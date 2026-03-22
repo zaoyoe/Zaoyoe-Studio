@@ -2038,6 +2038,96 @@
             return this.paymentChannelsConfig;
         },
 
+        getDefaultPaymentRuntimeConfig() {
+            const allowLocalMock = window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
+            return {
+                mock_payment: {
+                    allowed: allowLocalMock,
+                    reason: allowLocalMock ? 'local_runtime' : 'unknown',
+                    message: allowLocalMock
+                        ? '当前访问的是本地环境，允许使用模拟支付。'
+                        : '暂时无法确认当前环境是否允许模拟支付。'
+                }
+            };
+        },
+
+        normalizePaymentRuntimeConfig(raw) {
+            const defaults = this.getDefaultPaymentRuntimeConfig();
+            const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+            const mockSource = source.mock_payment && typeof source.mock_payment === 'object' && !Array.isArray(source.mock_payment)
+                ? source.mock_payment
+                : {};
+            const allowed = mockSource.allowed === true || String(mockSource.allowed) === 'true'
+                ? true
+                : (mockSource.allowed === false || String(mockSource.allowed) === 'false'
+                    ? false
+                    : defaults.mock_payment.allowed);
+            const reason = String(mockSource.reason || defaults.mock_payment.reason).trim() || defaults.mock_payment.reason;
+            const message = String(mockSource.message || defaults.mock_payment.message).trim() || defaults.mock_payment.message;
+
+            return {
+                mock_payment: {
+                    allowed,
+                    reason,
+                    message
+                }
+            };
+        },
+
+        async loadPaymentRuntimeConfig(forceRefresh = false) {
+            if (!forceRefresh && this.paymentRuntimeConfig) {
+                return this.paymentRuntimeConfig;
+            }
+
+            try {
+                const response = await fetch('/api/payments/config', {
+                    method: 'GET'
+                });
+                const payload = await response.json().catch(() => ({}));
+
+                if (!response.ok || payload?.success === false) {
+                    throw new Error(payload?.message || '加载支付环境配置失败');
+                }
+
+                if (payload?.config) {
+                    this.paymentChannelsConfig = this.normalizePaymentChannelsConfig(payload.config);
+                }
+
+                if (payload?.recharge_options) {
+                    this.rechargeOptionsConfig = this.normalizeRechargeOptionsConfig(payload.recharge_options);
+                }
+
+                this.paymentRuntimeConfig = this.normalizePaymentRuntimeConfig(payload?.runtime);
+            } catch (runtimeError) {
+                console.warn('[WalletModal] Failed to load payment runtime config:', runtimeError);
+                this.paymentRuntimeConfig = this.getDefaultPaymentRuntimeConfig();
+            }
+
+            return this.paymentRuntimeConfig;
+        },
+
+        getMockPaymentAvailability({
+            rechargeOptions = this.rechargeOptionsConfig,
+            paymentChannels = this.paymentChannelsConfig,
+            paymentRuntime = this.paymentRuntimeConfig
+        } = {}) {
+            const normalizedRechargeOptions = this.normalizeRechargeOptionsConfig(rechargeOptions);
+            const normalizedPaymentChannels = this.normalizePaymentChannelsConfig(paymentChannels);
+            const normalizedRuntime = this.normalizePaymentRuntimeConfig(paymentRuntime);
+            const activeProvider = this.getActivePaymentProviderConfig(normalizedPaymentChannels);
+            const activeProviderRequested = activeProvider.key === 'mock';
+            const configured = activeProviderRequested || normalizedRechargeOptions.mock_payment_enabled === true;
+
+            return {
+                activeProviderRequested,
+                configured,
+                allowed: configured && normalizedRuntime.mock_payment.allowed === true,
+                blocked: configured && normalizedRuntime.mock_payment.allowed !== true,
+                message: normalizedRuntime.mock_payment.message || '当前环境已禁用模拟支付，请切换到真实支付通道。',
+                reason: normalizedRuntime.mock_payment.reason || 'unknown'
+            };
+        },
+
         getActivePaymentProviderConfig(config = this.paymentChannelsConfig) {
             const normalizedConfig = this.normalizePaymentChannelsConfig(config);
             const activeKey = normalizedConfig.active_provider || 'afdian';
@@ -2082,7 +2172,11 @@
             requestWalletRechargeScrollCueUpdate();
         },
 
-        renderCustomRechargeSection(config = this.rechargeOptionsConfig, paymentChannels = this.paymentChannelsConfig) {
+        renderCustomRechargeSection(
+            config = this.rechargeOptionsConfig,
+            paymentChannels = this.paymentChannelsConfig,
+            paymentRuntime = this.paymentRuntimeConfig
+        ) {
             const section = document.getElementById('wallet-custom-recharge-section');
             const input = document.getElementById('wallet-custom-recharge-input');
             const button = document.getElementById('wallet-custom-recharge-btn');
@@ -2095,8 +2189,14 @@
             const normalizedPaymentChannels = this.normalizePaymentChannelsConfig(paymentChannels);
             const activeProvider = this.getActivePaymentProviderConfig(normalizedPaymentChannels);
             const isFeatureEnabled = normalizedConfig.custom_amount_enabled === true;
-            const isSimulationEnabled = activeProvider.key === 'mock' || normalizedConfig.mock_payment_enabled === true;
-            const isDirectRechargeAllowed = isSimulationEnabled || window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
+            const mockPayment = this.getMockPaymentAvailability({
+                rechargeOptions: normalizedConfig,
+                paymentChannels: normalizedPaymentChannels,
+                paymentRuntime
+            });
+            const isSimulationEnabled = mockPayment.activeProviderRequested && mockPayment.allowed;
+            const isSimulationBlocked = activeProvider.key === 'mock' && mockPayment.blocked;
+            const isDirectRechargeAllowed = isSimulationEnabled;
             const providerLabel = activeProvider.display_name || '当前通道';
             const minPoints = Math.max(1, Number(normalizedConfig.custom_amount_min_points) || 1);
             const maxPoints = Math.max(minPoints, Number(normalizedConfig.custom_amount_max_points) || minPoints);
@@ -2107,7 +2207,7 @@
             section.style.display = isFeatureEnabled ? '' : 'none';
 
             if (input) {
-                input.disabled = !isFeatureEnabled;
+                input.disabled = !isFeatureEnabled || isSimulationBlocked;
                 input.min = String(minPoints);
                 input.step = String(stepPoints);
                 input.placeholder = `例如 ${Math.max(minPoints, stepPoints * 100)}`;
@@ -2115,32 +2215,40 @@
             }
 
             if (button) {
-                button.disabled = !isFeatureEnabled;
-                button.textContent = isDirectRechargeAllowed ? '立即充值' : `前往${providerLabel}`;
+                button.disabled = !isFeatureEnabled || isSimulationBlocked;
+                button.textContent = isSimulationBlocked
+                    ? '当前环境不可用'
+                    : (isDirectRechargeAllowed ? '立即充值' : `前往${providerLabel}`);
             }
 
             if (subtitle) {
-                subtitle.textContent = isDirectRechargeAllowed
+                subtitle.textContent = isSimulationBlocked
+                    ? mockPayment.message
+                    : (isDirectRechargeAllowed
                     ? (isSimulationEnabled
                         ? '已开启临时模拟支付，提交后会直接到账积分。'
                         : `输入 ${stepPoints} 的整数倍积分，系统会按服务端报价生成应付金额。`)
-                    : (activeProvider.custom_amount_hint || `输入想购买的积分数量，我们会按服务端报价引导你前往${providerLabel}完成真实支付。`);
+                    : (activeProvider.custom_amount_hint || `输入想购买的积分数量，我们会按服务端报价引导你前往${providerLabel}完成真实支付。`));
             }
 
             if (badge) {
-                badge.textContent = isDirectRechargeAllowed
+                badge.textContent = isSimulationBlocked
+                    ? '模拟支付受限'
+                    : (isDirectRechargeAllowed
                     ? (isSimulationEnabled ? '模拟支付' : '按需充值')
-                    : providerLabel;
+                    : providerLabel);
             }
 
             if (meta) {
-                meta.textContent = isDirectRechargeAllowed
+                meta.textContent = isSimulationBlocked
+                    ? '后台虽然已切到模拟支付，但当前站点不在本地或白名单环境内，服务端会拒绝直充。请在支付通道里切换到爱发电或虎皮椒。'
+                    : (isDirectRechargeAllowed
                     ? (isSimulationEnabled
                         ? '当前为临时模拟支付模式，仅用于正式支付接入前过渡。用户提交后会直接到账，请谨慎使用。'
                         : `该入口由管理员在后台控制显示。当前按 ${this.formatPoints(pointsPerCny)} 积分/元报价，单次范围 ${this.formatPoints(minPoints)}-${this.formatPoints(maxPoints)} 积分，报价约 ${quoteMinutes} 分钟内有效。`)
                     : (activeProvider.key === 'afdian'
                         ? `该入口由管理员在后台控制显示。当前按 ${this.formatPoints(pointsPerCny)} 积分/元报价，单次范围 ${this.formatPoints(minPoints)}-${this.formatPoints(maxPoints)} 积分，报价约 ${quoteMinutes} 分钟内有效。完成支付后请返回这里输入订单号领取兑换码。`
-                        : `该入口由管理员在后台控制显示。当前会跳转到${providerLabel}，具体支付回执与入账方式以你配置的通道说明为准。`);
+                        : `该入口由管理员在后台控制显示。当前会跳转到${providerLabel}，具体支付回执与入账方式以你配置的通道说明为准。`));
             }
 
             requestWalletRechargeScrollCueUpdate();
@@ -3124,13 +3232,17 @@
 
                 // 🚀 Run ALL API calls in PARALLEL
                 const rechargeOptionsPromise = this.loadRechargeOptionsConfig();
-                const [balance, packages, history, rechargeOptions] = await Promise.all([
+                const paymentRuntimePromise = this.loadPaymentRuntimeConfig();
+                const [balance, packages, history] = await Promise.all([
                     PointsService.getBalance(),
                     PointsService.getPackages(),
                     PointsService.getHistory(),
-                    rechargeOptionsPromise
+                    rechargeOptionsPromise,
+                    paymentRuntimePromise
                 ]);
-                const paymentChannels = await this.loadPaymentChannelsConfig();
+                const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
+                const paymentChannels = this.normalizePaymentChannelsConfig(this.paymentChannelsConfig);
+                const paymentRuntime = this.normalizePaymentRuntimeConfig(this.paymentRuntimeConfig);
 
                 console.log('[WalletModal] ✅ Data loaded:', { balance, packagesLength: packages.length });
 
@@ -3175,7 +3287,7 @@
                     requestWalletRechargeScrollCueUpdate();
                 }
 
-                this.renderCustomRechargeSection(rechargeOptions, paymentChannels);
+                this.renderCustomRechargeSection(rechargeOptions, paymentChannels, paymentRuntime);
                 this.renderPaymentOrderQuerySection(paymentChannels);
 
                 // Store packages & history data for reuse
@@ -3238,18 +3350,27 @@
             const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
             const paymentChannels = this.normalizePaymentChannelsConfig(this.paymentChannelsConfig);
             const activeProvider = this.getActivePaymentProviderConfig(paymentChannels);
-            const allowSimulatedPayment = activeProvider.key === 'mock'
-                || rechargeOptions.mock_payment_enabled === true
-                || window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
+            const mockPayment = this.getMockPaymentAvailability({
+                rechargeOptions,
+                paymentChannels,
+                paymentRuntime: this.paymentRuntimeConfig
+            });
+            const providerKey = mockPayment.activeProviderRequested && mockPayment.allowed
+                ? 'mock'
+                : activeProvider.key;
             const packageData = Array.isArray(this._packagesCache)
                 ? this._packagesCache.find(pkg => String(pkg.id) === String(packageId))
                 : null;
 
             try {
+                if (providerKey === 'mock' && !mockPayment.allowed) {
+                    throw new Error(mockPayment.message || '当前环境已禁用模拟支付，请切换到真实支付通道。');
+                }
+
                 if (overlay) overlay.classList.add('loading');
 
                 const paymentResult = await PointsService.createPaymentRequest({
-                    provider_key: allowSimulatedPayment ? 'mock' : activeProvider.key,
+                    provider_key: providerKey,
                     package_id: packageId,
                     package_name: packageData?.name || packageName || ''
                 });
@@ -3301,9 +3422,14 @@
             const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
             const paymentChannels = this.normalizePaymentChannelsConfig(this.paymentChannelsConfig);
             const activeProvider = this.getActivePaymentProviderConfig(paymentChannels);
-            const allowSimulatedPayment = activeProvider.key === 'mock'
-                || rechargeOptions.mock_payment_enabled === true
-                || window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
+            const mockPayment = this.getMockPaymentAvailability({
+                rechargeOptions,
+                paymentChannels,
+                paymentRuntime: this.paymentRuntimeConfig
+            });
+            const providerKey = mockPayment.activeProviderRequested && mockPayment.allowed
+                ? 'mock'
+                : activeProvider.key;
             const normalizedAmount = Math.round(numericAmount);
             const minPoints = Math.max(1, Number(rechargeOptions.custom_amount_min_points) || 1);
             const maxPoints = Math.max(minPoints, Number(rechargeOptions.custom_amount_max_points) || minPoints);
@@ -3326,11 +3452,15 @@
             }
 
             try {
+                if (providerKey === 'mock' && !mockPayment.allowed) {
+                    throw new Error(mockPayment.message || '当前环境已禁用模拟支付，请切换到真实支付通道。');
+                }
+
                 if (button) button.disabled = true;
                 if (overlay) overlay.classList.add('loading');
 
                 const paymentResult = await PointsService.createPaymentRequest({
-                    provider_key: allowSimulatedPayment ? 'mock' : activeProvider.key,
+                    provider_key: providerKey,
                     points_amount: normalizedAmount
                 });
 

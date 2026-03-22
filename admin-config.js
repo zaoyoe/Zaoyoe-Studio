@@ -6,6 +6,7 @@
 // Config cache
 let systemConfigCache = {};
 let paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
+let paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
 let paymentChannelAccordionState = {
     mock: false,
     afdian: false,
@@ -38,6 +39,36 @@ function getDefaultPaymentChannelSecretStatus() {
         afdian_token: { configured: false, source: 'missing', updatedAt: null },
         hupijiao_api_key: { configured: false, source: 'missing', updatedAt: null },
         hupijiao_secret_key: { configured: false, source: 'missing', updatedAt: null }
+    };
+}
+
+function getDefaultPaymentChannelRuntimeState() {
+    return {
+        mock_payment: {
+            allowed: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1',
+            reason: 'unknown',
+            message: '暂时无法确认当前环境是否允许模拟支付。'
+        }
+    };
+}
+
+function normalizePaymentChannelRuntimeState(raw) {
+    const defaults = getDefaultPaymentChannelRuntimeState();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const mockSource = source.mock_payment && typeof source.mock_payment === 'object' && !Array.isArray(source.mock_payment)
+        ? source.mock_payment
+        : {};
+
+    return {
+        mock_payment: {
+            allowed: mockSource.allowed === true || String(mockSource.allowed) === 'true'
+                ? true
+                : (mockSource.allowed === false || String(mockSource.allowed) === 'false'
+                    ? false
+                    : defaults.mock_payment.allowed),
+            reason: String(mockSource.reason || defaults.mock_payment.reason).trim() || defaults.mock_payment.reason,
+            message: String(mockSource.message || defaults.mock_payment.message).trim() || defaults.mock_payment.message
+        }
     };
 }
 
@@ -421,6 +452,8 @@ function togglePaymentProviderPanel(providerKey) {
 
 function applyPaymentChannelOverview(config) {
     const activeProvider = config.providers[config.active_provider];
+    const mockRuntime = normalizePaymentChannelRuntimeState(paymentChannelRuntimeState).mock_payment;
+    const isMockActiveButBlocked = config.active_provider === 'mock' && mockRuntime.allowed !== true;
     const activeSelect = document.getElementById('paymentChannelActiveSelect');
     if (activeSelect && activeSelect.value !== config.active_provider) {
         activeSelect.value = config.active_provider;
@@ -429,8 +462,8 @@ function applyPaymentChannelOverview(config) {
     const summary = document.getElementById('paymentChannelSummary');
     if (summary) {
         summary.innerHTML = `
-            <i class="fas fa-plug"></i>
-            <span>当前主通道：${escapeConfigHtml(activeProvider.display_name)}。公开配置保存在系统设置中；敏感密钥会通过服务端加密保存，不再存浏览器。</span>
+            <i class="fas ${isMockActiveButBlocked ? 'fa-exclamation-triangle' : 'fa-plug'}"></i>
+            <span>当前主通道：${escapeConfigHtml(activeProvider.display_name)}。${isMockActiveButBlocked ? escapeConfigHtml(mockRuntime.message) : '公开配置保存在系统设置中；敏感密钥会通过服务端加密保存，不再存浏览器。'}</span>
         `;
     }
 
@@ -441,7 +474,9 @@ function applyPaymentChannelOverview(config) {
     };
 
     const descriptionMap = {
-        mock: config.providers.mock.description || '直接到账，适合短期过渡验证。',
+        mock: isMockActiveButBlocked
+            ? `当前已选择为主通道，但 ${mockRuntime.message}`
+            : (config.providers.mock.description || '直接到账，适合短期过渡验证。'),
         afdian: `${config.providers.afdian.package_hint || '支付后输入订单号领取兑换码'} · ${paymentChannelSecretStatus?.afdian_token?.configured ? 'Token 已配置' : 'Token 待配置'}`,
         hupijiao: `${config.providers.hupijiao.merchant_id ? `商户号 ${config.providers.hupijiao.merchant_id}` : '商户号待填写'} · ${(paymentChannelSecretStatus?.hupijiao_api_key?.configured && paymentChannelSecretStatus?.hupijiao_secret_key?.configured) ? '密钥已配置' : '密钥待配置'}`
     };
@@ -709,6 +744,7 @@ async function loadPaymentChannelSettings(force = false) {
 
             systemConfigCache['payment_channels'] = normalizePaymentChannelsConfig(payload.config);
             paymentChannelSecretStatus = payload.secrets || getDefaultPaymentChannelSecretStatus();
+            paymentChannelRuntimeState = normalizePaymentChannelRuntimeState(payload.runtime);
             const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
             rechargeOptions.mock_payment_enabled = systemConfigCache['payment_channels'].active_provider === 'mock';
             systemConfigCache['recharge_options'] = rechargeOptions;
@@ -718,6 +754,7 @@ async function loadPaymentChannelSettings(force = false) {
         } catch (error) {
             console.warn('[Config] Payment channel settings load failed:', error.message);
             paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
+            paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
             renderPaymentChannelsConfig();
             return null;
         }
@@ -1289,6 +1326,7 @@ async function savePaymentChannelSettings(options = {}) {
 
         systemConfigCache['payment_channels'] = normalizePaymentChannelsConfig(payload.config);
         paymentChannelSecretStatus = payload.secrets || getDefaultPaymentChannelSecretStatus();
+        paymentChannelRuntimeState = normalizePaymentChannelRuntimeState(payload.runtime);
 
         const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
         rechargeOptions.mock_payment_enabled = systemConfigCache['payment_channels'].active_provider === 'mock';
