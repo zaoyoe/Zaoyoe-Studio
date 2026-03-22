@@ -23,6 +23,7 @@
         autoRefreshIntervalMs: 5 * 60 * 1000,
         autoRefreshTimer: null,
         anomalyActionLoading: {},
+        exceptionTopicFilter: 'all',
         pagination: {
             anomalies: 1,
             orders: 1,
@@ -32,6 +33,12 @@
     };
 
     const PAYMENTS_PAGE_SIZE = 5;
+    const SENSITIVE_REVIEW_ACTIONS = new Set([
+        'approve_review',
+        'reject_review',
+        'approve_amount_mismatch',
+        'reject_amount_mismatch'
+    ]);
 
     function escapeHtml(value) {
         return String(value ?? '')
@@ -326,7 +333,9 @@
             request_retry: '登记重试',
             reopen: '重新打开',
             approve_review: '审核通过',
-            reject_review: '驳回'
+            reject_review: '驳回',
+            approve_amount_mismatch: '人工放行',
+            reject_amount_mismatch: '拒绝入账'
         };
         return map[String(action || '').trim().toLowerCase()] || '执行操作';
     }
@@ -408,6 +417,96 @@
             tone: 'muted',
             detail: '该订单创建时还未启用支付意图链路'
         };
+    }
+
+    function getHandlingSuggestion(item) {
+        const title = String(item?.title || '');
+        const message = String(item?.message || '');
+        const type = String(item?.type || '').trim().toLowerCase();
+
+        if (type === 'query' || title.includes('查码')) {
+            return '处理建议：先判断是用户输错订单号，还是 webhook 未落单、订单被拦截或兑换码尚未生成。';
+        }
+        if (title.includes('支付意图') || type === 'session') {
+            if (title.includes('待回填')) {
+                return '处理建议：先检查支付入口是否成功创建，再核对 webhook 是否到达；必要时引导用户查码认领兜底。';
+            }
+            if (title.includes('已完成但未回填')) {
+                return '处理建议：优先检查 provider_order_no 与 checkout session 的关联是否丢失，再决定是否人工回填。';
+            }
+            return '处理建议：检查支付通道拉起参数、支付跳转结果以及 checkout session 状态。';
+        }
+        if (title.includes('重复回调')) {
+            return '处理建议：确认是否只是重复通知，还是已经触发重复写单、重复回填或重复入账。';
+        }
+        if (title.includes('签名') || message.toLowerCase().includes('signature')) {
+            return '处理建议：检查支付通道密钥、回调签名算法和回调来源地址。';
+        }
+        if (title.includes('金额') || message.includes('金额')) {
+            return '处理建议：核对套餐价格、支付金额和通道回传金额是否一致，金额异常放行前务必补处理备注。';
+        }
+        if (title.includes('未认领') || message.includes('未输入订单号')) {
+            return '处理建议：提醒用户在钱包输入订单号，或后台人工补认领。';
+        }
+        if (title.includes('待审核')) {
+            return '处理建议：检查套餐映射、金额校验和订单来源后再决定是否放行。';
+        }
+        return '处理建议：先核对订单号、支付通道配置和回调时间，再决定是否人工补单。';
+    }
+
+    function getAnomalyTypeLabel(item) {
+        if (item?.type === 'session') return '支付意图';
+        if (item?.type === 'event') return '回调事件';
+        if (item?.type === 'query') return '查码记录';
+        return '订单';
+    }
+
+    function getAnomalyReferenceLabel(item) {
+        return item?.type === 'session' ? '会话' : '订单号';
+    }
+
+    function getAnomalyReferenceValue(item) {
+        if (item?.type === 'session') {
+            return item.session_key || item.provider_order_no || '无会话号';
+        }
+        return item?.provider_order_no || '无订单号';
+    }
+
+    function renderAnomalyOpsState(item) {
+        const status = String(item?.ops_status || 'open').trim().toLowerCase();
+        const tone = getAnomalyOpsTone(status);
+        const label = getAnomalyOpsStatusLabel(status);
+        const resolution = String(item?.ops_resolution || '').trim();
+        const actionTime = item?.ops_last_action_at ? formatDateTime(item.ops_last_action_at) : '';
+
+        return `
+            <div class="payments-anomaly-ops">
+                <span class="payments-anomaly-state ${escapeHtml(`status-${status}`)} ${escapeHtml(tone)}">${escapeHtml(label)}</span>
+                ${resolution ? `<span class="payments-anomaly-resolution">${escapeHtml(resolution)}</span>` : ''}
+                ${actionTime ? `<span class="payments-anomaly-resolution-meta">最近处理：${escapeHtml(actionTime)}</span>` : ''}
+            </div>
+        `;
+    }
+
+    function renderAnomalyActions(item) {
+        const actions = Array.isArray(item?.ops_available_actions) ? item.ops_available_actions : [];
+        if (!actions.length) return '';
+
+        const loading = isAnomalyActionLoading(item.type, item.id);
+        return `
+            <div class="payments-anomaly-actions">
+                ${actions.map((action) => `
+                    <button
+                        type="button"
+                        class="payments-anomaly-action-btn ${escapeHtml(action)}"
+                        onclick="AdminPayments.handleAnomalyAction('${escapeHtml(item.type)}','${escapeHtml(item.id)}','${escapeHtml(action)}')"
+                        ${loading ? 'disabled' : ''}
+                    >
+                        ${escapeHtml(getAnomalyActionLabel(action))}
+                    </button>
+                `).join('')}
+            </div>
+        `;
     }
 
     function getRangeLabel(days) {
@@ -677,7 +776,8 @@
         const anomalyCount = Number(anomaly.review_orders || 0)
             + Number(anomaly.failed_orders || 0)
             + Number(anomaly.recent_event_anomalies || 0)
-            + Number(anomaly.session_anomalies || 0);
+            + Number(anomaly.session_anomalies || 0)
+            + Number(anomaly.query_failures || 0);
         const incomeValue = sitewide.recharge_amount != null
             ? sitewide.recharge_amount
             : overview.total_amount;
@@ -713,10 +813,11 @@
         const anomalyCount = Number(anomaly.review_orders || 0)
             + Number(anomaly.failed_orders || 0)
             + Number(anomaly.recent_event_anomalies || 0)
-            + Number(anomaly.session_anomalies || 0);
+            + Number(anomaly.session_anomalies || 0)
+            + Number(anomaly.query_failures || 0);
 
         if (anomalyCount > 0) {
-            renderAccessState(`当前有 ${formatNumber(anomalyCount)} 项异常需要关注，请优先查看失败订单、待审核、异常回调与支付意图回填。`, 'warning', { preserveBody: true });
+            renderAccessState(`当前有 ${formatNumber(anomalyCount)} 项异常需要关注，请优先查看金额异常、待审核、重复回调、查码失败与支付意图回填。`, 'warning', { preserveBody: true });
             return;
         }
 
@@ -853,6 +954,7 @@
         const overview = data?.overview || {};
         const anomaly = data?.anomaly_summary || {};
         const sessionSummary = data?.session_summary || {};
+        const querySummary = data?.query_summary || {};
         const target = document.getElementById('paymentsOverviewGrid');
         if (!target) return;
 
@@ -911,6 +1013,15 @@
                 value: formatNumber(Number(anomaly.recent_event_anomalies || 0) + Number(anomaly.session_anomalies || 0)),
                 help: `${formatNumber(anomaly.duplicate_webhook_orders)} 个订单出现重复回调 · 会话异常 ${formatNumber(anomaly.session_anomalies)}`,
                 tone: 'warning'
+            },
+            {
+                icon: 'fas fa-magnifying-glass-chart',
+                label: '查码成功率',
+                value: Number(querySummary.total_attempts || 0) > 0 ? formatPercent(querySummary.success_rate) : '—',
+                help: Number(querySummary.total_attempts || 0) > 0
+                    ? `${formatNumber(querySummary.failed_attempts)} 次失败 · 总查询 ${formatNumber(querySummary.total_attempts)} 次`
+                    : '当前时间范围内暂无查码请求',
+                tone: Number(querySummary.failed_attempts || 0) > 0 ? 'warning' : 'info'
             }
         ];
 
@@ -936,11 +1047,14 @@
                         · 支付成功 ${escapeHtml(formatPercent(item.paid_rate))}
                         · 认领 ${escapeHtml(formatPercent(item.claim_rate))}
                         · 意图匹配 ${escapeHtml(formatPercent(item.order_match_rate || item.session_match_rate))}
+                        · webhook ${escapeHtml(formatPercent(item.webhook_success_rate || 0))}
+                        · 查码 ${Number(item.query_total || 0) > 0 ? escapeHtml(formatPercent(item.query_success_rate || 0)) : '—'}
                     </div>
                     <div class="payments-provider-extra">
                         <span>${escapeHtml(formatCurrency(item.total_amount))}</span>
                         <span>${escapeHtml(formatPoints(item.total_points))}</span>
                         <span>会话 ${escapeHtml(formatNumber(item.session_total))} · 已匹配 ${escapeHtml(formatNumber(item.session_matched))}</span>
+                        <span>自动回填 ${escapeHtml(formatPercent(item.auto_link_rate || 0))} · 人工/兜底 ${escapeHtml(formatPercent(item.fallback_link_rate || 0))}</span>
                     </div>
                 </div>
                 <div class="payments-provider-badges">
@@ -949,6 +1063,9 @@
                     ${Number(item.session_stale || 0) > 0 ? `<span class="payments-mini-badge warning">${escapeHtml(formatNumber(item.session_stale))} 待回填</span>` : ''}
                     ${Number(item.session_failed || 0) > 0 ? `<span class="payments-mini-badge danger">${escapeHtml(formatNumber(item.session_failed))} 会话失败</span>` : ''}
                     ${Number(item.fallback_links || 0) > 0 ? `<span class="payments-mini-badge info">${escapeHtml(formatNumber(item.fallback_links))} 兜底</span>` : ''}
+                    ${Number(item.webhook_4xx || 0) > 0 ? `<span class="payments-mini-badge warning">${escapeHtml(formatNumber(item.webhook_4xx))} webhook 4xx</span>` : ''}
+                    ${Number(item.webhook_5xx || 0) > 0 ? `<span class="payments-mini-badge danger">${escapeHtml(formatNumber(item.webhook_5xx))} webhook 5xx</span>` : ''}
+                    ${Number(item.query_failed || 0) > 0 ? `<span class="payments-mini-badge warning">${escapeHtml(formatNumber(item.query_failed))} 查码失败</span>` : ''}
                 </div>
             </div>
         `).join('');
@@ -1121,87 +1238,6 @@
 
         const pager = paginateItems(anomalies, 'anomalies');
 
-        function getHandlingSuggestion(item) {
-            const title = String(item?.title || '');
-            const message = String(item?.message || '');
-
-            if (title.includes('支付意图') || item?.type === 'session') {
-                if (title.includes('待回填')) {
-                    return '处理建议：先检查支付入口是否成功创建，再核对 webhook 是否到达；必要时引导用户查码认领兜底。';
-                }
-                if (title.includes('已完成但未回填')) {
-                    return '处理建议：优先检查 provider_order_no 与 checkout session 的关联是否丢失，再决定是否人工回填。';
-                }
-                return '处理建议：检查支付通道拉起参数、支付跳转结果以及 checkout session 状态。';
-            }
-            if (title.includes('签名') || message.toLowerCase().includes('signature')) {
-                return '处理建议：检查支付通道密钥、回调签名算法和回调来源地址。';
-            }
-            if (title.includes('金额') || message.includes('金额')) {
-                return '处理建议：核对套餐价格、支付金额和通道回传金额是否一致。';
-            }
-            if (title.includes('未认领') || message.includes('未输入订单号')) {
-                return '处理建议：提醒用户在钱包输入订单号，或后台人工补认领。';
-            }
-            if (title.includes('待审核')) {
-                return '处理建议：检查套餐映射、金额校验和订单来源后再决定是否放行。';
-            }
-            return '处理建议：先核对订单号、支付通道配置和回调时间，再决定是否人工补单。';
-        }
-
-        function getAnomalyTypeLabel(item) {
-            if (item?.type === 'session') return '支付意图';
-            if (item?.type === 'event') return '回调事件';
-            return '订单';
-        }
-
-        function getAnomalyReferenceLabel(item) {
-            return item?.type === 'session' ? '会话' : '订单号';
-        }
-
-        function getAnomalyReferenceValue(item) {
-            return item?.type === 'session'
-                ? (item.session_key || item.provider_order_no || '无会话号')
-                : (item.provider_order_no || '无订单号');
-        }
-
-        function renderOpsState(item) {
-            const status = String(item?.ops_status || 'open').trim().toLowerCase();
-            const tone = getAnomalyOpsTone(status);
-            const label = getAnomalyOpsStatusLabel(status);
-            const resolution = String(item?.ops_resolution || '').trim();
-            const actionTime = item?.ops_last_action_at ? formatDateTime(item.ops_last_action_at) : '';
-
-            return `
-                <div class="payments-anomaly-ops">
-                    <span class="payments-anomaly-state ${escapeHtml(`status-${status}`)} ${escapeHtml(tone)}">${escapeHtml(label)}</span>
-                    ${resolution ? `<span class="payments-anomaly-resolution">${escapeHtml(resolution)}</span>` : ''}
-                    ${actionTime ? `<span class="payments-anomaly-resolution-meta">最近处理：${escapeHtml(actionTime)}</span>` : ''}
-                </div>
-            `;
-        }
-
-        function renderActions(item) {
-            const actions = Array.isArray(item?.ops_available_actions) ? item.ops_available_actions : [];
-            if (!actions.length) return '';
-
-            const loading = isAnomalyActionLoading(item.type, item.id);
-            return `
-                <div class="payments-anomaly-actions">
-                    ${actions.map((action) => `
-                        <button
-                            type="button"
-                            class="payments-anomaly-action-btn ${escapeHtml(action)}"
-                            onclick="AdminPayments.handleAnomalyAction('${escapeHtml(item.type)}','${escapeHtml(item.id)}','${escapeHtml(action)}')"
-                            ${loading ? 'disabled' : ''}
-                        >
-                            ${escapeHtml(getAnomalyActionLabel(action))}
-                        </button>
-                    `).join('')}
-                </div>
-            `;
-        }
-
         target.innerHTML = `
             <div class="payments-anomaly-items">
                 ${pager.pageItems.map((item) => `
@@ -1213,7 +1249,7 @@
                     </div>
                     <span class="payments-anomaly-severity">${escapeHtml(getSeverityLabel(item.severity))}</span>
                 </div>
-                ${renderOpsState(item)}
+                ${renderAnomalyOpsState(item)}
                 <div class="payments-anomaly-suggestion">
                     <i class="fas fa-lightbulb"></i>
                     <span>${escapeHtml(getHandlingSuggestion(item))}</span>
@@ -1224,11 +1260,88 @@
                     <span><small>${escapeHtml(getAnomalyReferenceLabel(item))}</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
                     <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
                 </div>
-                ${renderActions(item)}
+                ${renderAnomalyActions(item)}
             </div>
                 `).join('')}
             </div>
             ${renderPager('anomalies', pager.currentPage, pager.totalPages, pager.totalItems)}
+        `;
+    }
+
+    function renderExceptionTopics(data) {
+        const topicsTarget = document.getElementById('paymentsExceptionTopics');
+        const listTarget = document.getElementById('paymentsExceptionTopicList');
+        if (!topicsTarget || !listTarget) return;
+
+        const topics = Array.isArray(data?.exception_topics) ? data.exception_topics : [];
+        const items = Array.isArray(data?.exception_topic_items) ? data.exception_topic_items : [];
+        const activeFilter = String(state.exceptionTopicFilter || 'all').trim().toLowerCase() || 'all';
+        const filteredItems = activeFilter === 'all'
+            ? items
+            : items.filter((item) => String(item?.topic_key || '').trim().toLowerCase() === activeFilter);
+        const totalTopicCount = topics.reduce((sum, topic) => sum + Number(topic?.count || 0), 0);
+
+        if (!topics.length) {
+            topicsTarget.innerHTML = '<div class="payments-empty-state">当前时间范围内没有需要专题跟进的支付异常。</div>';
+            listTarget.innerHTML = '';
+            return;
+        }
+
+        topicsTarget.innerHTML = `
+            <div class="payments-provider-row">
+                <div class="payments-provider-copy">
+                    <div class="payments-provider-name"><i class="fas fa-layer-group"></i>全部专题</div>
+                    <div class="payments-provider-meta">当前范围内共 ${escapeHtml(formatNumber(totalTopicCount))} 项专题异常，点击下方专题查看聚合详情。</div>
+                </div>
+                <div class="payments-provider-badges">
+                    <button type="button" class="payments-anomaly-action-btn ${activeFilter === 'all' ? 'mark_handled' : ''}" onclick="AdminPayments.setExceptionTopicFilter('all')">查看全部</button>
+                </div>
+            </div>
+            ${topics.map((topic) => `
+                <div class="payments-provider-row">
+                    <div class="payments-provider-copy">
+                        <div class="payments-provider-name"><i class="fas fa-bullseye"></i>${escapeHtml(topic.label || '专题')}</div>
+                        <div class="payments-provider-meta">${escapeHtml(topic.description || '')}</div>
+                    </div>
+                    <div class="payments-provider-badges">
+                        <span class="payments-mini-badge ${escapeHtml(topic.severity === 'critical' ? 'danger' : (topic.severity === 'warning' ? 'warning' : 'info'))}">${escapeHtml(formatNumber(topic.count || 0))} 项</span>
+                        <button type="button" class="payments-anomaly-action-btn ${activeFilter === String(topic.key || '').trim().toLowerCase() ? 'mark_handled' : ''}" onclick="AdminPayments.setExceptionTopicFilter('${escapeHtml(topic.key)}')">查看</button>
+                    </div>
+                </div>
+            `).join('')}
+        `;
+
+        if (!filteredItems.length) {
+            listTarget.innerHTML = '<div class="payments-empty-state compact">当前专题下没有新的明细项。</div>';
+            return;
+        }
+
+        listTarget.innerHTML = `
+            <div class="payments-anomaly-items">
+                ${filteredItems.map((item) => `
+                    <div class="payments-anomaly-item severity-${escapeHtml(item.severity || 'info')}">
+                        <div class="payments-anomaly-top">
+                            <div class="payments-anomaly-copy">
+                                <div class="payments-anomaly-title">${escapeHtml(item.title || '专题项')}</div>
+                                <div class="payments-anomaly-message">${escapeHtml(item.message || '')}</div>
+                            </div>
+                            <span class="payments-anomaly-severity">${escapeHtml(getSeverityLabel(item.severity))}</span>
+                        </div>
+                        ${item.type === 'query' ? '' : renderAnomalyOpsState(item)}
+                        <div class="payments-anomaly-suggestion">
+                            <i class="fas fa-lightbulb"></i>
+                            <span>${escapeHtml(getHandlingSuggestion(item))}</span>
+                        </div>
+                        <div class="payments-anomaly-meta">
+                            <span><small>专题</small><strong>${escapeHtml(item.topic_label || '支付异常')}</strong></span>
+                            <span><small>通道</small><strong>${escapeHtml(getProviderLabel(item.provider))}</strong></span>
+                            <span><small>${escapeHtml(getAnomalyReferenceLabel(item))}</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
+                            <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
+                        </div>
+                        ${renderAnomalyActions(item)}
+                    </div>
+                `).join('')}
+            </div>
         `;
     }
 
@@ -1400,6 +1513,7 @@
         renderBusinessBreakdown(state.summary);
         renderPointsBreakdown(state.summary);
         renderTrend(state.summary);
+        renderExceptionTopics(state.summary);
         renderAnomalies(state.summary);
         renderOrders(state.summary);
         if (state.cleanupPreview) {
@@ -1444,6 +1558,7 @@
         renderBusinessBreakdown(data);
         renderPointsBreakdown(data);
         renderTrend(data);
+        renderExceptionTopics(data);
         renderAnomalies(data);
         renderOrders(data);
         updateOverviewBanner(data);
@@ -1466,6 +1581,15 @@
         const normalizedAction = String(action || '').trim().toLowerCase();
         if (!normalizedTargetType || !normalizedTargetId || !normalizedAction) return;
 
+        let note = '';
+        if (SENSITIVE_REVIEW_ACTIONS.has(normalizedAction)) {
+            note = String(window.prompt('请填写处理备注，这条备注会进入后台审计记录：', '') || '').trim();
+            if (!note) {
+                window.showToast?.('敏感操作必须填写处理备注。', 'warning');
+                return;
+            }
+        }
+
         const actionKey = `${normalizedTargetType}:${normalizedTargetId}`;
         if (state.anomalyActionLoading[actionKey]) return;
 
@@ -1478,7 +1602,8 @@
                 body: JSON.stringify({
                     targetType: normalizedTargetType,
                     targetId: normalizedTargetId,
-                    action: normalizedAction
+                    action: normalizedAction,
+                    note: note || undefined
                 })
             });
 
@@ -1496,6 +1621,11 @@
                 renderAnomalies(state.summary);
             }
         }
+    }
+
+    function setExceptionTopicFilter(topicKey = 'all') {
+        state.exceptionTopicFilter = String(topicKey || 'all').trim().toLowerCase() || 'all';
+        renderExceptionTopics(state.summary || {});
     }
 
     async function init() {
@@ -1762,12 +1892,15 @@
             rangeLabel: getCurrentRangeLabel(),
             siteLabel: (getSiteParam() || 'all').toUpperCase(),
             overview: overviewPayload.overview || {},
+            query_summary: overviewPayload.query_summary || {},
             anomaly_summary: overviewPayload.anomaly_summary || opsPayload.anomaly_summary || {},
             provider_stats: overviewPayload.provider_stats || [],
             trend_24h: overviewPayload.trend_24h || [],
             sitewide_summary: financePayload.sitewide_summary || {},
             business_breakdown: financePayload.business_breakdown || [],
             points_breakdown: financePayload.points_breakdown || [],
+            exception_topics: opsPayload.exception_topics || [],
+            exception_topic_items: opsPayload.exception_topic_items || [],
             recent_anomalies: opsPayload.recent_anomalies || [],
             recent_orders: opsPayload.recent_orders || []
         };
@@ -1935,6 +2068,7 @@
         previewCleanup,
         cleanupTestData,
         goToPage,
-        handleAnomalyAction
+        handleAnomalyAction,
+        setExceptionTopicFilter
     };
 })();

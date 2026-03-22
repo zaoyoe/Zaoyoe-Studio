@@ -51,8 +51,10 @@
 - 钱包购买套餐与自定义充值统一从这里进入
 - 后端统一判断当前生效通道
 - 统一先创建 `payment_checkout_sessions`
+- 对已接入真实通道预创建 `payment_orders` 作为最终落单占位
 - `mock` 会直接走共享完成逻辑
-- `afdian` / `hupijiao` 返回统一的 checkout context，由前端拉起支付页
+- `afdian` 返回统一的 checkout context，由前端拉起支付页
+- `hupijiao` 当前默认 fail-closed，不允许继续走半成品真实下单
 
 ### checkout session / 支付意图层
 
@@ -99,16 +101,19 @@
 
 当前状态：
 - 创建支付时会先写 `payment_checkout_sessions`
-- 真实 `payment_orders` 仍主要在回调后落库
+- 创建支付时会预创建一个 `pending` 的 `payment_orders` 占位，并绑定 `checkout_session_id`
+- webhook / 查码阶段会优先复用这条占位订单，而不是再新建一条最终订单
 - webhook 阶段会优先尝试把 `payment_checkout_sessions` 回填到最终 `payment_orders`
 - 如果 webhook 阶段无法安全匹配，用户在钱包查码认领时会再做一次按账号的强关联兜底
-- 后续如果要把爱发电也完全拉平，仍建议继续补更强的 `intent/session -> final order` 关联策略
+- 金额异常 / 待审核现在统一走后台审核 RPC，不再直接散落改订单状态
+- 查码失败会落 `payment_query_attempts`，并进入后台支付对账汇总 / 异常专题
 
 ### hupijiao
 
 当前状态：
-- 已能通过 `/api/payments/create` 走统一入口并返回 checkout context 骨架
-- 尚未实现真实下单、验签、回调、自动入账
+- 配置项和 secret 已预留到统一 adapter
+- 因尚未实现真实下单、验签、回调、查单、自动入账，所以当前默认禁止从 `/api/payments/create` 拉起真实支付
+- 这样可以避免商业环境里出现“入口可点，但最终无法统一落单”的半成品链路
 
 ## 后续接虎皮椒时要补的点
 

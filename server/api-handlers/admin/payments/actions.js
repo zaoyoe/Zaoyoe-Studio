@@ -12,7 +12,15 @@ const VALID_ACTIONS = new Set([
     'request_retry',
     'reopen',
     'approve_review',
-    'reject_review'
+    'reject_review',
+    'approve_amount_mismatch',
+    'reject_amount_mismatch'
+]);
+const SENSITIVE_REVIEW_ACTIONS = new Set([
+    'approve_review',
+    'reject_review',
+    'approve_amount_mismatch',
+    'reject_amount_mismatch'
 ]);
 
 function normalizeText(value) {
@@ -28,8 +36,10 @@ function mapActionToStatus(action) {
     case 'request_retry':
         return 'retry_requested';
     case 'approve_review':
+    case 'approve_amount_mismatch':
         return 'approved';
     case 'reject_review':
+    case 'reject_amount_mismatch':
         return 'rejected';
     case 'reopen':
     default:
@@ -50,8 +60,12 @@ function getResolutionText(action, note) {
         return '已登记重试申请，等待后续履约链路接管。';
     case 'approve_review':
         return '已人工审核通过。';
+    case 'approve_amount_mismatch':
+        return '已人工放行金额异常订单。';
     case 'reject_review':
         return '已人工审核驳回。';
+    case 'reject_amount_mismatch':
+        return '已人工驳回金额异常订单。';
     case 'reopen':
         return '已重新打开异常项。';
     default:
@@ -89,43 +103,40 @@ async function fetchTargetRecord(supabase, targetType, targetId) {
     return data;
 }
 
-async function applyOrderReviewDecision(supabase, target, action, note) {
-    if (target.status !== 'pending_review') {
-        const error = new Error('Only pending_review orders can be approved or rejected');
+function normalizeReviewRpcAction(action) {
+    if (action === 'approve_review' || action === 'approve_amount_mismatch') {
+        return 'approve';
+    }
+    return 'reject';
+}
+
+async function applyOrderReviewDecision(supabase, target, action, note, actorId) {
+    const status = normalizeText(target.status).toLowerCase();
+    const expectsPendingReview = action === 'approve_review' || action === 'reject_review';
+    const expectedStatus = expectsPendingReview ? 'pending_review' : 'amount_mismatch';
+
+    if (status !== expectedStatus) {
+        const error = new Error(`Only ${expectedStatus} orders can use this review action`);
         error.statusCode = 409;
         throw error;
     }
 
-    const nextStatus = action === 'approve_review' ? 'paid' : 'rejected';
-    const nextValues = {
-        status: nextStatus,
-        updated_at: new Date().toISOString()
-    };
+    const { data, error } = await supabase.rpc('fn_apply_payment_order_review', {
+        p_payment_order_id: target.id,
+        p_action: normalizeReviewRpcAction(action),
+        p_note: normalizeText(note) || null,
+        p_actor_id: actorId || null
+    });
 
-    if (action === 'approve_review') {
-        nextValues.paid_at = target.paid_at || nextValues.updated_at;
-        nextValues.verified_at = nextValues.updated_at;
-        nextValues.last_error = null;
-    } else {
-        nextValues.last_error = normalizeText(note) || '已人工审核驳回';
+    if (error) {
+        const reviewError = new Error(error.message || 'Failed to apply payment review');
+        reviewError.statusCode = /only pending_review|only amount_mismatch|only pending_review or amount_mismatch/i.test(error.message || '')
+            ? 409
+            : 400;
+        throw reviewError;
     }
 
-    const { error: orderError } = await supabase
-        .from('payment_orders')
-        .update(nextValues)
-        .eq('id', target.id);
-
-    if (orderError) throw orderError;
-
-    if (normalizeText(target.provider).toLowerCase() === 'afdian' && normalizeText(target.provider_order_no)) {
-        await supabase
-            .from('afdian_orders')
-            .update({
-                payment_status: nextStatus,
-                updated_at: new Date().toISOString()
-            })
-            .eq('out_trade_no', target.provider_order_no);
-    }
+    return data;
 }
 
 async function upsertAnomalyCase(supabase, {
@@ -195,8 +206,22 @@ module.exports = async function handler(req, res) {
         const targetProvider = normalizeText(target?.provider);
         const targetProviderOrderNo = normalizeText(target?.provider_order_no || target?.session_key);
 
-        if (targetType === 'order' && (action === 'approve_review' || action === 'reject_review')) {
-            await applyOrderReviewDecision(supabase, target, action, note);
+        if (SENSITIVE_REVIEW_ACTIONS.has(action) && !note) {
+            return sendJson(res, 400, {
+                success: false,
+                message: '请填写处理备注后再执行该操作'
+            });
+        }
+
+        if (SENSITIVE_REVIEW_ACTIONS.has(action) && targetType !== 'order') {
+            return sendJson(res, 400, {
+                success: false,
+                message: '该操作仅适用于支付订单'
+            });
+        }
+
+        if (targetType === 'order' && SENSITIVE_REVIEW_ACTIONS.has(action)) {
+            await applyOrderReviewDecision(supabase, target, action, note, user.id);
         }
 
         const anomalyCase = await upsertAnomalyCase(supabase, {

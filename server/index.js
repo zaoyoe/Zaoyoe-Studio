@@ -15,7 +15,8 @@ const {
     amountsMatch: paymentAmountsMatch
 } = require('../api/_lib/payments/provider-adapters');
 const {
-    reconcileCheckoutSessionForPaymentOrder
+    reconcileCheckoutSessionForPaymentOrder,
+    resolvePendingPaymentOrderFromCheckoutContext
 } = require('../api/_lib/payments/orders');
 const {
     loadShopDeliveryStrategyConfig,
@@ -256,6 +257,49 @@ async function finalizePaymentEvent(eventKey, patch = {}) {
 
     if (error) {
         console.warn('[Payments] Failed to finalize payment event:', error.message);
+    }
+}
+
+function isMissingSupabaseStructureError(error) {
+    const code = String(error?.code || '').trim();
+    const message = String(error?.message || '').toLowerCase();
+    return code === '42703'
+        || code === '42P01'
+        || (message.includes('column') && message.includes('does not exist'))
+        || (message.includes('relation') && message.includes('does not exist'));
+}
+
+async function recordPaymentQueryAttempt(payload = {}) {
+    const metadata = payload?.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+        ? payload.metadata
+        : {};
+
+    try {
+        const { error } = await supabase
+            .from('payment_query_attempts')
+            .insert({
+                provider: String(payload.provider || 'unknown').trim().toLowerCase() || 'unknown',
+                site: String(payload.site || 'cn').trim().toLowerCase() || 'cn',
+                order_no: String(payload.orderNo || '').trim() || null,
+                user_id: payload.userId || null,
+                payment_order_id: payload.paymentOrderId || null,
+                checkout_session_id: payload.checkoutSessionId || null,
+                success: payload.success === true,
+                response_status: Number.isFinite(Number(payload.responseStatus))
+                    ? Number(payload.responseStatus)
+                    : null,
+                outcome_code: String(payload.outcomeCode || (payload.success ? 'success' : 'unknown')).trim().toLowerCase() || 'unknown',
+                message: String(payload.message || '').trim() || null,
+                metadata
+            });
+
+        if (error && !isMissingSupabaseStructureError(error)) {
+            console.warn('[Payments] Failed to record payment query attempt:', error.message);
+        }
+    } catch (error) {
+        if (!isMissingSupabaseStructureError(error)) {
+            console.warn('[Payments] Failed to record payment query attempt:', error.message);
+        }
     }
 }
 
@@ -1824,6 +1868,7 @@ app.post('/api/afdian/webhook', async (req, res) => {
     const orderNo = String(order.out_trade_no || '').trim();
     const status = Number(order.status);
     const eventKey = buildAfdianEventKey(orderNo, status, payload);
+    const currentSite = getCurrentSite(req);
 
     try {
         console.log('[Afdian] Raw payload:', JSON.stringify(payload).substring(0, 500));
@@ -1846,7 +1891,8 @@ app.post('/api/afdian/webhook', async (req, res) => {
         if (!orderNo) {
             await finalizePaymentEvent(eventKey, {
                 processing_result: 'invalid_order_no',
-                error_message: 'missing out_trade_no'
+                error_message: 'missing out_trade_no',
+                response_status: 400
             });
             return res.status(400).json({ ec: 400, em: 'missing order number' });
         }
@@ -1855,21 +1901,24 @@ app.post('/api/afdian/webhook', async (req, res) => {
             console.warn('[Afdian] Non-success payload:', payload.ec, payload.em);
             await finalizePaymentEvent(eventKey, {
                 processing_result: 'ignored_non_success_ec',
-                error_message: payload.em || 'non-success ec'
+                error_message: payload.em || 'non-success ec',
+                response_status: 200
             });
             return res.json({ ec: 200, em: '' });
         }
 
         if (data?.type !== 'order' || !data?.order) {
             await finalizePaymentEvent(eventKey, {
-                processing_result: 'ignored_non_order_event'
+                processing_result: 'ignored_non_order_event',
+                response_status: 200
             });
             return res.json({ ec: 200, em: '' });
         }
 
         if (status !== 2) {
             await finalizePaymentEvent(eventKey, {
-                processing_result: 'ignored_non_paid_status'
+                processing_result: 'ignored_non_paid_status',
+                response_status: 200
             });
             return res.json({ ec: 200, em: '' });
         }
@@ -1882,7 +1931,8 @@ app.post('/api/afdian/webhook', async (req, res) => {
         if (!afdianToken) {
             await finalizePaymentEvent(eventKey, {
                 processing_result: 'missing_afdian_token',
-                error_message: 'AFDIAN_TOKEN is not configured'
+                error_message: 'AFDIAN_TOKEN is not configured',
+                response_status: 503
             });
             return res.status(503).json({ ec: 503, em: 'payment webhook not configured' });
         }
@@ -1890,7 +1940,8 @@ app.post('/api/afdian/webhook', async (req, res) => {
         if (!payload.sign) {
             await finalizePaymentEvent(eventKey, {
                 processing_result: 'missing_signature',
-                error_message: 'missing sign'
+                error_message: 'missing sign',
+                response_status: 401
             });
             return res.status(401).json({ ec: 401, em: 'missing signature' });
         }
@@ -1912,6 +1963,18 @@ app.post('/api/afdian/webhook', async (req, res) => {
             amount,
             amountValid
         });
+        const pendingPaymentOrder = await resolvePendingPaymentOrderFromCheckoutContext({
+            supabase,
+            providerKey: 'afdian',
+            providerOrderNo: orderNo,
+            site: currentSite,
+            packageId: resolvedPackage?.packageId ?? null,
+            packageName: resolvedPackage?.packageName ?? null,
+            expectedAmount: resolvedPackage?.expectedAmount ?? amount,
+            paidAmount: amount,
+            pointsAmount: resolvedPackage?.pointsTotal ?? 0,
+            lookbackMinutes: 120
+        });
 
         const { data: processResult, error: processRpcError } = await supabase.rpc('fn_process_afdian_payment', {
             p_order_no: orderNo,
@@ -1926,13 +1989,15 @@ app.post('/api/afdian/webhook', async (req, res) => {
             p_signature_valid: signatureValid,
             p_amount_valid: amountValid,
             p_payload: payload,
-            p_error: processError
+            p_error: processError,
+            p_payment_order_id: pendingPaymentOrder?.paymentOrderId || null
         });
 
         if (processRpcError) {
             await finalizePaymentEvent(eventKey, {
                 processing_result: 'process_rpc_failed',
-                error_message: processRpcError.message
+                error_message: processRpcError.message,
+                response_status: 500
             });
             console.error('[Afdian] Failed to process payment:', processRpcError);
             return res.status(500).json({ ec: 500, em: 'internal error' });
@@ -1945,7 +2010,7 @@ app.post('/api/afdian/webhook', async (req, res) => {
                     providerKey: 'afdian',
                     paymentOrderId: processResult.payment_order_id,
                     providerOrderNo: orderNo,
-                    site: getCurrentSite(req),
+                    site: currentSite,
                     packageId: resolvedPackage?.packageId ?? null,
                     packageName: resolvedPackage?.packageName ?? null,
                     expectedAmount: resolvedPackage?.expectedAmount ?? amount,
@@ -1966,7 +2031,8 @@ app.post('/api/afdian/webhook', async (req, res) => {
             signature_valid: signatureValid,
             amount_valid: amountValid,
             processing_result: signatureValid && amountValid ? 'processed_paid' : (processResult?.status || 'pending_review'),
-            error_message: processError || null
+            error_message: processError || null,
+            response_status: signatureValid ? 200 : 401
         });
 
         if (!signatureValid) {
@@ -1982,7 +2048,8 @@ app.post('/api/afdian/webhook', async (req, res) => {
         console.error('[Afdian] Webhook error:', error);
         await finalizePaymentEvent(eventKey, {
             processing_result: 'webhook_exception',
-            error_message: error.message
+            error_message: error.message,
+            response_status: 500
         });
         return res.status(500).json({ ec: 500, em: 'internal error' });
     }
@@ -1991,15 +2058,40 @@ app.post('/api/afdian/webhook', async (req, res) => {
 // GET /api/afdian/query - Query redemption code by order number
 app.get('/api/afdian/query', async (req, res) => {
     const orderNo = String(req.query.order_no || '').trim();
+    const currentSite = getCurrentSite(req);
+
+    async function sendQueryResponse(statusCode, payload, audit = {}) {
+        await recordPaymentQueryAttempt({
+            provider: 'afdian',
+            site: currentSite,
+            orderNo,
+            userId: audit.userId || null,
+            paymentOrderId: audit.paymentOrderId || null,
+            checkoutSessionId: audit.checkoutSessionId || null,
+            success: audit.success === true,
+            responseStatus: statusCode,
+            outcomeCode: audit.outcomeCode || (audit.success ? 'success' : 'unknown'),
+            message: audit.message || payload?.message || null,
+            metadata: {
+                payment_status: audit.paymentStatus || null,
+                source: 'afdian_query_api'
+            }
+        });
+        return res.status(statusCode).json(payload);
+    }
 
     if (!orderNo) {
-        return res.status(400).json({ success: false, message: '请输入订单号' });
+        return sendQueryResponse(400, { success: false, message: '请输入订单号' }, {
+            outcomeCode: 'missing_order_no'
+        });
     }
 
     try {
         const user = await getAuthenticatedUser(req);
         if (!user) {
-            return res.status(401).json({ success: false, message: '请先登录后再查询订单' });
+            return sendQueryResponse(401, { success: false, message: '请先登录后再查询订单' }, {
+                outcomeCode: 'unauthenticated'
+            });
         }
 
         const { data, error } = await supabase.rpc('fn_claim_and_query_afdian_code', {
@@ -2010,23 +2102,35 @@ app.get('/api/afdian/query', async (req, res) => {
         if (error) {
             console.error('[Afdian] Query error:', error);
             if (/Access denied/i.test(error.message || '')) {
-                return res.status(403).json({ success: false, message: '该订单已归属其他账号，无法查询' });
+                return sendQueryResponse(403, { success: false, message: '该订单已归属其他账号，无法查询' }, {
+                    userId: user.id,
+                    outcomeCode: 'access_denied'
+                });
             }
-            return res.status(500).json({ success: false, message: '查询失败' });
+            return sendQueryResponse(500, { success: false, message: '查询失败' }, {
+                userId: user.id,
+                outcomeCode: 'query_rpc_failed'
+            });
         }
 
         if (!data || data.length === 0) {
-            return res.json({ success: false, message: '未找到该订单' });
+            return sendQueryResponse(200, { success: false, message: '未找到该订单' }, {
+                userId: user.id,
+                outcomeCode: 'not_found'
+            });
         }
 
         const orderInfo = data[0];
+        let linkedPaymentOrder = null;
         try {
             const { data: paymentOrder } = await supabase
                 .from('payment_orders')
-                .select('id, site, package_id, package_name, expected_amount, paid_amount, points_amount, status')
+                .select('id, site, checkout_session_id, package_id, package_name, expected_amount, paid_amount, points_amount, status')
                 .eq('provider', 'afdian')
                 .eq('provider_order_no', orderNo)
                 .maybeSingle();
+
+            linkedPaymentOrder = paymentOrder || null;
 
             if (paymentOrder?.id) {
                 await reconcileCheckoutSessionForPaymentOrder({
@@ -2058,25 +2162,44 @@ app.get('/api/afdian/query', async (req, res) => {
                 : currentStatus === 'amount_mismatch'
                     ? '订单金额校验异常，正在审核'
                     : '订单已记录，兑换码生成中，请稍后再试';
-            return res.json({
+            return sendQueryResponse(200, {
                 success: false,
                 message,
                 status: currentStatus
+            }, {
+                userId: user.id,
+                paymentOrderId: linkedPaymentOrder?.id || null,
+                checkoutSessionId: linkedPaymentOrder?.checkout_session_id || null,
+                paymentStatus: currentStatus,
+                outcomeCode: currentStatus === 'rejected'
+                    ? 'rejected'
+                    : currentStatus === 'amount_mismatch'
+                        ? 'amount_mismatch'
+                        : 'code_pending'
             });
         }
 
-        return res.json({
+        return sendQueryResponse(200, {
             success: true,
             code: orderInfo.code,
             points: orderInfo.points,
             is_redeemed: orderInfo.is_redeemed,
             created_at: orderInfo.created_at,
             payment_status: orderInfo.payment_status
+        }, {
+            userId: user.id,
+            paymentOrderId: linkedPaymentOrder?.id || null,
+            checkoutSessionId: linkedPaymentOrder?.checkout_session_id || null,
+            paymentStatus: orderInfo.payment_status,
+            success: true,
+            outcomeCode: 'success'
         });
 
     } catch (error) {
         console.error('[Afdian] Query exception:', error);
-        return res.status(500).json({ success: false, message: '服务暂时不可用' });
+        return sendQueryResponse(500, { success: false, message: '服务暂时不可用' }, {
+            outcomeCode: 'query_exception'
+        });
     }
 });
 

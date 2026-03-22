@@ -285,20 +285,11 @@ const providerRegistry = {
         },
         createCheckoutContext({ runtimeContext } = {}) {
             const channelConfig = runtimeContext?.channelConfig || {};
-            const checkoutUrl = String(channelConfig.checkout_url || '').trim();
-            if (!checkoutUrl) {
-                return {
-                    supported: false,
-                    action: 'redirect',
-                    message: '虎皮椒支付链接尚未配置。'
-                };
-            }
             return {
-                supported: true,
+                supported: false,
                 action: 'redirect',
                 displayName: channelConfig.display_name || '虎皮椒',
-                checkoutUrl,
-                message: channelConfig.package_hint || '虎皮椒通道已启用，正式下单与回调接入完成后可完整使用。'
+                message: '虎皮椒通道尚未完成统一落单、验签回调和查单闭环，已默认禁止拉起真实支付。请先切换到爱发电或完成虎皮椒全链路接入后再启用。'
             };
         },
         verifyWebhook() {

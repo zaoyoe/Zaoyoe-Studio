@@ -11,6 +11,7 @@ const mockProvider = getPaymentProviderAdapter('mock');
 const CHECKOUT_SESSION_EXPIRY_HOURS = 24;
 const ACTIVE_CHECKOUT_SESSION_STATUSES = ['created', 'redirect_ready', 'failed'];
 const TERMINAL_CHECKOUT_SESSION_STATUSES = ['completed', 'cancelled', 'expired'];
+const PENDING_PROVIDER_ORDER_PREFIX = 'PENDING';
 
 function sanitizeSite(value) {
     const site = String(value || '').trim().toLowerCase();
@@ -27,6 +28,42 @@ function normalizeCurrency(value, fallback = null) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return fallback;
     return Math.round(parsed * 100) / 100;
+}
+
+function isMissingDatabaseStructureError(error) {
+    const code = String(error?.code || '').trim();
+    const message = String(error?.message || '').toLowerCase();
+    return code === '42703'
+        || code === '42P01'
+        || (message.includes('column') && message.includes('does not exist'))
+        || (message.includes('relation') && message.includes('does not exist'));
+}
+
+function buildPendingProviderOrderNo(providerKey = '', sessionKey = '') {
+    const normalizedProvider = String(providerKey || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '_')
+        .slice(0, 16) || 'PAY';
+    const normalizedSession = String(sessionKey || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '_')
+        .slice(0, 88) || crypto.randomBytes(6).toString('hex').toUpperCase();
+    return `${PENDING_PROVIDER_ORDER_PREFIX}_${normalizedProvider}_${normalizedSession}`.slice(0, 120);
+}
+
+function isPendingProviderOrderNo(value = '') {
+    return String(value || '').trim().toUpperCase().startsWith(`${PENDING_PROVIDER_ORDER_PREFIX}_`);
+}
+
+function isUnresolvedPendingPaymentOrder(order = {}) {
+    const metadata = order?.provider_metadata && typeof order.provider_metadata === 'object'
+        ? order.provider_metadata
+        : {};
+    return metadata.provider_order_resolved === false
+        || metadata.provider_order_pending === true
+        || isPendingProviderOrderNo(order.provider_order_no);
 }
 
 function buildMockOrderNo(explicitOrderNo = '') {
@@ -180,21 +217,315 @@ async function loadCheckoutSessionByPaymentOrder(supabase, paymentOrderId) {
     return data || null;
 }
 
+async function loadCheckoutSessionById(supabase, checkoutSessionId) {
+    const normalizedCheckoutSessionId = String(checkoutSessionId || '').trim();
+    if (!normalizedCheckoutSessionId) return null;
+
+    const { data, error } = await supabase
+        .from('payment_checkout_sessions')
+        .select('*')
+        .eq('id', normalizedCheckoutSessionId)
+        .maybeSingle();
+
+    if (error) {
+        throw new Error(error.message || 'Failed to inspect payment checkout session by id');
+    }
+
+    return data || null;
+}
+
 async function loadPaymentOrderForLinking(supabase, paymentOrderId) {
     const normalizedPaymentOrderId = String(paymentOrderId || '').trim();
     if (!normalizedPaymentOrderId) return null;
 
-    const { data, error } = await supabase
+    const primarySelect = 'id, user_id, provider, provider_order_no, checkout_session_id, site, package_id, package_name, expected_amount, paid_amount, points_amount, status, last_error, raw_payload, provider_metadata';
+    const fallbackSelect = 'id, user_id, provider, provider_order_no, site, package_id, package_name, expected_amount, paid_amount, points_amount, status, last_error, raw_payload, provider_metadata';
+    let data;
+    let error;
+
+    ({ data, error } = await supabase
         .from('payment_orders')
-        .select('id, user_id, provider, provider_order_no, site, package_id, package_name, expected_amount, paid_amount, points_amount, status, last_error, raw_payload, provider_metadata')
+        .select(primarySelect)
         .eq('id', normalizedPaymentOrderId)
-        .maybeSingle();
+        .maybeSingle());
+
+    if (error && isMissingDatabaseStructureError(error)) {
+        ({ data, error } = await supabase
+            .from('payment_orders')
+            .select(fallbackSelect)
+            .eq('id', normalizedPaymentOrderId)
+            .maybeSingle());
+    }
 
     if (error) {
         throw new Error(error.message || 'Failed to inspect payment order');
     }
 
     return data || null;
+}
+
+async function createPendingPaymentOrderForCheckoutSession({
+    supabase,
+    checkoutSession,
+    user,
+    providerKey,
+    site,
+    packageId = '',
+    packageName = '',
+    paidAmount = null,
+    grantedPoints = 0
+}) {
+    const sessionId = String(checkoutSession?.id || '').trim();
+    const sessionKey = String(checkoutSession?.session_key || '').trim();
+    const normalizedProviderKey = String(providerKey || '').trim().toLowerCase();
+    if (!supabase || !sessionId || !normalizedProviderKey) return null;
+
+    try {
+        const { data: existingOrder, error: existingOrderError } = await supabase
+            .from('payment_orders')
+            .select('id, provider, provider_order_no, checkout_session_id, status, provider_metadata')
+            .eq('provider', normalizedProviderKey)
+            .eq('checkout_session_id', sessionId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (existingOrderError && !isMissingDatabaseStructureError(existingOrderError)) {
+            throw new Error(existingOrderError.message || 'Failed to inspect pending payment order');
+        }
+
+        if (existingOrder) {
+            return existingOrder;
+        }
+    } catch (error) {
+        if (!isMissingDatabaseStructureError(error)) {
+            throw error;
+        }
+        return null;
+    }
+
+    const nowIso = new Date().toISOString();
+    const pendingOrderNo = buildPendingProviderOrderNo(normalizedProviderKey, sessionKey || sessionId);
+    const providerMetadata = mergeObjects(checkoutSession?.provider_metadata, {
+        checkout_session_id: sessionId,
+        checkout_session_key: sessionKey || null,
+        order_origin: 'payment_checkout_session',
+        provider_order_pending: true,
+        provider_order_resolved: false,
+        intent_created_at: nowIso
+    });
+    const rawPayload = mergeObjects(checkoutSession?.request_payload, {
+        checkout_session_id: sessionId,
+        checkout_session_key: sessionKey || null
+    });
+
+    const payload = {
+        provider: normalizedProviderKey,
+        provider_order_no: pendingOrderNo,
+        user_id: user?.id || null,
+        checkout_session_id: sessionId,
+        site,
+        package_id: packageId || null,
+        package_name: packageName || null,
+        expected_amount: paidAmount,
+        paid_amount: null,
+        points_amount: normalizePointValue(grantedPoints, 0),
+        status: 'pending',
+        sign_verified: false,
+        amount_verified: false,
+        raw_payload: rawPayload,
+        provider_metadata: providerMetadata,
+        created_at: nowIso,
+        updated_at: nowIso
+    };
+
+    const { data, error } = await supabase
+        .from('payment_orders')
+        .insert(payload)
+        .select('id, provider, provider_order_no, checkout_session_id, status, provider_metadata')
+        .single();
+
+    if (error) {
+        if (isMissingDatabaseStructureError(error)) {
+            return null;
+        }
+        throw new Error(error.message || 'Failed to create pending payment order');
+    }
+
+    return data || null;
+}
+
+async function resolvePendingPaymentOrderFromCheckoutContext({
+    supabase,
+    providerKey,
+    providerOrderNo = '',
+    userId = '',
+    site = '',
+    packageId = '',
+    packageName = '',
+    expectedAmount = null,
+    paidAmount = null,
+    pointsAmount = 0,
+    lookbackMinutes = 1440
+}) {
+    const normalizedProviderKey = String(providerKey || '').trim().toLowerCase();
+    const normalizedProviderOrderNo = sanitizeText(providerOrderNo, '', 160);
+    if (!supabase || !normalizedProviderKey) return null;
+
+    if (normalizedProviderOrderNo) {
+        try {
+            const { data: existingOrder, error: existingOrderError } = await supabase
+                .from('payment_orders')
+                .select('id, checkout_session_id')
+                .eq('provider', normalizedProviderKey)
+                .eq('provider_order_no', normalizedProviderOrderNo)
+                .maybeSingle();
+
+            if (existingOrderError && !isMissingDatabaseStructureError(existingOrderError)) {
+                throw new Error(existingOrderError.message || 'Failed to inspect resolved payment order');
+            }
+
+            if (existingOrder?.id) {
+                return {
+                    paymentOrderId: existingOrder.id,
+                    checkoutSessionId: existingOrder.checkout_session_id || null,
+                    resolvedBy: 'provider_order_no'
+                };
+            }
+        } catch (error) {
+            if (!isMissingDatabaseStructureError(error)) {
+                throw error;
+            }
+            return null;
+        }
+    }
+
+    const candidates = await findCheckoutSessionCandidates(supabase, {
+        providerKey: normalizedProviderKey,
+        userId,
+        site,
+        packageId,
+        packageName,
+        expectedAmount,
+        paidAmount,
+        pointsAmount,
+        lookbackMinutes
+    });
+    const [bestCandidate, secondCandidate] = candidates;
+    const topScore = bestCandidate?.score || 0;
+    const secondScore = secondCandidate?.score || 0;
+    const shouldUseBestCandidate = userId
+        ? topScore >= 80
+        : (topScore >= 120 && (topScore - secondScore >= 35 || !secondCandidate));
+
+    if (!shouldUseBestCandidate || !bestCandidate?.session?.id) {
+        return null;
+    }
+
+    try {
+        const { data: pendingOrder, error: pendingOrderError } = await supabase
+            .from('payment_orders')
+            .select('id, provider_order_no, checkout_session_id, status, provider_metadata')
+            .eq('provider', normalizedProviderKey)
+            .eq('checkout_session_id', bestCandidate.session.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (pendingOrderError) {
+            if (isMissingDatabaseStructureError(pendingOrderError)) {
+                return null;
+            }
+            throw new Error(pendingOrderError.message || 'Failed to inspect pending payment order');
+        }
+
+        if (!pendingOrder || !isUnresolvedPendingPaymentOrder(pendingOrder)) {
+            return null;
+        }
+
+        return {
+            paymentOrderId: pendingOrder.id,
+            checkoutSessionId: pendingOrder.checkout_session_id || bestCandidate.session.id,
+            resolvedBy: 'checkout_session_candidate',
+            sessionScore: bestCandidate.score
+        };
+    } catch (error) {
+        if (isMissingDatabaseStructureError(error)) {
+            return null;
+        }
+        throw error;
+    }
+}
+
+async function detachSupersededPendingOrdersForCheckoutSession({
+    supabase,
+    checkoutSessionId,
+    keepPaymentOrderId,
+    linkedBy = 'runtime'
+}) {
+    const normalizedCheckoutSessionId = String(checkoutSessionId || '').trim();
+    const normalizedKeepPaymentOrderId = String(keepPaymentOrderId || '').trim();
+    if (!supabase || !normalizedCheckoutSessionId || !normalizedKeepPaymentOrderId) {
+        return;
+    }
+
+    let data;
+    let error;
+    ({ data, error } = await supabase
+        .from('payment_orders')
+        .select('id, status, provider_order_no, checkout_session_id, provider_metadata, last_error')
+        .eq('checkout_session_id', normalizedCheckoutSessionId)
+        .neq('id', normalizedKeepPaymentOrderId)
+        .order('created_at', { ascending: false })
+        .limit(8));
+
+    if (error) {
+        if (isMissingDatabaseStructureError(error)) {
+            return;
+        }
+        throw new Error(error.message || 'Failed to inspect conflicting checkout session payment orders');
+    }
+
+    const conflicts = Array.isArray(data) ? data : [];
+    const unexpectedConflict = conflicts.find((item) => !isUnresolvedPendingPaymentOrder(item));
+    if (unexpectedConflict) {
+        throw new Error('Checkout session already linked to another resolved payment order');
+    }
+
+    const nowIso = new Date().toISOString();
+    for (const pendingOrder of conflicts) {
+        const nextMetadata = mergeObjects(pendingOrder.provider_metadata, {
+            checkout_session_id: normalizedCheckoutSessionId,
+            provider_order_pending: true,
+            provider_order_resolved: false,
+            checkout_session_detached_at: nowIso,
+            checkout_session_detached_by: linkedBy,
+            superseded_by_payment_order_id: normalizedKeepPaymentOrderId
+        });
+        const patch = {
+            checkout_session_id: null,
+            provider_metadata: nextMetadata,
+            last_error: sanitizeText(pendingOrder.last_error, 'superseded_by_resolved_payment_order', 240)
+        };
+
+        let { error: updateError } = await supabase
+            .from('payment_orders')
+            .update(patch)
+            .eq('id', pendingOrder.id);
+
+        if (updateError && isMissingDatabaseStructureError(updateError) && Object.prototype.hasOwnProperty.call(patch, 'checkout_session_id')) {
+            const fallbackPatch = { ...patch };
+            delete fallbackPatch.checkout_session_id;
+            ({ error: updateError } = await supabase
+                .from('payment_orders')
+                .update(fallbackPatch)
+                .eq('id', pendingOrder.id));
+        }
+
+        if (updateError) {
+            throw new Error(updateError.message || 'Failed to release superseded pending payment order');
+        }
+    }
 }
 
 async function reconcileCheckoutSessionForPaymentOrder({
@@ -221,6 +552,9 @@ async function reconcileCheckoutSessionForPaymentOrder({
     if (!paymentOrder) return null;
 
     const existingLinkedSession = await loadCheckoutSessionByPaymentOrder(supabase, normalizedPaymentOrderId);
+    const hintedLinkedSession = !existingLinkedSession && paymentOrder.checkout_session_id
+        ? await loadCheckoutSessionById(supabase, paymentOrder.checkout_session_id)
+        : null;
     const context = {
         providerKey: providerKey || paymentOrder.provider,
         providerOrderNo: providerOrderNo || paymentOrder.provider_order_no,
@@ -234,7 +568,11 @@ async function reconcileCheckoutSessionForPaymentOrder({
         lookbackMinutes
     };
 
-    let targetSession = existingLinkedSession;
+    let targetSession = existingLinkedSession || hintedLinkedSession;
+
+    if (targetSession?.payment_order_id && targetSession.payment_order_id !== normalizedPaymentOrderId) {
+        targetSession = null;
+    }
 
     if (!targetSession) {
         const candidates = await findCheckoutSessionCandidates(supabase, context);
@@ -254,6 +592,13 @@ async function reconcileCheckoutSessionForPaymentOrder({
     const nowIso = new Date().toISOString();
     const nextSessionStatus = deriveCheckoutSessionStatusFromOrderStatus(orderStatus || paymentOrder.status);
     const nextProviderOrderNo = context.providerOrderNo || paymentOrder.provider_order_no;
+
+    await detachSupersededPendingOrdersForCheckoutSession({
+        supabase,
+        checkoutSessionId: targetSession.id,
+        keepPaymentOrderId: normalizedPaymentOrderId,
+        linkedBy
+    });
 
     const nextSessionProviderMetadata = mergeObjects(targetSession.provider_metadata, {
         provider_order_no: nextProviderOrderNo || null,
@@ -289,6 +634,7 @@ async function reconcileCheckoutSessionForPaymentOrder({
     });
 
     const orderPatch = {
+        checkout_session_id: updatedSession?.id || targetSession.id,
         provider_metadata: nextOrderProviderMetadata,
         raw_payload: nextOrderRawPayload
     };
@@ -296,10 +642,19 @@ async function reconcileCheckoutSessionForPaymentOrder({
         orderPatch.user_id = context.userId;
     }
 
-    const { error: orderUpdateError } = await supabase
+    let { error: orderUpdateError } = await supabase
         .from('payment_orders')
         .update(orderPatch)
         .eq('id', normalizedPaymentOrderId);
+
+    if (orderUpdateError && isMissingDatabaseStructureError(orderUpdateError) && Object.prototype.hasOwnProperty.call(orderPatch, 'checkout_session_id')) {
+        const fallbackOrderPatch = { ...orderPatch };
+        delete fallbackOrderPatch.checkout_session_id;
+        ({ error: orderUpdateError } = await supabase
+            .from('payment_orders')
+            .update(fallbackOrderPatch)
+            .eq('id', normalizedPaymentOrderId));
+    }
 
     if (orderUpdateError) {
         throw new Error(orderUpdateError.message || 'Failed to backfill payment order checkout session');
@@ -891,6 +1246,25 @@ async function createPaymentRequest({
             },
             error_message: null
         });
+        let pendingPaymentOrder = null;
+
+        if (providerKey !== 'mock') {
+            try {
+                pendingPaymentOrder = await createPendingPaymentOrderForCheckoutSession({
+                    supabase,
+                    checkoutSession: updatedSession || checkoutSession,
+                    user,
+                    providerKey,
+                    site,
+                    packageId,
+                    packageName,
+                    paidAmount,
+                    grantedPoints
+                });
+            } catch (pendingOrderError) {
+                console.warn('[Payments] Failed to precreate payment order from checkout session:', pendingOrderError.message);
+            }
+        }
 
         return {
             success: true,
@@ -904,6 +1278,7 @@ async function createPaymentRequest({
             query_mode: checkoutContext.queryMode || '',
             checkout_session_id: updatedSession?.id || checkoutSession.id,
             checkout_session_key: updatedSession?.session_key || checkoutSession.session_key,
+            payment_order_id: pendingPaymentOrder?.id || null,
             checkout_session_status: updatedSession?.status || 'redirect_ready',
             message: checkoutContext.message || `${checkoutContext.displayName || adapter.label || '当前支付通道'}已准备就绪。`,
             provider_summary: checkoutContext.summary || {}
@@ -929,6 +1304,7 @@ module.exports = {
     findCheckoutSessionCandidates,
     loadCheckoutSessionForUser,
     loadPointsPackage,
+    resolvePendingPaymentOrderFromCheckoutContext,
     reconcileCheckoutSessionForPaymentOrder,
     sanitizeSite,
     updateCheckoutSession
