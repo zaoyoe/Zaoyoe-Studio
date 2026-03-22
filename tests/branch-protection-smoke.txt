@@ -1,0 +1,2 @@
+Temporary smoke-test marker for GitHub branch protection verification.
+This file exists only to trigger the security-tests workflow on a test PR.
