@@ -19,7 +19,9 @@ module.exports = async function handler(req, res) {
         const payload = await completeMockPayment({
             supabase: adminSupabase || supabase,
             user,
-            body
+            body,
+            env: process.env,
+            requestHost: req.headers.host || req.headers.Host || ''
         });
 
         return sendJson(res, 200, payload);

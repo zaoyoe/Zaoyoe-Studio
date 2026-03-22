@@ -164,6 +164,52 @@ test('mock payment can be explicitly allowed in production-like runtimes', () =>
     }), 'mock');
 });
 
+test('mock payment supports auto-expiring production override windows', () => {
+    const futureIso = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const runtimeState = paymentTestUtils.getMockPaymentRuntimeState({
+        requestHost: 'verify.zaoyoe.com',
+        env: {
+            VERCEL_ENV: 'production',
+            ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL: futureIso
+        }
+    });
+
+    assert.equal(runtimeState.allowed, true);
+    assert.match(runtimeState.message, /有效期至/);
+    assert.match(runtimeState.message, new RegExp(futureIso.slice(0, 16)));
+});
+
+test('expired mock payment override windows fail closed', () => {
+    const pastIso = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const runtimeState = paymentTestUtils.getMockPaymentRuntimeState({
+        requestHost: 'verify.zaoyoe.com',
+        env: {
+            VERCEL_ENV: 'production',
+            ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL: pastIso
+        }
+    });
+
+    assert.equal(runtimeState.allowed, false);
+    assert.match(runtimeState.message, /到期/);
+});
+
+test('mock payment runtime state keeps cleanup metadata when override env still exists', () => {
+    const pastIso = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const runtimeState = paymentTestUtils.getMockPaymentRuntimeState({
+        requestHost: 'verify.zaoyoe.com',
+        env: {
+            VERCEL_ENV: 'production',
+            ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL: pastIso
+        }
+    });
+
+    assert.equal(runtimeState.override_configured, true);
+    assert.equal(runtimeState.override_active, false);
+    assert.equal(runtimeState.override_env_name, 'ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL');
+    assert.equal(runtimeState.override_mode, 'until');
+    assert.match(runtimeState.cleanup_message, /ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL/);
+});
+
 test('mock payment stays blocked in production-like runtimes without explicit override', () => {
     assert.throws(() => paymentTestUtils.resolveRequestedProviderKey({
         requestedProviderKey: 'mock',
@@ -180,7 +226,27 @@ test('mock payment stays blocked in production-like runtimes without explicit ov
         env: {
             VERCEL_ENV: 'production'
         }
-    }), /ALLOW_REMOTE_MOCK_PAYMENTS=true/);
+    }), /ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL/);
+});
+
+test('mock payment still requires backend config even when runtime override is enabled', () => {
+    assert.throws(() => paymentTestUtils.resolveRequestedProviderKey({
+        requestedProviderKey: 'mock',
+        paymentChannels: {
+            active_provider: 'afdian',
+            providers: {
+                mock: { enabled: false }
+            }
+        },
+        rechargeOptions: {
+            mock_payment_enabled: false
+        },
+        requestHost: 'verify.zaoyoe.com',
+        env: {
+            VERCEL_ENV: 'production',
+            ALLOW_REMOTE_MOCK_PAYMENTS: 'true'
+        }
+    }), /未开启模拟支付/);
 });
 
 test('admin secret encryption key must be independent', () => {
