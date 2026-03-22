@@ -61,7 +61,7 @@ Inspired by Framer.com design aesthetics
 
     /* Z-Index Layers */
     --z-nav: 1200;
-    --z-mobile-menu: 1100;
+    --z-mobile-menu: 10020;
     --z-modal: 2000;
 }
 
@@ -481,9 +481,9 @@ a.nav-trigger.active {
 }
 
 .mobile-menu.active {
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
 }
 
 .mobile-menu-items {
@@ -614,6 +614,34 @@ a.nav-trigger.active {
     color: var(--text-primary);
     border-left-color: var(--text-primary);
     transform: translateX(4px);
+}
+
+/*
+ * Shared auth dropdown backdrop.
+ * prompts.html does not load the legacy homepage stylesheet where this lives,
+ * so the injected overlay was previously unstyled and inconsistent.
+ */
+.dropdown-overlay {
+    position: fixed;
+    inset: 0;
+    background: transparent;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.25s ease, visibility 0.25s ease;
+    z-index: 2000;
+}
+
+.dropdown-overlay.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+body.mobile-menu-open .chat-widget-fab {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
 }
 
 /* ========== Buttons =========== */

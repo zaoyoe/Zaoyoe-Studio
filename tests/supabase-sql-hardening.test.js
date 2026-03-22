@@ -13,6 +13,7 @@ test('standalone Supabase helper SQL files stay aligned with hardened site-aware
     const balanceSql = readRepoFile(path.join('supabase', 'fn_get_user_balance.sql'));
     const rechargeSql = readRepoFile(path.join('supabase', 'fn_recharge_points.sql'));
     const redeemSql = readRepoFile(path.join('supabase', 'fn_redeem_code_v2.sql'));
+    const customCodesSql = readRepoFile(path.join('supabase', 'fn_generate_custom_codes.sql'));
 
     assert.match(
         balanceSql,
@@ -45,6 +46,17 @@ test('standalone Supabase helper SQL files stay aligned with hardened site-aware
         redeemSql,
         /GRANT EXECUTE ON FUNCTION public\.fn_redeem_code\(VARCHAR, VARCHAR\) TO authenticated;/,
         'fn_redeem_code helper should only grant authenticated callers access to the site-aware overload'
+    );
+
+    assert.match(
+        customCodesSql,
+        /CREATE OR REPLACE FUNCTION public\.fn_generate_custom_codes\(\s*p_batch_name TEXT,\s*p_points_amount INTEGER,\s*p_count INTEGER,\s*p_channel TEXT DEFAULT 'manual',\s*p_expires_at TIMESTAMPTZ DEFAULT NULL,\s*p_site VARCHAR DEFAULT 'cn'/s,
+        'fn_generate_custom_codes helper should expose the hardened site-aware signature'
+    );
+    assert.match(
+        customCodesSql,
+        /CREATE OR REPLACE FUNCTION public\.fn_generate_custom_codes\(\s*p_batch_name TEXT,\s*p_points_amount INTEGER,\s*p_count INTEGER,\s*p_channel TEXT DEFAULT 'manual',\s*p_expires_at TIMESTAMPTZ DEFAULT NULL\s*\)/s,
+        'fn_generate_custom_codes helper should keep the legacy wrapper only as a delegator'
     );
 });
 
@@ -103,6 +115,9 @@ test('root legacy SQL scripts no longer ship executable single-site payment or r
     const rootCommercialSql = readRepoFile('commercial_points_functions.sql');
     const rootRedemptionSql = readRepoFile('redemption_functions.sql');
     const affiliateUpgradeSql = readRepoFile('6.5_affiliate_dashboard_upgrade.sql');
+    const fixRedemptionSiteSql = readRepoFile(path.join('supabase', 'fix_redemption_site.sql'));
+    const dualSiteFunctionsSql = readRepoFile(path.join('supabase', 'dual_site_functions.sql'));
+    const afdianOrdersSql = readRepoFile(path.join('supabase', 'afdian_orders.sql'));
 
     assert.doesNotMatch(
         rootCommercialSql,
@@ -130,5 +145,28 @@ test('root legacy SQL scripts no longer ship executable single-site payment or r
         affiliateUpgradeSql,
         /CREATE OR REPLACE FUNCTION public\.fn_recharge_points\(/,
         '6.5_affiliate_dashboard_upgrade.sql should not redeclare points recharge RPCs'
+    );
+
+    assert.doesNotMatch(
+        fixRedemptionSiteSql,
+        /CREATE OR REPLACE FUNCTION fn_generate_codes\(/,
+        'fix_redemption_site.sql should be a deprecated stub, not an executable fn_generate_codes source'
+    );
+    assert.doesNotMatch(
+        fixRedemptionSiteSql,
+        /CREATE OR REPLACE FUNCTION fn_generate_custom_codes\(/,
+        'fix_redemption_site.sql should be a deprecated stub, not an executable fn_generate_custom_codes source'
+    );
+
+    assert.doesNotMatch(
+        dualSiteFunctionsSql,
+        /CREATE OR REPLACE FUNCTION fn_(purchase_shop_item|get_user_balance|recharge_points|add_points|deduct_points|redeem_code)\(/,
+        'dual_site_functions.sql should be a deprecated stub, not an executable RPC bundle'
+    );
+
+    assert.doesNotMatch(
+        afdianOrdersSql,
+        /CREATE OR REPLACE FUNCTION public\.fn_(ensure_redemption_code_for_payment_order|apply_payment_order_review|process_afdian_payment|finalize_afdian_custom_payment)\(/,
+        'afdian_orders.sql should be a deprecated stub, not an executable payment bundle'
     );
 });

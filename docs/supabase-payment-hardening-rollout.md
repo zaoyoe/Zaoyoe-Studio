@@ -83,6 +83,6 @@ After the SQL rollout, verify these flows in the deployed app:
 - Re-check whether the target database is missing one of the earlier March 22 migrations.
 - Compare the live function signature and grants against:
   - [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_points_mutation_rpcs.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_points_mutation_rpcs.sql)
-  - [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_redemption_entrypoints.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql)
+  - [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_redemption_entrypoints.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_redemption_entrypoints.sql)
   - [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql)
 - If necessary, restore from backup or re-run the correct migration chain in order.
