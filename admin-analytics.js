@@ -3355,9 +3355,17 @@ function exportAsExcel(data) {
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', function () {
-    // Delay to ensure DOM is ready
-    setTimeout(initDateRangeControls, 500);
-    setTimeout(initRealtimeFeatures, 1000);
+    const initAnalyticsBoot = () => {
+        // Delay to ensure DOM is ready
+        setTimeout(initDateRangeControls, 500);
+        setTimeout(initRealtimeFeatures, 1000);
+    };
+
+    if (window.adminStudioAccessGranted) {
+        initAnalyticsBoot();
+        return;
+    }
+    window.addEventListener('adminStudioAccessGranted', initAnalyticsBoot, { once: true });
 });
 
 // Expose to window

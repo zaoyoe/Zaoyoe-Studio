@@ -14,6 +14,7 @@ let analysisResult = null;
 window.currentUserPermissions = [];
 window.isSuperAdmin = false;
 window.isAdmin = false;
+window.adminStudioAccessGranted = false;
 
 function sanitizeImageUrl(url) {
     if (typeof url !== 'string' || !url.trim()) return '';
@@ -70,16 +71,123 @@ window.addEventListener('storage', (e) => {
 // ========================================
 // INITIALIZATION
 // ========================================
-document.addEventListener('DOMContentLoaded', () => {
+function setAdminStudioAccessState(nextState) {
+    const body = document.body;
+    if (!body) return;
+
+    body.classList.remove('admin-access-pending', 'admin-access-denied', 'admin-access-granted');
+    body.classList.add(`admin-access-${nextState}`);
+}
+
+function renderAdminStudioAccessGate(state, options = {}) {
+    const titleEl = document.getElementById('adminAccessTitle');
+    const messageEl = document.getElementById('adminAccessMessage');
+    const iconEl = document.getElementById('adminAccessIcon');
+    const primaryAction = document.getElementById('adminAccessPrimaryAction');
+    const secondaryAction = document.getElementById('adminAccessSecondaryAction');
+
+    setAdminStudioAccessState(state);
+
+    if (titleEl) {
+        titleEl.textContent = options.title || (state === 'pending' ? '正在校验后台访问权限' : '无法访问 Admin Studio');
+    }
+
+    if (messageEl) {
+        messageEl.textContent = options.message || (state === 'pending'
+            ? '请稍候，我们正在确认当前账号是否拥有 Admin Studio 访问权限。'
+            : '当前账号没有后台访问权限。');
+    }
+
+    if (iconEl) {
+        iconEl.innerHTML = state === 'pending'
+            ? '<i class="fas fa-shield-alt"></i>'
+            : '<i class="fas fa-lock"></i>';
+    }
+
+    if (primaryAction) {
+        primaryAction.textContent = options.primaryLabel || '返回首页';
+        primaryAction.href = options.primaryHref || 'index.html';
+        primaryAction.style.display = '';
+    }
+
+    if (secondaryAction) {
+        if (options.secondaryLabel) {
+            secondaryAction.textContent = options.secondaryLabel;
+            secondaryAction.href = options.secondaryHref || 'index.html';
+            secondaryAction.style.display = '';
+        } else {
+            secondaryAction.style.display = 'none';
+        }
+    }
+}
+
+function applyResolvedAdminAccess(access = {}) {
+    window.isSuperAdmin = Boolean(access.isSuperAdmin);
+    window.isAdmin = Boolean(access.isAdmin);
+    window.currentUserPermissions = Array.isArray(access.permissions) ? access.permissions : [];
+    window.adminStudioAccessGranted = Boolean(access.isAdmin);
+
+    console.log('🛡️ Permissions loaded:', {
+        isSuperAdmin: window.isSuperAdmin,
+        permissions: window.currentUserPermissions
+    });
+
+    window.dispatchEvent(new CustomEvent('adminStudioAccessGranted'));
+    window.dispatchEvent(new CustomEvent('permissionsLoaded'));
+    updateUIBasedOnPermissions();
+}
+
+async function requireAdminStudioAccess() {
+    renderAdminStudioAccessGate('pending');
+
+    const accessClient = window.AdminAccess;
+    if (!accessClient?.getCurrentAdminAccess) {
+        renderAdminStudioAccessGate('denied', {
+            title: '后台权限校验不可用',
+            message: '当前页面缺少管理员权限校验模块，请刷新页面后重试。如果问题持续存在，请联系站点维护者。',
+            secondaryLabel: '刷新重试',
+            secondaryHref: 'admin-studio.html'
+        });
+        return null;
+    }
+
+    const access = await accessClient.getCurrentAdminAccess({ forceRefresh: true });
+
+    if (!access?.user) {
+        renderAdminStudioAccessGate('denied', {
+            title: '请先登录管理员账号',
+            message: 'Admin Studio 现在要求先登录再校验权限。请返回首页登录后重新进入后台。',
+            secondaryLabel: '返回登录',
+            secondaryHref: 'index.html'
+        });
+        return null;
+    }
+
+    if (!access.isAdmin) {
+        renderAdminStudioAccessGate('denied', {
+            title: '当前账号没有后台访问权限',
+            message: '你已经登录，但当前账号不是管理员或未分配后台权限，因此不能进入 Admin Studio。',
+            secondaryLabel: '切换账号',
+            secondaryHref: 'index.html'
+        });
+        return null;
+    }
+
+    applyResolvedAdminAccess(access);
+    renderAdminStudioAccessGate('granted');
+    return access;
+}
+
+function initializeAdminStudioShell() {
     initUploadZone();
     initForm();
     initCustomDropdown();
     checkApiKey();
     initStarrySky(); // New: Starry background
-    loadUserPermissions(); // Load permissions on start
+    initBatchOperations();
 
     // Initialize admin site filter selector
-    if (window.AdminSiteFilter) AdminSiteFilter.renderSiteSelector();
+    if (window.AdminSiteFilter) window.AdminSiteFilter.renderSiteSelector();
 
     // Initialize system config if available
     if (typeof initSystemConfig === 'function') {
@@ -91,6 +199,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (manageTab) {
         manageTab.addEventListener('click', () => loadAdminPrompts());
     }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    const access = await requireAdminStudioAccess();
+    if (!access) return;
+    initializeAdminStudioShell();
 });
 
 // ========================================
@@ -102,34 +216,34 @@ let editingId = null;
 // ========================================
 // PERMISSION SYSTEM
 // ========================================
-window.loadUserPermissions = async function () {
+window.loadUserPermissions = async function (options = {}) {
     try {
-        const { data: { user } } = await window.supabaseClient.auth.getUser();
-        if (!user) return;
+        const accessClient = window.AdminAccess;
+        if (!accessClient?.getCurrentAdminAccess) {
+            throw new Error('AdminAccess helper unavailable');
+        }
 
-        const { data, error } = await window.supabaseClient
-            .rpc('get_user_permissions', { p_user_id: user.id });
-
-        if (error) throw error;
-
-        window.isSuperAdmin = Boolean(data?.is_super_admin);
-        window.isAdmin = Boolean(data?.is_admin || data?.is_super_admin);
-        window.currentUserPermissions = data.permissions || [];
-
-        console.log('🛡️ Permissions loaded:', {
-            isSuperAdmin: window.isSuperAdmin,
-            permissions: window.currentUserPermissions
+        const access = await accessClient.getCurrentAdminAccess({
+            forceRefresh: options.forceRefresh === true
         });
 
-        // Broadcast event for other modules
-        window.dispatchEvent(new CustomEvent('permissionsLoaded'));
+        if (!access?.user) {
+            window.isSuperAdmin = false;
+            window.isAdmin = false;
+            window.currentUserPermissions = [];
+            window.adminStudioAccessGranted = false;
+            return null;
+        }
 
-        // Update UI based on permissions
-        updateUIBasedOnPermissions();
-
+        applyResolvedAdminAccess(access);
+        return access;
     } catch (err) {
         console.warn('Failed to load permissions:', err);
-        // Fallback or retry
+        window.isSuperAdmin = false;
+        window.isAdmin = false;
+        window.currentUserPermissions = [];
+        window.adminStudioAccessGranted = false;
+        return null;
     }
 };
 
@@ -1961,11 +2075,6 @@ let batchEditIndex = 0;
 let batchCancelled = false;
 let batchPaused = false;
 let batchStartTime = null;
-
-// Initialize batch operations
-document.addEventListener('DOMContentLoaded', () => {
-    initBatchOperations();
-});
 
 function initBatchOperations() {
     // Selection mode toggle

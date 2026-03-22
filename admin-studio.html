@@ -40,9 +40,158 @@
             }
         })();
     </script>
+
+    <style>
+        body.admin-access-pending,
+        body.admin-access-denied {
+            overflow: hidden;
+        }
+
+        body.admin-access-pending .admin-layout {
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        body.admin-access-denied .admin-layout {
+            display: none;
+        }
+
+        .admin-access-screen {
+            position: fixed;
+            inset: 0;
+            z-index: 99999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background:
+                radial-gradient(circle at top, rgba(90, 126, 214, 0.2), transparent 45%),
+                linear-gradient(180deg, rgba(10, 14, 26, 0.98), rgba(8, 10, 18, 0.99));
+        }
+
+        body.admin-access-pending .admin-access-screen,
+        body.admin-access-denied .admin-access-screen {
+            display: flex;
+        }
+
+        .admin-access-card {
+            width: min(100%, 520px);
+            padding: 36px 32px;
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(14, 19, 34, 0.9);
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+            text-align: center;
+            color: #f3f4f6;
+        }
+
+        .admin-access-icon {
+            width: 68px;
+            height: 68px;
+            margin: 0 auto 18px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(107, 158, 206, 0.14);
+            color: #9ec5ff;
+            font-size: 28px;
+        }
+
+        body.admin-access-denied .admin-access-icon {
+            background: rgba(248, 113, 113, 0.14);
+            color: #fca5a5;
+        }
+
+        .admin-access-title {
+            margin: 0 0 12px;
+            font-size: 30px;
+            line-height: 1.15;
+            font-family: "Playfair Display", serif;
+        }
+
+        .admin-access-message {
+            margin: 0;
+            color: rgba(243, 244, 246, 0.76);
+            font-size: 15px;
+            line-height: 1.7;
+        }
+
+        .admin-access-spinner {
+            width: 48px;
+            height: 48px;
+            margin: 24px auto 0;
+            border-radius: 50%;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #9ec5ff;
+            animation: admin-access-spin 0.9s linear infinite;
+        }
+
+        .admin-access-actions {
+            display: none;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 24px;
+            flex-wrap: wrap;
+        }
+
+        body.admin-access-denied .admin-access-actions {
+            display: flex;
+        }
+
+        body.admin-access-denied .admin-access-spinner {
+            display: none;
+        }
+
+        .admin-access-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 140px;
+            padding: 12px 18px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #f9fafb;
+            text-decoration: none;
+            background: rgba(255, 255, 255, 0.04);
+            transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+        }
+
+        .admin-access-btn:hover {
+            transform: translateY(-1px);
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .admin-access-btn.primary {
+            background: linear-gradient(135deg, #5f8cff, #3b82f6);
+            border-color: rgba(159, 195, 255, 0.6);
+        }
+
+        @keyframes admin-access-spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
 </head>
 
-<body>
+<body class="admin-access-pending">
+    <div class="admin-access-screen" id="adminAccessScreen" aria-live="polite">
+        <div class="admin-access-card">
+            <div class="admin-access-icon" id="adminAccessIcon">
+                <i class="fas fa-shield-alt"></i>
+            </div>
+            <h1 class="admin-access-title" id="adminAccessTitle">正在校验后台访问权限</h1>
+            <p class="admin-access-message" id="adminAccessMessage">请稍候，我们正在确认当前账号是否拥有 Admin Studio 访问权限。</p>
+            <div class="admin-access-spinner" id="adminAccessSpinner" aria-hidden="true"></div>
+            <div class="admin-access-actions" id="adminAccessActions">
+                <a class="admin-access-btn primary" id="adminAccessPrimaryAction" href="index.html">返回首页</a>
+                <a class="admin-access-btn" id="adminAccessSecondaryAction" href="index.html">重新登录</a>
+            </div>
+        </div>
+    </div>
+
     <!-- Admin Layout Container -->
     <div class="admin-layout">
         <!-- Supabase-style Sidebar -->
@@ -9396,6 +9545,7 @@
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js"></script>
     <script src="js/admin-tickets.js"></script>
+    <script src="js/admin-access.js"></script>
     <script src="admin-studio.js"></script>
     <script src="js/admin-shop.js?v=CLICK_DYNAMIC_V18"></script>
 </body>

@@ -1,19 +1,20 @@
 -- Run this in Supabase SQL Editor
--- Creates RPC function to get user balance (bypasses RLS)
+-- Site-aware balance RPC aligned with the hardened migration
 
-DROP FUNCTION IF EXISTS fn_get_user_balance(UUID);
+DROP FUNCTION IF EXISTS public.fn_get_user_balance(UUID);
+DROP FUNCTION IF EXISTS public.fn_get_user_balance(VARCHAR);
 
-CREATE OR REPLACE FUNCTION fn_get_user_balance(p_user_id UUID)
-RETURNS TABLE (
-    paid_balance NUMERIC(12,1),
-    bonus_balance NUMERIC(12,1),
-    total_balance NUMERIC(12,1)
+CREATE OR REPLACE FUNCTION public.fn_get_user_balance(
+    p_user_id UUID DEFAULT NULL,
+    p_site VARCHAR DEFAULT 'cn'
 )
+RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
+    v_result RECORD;
     v_request_user_id UUID := auth.uid();
     v_request_role TEXT := COALESCE(auth.role(), '');
     v_effective_user_id UUID;
@@ -36,20 +37,29 @@ BEGIN
         RAISE EXCEPTION 'user_id required';
     END IF;
 
-    RETURN QUERY
-    SELECT 
-        COALESCE(pb.paid_balance, 0),
-        COALESCE(pb.bonus_balance, 0),
-        COALESCE(pb.total_balance, 0)
-    FROM points_balance pb
-    WHERE pb.user_id = v_effective_user_id;
-    
-    -- If no rows returned, return zeros
+    SELECT paid_balance, bonus_balance, total_balance
+    INTO v_result
+    FROM public.points_balance
+    WHERE user_id = v_effective_user_id
+      AND site = p_site;
+
     IF NOT FOUND THEN
-        RETURN QUERY SELECT 0, 0, 0;
+        RETURN jsonb_build_object(
+            'paid_balance', 0,
+            'bonus_balance', 0,
+            'total_balance', 0,
+            'site', p_site
+        );
     END IF;
+
+    RETURN jsonb_build_object(
+        'paid_balance', v_result.paid_balance,
+        'bonus_balance', v_result.bonus_balance,
+        'total_balance', v_result.total_balance,
+        'site', p_site
+    );
 END;
 $$;
 
-REVOKE ALL ON FUNCTION fn_get_user_balance(UUID) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION fn_get_user_balance(UUID) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_get_user_balance(UUID, VARCHAR) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_get_user_balance(UUID, VARCHAR) TO authenticated, service_role;

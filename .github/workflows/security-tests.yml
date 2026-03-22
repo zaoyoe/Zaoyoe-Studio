@@ -9,9 +9,21 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'scripts/check-prod-env.js'
+      - 'middleware.js'
       - 'server/**'
       - 'api/**'
       - 'tests/**'
+      - 'admin-studio.html'
+      - 'admin-studio.js'
+      - 'admin-comments.js'
+      - 'admin-points.js'
+      - 'admin-analytics.js'
+      - 'admin-entry.html'
+      - 'supabase-auth-functions.js'
+      - 'inject-auth.js'
+      - 'index.html'
+      - 'js/admin-access.js'
+      - 'js/admin-entry.js'
       - 'verify-widget.js'
       - 'admin-config.js'
   pull_request:
@@ -20,9 +32,21 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'scripts/check-prod-env.js'
+      - 'middleware.js'
       - 'server/**'
       - 'api/**'
       - 'tests/**'
+      - 'admin-studio.html'
+      - 'admin-studio.js'
+      - 'admin-comments.js'
+      - 'admin-points.js'
+      - 'admin-analytics.js'
+      - 'admin-entry.html'
+      - 'supabase-auth-functions.js'
+      - 'inject-auth.js'
+      - 'index.html'
+      - 'js/admin-access.js'
+      - 'js/admin-entry.js'
       - 'verify-widget.js'
       - 'admin-config.js'
   workflow_dispatch:
@@ -57,6 +81,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ci-service-role-key
           ADMIN_CONFIG_ENCRYPTION_KEY: ci-admin-config-key
           PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: ci-quote-secret
+          ADMIN_STUDIO_ACCESS_SECRET: ci-admin-studio-secret
         run: npm run check:prod-env -- --allow-non-production
 
       - name: Run security regression suite

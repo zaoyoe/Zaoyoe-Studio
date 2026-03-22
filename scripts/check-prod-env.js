@@ -56,6 +56,7 @@ function main() {
 
     const serviceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY');
     const adminEncryptionKey = readEnv('ADMIN_CONFIG_ENCRYPTION_KEY');
+    const adminStudioAccessSecret = readEnv('ADMIN_STUDIO_ACCESS_SECRET');
     const quoteSecret = readFirstAvailableEnv([
         'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
         'PAYMENT_CUSTOM_QUOTE_SECRET',
@@ -90,6 +91,19 @@ function main() {
                     : `set via ${quoteSecret.name}, independent, fingerprint=${fingerprintSecret(quoteSecret.value)}`
         },
         {
+            label: 'ADMIN_STUDIO_ACCESS_SECRET',
+            ok: Boolean(adminStudioAccessSecret)
+                && adminStudioAccessSecret !== serviceRoleKey
+                && adminStudioAccessSecret !== adminEncryptionKey,
+            details: !adminStudioAccessSecret
+                ? 'missing'
+                : adminStudioAccessSecret === serviceRoleKey
+                    ? 'must not equal SUPABASE_SERVICE_ROLE_KEY'
+                    : adminStudioAccessSecret === adminEncryptionKey
+                        ? 'should be independent from ADMIN_CONFIG_ENCRYPTION_KEY'
+                        : `set, independent, fingerprint=${fingerprintSecret(adminStudioAccessSecret)}`
+        },
+        {
             label: 'production-like runtime',
             ok: runtime.productionLike || allowNonProduction,
             details: runtime.productionLike
@@ -101,7 +115,7 @@ function main() {
     ];
 
     console.log('Production Environment Check');
-    console.log('Compare ADMIN_CONFIG_ENCRYPTION_KEY and PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET fingerprints across Vercel and Railway; they should match.');
+    console.log('Compare ADMIN_CONFIG_ENCRYPTION_KEY, PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET, and ADMIN_STUDIO_ACCESS_SECRET fingerprints across Vercel and Railway; they should match.');
     console.log('');
 
     checks.forEach((check) => {
