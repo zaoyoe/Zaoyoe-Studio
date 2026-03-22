@@ -15,7 +15,7 @@ This Supabase Edge Function handles uploading images directly to Cloudflare R2 C
 Set these using `supabase secrets set`:
 
 ```bash
-R2_ENDPOINT=https://cd39b0e8dba64c7f804d8e00d40e5d4a.r2.cloudflarestorage.com
+R2_ENDPOINT=https://<your-account-id>.r2.cloudflarestorage.com
 R2_ACCESS_KEY=<your-access-key-id>
 R2_SECRET_KEY=<your-secret-access-key>
 ```
@@ -38,7 +38,7 @@ The function is called from `admin-studio.js`:
 
 ```javascript
 const response = await fetch(
-    'https://mmkugdibsaeoevliebzk.supabase.co/functions/v1/upload-to-r2',
+    'https://<your-project-ref>.supabase.co/functions/v1/upload-to-r2',
     {
         method: 'POST',
         headers: {

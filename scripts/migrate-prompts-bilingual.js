@@ -9,15 +9,38 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import path from 'path';
+import dotenv from 'dotenv';
+
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local'), override: false });
+
+function readFirstEnv(names, fallback = '') {
+    for (const name of names) {
+        const value = String(process.env[name] || '').trim();
+        if (value) return value;
+    }
+    return fallback;
+}
 
 // Configuration - read from environment
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://auth.zaoyoe.com';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const SUPABASE_URL = readFirstEnv([
+    'SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'PUBLIC_SUPABASE_URL'
+]);
+const SUPABASE_ANON_KEY = readFirstEnv([
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_SERVICE_KEY',
+    'SUPABASE_PUBLISHABLE_KEY',
+    'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY'
+]);
+const GEMINI_API_KEY = readFirstEnv(['GEMINI_API_KEY']);
 
-if (!GEMINI_API_KEY) {
-    console.error('Error: Please set GEMINI_API_KEY environment variable');
-    console.error('Example: GEMINI_API_KEY=your_key node scripts/migrate-prompts-bilingual.js');
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !GEMINI_API_KEY) {
+    console.error('Error: Please set SUPABASE_URL, a Supabase key, and GEMINI_API_KEY in your environment');
+    console.error('Example: GEMINI_API_KEY=your_key SUPABASE_URL=https://your-project-ref.supabase.co node scripts/migrate-prompts-bilingual.js');
     process.exit(1);
 }
 

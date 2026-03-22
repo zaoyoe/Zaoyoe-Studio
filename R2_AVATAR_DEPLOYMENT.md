@@ -22,7 +22,7 @@ npm install -g supabase
 
 ```bash
 cd /Volumes/chao/AI/xianyu_profit_calculator
-supabase link --project-ref mmkugdibsaeoevliebzk
+supabase link --project-ref <your-project-ref>
 ```
 
 ### Step 3: Set R2 Environment Variables
@@ -33,7 +33,7 @@ supabase secrets set R2_ACCOUNT_ID="your-cloudflare-account-id"
 supabase secrets set R2_ACCESS_KEY_ID="your-r2-access-key-id"
 supabase secrets set R2_SECRET_ACCESS_KEY="your-r2-secret-access-key"
 supabase secrets set R2_BUCKET_NAME="zaoyoe-images"
-supabase secrets set R2_PUBLIC_URL="https://pub-8c83901b01d7446b834ec829b623bf7b.r2.dev"
+supabase secrets set R2_PUBLIC_URL="https://pub-<your-bucket-public-id>.r2.dev"
 ```
 
 **Where to get credentials**:
@@ -52,7 +52,7 @@ supabase functions deploy upload-avatar
 Test the Edge Function:
 
 ```bash
-curl -X POST https://mmkugdibsaeoevliebzk.supabase.co/functions/v1/upload-avatar \
+curl -X POST https://<your-project-ref>.supabase.co/functions/v1/upload-avatar \
   -H "Authorization: Bearer YOUR_USER_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

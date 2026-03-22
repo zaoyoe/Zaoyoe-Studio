@@ -10,6 +10,9 @@ echo "${GREEN}🚀 R2 Edge Function 快速部署脚本${NC}"
 echo "=================================="
 echo ""
 
+PROJECT_REF="${SUPABASE_PROJECT_REF:-}"
+R2_ENDPOINT_VALUE="${R2_ENDPOINT:-}"
+
 # Step 1: Check Supabase CLI
 echo "${YELLOW}Step 1/5: 检查 Supabase CLI...${NC}"
 if ! command -v supabase &> /dev/null; then
@@ -23,9 +26,19 @@ echo ""
 
 # Step 2: Check project link
 echo "${YELLOW}Step 2/5: 检查项目链接...${NC}"
+if [ -z "$PROJECT_REF" ]; then
+    read -p "Supabase Project Ref: " PROJECT_REF
+fi
+
+if [ -z "$PROJECT_REF" ]; then
+    echo "${RED}❌ 缺少 Supabase Project Ref${NC}"
+    echo "请设置 SUPABASE_PROJECT_REF 或在提示时输入"
+    exit 1
+fi
+
 if [ ! -f "./.supabase/config.toml" ]; then
     echo "${YELLOW}⚠️  项目未链接，开始链接...${NC}"
-    supabase link --project-ref mmkugdibsaeoevliebzk
+    supabase link --project-ref "$PROJECT_REF"
 else
     echo "${GREEN}✅ 项目已链接${NC}"
 fi
@@ -39,12 +52,19 @@ echo ""
 read -p "R2 Access Key ID: " R2_ACCESS_KEY
 read -p "R2 Secret Access Key: " R2_SECRET_KEY
 
-# Default endpoint
-R2_ENDPOINT="https://cd39b0e8dba64c7f804d8e00d40e5d4a.r2.cloudflarestorage.com"
+if [ -z "$R2_ENDPOINT_VALUE" ]; then
+    read -p "R2 Endpoint (例如 https://<account-id>.r2.cloudflarestorage.com): " R2_ENDPOINT_VALUE
+fi
+
+if [ -z "$R2_ENDPOINT_VALUE" ]; then
+    echo "${RED}❌ 缺少 R2 Endpoint${NC}"
+    echo "请设置 R2_ENDPOINT 或在提示时输入"
+    exit 1
+fi
 
 echo ""
 echo "${YELLOW}正在设置 secrets...${NC}"
-supabase secrets set R2_ENDPOINT="$R2_ENDPOINT"
+supabase secrets set R2_ENDPOINT="$R2_ENDPOINT_VALUE"
 supabase secrets set R2_ACCESS_KEY="$R2_ACCESS_KEY"
 supabase secrets set R2_SECRET_KEY="$R2_SECRET_KEY"
 echo "${GREEN}✅ Secrets 设置完成${NC}"
@@ -65,7 +85,7 @@ echo ""
 # Step 5: Verify
 echo "${YELLOW}Step 5/5: 验证部署...${NC}"
 echo "Edge Function URL:"
-echo "https://mmkugdibsaeoevliebzk.supabase.co/functions/v1/upload-to-r2"
+echo "https://${PROJECT_REF}.supabase.co/functions/v1/upload-to-r2"
 echo ""
 echo "${GREEN}✅ 部署完成！${NC}"
 echo ""

@@ -70,6 +70,7 @@ server/.env
 server/.env.local
 server/.env.production
 server/.env.staging
+supabase/.temp/
 
 # dataconnect generated files
 .dataconnect

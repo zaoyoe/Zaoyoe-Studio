@@ -6,11 +6,32 @@
  */
 
 const { createClient } = require('@supabase/supabase-js');
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env.local'), override: false });
 
-const supabaseUrl = 'https://auth.zaoyoe.com';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ta3VnZGlic2Flb2V2bGllYnprIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTkzOTM2NiwiZXhwIjoyMDgxNTE1MzY2fQ.FdwbzapB8-TgaZKiocHgsQuuMy250qAilACZkO5CqhY';
+function readFirstEnv(names = []) {
+    for (const name of names) {
+        const value = String(process.env[name] || '').trim();
+        if (value) return value;
+    }
+    return '';
+}
+
+const supabaseUrl = readFirstEnv([
+    'SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'PUBLIC_SUPABASE_URL'
+]);
+const supabaseKey = readFirstEnv([
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_SERVICE_KEY'
+]);
 
 const R2_CDN_BASE = 'https://cdn.zaoyoe.com/prompts/';
+
+if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment');
+}
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -54,7 +75,7 @@ async function updateSupabaseUrls() {
 
                     if (url.includes('supabase.co/storage')) {
                         // Supabase Storage URL
-                        // 例如: https://mmkugdibsaeoevliebzk.supabase.co/storage/v1/object/public/prompts/3D_chibi_style______1_1.png
+                        // 例如: https://<your-project-ref>.supabase.co/storage/v1/object/public/prompts/example.png
                         const match = url.match(/\/prompts\/([^?]+)/);
                         if (match) {
                             filename = match[1];

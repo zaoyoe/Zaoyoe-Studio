@@ -8,8 +8,10 @@
  * npm install sharp @supabase/supabase-js @aws-sdk/client-s3 dotenv
  */
 
+const path = require('path');
+
 // Load environment variables from .env.local
-require('dotenv').config({ path: '.env.local' });
+require('dotenv').config({ path: path.resolve(__dirname, '../.env.local'), override: false });
 
 const sharp = require('sharp');
 const { createClient } = require('@supabase/supabase-js');
@@ -17,16 +19,33 @@ const { S3Client, PutObjectCommand, HeadObjectCommand } = require('@aws-sdk/clie
 const https = require('https');
 const http = require('http');
 
+function readFirstEnv(names = [], fallback = '') {
+    for (const name of names) {
+        const value = String(process.env[name] || '').trim();
+        if (value) return value;
+    }
+    return fallback;
+}
+
 // Configuration
-const SUPABASE_URL = 'https://auth.zaoyoe.com';
-const SUPABASE_ANON_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+const SUPABASE_URL = readFirstEnv([
+    'SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'PUBLIC_SUPABASE_URL'
+]);
+const SUPABASE_ANON_KEY = readFirstEnv([
+    'SUPABASE_PUBLISHABLE_KEY',
+    'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY'
+]);
 
 // R2 Configuration from .env.local
 const R2_ENDPOINT = process.env.R2_ENDPOINT;
 const R2_ACCESS_KEY = process.env.R2_ACCESS_KEY_ID;
 const R2_SECRET_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'zaoyoeimages';
-const R2_PUBLIC_URL = 'https://cdn.zaoyoe.com';
+const R2_PUBLIC_URL = readFirstEnv(['R2_PUBLIC_URL'], 'https://cdn.zaoyoe.com');
 
 const THUMB_WIDTH = 800;
 const THUMB_QUALITY = 85;
@@ -34,6 +53,10 @@ const BATCH_SIZE = 10;
 const DELAY_BETWEEN_BATCHES = 1000;
 
 // Initialize clients
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error('Missing SUPABASE_URL or publishable key in .env.local');
+}
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let s3Client = null;
