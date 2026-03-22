@@ -64,7 +64,7 @@ function getDefaultPaymentChannelsConfig(options = {}) {
             mock: {
                 enabled: true,
                 display_name: '模拟支付',
-                description: '仅建议在正式支付接入前短期使用，开启后将直接到账积分。'
+                description: '仅允许本地开发或显式白名单环境使用，开启后会直接到账积分。'
             },
             afdian: {
                 enabled: true,

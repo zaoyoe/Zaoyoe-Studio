@@ -16,8 +16,12 @@ CREATE OR REPLACE FUNCTION fn_purchase_shop_item(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
+    v_request_user_id UUID := auth.uid();
+    v_request_role TEXT := COALESCE(auth.role(), '');
+    v_effective_user_id UUID;
     v_product_price INT;
     v_user_balance INT;
     v_inventory_id UUID;
@@ -25,6 +29,24 @@ DECLARE
     v_product_name VARCHAR;
     v_order_id UUID;
 BEGIN
+    IF v_request_role = 'service_role' THEN
+        v_effective_user_id := COALESCE(p_user_id, v_request_user_id);
+    ELSE
+        IF v_request_user_id IS NULL THEN
+            RETURN jsonb_build_object('success', false, 'message', '请先登录');
+        END IF;
+
+        IF p_user_id IS NOT NULL AND p_user_id <> v_request_user_id THEN
+            RETURN jsonb_build_object('success', false, 'message', '非法的用户上下文');
+        END IF;
+
+        v_effective_user_id := v_request_user_id;
+    END IF;
+
+    IF v_effective_user_id IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', '缺少有效的用户身份');
+    END IF;
+
     -- A. 检查商品是否存在，根据站点选择价格
     IF p_site = 'intl' THEN
         SELECT price_points_intl, name INTO v_product_price, v_product_name
@@ -54,7 +76,7 @@ BEGIN
     -- C. 检查对应站点的余额 & 扣费
     SELECT total_balance INTO v_user_balance
     FROM points_balance
-    WHERE user_id = p_user_id AND site = p_site
+    WHERE user_id = v_effective_user_id AND site = p_site
     FOR UPDATE; -- 锁定余额行
 
     IF v_user_balance IS NULL OR v_user_balance < v_product_price THEN
@@ -70,7 +92,7 @@ BEGIN
         v_remaining_cost INT := v_product_price;
     BEGIN
         SELECT bonus_balance, paid_balance INTO v_current_bonus, v_current_paid
-        FROM points_balance WHERE user_id = p_user_id AND site = p_site;
+        FROM points_balance WHERE user_id = v_effective_user_id AND site = p_site;
         
         -- 扣 Bonus
         IF v_current_bonus >= v_remaining_cost THEN
@@ -94,13 +116,13 @@ BEGIN
         SET bonus_balance = bonus_balance - v_deduct_bonus,
             paid_balance = paid_balance - v_deduct_paid,
             updated_at = NOW()
-        WHERE user_id = p_user_id AND site = p_site;
+        WHERE user_id = v_effective_user_id AND site = p_site;
     END;
 
     -- 记账 (Ledger) - 带 site 字段
     INSERT INTO points_ledger (user_id, amount, reason, reference_id, site)
     VALUES (
-        p_user_id, 
+        v_effective_user_id,
         -v_product_price, 
         'shop_purchase: ' || v_product_name,
         p_product_id::TEXT,
@@ -110,13 +132,13 @@ BEGIN
     -- D. 更新库存状态
     UPDATE shop_inventory
     SET status = 'sold',
-        buyer_id = p_user_id,
+        buyer_id = v_effective_user_id,
         sold_at = NOW()
     WHERE id = v_inventory_id;
 
     -- E. 创建订单 - 带 site 字段
     INSERT INTO shop_orders (user_id, product_id, inventory_id, price_paid, snapshot_product_name, site)
-    VALUES (p_user_id, p_product_id, v_inventory_id, v_product_price, v_product_name, p_site)
+    VALUES (v_effective_user_id, p_product_id, v_inventory_id, v_product_price, v_product_name, p_site)
     RETURNING id INTO v_order_id;
     
     -- F. 更新商品库存计数缓存
@@ -151,13 +173,31 @@ CREATE OR REPLACE FUNCTION fn_get_user_balance(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_result RECORD;
+    v_request_user_id UUID := auth.uid();
+    v_request_role TEXT := COALESCE(auth.role(), '');
     v_uid UUID;
 BEGIN
-    -- Use p_user_id if provided (server-side), else auth.uid() (client-side)
-    v_uid := COALESCE(p_user_id, auth.uid());
+    IF v_request_role = 'service_role' THEN
+        v_uid := COALESCE(p_user_id, v_request_user_id);
+    ELSE
+        IF v_request_user_id IS NULL THEN
+            RAISE EXCEPTION 'auth required';
+        END IF;
+
+        IF p_user_id IS NOT NULL AND p_user_id <> v_request_user_id THEN
+            RAISE EXCEPTION 'Access denied';
+        END IF;
+
+        v_uid := v_request_user_id;
+    END IF;
+
+    IF v_uid IS NULL THEN
+        RAISE EXCEPTION 'user_id required';
+    END IF;
     
     SELECT paid_balance, bonus_balance, total_balance
     INTO v_result
@@ -185,7 +225,8 @@ $$;
 -- Drop old signature to avoid conflicts
 DROP FUNCTION IF EXISTS fn_get_user_balance(UUID);
 DROP FUNCTION IF EXISTS fn_get_user_balance(VARCHAR);
-GRANT EXECUTE ON FUNCTION fn_get_user_balance(UUID, VARCHAR) TO anon, authenticated;
+REVOKE ALL ON FUNCTION fn_get_user_balance(UUID, VARCHAR) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_get_user_balance(UUID, VARCHAR) TO authenticated, service_role;
 
 -- ============================================
 -- 3. unlock_prompt - Prompt 解锁（带 site）

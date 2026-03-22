@@ -30,6 +30,51 @@ function normalizeCurrency(value, fallback = null) {
     return Math.round(parsed * 100) / 100;
 }
 
+function isTruthyFlag(value) {
+    if (value === true) return true;
+    const normalized = String(value || '').trim().toLowerCase();
+    return ['1', 'true', 'yes', 'on'].includes(normalized);
+}
+
+function extractHostname(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+
+    try {
+        const candidate = normalized.includes('://')
+            ? normalized
+            : `http://${normalized.replace(/^\/*/, '')}`;
+        return String(new URL(candidate).hostname || '').trim().toLowerCase();
+    } catch (_) {
+        return normalized
+            .replace(/^[a-z]+:\/\//i, '')
+            .replace(/^\/+/, '')
+            .split('/')[0]
+            .split(':')[0]
+            .trim()
+            .toLowerCase();
+    }
+}
+
+function isLocalHostname(value) {
+    const hostname = extractHostname(value);
+    return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
+function isMockPaymentRuntimeAllowed({ requestHost = '', env = process.env } = {}) {
+    if (isLocalHostname(requestHost)) {
+        return true;
+    }
+
+    if (isLocalHostname(env?.APP_BASE_URL)) {
+        return true;
+    }
+
+    return isTruthyFlag(env?.ALLOW_REMOTE_MOCK_PAYMENTS)
+        || isTruthyFlag(env?.PAYMENT_ALLOW_REMOTE_MOCK)
+        || isTruthyFlag(env?.PAYMENT_MOCK_ALLOW_REMOTE);
+}
+
 function isMissingDatabaseStructureError(error) {
     const code = String(error?.code || '').trim();
     const message = String(error?.message || '').toLowerCase();
@@ -803,23 +848,40 @@ function resolveRequestedProviderKey({
     requestedProviderKey,
     paymentChannels,
     rechargeOptions,
-    requestHost = ''
+    requestHost = '',
+    env = process.env
 }) {
     const normalizedRequested = String(requestedProviderKey || '').trim().toLowerCase();
     const activeProviderKey = String(paymentChannels?.active_provider || 'afdian').trim().toLowerCase() || 'afdian';
+    const mockConfigured = paymentChannels?.providers?.mock?.enabled !== false
+        && (
+            rechargeOptions?.mock_payment_enabled === true
+            || paymentChannels?.active_provider === 'mock'
+        );
+    const mockRuntimeAllowed = isMockPaymentRuntimeAllowed({
+        requestHost,
+        env
+    });
+
+    const resolveMockProvider = () => {
+        if (!mockConfigured) {
+            throw new Error('当前未开启模拟支付，请使用真实支付流程');
+        }
+        if (!mockRuntimeAllowed) {
+            throw new Error('当前环境已禁用模拟支付，请切换到真实支付通道');
+        }
+        return 'mock';
+    };
 
     if (!normalizedRequested || normalizedRequested === activeProviderKey) {
+        if (activeProviderKey === 'mock') {
+            return resolveMockProvider();
+        }
         return activeProviderKey;
     }
 
     if (normalizedRequested === 'mock') {
-        const mockEnabled = rechargeOptions?.mock_payment_enabled === true
-            || paymentChannels?.active_provider === 'mock';
-        const isLocalRequest = /(^|:)(localhost|127\.0\.0\.1)(:\d+)?$/i.test(String(requestHost || '').trim());
-        if (mockEnabled || isLocalRequest) {
-            return 'mock';
-        }
-        throw new Error('当前未开启模拟支付，请使用真实支付流程');
+        return resolveMockProvider();
     }
 
     throw new Error('当前支付通道与前端请求不一致，请刷新页面后重试');
@@ -1143,7 +1205,8 @@ async function createPaymentRequest({
         requestedProviderKey,
         paymentChannels,
         rechargeOptions,
-        requestHost
+        requestHost,
+        env
     });
 
     const adapter = getPaymentProviderAdapter(providerKey);

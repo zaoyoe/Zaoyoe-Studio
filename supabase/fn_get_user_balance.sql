@@ -11,15 +11,38 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
+DECLARE
+    v_request_user_id UUID := auth.uid();
+    v_request_role TEXT := COALESCE(auth.role(), '');
+    v_effective_user_id UUID;
 BEGIN
+    IF v_request_role = 'service_role' THEN
+        v_effective_user_id := COALESCE(p_user_id, v_request_user_id);
+    ELSE
+        IF v_request_user_id IS NULL THEN
+            RAISE EXCEPTION 'auth required';
+        END IF;
+
+        IF p_user_id IS NOT NULL AND p_user_id <> v_request_user_id THEN
+            RAISE EXCEPTION 'Access denied';
+        END IF;
+
+        v_effective_user_id := v_request_user_id;
+    END IF;
+
+    IF v_effective_user_id IS NULL THEN
+        RAISE EXCEPTION 'user_id required';
+    END IF;
+
     RETURN QUERY
     SELECT 
         COALESCE(pb.paid_balance, 0),
         COALESCE(pb.bonus_balance, 0),
         COALESCE(pb.total_balance, 0)
     FROM points_balance pb
-    WHERE pb.user_id = p_user_id;
+    WHERE pb.user_id = v_effective_user_id;
     
     -- If no rows returned, return zeros
     IF NOT FOUND THEN
@@ -28,5 +51,5 @@ BEGIN
 END;
 $$;
 
--- Grant execute to anon and authenticated
-GRANT EXECUTE ON FUNCTION fn_get_user_balance(UUID) TO anon, authenticated;
+REVOKE ALL ON FUNCTION fn_get_user_balance(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_get_user_balance(UUID) TO authenticated, service_role;
