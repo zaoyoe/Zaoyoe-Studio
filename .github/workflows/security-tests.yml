@@ -27,28 +27,6 @@ on:
       - 'verify-widget.js'
       - 'admin-config.js'
   pull_request:
-    paths:
-      - '.github/workflows/security-tests.yml'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'scripts/check-prod-env.js'
-      - 'middleware.js'
-      - 'server/**'
-      - 'api/**'
-      - 'tests/**'
-      - 'admin-studio.html'
-      - 'admin-studio.js'
-      - 'admin-comments.js'
-      - 'admin-points.js'
-      - 'admin-analytics.js'
-      - 'admin-entry.html'
-      - 'supabase-auth-functions.js'
-      - 'inject-auth.js'
-      - 'index.html'
-      - 'js/admin-access.js'
-      - 'js/admin-entry.js'
-      - 'verify-widget.js'
-      - 'admin-config.js'
   workflow_dispatch:
 
 permissions:
@@ -83,6 +61,9 @@ jobs:
           PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: ci-quote-secret
           ADMIN_STUDIO_ACCESS_SECRET: ci-admin-studio-secret
         run: npm run check:prod-env -- --allow-non-production
+
+      - name: Run guarded rollout planner smoke check
+        run: npm run rollout:payment -- --env-file server/.env.example --set incremental --project-ref ci-demo-ref --db-url postgresql://example.invalid/postgres
 
       - name: Run security regression suite
         run: npm run test:security

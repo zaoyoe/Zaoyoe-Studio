@@ -80,3 +80,31 @@ test('payment rollout runbook references the guarded preflight command', () => {
         'runbook should document the automated payment smoke command'
     );
 });
+
+test('security workflow always runs on pull requests and exercises the guarded rollout planner', () => {
+    const workflow = readRepoFile(path.join('.github', 'workflows', 'security-tests.yml'));
+
+    const pullRequestSection = workflow.split(/\nworkflow_dispatch:/)[0];
+    assert.match(pullRequestSection, /\n\s*pull_request:\n/, 'security workflow should trigger on all pull requests');
+
+    const normalizedLines = pullRequestSection.split('\n');
+    const pullRequestLineIndex = normalizedLines.findIndex((line) => /^\s*pull_request:\s*$/.test(line));
+    assert.notEqual(pullRequestLineIndex, -1, 'pull_request trigger should be present');
+
+    const linesAfterPullRequest = normalizedLines.slice(pullRequestLineIndex + 1);
+    const nextTopLevelIndex = linesAfterPullRequest.findIndex((line) => line.trim() && !/^\s/.test(line));
+    const pullRequestBlock = nextTopLevelIndex === -1
+        ? linesAfterPullRequest
+        : linesAfterPullRequest.slice(0, nextTopLevelIndex);
+
+    assert.equal(
+        pullRequestBlock.some((line) => /^\s+paths:\s*$/.test(line)),
+        false,
+        'pull_request trigger should not be path-filtered, otherwise required checks can stay pending'
+    );
+    assert.match(
+        workflow,
+        /npm run rollout:payment -- --env-file server\/\.env\.example --set incremental --project-ref ci-demo-ref --db-url postgresql:\/\/example\.invalid\/postgres/,
+        'security workflow should run the guarded rollout planner smoke check'
+    );
+});
