@@ -193,6 +193,23 @@ test('expired mock payment override windows fail closed', () => {
     assert.match(runtimeState.message, /到期/);
 });
 
+test('mock payment runtime state keeps cleanup metadata when override env still exists', () => {
+    const pastIso = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const runtimeState = paymentTestUtils.getMockPaymentRuntimeState({
+        requestHost: 'verify.zaoyoe.com',
+        env: {
+            VERCEL_ENV: 'production',
+            ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL: pastIso
+        }
+    });
+
+    assert.equal(runtimeState.override_configured, true);
+    assert.equal(runtimeState.override_active, false);
+    assert.equal(runtimeState.override_env_name, 'ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL');
+    assert.equal(runtimeState.override_mode, 'until');
+    assert.match(runtimeState.cleanup_message, /ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL/);
+});
+
 test('mock payment stays blocked in production-like runtimes without explicit override', () => {
     assert.throws(() => paymentTestUtils.resolveRequestedProviderKey({
         requestedProviderKey: 'mock',

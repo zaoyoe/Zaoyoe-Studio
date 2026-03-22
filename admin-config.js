@@ -47,7 +47,12 @@ function getDefaultPaymentChannelRuntimeState() {
         mock_payment: {
             allowed: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1',
             reason: 'unknown',
-            message: '暂时无法确认当前环境是否允许模拟支付。'
+            message: '暂时无法确认当前环境是否允许模拟支付。',
+            override_configured: false,
+            override_active: false,
+            override_env_name: '',
+            override_mode: 'none',
+            cleanup_message: ''
         }
     };
 }
@@ -67,7 +72,12 @@ function normalizePaymentChannelRuntimeState(raw) {
                     ? false
                     : defaults.mock_payment.allowed),
             reason: String(mockSource.reason || defaults.mock_payment.reason).trim() || defaults.mock_payment.reason,
-            message: String(mockSource.message || defaults.mock_payment.message).trim() || defaults.mock_payment.message
+            message: String(mockSource.message || defaults.mock_payment.message).trim() || defaults.mock_payment.message,
+            override_configured: mockSource.override_configured === true || String(mockSource.override_configured) === 'true',
+            override_active: mockSource.override_active === true || String(mockSource.override_active) === 'true',
+            override_env_name: String(mockSource.override_env_name || defaults.mock_payment.override_env_name).trim(),
+            override_mode: String(mockSource.override_mode || defaults.mock_payment.override_mode).trim() || defaults.mock_payment.override_mode,
+            cleanup_message: String(mockSource.cleanup_message || defaults.mock_payment.cleanup_message).trim()
         }
     };
 }
@@ -453,7 +463,17 @@ function togglePaymentProviderPanel(providerKey) {
 function applyPaymentChannelOverview(config) {
     const activeProvider = config.providers[config.active_provider];
     const mockRuntime = normalizePaymentChannelRuntimeState(paymentChannelRuntimeState).mock_payment;
+    const isMockCurrentlyEnabled = config.active_provider === 'mock';
     const isMockActiveButBlocked = config.active_provider === 'mock' && mockRuntime.allowed !== true;
+    const hasMockOverrideCleanupNotice = !isMockCurrentlyEnabled
+        && mockRuntime.override_configured === true
+        && Boolean(mockRuntime.cleanup_message);
+    const summaryMessage = isMockActiveButBlocked
+        ? mockRuntime.message
+        : (hasMockOverrideCleanupNotice
+            ? mockRuntime.cleanup_message
+            : '公开配置保存在系统设置中；敏感密钥会通过服务端加密保存，不再存浏览器。');
+    const summaryIcon = (isMockActiveButBlocked || hasMockOverrideCleanupNotice) ? 'fa-exclamation-triangle' : 'fa-plug';
     const activeSelect = document.getElementById('paymentChannelActiveSelect');
     if (activeSelect && activeSelect.value !== config.active_provider) {
         activeSelect.value = config.active_provider;
@@ -462,8 +482,8 @@ function applyPaymentChannelOverview(config) {
     const summary = document.getElementById('paymentChannelSummary');
     if (summary) {
         summary.innerHTML = `
-            <i class="fas ${isMockActiveButBlocked ? 'fa-exclamation-triangle' : 'fa-plug'}"></i>
-            <span>当前主通道：${escapeConfigHtml(activeProvider.display_name)}。${isMockActiveButBlocked ? escapeConfigHtml(mockRuntime.message) : '公开配置保存在系统设置中；敏感密钥会通过服务端加密保存，不再存浏览器。'}</span>
+            <i class="fas ${summaryIcon}"></i>
+            <span>当前主通道：${escapeConfigHtml(activeProvider.display_name)}。${escapeConfigHtml(summaryMessage)}</span>
         `;
     }
 
@@ -476,7 +496,9 @@ function applyPaymentChannelOverview(config) {
     const descriptionMap = {
         mock: isMockActiveButBlocked
             ? `当前已选择为主通道，但 ${mockRuntime.message}`
-            : (config.providers.mock.description || '直接到账，适合短期过渡验证。'),
+            : (hasMockOverrideCleanupNotice
+                ? mockRuntime.cleanup_message
+                : (config.providers.mock.description || '直接到账，适合短期过渡验证。')),
         afdian: `${config.providers.afdian.package_hint || '支付后输入订单号领取兑换码'} · ${paymentChannelSecretStatus?.afdian_token?.configured ? 'Token 已配置' : 'Token 待配置'}`,
         hupijiao: `${config.providers.hupijiao.merchant_id ? `商户号 ${config.providers.hupijiao.merchant_id}` : '商户号待填写'} · ${(paymentChannelSecretStatus?.hupijiao_api_key?.configured && paymentChannelSecretStatus?.hupijiao_secret_key?.configured) ? '密钥已配置' : '密钥待配置'}`
     };
