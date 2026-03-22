@@ -4,6 +4,9 @@ const {
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
+const {
+    applyPaymentOrderReview
+} = require('../../../../api/_lib/payments/rpc');
 
 const VALID_TARGET_TYPES = new Set(['order', 'event', 'session']);
 const VALID_ACTIONS = new Set([
@@ -121,11 +124,12 @@ async function applyOrderReviewDecision(supabase, target, action, note, actorId)
         throw error;
     }
 
-    const { data, error } = await supabase.rpc('fn_apply_payment_order_review', {
-        p_payment_order_id: target.id,
-        p_action: normalizeReviewRpcAction(action),
-        p_note: normalizeText(note) || null,
-        p_actor_id: actorId || null
+    const { data, error } = await applyPaymentOrderReview({
+        supabase,
+        paymentOrderId: target.id,
+        action: normalizeReviewRpcAction(action),
+        note: normalizeText(note) || null,
+        actorId: actorId || null
     });
 
     if (error) {

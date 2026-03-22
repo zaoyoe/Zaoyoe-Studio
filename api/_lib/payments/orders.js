@@ -6,6 +6,9 @@ const {
 const {
     loadStoredPaymentConfigs
 } = require('./providers');
+const {
+    rechargePointsForPayment
+} = require('./rpc');
 
 const mockProvider = getPaymentProviderAdapter('mock');
 const CHECKOUT_SESSION_EXPIRY_HOURS = 24;
@@ -1345,13 +1348,14 @@ async function completeMockPayment({
     }
 
     try {
-        const { error: rechargeError } = await supabase.rpc('fn_recharge_points', {
-            target_user_id: user.id,
-            p_paid: paidPoints,
-            p_bonus: bonusPoints,
-            p_reason: reason,
-            p_reference_id: referenceId,
-            p_site: site
+        const { error: rechargeError } = await rechargePointsForPayment({
+            supabase,
+            userId: user.id,
+            paidPoints,
+            bonusPoints,
+            reason,
+            referenceId,
+            site
         });
 
         if (rechargeError) {

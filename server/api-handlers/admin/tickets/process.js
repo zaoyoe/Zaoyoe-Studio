@@ -4,6 +4,9 @@ const {
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
+const {
+    rechargePointsForPayment
+} = require('../../../../api/_lib/payments/rpc');
 
 module.exports = async (req, res) => {
     if (req.method !== 'POST') {
@@ -59,41 +62,21 @@ module.exports = async (req, res) => {
 
             refundAmount = Number(orderData.total_price || 0);
             if (refundAmount > 0) {
-                const { data: balanceData, error: balanceError } = await supabase
-                    .from('points_balance')
-                    .select('bonus_balance')
-                    .eq('user_id', ticket.user_id)
-                    .single();
-
-                if (balanceError || !balanceData) {
-                    return sendJson(res, 400, {
-                        success: false,
-                        message: `无法读取用户积分余额: ${balanceError?.message || '余额不存在'}`
-                    });
-                }
-
-                const newBalance = Number(balanceData.bonus_balance || 0) + refundAmount;
-                const { error: updateBalanceError } = await supabase
-                    .from('points_balance')
-                    .update({
-                        bonus_balance: newBalance,
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('user_id', ticket.user_id);
-
-                if (updateBalanceError) {
-                    return sendJson(res, 400, {
-                        success: false,
-                        message: `退款失败: ${updateBalanceError.message}`
-                    });
-                }
-
-                await supabase.from('points_ledger').insert({
-                    user_id: ticket.user_id,
-                    amount: refundAmount,
+                const { error: refundError } = await rechargePointsForPayment({
+                    supabase,
+                    userId: ticket.user_id,
+                    paidPoints: 0,
+                    bonusPoints: refundAmount,
                     reason: `工单退款 (订单号: ${String(ticket.order_id || '').substring(0, 8)})`,
-                    reference_id: `TICKET_REFUND_${String(ticketId).substring(0, 8)}`
+                    referenceId: `TICKET_REFUND_${String(ticketId).substring(0, 8)}`
                 });
+
+                if (refundError) {
+                    return sendJson(res, 400, {
+                        success: false,
+                        message: `退款失败: ${refundError.message}`
+                    });
+                }
             }
         }
 
