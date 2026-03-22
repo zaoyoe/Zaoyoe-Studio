@@ -4,46 +4,55 @@
 -- ============================================
 
 -- 1. Function presence / grants / guardrails
-WITH function_targets AS (
-    SELECT *
-    FROM (
-        VALUES
-            ('public.fn_purchase_shop_item(uuid,uuid)'::TEXT, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, 'legacy 2-arg overload should be dropped'),
-            ('public.fn_redeem_code(character varying)'::TEXT, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, 'legacy 1-arg redemption overload should be dropped'),
-            ('public.fn_redeem_code(character varying,character varying)'::TEXT, TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, 'site-aware redemption RPC should only be callable by authenticated users'),
-            ('public.fn_get_user_balance(uuid)'::TEXT, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, 'legacy single-arg balance overload should be dropped'),
-            ('public.fn_get_user_balance(character varying)'::TEXT, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, 'legacy varchar balance overload should be dropped'),
-            ('public.fn_get_user_balance(uuid,character varying)'::TEXT, TRUE, TRUE, FALSE, TRUE, FALSE, FALSE, 'site-aware balance RPC should allow authenticated/service_role callers only'),
-            ('public.fn_add_points(uuid,integer,text,text)'::TEXT, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'legacy internal add-points helper should remain service_role only'),
-            ('public.fn_add_points(uuid,integer,text,text,character varying)'::TEXT, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'site-aware internal add-points helper should remain service_role only'),
-            ('public.fn_deduct_points(integer,text,text)'::TEXT, TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, 'legacy self-deduct helper remains authenticated only for compatibility'),
-            ('public.fn_deduct_points(integer,text,text,character varying)'::TEXT, TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, 'site-aware self-deduct helper remains authenticated only for compatibility'),
-            ('public.fn_deduct_points(uuid,integer,text,text)'::TEXT, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'admin deduction helper should remain service_role only'),
-            ('public.fn_deduct_points_admin_site(uuid,integer,text,text,character varying)'::TEXT, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'site-aware admin deduction helper should remain service_role only'),
-            ('public.fn_recharge_points(uuid,numeric,numeric,text,text)'::TEXT, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'legacy recharge helper should remain service_role only'),
-            ('public.fn_recharge_points(uuid,numeric,numeric,text,text,character varying)'::TEXT, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'site-aware recharge helper should remain service_role only'),
-            ('public.fn_dispatch_code(character varying,character varying)'::TEXT, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'legacy dispatch RPC should be service_role only'),
-            ('public.fn_ensure_redemption_code_for_payment_order(uuid,uuid,integer,character varying,text)'::TEXT, TRUE, TRUE, FALSE, TRUE, TRUE, TRUE, 'mint-code RPC should require admin/service_role and paid gate'),
-            ('public.fn_apply_payment_order_review(uuid,text,text,uuid)'::TEXT, TRUE, TRUE, FALSE, TRUE, TRUE, FALSE, 'manual review RPC should enforce admin/service_role'),
-            ('public.fn_generate_codes(character varying,uuid,integer,character varying,timestamp with time zone,character varying)'::TEXT, TRUE, TRUE, FALSE, FALSE, TRUE, FALSE, 'package code generation should stay admin-gated'),
-            ('public.fn_generate_custom_codes(text,integer,integer,text,timestamp with time zone,character varying)'::TEXT, TRUE, TRUE, FALSE, FALSE, TRUE, FALSE, 'custom code generation should stay admin-gated'),
-            ('public.fn_generate_custom_codes(text,integer,integer,text,timestamp with time zone)'::TEXT, TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, 'legacy wrapper should exist only as a delegator')
-    ) AS t(
-        signature,
-        expect_exists,
-        expect_authenticated_execute,
-        expect_anon_execute,
-        expect_service_role_execute,
-        expect_admin_gate,
-        expect_paid_gate,
-        note
-    )
-),
-resolved AS (
+DROP TABLE IF EXISTS pg_temp._payment_hardening_targets;
+
+CREATE TEMP TABLE _payment_hardening_targets (
+    signature TEXT PRIMARY KEY,
+    expect_exists BOOLEAN NOT NULL,
+    expect_authenticated_execute BOOLEAN NOT NULL,
+    expect_anon_execute BOOLEAN NOT NULL,
+    expect_service_role_execute BOOLEAN NOT NULL,
+    expect_admin_gate BOOLEAN NOT NULL,
+    expect_paid_gate BOOLEAN NOT NULL,
+    note TEXT NOT NULL
+);
+
+INSERT INTO _payment_hardening_targets (
+    signature,
+    expect_exists,
+    expect_authenticated_execute,
+    expect_anon_execute,
+    expect_service_role_execute,
+    expect_admin_gate,
+    expect_paid_gate,
+    note
+) VALUES
+    ('public.fn_purchase_shop_item(uuid,uuid)', FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, 'legacy 2-arg overload should be dropped'),
+    ('public.fn_redeem_code(character varying)', FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, 'legacy 1-arg redemption overload should be dropped'),
+    ('public.fn_redeem_code(character varying,character varying)', TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, 'site-aware redemption RPC should only be callable by authenticated users'),
+    ('public.fn_get_user_balance(uuid)', FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, 'legacy single-arg balance overload should be dropped'),
+    ('public.fn_get_user_balance(character varying)', FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, 'legacy varchar balance overload should be dropped'),
+    ('public.fn_get_user_balance(uuid,character varying)', TRUE, TRUE, FALSE, TRUE, FALSE, FALSE, 'site-aware balance RPC should allow authenticated/service_role callers only'),
+    ('public.fn_add_points(uuid,integer,text,text)', TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'legacy internal add-points helper should remain service_role only'),
+    ('public.fn_add_points(uuid,integer,text,text,character varying)', TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'site-aware internal add-points helper should remain service_role only'),
+    ('public.fn_deduct_points(integer,text,text)', TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, 'legacy self-deduct helper remains authenticated only for compatibility'),
+    ('public.fn_deduct_points(integer,text,text,character varying)', TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, 'site-aware self-deduct helper remains authenticated only for compatibility'),
+    ('public.fn_deduct_points(uuid,integer,text,text)', TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'admin deduction helper should remain service_role only'),
+    ('public.fn_deduct_points_admin_site(uuid,integer,text,text,character varying)', TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'site-aware admin deduction helper should remain service_role only'),
+    ('public.fn_recharge_points(uuid,numeric,numeric,text,text)', TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'legacy recharge helper should remain service_role only'),
+    ('public.fn_recharge_points(uuid,numeric,numeric,text,text,character varying)', TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'site-aware recharge helper should remain service_role only'),
+    ('public.fn_dispatch_code(character varying,character varying)', TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'legacy dispatch RPC should be service_role only'),
+    ('public.fn_ensure_redemption_code_for_payment_order(uuid,uuid,integer,character varying,text)', TRUE, TRUE, FALSE, TRUE, TRUE, TRUE, 'mint-code RPC should require admin/service_role and paid gate'),
+    ('public.fn_apply_payment_order_review(uuid,text,text,uuid)', TRUE, TRUE, FALSE, TRUE, TRUE, FALSE, 'manual review RPC should enforce admin/service_role'),
+    ('public.fn_generate_codes(character varying,uuid,integer,character varying,timestamp with time zone,character varying)', TRUE, TRUE, FALSE, FALSE, TRUE, FALSE, 'package code generation should stay admin-gated'),
+    ('public.fn_generate_custom_codes(text,integer,integer,text,timestamp with time zone,character varying)', TRUE, TRUE, FALSE, FALSE, TRUE, FALSE, 'custom code generation should stay admin-gated'),
+    ('public.fn_generate_custom_codes(text,integer,integer,text,timestamp with time zone)', TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, 'legacy wrapper should exist only as a delegator');
+
+WITH resolved AS (
     SELECT
         ft.*,
         to_regprocedure(ft.signature) AS proc_oid
-    FROM function_targets ft
+    FROM _payment_hardening_targets ft
 ),
 checks AS (
     SELECT

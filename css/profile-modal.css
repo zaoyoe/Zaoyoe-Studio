@@ -30,6 +30,19 @@
     opacity: 0 !important;
 }
 
+/*
+ * Mobile layout overrides later in this file force several inner panels back to
+ * `visibility: visible` / `pointer-events: auto`. Without this guard, the hidden
+ * profile modal can still sit on top of the prompts page and steal taps from the
+ * mobile nav, avatar dropdown, and gallery content.
+ */
+#profileModal:not(.active) .modal-content.profile-modal,
+#profileModal:not(.active) .modal-content.profile-modal * {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
 #profileModal.active {
     opacity: 1 !important;
     visibility: visible !important;
