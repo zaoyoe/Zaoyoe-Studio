@@ -7,6 +7,7 @@
     "check:prod-env": "node scripts/check-prod-env.js",
     "optimize-images": "node scripts/optimize-images.js",
     "preflight:payment-rollout": "node scripts/payment-rollout-preflight.js",
+    "rollout:payment": "node scripts/payment-rollout-apply.js",
     "scan:payment-sites": "node scripts/scan-payment-site-values.js",
     "smoke:payment": "node scripts/payment-smoke-test.js",
     "upload-to-r2": "node scripts/upload-to-r2.js",

@@ -44,6 +44,10 @@ Deprecated scripts that must not be executed anymore:
 6. If the repository is only linked to the production project, do not treat that linked project as staging by default. Confirm the target project ref first.
 7. Keep real `.env.local` / `server/.env.production` files out of Git. Use the committed `*.example` templates instead.
 8. For deployed app smoke tests, prefer a staging or preview base URL. The smoke runner refuses production-like hosts unless you explicitly pass `--allow-production-like`.
+9. Before touching a remote database, generate a guarded rollout plan and confirm the linked Supabase project ref matches the target:
+   - Plan only: `npm run rollout:payment -- --env-file server/.env.production --set incremental`
+   - CLI dry-run: `npm run rollout:payment -- --env-file server/.env.production --set incremental --execute`
+   - Actual apply: `npm run rollout:payment -- --env-file server/.env.production --set incremental --apply --run-smoke --smoke-config-only`
 
 ## Apply Order
 
@@ -61,6 +65,11 @@ If the target database is behind the current hardened baseline, apply in this or
 4. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_redemption_entrypoints.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_redemption_entrypoints.sql)
 5. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_constrain_payment_sites.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_constrain_payment_sites.sql)
 6. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql)
+
+The guarded rollout helper enforces these same migration sets:
+
+- `--set incremental`: only the three payment rollout migrations needed on an already-hardened March 22 baseline
+- `--set full`: the full six-step hardening chain above
 
 ## Database Verification
 

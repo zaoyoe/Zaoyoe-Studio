@@ -66,6 +66,11 @@ test('payment rollout runbook references the guarded preflight command', () => {
     );
     assert.match(
         rolloutDoc,
+        /npm run rollout:payment -- --env-file server\/\.env\.production --set incremental/,
+        'runbook should document the guarded migration rollout planner'
+    );
+    assert.match(
+        rolloutDoc,
         /npm run smoke:payment -- --env-file server\/\.env\.production/,
         'runbook should document the automated payment smoke command'
     );
