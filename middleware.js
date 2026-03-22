@@ -1,8 +1,8 @@
 import { next } from '@vercel/functions';
-import {
-    getAdminStudioCookieName,
-    verifyAdminStudioToken
-} from './api/_lib/admin-studio-access.mjs';
+
+async function loadAdminStudioAccessHelpers() {
+    return import('./api/_lib/admin-studio-access.mjs');
+}
 
 function getCookieValue(cookieHeader, cookieName) {
     if (!cookieHeader || !cookieName) return '';
@@ -23,6 +23,10 @@ export default async function middleware(request) {
     redirectUrl.searchParams.set('next', `${requestUrl.pathname}${requestUrl.search}`);
 
     try {
+        const {
+            getAdminStudioCookieName,
+            verifyAdminStudioToken
+        } = await loadAdminStudioAccessHelpers();
         const cookieValue = getCookieValue(
             request.headers.get('cookie') || '',
             getAdminStudioCookieName()
