@@ -1207,7 +1207,12 @@ function switchLayoutView(layout) {
 }
 // Initialize layout on load
 document.addEventListener('DOMContentLoaded', () => {
-    switchLayoutView(currentViewLayout);
+    const initCommentsLayout = () => switchLayoutView(currentViewLayout);
+    if (window.adminStudioAccessGranted) {
+        initCommentsLayout();
+        return;
+    }
+    window.addEventListener('adminStudioAccessGranted', initCommentsLayout, { once: true });
 });
 
 
@@ -1516,4 +1521,3 @@ window.unblockUser = async function (userId, scope) {
         showToast('操作失败: ' + err.message, 'error');
     }
 };
-

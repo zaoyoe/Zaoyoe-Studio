@@ -1,6 +1,6 @@
 -- ============================================
--- 当前安全版 fn_redeem_code（site-aware）
--- 对齐 2026-03-22 之后的支付/积分安全收口
+-- Retire legacy redemption overloads and tighten helper RPC grants
+-- 下线旧版兑换码重载，避免旧脚本重新暴露非 site-aware 入口
 -- ============================================
 
 CREATE OR REPLACE FUNCTION public.fn_redeem_code(
@@ -117,3 +117,6 @@ DROP FUNCTION IF EXISTS public.fn_redeem_code(VARCHAR);
 
 REVOKE ALL ON FUNCTION public.fn_redeem_code(VARCHAR, VARCHAR) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.fn_redeem_code(VARCHAR, VARCHAR) TO authenticated;
+
+DROP FUNCTION IF EXISTS public.fn_get_user_balance(UUID);
+DROP FUNCTION IF EXISTS public.fn_get_user_balance(VARCHAR);

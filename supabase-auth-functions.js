@@ -644,6 +644,7 @@ async function handleLogout(event) {
     stopSessionTimeoutMonitor();
 
     try {
+        await window.AdminAccess?.clearAdminStudioSession?.();
         await window.supabaseClient.auth.signOut();
     } catch (error) {
         console.error('❌ Supabase logout failed:', error);
@@ -950,7 +951,6 @@ async function checkAuthState(options = {}) {
 }
 
 // ==================== 更新用户UI ====================
-const ADMIN_EMAILS = ['zaoyoe@gmail.com'];
 
 function normalizeAvatarUrl(url) {
     if (!url) return '';
@@ -1157,6 +1157,59 @@ function setProfileModalAvatar(avatarUrl, fallbackSeed = 'User', options = {}) {
     probe.src = targetUrl;
 }
 
+function normalizeUserForAdminAccess(user) {
+    if (!user || typeof user !== 'object') return null;
+    return {
+        ...user,
+        id: user.id || user.objectId || null
+    };
+}
+
+function applyAdminEntryUiState(displayName, isAdmin) {
+    const dropdownUsername = document.getElementById('dropdownUsername');
+    const enterStudioBtn = document.getElementById('enterStudioBtn');
+
+    if (dropdownUsername) {
+        dropdownUsername.textContent = displayName || 'User';
+        if (isAdmin) {
+            const badge = document.createElement('span');
+            badge.style.color = '#fbbf24';
+            badge.textContent = ' ✨';
+            dropdownUsername.appendChild(badge);
+        }
+    }
+
+    if (enterStudioBtn) {
+        enterStudioBtn.style.display = isAdmin ? 'flex' : 'none';
+    }
+}
+
+async function resolveAdminEntryAccess(user, options = {}) {
+    const normalizedUser = normalizeUserForAdminAccess(user);
+    if (!normalizedUser?.id) {
+        return {
+            isAdmin: false,
+            isSuperAdmin: false,
+            permissions: [],
+            error: null
+        };
+    }
+
+    if (!window.AdminAccess?.getCurrentAdminAccess) {
+        return {
+            isAdmin: false,
+            isSuperAdmin: false,
+            permissions: [],
+            error: new Error('AdminAccess helper unavailable')
+        };
+    }
+
+    return window.AdminAccess.getCurrentAdminAccess({
+        user: normalizedUser,
+        forceRefresh: options.forceRefresh === true
+    });
+}
+
 function updateUserUI(user, options = {}) {
     const { animateAvatar = false, preferImmediateAvatar = false, clearCacheOnLogout = false } = options;
     const defaultIcon = document.getElementById('defaultAuthIcon');
@@ -1168,9 +1221,6 @@ function updateUserUI(user, options = {}) {
 
     if (user) {
         console.log('👤 updateUserUI: 用户已登录', user);
-
-        // Check if user is admin
-        const isAdmin = ADMIN_EMAILS.includes(user.email);
 
         if (navAvatar) {
             const fallbackSeed = user.email || user.username || user.nickname || 'User';
@@ -1241,12 +1291,8 @@ function updateUserUI(user, options = {}) {
             btnText.textContent = user.nickname || user.username || 'User';
         }
 
-        const dropdownUsername = document.getElementById('dropdownUsername');
-        if (dropdownUsername) {
-            dropdownUsername.textContent = user.nickname || user.username || 'User';
-            // Add sparkle if admin (simplified)
-            if (isAdmin) dropdownUsername.innerHTML += ' <span style="color:#fbbf24;">✨</span>';
-        }
+        const displayName = user.nickname || user.username || 'User';
+        applyAdminEntryUiState(displayName, false);
 
         if (authBtn) authBtn.classList.add('logged-in');
 
@@ -1261,9 +1307,6 @@ function updateUserUI(user, options = {}) {
             user.email || user.username || user.nickname || 'User'
         );
         if (userDropdown) userDropdown.style.display = '';
-
-        // Show Enter Studio for admin only
-        if (enterStudioBtn) enterStudioBtn.style.display = isAdmin ? 'flex' : 'none';
 
         const userForCache = { ...user };
         const cacheAvatar = isUsableAvatarUrl(userForCache.avatarUrl) ? String(userForCache.avatarUrl).trim() : '';
@@ -1295,6 +1338,25 @@ function updateUserUI(user, options = {}) {
         }
 
         localStorage.setItem('cached_user_profile', JSON.stringify(userForCache));
+
+        const accessRequestId = `${user.id || user.objectId || user.email || 'guest'}:${Date.now()}`;
+        if (enterStudioBtn) enterStudioBtn.dataset.adminAccessRequest = accessRequestId;
+
+        void (async () => {
+            try {
+                const access = await resolveAdminEntryAccess(user, { forceRefresh: true });
+                if (enterStudioBtn && enterStudioBtn.dataset.adminAccessRequest !== accessRequestId) {
+                    return;
+                }
+                applyAdminEntryUiState(displayName, Boolean(access?.isAdmin));
+            } catch (error) {
+                console.warn('Failed to resolve admin entry access:', error);
+                if (enterStudioBtn && enterStudioBtn.dataset.adminAccessRequest !== accessRequestId) {
+                    return;
+                }
+                applyAdminEntryUiState(displayName, false);
+            }
+        })();
     } else {
         if (defaultIcon) {
             defaultIcon.className = 'fas fa-user-circle'; // Ensure spinner is cleared
@@ -1311,6 +1373,8 @@ function updateUserUI(user, options = {}) {
         if (authBtn) {
             authBtn.classList.remove('logged-in');
         }
+        applyAdminEntryUiState('User', false);
+        window.AdminAccess?.clearAccessCache?.();
 
         if (clearCacheOnLogout) {
             localStorage.removeItem('cached_user_profile');
@@ -2229,6 +2293,7 @@ async function forceLogout(event) {
         if (typeof guardStorage !== 'undefined') {
             guardStorage._locked = false;
         }
+        await window.AdminAccess?.clearAdminStudioSession?.();
         await window.supabaseClient.auth.signOut();
     } catch (e) {
         console.error('Supabase signOut error:', e);
@@ -3262,6 +3327,7 @@ async function handleSwitchAccount(event) {
 
     // 退出登录
     try {
+        await window.AdminAccess?.clearAdminStudioSession?.();
         await window.supabaseClient.auth.signOut();
     } catch (e) {
         console.error('Supabase signOut error:', e);

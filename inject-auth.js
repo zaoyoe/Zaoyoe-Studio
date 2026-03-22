@@ -1361,7 +1361,7 @@
             } else if (action === 'switch-account') {
                 window.handleSwitchAccount?.(event);
             } else if (action === 'studio') {
-                window.location.href = 'admin-studio.html';
+                void window.AdminAccess?.openAdminStudio?.('admin-studio.html');
             } else if (action === 'logout') {
                 window.handleLogout?.(event);
             }

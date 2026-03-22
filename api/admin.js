@@ -1,5 +1,6 @@
 const { sendJson } = require('./_lib/admin');
 const geminiHandler = require('../server/api-handlers/admin/gemini');
+const accessSessionHandler = require('../server/api-handlers/admin/access/session');
 const shopMutateHandler = require('../server/api-handlers/admin/shop/mutate');
 const shopDeliveryActionsHandler = require('../server/api-handlers/admin/shop/delivery-actions');
 const shopDeliveryTasksHandler = require('../server/api-handlers/admin/shop/delivery-tasks');
@@ -12,6 +13,7 @@ const ticketProcessHandler = require('../server/api-handlers/admin/tickets/proce
 
 const ROUTE_HANDLERS = {
     gemini: geminiHandler,
+    'access/session': accessSessionHandler,
     'settings/gemini-key': settingsGeminiKeyHandler,
     'settings/payment-channels': settingsPaymentChannelsHandler,
     'tickets/process': ticketProcessHandler,

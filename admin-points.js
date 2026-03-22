@@ -493,54 +493,62 @@ function copySingleCode(element, code) {
 let codeSearchDebounceTimer = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-    const searchInput = document.getElementById('batchSearchInput');
-    if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
-            // Skip filtering if we're clearing input after code search
-            if (isCodeSearchInProgress) return;
+    const initPointsPageBindings = () => {
+        const searchInput = document.getElementById('batchSearchInput');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                // Skip filtering if we're clearing input after code search
+                if (isCodeSearchInProgress) return;
 
-            const term = e.target.value.trim().toUpperCase();
+                const term = e.target.value.trim().toUpperCase();
 
-            // Check if it looks like a complete redemption code (ZY-XXXX-XXXX-XXXX format)
-            const isCodeFormat = /^ZY-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(term);
+                // Check if it looks like a complete redemption code (ZY-XXXX-XXXX-XXXX format)
+                const isCodeFormat = /^ZY-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(term);
 
-            if (isCodeFormat) {
-                // Debounce code search to avoid too many API calls
-                clearTimeout(codeSearchDebounceTimer);
-                codeSearchDebounceTimer = setTimeout(() => {
-                    searchCodeInBatchesNoModal(term);
-                }, 300);
-            } else if (term.startsWith('ZY-')) {
-                // Partial code input - show loading hint or wait
-                // Don't filter yet, wait for complete code
-            } else {
-                // Regular batch name filter
-                clearTimeout(codeSearchDebounceTimer);
-                applyBatchFilters();
-            }
-        });
-    }
-
-    // Initialize batch date pickers for custom range
-    initBatchDatePickers();
-
-    // Close all batch filter dropdowns when clicking outside
-    document.addEventListener('click', (e) => {
-        const filterIds = ['batchDateFilter', 'batchChannelFilter', 'batchPackageFilter', 'batchExportDropdown'];
-        filterIds.forEach(id => {
-            const filter = document.getElementById(id);
-            if (filter && !filter.contains(e.target)) {
-                filter.classList.remove('open');
-            }
-        });
-
-        // Also close export popup (uses .show class)
-        const exportPopup = document.getElementById('batchExportPopup');
-        const exportDropdown = document.getElementById('batchExportDropdown');
-        if (exportPopup && exportDropdown && !exportDropdown.contains(e.target)) {
-            exportPopup.classList.remove('show');
+                if (isCodeFormat) {
+                    // Debounce code search to avoid too many API calls
+                    clearTimeout(codeSearchDebounceTimer);
+                    codeSearchDebounceTimer = setTimeout(() => {
+                        searchCodeInBatchesNoModal(term);
+                    }, 300);
+                } else if (term.startsWith('ZY-')) {
+                    // Partial code input - show loading hint or wait
+                    // Don't filter yet, wait for complete code
+                } else {
+                    // Regular batch name filter
+                    clearTimeout(codeSearchDebounceTimer);
+                    applyBatchFilters();
+                }
+            });
         }
-    });
+
+        // Initialize batch date pickers for custom range
+        initBatchDatePickers();
+
+        // Close all batch filter dropdowns when clicking outside
+        document.addEventListener('click', (e) => {
+            const filterIds = ['batchDateFilter', 'batchChannelFilter', 'batchPackageFilter', 'batchExportDropdown'];
+            filterIds.forEach(id => {
+                const filter = document.getElementById(id);
+                if (filter && !filter.contains(e.target)) {
+                    filter.classList.remove('open');
+                }
+            });
+
+            // Also close export popup (uses .show class)
+            const exportPopup = document.getElementById('batchExportPopup');
+            const exportDropdown = document.getElementById('batchExportDropdown');
+            if (exportPopup && exportDropdown && !exportDropdown.contains(e.target)) {
+                exportPopup.classList.remove('show');
+            }
+        });
+    };
+
+    if (window.adminStudioAccessGranted) {
+        initPointsPageBindings();
+        return;
+    }
+    window.addEventListener('adminStudioAccessGranted', initPointsPageBindings, { once: true });
 });
 
 // ========================================
@@ -2152,13 +2160,21 @@ function navigateToBatch(batchId) {
 // ========================================
 // Triggered when points module is activated
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize tab indicator position for Points module
-    setTimeout(() => {
-        const activeTab = document.querySelector('#module-points .admin-tab.active');
-        const indicator = document.querySelector('#module-points .admin-tab-indicator');
-        if (activeTab && indicator) {
-            indicator.style.width = `${activeTab.offsetWidth} px`;
-            indicator.style.left = `${activeTab.offsetLeft} px`;
-        }
-    }, 100);
+    const initPointsIndicator = () => {
+        // Initialize tab indicator position for Points module
+        setTimeout(() => {
+            const activeTab = document.querySelector('#module-points .admin-tab.active');
+            const indicator = document.querySelector('#module-points .admin-tab-indicator');
+            if (activeTab && indicator) {
+                indicator.style.width = `${activeTab.offsetWidth} px`;
+                indicator.style.left = `${activeTab.offsetLeft} px`;
+            }
+        }, 100);
+    };
+
+    if (window.adminStudioAccessGranted) {
+        initPointsIndicator();
+        return;
+    }
+    window.addEventListener('adminStudioAccessGranted', initPointsIndicator, { once: true });
 });

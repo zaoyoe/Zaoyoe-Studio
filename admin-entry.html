@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Admin Entry | Zaoyoe Studio</title>
+    <link rel="icon" type="image/png" href="assets/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Outfit:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            font-family: "Outfit", sans-serif;
+            background:
+                radial-gradient(circle at top, rgba(96, 165, 250, 0.2), transparent 42%),
+                linear-gradient(180deg, #0b1020, #070b14 65%);
+            color: #f8fafc;
+        }
+
+        .entry-shell {
+            width: min(100%, 540px);
+            padding: 36px 32px;
+            border-radius: 28px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(12, 18, 32, 0.92);
+            box-shadow: 0 28px 90px rgba(0, 0, 0, 0.45);
+            text-align: center;
+        }
+
+        .entry-icon {
+            width: 72px;
+            height: 72px;
+            margin: 0 auto 18px;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            background: rgba(96, 165, 250, 0.15);
+            color: #93c5fd;
+            font-size: 30px;
+        }
+
+        body[data-state="denied"] .entry-icon,
+        body[data-state="error"] .entry-icon {
+            background: rgba(248, 113, 113, 0.16);
+            color: #fca5a5;
+        }
+
+        .entry-title {
+            margin: 0 0 12px;
+            font-family: "Playfair Display", serif;
+            font-size: 32px;
+            line-height: 1.15;
+        }
+
+        .entry-message {
+            margin: 0;
+            font-size: 15px;
+            line-height: 1.7;
+            color: rgba(226, 232, 240, 0.78);
+        }
+
+        .entry-spinner {
+            width: 46px;
+            height: 46px;
+            margin: 26px auto 0;
+            border-radius: 50%;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #93c5fd;
+            animation: entry-spin 0.9s linear infinite;
+        }
+
+        .entry-actions {
+            display: none;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 26px;
+            flex-wrap: wrap;
+        }
+
+        body[data-state="denied"] .entry-actions,
+        body[data-state="error"] .entry-actions {
+            display: flex;
+        }
+
+        body[data-state="denied"] .entry-spinner,
+        body[data-state="error"] .entry-spinner {
+            display: none;
+        }
+
+        .entry-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 136px;
+            padding: 12px 18px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: #f8fafc;
+            text-decoration: none;
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .entry-btn.primary {
+            background: linear-gradient(135deg, #5f8cff, #3b82f6);
+            border-color: rgba(191, 219, 254, 0.45);
+        }
+
+        @keyframes entry-spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body data-state="pending">
+    <main class="entry-shell">
+        <div class="entry-icon" id="entryIcon">
+            <i class="fas fa-shield-alt"></i>
+        </div>
+        <h1 class="entry-title" id="entryTitle">正在验证后台访问</h1>
+        <p class="entry-message" id="entryMessage">请稍候，我们正在为管理员账号签发短时访问凭证。</p>
+        <div class="entry-spinner" id="entrySpinner" aria-hidden="true"></div>
+        <div class="entry-actions">
+            <a class="entry-btn primary" href="index.html" id="entryPrimaryAction">返回首页</a>
+            <a class="entry-btn" href="index.html" id="entrySecondaryAction">重新登录</a>
+        </div>
+    </main>
+
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="./supabase-client.js"></script>
+    <script src="./js/admin-access.js"></script>
+    <script src="./js/admin-entry.js"></script>
+</body>
+
+</html>
