@@ -226,30 +226,6 @@ function getRequestHostName(req) {
     return rawHost.replace(/^\[|\]$/g, '').split(':')[0];
 }
 
-function getTrustedInternalHosts(env = process.env) {
-    const raw = String(env?.TRUSTED_INTERNAL_HOSTS || '').trim();
-    if (!raw) return new Set();
-
-    return new Set(
-        raw
-            .split(',')
-            .map((value) => value.trim().toLowerCase())
-            .filter(Boolean)
-            .map((value) => value.replace(/^\[|\]$/g, '').split(':')[0])
-    );
-}
-
-function isTrustedInternalRequest(req, env = process.env) {
-    const hostName = getRequestHostName(req);
-    if (!hostName) return false;
-
-    if (hostName === 'localhost' || hostName === '127.0.0.1' || hostName === '::1') {
-        return true;
-    }
-
-    return getTrustedInternalHosts(env).has(hostName);
-}
-
 function isLocalRequestOrigin(req) {
     const origin = String(req.headers.origin || req.headers.Origin || '').trim().toLowerCase();
     const host = getRequestHostName(req);
@@ -355,13 +331,6 @@ async function requireAdminUser(req, res) {
 }
 
 async function requireAdminOrInternalAccess(req, res) {
-    if (isTrustedInternalRequest(req)) {
-        return {
-            id: null,
-            role: 'internal'
-        };
-    }
-
     return requireAdminUser(req, res);
 }
 

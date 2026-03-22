@@ -1,5 +1,8 @@
 const crypto = require('crypto');
 const {
+    normalizeSiteValue
+} = require('../site');
+const {
     loadStoredPaymentConfigs,
     resolvePaymentProviderSecrets
 } = require('./providers');
@@ -133,7 +136,7 @@ const providerRegistry = {
                 credited_points: normalizePointValue(grantedPoints, 0),
                 display_name: String(packageName || '自定义充值'),
                 currency_amount: roundCurrencyAmount(paidAmount),
-                site: String(site || 'cn').trim().toLowerCase() || 'cn'
+                site: normalizeSiteValue(site)
             };
         },
         createCheckoutContext({ runtimeContext, packageName, grantedPoints, isCustomRecharge } = {}) {

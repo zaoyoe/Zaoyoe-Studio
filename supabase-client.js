@@ -8,8 +8,18 @@
 // Timestamp for init-period guards across all auth scripts
 window._pageLoadTime = Date.now();
 
-const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+let SUPABASE_URL = '';
+let SUPABASE_KEY = '';
+
+try {
+    const runtimeSupabaseConfig = typeof window.requireZaoyoeSupabaseConfig === 'function'
+        ? window.requireZaoyoeSupabaseConfig()
+        : null;
+    SUPABASE_URL = String(runtimeSupabaseConfig?.url || '').trim();
+    SUPABASE_KEY = String(runtimeSupabaseConfig?.publishableKey || '').trim();
+} catch (error) {
+    console.error('❌ Failed to resolve Supabase runtime config:', error);
+}
 
 const getOrCreateChatSessionId = () => {
     try {
@@ -106,26 +116,30 @@ const guardStorage = {
 
 // ==================== Initialize Client ====================
 if (typeof supabase !== 'undefined' && supabase.createClient) {
-    window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-        auth: {
-            persistSession: true,
-            autoRefreshToken: false,
-            detectSessionInUrl: false,
-            flowType: 'implicit',
-            storage: guardStorage
-        },
-        global: {
-            headers: CHAT_SESSION_ID ? { 'x-session-id': CHAT_SESSION_ID } : {}
-        }
-    });
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+        console.error('❌ Supabase runtime config is missing. Make sure /api/runtime/supabase-config loads before supabase-client.js.');
+    } else {
+        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+            auth: {
+                persistSession: true,
+                autoRefreshToken: false,
+                detectSessionInUrl: false,
+                flowType: 'implicit',
+                storage: guardStorage
+            },
+            global: {
+                headers: CHAT_SESSION_ID ? { 'x-session-id': CHAT_SESSION_ID } : {}
+            }
+        });
 
-    // After Supabase init completes, simply unlock the normal storage adapter
-    setTimeout(() => {
-        guardStorage._locked = false;
-        console.log('🔓 Storage guard unlocked');
-    }, 3000);
+        // After Supabase init completes, simply unlock the normal storage adapter
+        setTimeout(() => {
+            guardStorage._locked = false;
+            console.log('🔓 Storage guard unlocked');
+        }, 3000);
 
-    console.log('✅ Supabase client initialized (with guard storage)');
+        console.log('✅ Supabase client initialized (with guard storage)');
+    }
 } else {
     console.error('❌ Supabase library not loaded. Make sure to include the CDN script first.');
 }
