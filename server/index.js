@@ -214,14 +214,43 @@ function getBearerToken(req) {
     return match?.[1] || '';
 }
 
+function getRequestHostName(req) {
+    const rawHost = String(req.headers.host || req.headers.Host || '').trim().toLowerCase();
+    if (!rawHost) return '';
+    return rawHost.replace(/^\[|\]$/g, '').split(':')[0];
+}
+
+function getTrustedInternalHosts(env = process.env) {
+    const raw = String(env?.TRUSTED_INTERNAL_HOSTS || '').trim();
+    if (!raw) return new Set();
+
+    return new Set(
+        raw
+            .split(',')
+            .map((value) => value.trim().toLowerCase())
+            .filter(Boolean)
+            .map((value) => value.replace(/^\[|\]$/g, '').split(':')[0])
+    );
+}
+
+function isTrustedInternalRequest(req, env = process.env) {
+    const hostName = getRequestHostName(req);
+    if (!hostName) return false;
+
+    if (hostName === 'localhost' || hostName === '127.0.0.1' || hostName === '::1') {
+        return true;
+    }
+
+    return getTrustedInternalHosts(env).has(hostName);
+}
+
 function isLocalRequestOrigin(req) {
     const origin = String(req.headers.origin || req.headers.Origin || '').trim().toLowerCase();
-    const host = String(req.headers.host || req.headers.Host || '').trim().toLowerCase();
+    const host = getRequestHostName(req);
     return origin.includes('localhost')
         || origin.includes('127.0.0.1')
-        || host.startsWith('localhost:')
         || host === 'localhost'
-        || host.startsWith('127.0.0.1:');
+        || host === '127.0.0.1';
 }
 
 function resolveSecureRequestSite(req, explicitSite = '') {
@@ -317,6 +346,17 @@ async function requireAdminUser(req, res) {
         code: 'admin_required'
     });
     return null;
+}
+
+async function requireAdminOrInternalAccess(req, res) {
+    if (isTrustedInternalRequest(req)) {
+        return {
+            id: null,
+            role: 'internal'
+        };
+    }
+
+    return requireAdminUser(req, res);
 }
 
 async function recordPaymentEvent(eventPayload) {
@@ -2239,8 +2279,8 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
 // GET /api/quota — Check current API key balance
 // =============================================
 app.get('/api/quota', async (req, res) => {
-    const authenticatedUser = await requireAuthenticatedUser(req, res);
-    if (!authenticatedUser) return;
+    const quotaAccess = await requireAdminOrInternalAccess(req, res);
+    if (!quotaAccess) return;
 
     try {
         const config = await getVerifyConfig();
@@ -2286,8 +2326,8 @@ app.get('/api/quota', async (req, res) => {
 // GET /api/queue — Inspect upstream queue status
 // =============================================
 app.get('/api/queue', async (req, res) => {
-    const adminUser = await requireAdminUser(req, res);
-    if (!adminUser) return;
+    const queueAccess = await requireAdminOrInternalAccess(req, res);
+    if (!queueAccess) return;
 
     try {
         const config = await getVerifyConfig();

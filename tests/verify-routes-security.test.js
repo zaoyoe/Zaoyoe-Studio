@@ -565,13 +565,120 @@ async function dispatchRoute(app, {
     };
 }
 
-test('quota endpoint requires authentication', async () => {
+test('quota endpoint rejects unauthenticated external access', async () => {
     await withTestServer({}, async ({ app }) => {
         const response = await dispatchRoute(app, { url: '/api/quota' });
         const payload = response.json();
 
         assert.equal(response.status, 401);
         assert.equal(payload.code, 'unauthorized');
+    });
+});
+
+test('quota endpoint requires admin privileges for authenticated external users', async () => {
+    await withTestServer({
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        }
+    }, async ({ app }) => {
+        const response = await dispatchRoute(app, {
+            url: '/api/quota',
+            headers: {
+                Authorization: 'Bearer member-token',
+                Host: 'zaoyoe-verify-server-production.up.railway.app'
+            }
+        });
+        const payload = response.json();
+
+        assert.equal(response.status, 403);
+        assert.equal(payload.code, 'admin_required');
+    });
+});
+
+test('quota endpoint allows admins and proxies upstream data', async () => {
+    await withTestServer({
+        tokens: {
+            'admin-token': { id: 'admin-1', email: 'admin@example.com' }
+        },
+        permissions: {
+            'admin-1': { is_admin: true, is_super_admin: false }
+        }
+    }, async ({ app }) => {
+        const originalFetch = global.fetch;
+        global.fetch = async (input) => {
+            const url = String(input || '');
+            if (url === 'https://verify.test/api/balance') {
+                return new Response(JSON.stringify({
+                    balance: 11,
+                    total_used: 4,
+                    cost_per_job: 1,
+                    name: 'primary-key'
+                }), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            }
+
+            throw new Error(`Unexpected fetch URL in test: ${url}`);
+        };
+
+        try {
+            const response = await dispatchRoute(app, {
+                url: '/api/quota',
+                headers: {
+                    Authorization: 'Bearer admin-token',
+                    Host: 'zaoyoe-verify-server-production.up.railway.app'
+                }
+            });
+            const payload = response.json();
+
+            assert.equal(response.status, 200);
+            assert.equal(payload.success, true);
+            assert.equal(payload.balance, 11);
+            assert.equal(payload.total_used, 4);
+            assert.equal(payload.key_name, 'primary-key');
+        } finally {
+            global.fetch = originalFetch;
+        }
+    });
+});
+
+test('quota endpoint allows localhost access without admin auth', async () => {
+    await withTestServer({}, async ({ app }) => {
+        const originalFetch = global.fetch;
+        global.fetch = async (input) => {
+            const url = String(input || '');
+            if (url === 'https://verify.test/api/balance') {
+                return new Response(JSON.stringify({
+                    balance: 9
+                }), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            }
+
+            throw new Error(`Unexpected fetch URL in test: ${url}`);
+        };
+
+        try {
+            const response = await dispatchRoute(app, {
+                url: '/api/quota',
+                headers: {
+                    Host: 'localhost:3001'
+                }
+            });
+            const payload = response.json();
+
+            assert.equal(response.status, 200);
+            assert.equal(payload.success, true);
+            assert.equal(payload.balance, 9);
+        } finally {
+            global.fetch = originalFetch;
+        }
     });
 });
 
@@ -591,6 +698,45 @@ test('queue endpoint requires admin privileges', async () => {
 
         assert.equal(response.status, 403);
         assert.equal(payload.code, 'admin_required');
+    });
+});
+
+test('queue endpoint allows localhost access without admin auth', async () => {
+    await withTestServer({}, async ({ app }) => {
+        const originalFetch = global.fetch;
+        global.fetch = async (input) => {
+            const url = String(input || '');
+            if (url === 'https://verify.test/api/queue') {
+                return new Response(JSON.stringify({
+                    queue_size: 3,
+                    running_jobs: 1
+                }), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            }
+
+            throw new Error(`Unexpected fetch URL in test: ${url}`);
+        };
+
+        try {
+            const response = await dispatchRoute(app, {
+                url: '/api/queue',
+                headers: {
+                    Host: '127.0.0.1:3001'
+                }
+            });
+            const payload = response.json();
+
+            assert.equal(response.status, 200);
+            assert.equal(payload.success, true);
+            assert.equal(payload.queue_size, 3);
+            assert.equal(payload.running_jobs, 1);
+        } finally {
+            global.fetch = originalFetch;
+        }
     });
 });
 
