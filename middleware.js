@@ -1,3 +1,4 @@
+import { next } from '@vercel/functions';
 import {
     getAdminStudioCookieName,
     verifyAdminStudioToken
@@ -18,18 +19,24 @@ function getCookieValue(cookieHeader, cookieName) {
 
 export default async function middleware(request) {
     const requestUrl = new URL(request.url);
-    const cookieValue = getCookieValue(
-        request.headers.get('cookie') || '',
-        getAdminStudioCookieName()
-    );
-
-    const payload = await verifyAdminStudioToken(cookieValue);
-    if (payload?.sub) {
-        return;
-    }
-
     const redirectUrl = new URL('/admin-entry', request.url);
     redirectUrl.searchParams.set('next', `${requestUrl.pathname}${requestUrl.search}`);
+
+    try {
+        const cookieValue = getCookieValue(
+            request.headers.get('cookie') || '',
+            getAdminStudioCookieName()
+        );
+
+        const payload = await verifyAdminStudioToken(cookieValue);
+        if (payload?.sub) {
+            return next();
+        }
+    } catch (_) {
+        // Fail closed into the admin-entry trampoline instead of surfacing
+        // a middleware invocation error to the browser.
+    }
+
     return Response.redirect(redirectUrl, 307);
 }
 
