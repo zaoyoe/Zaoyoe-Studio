@@ -645,40 +645,18 @@ test('quota endpoint allows admins and proxies upstream data', async () => {
     });
 });
 
-test('quota endpoint allows localhost access without admin auth', async () => {
+test('quota endpoint rejects localhost access without admin auth', async () => {
     await withTestServer({}, async ({ app }) => {
-        const originalFetch = global.fetch;
-        global.fetch = async (input) => {
-            const url = String(input || '');
-            if (url === 'https://verify.test/api/balance') {
-                return new Response(JSON.stringify({
-                    balance: 9
-                }), {
-                    status: 200,
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
+        const response = await dispatchRoute(app, {
+            url: '/api/quota',
+            headers: {
+                Host: 'localhost:3001'
             }
+        });
+        const payload = response.json();
 
-            throw new Error(`Unexpected fetch URL in test: ${url}`);
-        };
-
-        try {
-            const response = await dispatchRoute(app, {
-                url: '/api/quota',
-                headers: {
-                    Host: 'localhost:3001'
-                }
-            });
-            const payload = response.json();
-
-            assert.equal(response.status, 200);
-            assert.equal(payload.success, true);
-            assert.equal(payload.balance, 9);
-        } finally {
-            global.fetch = originalFetch;
-        }
+        assert.equal(response.status, 401);
+        assert.equal(payload.code, 'unauthorized');
     });
 });
 
@@ -701,42 +679,18 @@ test('queue endpoint requires admin privileges', async () => {
     });
 });
 
-test('queue endpoint allows localhost access without admin auth', async () => {
+test('queue endpoint rejects localhost access without admin auth', async () => {
     await withTestServer({}, async ({ app }) => {
-        const originalFetch = global.fetch;
-        global.fetch = async (input) => {
-            const url = String(input || '');
-            if (url === 'https://verify.test/api/queue') {
-                return new Response(JSON.stringify({
-                    queue_size: 3,
-                    running_jobs: 1
-                }), {
-                    status: 200,
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
+        const response = await dispatchRoute(app, {
+            url: '/api/queue',
+            headers: {
+                Host: '127.0.0.1:3001'
             }
+        });
+        const payload = response.json();
 
-            throw new Error(`Unexpected fetch URL in test: ${url}`);
-        };
-
-        try {
-            const response = await dispatchRoute(app, {
-                url: '/api/queue',
-                headers: {
-                    Host: '127.0.0.1:3001'
-                }
-            });
-            const payload = response.json();
-
-            assert.equal(response.status, 200);
-            assert.equal(payload.success, true);
-            assert.equal(payload.queue_size, 3);
-            assert.equal(payload.running_jobs, 1);
-        } finally {
-            global.fetch = originalFetch;
-        }
+        assert.equal(response.status, 401);
+        assert.equal(payload.code, 'unauthorized');
     });
 });
 

@@ -17,10 +17,11 @@ module.exports = async function handler(req, res) {
     }
 
     try {
-        const { supabase, user } = await requireAuthenticatedUser(req);
+        const { supabase, requestSupabase, adminSupabase, user } = await requireAuthenticatedUser(req);
         const body = await parseJsonBody(req);
         const payload = await createPaymentRequest({
-            supabase,
+            supabase: requestSupabase || supabase,
+            adminSupabase,
             user,
             body,
             env: process.env,

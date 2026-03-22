@@ -14,10 +14,10 @@ module.exports = async function handler(req, res) {
     }
 
     try {
-        const { supabase, user } = await requireAuthenticatedUser(req);
+        const { supabase, adminSupabase, user } = await requireAuthenticatedUser(req);
         const body = await parseJsonBody(req);
         const payload = await completeMockPayment({
-            supabase,
+            supabase: adminSupabase || supabase,
             user,
             body
         });

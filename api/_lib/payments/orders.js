@@ -1,5 +1,10 @@
 const crypto = require('crypto');
 const {
+    isSupportedSite,
+    normalizeSiteValue,
+    requireSupportedSite
+} = require('../site');
+const {
     getPaymentProviderAdapter,
     normalizePointValue
 } = require('./provider-adapters');
@@ -23,8 +28,7 @@ const DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY = 50;
 const DEFAULT_CUSTOM_RECHARGE_QUOTE_TTL_SECONDS = 1800;
 
 function sanitizeSite(value) {
-    const site = String(value || '').trim().toLowerCase();
-    return site || 'cn';
+    return normalizeSiteValue(value);
 }
 
 function sanitizeText(value, fallback = '', maxLength = 240) {
@@ -159,6 +163,7 @@ function issueCustomRechargeQuote({
     rechargeOptions,
     env = process.env
 }) {
+    const normalizedSite = requireSupportedSite(site);
     const rules = getNormalizedCustomRechargeRules(rechargeOptions);
     const normalizedPoints = normalizeInteger(pointsAmount, 0);
 
@@ -188,7 +193,7 @@ function issueCustomRechargeQuote({
         quote_id: buildCustomRechargeQuoteId(),
         provider: String(providerKey || 'afdian').trim().toLowerCase() || 'afdian',
         user_id: String(userId || '').trim(),
-        site: sanitizeSite(site),
+        site: normalizedSite,
         points_amount: normalizedPoints,
         paid_amount: paidAmount,
         pricing_mode: 'fixed_rate',
@@ -271,8 +276,19 @@ function verifyCustomRechargeQuoteToken(token, {
         return null;
     }
 
-    const normalizedSite = sanitizeSite(site);
-    if (normalizedSite && sanitizeSite(payload.site) !== normalizedSite) {
+    let normalizedSite = '';
+    try {
+        normalizedSite = requireSupportedSite(site, { allowEmpty: true });
+    } catch (_) {
+        return null;
+    }
+
+    const payloadSite = normalizeSiteValue(payload.site, { fallback: '' });
+    if (!payloadSite) {
+        return null;
+    }
+
+    if (normalizedSite && payloadSite !== normalizedSite) {
         return null;
     }
 
@@ -292,7 +308,7 @@ function verifyCustomRechargeQuoteToken(token, {
         token: normalizedToken,
         tokenHash: hashCustomRechargeQuoteToken(normalizedToken),
         userId: String(payload.user_id || '').trim(),
-        site: sanitizeSite(payload.site),
+        site: payloadSite,
         provider: String(payload.provider || '').trim().toLowerCase() || 'afdian',
         pointsAmount,
         paidAmount,
@@ -401,6 +417,24 @@ function isMissingDatabaseStructureError(error) {
         || code === '42P01'
         || (message.includes('column') && message.includes('does not exist'))
         || (message.includes('relation') && message.includes('does not exist'));
+}
+
+function isMissingDatabaseCapabilityError(error) {
+    const code = String(error?.code || '').trim();
+    const message = String(error?.message || '').toLowerCase();
+    return isMissingDatabaseStructureError(error)
+        || code === '42883'
+        || code === 'PGRST202'
+        || (message.includes('function') && message.includes('does not exist'))
+        || message.includes('could not find the function')
+        || message.includes('schema cache');
+}
+
+function getRpcSingleRow(data) {
+    if (Array.isArray(data)) {
+        return data[0] || null;
+    }
+    return data || null;
 }
 
 function buildPendingProviderOrderNo(providerKey = '', sessionKey = '') {
@@ -642,7 +676,61 @@ async function createPendingPaymentOrderForCheckoutSession({
     const sessionId = String(checkoutSession?.id || '').trim();
     const sessionKey = String(checkoutSession?.session_key || '').trim();
     const normalizedProviderKey = String(providerKey || '').trim().toLowerCase();
+    const normalizedSite = requireSupportedSite(site);
     if (!supabase || !sessionId || !normalizedProviderKey) return null;
+
+    const nowIso = new Date().toISOString();
+    const pendingOrderNo = buildPendingProviderOrderNo(normalizedProviderKey, sessionKey || sessionId);
+    const providerMetadata = mergeObjects(checkoutSession?.provider_metadata, {
+        checkout_session_id: sessionId,
+        checkout_session_key: sessionKey || null,
+        order_origin: 'payment_checkout_session',
+        provider_order_pending: true,
+        provider_order_resolved: false,
+        intent_created_at: nowIso
+    });
+    const rawPayload = mergeObjects(checkoutSession?.request_payload, {
+        checkout_session_id: sessionId,
+        checkout_session_key: sessionKey || null
+    });
+
+    const payload = {
+        provider: normalizedProviderKey,
+        provider_order_no: pendingOrderNo,
+        user_id: user?.id || null,
+        checkout_session_id: sessionId,
+        site: normalizedSite,
+        package_id: packageId || null,
+        package_name: packageName || null,
+        expected_amount: paidAmount,
+        paid_amount: null,
+        points_amount: normalizePointValue(grantedPoints, 0),
+        status: 'pending',
+        sign_verified: false,
+        amount_verified: false,
+        raw_payload: rawPayload,
+        provider_metadata: providerMetadata,
+        created_at: nowIso,
+        updated_at: nowIso
+    };
+
+    if (typeof supabase?.rpc === 'function') {
+        const { data: rpcData, error: rpcError } = await supabase.rpc(
+            'fn_create_pending_payment_order_for_checkout_session',
+            {
+                p_payload: payload,
+                p_user_id: user?.id || null
+            }
+        );
+
+        if (!rpcError) {
+            return getRpcSingleRow(rpcData);
+        }
+
+        if (!isMissingDatabaseCapabilityError(rpcError)) {
+            throw new Error(rpcError.message || 'Failed to create pending payment order');
+        }
+    }
 
     try {
         const { data: existingOrder, error: existingOrderError } = await supabase
@@ -667,41 +755,6 @@ async function createPendingPaymentOrderForCheckoutSession({
         }
         return null;
     }
-
-    const nowIso = new Date().toISOString();
-    const pendingOrderNo = buildPendingProviderOrderNo(normalizedProviderKey, sessionKey || sessionId);
-    const providerMetadata = mergeObjects(checkoutSession?.provider_metadata, {
-        checkout_session_id: sessionId,
-        checkout_session_key: sessionKey || null,
-        order_origin: 'payment_checkout_session',
-        provider_order_pending: true,
-        provider_order_resolved: false,
-        intent_created_at: nowIso
-    });
-    const rawPayload = mergeObjects(checkoutSession?.request_payload, {
-        checkout_session_id: sessionId,
-        checkout_session_key: sessionKey || null
-    });
-
-    const payload = {
-        provider: normalizedProviderKey,
-        provider_order_no: pendingOrderNo,
-        user_id: user?.id || null,
-        checkout_session_id: sessionId,
-        site,
-        package_id: packageId || null,
-        package_name: packageName || null,
-        expected_amount: paidAmount,
-        paid_amount: null,
-        points_amount: normalizePointValue(grantedPoints, 0),
-        status: 'pending',
-        sign_verified: false,
-        amount_verified: false,
-        raw_payload: rawPayload,
-        provider_metadata: providerMetadata,
-        created_at: nowIso,
-        updated_at: nowIso
-    };
 
     const { data, error } = await supabase
         .from('payment_orders')
@@ -1071,6 +1124,7 @@ async function createCheckoutSession({
     isCustomRecharge = false,
     customQuote = null
 }) {
+    const normalizedSite = requireSupportedSite(site);
     const customQuotePayload = customQuote
         ? {
             quote_id: customQuote.quoteId,
@@ -1087,7 +1141,7 @@ async function createCheckoutSession({
         session_key: buildCheckoutSessionKey(providerKey),
         provider: String(providerKey || 'unknown').trim().toLowerCase() || 'unknown',
         user_id: user.id,
-        site,
+        site: normalizedSite,
         package_id: packageId || null,
         package_name: packageName || null,
         requested_points: normalizePointValue(paidPoints, 0),
@@ -1104,7 +1158,7 @@ async function createCheckoutSession({
                 bonus_points: normalizePointValue(bonusPoints, 0),
                 granted_points: normalizePointValue(grantedPoints, 0),
                 paid_amount: paidAmount,
-                site,
+                site: normalizedSite,
                 is_custom_recharge: isCustomRecharge,
                 custom_quote: customQuotePayload
             }
@@ -1117,6 +1171,24 @@ async function createCheckoutSession({
         },
         expires_at: getCheckoutSessionExpiryIso()
     };
+
+    if (typeof supabase?.rpc === 'function') {
+        const { data: rpcData, error: rpcError } = await supabase.rpc(
+            'fn_create_payment_checkout_session',
+            {
+                p_payload: payload,
+                p_user_id: user?.id || null
+            }
+        );
+
+        if (!rpcError) {
+            return getRpcSingleRow(rpcData);
+        }
+
+        if (!isMissingDatabaseCapabilityError(rpcError)) {
+            throw new Error(rpcError.message || 'Failed to create payment checkout session');
+        }
+    }
 
     const { data, error } = await supabase
         .from('payment_checkout_sessions')
@@ -1134,6 +1206,24 @@ async function createCheckoutSession({
 async function updateCheckoutSession(supabase, sessionId, patch = {}) {
     const normalizedSessionId = String(sessionId || '').trim();
     if (!normalizedSessionId) return null;
+
+    if (typeof supabase?.rpc === 'function') {
+        const { data: rpcData, error: rpcError } = await supabase.rpc(
+            'fn_update_payment_checkout_session',
+            {
+                p_session_id: normalizedSessionId,
+                p_patch: patch
+            }
+        );
+
+        if (!rpcError) {
+            return getRpcSingleRow(rpcData);
+        }
+
+        if (!isMissingDatabaseCapabilityError(rpcError)) {
+            throw new Error(rpcError.message || 'Failed to update payment checkout session');
+        }
+    }
 
     const { data, error } = await supabase
         .from('payment_checkout_sessions')
@@ -1229,7 +1319,7 @@ async function completeMockPayment({
     body = {},
     checkoutSession = null
 }) {
-    const site = sanitizeSite(body.site);
+    const site = requireSupportedSite(body.site);
     const packageId = body.package_id ? String(body.package_id).trim() : '';
     const orderNo = buildMockOrderNo(body.order_no);
     const isCustomRecharge = !packageId;
@@ -1523,17 +1613,20 @@ async function completeMockPayment({
 
 async function createPaymentRequest({
     supabase,
+    adminSupabase = null,
     user,
     body = {},
     env = process.env,
     requestHost = ''
 }) {
-    const site = sanitizeSite(body.site);
+    const paymentWriteSupabase = supabase;
+    const paymentRuntimeSupabase = adminSupabase || supabase;
+    const site = requireSupportedSite(body.site);
     const requestedProviderKey = String(body.provider_key || '').trim().toLowerCase();
     const packageId = body.package_id ? String(body.package_id).trim() : '';
     const isCustomRecharge = !packageId;
 
-    const { paymentChannels, rechargeOptions } = await loadStoredPaymentConfigs(supabase, {
+    const { paymentChannels, rechargeOptions } = await loadStoredPaymentConfigs(paymentRuntimeSupabase, {
         origin: env.APP_BASE_URL,
         afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
     });
@@ -1588,7 +1681,7 @@ async function createPaymentRequest({
     }
 
     const checkoutSession = await createCheckoutSession({
-        supabase,
+        supabase: paymentWriteSupabase,
         user,
         providerKey,
         site,
@@ -1605,7 +1698,7 @@ async function createPaymentRequest({
 
     if (providerKey === 'mock') {
         return completeMockPayment({
-            supabase,
+            supabase: adminSupabase || paymentWriteSupabase,
             user,
             checkoutSession,
             body: {
@@ -1622,7 +1715,7 @@ async function createPaymentRequest({
 
     try {
         const runtimeContext = await adapter.resolveRuntimeContext({
-            supabase,
+            supabase: paymentRuntimeSupabase,
             env,
             config: paymentChannels
         });
@@ -1642,7 +1735,7 @@ async function createPaymentRequest({
         });
 
         if (!checkoutContext?.supported) {
-            await updateCheckoutSession(supabase, checkoutSession.id, {
+            await updateCheckoutSession(paymentWriteSupabase, checkoutSession.id, {
                 status: 'failed',
                 error_message: checkoutContext?.message || `${adapter.label || '当前支付通道'}暂未完成接入`,
                 provider_metadata: {
@@ -1653,7 +1746,7 @@ async function createPaymentRequest({
             throw new Error(checkoutContext?.message || `${adapter.label || '当前支付通道'}暂未完成接入`);
         }
 
-        const updatedSession = await updateCheckoutSession(supabase, checkoutSession.id, {
+        const updatedSession = await updateCheckoutSession(paymentWriteSupabase, checkoutSession.id, {
             status: 'redirect_ready',
             checkout_url: checkoutContext.checkoutUrl || null,
             query_mode: checkoutContext.queryMode || null,
@@ -1670,7 +1763,7 @@ async function createPaymentRequest({
         if (providerKey !== 'mock') {
             try {
                 pendingPaymentOrder = await createPendingPaymentOrderForCheckoutSession({
-                    supabase,
+                    supabase: paymentWriteSupabase,
                     checkoutSession: updatedSession || checkoutSession,
                     user,
                     providerKey,
@@ -1714,7 +1807,7 @@ async function createPaymentRequest({
                 : null
         };
     } catch (error) {
-        await updateCheckoutSession(supabase, checkoutSession.id, {
+        await updateCheckoutSession(paymentWriteSupabase, checkoutSession.id, {
             status: 'failed',
             error_message: error.message || 'Failed to create checkout session',
             provider_metadata: {
@@ -1729,8 +1822,10 @@ async function createPaymentRequest({
 
 module.exports = {
     __testUtils: {
+        createPendingPaymentOrderForCheckoutSession,
         getMockPaymentRuntimeState,
         getCustomRechargeQuoteSecret,
+        isSupportedSite,
         isMockPaymentRuntimeAllowed,
         resolveRequestedProviderKey
     },

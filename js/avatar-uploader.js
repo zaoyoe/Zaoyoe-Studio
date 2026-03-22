@@ -5,8 +5,6 @@
 (function () {
     'use strict';
 
-    const AVATAR_SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
-
     /**
      * Upload avatar to R2
      * @param {Object} options
@@ -27,7 +25,7 @@
 
             // Call Edge Function
             const response = await fetch(
-                `${AVATAR_SUPABASE_URL}/functions/v1/upload-avatar`,
+                window.getZaoyoeSupabaseFunctionUrl('upload-avatar'),
                 {
                     method: 'POST',
                     headers: {

@@ -968,7 +968,7 @@ async function uploadAffiliatePosterBackgroundToR2(templateId, file) {
     });
 
     const response = await fetch(
-        'https://mmkugdibsaeoevliebzk.supabase.co/functions/v1/upload-avatar',
+        window.getZaoyoeSupabaseFunctionUrl('upload-avatar'),
         {
             method: 'POST',
             headers: {

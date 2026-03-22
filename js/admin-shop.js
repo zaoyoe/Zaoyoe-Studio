@@ -2,10 +2,16 @@
 // Admin Studio - Shop Management Module
 // ==========================================
 
-const SHOP_ADMIN_PROJECT_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
-const SHOP_ADMIN_PUBLISHABLE_KEY = typeof SUPABASE_KEY !== 'undefined'
-    ? SUPABASE_KEY
-    : 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+let SHOP_ADMIN_RUNTIME_CONFIG = null;
+try {
+    SHOP_ADMIN_RUNTIME_CONFIG = typeof window.requireZaoyoeSupabaseConfig === 'function'
+        ? window.requireZaoyoeSupabaseConfig()
+        : null;
+} catch (error) {
+    console.error('Failed to resolve shop admin Supabase runtime config:', error);
+}
+const SHOP_ADMIN_PROJECT_URL = String(SHOP_ADMIN_RUNTIME_CONFIG?.url || '').trim();
+const SHOP_ADMIN_PUBLISHABLE_KEY = String(SHOP_ADMIN_RUNTIME_CONFIG?.publishableKey || '').trim();
 
 // Keep auth on the custom domain client, but route shop data reads/writes
 // through the official project endpoint to avoid PATCH/DELETE fetch failures.
@@ -13,6 +19,11 @@ const supabaseClient = (() => {
     const authClient = window.supabaseClient;
 
     if (!authClient || typeof window.supabase?.createClient !== 'function') {
+        return authClient;
+    }
+
+    if (!SHOP_ADMIN_PROJECT_URL || !SHOP_ADMIN_PUBLISHABLE_KEY) {
+        console.error('Shop admin runtime Supabase config is unavailable.');
         return authClient;
     }
 
@@ -2546,7 +2557,7 @@ Example output format:
             const productId = document.getElementById('editProductId').value || `product_${Date.now()}`;
 
             const response = await fetch(
-                'https://mmkugdibsaeoevliebzk.supabase.co/functions/v1/upload-avatar',
+                window.getZaoyoeSupabaseFunctionUrl('upload-avatar'),
                 {
                     method: 'POST',
                     headers: {

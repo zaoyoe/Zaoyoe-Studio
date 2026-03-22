@@ -63,6 +63,8 @@ test('standalone Supabase helper SQL files stay aligned with hardened site-aware
 test('database migrations retire the legacy redemption overload and formalize the new guardrails', () => {
     const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260322_retire_legacy_redemption_overloads.sql'));
     const verificationSql = readRepoFile(path.join('supabase', 'verify_payment_redemption_hardening.sql'));
+    const paymentCreationSql = readRepoFile(path.join('supabase', 'migrations', '20260322_harden_payment_creation_entrypoints.sql'));
+    const paymentSiteSql = readRepoFile(path.join('supabase', 'migrations', '20260322_constrain_payment_sites.sql'));
 
     assert.match(
         migrationSql,
@@ -108,6 +110,46 @@ test('database migrations retire the legacy redemption overload and formalize th
         verificationSql,
         /public\.fn_get_user_balance\(uuid,character varying\)/,
         'verification SQL should explicitly check the site-aware balance overload'
+    );
+    assert.match(
+        paymentCreationSql,
+        /ALTER TABLE IF EXISTS public\.payment_orders ENABLE ROW LEVEL SECURITY;/,
+        'payment creation hardening should enable RLS on payment_orders'
+    );
+    assert.match(
+        paymentCreationSql,
+        /CREATE POLICY "Users view own payment orders"/,
+        'payment creation hardening should scope payment order reads to the owner'
+    );
+    assert.match(
+        paymentCreationSql,
+        /CREATE OR REPLACE FUNCTION public\.fn_create_payment_checkout_session\(/,
+        'payment creation hardening should define a user-bound checkout session creation RPC'
+    );
+    assert.match(
+        paymentCreationSql,
+        /CREATE OR REPLACE FUNCTION public\.fn_update_payment_checkout_session\(/,
+        'payment creation hardening should define a user-bound checkout session update RPC'
+    );
+    assert.match(
+        paymentCreationSql,
+        /CREATE OR REPLACE FUNCTION public\.fn_create_pending_payment_order_for_checkout_session\(/,
+        'payment creation hardening should define a user-bound pending payment order RPC'
+    );
+    assert.match(
+        paymentSiteSql,
+        /payment_checkout_sessions contains unsupported site values/,
+        'payment site guardrail should fail the migration if legacy checkout sessions still carry unknown site values'
+    );
+    assert.match(
+        paymentSiteSql,
+        /ADD CONSTRAINT payment_checkout_sessions_site_check\s+CHECK \(site IN \('cn', 'intl'\)\);/s,
+        'payment site guardrail should constrain checkout sessions to the supported site set'
+    );
+    assert.match(
+        paymentSiteSql,
+        /ADD CONSTRAINT payment_orders_site_check\s+CHECK \(site IN \('cn', 'intl'\)\);/s,
+        'payment site guardrail should constrain payment orders to the supported site set'
     );
 });
 

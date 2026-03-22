@@ -1,6 +1,9 @@
+const {
+    normalizeSiteValue
+} = require('../site');
+
 function normalizeSite(site = 'cn') {
-    const normalized = String(site || '').trim().toLowerCase();
-    return normalized || 'cn';
+    return normalizeSiteValue(site);
 }
 
 async function getUserBalance({

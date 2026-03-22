@@ -1910,7 +1910,7 @@ async function uploadImages() {
 
             // Call Edge Function
             const response = await fetch(
-                'https://mmkugdibsaeoevliebzk.supabase.co/functions/v1/upload-to-r2',
+                window.getZaoyoeSupabaseFunctionUrl('upload-to-r2'),
                 {
                     method: 'POST',
                     headers: {

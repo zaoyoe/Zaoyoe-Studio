@@ -1,9 +1,12 @@
 const { createClient } = require('@supabase/supabase-js');
+const {
+    getSupabasePublishableKey,
+    getSupabaseUrl,
+    hasSupabasePublicClientConfig
+} = require('./public-runtime-config');
 
 let supabaseAdmin = null;
 let supabasePublic = null;
-const DEFAULT_SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
-const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
 
 function getEnv(name) {
     const value = process.env[name];
@@ -13,18 +16,10 @@ function getEnv(name) {
     return value;
 }
 
-function getSupabaseUrl() {
-    return DEFAULT_SUPABASE_URL;
-}
-
 function getSupabaseServiceRoleKey() {
     return process.env.SUPABASE_SERVICE_ROLE_KEY
         || process.env.SUPABASE_SERVICE_KEY
         || '';
-}
-
-function getSupabasePublishableKey() {
-    return DEFAULT_SUPABASE_PUBLISHABLE_KEY;
 }
 
 function getSupabaseAdmin() {
@@ -128,10 +123,15 @@ async function getAuthenticatedUser(req) {
         return { token: '', user: null };
     }
 
-    const requestClient = createSupabaseRequestClient(req);
-    const { data: requestData, error: requestError } = await requestClient.auth.getUser(token);
-    if (!requestError && requestData?.user) {
-        return { token, user: requestData.user };
+    let requestError = null;
+
+    if (hasSupabasePublicClientConfig()) {
+        const requestClient = createSupabaseRequestClient(req);
+        const { data: requestData, error } = await requestClient.auth.getUser(token);
+        if (!error && requestData?.user) {
+            return { token, user: requestData.user };
+        }
+        requestError = error;
     }
 
     if (!getSupabaseServiceRoleKey()) {
@@ -154,16 +154,20 @@ async function requireAuthenticatedUser(req) {
         throw authError;
     }
 
-    const requestSupabase = createSupabaseRequestClient(req);
-    const supabase = getSupabaseServiceRoleKey()
+    const requestSupabase = hasSupabasePublicClientConfig()
+        ? createSupabaseRequestClient(req)
+        : null;
+    const adminSupabase = getSupabaseServiceRoleKey()
         ? getSupabaseAdmin()
-        : requestSupabase;
+        : null;
+    const supabase = requestSupabase || adminSupabase;
 
     return {
         user,
         token,
         supabase,
-        requestSupabase
+        requestSupabase,
+        adminSupabase
     };
 }
 
@@ -175,15 +179,19 @@ async function requireAdmin(req) {
         throw authError;
     }
 
-    const requestClient = createSupabaseRequestClient(req);
+    const requestClient = hasSupabasePublicClientConfig()
+        ? createSupabaseRequestClient(req)
+        : null;
     const hasServiceRole = Boolean(getSupabaseServiceRoleKey());
-    const supabase = hasServiceRole ? getSupabaseAdmin() : createSupabaseRequestClient(req);
+    const adminSupabase = hasServiceRole ? getSupabaseAdmin() : null;
+    const supabase = adminSupabase || requestClient;
+    const permissionClient = requestClient || adminSupabase;
     let activeRoles = [];
 
     // Prefer the existing permission RPC so the API stays compatible
     // during the migration from email allowlists to role-based admin auth.
     try {
-        const { data: permissionData, error: permissionError } = await requestClient
+        const { data: permissionData, error: permissionError } = await permissionClient
             .rpc('get_user_permissions', { p_user_id: user.id });
 
         if (!permissionError && (permissionData?.is_admin || permissionData?.is_super_admin)) {
@@ -225,6 +233,7 @@ async function requireAdmin(req) {
     return {
         supabase,
         requestSupabase: requestClient,
+        adminSupabase,
         user,
         roles: activeRoles
     };
