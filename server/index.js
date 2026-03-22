@@ -21,6 +21,12 @@ const {
     verifyCustomRechargeQuoteToken
 } = require('../api/_lib/payments/orders');
 const {
+    deductPointsForService,
+    finalizeAfdianCustomPayment,
+    getUserBalance,
+    processAfdianPayment
+} = require('../api/_lib/payments/rpc');
+const {
     loadShopDeliveryStrategyConfig,
     normalizeShopDeliveryStrategyConfig
 } = require('../api/_lib/payments/shop-delivery-strategy');
@@ -787,14 +793,15 @@ async function tryFinalizeCustomRechargeFromQuote({
         return null;
     }
 
-    const { data, error } = await supabase.rpc('fn_finalize_afdian_custom_payment', {
-        p_order_no: orderNo,
-        p_user_id: user.id,
-        p_site: matchedCandidate.quote.site || site,
-        p_points: matchedCandidate.quote.pointsAmount,
-        p_expected_amount: matchedCandidate.quote.expectedAmount,
-        p_quote_id: matchedCandidate.quote.quoteId,
-        p_package_name: '自定义充值'
+    const { data, error } = await finalizeAfdianCustomPayment({
+        supabase,
+        orderNo,
+        userId: user.id,
+        site: matchedCandidate.quote.site || site,
+        points: matchedCandidate.quote.pointsAmount,
+        expectedAmount: matchedCandidate.quote.expectedAmount,
+        quoteId: matchedCandidate.quote.quoteId,
+        packageName: '自定义充值'
     });
 
     if (error) {
@@ -1110,25 +1117,14 @@ async function deductPointsForJob(userId, jobId, amount, site = 'cn') {
         return existingDeduction;
     }
 
-    const adminSiteRpcParams = {
-        p_target_user_id: userId,
-        p_amount: amount,
-        p_reason: 'Google One 链接获取服务',
-        p_reference_id: jobId,
-        p_site: site
-    };
-
-    let { data: deductData, error: deductError } = await supabase.rpc('fn_deduct_points_admin_site', adminSiteRpcParams);
-
-    if (deductError) {
-        console.warn('[Verify] fn_deduct_points_admin_site unavailable, falling back:', deductError.message);
-        ({ data: deductData, error: deductError } = await supabase.rpc('fn_deduct_points', {
-            p_target_user_id: userId,
-            p_amount: amount,
-            p_reason: 'Google One 链接获取服务',
-            p_reference_id: jobId
-        }));
-    }
+    const { data: deductData, error: deductError } = await deductPointsForService({
+        supabase,
+        userId,
+        amount,
+        reason: 'Google One 链接获取服务',
+        referenceId: jobId,
+        site
+    });
 
     if (deductError) {
         console.error('[Verify] Failed to deduct points:', deductError);
@@ -2070,9 +2066,11 @@ async function validateUserBalance(userId, requiredPoints, site = 'cn') {
         return { valid: false, error: '请先登录', status: 400 };
     }
 
-    const { data: balanceData, error: balanceError } = await supabase
-        .rpc('fn_get_user_balance', { p_user_id: userId, p_site: site })
-        .single();
+    const { data: balanceData, error: balanceError } = await getUserBalance({
+        supabase,
+        userId,
+        site
+    });
 
     if (balanceError) {
         console.error('[Verify] Balance check error:', balanceError);
@@ -2502,21 +2500,22 @@ app.post('/api/afdian/webhook', async (req, res) => {
             lookbackMinutes: 120
         });
 
-        const { data: processResult, error: processRpcError } = await supabase.rpc('fn_process_afdian_payment', {
-            p_order_no: orderNo,
-            p_afdian_user_id: String(order.user_id || ''),
-            p_plan_id: order.plan_id || null,
-            p_paid_amount: amount,
-            p_expected_amount: resolvedPackage?.expectedAmount ?? amount,
-            p_points: resolvedPackage?.pointsTotal ?? 0,
-            p_package_id: resolvedPackage?.packageId ?? null,
-            p_package_name: resolvedPackage?.packageName ?? null,
-            p_site: getCurrentSite(req),
-            p_signature_valid: signatureValid,
-            p_amount_valid: amountValid,
-            p_payload: payload,
-            p_error: processError,
-            p_payment_order_id: pendingPaymentOrder?.paymentOrderId || null
+        const { data: processResult, error: processRpcError } = await processAfdianPayment({
+            supabase,
+            orderNo,
+            afdianUserId: String(order.user_id || ''),
+            planId: order.plan_id || null,
+            paidAmount: amount,
+            expectedAmount: resolvedPackage?.expectedAmount ?? amount,
+            points: resolvedPackage?.pointsTotal ?? 0,
+            packageId: resolvedPackage?.packageId ?? null,
+            packageName: resolvedPackage?.packageName ?? null,
+            site: getCurrentSite(req),
+            signatureValid,
+            amountValid,
+            payload,
+            processError,
+            paymentOrderId: pendingPaymentOrder?.paymentOrderId || null
         });
 
         if (processRpcError) {
