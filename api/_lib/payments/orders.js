@@ -21,6 +21,11 @@ const DEFAULT_CUSTOM_RECHARGE_MAX_POINTS = 50000;
 const DEFAULT_CUSTOM_RECHARGE_STEP = 1;
 const DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY = 50;
 const DEFAULT_CUSTOM_RECHARGE_QUOTE_TTL_SECONDS = 1800;
+const REMOTE_MOCK_PAYMENT_UNTIL_ENV_NAMES = Object.freeze([
+    'ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL',
+    'PAYMENT_ALLOW_REMOTE_MOCK_UNTIL',
+    'PAYMENT_MOCK_ALLOW_REMOTE_UNTIL'
+]);
 
 function sanitizeSite(value) {
     const site = String(value || '').trim().toLowerCase();
@@ -350,6 +355,49 @@ function isRemoteMockPaymentWhitelisted(env = process.env) {
         || isTruthyFlag(env?.PAYMENT_MOCK_ALLOW_REMOTE);
 }
 
+function formatIsoTimestamp(value) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toISOString().replace('.000Z', 'Z');
+}
+
+function getRemoteMockPaymentExpiryOverride(env = process.env) {
+    for (const envName of REMOTE_MOCK_PAYMENT_UNTIL_ENV_NAMES) {
+        const rawValue = String(env?.[envName] || '').trim();
+        if (!rawValue) continue;
+
+        const expiresAt = new Date(rawValue);
+        if (Number.isNaN(expiresAt.getTime())) {
+            return {
+                configured: true,
+                valid: false,
+                expired: false,
+                envName,
+                rawValue,
+                expiresAt: null
+            };
+        }
+
+        return {
+            configured: true,
+            valid: true,
+            expired: expiresAt.getTime() <= Date.now(),
+            envName,
+            rawValue,
+            expiresAt
+        };
+    }
+
+    return {
+        configured: false,
+        valid: false,
+        expired: false,
+        envName: '',
+        rawValue: '',
+        expiresAt: null
+    };
+}
+
 function getMockPaymentRuntimeState({ requestHost = '', env = process.env } = {}) {
     if (isLocalHostname(requestHost)) {
         return {
@@ -367,11 +415,36 @@ function getMockPaymentRuntimeState({ requestHost = '', env = process.env } = {}
         };
     }
 
+    const expiryOverride = getRemoteMockPaymentExpiryOverride(env);
+    if (expiryOverride.configured) {
+        if (!expiryOverride.valid) {
+            return {
+                allowed: false,
+                reason: 'remote_whitelist_until_invalid',
+                message: `${expiryOverride.envName} 配置无效，请填写 ISO 时间，例如 2026-03-22T23:59:59+08:00。`
+            };
+        }
+
+        if (!expiryOverride.expired) {
+            return {
+                allowed: true,
+                reason: 'remote_whitelist_until_enabled',
+                message: `当前环境已通过限时白名单放行模拟支付，有效期至 ${formatIsoTimestamp(expiryOverride.expiresAt)}。`
+            };
+        }
+
+        return {
+            allowed: false,
+            reason: 'remote_whitelist_until_expired',
+            message: `模拟支付限时白名单已于 ${formatIsoTimestamp(expiryOverride.expiresAt)} 到期，请移除 ${expiryOverride.envName} 或重新设置新的截止时间。`
+        };
+    }
+
     if (isRemoteMockPaymentWhitelisted(env)) {
         return {
             allowed: true,
             reason: 'remote_whitelist_enabled',
-            message: '当前环境已通过白名单放行模拟支付。'
+            message: '当前环境已通过长期白名单放行模拟支付。建议改用 ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL 设置自动失效时间。'
         };
     }
 
@@ -379,14 +452,14 @@ function getMockPaymentRuntimeState({ requestHost = '', env = process.env } = {}
         return {
             allowed: false,
             reason: 'production_like_runtime',
-            message: '当前站点运行在生产环境，服务端默认禁用模拟支付；如需临时测试，请设置 ALLOW_REMOTE_MOCK_PAYMENTS=true 后重新部署。'
+            message: '当前站点运行在生产环境，服务端默认禁用模拟支付；如需临时测试，建议设置 ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL 后重新部署。'
         };
     }
 
     return {
         allowed: false,
         reason: 'remote_whitelist_required',
-        message: '当前环境不是本地环境，且未配置模拟支付白名单；如需临时测试，请设置 ALLOW_REMOTE_MOCK_PAYMENTS=true 后重新部署。'
+        message: '当前环境不是本地环境，且未配置模拟支付白名单；如需临时测试，建议设置 ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL 后重新部署。'
     };
 }
 
@@ -1223,12 +1296,57 @@ function resolveRequestedProviderKey({
     throw new Error('当前支付通道与前端请求不一致，请刷新页面后重试');
 }
 
+async function ensureMockPaymentAvailable({
+    supabase,
+    paymentChannels = null,
+    rechargeOptions = null,
+    env = process.env,
+    requestHost = ''
+}) {
+    let effectivePaymentChannels = paymentChannels;
+    let effectiveRechargeOptions = rechargeOptions;
+
+    if (!effectivePaymentChannels || !effectiveRechargeOptions) {
+        const loadedConfigs = await loadStoredPaymentConfigs(supabase, {
+            origin: env?.APP_BASE_URL,
+            afdianCheckoutUrl: env?.PAYMENT_AFDIAN_URL
+        });
+        effectivePaymentChannels = loadedConfigs.paymentChannels;
+        effectiveRechargeOptions = loadedConfigs.rechargeOptions;
+    }
+
+    resolveRequestedProviderKey({
+        requestedProviderKey: 'mock',
+        paymentChannels: effectivePaymentChannels,
+        rechargeOptions: effectiveRechargeOptions,
+        requestHost,
+        env
+    });
+
+    return {
+        paymentChannels: effectivePaymentChannels,
+        rechargeOptions: effectiveRechargeOptions
+    };
+}
+
 async function completeMockPayment({
     supabase,
     user,
     body = {},
-    checkoutSession = null
+    checkoutSession = null,
+    paymentChannels = null,
+    rechargeOptions = null,
+    env = process.env,
+    requestHost = ''
 }) {
+    await ensureMockPaymentAvailable({
+        supabase,
+        paymentChannels,
+        rechargeOptions,
+        env,
+        requestHost
+    });
+
     const site = sanitizeSite(body.site);
     const packageId = body.package_id ? String(body.package_id).trim() : '';
     const orderNo = buildMockOrderNo(body.order_no);
@@ -1608,6 +1726,10 @@ async function createPaymentRequest({
             supabase,
             user,
             checkoutSession,
+            paymentChannels,
+            rechargeOptions,
+            env,
+            requestHost,
             body: {
                 ...body,
                 site,
@@ -1729,8 +1851,10 @@ async function createPaymentRequest({
 
 module.exports = {
     __testUtils: {
+        getRemoteMockPaymentExpiryOverride,
         getMockPaymentRuntimeState,
         getCustomRechargeQuoteSecret,
+        ensureMockPaymentAvailable,
         isMockPaymentRuntimeAllowed,
         resolveRequestedProviderKey
     },
