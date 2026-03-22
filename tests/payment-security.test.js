@@ -127,6 +127,16 @@ test('misconfigured quote secret fails closed during verification', () => {
 });
 
 test('mock payment is blocked in production-like runtimes', () => {
+    const runtimeState = paymentTestUtils.getMockPaymentRuntimeState({
+        requestHost: 'verify.zaoyoe.com',
+        env: {
+            VERCEL_ENV: 'production',
+            ALLOW_REMOTE_MOCK_PAYMENTS: 'true'
+        }
+    });
+
+    assert.equal(runtimeState.allowed, false);
+    assert.match(runtimeState.message, /生产环境/);
     assert.equal(paymentTestUtils.isMockPaymentRuntimeAllowed({
         requestHost: 'verify.zaoyoe.com',
         env: {

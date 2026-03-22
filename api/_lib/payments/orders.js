@@ -344,22 +344,52 @@ function isProductionLikeRuntime(env = process.env) {
         || deploymentTier === 'production';
 }
 
-function isMockPaymentRuntimeAllowed({ requestHost = '', env = process.env } = {}) {
+function getMockPaymentRuntimeState({ requestHost = '', env = process.env } = {}) {
     if (isLocalHostname(requestHost)) {
-        return true;
+        return {
+            allowed: true,
+            reason: 'local_request_host',
+            message: '当前访问的是本地环境，允许使用模拟支付。'
+        };
     }
 
     if (isLocalHostname(env?.APP_BASE_URL)) {
-        return true;
+        return {
+            allowed: true,
+            reason: 'local_app_base_url',
+            message: '当前部署被识别为本地环境，允许使用模拟支付。'
+        };
     }
 
     if (isProductionLikeRuntime(env)) {
-        return false;
+        return {
+            allowed: false,
+            reason: 'production_like_runtime',
+            message: '当前站点运行在生产环境，服务端已禁用模拟支付，请切换到真实支付通道。'
+        };
     }
 
-    return isTruthyFlag(env?.ALLOW_REMOTE_MOCK_PAYMENTS)
+    if (
+        isTruthyFlag(env?.ALLOW_REMOTE_MOCK_PAYMENTS)
         || isTruthyFlag(env?.PAYMENT_ALLOW_REMOTE_MOCK)
-        || isTruthyFlag(env?.PAYMENT_MOCK_ALLOW_REMOTE);
+        || isTruthyFlag(env?.PAYMENT_MOCK_ALLOW_REMOTE)
+    ) {
+        return {
+            allowed: true,
+            reason: 'remote_whitelist_enabled',
+            message: '当前环境已通过白名单放行模拟支付。'
+        };
+    }
+
+    return {
+        allowed: false,
+        reason: 'remote_whitelist_required',
+        message: '当前环境不是本地环境，且未配置模拟支付白名单，请切换到真实支付通道。'
+    };
+}
+
+function isMockPaymentRuntimeAllowed({ requestHost = '', env = process.env } = {}) {
+    return getMockPaymentRuntimeState({ requestHost, env }).allowed === true;
 }
 
 function isMissingDatabaseStructureError(error) {
@@ -1162,7 +1192,7 @@ function resolveRequestedProviderKey({
             rechargeOptions?.mock_payment_enabled === true
             || paymentChannels?.active_provider === 'mock'
         );
-    const mockRuntimeAllowed = isMockPaymentRuntimeAllowed({
+    const mockRuntime = getMockPaymentRuntimeState({
         requestHost,
         env
     });
@@ -1171,8 +1201,8 @@ function resolveRequestedProviderKey({
         if (!mockConfigured) {
             throw new Error('当前未开启模拟支付，请使用真实支付流程');
         }
-        if (!mockRuntimeAllowed) {
-            throw new Error('当前环境已禁用模拟支付，请切换到真实支付通道');
+        if (!mockRuntime.allowed) {
+            throw new Error(mockRuntime.message || '当前环境已禁用模拟支付，请切换到真实支付通道');
         }
         return 'mock';
     };
@@ -1697,6 +1727,7 @@ async function createPaymentRequest({
 
 module.exports = {
     __testUtils: {
+        getMockPaymentRuntimeState,
         getCustomRechargeQuoteSecret,
         isMockPaymentRuntimeAllowed,
         resolveRequestedProviderKey
@@ -1705,6 +1736,7 @@ module.exports = {
     createCheckoutSession,
     createPaymentRequest,
     findCheckoutSessionCandidates,
+    getMockPaymentRuntimeState,
     issueCustomRechargeQuote,
     loadCheckoutSessionForUser,
     loadPointsPackage,

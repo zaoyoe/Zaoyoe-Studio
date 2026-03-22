@@ -15,6 +15,9 @@ const {
     normalizePaymentChannelsConfig,
     sanitizeText
 } = require('../../../../api/_lib/payments/providers');
+const {
+    getMockPaymentRuntimeState
+} = require('../../../../api/_lib/payments/orders');
 
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
     const { error } = await supabase
@@ -34,6 +37,13 @@ async function upsertSystemConfig(supabase, configKey, configValue, userId, desc
 
 module.exports = async (req, res) => {
     try {
+        const runtime = {
+            mock_payment: getMockPaymentRuntimeState({
+                requestHost: req.headers.host || req.headers.Host || '',
+                env: process.env
+            })
+        };
+
         const { supabase, user } = await requireAdmin(req);
 
         if (req.method === 'GET') {
@@ -43,7 +53,8 @@ module.exports = async (req, res) => {
             return sendJson(res, 200, {
                 success: true,
                 config: paymentChannels,
-                secrets
+                secrets,
+                runtime
             });
         }
 
@@ -109,7 +120,8 @@ module.exports = async (req, res) => {
                 success: true,
                 message: '支付通道配置已保存。',
                 config: nextConfig,
-                secrets
+                secrets,
+                runtime
             });
         }
 
@@ -140,7 +152,8 @@ module.exports = async (req, res) => {
             return sendJson(res, 200, {
                 success: true,
                 message: '支付密钥已删除。',
-                secrets
+                secrets,
+                runtime
             });
         }
 
