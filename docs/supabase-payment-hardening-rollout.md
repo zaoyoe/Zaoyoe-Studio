@@ -39,6 +39,7 @@ Deprecated scripts that must not be executed anymore:
 5. Before applying `20260322_constrain_payment_sites.sql`, scan the target project for historical `site` anomalies:
    - SQL editor: [/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql)
    - CLI / service-role env: `npm run scan:payment-sites -- --env-file server/.env.production --fail-on-anomaly`
+   - Combined preflight: `npm run preflight:payment-rollout -- --env-file server/.env.production`
 6. If the repository is only linked to the production project, do not treat that linked project as staging by default. Confirm the target project ref first.
 7. Keep real `.env.local` / `server/.env.production` files out of Git. Use the committed `*.example` templates instead.
 
