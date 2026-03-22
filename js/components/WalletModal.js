@@ -1515,7 +1515,7 @@
                                     <div class="custom-recharge-header">
                                         <div>
                                             <div class="custom-recharge-title">自定义充值</div>
-                                            <div class="custom-recharge-subtitle" id="wallet-custom-recharge-subtitle">输入要充值的积分数量，支持 0.1 精度。</div>
+                                            <div class="custom-recharge-subtitle" id="wallet-custom-recharge-subtitle">输入要充值的整数积分数量，系统会生成本次应付金额。</div>
                                         </div>
                                         <span class="custom-recharge-badge" id="wallet-custom-recharge-badge">按需充值</span>
                                     </div>
@@ -1523,14 +1523,14 @@
                                         <input type="number"
                                                id="wallet-custom-recharge-input"
                                                class="custom-recharge-input"
-                                               min="0.1"
-                                               step="0.1"
-                                               inputmode="decimal"
-                                               placeholder="例如 100 或 0.1"
+                                               min="1"
+                                               step="1"
+                                               inputmode="numeric"
+                                               placeholder="例如 100"
                                                onkeyup="if(event.key==='Enter') WalletModal.customRecharge()" />
                                         <button class="custom-recharge-btn" id="wallet-custom-recharge-btn" onclick="WalletModal.customRecharge()">立即充值</button>
                                     </div>
-                                    <div class="custom-recharge-meta" id="wallet-custom-recharge-meta">该入口由管理员在后台控制显示，用于用户自行决定本次充值的积分数量。</div>
+                                    <div class="custom-recharge-meta" id="wallet-custom-recharge-meta">该入口由管理员在后台控制显示，会按服务端定价规则生成本次应付金额。</div>
                                 </div>
                                 
                                 <!-- Afdian Code Query Section -->
@@ -1882,7 +1882,12 @@
         getDefaultRechargeOptionsConfig() {
             return {
                 custom_amount_enabled: false,
-                mock_payment_enabled: false
+                mock_payment_enabled: false,
+                custom_amount_min_points: 1,
+                custom_amount_max_points: 50000,
+                custom_amount_step: 1,
+                custom_amount_points_per_cny: 50,
+                custom_amount_quote_ttl_seconds: 1800
             };
         },
 
@@ -1896,7 +1901,15 @@
                     : defaults.custom_amount_enabled,
                 mock_payment_enabled: source.mock_payment_enabled === true || String(source.mock_payment_enabled) === 'true'
                     ? true
-                    : defaults.mock_payment_enabled
+                    : defaults.mock_payment_enabled,
+                custom_amount_min_points: Math.max(1, Math.round(Number(source.custom_amount_min_points) || defaults.custom_amount_min_points)),
+                custom_amount_max_points: Math.max(
+                    Math.max(1, Math.round(Number(source.custom_amount_min_points) || defaults.custom_amount_min_points)),
+                    Math.round(Number(source.custom_amount_max_points) || defaults.custom_amount_max_points)
+                ),
+                custom_amount_step: Math.max(1, Math.round(Number(source.custom_amount_step) || defaults.custom_amount_step)),
+                custom_amount_points_per_cny: Math.max(0.01, Number(source.custom_amount_points_per_cny) || defaults.custom_amount_points_per_cny),
+                custom_amount_quote_ttl_seconds: Math.max(60, Math.round(Number(source.custom_amount_quote_ttl_seconds) || defaults.custom_amount_quote_ttl_seconds))
             };
         },
 
@@ -1938,7 +1951,7 @@
                         display_name: '爱发电',
                         checkout_url: window.PAYMENT_AFDIAN_URL || 'https://afdian.com/a/zaoyoe',
                         package_hint: '请在爱发电完成支付后，返回这里输入订单号领取兑换码。',
-                        custom_amount_hint: '建议在支付备注里填写要充值的积分数量，支付后返回这里输入订单号领取兑换码。'
+                        custom_amount_hint: '钱包会先生成本次应付金额，请按报价完成支付后返回这里输入订单号领取兑换码。'
                     },
                     hupijiao: {
                         enabled: false,
@@ -2085,12 +2098,19 @@
             const isSimulationEnabled = activeProvider.key === 'mock' || normalizedConfig.mock_payment_enabled === true;
             const isDirectRechargeAllowed = isSimulationEnabled || window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
             const providerLabel = activeProvider.display_name || '当前通道';
+            const minPoints = Math.max(1, Number(normalizedConfig.custom_amount_min_points) || 1);
+            const maxPoints = Math.max(minPoints, Number(normalizedConfig.custom_amount_max_points) || minPoints);
+            const stepPoints = Math.max(1, Number(normalizedConfig.custom_amount_step) || 1);
+            const pointsPerCny = Math.max(0.01, Number(normalizedConfig.custom_amount_points_per_cny) || 50);
+            const quoteMinutes = Math.max(1, Math.round((Number(normalizedConfig.custom_amount_quote_ttl_seconds) || 1800) / 60));
 
             section.style.display = isFeatureEnabled ? '' : 'none';
 
             if (input) {
                 input.disabled = !isFeatureEnabled;
-                input.placeholder = isDirectRechargeAllowed ? '例如 100 或 0.1' : '例如 100';
+                input.min = String(minPoints);
+                input.step = String(stepPoints);
+                input.placeholder = `例如 ${Math.max(minPoints, stepPoints * 100)}`;
                 if (!isFeatureEnabled) input.value = '';
             }
 
@@ -2103,8 +2123,8 @@
                 subtitle.textContent = isDirectRechargeAllowed
                     ? (isSimulationEnabled
                         ? '已开启临时模拟支付，提交后会直接到账积分。'
-                        : '输入要充值的积分数量，支持 0.1 精度。')
-                    : (activeProvider.custom_amount_hint || `输入想购买的积分数量，我们会引导你前往${providerLabel}完成真实支付。`);
+                        : `输入 ${stepPoints} 的整数倍积分，系统会按服务端报价生成应付金额。`)
+                    : (activeProvider.custom_amount_hint || `输入想购买的积分数量，我们会按服务端报价引导你前往${providerLabel}完成真实支付。`);
             }
 
             if (badge) {
@@ -2117,9 +2137,9 @@
                 meta.textContent = isDirectRechargeAllowed
                     ? (isSimulationEnabled
                         ? '当前为临时模拟支付模式，仅用于正式支付接入前过渡。用户提交后会直接到账，请谨慎使用。'
-                        : '该入口由管理员在后台控制显示，用于用户自行决定本次充值的积分数量。')
+                        : `该入口由管理员在后台控制显示。当前按 ${this.formatPoints(pointsPerCny)} 积分/元报价，单次范围 ${this.formatPoints(minPoints)}-${this.formatPoints(maxPoints)} 积分，报价约 ${quoteMinutes} 分钟内有效。`)
                     : (activeProvider.key === 'afdian'
-                        ? '该入口由管理员在后台控制显示。正式站点已关闭浏览器直充；填写数量后会打开支付页，完成支付后请返回这里输入订单号领取兑换码。'
+                        ? `该入口由管理员在后台控制显示。当前按 ${this.formatPoints(pointsPerCny)} 积分/元报价，单次范围 ${this.formatPoints(minPoints)}-${this.formatPoints(maxPoints)} 积分，报价约 ${quoteMinutes} 分钟内有效。完成支付后请返回这里输入订单号领取兑换码。`
                         : `该入口由管理员在后台控制显示。当前会跳转到${providerLabel}，具体支付回执与入账方式以你配置的通道说明为准。`);
             }
 
@@ -3277,16 +3297,30 @@
             const input = document.getElementById('wallet-custom-recharge-input');
             const button = document.getElementById('wallet-custom-recharge-btn');
             const rawValue = input?.value ?? '';
-            const normalizedAmount = this.normalizePointValue(rawValue);
+            const numericAmount = Number(rawValue);
             const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
             const paymentChannels = this.normalizePaymentChannelsConfig(this.paymentChannelsConfig);
             const activeProvider = this.getActivePaymentProviderConfig(paymentChannels);
             const allowSimulatedPayment = activeProvider.key === 'mock'
                 || rechargeOptions.mock_payment_enabled === true
                 || window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
+            const normalizedAmount = Math.round(numericAmount);
+            const minPoints = Math.max(1, Number(rechargeOptions.custom_amount_min_points) || 1);
+            const maxPoints = Math.max(minPoints, Number(rechargeOptions.custom_amount_max_points) || minPoints);
+            const stepPoints = Math.max(1, Number(rechargeOptions.custom_amount_step) || 1);
 
-            if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
-                this.showToast('请输入大于 0 的充值积分', 'error');
+            if (!Number.isFinite(numericAmount) || !Number.isInteger(numericAmount) || normalizedAmount <= 0) {
+                this.showToast('请输入大于 0 的整数积分', 'error');
+                if (input) input.focus();
+                return;
+            }
+            if (normalizedAmount < minPoints || normalizedAmount > maxPoints) {
+                this.showToast(`请输入 ${this.formatPoints(minPoints)} 到 ${this.formatPoints(maxPoints)} 之间的积分数量`, 'error');
+                if (input) input.focus();
+                return;
+            }
+            if (normalizedAmount % stepPoints !== 0) {
+                this.showToast(`请输入 ${this.formatPoints(stepPoints)} 的整数倍积分`, 'error');
                 if (input) input.focus();
                 return;
             }
@@ -3312,9 +3346,11 @@
                         throw new Error('支付页面被浏览器拦截，请允许弹窗后重试');
                     }
 
+                    this.rememberPendingCustomRechargeQuote(paymentResult);
+
                     this.showToast(
                         paymentResult.message
-                            || `${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}已准备就绪，请完成支付后按页面提示继续操作。`,
+                            || `${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}已准备就绪，请按 ¥${Number(paymentResult.paid_amount || 0).toFixed(2)} 完成支付后再返回查询订单。`,
                         'success'
                     );
                     return;
@@ -3345,6 +3381,81 @@
             } finally {
                 if (button) button.disabled = false;
             }
+        },
+
+        getPendingCustomRechargeQuoteStorageKey() {
+            return 'wallet_pending_custom_recharge_quotes_v1';
+        },
+
+        loadPendingCustomRechargeQuotes() {
+            try {
+                const raw = window.localStorage?.getItem(this.getPendingCustomRechargeQuoteStorageKey());
+                const parsed = JSON.parse(raw || '[]');
+                const now = Date.now();
+                const filtered = (Array.isArray(parsed) ? parsed : []).filter((item) => {
+                    const token = String(item?.token || '').trim();
+                    const quoteId = String(item?.quote_id || '').trim();
+                    const expiresAt = Date.parse(String(item?.expires_at || ''));
+                    return token && quoteId && Number.isFinite(expiresAt) && expiresAt > now;
+                });
+
+                if (filtered.length !== (Array.isArray(parsed) ? parsed.length : 0)) {
+                    window.localStorage?.setItem(this.getPendingCustomRechargeQuoteStorageKey(), JSON.stringify(filtered));
+                }
+
+                return filtered;
+            } catch (_) {
+                return [];
+            }
+        },
+
+        savePendingCustomRechargeQuotes(quotes = []) {
+            try {
+                window.localStorage?.setItem(
+                    this.getPendingCustomRechargeQuoteStorageKey(),
+                    JSON.stringify(Array.isArray(quotes) ? quotes : [])
+                );
+            } catch (_) {
+                // ignore storage failures
+            }
+        },
+
+        rememberPendingCustomRechargeQuote(paymentResult = {}) {
+            const quote = paymentResult?.custom_quote;
+            const token = String(quote?.token || '').trim();
+            const quoteId = String(quote?.quote_id || '').trim();
+            if (!token || !quoteId) {
+                return;
+            }
+
+            const site = window.SiteConfig?.site || 'cn';
+            const existing = this.loadPendingCustomRechargeQuotes().filter((item) => item.quote_id !== quoteId);
+            existing.unshift({
+                quote_id: quoteId,
+                token,
+                provider: String(paymentResult?.provider || 'afdian').trim().toLowerCase() || 'afdian',
+                site,
+                points_amount: Number(quote?.points_amount || paymentResult?.points_amount || 0) || 0,
+                paid_amount: Number(quote?.paid_amount || paymentResult?.paid_amount || 0) || 0,
+                issued_at: String(quote?.issued_at || '').trim() || new Date().toISOString(),
+                expires_at: String(quote?.expires_at || '').trim() || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+                checkout_session_id: String(paymentResult?.checkout_session_id || '').trim() || null
+            });
+
+            this.savePendingCustomRechargeQuotes(existing.slice(0, 12));
+        },
+
+        consumePendingCustomRechargeQuotes(quoteIds = []) {
+            const normalizedIds = (Array.isArray(quoteIds) ? quoteIds : [])
+                .map((item) => String(item || '').trim())
+                .filter(Boolean);
+            if (!normalizedIds.length) {
+                return;
+            }
+
+            const remaining = this.loadPendingCustomRechargeQuotes()
+                .filter((item) => !normalizedIds.includes(String(item?.quote_id || '').trim()));
+            this.savePendingCustomRechargeQuotes(remaining);
         },
 
         /**
@@ -3742,14 +3853,30 @@
                     throw new Error('请先登录后再查询订单');
                 }
 
+                const pendingQuoteTokens = this.loadPendingCustomRechargeQuotes()
+                    .filter((item) => (item.site || 'cn') === (window.SiteConfig?.site || 'cn'))
+                    .filter((item) => (item.provider || 'afdian') === 'afdian')
+                    .map((item) => item.token)
+                    .filter(Boolean);
+
                 // Get server URL from verify config or default
                 const serverUrl = window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app';
-                const response = await fetch(`${serverUrl}/api/afdian/query?order_no=${encodeURIComponent(orderNo)}`, {
+                const response = await fetch(`${serverUrl}/api/afdian/query`, {
+                    method: 'POST',
                     headers: {
+                        'Content-Type': 'application/json',
                         Authorization: `Bearer ${session.access_token}`
-                    }
+                    },
+                    body: JSON.stringify({
+                        order_no: orderNo,
+                        quote_tokens: pendingQuoteTokens
+                    })
                 });
                 const data = await response.json().catch(() => ({}));
+
+                if (Array.isArray(data?.consumed_custom_quote_ids) && data.consumed_custom_quote_ids.length > 0) {
+                    this.consumePendingCustomRechargeQuotes(data.consumed_custom_quote_ids);
+                }
 
                 resultDiv.innerHTML = '';
                 const wrapper = document.createElement('div');

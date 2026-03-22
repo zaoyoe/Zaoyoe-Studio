@@ -63,7 +63,12 @@ ON CONFLICT (config_key) DO NOTHING;
 INSERT INTO public.system_config (config_key, config_value, description) VALUES
 ('recharge_options', '{
     "custom_amount_enabled": false,
-    "mock_payment_enabled": false
+    "mock_payment_enabled": false,
+    "custom_amount_min_points": 1,
+    "custom_amount_max_points": 50000,
+    "custom_amount_step": 1,
+    "custom_amount_points_per_cny": 50,
+    "custom_amount_quote_ttl_seconds": 1800
 }'::jsonb, '充值入口配置')
 ON CONFLICT (config_key) DO NOTHING;
 

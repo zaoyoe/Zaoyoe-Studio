@@ -16,7 +16,9 @@ const {
 } = require('../api/_lib/payments/provider-adapters');
 const {
     reconcileCheckoutSessionForPaymentOrder,
-    resolvePendingPaymentOrderFromCheckoutContext
+    resolvePendingPaymentOrderFromCheckoutContext,
+    sanitizeSite,
+    verifyCustomRechargeQuoteToken
 } = require('../api/_lib/payments/orders');
 const {
     loadShopDeliveryStrategyConfig,
@@ -326,6 +328,379 @@ async function resolveAfdianPackage({ planId, amount }) {
     }
 
     return null;
+}
+
+function normalizeQuoteTokens(input) {
+    const values = Array.isArray(input)
+        ? input
+        : typeof input === 'string'
+            ? input.split(',')
+            : [];
+
+    return [...new Set(values
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .slice(0, 12))];
+}
+
+async function loadAfdianQuerySnapshot(orderNo) {
+    const normalizedOrderNo = String(orderNo || '').trim();
+    if (!normalizedOrderNo) {
+        return {
+            afdianOrder: null,
+            paymentOrder: null
+        };
+    }
+
+    const { data: afdianOrder, error: afdianOrderError } = await supabase
+        .from('afdian_orders')
+        .select('id, out_trade_no, total_amount, points, redeem_code, is_redeemed, created_at, payment_status, sign_verified, amount_verified, site, site_user_id, claimed_at, payment_order_id, plan_id, raw_payload, paid_at, verified_at')
+        .eq('out_trade_no', normalizedOrderNo)
+        .maybeSingle();
+
+    if (afdianOrderError) {
+        throw new Error(afdianOrderError.message || 'Failed to inspect afdian order');
+    }
+
+    if (!afdianOrder) {
+        return {
+            afdianOrder: null,
+            paymentOrder: null
+        };
+    }
+
+    let paymentOrder = null;
+    let paymentOrderError = null;
+    if (afdianOrder.payment_order_id) {
+        ({ data: paymentOrder, error: paymentOrderError } = await supabase
+            .from('payment_orders')
+            .select('id, user_id, site, checkout_session_id, package_id, package_name, expected_amount, paid_amount, points_amount, status, sign_verified, amount_verified, provider_metadata, created_at, paid_at, last_error')
+            .eq('id', afdianOrder.payment_order_id)
+            .maybeSingle());
+    }
+
+    if (!paymentOrder && !paymentOrderError) {
+        ({ data: paymentOrder, error: paymentOrderError } = await supabase
+            .from('payment_orders')
+            .select('id, user_id, site, checkout_session_id, package_id, package_name, expected_amount, paid_amount, points_amount, status, sign_verified, amount_verified, provider_metadata, created_at, paid_at, last_error')
+            .eq('provider', 'afdian')
+            .eq('provider_order_no', normalizedOrderNo)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle());
+    }
+
+    if (paymentOrderError) {
+        throw new Error(paymentOrderError.message || 'Failed to inspect afdian payment order');
+    }
+
+    return {
+        afdianOrder,
+        paymentOrder: paymentOrder || null
+    };
+}
+
+function deriveAfdianOwnershipState({ userId, afdianOrder = null, paymentOrder = null } = {}) {
+    const normalizedUserId = String(userId || '').trim();
+    const orderOwnerId = String(afdianOrder?.site_user_id || '').trim();
+    const paymentOwnerId = String(paymentOrder?.user_id || '').trim();
+
+    if (!normalizedUserId) {
+        return {
+            state: 'missing_user'
+        };
+    }
+
+    if ((orderOwnerId && orderOwnerId !== normalizedUserId) || (paymentOwnerId && paymentOwnerId !== normalizedUserId)) {
+        return {
+            state: 'denied',
+            ownerSource: orderOwnerId && orderOwnerId !== normalizedUserId ? 'afdian_order' : 'payment_order'
+        };
+    }
+
+    if (orderOwnerId === normalizedUserId || paymentOwnerId === normalizedUserId) {
+        return {
+            state: 'owned',
+            ownerSource: orderOwnerId === normalizedUserId ? 'afdian_order' : 'payment_order'
+        };
+    }
+
+    return {
+        state: 'unowned'
+    };
+}
+
+function buildAfdianQueryOrderInfo({ afdianOrder = null, paymentOrder = null } = {}) {
+    if (!afdianOrder && !paymentOrder) {
+        return null;
+    }
+
+    return {
+        code: String(afdianOrder?.redeem_code || '').trim() || null,
+        points: Math.max(
+            0,
+            Math.round(Number(paymentOrder?.points_amount ?? afdianOrder?.points ?? 0) || 0)
+        ),
+        is_redeemed: Boolean(afdianOrder?.is_redeemed),
+        created_at: afdianOrder?.created_at || paymentOrder?.created_at || null,
+        payment_status: String(paymentOrder?.status || afdianOrder?.payment_status || 'pending').trim() || 'pending',
+        sign_verified: paymentOrder?.sign_verified === true || afdianOrder?.sign_verified === true,
+        amount_verified: paymentOrder?.amount_verified === true || afdianOrder?.amount_verified === true,
+        last_error: String(paymentOrder?.last_error || '').trim() || null
+    };
+}
+
+function extractAfdianQueryRequest(req) {
+    if (req.method === 'POST') {
+        const body = req.body && typeof req.body === 'object' ? req.body : {};
+        return {
+            orderNo: String(body.order_no || '').trim(),
+            quoteTokens: normalizeQuoteTokens(body.quote_tokens || body.quote_token || [])
+        };
+    }
+
+    return {
+        orderNo: String(req.query.order_no || '').trim(),
+        quoteTokens: normalizeQuoteTokens(req.query.quote_tokens || req.query.quote_token || [])
+    };
+}
+
+function getCustomQuoteSnapshot(order = {}) {
+    const metadata = order?.provider_metadata && typeof order.provider_metadata === 'object'
+        ? order.provider_metadata
+        : {};
+    const quote = metadata?.custom_quote && typeof metadata.custom_quote === 'object'
+        ? metadata.custom_quote
+        : {};
+    const quoteId = String(metadata.custom_quote_id || quote.quote_id || '').trim();
+    const expiresAt = String(metadata.custom_quote_expires_at || quote.expires_at || '').trim() || null;
+    const expectedAmount = roundPaymentCurrencyAmount(
+        quote.paid_amount ?? order.expected_amount ?? order.paid_amount ?? 0
+    );
+    const pointsAmount = Math.max(
+        0,
+        Math.round(Number(quote.points_amount ?? order.points_amount ?? 0) || 0)
+    );
+    const site = String(order.site || quote.site || '').trim().toLowerCase() || 'cn';
+    const chargeType = String(metadata.charge_type || '').trim().toLowerCase();
+    const pricingMode = String(quote.pricing_mode || '').trim().toLowerCase() || 'fixed_rate';
+    const checkoutSessionId = String(order.checkout_session_id || '').trim() || null;
+    const paidAt = String(order.paid_at || '').trim() || null;
+    const createdAt = String(order.created_at || '').trim() || null;
+
+    if (!quoteId || pointsAmount <= 0 || expectedAmount <= 0) {
+        return null;
+    }
+
+    return {
+        quoteId,
+        expectedAmount,
+        pointsAmount,
+        expiresAt,
+        site,
+        chargeType,
+        pricingMode,
+        checkoutSessionId,
+        paidAt,
+        createdAt
+    };
+}
+
+async function findMatchingCustomRechargeQuote({
+    userId,
+    site,
+    paidAmount,
+    paidAt = '',
+    linkedPaymentOrder = null,
+    quoteTokens = []
+}) {
+    if (!userId || !Number.isFinite(Number(paidAmount)) || Number(paidAmount) <= 0) {
+        return null;
+    }
+
+    const verifiedQuoteIds = new Set(
+        normalizeQuoteTokens(quoteTokens)
+            .map((token) => verifyCustomRechargeQuoteToken(token, {
+                env: process.env,
+                userId,
+                site,
+                providerKey: 'afdian'
+            }))
+            .filter(Boolean)
+            .map((item) => item.quoteId)
+    );
+
+    const lookbackIso = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+        .from('payment_orders')
+        .select('id, user_id, provider_order_no, checkout_session_id, site, expected_amount, paid_amount, points_amount, status, provider_metadata, created_at, paid_at')
+        .eq('provider', 'afdian')
+        .eq('user_id', userId)
+        .gte('created_at', lookbackIso)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+    if (error) {
+        throw new Error(error.message || 'Failed to inspect custom recharge quotes');
+    }
+
+    const candidates = (Array.isArray(data) ? data : [])
+        .map((item) => ({
+            order: item,
+            quote: getCustomQuoteSnapshot(item)
+        }))
+        .filter((item) => item.quote && item.quote.chargeType === 'custom')
+        .filter((item) => {
+            const status = String(item.order.status || '').trim().toLowerCase();
+            if (['pending', 'pending_review', 'amount_mismatch'].includes(status)) {
+                return true;
+            }
+            return !!linkedPaymentOrder?.id && item.order.id === linkedPaymentOrder.id;
+        })
+        .filter((item) => paymentAmountsMatch(item.quote.expectedAmount, paidAmount))
+        .filter((item) => sanitizeSite(item.quote.site) === sanitizeSite(site))
+        .filter((item) => {
+            if (!item.quote.expiresAt) return true;
+            const paidAtTs = Date.parse(String(paidAt || item.quote.paidAt || ''));
+            const expiresAtTs = Date.parse(String(item.quote.expiresAt || ''));
+            if (!Number.isFinite(expiresAtTs)) return true;
+            if (!Number.isFinite(paidAtTs)) return true;
+            return paidAtTs <= expiresAtTs;
+        })
+        .map((item) => {
+            let score = 0;
+            if (verifiedQuoteIds.has(item.quote.quoteId)) score += 200;
+            if (linkedPaymentOrder?.checkout_session_id && item.quote.checkoutSessionId === linkedPaymentOrder.checkout_session_id) score += 80;
+            if (String(item.order.provider_order_no || '').toUpperCase().startsWith('PENDING_')) score += 30;
+            if (item.order.status === 'pending') score += 20;
+            return {
+                ...item,
+                score
+            };
+        })
+        .sort((left, right) => {
+            if (right.score !== left.score) return right.score - left.score;
+            return Date.parse(String(right.order.created_at || '')) - Date.parse(String(left.order.created_at || ''));
+        });
+
+    if (!candidates.length) {
+        return null;
+    }
+
+    if (verifiedQuoteIds.size > 0) {
+        const tokenMatchedCandidates = candidates.filter((item) => verifiedQuoteIds.has(item.quote.quoteId));
+        if (tokenMatchedCandidates.length === 1) {
+            return tokenMatchedCandidates[0];
+        }
+        if (tokenMatchedCandidates.length > 1 && linkedPaymentOrder?.checkout_session_id) {
+            const exactSessionCandidate = tokenMatchedCandidates.find(
+                (item) => item.quote.checkoutSessionId === linkedPaymentOrder.checkout_session_id
+            );
+            if (exactSessionCandidate) {
+                return exactSessionCandidate;
+            }
+        }
+        if (tokenMatchedCandidates.length > 1) {
+            return null;
+        }
+    }
+
+    const [bestCandidate, secondCandidate] = candidates;
+    if (!secondCandidate) {
+        return bestCandidate;
+    }
+
+    if (bestCandidate.quote.quoteId === secondCandidate.quote.quoteId) {
+        return bestCandidate;
+    }
+
+    if (bestCandidate.score - secondCandidate.score >= 80) {
+        return bestCandidate;
+    }
+
+    return null;
+}
+
+async function tryFinalizeCustomRechargeFromQuote({
+    orderNo,
+    user,
+    site,
+    linkedPaymentOrder = null,
+    orderInfo = null,
+    quoteTokens = []
+}) {
+    const paidAmount = roundPaymentCurrencyAmount(
+        linkedPaymentOrder?.paid_amount
+            ?? orderInfo?.paid_amount
+            ?? 0
+    );
+    const paidAt = String(linkedPaymentOrder?.paid_at || orderInfo?.paid_at || '').trim() || null;
+    const signVerified = linkedPaymentOrder?.sign_verified === true || orderInfo?.sign_verified === true;
+
+    if (!signVerified || paidAmount <= 0) {
+        return null;
+    }
+
+    const matchedCandidate = await findMatchingCustomRechargeQuote({
+        userId: user.id,
+        site,
+        paidAmount,
+        paidAt,
+        linkedPaymentOrder,
+        quoteTokens
+    });
+
+    if (!matchedCandidate?.quote) {
+        return null;
+    }
+
+    const { data, error } = await supabase.rpc('fn_finalize_afdian_custom_payment', {
+        p_order_no: orderNo,
+        p_user_id: user.id,
+        p_site: matchedCandidate.quote.site || site,
+        p_points: matchedCandidate.quote.pointsAmount,
+        p_expected_amount: matchedCandidate.quote.expectedAmount,
+        p_quote_id: matchedCandidate.quote.quoteId,
+        p_package_name: '自定义充值'
+    });
+
+    if (error) {
+        throw new Error(error.message || 'Failed to finalize custom recharge quote');
+    }
+
+    if (!data?.payment_order_id) {
+        return null;
+    }
+
+    try {
+        await reconcileCheckoutSessionForPaymentOrder({
+            supabase,
+            providerKey: 'afdian',
+            paymentOrderId: data.payment_order_id,
+            providerOrderNo: orderNo,
+            userId: user.id,
+            site: matchedCandidate.quote.site || site,
+            packageId: null,
+            packageName: '自定义充值',
+            expectedAmount: matchedCandidate.quote.expectedAmount,
+            paidAmount,
+            pointsAmount: matchedCandidate.quote.pointsAmount,
+            orderStatus: data.status || 'paid',
+            linkedBy: 'afdian_query_custom_quote',
+            allowHeuristic: true,
+            lookbackMinutes: 1440
+        });
+    } catch (linkError) {
+        console.warn('[Afdian] Failed to reconcile checkout session after custom quote finalization:', linkError.message);
+    }
+
+    return {
+        code: data.code,
+        points: data.points,
+        paymentOrderId: data.payment_order_id,
+        checkoutSessionId: data.checkout_session_id || linkedPaymentOrder?.checkout_session_id || null,
+        quoteId: data.quote_id || matchedCandidate.quote.quoteId
+    };
 }
 
 function buildClientStatusMessage(job) {
@@ -2055,9 +2430,8 @@ app.post('/api/afdian/webhook', async (req, res) => {
     }
 });
 
-// GET /api/afdian/query - Query redemption code by order number
-app.get('/api/afdian/query', async (req, res) => {
-    const orderNo = String(req.query.order_no || '').trim();
+async function handleAfdianQueryRequest(req, res) {
+    const { orderNo, quoteTokens } = extractAfdianQueryRequest(req);
     const currentSite = getCurrentSite(req);
 
     async function sendQueryResponse(statusCode, payload, audit = {}) {
@@ -2074,7 +2448,8 @@ app.get('/api/afdian/query', async (req, res) => {
             message: audit.message || payload?.message || null,
             metadata: {
                 payment_status: audit.paymentStatus || null,
-                source: 'afdian_query_api'
+                source: 'afdian_query_api',
+                quote_token_count: quoteTokens.length
             }
         });
         return res.status(statusCode).json(payload);
@@ -2094,86 +2469,148 @@ app.get('/api/afdian/query', async (req, res) => {
             });
         }
 
-        const { data, error } = await supabase.rpc('fn_claim_and_query_afdian_code', {
-            p_order_no: orderNo,
-            p_user_id: user.id
-        });
-
-        if (error) {
-            console.error('[Afdian] Query error:', error);
-            if (/Access denied/i.test(error.message || '')) {
-                return sendQueryResponse(403, { success: false, message: '该订单已归属其他账号，无法查询' }, {
-                    userId: user.id,
-                    outcomeCode: 'access_denied'
-                });
-            }
-            return sendQueryResponse(500, { success: false, message: '查询失败' }, {
-                userId: user.id,
-                outcomeCode: 'query_rpc_failed'
-            });
-        }
-
-        if (!data || data.length === 0) {
+        let { afdianOrder, paymentOrder: linkedPaymentOrder } = await loadAfdianQuerySnapshot(orderNo);
+        if (!afdianOrder) {
             return sendQueryResponse(200, { success: false, message: '未找到该订单' }, {
                 userId: user.id,
                 outcomeCode: 'not_found'
             });
         }
 
-        const orderInfo = data[0];
-        let linkedPaymentOrder = null;
-        try {
-            const { data: paymentOrder } = await supabase
-                .from('payment_orders')
-                .select('id, site, checkout_session_id, package_id, package_name, expected_amount, paid_amount, points_amount, status')
-                .eq('provider', 'afdian')
-                .eq('provider_order_no', orderNo)
-                .maybeSingle();
+        let ownership = deriveAfdianOwnershipState({
+            userId: user.id,
+            afdianOrder,
+            paymentOrder: linkedPaymentOrder
+        });
+        if (ownership.state === 'denied') {
+            return sendQueryResponse(403, { success: false, message: '该订单已归属其他账号，无法查询' }, {
+                userId: user.id,
+                paymentOrderId: linkedPaymentOrder?.id || afdianOrder?.payment_order_id || null,
+                checkoutSessionId: linkedPaymentOrder?.checkout_session_id || null,
+                outcomeCode: 'access_denied'
+            });
+        }
 
-            linkedPaymentOrder = paymentOrder || null;
+        let orderInfo = buildAfdianQueryOrderInfo({
+            afdianOrder,
+            paymentOrder: linkedPaymentOrder
+        });
 
-            if (paymentOrder?.id) {
+        if (linkedPaymentOrder?.id && ownership.state === 'owned') {
+            try {
                 await reconcileCheckoutSessionForPaymentOrder({
                     supabase,
                     providerKey: 'afdian',
-                    paymentOrderId: paymentOrder.id,
+                    paymentOrderId: linkedPaymentOrder.id,
                     providerOrderNo: orderNo,
                     userId: user.id,
-                    site: paymentOrder.site,
-                    packageId: paymentOrder.package_id,
-                    packageName: paymentOrder.package_name,
-                    expectedAmount: paymentOrder.expected_amount,
-                    paidAmount: paymentOrder.paid_amount,
-                    pointsAmount: paymentOrder.points_amount,
-                    orderStatus: paymentOrder.status,
-                    linkedBy: 'afdian_query_claim',
+                    site: linkedPaymentOrder.site,
+                    packageId: linkedPaymentOrder.package_id,
+                    packageName: linkedPaymentOrder.package_name,
+                    expectedAmount: linkedPaymentOrder.expected_amount,
+                    paidAmount: linkedPaymentOrder.paid_amount,
+                    pointsAmount: linkedPaymentOrder.points_amount,
+                    orderStatus: linkedPaymentOrder.status,
+                    linkedBy: 'afdian_query_owned',
                     allowHeuristic: true,
                     lookbackMinutes: 1440
                 });
+            } catch (linkError) {
+                console.warn('[Afdian] Failed to link checkout session for owned order query:', linkError.message);
             }
-        } catch (linkError) {
-            console.warn('[Afdian] Failed to link checkout session from query claim:', linkError.message);
         }
 
         if (!orderInfo.code) {
             const currentStatus = String(orderInfo.payment_status || 'pending_review');
-            const message = currentStatus === 'rejected'
+            if (ownership.state === 'unowned' && currentStatus !== 'rejected') {
+                try {
+                    const finalizedCustomRecharge = await tryFinalizeCustomRechargeFromQuote({
+                        orderNo,
+                        user,
+                        site: linkedPaymentOrder?.site || afdianOrder?.site || currentSite,
+                        linkedPaymentOrder,
+                        orderInfo,
+                        quoteTokens
+                    });
+
+                    if (finalizedCustomRecharge?.code) {
+                        return sendQueryResponse(200, {
+                            success: true,
+                            code: finalizedCustomRecharge.code,
+                            points: finalizedCustomRecharge.points,
+                            is_redeemed: false,
+                            created_at: orderInfo?.created_at || afdianOrder?.created_at || null,
+                            payment_status: 'paid',
+                            consumed_custom_quote_ids: finalizedCustomRecharge.quoteId ? [finalizedCustomRecharge.quoteId] : []
+                        }, {
+                            userId: user.id,
+                            paymentOrderId: finalizedCustomRecharge.paymentOrderId || linkedPaymentOrder?.id || null,
+                            checkoutSessionId: finalizedCustomRecharge.checkoutSessionId || linkedPaymentOrder?.checkout_session_id || null,
+                            paymentStatus: 'paid',
+                            success: true,
+                            outcomeCode: 'custom_quote_resolved'
+                        });
+                    }
+                } catch (customFinalizeError) {
+                    console.warn('[Afdian] Failed to finalize custom recharge from quote:', customFinalizeError.message);
+                }
+
+                ({ afdianOrder, paymentOrder: linkedPaymentOrder } = await loadAfdianQuerySnapshot(orderNo));
+                ownership = deriveAfdianOwnershipState({
+                    userId: user.id,
+                    afdianOrder,
+                    paymentOrder: linkedPaymentOrder
+                });
+                if (ownership.state === 'denied') {
+                    return sendQueryResponse(403, { success: false, message: '该订单已归属其他账号，无法查询' }, {
+                        userId: user.id,
+                        paymentOrderId: linkedPaymentOrder?.id || afdianOrder?.payment_order_id || null,
+                        checkoutSessionId: linkedPaymentOrder?.checkout_session_id || null,
+                        outcomeCode: 'access_denied'
+                    });
+                }
+                orderInfo = buildAfdianQueryOrderInfo({
+                    afdianOrder,
+                    paymentOrder: linkedPaymentOrder
+                });
+            }
+
+            const effectiveStatus = String(orderInfo?.payment_status || currentStatus || 'pending_review');
+
+            if (ownership.state !== 'owned') {
+                const pendingOwnershipMessage = effectiveStatus === 'rejected'
+                    ? '订单验签失败，已拦截，请联系客服'
+                    : '订单已记录，但尚未安全匹配到当前账号的支付意图，请确认使用本账号创建支付并稍后重试；如仍未到账请联系客服。';
+                return sendQueryResponse(200, {
+                    success: false,
+                    message: pendingOwnershipMessage,
+                    status: effectiveStatus
+                }, {
+                    userId: user.id,
+                    paymentOrderId: linkedPaymentOrder?.id || afdianOrder?.payment_order_id || null,
+                    checkoutSessionId: linkedPaymentOrder?.checkout_session_id || null,
+                    paymentStatus: effectiveStatus,
+                    outcomeCode: effectiveStatus === 'rejected' ? 'rejected' : 'ownership_pending'
+                });
+            }
+
+            const message = effectiveStatus === 'rejected'
                 ? '订单验签失败，已拦截，请联系客服'
-                : currentStatus === 'amount_mismatch'
-                    ? '订单金额校验异常，正在审核'
+                : effectiveStatus === 'amount_mismatch'
+                    ? '订单金额校验异常；如果这是自定义充值，请确认支付金额与钱包报价一致后稍后重试'
                     : '订单已记录，兑换码生成中，请稍后再试';
             return sendQueryResponse(200, {
                 success: false,
                 message,
-                status: currentStatus
+                status: effectiveStatus
             }, {
                 userId: user.id,
                 paymentOrderId: linkedPaymentOrder?.id || null,
                 checkoutSessionId: linkedPaymentOrder?.checkout_session_id || null,
-                paymentStatus: currentStatus,
-                outcomeCode: currentStatus === 'rejected'
+                paymentStatus: effectiveStatus,
+                outcomeCode: effectiveStatus === 'rejected'
                     ? 'rejected'
-                    : currentStatus === 'amount_mismatch'
+                    : effectiveStatus === 'amount_mismatch'
                         ? 'amount_mismatch'
                         : 'code_pending'
             });
@@ -2201,7 +2638,11 @@ app.get('/api/afdian/query', async (req, res) => {
             outcomeCode: 'query_exception'
         });
     }
-});
+}
+
+// GET/POST /api/afdian/query - Query redemption code by order number
+app.get('/api/afdian/query', handleAfdianQueryRequest);
+app.post('/api/afdian/query', handleAfdianQueryRequest);
 
 app.listen(PORT, () => {
     console.log(`🚀 Verify proxy server running on port ${PORT}`);

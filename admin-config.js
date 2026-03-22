@@ -24,7 +24,12 @@ function getDefaultCheckinConfig() {
 function getDefaultRechargeOptionsConfig() {
     return {
         custom_amount_enabled: false,
-        mock_payment_enabled: false
+        mock_payment_enabled: false,
+        custom_amount_min_points: 1,
+        custom_amount_max_points: 50000,
+        custom_amount_step: 1,
+        custom_amount_points_per_cny: 50,
+        custom_amount_quote_ttl_seconds: 1800
     };
 }
 
@@ -53,7 +58,7 @@ function getDefaultPaymentChannelsConfig() {
                 display_name: '爱发电',
                 checkout_url: 'https://afdian.com/a/zaoyoe',
                 package_hint: '请在爱发电完成支付后，返回钱包输入订单号领取兑换码。',
-                custom_amount_hint: '建议在支付备注里填写要充值的积分数量，支付后返回钱包输入订单号领取兑换码。'
+                custom_amount_hint: '钱包会先生成本次应付金额，请按报价完成支付后返回输入订单号领取兑换码。'
             },
             hupijiao: {
                 enabled: false,
@@ -168,7 +173,15 @@ function normalizeRechargeOptionsConfig(raw) {
 
     return {
         custom_amount_enabled: source.custom_amount_enabled === true || String(source.custom_amount_enabled) === 'true',
-        mock_payment_enabled: source.mock_payment_enabled === true || String(source.mock_payment_enabled) === 'true'
+        mock_payment_enabled: source.mock_payment_enabled === true || String(source.mock_payment_enabled) === 'true',
+        custom_amount_min_points: Math.max(1, Math.round(toPointNumber(source.custom_amount_min_points, defaults.custom_amount_min_points))),
+        custom_amount_max_points: Math.max(
+            Math.max(1, Math.round(toPointNumber(source.custom_amount_min_points, defaults.custom_amount_min_points))),
+            Math.round(toPointNumber(source.custom_amount_max_points, defaults.custom_amount_max_points))
+        ),
+        custom_amount_step: Math.max(1, Math.round(toPointNumber(source.custom_amount_step, defaults.custom_amount_step))),
+        custom_amount_points_per_cny: Math.max(0.01, toPointNumber(source.custom_amount_points_per_cny, defaults.custom_amount_points_per_cny)),
+        custom_amount_quote_ttl_seconds: Math.max(60, Math.round(toPointNumber(source.custom_amount_quote_ttl_seconds, defaults.custom_amount_quote_ttl_seconds)))
     };
 }
 

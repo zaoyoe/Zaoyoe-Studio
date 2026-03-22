@@ -6,6 +6,11 @@ const {
 const PROVIDER_KEYS = Object.freeze(['mock', 'afdian', 'hupijiao']);
 const DEFAULT_SITE_ORIGIN = 'https://www.zaoyoe.com';
 const DEFAULT_AFDIAN_CHECKOUT_URL = 'https://afdian.com/a/zaoyoe';
+const DEFAULT_CUSTOM_RECHARGE_MIN_POINTS = 1;
+const DEFAULT_CUSTOM_RECHARGE_MAX_POINTS = 50000;
+const DEFAULT_CUSTOM_RECHARGE_STEP = 1;
+const DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY = 50;
+const DEFAULT_CUSTOM_RECHARGE_QUOTE_TTL_SECONDS = 1800;
 
 const PROVIDER_SECRET_NAMES = Object.freeze({
     mock: [],
@@ -40,13 +45,48 @@ function coerceBoolean(value, fallback = false) {
     return fallback;
 }
 
+function coerceFiniteNumber(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function coercePositiveNumber(value, fallback) {
+    const parsed = coerceFiniteNumber(value, fallback);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function coercePositiveInteger(value, fallback) {
+    const parsed = Math.round(coerceFiniteNumber(value, fallback));
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function normalizeRechargeOptionsConfig(raw) {
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
     return {
         custom_amount_enabled: source.custom_amount_enabled === true
             || String(source.custom_amount_enabled) === 'true',
         mock_payment_enabled: source.mock_payment_enabled === true
-            || String(source.mock_payment_enabled) === 'true'
+            || String(source.mock_payment_enabled) === 'true',
+        custom_amount_min_points: coercePositiveInteger(
+            source.custom_amount_min_points,
+            DEFAULT_CUSTOM_RECHARGE_MIN_POINTS
+        ),
+        custom_amount_max_points: coercePositiveInteger(
+            source.custom_amount_max_points,
+            DEFAULT_CUSTOM_RECHARGE_MAX_POINTS
+        ),
+        custom_amount_step: coercePositiveInteger(
+            source.custom_amount_step,
+            DEFAULT_CUSTOM_RECHARGE_STEP
+        ),
+        custom_amount_points_per_cny: coercePositiveNumber(
+            source.custom_amount_points_per_cny,
+            DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY
+        ),
+        custom_amount_quote_ttl_seconds: coercePositiveInteger(
+            source.custom_amount_quote_ttl_seconds,
+            DEFAULT_CUSTOM_RECHARGE_QUOTE_TTL_SECONDS
+        )
     };
 }
 
@@ -71,7 +111,7 @@ function getDefaultPaymentChannelsConfig(options = {}) {
                 display_name: '爱发电',
                 checkout_url: afdianCheckoutUrl,
                 package_hint: '请在爱发电完成支付后，返回钱包输入订单号领取兑换码。',
-                custom_amount_hint: '建议在支付备注里填写要充值的积分数量，支付后返回钱包输入订单号领取兑换码。'
+                custom_amount_hint: '钱包会先生成本次应付金额，请按报价完成支付后返回输入订单号领取兑换码。'
             },
             hupijiao: {
                 enabled: false,

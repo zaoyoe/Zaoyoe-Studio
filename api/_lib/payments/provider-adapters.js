@@ -223,7 +223,7 @@ const providerRegistry = {
             }
             return null;
         },
-        createCheckoutContext({ runtimeContext, packageName, grantedPoints, isCustomRecharge } = {}) {
+        createCheckoutContext({ runtimeContext, packageName, grantedPoints, isCustomRecharge, paidAmount, customQuote } = {}) {
             const channelConfig = runtimeContext?.channelConfig || {};
             const checkoutUrl = String(channelConfig.checkout_url || '').trim();
 
@@ -245,10 +245,12 @@ const providerRegistry = {
                     ? channelConfig.custom_amount_hint
                     : channelConfig.package_hint)
                     || (isCustomRecharge
-                        ? `建议在支付备注里填写要充值的积分数量。支付后返回钱包输入订单号领取兑换码。`
+                        ? `请按页面报价支付 ¥${roundCurrencyAmount(paidAmount).toFixed(2)}，支付后返回钱包输入订单号领取兑换码。`
                         : `请在爱发电完成「${String(packageName || '').trim() || '当前套餐'}」支付后，返回钱包输入订单号领取兑换码。`),
                 summary: {
-                    grantedPoints: normalizePointValue(grantedPoints, 0)
+                    grantedPoints: normalizePointValue(grantedPoints, 0),
+                    expectedAmount: roundCurrencyAmount(paidAmount),
+                    quoteExpiresAt: customQuote?.expiresAt || null
                 }
             };
         }

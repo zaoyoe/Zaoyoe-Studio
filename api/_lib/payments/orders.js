@@ -12,6 +12,12 @@ const CHECKOUT_SESSION_EXPIRY_HOURS = 24;
 const ACTIVE_CHECKOUT_SESSION_STATUSES = ['created', 'redirect_ready', 'failed'];
 const TERMINAL_CHECKOUT_SESSION_STATUSES = ['completed', 'cancelled', 'expired'];
 const PENDING_PROVIDER_ORDER_PREFIX = 'PENDING';
+const CUSTOM_RECHARGE_QUOTE_PREFIX = 'crq';
+const DEFAULT_CUSTOM_RECHARGE_MIN_POINTS = 1;
+const DEFAULT_CUSTOM_RECHARGE_MAX_POINTS = 50000;
+const DEFAULT_CUSTOM_RECHARGE_STEP = 1;
+const DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY = 50;
+const DEFAULT_CUSTOM_RECHARGE_QUOTE_TTL_SECONDS = 1800;
 
 function sanitizeSite(value) {
     const site = String(value || '').trim().toLowerCase();
@@ -28,6 +34,254 @@ function normalizeCurrency(value, fallback = null) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return fallback;
     return Math.round(parsed * 100) / 100;
+}
+
+function normalizeInteger(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.round(parsed) : fallback;
+}
+
+function roundUpCurrency(value, fallback = null) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.ceil(parsed * 100) / 100;
+}
+
+function encodeBase64Url(value) {
+    return Buffer.from(String(value || ''), 'utf8')
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+}
+
+function decodeBase64Url(value) {
+    const normalized = String(value || '').trim().replace(/-/g, '+').replace(/_/g, '/');
+    if (!normalized) return '';
+    const padding = normalized.length % 4 === 0
+        ? ''
+        : '='.repeat(4 - (normalized.length % 4));
+    return Buffer.from(`${normalized}${padding}`, 'base64').toString('utf8');
+}
+
+function getCustomRechargeQuoteSecret(env = process.env) {
+    return [
+        env?.PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET,
+        env?.PAYMENT_CUSTOM_QUOTE_SECRET,
+        env?.PAYMENT_QUOTE_SECRET,
+        env?.SUPABASE_SERVICE_ROLE_KEY
+    ]
+        .map((value) => String(value || '').trim())
+        .find(Boolean) || '';
+}
+
+function signCustomRechargeQuotePayload(payload, env = process.env) {
+    const secret = getCustomRechargeQuoteSecret(env);
+    if (!secret) {
+        throw new Error('自定义充值报价签名密钥未配置');
+    }
+
+    const body = encodeBase64Url(JSON.stringify(payload || {}));
+    const signature = crypto
+        .createHmac('sha256', secret)
+        .update(body)
+        .digest('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+
+    return `${CUSTOM_RECHARGE_QUOTE_PREFIX}.${body}.${signature}`;
+}
+
+function hashCustomRechargeQuoteToken(token = '') {
+    return crypto
+        .createHash('sha256')
+        .update(String(token || ''))
+        .digest('hex');
+}
+
+function buildCustomRechargeQuoteId() {
+    return `CRQ_${Date.now()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+}
+
+function getNormalizedCustomRechargeRules(rechargeOptions = {}) {
+    const minPoints = Math.max(
+        1,
+        normalizeInteger(rechargeOptions?.custom_amount_min_points, DEFAULT_CUSTOM_RECHARGE_MIN_POINTS)
+    );
+    const maxPoints = Math.max(
+        minPoints,
+        normalizeInteger(rechargeOptions?.custom_amount_max_points, DEFAULT_CUSTOM_RECHARGE_MAX_POINTS)
+    );
+    const step = Math.max(
+        1,
+        normalizeInteger(rechargeOptions?.custom_amount_step, DEFAULT_CUSTOM_RECHARGE_STEP)
+    );
+    const pointsPerCny = Number(rechargeOptions?.custom_amount_points_per_cny);
+    const quoteTtlSeconds = Math.max(
+        60,
+        normalizeInteger(
+            rechargeOptions?.custom_amount_quote_ttl_seconds,
+            DEFAULT_CUSTOM_RECHARGE_QUOTE_TTL_SECONDS
+        )
+    );
+
+    return {
+        minPoints,
+        maxPoints,
+        step,
+        pointsPerCny: Number.isFinite(pointsPerCny) && pointsPerCny > 0
+            ? pointsPerCny
+            : DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY,
+        quoteTtlSeconds
+    };
+}
+
+function issueCustomRechargeQuote({
+    userId,
+    site,
+    providerKey,
+    pointsAmount,
+    rechargeOptions,
+    env = process.env
+}) {
+    const rules = getNormalizedCustomRechargeRules(rechargeOptions);
+    const normalizedPoints = normalizeInteger(pointsAmount, 0);
+
+    if (!Number.isFinite(normalizedPoints) || normalizedPoints <= 0) {
+        throw new Error('请输入大于 0 的整数积分');
+    }
+    if (normalizedPoints < rules.minPoints) {
+        throw new Error(`单次自定义充值最少为 ${rules.minPoints} 积分`);
+    }
+    if (normalizedPoints > rules.maxPoints) {
+        throw new Error(`单次自定义充值最多为 ${rules.maxPoints} 积分`);
+    }
+    if (normalizedPoints % rules.step !== 0) {
+        throw new Error(`自定义充值需按 ${rules.step} 积分整数档位提交`);
+    }
+
+    const paidAmount = roundUpCurrency(normalizedPoints / rules.pointsPerCny, null);
+    if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+        throw new Error('无法为当前自定义充值生成有效报价');
+    }
+
+    const issuedAt = new Date();
+    const expiresAt = new Date(issuedAt.getTime() + (rules.quoteTtlSeconds * 1000));
+    const payload = {
+        version: 1,
+        type: 'custom_recharge_quote',
+        quote_id: buildCustomRechargeQuoteId(),
+        provider: String(providerKey || 'afdian').trim().toLowerCase() || 'afdian',
+        user_id: String(userId || '').trim(),
+        site: sanitizeSite(site),
+        points_amount: normalizedPoints,
+        paid_amount: paidAmount,
+        pricing_mode: 'fixed_rate',
+        points_per_cny: rules.pointsPerCny,
+        issued_at: issuedAt.toISOString(),
+        expires_at: expiresAt.toISOString()
+    };
+    const token = signCustomRechargeQuotePayload(payload, env);
+
+    return {
+        quoteId: payload.quote_id,
+        token,
+        tokenHash: hashCustomRechargeQuoteToken(token),
+        pointsAmount: normalizedPoints,
+        paidAmount,
+        pricingMode: payload.pricing_mode,
+        pointsPerCny: rules.pointsPerCny,
+        issuedAt: payload.issued_at,
+        expiresAt: payload.expires_at,
+        minPoints: rules.minPoints,
+        maxPoints: rules.maxPoints,
+        step: rules.step
+    };
+}
+
+function verifyCustomRechargeQuoteToken(token, {
+    env = process.env,
+    userId = '',
+    site = '',
+    providerKey = ''
+} = {}) {
+    const normalizedToken = String(token || '').trim();
+    if (!normalizedToken) return null;
+
+    const [prefix, body, signature] = normalizedToken.split('.');
+    if (prefix !== CUSTOM_RECHARGE_QUOTE_PREFIX || !body || !signature) {
+        return null;
+    }
+
+    const secret = getCustomRechargeQuoteSecret(env);
+    if (!secret) {
+        return null;
+    }
+
+    const expectedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(body)
+        .digest('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+
+    if (signature !== expectedSignature) {
+        return null;
+    }
+
+    let payload;
+    try {
+        payload = JSON.parse(decodeBase64Url(body));
+    } catch (_) {
+        return null;
+    }
+
+    if (!payload || payload.type !== 'custom_recharge_quote') {
+        return null;
+    }
+
+    const expiresAt = Date.parse(String(payload.expires_at || ''));
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        return null;
+    }
+
+    const normalizedUserId = String(userId || '').trim();
+    if (normalizedUserId && String(payload.user_id || '').trim() !== normalizedUserId) {
+        return null;
+    }
+
+    const normalizedSite = sanitizeSite(site);
+    if (normalizedSite && sanitizeSite(payload.site) !== normalizedSite) {
+        return null;
+    }
+
+    const normalizedProvider = String(providerKey || '').trim().toLowerCase();
+    if (normalizedProvider && String(payload.provider || '').trim().toLowerCase() !== normalizedProvider) {
+        return null;
+    }
+
+    const pointsAmount = normalizeInteger(payload.points_amount, 0);
+    const paidAmount = normalizeCurrency(payload.paid_amount, null);
+    if (pointsAmount <= 0 || paidAmount === null || paidAmount <= 0) {
+        return null;
+    }
+
+    return {
+        quoteId: String(payload.quote_id || '').trim(),
+        token: normalizedToken,
+        tokenHash: hashCustomRechargeQuoteToken(normalizedToken),
+        userId: String(payload.user_id || '').trim(),
+        site: sanitizeSite(payload.site),
+        provider: String(payload.provider || '').trim().toLowerCase() || 'afdian',
+        pointsAmount,
+        paidAmount,
+        pricingMode: String(payload.pricing_mode || 'fixed_rate').trim().toLowerCase() || 'fixed_rate',
+        pointsPerCny: Number(payload.points_per_cny) || DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY,
+        issuedAt: String(payload.issued_at || '').trim() || null,
+        expiresAt: String(payload.expires_at || '').trim() || null
+    };
 }
 
 function isTruthyFlag(value) {
@@ -749,8 +1003,21 @@ async function createCheckoutSession({
     grantedPoints = 0,
     paidAmount = null,
     body = {},
-    isCustomRecharge = false
+    isCustomRecharge = false,
+    customQuote = null
 }) {
+    const customQuotePayload = customQuote
+        ? {
+            quote_id: customQuote.quoteId,
+            token_hash: customQuote.tokenHash,
+            issued_at: customQuote.issuedAt,
+            expires_at: customQuote.expiresAt,
+            points_amount: normalizeInteger(customQuote.pointsAmount, 0),
+            paid_amount: normalizeCurrency(customQuote.paidAmount, null),
+            pricing_mode: customQuote.pricingMode || 'fixed_rate',
+            points_per_cny: Number(customQuote.pointsPerCny) || null
+        }
+        : null;
     const payload = {
         session_key: buildCheckoutSessionKey(providerKey),
         provider: String(providerKey || 'unknown').trim().toLowerCase() || 'unknown',
@@ -773,11 +1040,15 @@ async function createCheckoutSession({
                 granted_points: normalizePointValue(grantedPoints, 0),
                 paid_amount: paidAmount,
                 site,
-                is_custom_recharge: isCustomRecharge
+                is_custom_recharge: isCustomRecharge,
+                custom_quote: customQuotePayload
             }
         },
         provider_metadata: {
-            charge_type: isCustomRecharge ? 'custom' : 'package'
+            charge_type: isCustomRecharge ? 'custom' : 'package',
+            custom_quote_id: customQuotePayload?.quote_id || null,
+            custom_quote_expires_at: customQuotePayload?.expires_at || null,
+            custom_quote: customQuotePayload
         },
         expires_at: getCheckoutSessionExpiryIso()
     };
@@ -1219,6 +1490,7 @@ async function createPaymentRequest({
     let bonusPoints = 0;
     let grantedPoints = paidPoints;
     let paidAmount = normalizeCurrency(body.paid_amount, null);
+    let customQuote = null;
 
     if (packageId) {
         const pkg = await loadPointsPackage(supabase, packageId);
@@ -1227,6 +1499,22 @@ async function createPaymentRequest({
         bonusPoints = pkg.bonusPoints;
         grantedPoints = pkg.grantedPoints;
         paidAmount = pkg.paidAmount;
+    } else if (providerKey !== 'mock') {
+        if (rechargeOptions?.custom_amount_enabled !== true) {
+            throw new Error('当前未开启自定义充值入口');
+        }
+
+        customQuote = issueCustomRechargeQuote({
+            userId: user.id,
+            site,
+            providerKey,
+            pointsAmount: body.points_amount,
+            rechargeOptions,
+            env
+        });
+        paidPoints = customQuote.pointsAmount;
+        grantedPoints = customQuote.pointsAmount;
+        paidAmount = customQuote.paidAmount;
     }
 
     if (!Number.isFinite(grantedPoints) || grantedPoints <= 0) {
@@ -1245,7 +1533,8 @@ async function createPaymentRequest({
         grantedPoints,
         paidAmount,
         body,
-        isCustomRecharge
+        isCustomRecharge,
+        customQuote
     });
 
     if (providerKey === 'mock') {
@@ -1282,7 +1571,8 @@ async function createPaymentRequest({
             paidPoints,
             bonusPoints,
             grantedPoints,
-            paidAmount
+            paidAmount,
+            customQuote
         });
 
         if (!checkoutContext?.supported) {
@@ -1344,7 +1634,19 @@ async function createPaymentRequest({
             payment_order_id: pendingPaymentOrder?.id || null,
             checkout_session_status: updatedSession?.status || 'redirect_ready',
             message: checkoutContext.message || `${checkoutContext.displayName || adapter.label || '当前支付通道'}已准备就绪。`,
-            provider_summary: checkoutContext.summary || {}
+            provider_summary: checkoutContext.summary || {},
+            custom_quote: customQuote
+                ? {
+                    quote_id: customQuote.quoteId,
+                    token: customQuote.token,
+                    issued_at: customQuote.issuedAt,
+                    expires_at: customQuote.expiresAt,
+                    points_amount: customQuote.pointsAmount,
+                    paid_amount: customQuote.paidAmount,
+                    pricing_mode: customQuote.pricingMode,
+                    points_per_cny: customQuote.pointsPerCny
+                }
+                : null
         };
     } catch (error) {
         await updateCheckoutSession(supabase, checkoutSession.id, {
@@ -1365,10 +1667,12 @@ module.exports = {
     createCheckoutSession,
     createPaymentRequest,
     findCheckoutSessionCandidates,
+    issueCustomRechargeQuote,
     loadCheckoutSessionForUser,
     loadPointsPackage,
     resolvePendingPaymentOrderFromCheckoutContext,
     reconcileCheckoutSessionForPaymentOrder,
     sanitizeSite,
-    updateCheckoutSession
+    updateCheckoutSession,
+    verifyCustomRechargeQuoteToken
 };
