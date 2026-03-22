@@ -43,6 +43,7 @@ Deprecated scripts that must not be executed anymore:
    - Combined preflight: `npm run preflight:payment-rollout -- --env-file server/.env.production`
 6. If the repository is only linked to the production project, do not treat that linked project as staging by default. Confirm the target project ref first.
 7. Keep real `.env.local` / `server/.env.production` files out of Git. Use the committed `*.example` templates instead.
+8. For deployed app smoke tests, prefer a staging or preview base URL. The smoke runner refuses production-like hosts unless you explicitly pass `--allow-production-like`.
 
 ## Apply Order
 
@@ -95,6 +96,22 @@ After the SQL rollout, verify these flows in the deployed app:
 3. Admin payment review still works for `pending_review` orders.
 4. A normal payment recharge still credits points and writes the expected ledger rows.
 5. Verify polling still deducts points only once per `jobId`.
+
+Recommended automated staging smoke test:
+
+1. Fill the optional `PAYMENT_SMOKE_*` values in `server/.env.production` for the target deployment.
+2. Run config-only validation first:
+   - `npm run smoke:payment -- --env-file server/.env.production --config-only`
+3. If the target deployment exposes mock payments for remote smoke usage, run the guarded end-to-end flow:
+   - `npm run smoke:payment -- --env-file server/.env.production`
+4. If you intentionally need to run against a production-like host, add `--allow-production-like` and confirm the mock-payment override window is still active before proceeding.
+
+The automated smoke runner validates:
+
+- `/api/payments/config` is reachable
+- remote mock-payment runtime is explicitly allowed
+- a test user can authenticate with Supabase
+- `/api/payments/create` completes a mock recharge and closes the checkout session
 
 ## If Verification Fails
 
