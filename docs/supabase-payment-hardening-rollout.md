@@ -47,7 +47,7 @@ Deprecated scripts that must not be executed anymore:
 9. Before touching a remote database, generate a guarded rollout plan and confirm the linked Supabase project ref matches the target:
    - Plan only: `npm run rollout:payment -- --env-file server/.env.production --set incremental`
    - CLI dry-run: `npm run rollout:payment -- --env-file server/.env.production --set incremental --execute`
-   - Actual apply: `npm run rollout:payment -- --env-file server/.env.production --set incremental --apply --run-smoke --smoke-config-only`
+   - Actual apply: `npm run rollout:payment -- --env-file server/.env.production --set incremental --apply --run-smoke --run-verify --smoke-config-only`
 
 ## Apply Order
 
@@ -77,6 +77,7 @@ Run:
 
 1. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/verify_payment_redemption_hardening.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/verify_payment_redemption_hardening.sql)
 2. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql)
+3. JS verifier (service-role based): `npm run verify:payment-rollout -- --env-file server/.env.production --fail-on-finding`
 
 Expected function results:
 
@@ -114,6 +115,8 @@ Recommended automated staging smoke test:
 3. If the target deployment exposes mock payments for remote smoke usage, run the guarded end-to-end flow:
    - `npm run smoke:payment -- --env-file server/.env.production`
 4. If you intentionally need to run against a production-like host, add `--allow-production-like` and confirm the mock-payment override window is still active before proceeding.
+5. After smoke passes, run the post-rollout verifier:
+   - `npm run verify:payment-rollout -- --env-file server/.env.production --fail-on-finding`
 
 The automated smoke runner validates:
 
@@ -121,6 +124,13 @@ The automated smoke runner validates:
 - remote mock-payment runtime is explicitly allowed
 - a test user can authenticate with Supabase
 - `/api/payments/create` completes a mock recharge and closes the checkout session
+
+The post-rollout verifier validates:
+
+- `payment_checkout_sessions.site` / `payment_orders.site` contain only `cn` / `intl`
+- no unpaid / unresolved payment orders already own redemption codes
+- no redemption codes are still linked to `PENDING_*` synthetic order ids
+- `redeem_*` ledger rows do not miss `site`
 
 ## If Verification Fails
 

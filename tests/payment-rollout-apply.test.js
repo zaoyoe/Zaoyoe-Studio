@@ -26,6 +26,7 @@ test('parseArgs captures rollout planning and execution flags', () => {
         '--keep-temp',
         '--skip-preflight',
         '--run-smoke',
+        '--run-verify',
         '--smoke-config-only',
         '--allow-production-like',
         '--json'
@@ -39,6 +40,7 @@ test('parseArgs captures rollout planning and execution flags', () => {
     assert.equal(options.keepTemp, true);
     assert.equal(options.skipPreflight, true);
     assert.equal(options.runSmoke, true);
+    assert.equal(options.runVerify, true);
     assert.equal(options.smokeConfigOnly, true);
     assert.equal(options.allowProductionLike, true);
     assert.equal(options.json, true);
@@ -70,6 +72,7 @@ test('resolveRolloutContext prefers explicit project ref and db url overrides', 
         keepTemp: true,
         skipPreflight: true,
         runSmoke: false,
+        runVerify: false,
         smokeConfigOnly: false,
         allowProductionLike: false,
         json: false

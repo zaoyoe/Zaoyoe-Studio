@@ -33,6 +33,7 @@ function parseArgs(argv = []) {
         keepTemp: false,
         skipPreflight: false,
         runSmoke: false,
+        runVerify: false,
         smokeConfigOnly: false,
         allowProductionLike: false,
         json: false
@@ -88,6 +89,11 @@ function parseArgs(argv = []) {
 
         if (value === '--run-smoke') {
             options.runSmoke = true;
+            continue;
+        }
+
+        if (value === '--run-verify') {
+            options.runVerify = true;
             continue;
         }
 
@@ -186,6 +192,7 @@ function resolveRolloutContext(options = {}, envValues = {}) {
         keepTemp: options.keepTemp,
         skipPreflight: options.skipPreflight,
         runSmoke: options.runSmoke,
+        runVerify: options.runVerify,
         smokeConfigOnly: options.smokeConfigOnly,
         allowProductionLike: options.allowProductionLike,
         json: options.json
@@ -383,6 +390,19 @@ async function runPaymentRollout(options = {}) {
         const smokeStatus = runNodeScript('payment-smoke-test.js', buildSmokeArgs(context));
         report.smokeStatus = smokeStatus;
         report.ok = smokeStatus === 0;
+        if (smokeStatus !== 0) {
+            return report;
+        }
+    }
+
+    if (context.executeMode === 'apply' && context.runVerify) {
+        const verifyStatus = runNodeScript('payment-rollout-verify.js', [
+            '--env-file',
+            context.envFile,
+            '--fail-on-finding'
+        ]);
+        report.verifyStatus = verifyStatus;
+        report.ok = verifyStatus === 0;
     }
 
     return report;
