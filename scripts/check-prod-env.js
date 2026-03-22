@@ -128,6 +128,9 @@ function main() {
     console.log(`- RAILWAY_ENVIRONMENT_NAME=${readEnv('RAILWAY_ENVIRONMENT_NAME') || '(empty)'}`);
     console.log(`- DEPLOYMENT_TIER=${readEnv('DEPLOYMENT_TIER') || '(empty)'}`);
     console.log(`- APP_ENV=${readEnv('APP_ENV') || '(empty)'}`);
+    console.log(`- ALLOW_REMOTE_MOCK_PAYMENTS=${readEnv('ALLOW_REMOTE_MOCK_PAYMENTS') || '(empty)'}`);
+    console.log(`- PAYMENT_ALLOW_REMOTE_MOCK=${readEnv('PAYMENT_ALLOW_REMOTE_MOCK') || '(empty)'}`);
+    console.log(`- PAYMENT_MOCK_ALLOW_REMOTE=${readEnv('PAYMENT_MOCK_ALLOW_REMOTE') || '(empty)'}`);
 
     const failedChecks = checks.filter((check) => !check.ok);
     if (failedChecks.length) {

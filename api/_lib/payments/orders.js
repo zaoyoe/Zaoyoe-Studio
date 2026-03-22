@@ -344,6 +344,12 @@ function isProductionLikeRuntime(env = process.env) {
         || deploymentTier === 'production';
 }
 
+function isRemoteMockPaymentWhitelisted(env = process.env) {
+    return isTruthyFlag(env?.ALLOW_REMOTE_MOCK_PAYMENTS)
+        || isTruthyFlag(env?.PAYMENT_ALLOW_REMOTE_MOCK)
+        || isTruthyFlag(env?.PAYMENT_MOCK_ALLOW_REMOTE);
+}
+
 function getMockPaymentRuntimeState({ requestHost = '', env = process.env } = {}) {
     if (isLocalHostname(requestHost)) {
         return {
@@ -361,19 +367,7 @@ function getMockPaymentRuntimeState({ requestHost = '', env = process.env } = {}
         };
     }
 
-    if (isProductionLikeRuntime(env)) {
-        return {
-            allowed: false,
-            reason: 'production_like_runtime',
-            message: '当前站点运行在生产环境，服务端已禁用模拟支付，请切换到真实支付通道。'
-        };
-    }
-
-    if (
-        isTruthyFlag(env?.ALLOW_REMOTE_MOCK_PAYMENTS)
-        || isTruthyFlag(env?.PAYMENT_ALLOW_REMOTE_MOCK)
-        || isTruthyFlag(env?.PAYMENT_MOCK_ALLOW_REMOTE)
-    ) {
+    if (isRemoteMockPaymentWhitelisted(env)) {
         return {
             allowed: true,
             reason: 'remote_whitelist_enabled',
@@ -381,10 +375,18 @@ function getMockPaymentRuntimeState({ requestHost = '', env = process.env } = {}
         };
     }
 
+    if (isProductionLikeRuntime(env)) {
+        return {
+            allowed: false,
+            reason: 'production_like_runtime',
+            message: '当前站点运行在生产环境，服务端默认禁用模拟支付；如需临时测试，请设置 ALLOW_REMOTE_MOCK_PAYMENTS=true 后重新部署。'
+        };
+    }
+
     return {
         allowed: false,
         reason: 'remote_whitelist_required',
-        message: '当前环境不是本地环境，且未配置模拟支付白名单，请切换到真实支付通道。'
+        message: '当前环境不是本地环境，且未配置模拟支付白名单；如需临时测试，请设置 ALLOW_REMOTE_MOCK_PAYMENTS=true 后重新部署。'
     };
 }
 
