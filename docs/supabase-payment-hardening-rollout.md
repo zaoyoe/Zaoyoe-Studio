@@ -40,6 +40,7 @@ Deprecated scripts that must not be executed anymore:
    - SQL editor: [/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql)
    - CLI / service-role env: `npm run scan:payment-sites -- --env-file server/.env.production --fail-on-anomaly`
 6. If the repository is only linked to the production project, do not treat that linked project as staging by default. Confirm the target project ref first.
+7. Keep real `.env.local` / `server/.env.production` files out of Git. Use the committed `*.example` templates instead.
 
 ## Apply Order
 
