@@ -8,23 +8,41 @@ CREATE OR REPLACE FUNCTION public.reset_login_failures(user_email TEXT)
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
-    v_user_id UUID;
+    v_request_user_id UUID := auth.uid();
+    v_request_role TEXT := COALESCE(auth.role(), '');
+    v_target_user_id UUID;
 BEGIN
-    SELECT au.id INTO v_user_id
-    FROM auth.users au
-    WHERE au.email = user_email;
-    
-    IF v_user_id IS NOT NULL THEN
+    IF v_request_role = 'service_role' THEN
+        SELECT au.id INTO v_target_user_id
+        FROM auth.users au
+        WHERE lower(COALESCE(au.email, '')) = lower(COALESCE(user_email, ''));
+    ELSE
+        IF v_request_user_id IS NULL THEN
+            RAISE EXCEPTION 'auth required';
+        END IF;
+
+        SELECT au.id INTO v_target_user_id
+        FROM auth.users au
+        WHERE au.id = v_request_user_id
+          AND (
+              user_email IS NULL
+              OR lower(COALESCE(au.email, '')) = lower(COALESCE(user_email, ''))
+          );
+    END IF;
+
+    IF v_target_user_id IS NOT NULL THEN
         UPDATE public.profiles p
         SET failed_login_attempts = 0, locked_until = NULL
-        WHERE p.id = v_user_id;
+        WHERE p.id = v_target_user_id;
     END IF;
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.reset_login_failures TO authenticated;
+REVOKE ALL ON FUNCTION public.reset_login_failures(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.reset_login_failures(TEXT) TO authenticated, service_role;
 
 -- Admin unlock single account
 CREATE OR REPLACE FUNCTION public.admin_unlock_account(target_user_id UUID)

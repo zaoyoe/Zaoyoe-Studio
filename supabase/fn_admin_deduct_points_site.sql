@@ -12,6 +12,7 @@ CREATE OR REPLACE FUNCTION fn_deduct_points_admin_site(
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     current_bonus NUMERIC(12,1);
@@ -21,6 +22,18 @@ DECLARE
     actual_deducted NUMERIC(12,1) := 0;
     existing_amount NUMERIC(12,1) := 0;
 BEGIN
+    IF COALESCE(auth.role(), '') <> 'service_role' THEN
+        RAISE EXCEPTION 'Access denied';
+    END IF;
+
+    IF p_target_user_id IS NULL THEN
+        RAISE EXCEPTION 'target_user_id is required';
+    END IF;
+
+    IF p_amount IS NULL OR p_amount <= 0 THEN
+        RAISE EXCEPTION 'Amount must be positive';
+    END IF;
+
     IF p_reference_id IS NOT NULL THEN
         SELECT ABS(amount) INTO existing_amount
         FROM points_ledger
@@ -91,3 +104,6 @@ BEGIN
     );
 END;
 $$;
+
+REVOKE ALL ON FUNCTION fn_deduct_points_admin_site(UUID, INT, TEXT, TEXT, VARCHAR) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_deduct_points_admin_site(UUID, INT, TEXT, TEXT, VARCHAR) TO service_role;

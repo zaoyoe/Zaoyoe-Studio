@@ -590,9 +590,34 @@
         }
     }
 
+    async function getVerifyRequestHeaders(includeJson = false) {
+        const headers = {};
+
+        if (includeJson) {
+            headers['Content-Type'] = 'application/json';
+        }
+
+        const getSession = window.supabaseClient?.auth?.getSession;
+        if (typeof getSession !== 'function') {
+            return headers;
+        }
+
+        try {
+            const { data: { session } = {} } = await getSession.call(window.supabaseClient.auth);
+            if (session?.access_token) {
+                headers.Authorization = `Bearer ${session.access_token}`;
+            }
+        } catch (_) {
+            // ignore auth header lookup errors and let the server reject if needed
+        }
+
+        return headers;
+    }
+
     async function loadApiQuota() {
         try {
-            const res = await fetch(`${CONFIG.nodeServerUrl}/api/quota`);
+            const headers = await getVerifyRequestHeaders();
+            const res = await fetch(`${CONFIG.nodeServerUrl}/api/quota`, { headers });
             const data = await res.json();
             if (data.success) {
                 apiCredits = Number(data.balance ?? data.credits ?? 0);
@@ -1296,7 +1321,7 @@
         });
         updateExecutionRing({ status: 'queued', queue_position: 0 });
 
-        pollTask(pending.jobId, pending.userId, {
+        pollTask(pending.jobId, {
             index: 0,
             email: pending.email
         }).then((result) => {
@@ -1419,16 +1444,15 @@
 
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 15000);
+            const headers = await getVerifyRequestHeaders(true);
             const res = await fetch(`${CONFIG.nodeServerUrl}/api/verify`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 body: JSON.stringify({
                     email: entry.email,
                     password: entry.password,
                     totpSecret: entry.totpSecret,
-                    priority: entry.priority,
-                    userId,
-                    site: window.SiteConfig?.site || 'cn'
+                    priority: entry.priority
                 }),
                 signal: controller.signal
             });
@@ -1486,7 +1510,7 @@
             updateResultItem(entry.index, display.status, display.html);
             updateExecutionRing(data);
 
-            pollTask(jobId, userId, entry).then((result) => {
+            pollTask(jobId, entry).then((result) => {
                 if (result.terminal && result.success) {
                     batchStats.success = 1;
                     if (result.pointsDeducted) {
@@ -1523,7 +1547,7 @@
         }
     }
 
-    function pollTask(jobId, userId, entry) {
+    function pollTask(jobId, entry) {
         return new Promise((resolve) => {
             const startTime = Date.now();
             const backgroundContinueText = t('verify.pendingBackgroundContinue', '连接暂时中断，任务仍在后台处理，可稍后在任务历史查看');
@@ -1549,10 +1573,10 @@
                 }
 
                 try {
-                    const site = encodeURIComponent(window.SiteConfig?.site || 'cn');
-                    const email = encodeURIComponent(entry.email);
+                    const headers = await getVerifyRequestHeaders();
                     const res = await fetch(
-                        `${CONFIG.nodeServerUrl}/api/verify/status/${encodeURIComponent(jobId)}?userId=${encodeURIComponent(userId)}&site=${site}&email=${email}`
+                        `${CONFIG.nodeServerUrl}/api/verify/status/${encodeURIComponent(jobId)}`,
+                        { headers }
                     );
                     const data = await res.json().catch(() => ({}));
 

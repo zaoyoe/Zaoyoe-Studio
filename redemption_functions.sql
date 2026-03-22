@@ -170,6 +170,18 @@ DECLARE
     v_code_record RECORD;
     v_package_id UUID;
 BEGIN
+    IF COALESCE(auth.role(), '') <> 'service_role' THEN
+        RAISE EXCEPTION 'Unauthorized: service_role only';
+    END IF;
+
+    IF COALESCE(BTRIM(p_sku_id), '') = '' THEN
+        RAISE EXCEPTION 'sku_id is required';
+    END IF;
+
+    IF COALESCE(BTRIM(p_external_order_id), '') = '' THEN
+        RAISE EXCEPTION 'external_order_id is required';
+    END IF;
+
     -- 检查是否已发货（防重复）
     IF EXISTS (
         SELECT 1 FROM redemption_codes 
@@ -323,6 +335,21 @@ BEGIN
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION fn_generate_codes(VARCHAR, UUID, INT, VARCHAR, TIMESTAMPTZ) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_generate_codes(VARCHAR, UUID, INT, VARCHAR, TIMESTAMPTZ) TO authenticated;
+
+REVOKE ALL ON FUNCTION fn_redeem_code(VARCHAR) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_redeem_code(VARCHAR) TO authenticated;
+
+REVOKE ALL ON FUNCTION fn_dispatch_code(VARCHAR, VARCHAR) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_dispatch_code(VARCHAR, VARCHAR) TO service_role;
+
+REVOKE ALL ON FUNCTION fn_revoke_code(VARCHAR, VARCHAR) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_revoke_code(VARCHAR, VARCHAR) TO authenticated;
+
+REVOKE ALL ON FUNCTION fn_check_code_status(VARCHAR) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_check_code_status(VARCHAR) TO authenticated;
 
 -- ============================================
 -- 完成！请在 Supabase SQL Editor 中运行此脚本

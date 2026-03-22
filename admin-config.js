@@ -2527,7 +2527,8 @@ async function checkVerifyQuota() {
     quotaEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 查询中...';
 
     try {
-        const res = await fetch(`${VERIFY_SERVER_URL}/api/quota`);
+        const headers = await getAdminConfigApiHeaders();
+        const res = await fetch(`${VERIFY_SERVER_URL}/api/quota`, { headers });
         const data = await res.json();
 
         if (data.success) {

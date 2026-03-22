@@ -463,11 +463,23 @@ CREATE OR REPLACE FUNCTION public.fn_ensure_redemption_code_for_payment_order(
 RETURNS TEXT
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
+    v_request_role TEXT := COALESCE(auth.role(), '');
+    v_request_user_id UUID := auth.uid();
+    v_is_admin BOOLEAN := FALSE;
+    v_normalized_status TEXT;
     v_payment_order public.payment_orders%ROWTYPE;
     v_effective_code TEXT;
 BEGIN
+    IF v_request_role <> 'service_role' THEN
+        v_is_admin := COALESCE(v_request_user_id IS NOT NULL AND public.is_admin(), FALSE);
+        IF NOT v_is_admin THEN
+            RAISE EXCEPTION 'Unauthorized: admin or service_role only';
+        END IF;
+    END IF;
+
     IF p_payment_order_id IS NULL THEN
         RAISE EXCEPTION 'payment_order_id is required';
     END IF;
@@ -482,8 +494,30 @@ BEGIN
         RAISE EXCEPTION 'payment order not found';
     END IF;
 
+    v_normalized_status := COALESCE(NULLIF(BTRIM(LOWER(v_payment_order.status)), ''), '');
+
     IF GREATEST(COALESCE(p_points, 0), COALESCE(v_payment_order.points_amount, 0), 0) <= 0 THEN
         RAISE EXCEPTION 'payment order points must be greater than 0 before issuing redemption code';
+    END IF;
+
+    IF v_request_role = 'service_role' THEN
+        IF v_normalized_status NOT IN ('paid', 'redeemed') THEN
+            RAISE EXCEPTION 'payment order must be paid before issuing redemption code';
+        END IF;
+    ELSIF v_is_admin THEN
+        IF v_normalized_status NOT IN ('paid', 'redeemed', 'pending_review', 'amount_mismatch') THEN
+            RAISE EXCEPTION 'admin review can only issue codes for paid/redeemed/reviewable payment orders';
+        END IF;
+    END IF;
+
+    IF COALESCE(NULLIF(BTRIM(LOWER(v_payment_order.provider)), ''), '') = 'afdian'
+       AND v_request_role = 'service_role'
+       AND (
+            NOT COALESCE(v_payment_order.sign_verified, FALSE)
+            OR NOT COALESCE(v_payment_order.amount_verified, FALSE)
+       )
+    THEN
+        RAISE EXCEPTION 'afdian payment order is not fully verified';
     END IF;
 
     v_effective_code := NULLIF(BTRIM(v_payment_order.redemption_code), '');
@@ -551,6 +585,14 @@ BEGIN
 END;
 $$;
 
+REVOKE ALL ON FUNCTION public.fn_ensure_redemption_code_for_payment_order(
+    UUID,
+    UUID,
+    INTEGER,
+    VARCHAR,
+    TEXT
+) FROM PUBLIC;
+
 GRANT EXECUTE ON FUNCTION public.fn_ensure_redemption_code_for_payment_order(
     UUID,
     UUID,
@@ -570,8 +612,13 @@ CREATE OR REPLACE FUNCTION public.fn_apply_payment_order_review(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
+    v_request_role TEXT := COALESCE(auth.role(), '');
+    v_request_user_id UUID := auth.uid();
+    v_is_admin BOOLEAN := FALSE;
+    v_effective_actor_id UUID := COALESCE(p_actor_id, v_request_user_id);
     v_order public.payment_orders%ROWTYPE;
     v_action TEXT := COALESCE(NULLIF(BTRIM(LOWER(p_action)), ''), '');
     v_note TEXT := NULLIF(BTRIM(p_note), '');
@@ -580,6 +627,13 @@ DECLARE
     v_redemption_code TEXT;
     v_manual_review JSONB;
 BEGIN
+    IF v_request_role <> 'service_role' THEN
+        v_is_admin := COALESCE(v_request_user_id IS NOT NULL AND public.is_admin(), FALSE);
+        IF NOT v_is_admin THEN
+            RAISE EXCEPTION 'Unauthorized: admin or service_role only';
+        END IF;
+    END IF;
+
     IF p_payment_order_id IS NULL THEN
         RAISE EXCEPTION 'payment_order_id is required';
     END IF;
@@ -630,7 +684,7 @@ BEGIN
         'action', v_action,
         'previous_status', v_order.status,
         'reviewed_at', v_now,
-        'reviewed_by', p_actor_id,
+        'reviewed_by', v_effective_actor_id,
         'note', v_note,
         'amount_override', (v_order.status = 'amount_mismatch' AND v_action = 'approve')
     ));
@@ -717,6 +771,8 @@ BEGIN
     );
 END;
 $$;
+
+REVOKE ALL ON FUNCTION public.fn_apply_payment_order_review(UUID, TEXT, TEXT, UUID) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.fn_apply_payment_order_review(UUID, TEXT, TEXT, UUID)
     TO authenticated, service_role;

@@ -64,14 +64,25 @@ function decodeBase64Url(value) {
     return Buffer.from(`${normalized}${padding}`, 'base64').toString('utf8');
 }
 
+function readIndependentSecret(secretValue, label, env = process.env) {
+    const normalizedSecret = String(secretValue || '').trim();
+    if (!normalizedSecret) return '';
+
+    const serviceRoleKey = String(env?.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+    if (serviceRoleKey && normalizedSecret === serviceRoleKey) {
+        throw new Error(`${label} 不能复用 SUPABASE_SERVICE_ROLE_KEY，请配置独立密钥`);
+    }
+
+    return normalizedSecret;
+}
+
 function getCustomRechargeQuoteSecret(env = process.env) {
     return [
         env?.PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET,
         env?.PAYMENT_CUSTOM_QUOTE_SECRET,
-        env?.PAYMENT_QUOTE_SECRET,
-        env?.SUPABASE_SERVICE_ROLE_KEY
+        env?.PAYMENT_QUOTE_SECRET
     ]
-        .map((value) => String(value || '').trim())
+        .map((value) => readIndependentSecret(value, 'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET', env))
         .find(Boolean) || '';
 }
 
@@ -214,7 +225,12 @@ function verifyCustomRechargeQuoteToken(token, {
         return null;
     }
 
-    const secret = getCustomRechargeQuoteSecret(env);
+    let secret = '';
+    try {
+        secret = getCustomRechargeQuoteSecret(env);
+    } catch (_) {
+        return null;
+    }
     if (!secret) {
         return null;
     }
@@ -315,6 +331,16 @@ function isLocalHostname(value) {
     return hostname === 'localhost' || hostname === '127.0.0.1';
 }
 
+function isProductionLikeRuntime(env = process.env) {
+    const vercelEnv = String(env?.VERCEL_ENV || '').trim().toLowerCase();
+    const railwayEnv = String(env?.RAILWAY_ENVIRONMENT_NAME || '').trim().toLowerCase();
+    const deploymentTier = String(env?.DEPLOYMENT_TIER || env?.APP_ENV || '').trim().toLowerCase();
+
+    return vercelEnv === 'production'
+        || railwayEnv === 'production'
+        || deploymentTier === 'production';
+}
+
 function isMockPaymentRuntimeAllowed({ requestHost = '', env = process.env } = {}) {
     if (isLocalHostname(requestHost)) {
         return true;
@@ -322,6 +348,10 @@ function isMockPaymentRuntimeAllowed({ requestHost = '', env = process.env } = {
 
     if (isLocalHostname(env?.APP_BASE_URL)) {
         return true;
+    }
+
+    if (isProductionLikeRuntime(env)) {
+        return false;
     }
 
     return isTruthyFlag(env?.ALLOW_REMOTE_MOCK_PAYMENTS)
@@ -1631,7 +1661,6 @@ async function createPaymentRequest({
             query_mode: checkoutContext.queryMode || '',
             checkout_session_id: updatedSession?.id || checkoutSession.id,
             checkout_session_key: updatedSession?.session_key || checkoutSession.session_key,
-            payment_order_id: pendingPaymentOrder?.id || null,
             checkout_session_status: updatedSession?.status || 'redirect_ready',
             message: checkoutContext.message || `${checkoutContext.displayName || adapter.label || '当前支付通道'}已准备就绪。`,
             provider_summary: checkoutContext.summary || {},
@@ -1663,6 +1692,11 @@ async function createPaymentRequest({
 }
 
 module.exports = {
+    __testUtils: {
+        getCustomRechargeQuoteSecret,
+        isMockPaymentRuntimeAllowed,
+        resolveRequestedProviderKey
+    },
     completeMockPayment,
     createCheckoutSession,
     createPaymentRequest,

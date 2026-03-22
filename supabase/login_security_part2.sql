@@ -11,14 +11,19 @@ RETURNS TABLE (
 ) 
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_user_id UUID;
     v_locked_until TIMESTAMP WITH TIME ZONE;
 BEGIN
+    IF COALESCE(auth.role(), '') <> 'service_role' THEN
+        RAISE EXCEPTION 'Access denied';
+    END IF;
+
     SELECT au.id INTO v_user_id
     FROM auth.users au
-    WHERE au.email = user_email;
+    WHERE lower(COALESCE(au.email, '')) = lower(COALESCE(user_email, ''));
     
     IF v_user_id IS NULL THEN
         RETURN QUERY SELECT FALSE, NULL::TIMESTAMP WITH TIME ZONE, 0;
@@ -40,4 +45,5 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.check_user_locked TO anon;
+REVOKE ALL ON FUNCTION public.check_user_locked(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.check_user_locked(TEXT) TO service_role;

@@ -111,14 +111,37 @@ CREATE OR REPLACE FUNCTION public.get_user_permissions(p_user_id UUID)
 RETURNS JSONB AS $$
 DECLARE
     v_role RECORD;
+    v_request_user_id UUID := auth.uid();
+    v_request_role TEXT := COALESCE(auth.role(), '');
+    v_request_is_admin BOOLEAN := FALSE;
+    v_effective_user_id UUID;
 BEGIN
+    IF v_request_role = 'service_role' THEN
+        v_effective_user_id := COALESCE(p_user_id, v_request_user_id);
+    ELSE
+        IF v_request_user_id IS NULL THEN
+            RAISE EXCEPTION 'auth required';
+        END IF;
+
+        v_request_is_admin := public.is_admin();
+        IF p_user_id IS NOT NULL AND p_user_id <> v_request_user_id AND NOT v_request_is_admin THEN
+            RAISE EXCEPTION 'Access denied';
+        END IF;
+
+        v_effective_user_id := COALESCE(p_user_id, v_request_user_id);
+    END IF;
+
+    IF v_effective_user_id IS NULL THEN
+        RAISE EXCEPTION 'user_id required';
+    END IF;
+
     SELECT
         role_name,
         COALESCE(permissions, '[]'::jsonb) AS permissions,
         expires_at
     INTO v_role
     FROM public.admin_roles
-    WHERE user_id = p_user_id
+    WHERE user_id = v_effective_user_id
       AND (expires_at IS NULL OR expires_at > NOW())
     ORDER BY
         CASE WHEN role_name = 'super_admin' THEN 0 ELSE 1 END,
@@ -134,10 +157,12 @@ BEGIN
         'expires_at', v_role.expires_at
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp;
 
 -- 授权
 GRANT EXECUTE ON FUNCTION public.is_super_admin() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.has_permission(TEXT) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_user_permissions(UUID) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_user_permissions(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_user_permissions(UUID) TO authenticated, service_role;

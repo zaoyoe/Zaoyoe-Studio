@@ -121,16 +121,6 @@ BEGIN
         WHERE user_id = v_effective_user_id AND site = p_site;
     END;
 
-    -- 记账 (Ledger) - 带 site 字段
-    INSERT INTO points_ledger (user_id, amount, reason, reference_id, site)
-    VALUES (
-        v_effective_user_id,
-        -v_product_price, 
-        'shop_purchase: ' || v_product_name,
-        p_product_id::TEXT,
-        p_site
-    );
-
     -- D. 更新库存状态
     UPDATE shop_inventory
     SET status = 'sold',
@@ -142,6 +132,16 @@ BEGIN
     INSERT INTO shop_orders (user_id, product_id, inventory_id, price_paid, snapshot_product_name, site)
     VALUES (v_effective_user_id, p_product_id, v_inventory_id, v_product_price, v_product_name, p_site)
     RETURNING id INTO v_order_id;
+
+    -- 记账 (Ledger) - 带 site 字段和订单级引用
+    INSERT INTO points_ledger (user_id, amount, reason, reference_id, site)
+    VALUES (
+        v_effective_user_id,
+        -v_product_price,
+        '商城购买: ' || v_product_name,
+        'SHOP_ORDER_' || v_order_id,
+        p_site
+    );
     
     -- F. 更新商品库存计数缓存
     UPDATE shop_products 

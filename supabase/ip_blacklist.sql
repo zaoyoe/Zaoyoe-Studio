@@ -35,12 +35,17 @@ CREATE OR REPLACE FUNCTION public.check_ip_blacklisted(client_ip TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_manual_list JSONB;
     v_entry TEXT;
     v_auto_blocked RECORD;
 BEGIN
+    IF COALESCE(auth.role(), '') <> 'service_role' THEN
+        RAISE EXCEPTION 'Access denied';
+    END IF;
+
     -- Check auto-blocked table first
     SELECT * INTO v_auto_blocked
     FROM public.ip_blacklist
@@ -114,11 +119,16 @@ CREATE OR REPLACE FUNCTION public.check_auto_blacklist_ip(p_ip TEXT)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_lockout_count INTEGER;
     v_already_blocked BOOLEAN;
 BEGIN
+    IF COALESCE(auth.role(), '') <> 'service_role' THEN
+        RAISE EXCEPTION 'Access denied';
+    END IF;
+
     -- Skip if already blocked
     SELECT EXISTS (
         SELECT 1 FROM public.ip_blacklist
@@ -229,11 +239,11 @@ END;
 $$;
 
 -- 9. Grant permissions
-GRANT EXECUTE ON FUNCTION public.check_ip_blacklisted TO anon;
-GRANT EXECUTE ON FUNCTION public.check_ip_blacklisted TO authenticated;
+REVOKE ALL ON FUNCTION public.check_ip_blacklisted(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.check_ip_blacklisted(TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.record_login_ip TO authenticated;
-GRANT EXECUTE ON FUNCTION public.check_auto_blacklist_ip TO anon;
-GRANT EXECUTE ON FUNCTION public.check_auto_blacklist_ip TO authenticated;
+REVOKE ALL ON FUNCTION public.check_auto_blacklist_ip(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.check_auto_blacklist_ip(TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_add_ip_blacklist TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_remove_ip_blacklist TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_get_blocked_ips TO authenticated;

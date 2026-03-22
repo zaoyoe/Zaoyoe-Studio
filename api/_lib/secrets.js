@@ -16,16 +16,29 @@ function wrapSecretStoreError(error, fallbackMessage) {
     return new Error(message);
 }
 
+function readIndependentSecret(secretValue, label, env = process.env) {
+    const normalizedSecret = String(secretValue || '').trim();
+    if (!normalizedSecret) return '';
+
+    const serviceRoleKey = String(env?.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+    if (serviceRoleKey && normalizedSecret === serviceRoleKey) {
+        throw new Error(`${label} 不能复用 SUPABASE_SERVICE_ROLE_KEY，请配置独立密钥`);
+    }
+
+    return normalizedSecret;
+}
+
 function getEncryptionSeed() {
-    return process.env.ADMIN_CONFIG_ENCRYPTION_KEY
-        || process.env.SUPABASE_SERVICE_ROLE_KEY
-        || '';
+    return readIndependentSecret(
+        process.env.ADMIN_CONFIG_ENCRYPTION_KEY,
+        'ADMIN_CONFIG_ENCRYPTION_KEY'
+    );
 }
 
 function getEncryptionKey() {
     const seed = getEncryptionSeed();
     if (!seed) {
-        throw new Error('请先在 Vercel 环境变量中配置 ADMIN_CONFIG_ENCRYPTION_KEY，用于加密后台密钥存储');
+        throw new Error('请先配置独立的 ADMIN_CONFIG_ENCRYPTION_KEY，用于加密后台密钥存储');
     }
 
     return crypto.createHash('sha256').update(seed).digest();
@@ -166,6 +179,10 @@ async function resolveGeminiRuntimeConfig(supabase) {
 }
 
 module.exports = {
+    __testUtils: {
+        getEncryptionKey,
+        readIndependentSecret
+    },
     GEMINI_SECRET_KEY,
     PAYMENT_CHANNEL_SECRET_KEYS,
     deleteStoredAdminSecret,

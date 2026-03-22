@@ -119,16 +119,6 @@ BEGIN
         WHERE user_id = v_effective_user_id AND site = p_site;
     END;
 
-    -- 记账 (Ledger) - 带 site 字段
-    INSERT INTO points_ledger (user_id, amount, reason, reference_id, site)
-    VALUES (
-        v_effective_user_id,
-        -v_product_price, 
-        'shop_purchase: ' || v_product_name,
-        p_product_id::TEXT,
-        p_site
-    );
-
     -- D. 更新库存状态
     UPDATE shop_inventory
     SET status = 'sold',
@@ -140,6 +130,16 @@ BEGIN
     INSERT INTO shop_orders (user_id, product_id, inventory_id, price_paid, snapshot_product_name, site)
     VALUES (v_effective_user_id, p_product_id, v_inventory_id, v_product_price, v_product_name, p_site)
     RETURNING id INTO v_order_id;
+
+    -- 记账 (Ledger) - 带 site 字段和订单级引用
+    INSERT INTO points_ledger (user_id, amount, reason, reference_id, site)
+    VALUES (
+        v_effective_user_id,
+        -v_product_price,
+        '商城购买: ' || v_product_name,
+        'SHOP_ORDER_' || v_order_id,
+        p_site
+    );
     
     -- F. 更新商品库存计数缓存
     UPDATE shop_products 
@@ -460,15 +460,34 @@ DECLARE
     v_new_balance RECORD;
     v_recharge_ledger_id UUID;
     v_pending_reward RECORD;
+    v_paid NUMERIC(12,1) := COALESCE(p_paid, 0);
+    v_bonus NUMERIC(12,1) := COALESCE(p_bonus, 0);
+    v_site VARCHAR := COALESCE(NULLIF(BTRIM(p_site), ''), 'cn');
 BEGIN
+    IF COALESCE(auth.role(), '') <> 'service_role' THEN
+        RAISE EXCEPTION 'Access denied';
+    END IF;
+
+    IF target_user_id IS NULL THEN
+        RAISE EXCEPTION 'target_user_id is required';
+    END IF;
+
+    IF v_paid < 0 OR v_bonus < 0 THEN
+        RAISE EXCEPTION 'paid and bonus must be non-negative';
+    END IF;
+
+    IF (v_paid + v_bonus) <= 0 THEN
+        RAISE EXCEPTION 'recharge total must be greater than 0';
+    END IF;
+
     -- 1. Insert into Ledger (with site)
     INSERT INTO points_ledger (user_id, amount, reason, reference_id, site)
-    VALUES (target_user_id, p_paid + p_bonus, p_reason, p_reference_id, p_site)
+    VALUES (target_user_id, v_paid + v_bonus, p_reason, p_reference_id, v_site)
     RETURNING id INTO v_recharge_ledger_id;
 
     -- 2. Update Balance Table (Upsert with composite PK)
     INSERT INTO points_balance (user_id, site, paid_balance, bonus_balance)
-    VALUES (target_user_id, p_site, p_paid, p_bonus)
+    VALUES (target_user_id, v_site, v_paid, v_bonus)
     ON CONFLICT (user_id, site)
     DO UPDATE SET
         paid_balance = points_balance.paid_balance + EXCLUDED.paid_balance,
@@ -477,7 +496,7 @@ BEGIN
     RETURNING paid_balance, bonus_balance, total_balance INTO v_new_balance;
 
     -- 3. Unlock pending affiliate signup reward on the invitee's first real recharge
-    IF (p_paid + p_bonus) > 0
+    IF (v_paid + v_bonus) > 0
        AND (
            p_reason = 'package_purchase'
            OR p_reason = 'afdian_recharge'
@@ -491,7 +510,7 @@ BEGIN
 
         IF FOUND THEN
             INSERT INTO points_balance (user_id, site, paid_balance, bonus_balance)
-            VALUES (v_pending_reward.inviter_id, p_site, 0, v_pending_reward.reward_points)
+            VALUES (v_pending_reward.inviter_id, v_site, 0, v_pending_reward.reward_points)
             ON CONFLICT (user_id, site) DO UPDATE SET
                 bonus_balance = points_balance.bonus_balance + EXCLUDED.bonus_balance,
                 updated_at = NOW();
@@ -502,7 +521,7 @@ BEGIN
                 v_pending_reward.reward_points,
                 '拉新固定奖励 (下线首充激活)',
                 'REG_REWARD_UNLOCK_RECHARGE_' || v_recharge_ledger_id,
-                p_site
+                v_site
             );
 
             DELETE FROM pending_referral_rewards
@@ -517,7 +536,8 @@ BEGIN
         'total', v_new_balance.total_balance
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp;
 
 -- ============================================
 -- 7. fn_add_points - 加积分（带 site）
@@ -532,17 +552,23 @@ CREATE OR REPLACE FUNCTION fn_add_points(
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     new_paid NUMERIC(12,1);
     new_bonus NUMERIC(12,1);
+    v_site VARCHAR := COALESCE(NULLIF(BTRIM(p_site), ''), 'cn');
 BEGIN
-    IF p_amount <= 0 THEN
+    IF target_user_id IS NULL THEN
+        RAISE EXCEPTION 'target_user_id is required';
+    END IF;
+
+    IF p_amount IS NULL OR p_amount <= 0 THEN
         RAISE EXCEPTION 'Amount must be positive';
     END IF;
 
     INSERT INTO points_balance (user_id, site, paid_balance, bonus_balance)
-    VALUES (target_user_id, p_site, p_amount, 0)
+    VALUES (target_user_id, v_site, p_amount, 0)
     ON CONFLICT (user_id, site) DO UPDATE SET
         paid_balance = points_balance.paid_balance + p_amount,
         updated_at = NOW(),
@@ -550,7 +576,7 @@ BEGIN
     RETURNING paid_balance, bonus_balance INTO new_paid, new_bonus;
 
     INSERT INTO points_ledger (user_id, amount, reason, reference_id, site)
-    VALUES (target_user_id, p_amount, p_reason, p_reference_id, p_site);
+    VALUES (target_user_id, p_amount, p_reason, p_reference_id, v_site);
 
     RETURN jsonb_build_object(
         'success', true,
@@ -572,6 +598,7 @@ CREATE OR REPLACE FUNCTION fn_deduct_points(
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     target_user_id UUID := auth.uid();
@@ -579,10 +606,19 @@ DECLARE
     current_paid NUMERIC(12,1);
     deduct_from_bonus NUMERIC(12,1) := 0;
     deduct_from_paid NUMERIC(12,1) := 0;
+    v_site VARCHAR := COALESCE(NULLIF(BTRIM(p_site), ''), 'cn');
 BEGIN
+    IF target_user_id IS NULL THEN
+        RAISE EXCEPTION 'auth required';
+    END IF;
+
+    IF p_amount IS NULL OR p_amount <= 0 THEN
+        RAISE EXCEPTION 'Amount must be positive';
+    END IF;
+
     SELECT bonus_balance, paid_balance INTO current_bonus, current_paid
     FROM points_balance
-    WHERE user_id = target_user_id AND site = p_site
+    WHERE user_id = target_user_id AND site = v_site
     FOR UPDATE;
 
     IF NOT FOUND THEN
@@ -605,10 +641,10 @@ BEGIN
         paid_balance = paid_balance - deduct_from_paid,
         updated_at = NOW(),
         version = version + 1
-    WHERE user_id = target_user_id AND site = p_site;
+    WHERE user_id = target_user_id AND site = v_site;
 
     INSERT INTO points_ledger (user_id, amount, reason, reference_id, site)
-    VALUES (target_user_id, -p_amount, p_reason, p_reference_id, p_site);
+    VALUES (target_user_id, -p_amount, p_reason, p_reference_id, v_site);
 
     RETURN jsonb_build_object(
         'success', true,
@@ -617,6 +653,15 @@ BEGIN
     );
 END;
 $$;
+
+REVOKE ALL ON FUNCTION fn_recharge_points(UUID, NUMERIC, NUMERIC, TEXT, TEXT, VARCHAR) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_recharge_points(UUID, NUMERIC, NUMERIC, TEXT, TEXT, VARCHAR) TO service_role;
+
+REVOKE ALL ON FUNCTION fn_add_points(UUID, INT, TEXT, TEXT, VARCHAR) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_add_points(UUID, INT, TEXT, TEXT, VARCHAR) TO service_role;
+
+REVOKE ALL ON FUNCTION fn_deduct_points(INT, TEXT, TEXT, VARCHAR) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_deduct_points(INT, TEXT, TEXT, VARCHAR) TO authenticated;
 
 -- ============================================
 -- 9. fn_redeem_code - 兑换码（带 site）

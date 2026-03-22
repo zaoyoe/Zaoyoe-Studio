@@ -4,7 +4,8 @@
   "description": "AI Prompt Gallery",
   "scripts": {
     "optimize-images": "node scripts/optimize-images.js",
-    "upload-to-r2": "node scripts/upload-to-r2.js"
+    "upload-to-r2": "node scripts/upload-to-r2.js",
+    "test:security": "node --test tests/*.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.985.0",

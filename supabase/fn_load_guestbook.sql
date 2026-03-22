@@ -12,10 +12,31 @@ CREATE OR REPLACE FUNCTION public.fn_load_guestbook(
 RETURNS JSON
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     result JSON;
+    v_request_user_id UUID := auth.uid();
+    v_request_role TEXT := COALESCE(auth.role(), '');
+    v_effective_user_id UUID := NULL;
+    v_request_is_admin BOOLEAN := FALSE;
 BEGIN
+    IF v_request_role = 'service_role' THEN
+        v_effective_user_id := COALESCE(p_user_id, v_request_user_id);
+    ELSIF v_request_user_id IS NOT NULL THEN
+        BEGIN
+            v_request_is_admin := public.is_admin();
+        EXCEPTION WHEN OTHERS THEN
+            v_request_is_admin := FALSE;
+        END;
+
+        IF v_request_is_admin AND p_user_id IS NOT NULL THEN
+            v_effective_user_id := p_user_id;
+        ELSE
+            v_effective_user_id := v_request_user_id;
+        END IF;
+    END IF;
+
     SELECT json_build_object(
         'messages', (
             SELECT COALESCE(json_agg(msg_row ORDER BY msg_row.created_at DESC), '[]'::json)
@@ -78,11 +99,14 @@ BEGIN
                 'target_id', gl.target_id
             )), '[]'::json)
             FROM public.guestbook_likes gl
-            WHERE gl.user_id = p_user_id
-              AND p_user_id IS NOT NULL
+            WHERE gl.user_id = v_effective_user_id
+              AND v_effective_user_id IS NOT NULL
         )
     ) INTO result;
 
     RETURN result;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION public.fn_load_guestbook(TEXT, INT, UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_load_guestbook(TEXT, INT, UUID) TO anon, authenticated, service_role;

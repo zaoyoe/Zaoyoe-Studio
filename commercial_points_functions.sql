@@ -15,13 +15,18 @@ CREATE OR REPLACE FUNCTION fn_add_points(
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     new_paid NUMERIC(12,1);
     new_bonus NUMERIC(12,1);
 BEGIN
+    IF target_user_id IS NULL THEN
+        RAISE EXCEPTION 'target_user_id is required';
+    END IF;
+
     -- 1. Validation
-    IF p_amount <= 0 THEN
+    IF p_amount IS NULL OR p_amount <= 0 THEN
         RAISE EXCEPTION 'Amount must be positive';
     END IF;
 
@@ -55,6 +60,7 @@ CREATE OR REPLACE FUNCTION fn_deduct_points(
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     target_user_id UUID := auth.uid();
@@ -63,6 +69,14 @@ DECLARE
     deduct_from_bonus NUMERIC(12,1) := 0;
     deduct_from_paid NUMERIC(12,1) := 0;
 BEGIN
+    IF target_user_id IS NULL THEN
+        RAISE EXCEPTION 'auth required';
+    END IF;
+
+    IF p_amount IS NULL OR p_amount <= 0 THEN
+        RAISE EXCEPTION 'Amount must be positive';
+    END IF;
+
     -- 1. Lock record for update
     SELECT bonus_balance, paid_balance INTO current_bonus, current_paid
     FROM points_balance
@@ -108,5 +122,8 @@ END;
 $$;
 
 -- Grant execute permissions
-GRANT EXECUTE ON FUNCTION fn_add_points(UUID, INT, TEXT, TEXT) TO authenticated;
+REVOKE ALL ON FUNCTION fn_add_points(UUID, INT, TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_add_points(UUID, INT, TEXT, TEXT) TO service_role;
+
+REVOKE ALL ON FUNCTION fn_deduct_points(INT, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION fn_deduct_points(INT, TEXT, TEXT) TO authenticated;

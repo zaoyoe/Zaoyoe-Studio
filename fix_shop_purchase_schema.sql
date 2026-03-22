@@ -8,6 +8,9 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
+    v_request_user_id UUID := auth.uid();
+    v_request_role TEXT := COALESCE(auth.role(), '');
+    v_effective_user_id UUID;
     v_product_price INT;
     v_user_balance NUMERIC(12,1);
     v_inventory_id UUID;
@@ -15,6 +18,24 @@ DECLARE
     v_product_name VARCHAR;
     v_order_id UUID;
 BEGIN
+    IF v_request_role = 'service_role' THEN
+        v_effective_user_id := COALESCE(p_user_id, v_request_user_id);
+    ELSE
+        IF v_request_user_id IS NULL THEN
+            RETURN jsonb_build_object('success', false, 'message', '请先登录');
+        END IF;
+
+        IF p_user_id IS NOT NULL AND p_user_id <> v_request_user_id THEN
+            RETURN jsonb_build_object('success', false, 'message', '非法的用户上下文');
+        END IF;
+
+        v_effective_user_id := v_request_user_id;
+    END IF;
+
+    IF v_effective_user_id IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', '缺少有效的用户身份');
+    END IF;
+
     -- A. Check Product
     SELECT price_points, name INTO v_product_price, v_product_name
     FROM shop_products
@@ -38,7 +59,7 @@ BEGIN
     -- C. Check Balance
     SELECT total_balance INTO v_user_balance
     FROM points_balance
-    WHERE user_id = p_user_id
+    WHERE user_id = v_effective_user_id
     FOR UPDATE;
 
     IF v_user_balance IS NULL OR v_user_balance < v_product_price THEN
@@ -54,7 +75,7 @@ BEGIN
         v_remaining_cost NUMERIC(12,1) := v_product_price;
     BEGIN
         SELECT bonus_balance, paid_balance INTO v_current_bonus, v_current_paid
-        FROM points_balance WHERE user_id = p_user_id;
+        FROM points_balance WHERE user_id = v_effective_user_id;
         
         -- Deduct Bonus First
         IF v_current_bonus >= v_remaining_cost THEN
@@ -78,26 +99,26 @@ BEGIN
         SET bonus_balance = bonus_balance - v_deduct_bonus,
             paid_balance = paid_balance - v_deduct_paid,
             updated_at = NOW()
-        WHERE user_id = p_user_id;
+        WHERE user_id = v_effective_user_id;
     END;
 
     -- D. Update Inventory Status
     UPDATE shop_inventory
     SET status = 'sold',
-        buyer_id = p_user_id,
+        buyer_id = v_effective_user_id,
         sold_at = NOW()
     WHERE id = v_inventory_id;
 
     -- E. Create Order (Get Order ID for Reference)
     INSERT INTO shop_orders (user_id, product_id, inventory_id, price_paid, snapshot_product_name)
-    VALUES (p_user_id, p_product_id, v_inventory_id, v_product_price, v_product_name)
+    VALUES (v_effective_user_id, p_product_id, v_inventory_id, v_product_price, v_product_name)
     RETURNING id INTO v_order_id;
 
     -- 2. Ledger (Using Order ID as Reference)
     -- Fixed: Uses correct columns (amount, reason, reference_id)
     INSERT INTO points_ledger (user_id, amount, reason, reference_id)
     VALUES (
-        p_user_id, 
+        v_effective_user_id,
         -v_product_price, 
         '商城购买: ' || v_product_name,
         'SHOP_ORDER_' || v_order_id

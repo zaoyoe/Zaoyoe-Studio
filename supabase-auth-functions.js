@@ -384,7 +384,7 @@ async function handleRegister(event) {
     }
 }
 
-// ==================== 登录功能 (Supabase 版本 - 带安全锁定) ====================
+// ==================== 登录功能 (Supabase 版本 - 带安全加固) ====================
 async function handleLogin(event) {
     event.preventDefault();
 
@@ -402,55 +402,19 @@ async function handleLogin(event) {
     }
 
     try {
-        // 🌐 Step 0: 获取客户端 IP
-        const clientIP = await getClientIP();
-
-        // 🚫 Step 0.5: 检查 IP 是否被拉黑
-        if (clientIP) {
-            const ipStatus = await checkIPBlacklisted(clientIP);
-            if (ipStatus.blocked) {
-                let message = '⛔ 您的 IP 地址已被禁止登录';
-                if (ipStatus.reason) {
-                    message += `\n\n原因: ${ipStatus.reason}`;
-                }
-                if (ipStatus.expires_at) {
-                    const expiresDate = new Date(ipStatus.expires_at);
-                    message += `\n解封时间: ${expiresDate.toLocaleString('zh-CN')}`;
-                }
-                showAuthFeedback(message, 'error', 'login');
-                setAuthLoading('login', false);
-                return;
-            }
-        }
-
-        // 🔒 Step 1: 检查账户是否被锁定
-        const lockStatus = await checkUserLocked(email);
-        if (lockStatus.isLocked) {
-            const minutes = Math.ceil(lockStatus.remainingSeconds / 60);
-            showAuthFeedback(
-                formatAuthText('auth.accountLockedRetry', '账户已锁定。由于多次登录失败，请在 {minutes} 分钟后重试。', { minutes }),
-                'error',
-                'login'
-            );
-            setAuthLoading('login', false);
-            return;
-        }
-
-        // Step 2: 尝试登录
+        // Step 1: 尝试登录
         const { data, error } = await window.supabaseClient.auth.signInWithPassword({
             email: email,
             password: password
         });
 
         if (error) {
-            // 🔒 登录失败 - 记录失败次数（包含 IP）
-            await recordLoginFailure(email, clientIP);
             throw error;
         }
 
         console.log('✅ 登录成功:', data.user);
 
-        // 🔒 Step 3: 登录成功 - 重置失败计数
+        // 🔒 Step 2: 登录成功 - 重置失败计数
         await resetLoginFailures(email);
 
         // 获取用户 profile
@@ -539,83 +503,23 @@ async function handleLogin(event) {
         console.error('登录失败:', error);
 
         let errorMessage = '登录失败';
-        let shouldOpenRegister = false;
         if (error.message.includes('Invalid login credentials')) {
-            // Check if email exists to distinguish between unregistered and wrong password
-            try {
-                const { data: emailExists } = await window.supabaseClient
-                    .rpc('fn_check_email_exists', { check_email: email });
-
-                if (!emailExists) {
-                    errorMessage = authT('auth.emailNotRegistered', '该邮箱未注册，请先注册账号');
-                    shouldOpenRegister = true;
-                } else {
-                    errorMessage = authT('auth.passwordIncorrect', '密码错误，请检查后重试');
-                }
-            } catch (e) {
-                errorMessage = authT('auth.credentialsIncorrect', '用户名或密码错误');
-            }
+            errorMessage = authT('auth.credentialsIncorrect', '用户名或密码错误');
         } else {
             errorMessage = error.message || '未知错误';
         }
 
-        if (shouldOpenRegister) {
-            showAuthFeedback(
-                formatAuthText('auth.loginFailedPrefix', '登录失败: {message}', { message: errorMessage }),
-                'error',
-                'register'
-            );
-        } else {
-            showAuthFeedback(
-                formatAuthText('auth.loginFailedPrefix', '登录失败: {message}', { message: errorMessage }),
-                'error',
-                'login'
-            );
-        }
+        showAuthFeedback(
+            formatAuthText('auth.loginFailedPrefix', '登录失败: {message}', { message: errorMessage }),
+            'error',
+            'login'
+        );
     } finally {
         setAuthLoading('login', false);
     }
 }
 
 // ==================== 登录安全辅助函数 ====================
-
-// 获取客户端 IP 地址
-async function getClientIP() {
-    try {
-        const context = await resolveClientNetworkContext();
-        if (context?.ip) {
-            console.log('🌐 客户端 IP:', context.ip);
-            return context.ip;
-        }
-        return null;
-    } catch (e) {
-        console.warn('无法获取客户端 IP:', e.message);
-        return null;
-    }
-}
-
-// 检查 IP 是否被拉黑
-async function checkIPBlacklisted(clientIP) {
-    try {
-        const { data, error } = await window.supabaseClient.rpc('check_ip_blacklisted', {
-            client_ip: clientIP
-        });
-
-        if (error) {
-            console.warn('检查 IP 黑名单失败:', error.message);
-            return { blocked: false };
-        }
-
-        if (data && data.blocked) {
-            console.warn('🚫 IP 已被拉黑:', clientIP, data.reason);
-        }
-
-        return data || { blocked: false };
-    } catch (e) {
-        console.warn('检查 IP 黑名单失败:', e.message);
-        return { blocked: false };
-    }
-}
 
 // 获取安全配置 (使用公开 RPC 函数，anon 用户可访问)
 async function getSecurityConfig() {
@@ -641,61 +545,6 @@ async function getSecurityConfig() {
             lockout_duration: 900000,
             session_timeout: 3600000
         };
-    }
-}
-
-// 检查用户是否被锁定
-async function checkUserLocked(email) {
-    try {
-        const { data, error } = await window.supabaseClient.rpc('check_user_locked', {
-            user_email: email
-        });
-        if (error) throw error;
-        if (data && data.length > 0) {
-            return {
-                isLocked: data[0].is_locked,
-                lockedUntil: data[0].locked_until,
-                remainingSeconds: data[0].remaining_seconds
-            };
-        }
-        return { isLocked: false };
-    } catch (e) {
-        console.warn('检查锁定状态失败:', e);
-        return { isLocked: false }; // 失败时允许继续登录
-    }
-}
-
-// 记录登录失败（支持 IP 传递用于自动拉黑）
-async function recordLoginFailure(email, clientIP = null) {
-    try {
-        const config = await getSecurityConfig();
-        const maxAttempts = config.login_lockout_attempts || 5;
-        const lockoutMinutes = Math.floor((config.lockout_duration || 900000) / 60000);
-
-        const { data, error } = await window.supabaseClient.rpc('record_login_failure', {
-            user_email: email,
-            max_attempts: maxAttempts,
-            lockout_minutes: lockoutMinutes,
-            client_ip: clientIP
-        });
-
-        if (error) throw error;
-
-        if (data && data.length > 0 && data[0].is_now_locked) {
-            console.warn(`⚠️ 账户 ${email} 已被锁定 ${lockoutMinutes} 分钟`);
-
-            // 检查是否触发了 IP 自动拉黑
-            if (data[0].ip_auto_blocked) {
-                console.warn(`🚫 IP ${clientIP} 已被自动拉黑 24 小时`);
-            }
-        } else if (data && data.length > 0) {
-            const remaining = maxAttempts - data[0].attempts;
-            if (remaining > 0 && remaining <= 2) {
-                console.warn(`⚠️ 登录失败，还剩 ${remaining} 次尝试机会`);
-            }
-        }
-    } catch (e) {
-        console.error('记录登录失败次数时出错:', e);
     }
 }
 

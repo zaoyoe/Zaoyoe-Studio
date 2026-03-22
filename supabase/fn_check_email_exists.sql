@@ -1,16 +1,19 @@
 -- Function to check if an email is registered
--- Returns true if registered, false if not
--- This is a SECURITY DEFINER function to query auth.users
+-- Only service_role may call this to avoid public email enumeration
 
 CREATE OR REPLACE FUNCTION fn_check_email_exists(check_email TEXT)
 RETURNS BOOLEAN AS $$
 BEGIN
+    IF COALESCE(auth.role(), '') <> 'service_role' THEN
+        RAISE EXCEPTION 'Access denied';
+    END IF;
+
     RETURN EXISTS (
-        SELECT 1 FROM auth.users WHERE email = check_email
+        SELECT 1 FROM auth.users WHERE lower(email) = lower(check_email)
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp;
 
--- Allow anonymous and authenticated users to call this
-GRANT EXECUTE ON FUNCTION fn_check_email_exists(TEXT) TO anon;
-GRANT EXECUTE ON FUNCTION fn_check_email_exists(TEXT) TO authenticated;
+REVOKE ALL ON FUNCTION fn_check_email_exists(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_check_email_exists(TEXT) TO service_role;

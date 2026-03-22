@@ -458,6 +458,271 @@ BEGIN
 END;
 $$;
 
+-- ============================================
+-- Security Hardening Override
+-- 返佣详情默认只允许本人读取；管理员和 service_role 可按需查看他人
+-- ============================================
+
+CREATE OR REPLACE FUNCTION public.fn_get_affiliate_reward_detail(
+    p_user_id UUID,
+    p_ledger_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_entry RECORD;
+    v_reward_type TEXT := 'affiliate_reward';
+    v_reward_label TEXT := '推广奖励';
+    v_source_kind TEXT := '';
+    v_source_stage TEXT := '';
+    v_invitee_id UUID;
+    v_invitee_name TEXT;
+    v_invitee_username TEXT;
+    v_invitee_avatar_url TEXT;
+    v_invitee_masked_email TEXT;
+    v_invitee_registered_at TIMESTAMPTZ;
+    v_source_order_id UUID;
+    v_source_ledger_id UUID;
+    v_source_reason TEXT;
+    v_source_name TEXT;
+    v_source_amount NUMERIC(12,1) := 0;
+    v_source_created_at TIMESTAMPTZ;
+    v_commission_rate NUMERIC(12,1);
+    v_declared_commission_rate NUMERIC(12,1);
+    v_expected_reward_amount NUMERIC(12,1);
+    v_text_ref TEXT;
+    v_affiliate_config JSONB;
+    v_source_category TEXT;
+    v_has_agent_profit BOOLEAN := false;
+    v_is_agent_commission BOOLEAN := false;
+    v_reason_declared_rate NUMERIC(12,1);
+    v_request_user_id UUID := auth.uid();
+    v_request_role TEXT := COALESCE(auth.role(), '');
+    v_request_is_admin BOOLEAN := FALSE;
+    v_effective_user_id UUID;
+BEGIN
+    IF v_request_role = 'service_role' THEN
+        v_effective_user_id := COALESCE(p_user_id, v_request_user_id);
+    ELSE
+        IF v_request_user_id IS NULL THEN
+            RAISE EXCEPTION 'auth required';
+        END IF;
+
+        v_request_is_admin := public.is_admin();
+        IF p_user_id IS NOT NULL AND p_user_id <> v_request_user_id AND NOT v_request_is_admin THEN
+            RAISE EXCEPTION 'Access denied';
+        END IF;
+
+        v_effective_user_id := COALESCE(p_user_id, v_request_user_id);
+    END IF;
+
+    IF v_effective_user_id IS NULL THEN
+        RAISE EXCEPTION 'user_id required';
+    END IF;
+
+    SELECT
+        pl.id,
+        pl.amount,
+        pl.reason,
+        pl.reference_id,
+        pl.created_at
+    INTO v_entry
+    FROM public.points_ledger pl
+    WHERE pl.id = p_ledger_id
+      AND pl.user_id = v_effective_user_id;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('found', false);
+    END IF;
+
+    IF v_entry.reference_id LIKE 'AFFILIATE_REWARD_%' OR v_entry.reference_id LIKE 'AFF_REW_%' THEN
+        v_reward_type := 'commission';
+        v_reward_label := '推广返佣';
+        v_source_kind := 'purchase';
+        v_source_stage := '已消费';
+        v_text_ref := CASE
+            WHEN v_entry.reference_id LIKE 'AFFILIATE_REWARD_%' THEN SUBSTRING(v_entry.reference_id FROM LENGTH('AFFILIATE_REWARD_') + 1)
+            ELSE SUBSTRING(v_entry.reference_id FROM LENGTH('AFF_REW_') + 1)
+        END;
+        IF v_text_ref ~ '^[0-9a-fA-F-]{36}$' THEN
+            v_source_order_id := v_text_ref::UUID;
+        END IF;
+
+        SELECT
+            so.user_id,
+            COALESCE(NULLIF(BTRIM(p.username), ''), NULLIF(split_part(COALESCE(au.email, ''), '@', 1), ''), '新用户'),
+            COALESCE(NULLIF(BTRIM(p.username), ''), ''),
+            p.avatar_url,
+            public.fn_mask_affiliate_email(au.email),
+            au.created_at,
+            so.snapshot_product_name,
+            COALESCE(so.price_paid, so.total_price, 0)::NUMERIC(12,1),
+            so.created_at,
+            COALESCE(sp.category, '')
+        INTO
+            v_invitee_id,
+            v_invitee_name,
+            v_invitee_username,
+            v_invitee_avatar_url,
+            v_invitee_masked_email,
+            v_invitee_registered_at,
+            v_source_name,
+            v_source_amount,
+            v_source_created_at,
+            v_source_category
+        FROM public.shop_orders so
+        LEFT JOIN public.shop_products sp ON sp.id = so.product_id
+        LEFT JOIN public.profiles p ON p.id = so.user_id
+        LEFT JOIN auth.users au ON au.id = so.user_id
+        WHERE so.id = v_source_order_id;
+
+        IF COALESCE(v_source_amount, 0) > 0 THEN
+            v_commission_rate := ROUND((v_entry.amount / v_source_amount * 100)::NUMERIC, 1);
+        END IF;
+
+        BEGIN
+            v_reason_declared_rate := NULLIF((regexp_match(v_entry.reason, '([0-9]+(?:\.[0-9]+)?)%'))[1], '')::NUMERIC;
+        EXCEPTION WHEN OTHERS THEN
+            v_reason_declared_rate := NULL;
+        END;
+
+        IF v_source_order_id IS NOT NULL THEN
+            SELECT EXISTS (
+                SELECT 1
+                FROM public.points_ledger pl
+                WHERE pl.reference_id = 'AGENT_PROF_' || v_source_order_id::TEXT
+            ) INTO v_has_agent_profit;
+        END IF;
+
+        v_is_agent_commission := v_has_agent_profit OR COALESCE(v_source_category, '') = 'resource';
+
+        SELECT config_value
+        INTO v_affiliate_config
+        FROM public.system_config
+        WHERE config_key = 'affiliate_program';
+
+        v_declared_commission_rate := CASE
+            WHEN v_is_agent_commission THEN COALESCE((v_affiliate_config->>'commission_rate_agent')::NUMERIC, v_reason_declared_rate, v_commission_rate)
+            ELSE COALESCE((v_affiliate_config->>'commission_rate_shop')::NUMERIC, v_reason_declared_rate, v_commission_rate)
+        END;
+
+        v_expected_reward_amount := CASE
+            WHEN COALESCE(v_source_amount, 0) > 0 AND COALESCE(v_declared_commission_rate, 0) > 0
+                THEN ROUND((v_source_amount * v_declared_commission_rate / 100.0)::NUMERIC, 1)
+            ELSE NULL
+        END;
+    ELSIF v_entry.reference_id LIKE 'REG_REWARD_%' THEN
+        v_reward_type := 'registration_reward';
+        v_reward_label := '拉新固定奖励';
+        v_source_kind := 'registration';
+        v_source_stage := '已注册';
+
+        IF v_entry.reference_id LIKE 'REG_REWARD_UNLOCK_RECHARGE_%' THEN
+            v_text_ref := SUBSTRING(v_entry.reference_id FROM LENGTH('REG_REWARD_UNLOCK_RECHARGE_') + 1);
+            IF v_text_ref ~ '^[0-9a-fA-F-]{36}$' THEN
+                v_source_ledger_id := v_text_ref::UUID;
+            END IF;
+
+            SELECT
+                pl.user_id,
+                pl.reason,
+                pl.amount,
+                pl.created_at
+            INTO
+                v_invitee_id,
+                v_source_reason,
+                v_source_amount,
+                v_source_created_at
+            FROM public.points_ledger pl
+            WHERE pl.id = v_source_ledger_id;
+
+            v_source_kind := 'recharge';
+            v_source_stage := '已首充';
+            v_source_name := COALESCE(NULLIF(BTRIM(v_source_reason), ''), '首充入账');
+        ELSIF v_entry.reference_id LIKE 'REG_REWARD_UNLOCK_%' THEN
+            v_text_ref := SUBSTRING(v_entry.reference_id FROM LENGTH('REG_REWARD_UNLOCK_') + 1);
+            IF v_text_ref ~ '^[0-9a-fA-F-]{36}$' THEN
+                v_source_order_id := v_text_ref::UUID;
+            END IF;
+
+            SELECT
+                so.user_id,
+                so.snapshot_product_name,
+                COALESCE(so.price_paid, so.total_price, 0)::NUMERIC(12,1),
+                so.created_at
+            INTO
+                v_invitee_id,
+                v_source_name,
+                v_source_amount,
+                v_source_created_at
+            FROM public.shop_orders so
+            WHERE so.id = v_source_order_id;
+
+            v_source_kind := 'purchase';
+            v_source_stage := '已消费';
+        ELSE
+            v_text_ref := SUBSTRING(v_entry.reference_id FROM LENGTH('REG_REWARD_') + 1);
+            IF v_text_ref ~ '^[0-9a-fA-F-]{36}$' THEN
+                v_invitee_id := v_text_ref::UUID;
+            END IF;
+        END IF;
+
+        IF v_invitee_id IS NOT NULL THEN
+            SELECT
+                COALESCE(NULLIF(BTRIM(p.username), ''), NULLIF(split_part(COALESCE(au.email, ''), '@', 1), ''), '新用户'),
+                COALESCE(NULLIF(BTRIM(p.username), ''), ''),
+                p.avatar_url,
+                public.fn_mask_affiliate_email(au.email),
+                au.created_at
+            INTO
+                v_invitee_name,
+                v_invitee_username,
+                v_invitee_avatar_url,
+                v_invitee_masked_email,
+                v_invitee_registered_at
+            FROM public.profiles p
+            LEFT JOIN auth.users au ON au.id = p.id
+            WHERE p.id = v_invitee_id;
+        END IF;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'found', true,
+        'ledger_id', v_entry.id,
+        'reward_type', v_reward_type,
+        'reward_label', v_reward_label,
+        'reward_amount', COALESCE(v_entry.amount, 0),
+        'reward_reason', v_entry.reason,
+        'reward_created_at', v_entry.created_at,
+        'reference_id', v_entry.reference_id,
+        'invitee_id', v_invitee_id,
+        'invitee_name', v_invitee_name,
+        'invitee_username', v_invitee_username,
+        'invitee_avatar_url', v_invitee_avatar_url,
+        'invitee_masked_email', v_invitee_masked_email,
+        'invitee_registered_at', v_invitee_registered_at,
+        'source_kind', v_source_kind,
+        'source_stage', v_source_stage,
+        'source_order_id', v_source_order_id,
+        'source_ledger_id', v_source_ledger_id,
+        'source_name', v_source_name,
+        'source_amount', v_source_amount,
+        'source_reason', v_source_reason,
+        'source_created_at', v_source_created_at,
+        'commission_rate', v_commission_rate,
+        'declared_commission_rate', v_declared_commission_rate,
+        'expected_reward_amount', v_expected_reward_amount,
+        'is_agent_commission', v_is_agent_commission
+    );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.fn_get_affiliate_reward_detail(UUID, UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_get_affiliate_reward_detail(UUID, UUID) TO authenticated, service_role;
+
 SELECT
     COUNT(*) AS fixed_rows,
     COALESCE(SUM(delta), 0)::NUMERIC(12,1) AS total_balance_delta

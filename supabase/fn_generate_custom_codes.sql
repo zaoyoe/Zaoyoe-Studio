@@ -12,12 +12,21 @@ CREATE OR REPLACE FUNCTION fn_generate_custom_codes(
 RETURNS TABLE(code TEXT) 
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_batch_id UUID;
     v_code TEXT;
     i INTEGER;
 BEGIN
+    IF auth.uid() IS NULL OR NOT public.is_admin() THEN
+        RAISE EXCEPTION 'Unauthorized: Admin only';
+    END IF;
+
+    IF COALESCE(BTRIM(p_batch_name), '') = '' THEN
+        RAISE EXCEPTION 'Batch name is required';
+    END IF;
+
     -- Validate inputs
     IF p_points_amount <= 0 THEN
         RAISE EXCEPTION 'Points amount must be positive';
@@ -35,7 +44,8 @@ BEGIN
         total_count,
         used_count,
         expires_at,
-        custom_points_amount
+        custom_points_amount,
+        created_by
     ) VALUES (
         p_batch_name,
         NULL,  -- No package for custom points
@@ -43,7 +53,8 @@ BEGIN
         p_count,
         0,
         p_expires_at,
-        p_points_amount  -- Store custom points amount
+        p_points_amount,  -- Store custom points amount
+        auth.uid()
     ) RETURNING id INTO v_batch_id;
 
     -- Generate codes
@@ -58,12 +69,14 @@ BEGIN
         INSERT INTO redemption_codes (
             batch_id,
             code,
+            points_amount,
             status,
             expires_at
         ) VALUES (
             v_batch_id,
             v_code,
-            'unused',  -- Use status enum value instead of is_used boolean
+            p_points_amount,
+            'pending',
             p_expires_at
         );
         
@@ -74,8 +87,8 @@ BEGIN
 END;
 $$;
 
--- Grant execute permission
-GRANT EXECUTE ON FUNCTION fn_generate_custom_codes TO authenticated;
+REVOKE ALL ON FUNCTION fn_generate_custom_codes(TEXT, INTEGER, INTEGER, TEXT, TIMESTAMPTZ) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_generate_custom_codes(TEXT, INTEGER, INTEGER, TEXT, TIMESTAMPTZ) TO authenticated;
 
 -- Add custom_points_amount column to redemption_batches if not exists
 -- Run this separately first if the column doesn't exist:

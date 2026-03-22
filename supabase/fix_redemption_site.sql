@@ -92,12 +92,21 @@ CREATE OR REPLACE FUNCTION fn_generate_custom_codes(
 RETURNS TABLE(code TEXT) 
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_batch_id UUID;
     v_code TEXT;
     i INTEGER;
 BEGIN
+    IF auth.uid() IS NULL OR NOT public.is_admin() THEN
+        RAISE EXCEPTION 'Unauthorized: Admin only';
+    END IF;
+
+    IF COALESCE(BTRIM(p_batch_name), '') = '' THEN
+        RAISE EXCEPTION 'Batch name is required';
+    END IF;
+
     IF p_points_amount <= 0 THEN
         RAISE EXCEPTION 'Points amount must be positive';
     END IF;
@@ -109,10 +118,10 @@ BEGIN
     -- 创建批次 (包含 site)
     INSERT INTO redemption_batches (
         name, package_id, channel, total_count, used_count,
-        expires_at, custom_points_amount, site
+        expires_at, custom_points_amount, site, created_by
     ) VALUES (
         p_batch_name, NULL, p_channel, p_count, 0,
-        p_expires_at, p_points_amount, p_site
+        p_expires_at, p_points_amount, p_site, auth.uid()
     ) RETURNING id INTO v_batch_id;
 
     -- 生成兑换码
@@ -124,9 +133,9 @@ BEGIN
         
         -- 插入兑换码 (包含 site)
         INSERT INTO redemption_codes (
-            batch_id, code, status, expires_at, site
+            batch_id, code, points_amount, status, expires_at, site
         ) VALUES (
-            v_batch_id, v_code, 'unused', p_expires_at, p_site
+            v_batch_id, v_code, p_points_amount, 'pending', p_expires_at, p_site
         );
         
         RETURN QUERY SELECT v_code;
@@ -189,7 +198,9 @@ DROP FUNCTION IF EXISTS get_channel_breakdown();
 -- ============================================
 -- 6. 权限
 -- ============================================
+REVOKE ALL ON FUNCTION fn_generate_codes(VARCHAR, UUID, INT, VARCHAR, TIMESTAMPTZ, VARCHAR) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION fn_generate_codes(VARCHAR, UUID, INT, VARCHAR, TIMESTAMPTZ, VARCHAR) TO authenticated;
+REVOKE ALL ON FUNCTION fn_generate_custom_codes(TEXT, INTEGER, INTEGER, TEXT, TIMESTAMPTZ, VARCHAR) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION fn_generate_custom_codes(TEXT, INTEGER, INTEGER, TEXT, TIMESTAMPTZ, VARCHAR) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_channel_breakdown(VARCHAR) TO authenticated;
 

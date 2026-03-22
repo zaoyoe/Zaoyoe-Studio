@@ -214,6 +214,29 @@ function getBearerToken(req) {
     return match?.[1] || '';
 }
 
+function isLocalRequestOrigin(req) {
+    const origin = String(req.headers.origin || req.headers.Origin || '').trim().toLowerCase();
+    const host = String(req.headers.host || req.headers.Host || '').trim().toLowerCase();
+    return origin.includes('localhost')
+        || origin.includes('127.0.0.1')
+        || host.startsWith('localhost:')
+        || host === 'localhost'
+        || host.startsWith('127.0.0.1:');
+}
+
+function resolveSecureRequestSite(req, explicitSite = '') {
+    const normalizedExplicitSite = String(explicitSite || '').trim().toLowerCase();
+    const origin = String(req.headers.origin || req.headers.Origin || '').trim().toLowerCase();
+    const host = String(req.headers.host || req.headers.Host || '').trim().toLowerCase();
+    const derivedSite = origin.includes('zaoyoe.xyz') || host.includes('zaoyoe.xyz') ? 'intl' : 'cn';
+
+    if (isLocalRequestOrigin(req) && ['cn', 'intl'].includes(normalizedExplicitSite)) {
+        return normalizedExplicitSite;
+    }
+
+    return derivedSite;
+}
+
 async function getAuthenticatedUser(req) {
     const token = getBearerToken(req);
     if (!token) return null;
@@ -224,6 +247,76 @@ async function getAuthenticatedUser(req) {
     }
 
     return data.user;
+}
+
+async function requireAuthenticatedUser(req, res) {
+    const user = await getAuthenticatedUser(req);
+    if (user) return user;
+
+    res.status(401).json({
+        success: false,
+        message: '请先登录',
+        code: 'unauthorized'
+    });
+    return null;
+}
+
+async function isAdminUser(userId) {
+    const normalizedUserId = String(userId || '').trim();
+    if (!normalizedUserId) return false;
+
+    try {
+        const { data: permissionData, error: permissionError } = await supabase
+            .rpc('get_user_permissions', { p_user_id: normalizedUserId });
+
+        if (!permissionError && (permissionData?.is_admin || permissionData?.is_super_admin)) {
+            return true;
+        }
+    } catch (error) {
+        console.warn('[Auth] get_user_permissions check failed:', error.message);
+    }
+
+    const { data, error } = await supabase
+        .from('admin_roles')
+        .select('role_name, expires_at')
+        .eq('user_id', normalizedUserId);
+
+    if (error) {
+        throw new Error(error.message || 'Failed to verify admin role');
+    }
+
+    const now = Date.now();
+    return (Array.isArray(data) ? data : []).some((role) => {
+        if (!role?.expires_at) return true;
+        return new Date(role.expires_at).getTime() > now;
+    });
+}
+
+async function requireAdminUser(req, res) {
+    const user = await requireAuthenticatedUser(req, res);
+    if (!user) return null;
+
+    try {
+        const allowed = await isAdminUser(user.id);
+        if (allowed) {
+            return user;
+        }
+    } catch (error) {
+        console.error('[Auth] Admin permission check error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || '管理员权限校验失败',
+            code: 'admin_check_failed'
+        });
+        return null;
+    }
+
+    res.status(403).json({
+        success: false,
+        message: '需要管理员权限',
+        code: 'admin_required'
+    });
+    return null;
 }
 
 async function recordPaymentEvent(eventPayload) {
@@ -1964,12 +2057,15 @@ async function validateUserBalance(userId, requiredPoints, site = 'cn') {
 // POST /api/verify — Submit a Google One job
 // =============================================
 app.post('/api/verify', async (req, res) => {
-    const { email, password, totpSecret, totp_secret, priority, userId, site } = req.body;
+    const authenticatedUser = await requireAuthenticatedUser(req, res);
+    if (!authenticatedUser) return;
+
+    const { email, password, totpSecret, totp_secret, priority, site } = req.body || {};
     const normalizedEmail = String(email || '').trim().toLowerCase();
     const normalizedPassword = String(password || '');
     const normalizedTotpSecret = String(totpSecret || totp_secret || '').trim();
     const normalizedPriority = Number(priority) === 1 ? 1 : 0;
-    const currentSite = getCurrentSite(req, site);
+    const currentSite = resolveSecureRequestSite(req, site);
 
     if (!normalizedEmail || !normalizedPassword || !normalizedTotpSecret) {
         return res.status(400).json({
@@ -1998,7 +2094,7 @@ app.post('/api/verify', async (req, res) => {
             });
         }
 
-        const balanceCheck = await validateUserBalance(userId, config.pricePerVerify, currentSite);
+        const balanceCheck = await validateUserBalance(authenticatedUser.id, config.pricePerVerify, currentSite);
         if (!balanceCheck.valid) {
             return res.status(balanceCheck.status).json({ success: false, message: balanceCheck.error });
         }
@@ -2031,9 +2127,9 @@ app.post('/api/verify', async (req, res) => {
         }
 
         const jobId = String(apiData.job_id || '').trim();
-        if (jobId && userId) {
+        if (jobId) {
             await syncTrackedJobStatus({
-                userId,
+                userId: authenticatedUser.id,
                 site: currentSite,
                 email: normalizedEmail,
                 jobId,
@@ -2069,11 +2165,24 @@ app.post('/api/verify', async (req, res) => {
 // GET /api/verify/status/:taskId — Poll job status
 // =============================================
 app.get('/api/verify/status/:taskId', async (req, res) => {
+    const authenticatedUser = await requireAuthenticatedUser(req, res);
+    if (!authenticatedUser) return;
+
     const { taskId } = req.params;
-    const { userId, site, email } = req.query;
-    const currentSite = getCurrentSite(req, site);
+    const { site } = req.query;
+    const currentSite = resolveSecureRequestSite(req, site);
 
     try {
+        const trackedRecord = await findTrackedJobLog(authenticatedUser.id, taskId, currentSite);
+        if (!trackedRecord) {
+            return res.status(404).json({
+                success: false,
+                message: '任务不存在或无权访问',
+                code: 'job_not_found'
+            });
+        }
+
+        const trackedPayload = parseHistoryMessage(trackedRecord.message) || {};
         const config = await getVerifyConfig();
 
         if (!config.apiKey) {
@@ -2090,19 +2199,15 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
         }
 
         const apiData = upstream.data;
-        let pointsDeducted = 0;
-
-        if (userId) {
-            const syncResult = await syncTrackedJobStatus({
-                userId: String(userId),
-                site: currentSite,
-                email: String(email || ''),
-                jobId: taskId,
-                apiData,
-                config
-            });
-            pointsDeducted = Number(syncResult?.pointsDeducted) || 0;
-        }
+        const syncResult = await syncTrackedJobStatus({
+            userId: authenticatedUser.id,
+            site: currentSite,
+            email: String(trackedPayload.email || '').trim().toLowerCase(),
+            jobId: taskId,
+            apiData,
+            config
+        });
+        const pointsDeducted = Number(syncResult?.pointsDeducted) || 0;
 
         return res.json({
             success: apiData.status === 'success',
@@ -2134,6 +2239,9 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
 // GET /api/quota — Check current API key balance
 // =============================================
 app.get('/api/quota', async (req, res) => {
+    const authenticatedUser = await requireAuthenticatedUser(req, res);
+    if (!authenticatedUser) return;
+
     try {
         const config = await getVerifyConfig();
 
@@ -2178,6 +2286,9 @@ app.get('/api/quota', async (req, res) => {
 // GET /api/queue — Inspect upstream queue status
 // =============================================
 app.get('/api/queue', async (req, res) => {
+    const adminUser = await requireAdminUser(req, res);
+    if (!adminUser) return;
+
     try {
         const config = await getVerifyConfig();
 
@@ -2644,8 +2755,19 @@ async function handleAfdianQueryRequest(req, res) {
 app.get('/api/afdian/query', handleAfdianQueryRequest);
 app.post('/api/afdian/query', handleAfdianQueryRequest);
 
-app.listen(PORT, () => {
-    console.log(`🚀 Verify proxy server running on port ${PORT}`);
-    startPendingJobSweep();
-    startShopDeliverySweep();
-});
+function startServer(port = PORT) {
+    return app.listen(port, () => {
+        console.log(`🚀 Verify proxy server running on port ${port}`);
+        startPendingJobSweep();
+        startShopDeliverySweep();
+    });
+}
+
+if (require.main === module) {
+    startServer();
+}
+
+module.exports = {
+    app,
+    startServer
+};

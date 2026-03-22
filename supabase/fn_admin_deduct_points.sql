@@ -11,6 +11,7 @@ CREATE OR REPLACE FUNCTION fn_deduct_points(
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     current_bonus NUMERIC(12,1);
@@ -19,6 +20,18 @@ DECLARE
     deduct_from_paid NUMERIC(12,1) := 0;
     actual_deducted NUMERIC(12,1) := 0;
 BEGIN
+    IF COALESCE(auth.role(), '') <> 'service_role' THEN
+        RAISE EXCEPTION 'Access denied';
+    END IF;
+
+    IF p_target_user_id IS NULL THEN
+        RAISE EXCEPTION 'target_user_id is required';
+    END IF;
+
+    IF p_amount IS NULL OR p_amount <= 0 THEN
+        RAISE EXCEPTION 'Amount must be positive';
+    END IF;
+
     -- 1. Lock record for update
     SELECT bonus_balance, paid_balance INTO current_bonus, current_paid
     FROM points_balance
@@ -76,3 +89,5 @@ $$;
 
 -- 注意：此函数只能由 SECURITY DEFINER 函数（如 fn_revoke_code）内部调用
 -- 不直接授予用户执行权限以防止滥用
+REVOKE ALL ON FUNCTION fn_deduct_points(UUID, INT, TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_deduct_points(UUID, INT, TEXT, TEXT) TO service_role;
