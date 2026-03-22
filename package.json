@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "description": "AI Prompt Gallery",
   "scripts": {
+    "check:prod-env": "node scripts/check-prod-env.js",
     "optimize-images": "node scripts/optimize-images.js",
     "upload-to-r2": "node scripts/upload-to-r2.js",
-    "test:security": "node --test tests/*.test.js"
+    "test:security": "node --test --test-force-exit tests/*.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.985.0",

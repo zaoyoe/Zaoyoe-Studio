@@ -1,0 +1,61 @@
+name: Security Tests
+
+on:
+  push:
+    paths:
+      - '.github/workflows/security-tests.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/check-prod-env.js'
+      - 'server/**'
+      - 'api/**'
+      - 'tests/**'
+      - 'verify-widget.js'
+      - 'admin-config.js'
+  pull_request:
+    paths:
+      - '.github/workflows/security-tests.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/check-prod-env.js'
+      - 'server/**'
+      - 'api/**'
+      - 'tests/**'
+      - 'verify-widget.js'
+      - 'admin-config.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate production env check script
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ci-service-role-key
+          ADMIN_CONFIG_ENCRYPTION_KEY: ci-admin-config-key
+          PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: ci-quote-secret
+        run: npm run check:prod-env -- --allow-non-production
+
+      - name: Run security regression suite
+        run: npm run test:security

@@ -1,9 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const http = require('node:http');
+const crypto = require('node:crypto');
 const path = require('node:path');
-const { once } = require('node:events');
-const { PassThrough } = require('node:stream');
 const Module = require('node:module');
 
 function createQueryBuilder(executor) {
@@ -22,7 +20,27 @@ function createQueryBuilder(executor) {
             return builder;
         },
         eq(column, value) {
-            state.filters.push({ column, value });
+            state.filters.push({ op: 'eq', column, value });
+            return builder;
+        },
+        in(column, values) {
+            state.filters.push({ op: 'in', column, value: Array.isArray(values) ? values : [values] });
+            return builder;
+        },
+        is(column, value) {
+            state.filters.push({ op: 'is', column, value });
+            return builder;
+        },
+        gte(column, value) {
+            state.filters.push({ op: 'gte', column, value });
+            return builder;
+        },
+        lt(column, value) {
+            state.filters.push({ op: 'lt', column, value });
+            return builder;
+        },
+        neq(column, value) {
+            state.filters.push({ op: 'neq', column, value });
             return builder;
         },
         order(column, options = {}) {
@@ -71,19 +89,80 @@ function getFilterValue(query, column) {
 }
 
 function applyCommonFilters(rows, query) {
-    return rows.filter((row) => query.filters.every(({ column, value }) => row[column] === value));
+    return rows.filter((row) => query.filters.every(({ op = 'eq', column, value }) => {
+        const currentValue = row[column];
+
+        if (op === 'eq') return currentValue === value;
+        if (op === 'neq') return currentValue !== value;
+        if (op === 'in') return Array.isArray(value) && value.includes(currentValue);
+        if (op === 'is') return currentValue === value;
+        if (op === 'gte') return String(currentValue || '') >= String(value || '');
+        if (op === 'lt') return Number(currentValue) < Number(value);
+        return false;
+    }));
+}
+
+function createRpcResult(data, error = null) {
+    return {
+        single() {
+            return Promise.resolve({ data, error });
+        },
+        then(resolve, reject) {
+            return Promise.resolve({ data, error }).then(resolve, reject);
+        },
+        catch(reject) {
+            return Promise.resolve({ data, error }).catch(reject);
+        }
+    };
+}
+
+async function withEnv(patch, callback) {
+    const previous = {};
+
+    for (const [key, value] of Object.entries(patch || {})) {
+        previous[key] = process.env[key];
+        if (value === undefined || value === null) {
+            delete process.env[key];
+        } else {
+            process.env[key] = String(value);
+        }
+    }
+
+    try {
+        return await callback();
+    } finally {
+        for (const key of Object.keys(patch || {})) {
+            if (previous[key] === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = previous[key];
+            }
+        }
+    }
 }
 
 function createSupabaseStub(state = {}) {
     const tokens = state.tokens || {};
     const verificationLogs = state.verificationLogs || [];
+    const paymentEvents = state.paymentEvents || [];
+    const paymentOrders = state.paymentOrders || [];
+    const pointsLedger = state.pointsLedger || [];
+    const pointsPackages = state.pointsPackages || [];
+    const adminSecretStore = state.adminSecretStore || [];
     const adminRoles = state.adminRoles || {};
     const permissions = state.permissions || {};
+    const balances = state.balances || {};
     const verifySettings = state.verifySettings || {
         price_per_verify: 10,
         verify_api_key: 'verify-api-key',
         verify_api_base_url: 'https://verify.test'
     };
+    const paymentChannels = state.paymentChannels || null;
+    const rechargeOptions = state.rechargeOptions || null;
+    const afdianProcessPaymentResult = state.afdianProcessPaymentResult || { status: 'pending_review', payment_order_id: null };
+    const afdianProcessPaymentError = state.afdianProcessPaymentError || null;
+    state.metrics = state.metrics || {};
+    state.metrics.deductCalls = Number(state.metrics.deductCalls || 0);
 
     return {
         auth: {
@@ -95,15 +174,54 @@ function createSupabaseStub(state = {}) {
                 return { data: { user: null }, error: { message: 'Unauthorized' } };
             }
         },
-        async rpc(name, args = {}) {
+        rpc(name, args = {}) {
             if (name === 'get_user_permissions') {
-                return {
-                    data: permissions[args.p_user_id] || {
+                return createRpcResult(
+                    permissions[args.p_user_id] || {
                         is_admin: false,
                         is_super_admin: false
-                    },
-                    error: null
-                };
+                    }
+                );
+            }
+
+            if (name === 'fn_get_user_balance') {
+                return createRpcResult({
+                    total_balance: Number(balances[args.p_user_id] ?? 100)
+                });
+            }
+
+            if (name === 'fn_process_afdian_payment') {
+                return createRpcResult(afdianProcessPaymentResult, afdianProcessPaymentError);
+            }
+
+            if (name === 'fn_deduct_points_admin_site') {
+                state.metrics.deductCalls += 1;
+                pointsLedger.push({
+                    id: `ledger-${pointsLedger.length + 1}`,
+                    user_id: args.p_target_user_id,
+                    amount: -Math.abs(Number(args.p_amount) || 0),
+                    reference_id: args.p_reference_id,
+                    site: args.p_site || null,
+                    created_at: new Date().toISOString()
+                });
+                return createRpcResult({
+                    deducted: Number(args.p_amount) || 0
+                });
+            }
+
+            if (name === 'fn_deduct_points') {
+                state.metrics.deductCalls += 1;
+                pointsLedger.push({
+                    id: `ledger-${pointsLedger.length + 1}`,
+                    user_id: args.p_target_user_id,
+                    amount: -Math.abs(Number(args.p_amount) || 0),
+                    reference_id: args.p_reference_id,
+                    site: null,
+                    created_at: new Date().toISOString()
+                });
+                return createRpcResult({
+                    deducted: Number(args.p_amount) || 0
+                });
             }
 
             throw new Error(`Unexpected RPC in test stub: ${name}`);
@@ -112,15 +230,27 @@ function createSupabaseStub(state = {}) {
             return createQueryBuilder(async (query) => {
                 if (table === 'system_config' && query.mode === 'select') {
                     const configKey = getFilterValue(query, 'config_key');
-                    if (configKey !== 'verify_settings') {
-                        return { data: null, error: null };
+                    const configKeys = query.filters.find((item) => item.column === 'config_key' && item.op === 'in')?.value || [];
+                    if (configKey === 'verify_settings') {
+                        const row = { config_value: verifySettings };
+                        return {
+                            data: query.single || query.maybeSingle ? row : [row],
+                            error: null
+                        };
                     }
 
-                    const row = { config_value: verifySettings };
-                    return {
-                        data: query.single || query.maybeSingle ? row : [row],
-                        error: null
-                    };
+                    if (configKeys.length) {
+                        const rows = [];
+                        if (configKeys.includes('payment_channels') && paymentChannels) {
+                            rows.push({ config_key: 'payment_channels', config_value: paymentChannels });
+                        }
+                        if (configKeys.includes('recharge_options') && rechargeOptions) {
+                            rows.push({ config_key: 'recharge_options', config_value: rechargeOptions });
+                        }
+                        return { data: rows, error: null };
+                    }
+
+                    return { data: null, error: null };
                 }
 
                 if (table === 'verification_logs' && query.mode === 'select') {
@@ -140,6 +270,29 @@ function createSupabaseStub(state = {}) {
                     return { data: rows, error: null };
                 }
 
+                if (table === 'verification_logs' && query.mode === 'insert') {
+                    const rows = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    const inserted = rows.map((row, index) => {
+                        const nextRow = {
+                            id: row.id || `verification-log-${verificationLogs.length + index + 1}`,
+                            created_at: row.created_at || new Date().toISOString(),
+                            ...row
+                        };
+                        verificationLogs.push(nextRow);
+                        return nextRow;
+                    });
+
+                    return { data: inserted, error: null };
+                }
+
+                if (table === 'verification_logs' && query.mode === 'update') {
+                    const matched = applyCommonFilters(verificationLogs, query);
+                    matched.forEach((row) => {
+                        Object.assign(row, query.payload || {});
+                    });
+                    return { data: matched, error: null };
+                }
+
                 if (table === 'admin_roles' && query.mode === 'select') {
                     let rows = (adminRoles[getFilterValue(query, 'user_id')] || []).map((role) => ({
                         role_name: role.role_name || 'admin',
@@ -151,6 +304,117 @@ function createSupabaseStub(state = {}) {
                     }
 
                     return { data: rows, error: null };
+                }
+
+                if (table === 'admin_secret_store' && query.mode === 'select') {
+                    const rows = applyCommonFilters(adminSecretStore, query);
+                    const result = query.single || query.maybeSingle
+                        ? (rows[0] || null)
+                        : rows;
+                    return { data: result, error: null };
+                }
+
+                if (table === 'points_packages' && query.mode === 'select') {
+                    let rows = applyCommonFilters(pointsPackages, query);
+                    if (query.order?.column) {
+                        const ascending = query.order.options?.ascending !== false;
+                        rows = [...rows].sort((left, right) => {
+                            const leftValue = left[query.order.column];
+                            const rightValue = right[query.order.column];
+                            if (leftValue === rightValue) return 0;
+                            if (leftValue == null) return 1;
+                            if (rightValue == null) return -1;
+                            return ascending
+                                ? (leftValue > rightValue ? 1 : -1)
+                                : (leftValue < rightValue ? 1 : -1);
+                        });
+                    }
+                    if (Number.isFinite(query.limit)) {
+                        rows = rows.slice(0, query.limit);
+                    }
+
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_orders' && query.mode === 'select') {
+                    let rows = applyCommonFilters(paymentOrders, query);
+                    if (query.order?.column) {
+                        const ascending = query.order.options?.ascending !== false;
+                        rows = [...rows].sort((left, right) => {
+                            const leftValue = left[query.order.column];
+                            const rightValue = right[query.order.column];
+                            if (leftValue === rightValue) return 0;
+                            if (leftValue == null) return 1;
+                            if (rightValue == null) return -1;
+                            return ascending
+                                ? (leftValue > rightValue ? 1 : -1)
+                                : (leftValue < rightValue ? 1 : -1);
+                        });
+                    }
+                    if (Number.isFinite(query.limit)) {
+                        rows = rows.slice(0, query.limit);
+                    }
+
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'points_ledger' && query.mode === 'select') {
+                    let rows = applyCommonFilters(pointsLedger, query);
+                    if (query.order?.column) {
+                        const ascending = query.order.options?.ascending !== false;
+                        rows = [...rows].sort((left, right) => {
+                            const leftValue = left[query.order.column];
+                            const rightValue = right[query.order.column];
+                            if (leftValue === rightValue) return 0;
+                            if (leftValue == null) return 1;
+                            if (rightValue == null) return -1;
+                            return ascending
+                                ? (leftValue > rightValue ? 1 : -1)
+                                : (leftValue < rightValue ? 1 : -1);
+                        });
+                    }
+                    if (Number.isFinite(query.limit)) {
+                        rows = rows.slice(0, query.limit);
+                    }
+
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_events' && query.mode === 'insert') {
+                    const rows = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    const duplicateRow = rows.find((row) => paymentEvents.some((event) => event.event_key === row.event_key));
+                    if (duplicateRow) {
+                        return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } };
+                    }
+
+                    const inserted = rows.map((row, index) => {
+                        const nextRow = {
+                            id: row.id || `payment-event-${paymentEvents.length + index + 1}`,
+                            created_at: row.created_at || new Date().toISOString(),
+                            ...row
+                        };
+                        paymentEvents.push(nextRow);
+                        return nextRow;
+                    });
+
+                    return { data: inserted, error: null };
+                }
+
+                if (table === 'payment_events' && query.mode === 'update') {
+                    const matched = applyCommonFilters(paymentEvents, query);
+                    matched.forEach((row) => {
+                        Object.assign(row, query.payload || {});
+                    });
+                    return { data: matched, error: null };
                 }
 
                 throw new Error(`Unexpected table access in test stub: ${table}/${query.mode}`);
@@ -191,50 +455,119 @@ async function withTestServer(state, callback) {
     }
 }
 
-async function dispatchRequest(app, {
+function matchRoutePath(routePath, requestPath) {
+    const routeSegments = String(routePath || '').split('/').filter(Boolean);
+    const requestSegments = String(requestPath || '').split('/').filter(Boolean);
+    if (routeSegments.length !== requestSegments.length) {
+        return null;
+    }
+
+    const params = {};
+    for (let index = 0; index < routeSegments.length; index += 1) {
+        const routeSegment = routeSegments[index];
+        const requestSegment = requestSegments[index];
+
+        if (routeSegment.startsWith(':')) {
+            params[routeSegment.slice(1)] = decodeURIComponent(requestSegment);
+            continue;
+        }
+
+        if (routeSegment !== requestSegment) {
+            return null;
+        }
+    }
+
+    return params;
+}
+
+function findRouteHandler(app, method, pathname) {
+    const router = app._router || app.router;
+    const stack = Array.isArray(router?.stack) ? router.stack : [];
+
+    for (const layer of stack) {
+        const route = layer.route;
+        if (!route) continue;
+        if (!route.methods?.[String(method || '').toLowerCase()]) continue;
+
+        const params = matchRoutePath(route.path, pathname);
+        if (params) {
+            const routeLayer = route.stack?.find((item) => typeof item.handle === 'function');
+            if (routeLayer?.handle) {
+                return {
+                    handler: routeLayer.handle,
+                    params
+                };
+            }
+        }
+    }
+
+    throw new Error(`Route not found for ${method} ${pathname}`);
+}
+
+async function dispatchRoute(app, {
     method = 'GET',
     url = '/',
-    headers = {}
+    headers = {},
+    body = null
 } = {}) {
-    const responseChunks = [];
-    const socket = new PassThrough();
-    socket.remoteAddress = '127.0.0.1';
-    socket.on('data', (chunk) => {
-        responseChunks.push(Buffer.from(chunk));
-    });
-
-    const req = new http.IncomingMessage(socket);
-    req.method = method;
-    req.url = url;
-    req.headers = Object.fromEntries(
+    const parsedUrl = new URL(url, 'http://local.test');
+    const normalizedHeaders = Object.fromEntries(
         Object.entries(headers).map(([key, value]) => [String(key).toLowerCase(), value])
     );
-    req.push(null);
+    const { handler, params } = findRouteHandler(app, method, parsedUrl.pathname);
+    const req = {
+        method,
+        url,
+        headers: normalizedHeaders,
+        body,
+        params,
+        query: Object.fromEntries(parsedUrl.searchParams.entries())
+    };
 
-    const res = new http.ServerResponse(req);
-    res.assignSocket(socket);
-    app.handle(req, res);
-    await once(res, 'finish');
+    const responseState = {
+        statusCode: 200,
+        headers: {},
+        body: ''
+    };
 
-    const rawResponse = Buffer.concat(responseChunks).toString('utf8');
-    const separatorIndex = rawResponse.indexOf('\r\n\r\n');
-    const body = separatorIndex >= 0
-        ? rawResponse.slice(separatorIndex + 4)
-        : rawResponse;
+    const res = {
+        status(code) {
+            responseState.statusCode = code;
+            return res;
+        },
+        setHeader(name, value) {
+            responseState.headers[String(name).toLowerCase()] = value;
+            return res;
+        },
+        getHeaders() {
+            return responseState.headers;
+        },
+        json(payload) {
+            responseState.headers['content-type'] = 'application/json; charset=utf-8';
+            responseState.body = JSON.stringify(payload);
+            return res;
+        },
+        end(payload = '') {
+            responseState.body = payload ? String(payload) : '';
+            return res;
+        }
+    };
+
+    await handler(req, res);
 
     return {
-        status: res.statusCode,
-        headers: res.getHeaders(),
-        text: body,
+        status: responseState.statusCode,
+        headers: responseState.headers,
+        text: responseState.body,
         json() {
-            return body ? JSON.parse(body) : {};
+            return responseState.body ? JSON.parse(responseState.body) : {};
         }
     };
 }
 
 test('quota endpoint requires authentication', async () => {
     await withTestServer({}, async ({ app }) => {
-        const response = await dispatchRequest(app, { url: '/api/quota' });
+        const response = await dispatchRoute(app, { url: '/api/quota' });
         const payload = response.json();
 
         assert.equal(response.status, 401);
@@ -248,7 +581,7 @@ test('queue endpoint requires admin privileges', async () => {
             'member-token': { id: 'user-1', email: 'member@example.com' }
         }
     }, async ({ app }) => {
-        const response = await dispatchRequest(app, {
+        const response = await dispatchRoute(app, {
             url: '/api/queue',
             headers: {
                 Authorization: 'Bearer member-token'
@@ -289,7 +622,7 @@ test('queue endpoint allows admins and proxies upstream data', async () => {
         };
 
         try {
-            const response = await dispatchRequest(app, {
+            const response = await dispatchRoute(app, {
                 url: '/api/queue',
                 headers: {
                     Authorization: 'Bearer admin-token'
@@ -323,7 +656,7 @@ test('verify status endpoint rejects task ids not owned by the authenticated use
             }
         ]
     }, async ({ app }) => {
-        const response = await dispatchRequest(app, {
+        const response = await dispatchRoute(app, {
             url: '/api/verify/status/task-123',
             headers: {
                 Authorization: 'Bearer member-token'
@@ -333,5 +666,408 @@ test('verify status endpoint rejects task ids not owned by the authenticated use
 
         assert.equal(response.status, 404);
         assert.equal(payload.code, 'job_not_found');
+    });
+});
+
+test('verify submit binds tracked job ownership to the authenticated user', async () => {
+    const state = {
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        },
+        balances: {
+            'user-1': 100
+        },
+        verificationLogs: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const originalFetch = global.fetch;
+        global.fetch = async (input, init) => {
+            const url = String(input || '');
+            if (url === 'https://verify.test/api/jobs') {
+                return new Response(JSON.stringify({
+                    job_id: 'job-queued-1',
+                    status: 'queued',
+                    queue_position: 3,
+                    estimated_wait_seconds: 25
+                }), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            }
+
+            throw new Error(`Unexpected fetch URL in test: ${url}`);
+        };
+
+        try {
+            const response = await dispatchRoute(app, {
+                method: 'POST',
+                url: '/api/verify',
+                headers: {
+                    Authorization: 'Bearer member-token'
+                },
+                body: {
+                    email: 'member@example.com',
+                    password: 'pw',
+                    totpSecret: 'totp-secret',
+                    priority: 1,
+                    userId: 'victim-user',
+                    site: 'intl'
+                }
+            });
+            const payload = response.json();
+
+            assert.equal(response.status, 200);
+            assert.equal(payload.success, true);
+            assert.equal(payload.job_id, 'job-queued-1');
+            assert.equal(state.verificationLogs.length, 1);
+            assert.equal(state.verificationLogs[0].user_id, 'user-1');
+            assert.equal(state.verificationLogs[0].site, 'cn');
+            assert.equal(state.verificationLogs[0].verification_id, 'job-queued-1');
+        } finally {
+            global.fetch = originalFetch;
+        }
+    });
+});
+
+test('afdian webhook duplicate payload is ignored after the first event is recorded', async () => {
+    const state = {
+        paymentEvents: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const payload = {
+            ec: 500,
+            em: 'upstream retry hint',
+            data: {
+                type: 'order',
+                order: {
+                    out_trade_no: 'AFD-ORDER-1',
+                    status: 2,
+                    total_amount: '5.00'
+                }
+            }
+        };
+
+        const firstResponse = await dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/webhook',
+            body: payload
+        });
+        const firstJson = firstResponse.json();
+
+        const secondResponse = await dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/webhook',
+            body: payload
+        });
+        const secondJson = secondResponse.json();
+
+        assert.equal(firstResponse.status, 200);
+        assert.deepEqual(firstJson, { ec: 200, em: '' });
+        assert.equal(secondResponse.status, 200);
+        assert.deepEqual(secondJson, { ec: 200, em: '' });
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].provider_order_no, 'AFD-ORDER-1');
+        assert.equal(state.paymentEvents[0].processing_result, 'ignored_non_success_ec');
+    });
+});
+
+test('afdian webhook rejects missing signatures and records the failure', async () => {
+    const state = {
+        paymentEvents: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const response = await withEnv({
+            AFDIAN_TOKEN: 'afdian-secret'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/webhook',
+            body: {
+                ec: 200,
+                data: {
+                    type: 'order',
+                    order: {
+                        out_trade_no: 'AFD-MISS-SIGN',
+                        status: 2,
+                        total_amount: '5.00'
+                    }
+                }
+            }
+        }));
+        const payload = response.json();
+
+        assert.equal(response.status, 401);
+        assert.deepEqual(payload, { ec: 401, em: 'missing signature' });
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].processing_result, 'missing_signature');
+        assert.equal(state.paymentEvents[0].response_status, 401);
+    });
+});
+
+test('afdian webhook rejects invalid signatures after processing metadata is recorded', async () => {
+    const state = {
+        paymentEvents: [],
+        paymentOrders: [
+            {
+                id: 'pay-order-signature',
+                provider: 'afdian',
+                provider_order_no: 'AFD-BAD-SIGN',
+                checkout_session_id: null
+            }
+        ]
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const response = await withEnv({
+            AFDIAN_TOKEN: 'afdian-secret'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/webhook',
+            body: {
+                ec: 200,
+                sign: 'bad-signature',
+                data: {
+                    type: 'order',
+                    order: {
+                        out_trade_no: 'AFD-BAD-SIGN',
+                        status: 2,
+                        total_amount: '20.00'
+                    }
+                }
+            }
+        }));
+        const payload = response.json();
+
+        assert.equal(response.status, 401);
+        assert.deepEqual(payload, { ec: 401, em: 'invalid signature' });
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].signature_valid, false);
+        assert.equal(state.paymentEvents[0].amount_valid, true);
+        assert.equal(state.paymentEvents[0].processing_result, 'pending_review');
+        assert.equal(state.paymentEvents[0].error_message, 'signature_mismatch');
+        assert.equal(state.paymentEvents[0].response_status, 401);
+    });
+});
+
+test('afdian webhook keeps amount mismatches in pending review', async () => {
+    const state = {
+        paymentEvents: [],
+        paymentOrders: [
+            {
+                id: 'pay-order-mismatch',
+                provider: 'afdian',
+                provider_order_no: 'AFD-AMOUNT-MISMATCH',
+                checkout_session_id: null
+            }
+        ],
+        pointsPackages: [
+            {
+                id: 'pkg-1',
+                name: 'Test Package',
+                points_amount: 100,
+                bonus_points: 0,
+                price_cny: 10,
+                sku_id: 'sku-10',
+                is_active: true
+            }
+        ],
+        afdianProcessPaymentResult: {
+            status: 'amount_mismatch',
+            payment_order_id: null
+        }
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const payloadData = {
+            type: 'order',
+            order: {
+                out_trade_no: 'AFD-AMOUNT-MISMATCH',
+                status: 2,
+                plan_id: 'sku-10',
+                total_amount: '12.00'
+            }
+        };
+        const sign = crypto
+            .createHash('md5')
+            .update(`afdian-secret${JSON.stringify(payloadData)}`)
+            .digest('hex');
+
+        const response = await withEnv({
+            AFDIAN_TOKEN: 'afdian-secret'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/webhook',
+            body: {
+                ec: 200,
+                sign,
+                data: payloadData
+            }
+        }));
+        const payload = response.json();
+
+        assert.equal(response.status, 200);
+        assert.deepEqual(payload, { ec: 200, em: 'pending review' });
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].signature_valid, true);
+        assert.equal(state.paymentEvents[0].amount_valid, false);
+        assert.equal(state.paymentEvents[0].processing_result, 'amount_mismatch');
+        assert.equal(state.paymentEvents[0].error_message, 'amount_mismatch_expected_10');
+        assert.equal(state.paymentEvents[0].response_status, 200);
+    });
+});
+
+test('afdian webhook marks process_rpc_failed when fn_process_afdian_payment errors', async () => {
+    const state = {
+        paymentEvents: [],
+        paymentOrders: [
+            {
+                id: 'pay-order-rpc-fail',
+                provider: 'afdian',
+                provider_order_no: 'AFD-RPC-FAIL',
+                checkout_session_id: null
+            }
+        ],
+        pointsPackages: [
+            {
+                id: 'pkg-2',
+                name: 'RPC Fail Package',
+                points_amount: 200,
+                bonus_points: 0,
+                price_cny: 20,
+                sku_id: 'sku-20',
+                is_active: true
+            }
+        ],
+        afdianProcessPaymentResult: null,
+        afdianProcessPaymentError: {
+            message: 'fn_process_afdian_payment exploded'
+        }
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const payloadData = {
+            type: 'order',
+            order: {
+                out_trade_no: 'AFD-RPC-FAIL',
+                status: 2,
+                plan_id: 'sku-20',
+                total_amount: '20.00'
+            }
+        };
+        const sign = crypto
+            .createHash('md5')
+            .update(`afdian-secret${JSON.stringify(payloadData)}`)
+            .digest('hex');
+
+        const response = await withEnv({
+            AFDIAN_TOKEN: 'afdian-secret'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/webhook',
+            body: {
+                ec: 200,
+                sign,
+                data: payloadData
+            }
+        }));
+        const payload = response.json();
+
+        assert.equal(response.status, 500);
+        assert.deepEqual(payload, { ec: 500, em: 'internal error' });
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].processing_result, 'process_rpc_failed');
+        assert.equal(state.paymentEvents[0].error_message, 'fn_process_afdian_payment exploded');
+        assert.equal(state.paymentEvents[0].response_status, 500);
+    });
+});
+
+test('verify success polling deducts points only once per job id', async () => {
+    const state = {
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        },
+        balances: {
+            'user-1': 100
+        },
+        verificationLogs: [
+            {
+                id: 'verify-job-success-1',
+                user_id: 'user-1',
+                site: 'cn',
+                verification_id: 'job-success-1',
+                status: 'queued',
+                points_deducted: 0,
+                created_at: '2026-03-22T12:00:00.000Z',
+                message: JSON.stringify({
+                    kind: 'google_one_job',
+                    job_id: 'job-success-1',
+                    email: 'member@example.com',
+                    raw_status: 'queued'
+                })
+            }
+        ],
+        pointsLedger: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const originalFetch = global.fetch;
+        global.fetch = async (input) => {
+            const url = String(input || '');
+            if (url === 'https://verify.test/api/jobs/job-success-1') {
+                return new Response(JSON.stringify({
+                    job_id: 'job-success-1',
+                    status: 'success',
+                    stage: 3,
+                    total_stages: 3,
+                    stage_label: 'done',
+                    url: 'https://example.com/result',
+                    elapsed_seconds: 18
+                }), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            }
+
+            throw new Error(`Unexpected fetch URL in test: ${url}`);
+        };
+
+        try {
+            const firstResponse = await dispatchRoute(app, {
+                url: '/api/verify/status/job-success-1',
+                headers: {
+                    Authorization: 'Bearer member-token'
+                }
+            });
+            const firstPayload = firstResponse.json();
+
+            const secondResponse = await dispatchRoute(app, {
+                url: '/api/verify/status/job-success-1',
+                headers: {
+                    Authorization: 'Bearer member-token'
+                }
+            });
+            const secondPayload = secondResponse.json();
+
+            assert.equal(firstResponse.status, 200);
+            assert.equal(secondResponse.status, 200);
+            assert.equal(firstPayload.success, true);
+            assert.equal(secondPayload.success, true);
+            assert.equal(firstPayload.pointsDeducted, 10);
+            assert.equal(secondPayload.pointsDeducted, 10);
+            assert.equal(state.metrics.deductCalls, 1);
+            assert.equal(state.pointsLedger.length, 1);
+            assert.equal(state.pointsLedger[0].reference_id, 'job-success-1');
+            assert.equal(state.pointsLedger[0].site, 'cn');
+            assert.equal(state.verificationLogs[0].status, 'success');
+            assert.equal(state.verificationLogs[0].points_deducted, 10);
+        } finally {
+            global.fetch = originalFetch;
+        }
     });
 });
