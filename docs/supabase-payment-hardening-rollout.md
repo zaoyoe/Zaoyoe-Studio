@@ -37,6 +37,7 @@ Deprecated scripts that must not be executed anymore:
 3. Make sure the app rollout that depends on these SQL changes is ready to deploy.
 4. Do not run deprecated root SQL scripts from the repository root.
 5. Before applying `20260322_constrain_payment_sites.sql`, scan the target project for historical `site` anomalies:
+   - Cross-env drift audit: `npm run audit:env-drift -- --env-file server/.env --env-file server/.env.production --check-live --fail-on-drift`
    - SQL editor: [/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql)
    - CLI / service-role env: `npm run scan:payment-sites -- --env-file server/.env.production --fail-on-anomaly`
    - Combined preflight: `npm run preflight:payment-rollout -- --env-file server/.env.production`
