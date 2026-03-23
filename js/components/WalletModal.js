@@ -867,6 +867,223 @@
         checkinConfig: null,
         rechargeOptionsConfig: null,
 
+        escapeAttribute(text) {
+            return String(text ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        },
+
+        encodeActionValue(value) {
+            return encodeURIComponent(String(value ?? ''));
+        },
+
+        decodeActionValue(value) {
+            try {
+                return decodeURIComponent(String(value ?? ''));
+            } catch (_error) {
+                return String(value ?? '');
+            }
+        },
+
+        buildDataAttributes(attributes = {}) {
+            return Object.entries(attributes)
+                .filter(([, value]) => value !== undefined && value !== null && value !== false)
+                .map(([name, value]) => ` data-${name}="${this.escapeAttribute(String(value))}"`)
+                .join('');
+        },
+
+        bindDelegatedHandlers(overlay = this.modalEl) {
+            if (!overlay || overlay.dataset.walletDelegatesBound === '1') {
+                return;
+            }
+
+            overlay.dataset.walletDelegatesBound = '1';
+
+            overlay.addEventListener('click', (event) => {
+                const actionEl = event.target.closest('[data-wallet-action]');
+                if (!actionEl || !overlay.contains(actionEl)) {
+                    return;
+                }
+
+                this.handleDelegatedAction(actionEl.dataset.walletAction, actionEl, event);
+            });
+
+            overlay.addEventListener('input', (event) => {
+                const inputEl = event.target.closest('[data-wallet-input-action]');
+                if (!inputEl || !overlay.contains(inputEl)) {
+                    return;
+                }
+
+                if (inputEl.dataset.walletInputAction === 'order-search') {
+                    this.handleOrderSearchInput(event);
+                }
+            });
+
+            overlay.addEventListener('keydown', (event) => {
+                const keydownEl = event.target.closest('[data-wallet-keydown-action]');
+                if (keydownEl && overlay.contains(keydownEl) && keydownEl.dataset.walletKeydownAction === 'order-search') {
+                    this.handleOrderSearchKeydown(event);
+                    return;
+                }
+
+                const enterEl = event.target.closest('[data-wallet-enter-action]');
+                if (!enterEl || !overlay.contains(enterEl) || event.key !== 'Enter') {
+                    return;
+                }
+
+                event.preventDefault();
+                this.handleDelegatedAction(enterEl.dataset.walletEnterAction, enterEl, event);
+            });
+        },
+
+        handleDelegatedAction(action, actionEl, event) {
+            switch (action) {
+                case 'switch-view':
+                    this.switchView(actionEl.dataset.walletViewId || 'balance');
+                    break;
+                case 'redeem-code':
+                    this.redeemCode();
+                    break;
+                case 'custom-recharge':
+                    this.customRecharge();
+                    break;
+                case 'query-afdian-code':
+                    this.queryAfdianCode();
+                    break;
+                case 'clear-order-search':
+                    this.clearOrderSearch(event);
+                    break;
+                case 'toggle-order-time-filter-menu':
+                    this.toggleOrderTimeFilterMenu(event);
+                    break;
+                case 'select-order-time-filter': {
+                    const value = actionEl.dataset.walletFilterValue || 'all';
+                    if (value === 'custom') {
+                        this.showOrderCustomDate();
+                    } else {
+                        this.selectOrderTimeFilter(value, actionEl.dataset.walletFilterLabel || actionEl.textContent.trim());
+                    }
+                    break;
+                }
+                case 'toggle-order-filter-menu':
+                    this.toggleOrderFilterMenu(event);
+                    break;
+                case 'select-order-filter':
+                    this.selectOrderFilter(
+                        actionEl.dataset.walletFilterValue || 'all',
+                        actionEl.dataset.walletFilterLabel || actionEl.textContent.trim()
+                    );
+                    break;
+                case 'clear-orders':
+                    this.clearOrders();
+                    break;
+                case 'select-affiliate-link':
+                    actionEl.select?.();
+                    break;
+                case 'copy-affiliate-link':
+                    this.copyAffiliateLink();
+                    break;
+                case 'generate-affiliate-poster':
+                    this.generateAffiliatePoster();
+                    break;
+                case 'toggle-affiliate-member-details':
+                    this.toggleAffiliateMemberDetails({ currentTarget: actionEl, target: event.target });
+                    break;
+                case 'buy-package':
+                    this.buyPackage(
+                        this.decodeActionValue(actionEl.dataset.walletPackageId),
+                        this.decodeActionValue(actionEl.dataset.walletPackageName)
+                    );
+                    break;
+                case 'daily-checkin-v2':
+                    this.dailyCheckinV2();
+                    break;
+                case 'makeup-checkin':
+                    this.makeupCheckin(this.decodeActionValue(actionEl.dataset.walletDateValue));
+                    break;
+                case 'toggle-history-item-details':
+                    this.toggleItemDetails(actionEl);
+                    break;
+                case 'history-details':
+                    event.stopPropagation();
+                    break;
+                case 'copy-value':
+                    this.copyToClipboard(this.decodeActionValue(actionEl.dataset.walletCopyValue), event);
+                    break;
+                case 'open-order-detail':
+                    event.stopPropagation();
+                    this.handleOpenOrderDetailAction(actionEl);
+                    break;
+                default:
+                    break;
+            }
+        },
+
+        handleOpenOrderDetailAction(actionEl) {
+            const orderKind = actionEl.dataset.walletOrderKind || '';
+
+            switch (orderKind) {
+                case 'prompt':
+                    this.showPromptOrderDetail(
+                        this.decodeActionValue(actionEl.dataset.walletOrderId),
+                        this.decodeActionValue(actionEl.dataset.walletPromptName),
+                        Number(actionEl.dataset.walletPrice || 0),
+                        this.decodeActionValue(actionEl.dataset.walletCreatedAt),
+                        this.decodeActionValue(actionEl.dataset.walletPromptId)
+                    );
+                    break;
+                case 'verify':
+                    this.showVerifyOrderDetail(
+                        this.decodeActionValue(actionEl.dataset.walletOrderId),
+                        this.decodeActionValue(actionEl.dataset.walletReferenceId),
+                        Number(actionEl.dataset.walletPointsPaid || 0),
+                        this.decodeActionValue(actionEl.dataset.walletCreatedAt),
+                        this.decodeActionValue(actionEl.dataset.walletReason)
+                    );
+                    break;
+                case 'shop':
+                    this.showOrderDetail(this.decodeActionValue(actionEl.dataset.walletOrderId));
+                    break;
+                case 'affiliate':
+                    this.showAffiliateRewardDetail(
+                        this.decodeActionValue(actionEl.dataset.walletOrderId),
+                        Number(actionEl.dataset.walletAmount || 0),
+                        this.decodeActionValue(actionEl.dataset.walletCreatedAt),
+                        this.decodeActionValue(actionEl.dataset.walletReason),
+                        this.decodeActionValue(actionEl.dataset.walletReferenceId)
+                    );
+                    break;
+                case 'recharge':
+                    this.showRechargeOrderDetail(
+                        this.decodeActionValue(actionEl.dataset.walletOrderId),
+                        Number(actionEl.dataset.walletAmount || 0),
+                        this.decodeActionValue(actionEl.dataset.walletCreatedAt),
+                        this.decodeActionValue(actionEl.dataset.walletReason),
+                        this.decodeActionValue(actionEl.dataset.walletReferenceId)
+                    );
+                    break;
+                case 'redeem':
+                    this.showRedeemOrderDetail(
+                        this.decodeActionValue(actionEl.dataset.walletOrderId),
+                        Number(actionEl.dataset.walletAmount || 0),
+                        this.decodeActionValue(actionEl.dataset.walletCreatedAt),
+                        this.decodeActionValue(actionEl.dataset.walletRedeemCode)
+                    );
+                    break;
+                default:
+                    break;
+            }
+        },
+
+        bindOverlayCloseButtons(detailOverlay) {
+            detailOverlay.querySelectorAll('.js-wallet-order-close').forEach((button) => {
+                button.addEventListener('click', () => detailOverlay.remove());
+            });
+        },
+
         isVerifyServiceReason(reason = '') {
             const normalized = String(reason || '').trim().toLowerCase();
             return normalized.includes('google one') && (
@@ -1422,6 +1639,7 @@
             if (overlay) {
                 overlay.style.display = 'block';
                 this.modalEl = overlay;
+                this.bindDelegatedHandlers(overlay);
                 this.syncOrderSearchUi();
                 return;
             }
@@ -1442,26 +1660,26 @@
                             <!-- Left Sidebar Menu -->
                             <div class="wallet-sidebar">
                                 <div class="sidebar-indicator"></div>
-                                <div class="wallet-menu-item active" data-view="balance" onclick="WalletModal.switchView('balance')">
+                                <div class="wallet-menu-item active" data-view="balance"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'balance' })}>
                                     <span class="menu-icon">💳</span>
                                     <span class="menu-text">${window.i18n?.t('wallet.balance') || '余额'}</span>
                                 </div>
-                                <div class="wallet-menu-item" data-view="recharge" onclick="WalletModal.switchView('recharge')">
+                                <div class="wallet-menu-item" data-view="recharge"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'recharge' })}>
                                     <span class="menu-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="boltGradientSidebar" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#fbbf24"/><stop offset="100%" style="stop-color:#f97316"/></linearGradient></defs><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="url(#boltGradientSidebar)"/></svg></span>
                                     <span class="menu-text">${window.i18n?.t('wallet.recharge') || '充值'}</span>
                                 </div>
 
-                                <div class="wallet-menu-item" data-view="orders" onclick="WalletModal.switchView('orders')">
+                                <div class="wallet-menu-item" data-view="orders"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'orders' })}>
                                     <span class="menu-icon">📋</span>
                                     <span class="menu-text">${window.i18n?.t('wallet.records') || '记录'}</span>
                                 </div>
 
-                                <div class="wallet-menu-item" data-view="affiliate" onclick="WalletModal.switchView('affiliate')">
+                                <div class="wallet-menu-item" data-view="affiliate"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'affiliate' })}>
                                     <span class="menu-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #10b981;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>
                                     <span class="menu-text">${window.i18n?.t('wallet.affiliate') || '推广'}</span>
                                 </div>
 
-                                <div class="wallet-menu-item" data-view="checkin" onclick="WalletModal.switchView('checkin')">
+                                <div class="wallet-menu-item" data-view="checkin"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'checkin' })}>
                                     <span class="menu-icon">🔖</span>
                                     <span class="menu-text">${window.i18n?.t('wallet.checkin') || '签到'}</span>
                                 </div>
@@ -1498,8 +1716,8 @@
                                                placeholder="${window.i18n?.t('wallet.enterCode') || '输入兑换码'}"
                                                maxlength="19"
                                                autocomplete="off"
-                                               onkeyup="if(event.key==='Enter') WalletModal.redeemCode()" />
-                                        <button class="redeem-btn" onclick="WalletModal.redeemCode()">${window.i18n?.t('wallet.redeem') || '兑换'}</button>
+                                               ${this.buildDataAttributes({ 'wallet-enter-action': 'redeem-code' })} />
+                                        <button class="redeem-btn"${this.buildDataAttributes({ 'wallet-action': 'redeem-code' })}>${window.i18n?.t('wallet.redeem') || '兑换'}</button>
                                     </div>
                                 </div>
                             </div>
@@ -1527,8 +1745,8 @@
                                                step="1"
                                                inputmode="numeric"
                                                placeholder="例如 100"
-                                               onkeyup="if(event.key==='Enter') WalletModal.customRecharge()" />
-                                        <button class="custom-recharge-btn" id="wallet-custom-recharge-btn" onclick="WalletModal.customRecharge()">立即充值</button>
+                                               ${this.buildDataAttributes({ 'wallet-enter-action': 'custom-recharge' })} />
+                                        <button class="custom-recharge-btn" id="wallet-custom-recharge-btn"${this.buildDataAttributes({ 'wallet-action': 'custom-recharge' })}>立即充值</button>
                                     </div>
                                     <div class="custom-recharge-meta" id="wallet-custom-recharge-meta">该入口由管理员在后台控制显示，会按服务端定价规则生成本次应付金额。</div>
                                 </div>
@@ -1556,8 +1774,8 @@
                                                id="afdian-order-input" 
                                                placeholder="${window.i18n?.t('wallet.afdianOrderNo') || '爱发电订单号'}"
                                                autocomplete="off"
-                                               onkeyup="if(event.key==='Enter') WalletModal.queryAfdianCode()" />
-                                        <button class="afdian-query-btn" onclick="WalletModal.queryAfdianCode()">${window.i18n?.t('wallet.query') || '查询'}</button>
+                                               ${this.buildDataAttributes({ 'wallet-enter-action': 'query-afdian-code' })} />
+                                        <button class="afdian-query-btn"${this.buildDataAttributes({ 'wallet-action': 'query-afdian-code' })}>${window.i18n?.t('wallet.query') || '查询'}</button>
                                     </div>
                                     <div id="afdian-result" class="afdian-result"></div>
                                 </div>
@@ -1606,14 +1824,13 @@
                                             placeholder="${window.i18n?.t('wallet.searchPlaceholder') || '搜索订单号 / 任务号 / 兑换码 / 商品名 / 认证邮箱 / 积分数量'}"
                                             autocomplete="off"
                                             spellcheck="false"
-                                            oninput="WalletModal.handleOrderSearchInput(event)"
-                                            onkeydown="WalletModal.handleOrderSearchKeydown(event)"
+                                            ${this.buildDataAttributes({ 'wallet-input-action': 'order-search', 'wallet-keydown-action': 'order-search' })}
                                         />
                                         <button
                                             type="button"
                                             class="history-search-clear"
                                             id="wallet-order-search-clear"
-                                            onclick="WalletModal.clearOrderSearch(event)"
+                                            ${this.buildDataAttributes({ 'wallet-action': 'clear-order-search' })}
                                             title="${window.i18n?.t('wallet.clearSearch') || '清除搜索'}"
                                         >
                                             <i class="fas fa-times"></i>
@@ -1621,34 +1838,34 @@
                                     </div>
                                     <div class="history-actions">
                                         <div class="filter-wrapper">
-                                            <div class="filter-chip" onclick="WalletModal.toggleOrderTimeFilterMenu(event)">
+                                            <div class="filter-chip"${this.buildDataAttributes({ 'wallet-action': 'toggle-order-time-filter-menu' })}>
                                                 <span id="order-time-filter-label">${window.i18n?.t('wallet.all') || '全部'}</span>
                                                 <span class="filter-arrow">▼</span>
                                             </div>
                                             <div class="filter-popup" id="order-time-filter-popup">
-                                                <div class="filter-option active" data-value="all" onclick="WalletModal.selectOrderTimeFilter('all', window.i18n?.t('wallet.all') || '全部')">${window.i18n?.t('wallet.all') || '全部'}</div>
-                                                <div class="filter-option" data-value="today" onclick="WalletModal.selectOrderTimeFilter('today', window.i18n?.t('wallet.today') || '今天')">${window.i18n?.t('wallet.today') || '今天'}</div>
-                                                <div class="filter-option" data-value="week" onclick="WalletModal.selectOrderTimeFilter('week', window.i18n?.t('wallet.thisWeek') || '本周')">${window.i18n?.t('wallet.thisWeek') || '本周'}</div>
-                                                <div class="filter-option" data-value="month" onclick="WalletModal.selectOrderTimeFilter('month', window.i18n?.t('wallet.thisMonth') || '本月')">${window.i18n?.t('wallet.thisMonth') || '本月'}</div>
+                                                <div class="filter-option active" data-value="all"${this.buildDataAttributes({ 'wallet-action': 'select-order-time-filter', 'wallet-filter-value': 'all', 'wallet-filter-label': window.i18n?.t('wallet.all') || '全部' })}>${window.i18n?.t('wallet.all') || '全部'}</div>
+                                                <div class="filter-option" data-value="today"${this.buildDataAttributes({ 'wallet-action': 'select-order-time-filter', 'wallet-filter-value': 'today', 'wallet-filter-label': window.i18n?.t('wallet.today') || '今天' })}>${window.i18n?.t('wallet.today') || '今天'}</div>
+                                                <div class="filter-option" data-value="week"${this.buildDataAttributes({ 'wallet-action': 'select-order-time-filter', 'wallet-filter-value': 'week', 'wallet-filter-label': window.i18n?.t('wallet.thisWeek') || '本周' })}>${window.i18n?.t('wallet.thisWeek') || '本周'}</div>
+                                                <div class="filter-option" data-value="month"${this.buildDataAttributes({ 'wallet-action': 'select-order-time-filter', 'wallet-filter-value': 'month', 'wallet-filter-label': window.i18n?.t('wallet.thisMonth') || '本月' })}>${window.i18n?.t('wallet.thisMonth') || '本月'}</div>
                                                 <div class="filter-divider"></div>
-                                                <div class="filter-option" data-value="custom" onclick="WalletModal.showOrderCustomDate()">📅 ${window.i18n?.t('wallet.custom') || '自定义...'}</div>
+                                                <div class="filter-option" data-value="custom"${this.buildDataAttributes({ 'wallet-action': 'select-order-time-filter', 'wallet-filter-value': 'custom', 'wallet-filter-label': window.i18n?.t('wallet.custom') || '自定义...' })}>📅 ${window.i18n?.t('wallet.custom') || '自定义...'}</div>
                                             </div>
                                         </div>
                                         <div class="filter-wrapper">
-                                            <div class="filter-chip" onclick="WalletModal.toggleOrderFilterMenu(event)">
+                                            <div class="filter-chip"${this.buildDataAttributes({ 'wallet-action': 'toggle-order-filter-menu' })}>
                                                 <span id="order-filter-label">${window.i18n?.t('wallet.all') || '全部'}</span>
                                                 <span class="filter-arrow">▼</span>
                                             </div>
                                             <div class="filter-popup" id="order-filter-popup">
-                                                <div class="filter-option active" data-value="all" onclick="WalletModal.selectOrderFilter('all', window.i18n?.t('wallet.all') || '全部')">${window.i18n?.t('wallet.all') || '全部'}</div>
-                                                <div class="filter-option" data-value="recharge" onclick="WalletModal.selectOrderFilter('recharge', window.i18n?.t('wallet.rechargeType') || '充值')"><i class="fas fa-bolt" style="color: #fbbf24;"></i> ${window.i18n?.t('wallet.rechargeType') || '充值'}</div>
-                                                <div class="filter-option" data-value="redeem" onclick="WalletModal.selectOrderFilter('redeem', window.i18n?.t('wallet.redeemCode') || '兑换码')"><i class="fas fa-ticket-alt" style="color: #f472b6;"></i> ${window.i18n?.t('wallet.redeemCode') || '兑换码'}</div>
-                                                <div class="filter-option" data-value="shop" onclick="WalletModal.selectOrderFilter('shop', window.i18n?.t('wallet.shopPurchase') || '商品')"><i class="fas fa-shopping-bag" style="color: #22c55e;"></i> ${window.i18n?.t('wallet.shopPurchase') || '商品'}</div>
-                                                <div class="filter-option" data-value="verify" onclick="WalletModal.selectOrderFilter('verify', window.i18n?.t('wallet.verifyPurchase') || '认证')"><i class="fas fa-shield-alt" style="color: #60a5fa;"></i> ${window.i18n?.t('wallet.verifyPurchase') || '认证'}</div>
-                                                <div class="filter-option" data-value="prompt" onclick="WalletModal.selectOrderFilter('prompt', window.i18n?.t('wallet.promptPurchase') || '提示词')"><i class="fas fa-lightbulb" style="color: #fde68a;"></i> ${window.i18n?.t('wallet.promptPurchase') || '提示词'}</div>
+                                                <div class="filter-option active" data-value="all"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'all', 'wallet-filter-label': window.i18n?.t('wallet.all') || '全部' })}>${window.i18n?.t('wallet.all') || '全部'}</div>
+                                                <div class="filter-option" data-value="recharge"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'recharge', 'wallet-filter-label': window.i18n?.t('wallet.rechargeType') || '充值' })}><i class="fas fa-bolt" style="color: #fbbf24;"></i> ${window.i18n?.t('wallet.rechargeType') || '充值'}</div>
+                                                <div class="filter-option" data-value="redeem"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'redeem', 'wallet-filter-label': window.i18n?.t('wallet.redeemCode') || '兑换码' })}><i class="fas fa-ticket-alt" style="color: #f472b6;"></i> ${window.i18n?.t('wallet.redeemCode') || '兑换码'}</div>
+                                                <div class="filter-option" data-value="shop"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'shop', 'wallet-filter-label': window.i18n?.t('wallet.shopPurchase') || '商品' })}><i class="fas fa-shopping-bag" style="color: #22c55e;"></i> ${window.i18n?.t('wallet.shopPurchase') || '商品'}</div>
+                                                <div class="filter-option" data-value="verify"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'verify', 'wallet-filter-label': window.i18n?.t('wallet.verifyPurchase') || '认证' })}><i class="fas fa-shield-alt" style="color: #60a5fa;"></i> ${window.i18n?.t('wallet.verifyPurchase') || '认证'}</div>
+                                                <div class="filter-option" data-value="prompt"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'prompt', 'wallet-filter-label': window.i18n?.t('wallet.promptPurchase') || '提示词' })}><i class="fas fa-lightbulb" style="color: #fde68a;"></i> ${window.i18n?.t('wallet.promptPurchase') || '提示词'}</div>
                                             </div>
                                         </div>
-                                        <div class="clear-chip" onclick="WalletModal.clearOrders()">🗑</div>
+                                        <div class="clear-chip"${this.buildDataAttributes({ 'wallet-action': 'clear-orders' })}>🗑</div>
                                     </div>
                                 </div>
                                 <div class="orders-container" id="wallet-orders">
@@ -1697,13 +1914,13 @@
                                             </div>
 
                                             <div class="wallet-affiliate-link-row">
-                                                <input type="text" id="affiliate-link" readonly class="wallet-affiliate-link-input" onclick="this.select()" />
-                                                <button class="wallet-affiliate-copy-btn" onclick="WalletModal.copyAffiliateLink()">
+                                                <input type="text" id="affiliate-link" readonly class="wallet-affiliate-link-input"${this.buildDataAttributes({ 'wallet-action': 'select-affiliate-link' })} />
+                                                <button class="wallet-affiliate-copy-btn"${this.buildDataAttributes({ 'wallet-action': 'copy-affiliate-link' })}>
                                                     ${window.i18n?.t('wallet.copyLink') || '复制链接'}
                                                 </button>
                                             </div>
 
-                                            <button class="wallet-affiliate-poster-btn" onclick="WalletModal.generateAffiliatePoster()">
+                                            <button class="wallet-affiliate-poster-btn"${this.buildDataAttributes({ 'wallet-action': 'generate-affiliate-poster' })}>
                                                 <i class="fas fa-image"></i> ${window.i18n?.t('wallet.generatePoster') || '生成海报'}
                                             </button>
                                         </section>
@@ -1763,6 +1980,7 @@
 
             document.body.appendChild(overlay);
             this.modalEl = overlay;
+            this.bindDelegatedHandlers(overlay);
         },
 
         /**
@@ -2577,7 +2795,7 @@
 
                 return `
                     <article class="affiliate-member-card" data-member-id="${this.escapeHtml(memberId)}">
-                        <button class="affiliate-member-summary" type="button" aria-expanded="false" onclick="WalletModal.toggleAffiliateMemberDetails(event)">
+                        <button class="affiliate-member-summary" type="button" aria-expanded="false"${this.buildDataAttributes({ 'wallet-action': 'toggle-affiliate-member-details' })}>
                             <div class="affiliate-member-summary-main">
                                 <div class="affiliate-member-head">
                                     <div class="affiliate-member-avatar">
@@ -3275,7 +3493,11 @@
                         pkgContainer.innerHTML = packages.map(pkg => {
                             const displayName = isEnglish && pkg.name_en ? pkg.name_en : pkg.name;
                             return `
-                            <div class="package-item" onclick="WalletModal.buyPackage('${pkg.id}', '${pkg.name}')">
+                            <div class="package-item"${this.buildDataAttributes({
+                                'wallet-action': 'buy-package',
+                                'wallet-package-id': this.encodeActionValue(pkg.id),
+                                'wallet-package-name': this.encodeActionValue(pkg.name)
+                            })}>
                                 <div class="pkg-name">${displayName}</div>
                                 <div class="pkg-points">${this.formatPoints(pkg.points_amount)} ${pointsUnit}${pkg.bonus_points > 0 ? ` <span class="pkg-bonus">+${this.formatPoints(pkg.bonus_points)}</span>` : ''}</div>
                                 <div class="pkg-price">¥${pkg.price_cny}</div>
@@ -3748,7 +3970,7 @@
                 const dateStr = `${year}-${mStr}-${dStr}`;
                 let dayClass = 'calendar-day';
                 let innerHtml = `<span>${i}</span>`;
-                let clickAction = '';
+                let actionAttrs = '';
 
                 // Calculate if this day is the 7th day of a streak
                 // For simplicity in the UI preview, let's just highlight the next upcoming 7th day milestone
@@ -3794,12 +4016,15 @@
                     `;
                 } else if (isToday) {
                     dayClass += ' today';
-                    clickAction = `onclick="WalletModal.dailyCheckinV2()"`;
+                    actionAttrs = this.buildDataAttributes({ 'wallet-action': 'daily-checkin-v2' });
                     innerHtml = `<span class="today-text">今日</span>`;
                 } else if (isPast) {
                     dayClass += ' missed';
                     innerHtml += `<div class="makeup-badge">补</div>`;
-                    clickAction = `onclick="WalletModal.makeupCheckin('${dateStr}')"`;
+                    actionAttrs = this.buildDataAttributes({
+                        'wallet-action': 'makeup-checkin',
+                        'wallet-date-value': this.encodeActionValue(dateStr)
+                    });
                 } else {
                     dayClass += ' future';
                 }
@@ -3813,7 +4038,7 @@
                     </div>`;
                 }
 
-                html += `<div class="${dayClass}" ${clickAction}>${innerHtml}</div>`;
+                html += `<div class="${dayClass}"${actionAttrs}>${innerHtml}</div>`;
             }
 
             grid.innerHTML = html;
@@ -4324,7 +4549,7 @@
                 }
 
                 return `
-                    <div class="history-item" onclick="WalletModal.toggleItemDetails(this)">
+                    <div class="history-item"${this.buildDataAttributes({ 'wallet-action': 'toggle-history-item-details' })}>
                         <div class="history-row-main">
                             <div class="history-main">
                                 <div class="history-desc" title="${item.reason}">${reason}</div>
@@ -4334,10 +4559,13 @@
                                 ${item.amount > 0 ? '+' : ''}${this.formatPoints(item.amount)}
                             </div>
                         </div>
-                        <div class="history-details" onclick="event.stopPropagation()">
+                        <div class="history-details"${this.buildDataAttributes({ 'wallet-action': 'history-details' })}>
                              <div class="detail-row">
                                 <span>订单号</span>
-                                <span class="detail-val copyable" class="detail-val copyable" onclick="WalletModal.copyToClipboard('${item.id}', event)" title="点击复制订单号" style="font-family:monospace;color:#fff;">${item.id}</span>
+                                <span class="detail-val copyable"${this.buildDataAttributes({
+                                    'wallet-action': 'copy-value',
+                                    'wallet-copy-value': this.encodeActionValue(item.id)
+                                })} title="点击复制订单号" style="font-family:monospace;color:#fff;">${item.id}</span>
                              </div>
                              <div class="detail-row">
                                 <span>业务关联</span>
@@ -4451,8 +4679,8 @@
                         <input type="date" id="date-end" />
                     </div>
                     <div class="date-picker-actions">
-                        <button class="date-cancel" onclick="this.closest('.date-picker-modal').remove()">取消</button>
-                        <button class="date-confirm" onclick="WalletModal.applyCustomDate()">确定</button>
+                        <button class="date-cancel js-wallet-date-cancel">取消</button>
+                        <button class="date-confirm js-wallet-date-confirm">确定</button>
                     </div>
                 </div>
             `;
@@ -4464,6 +4692,14 @@
             document.body.appendChild(modal);
             document.getElementById('date-start').value = weekAgo;
             document.getElementById('date-end').value = today;
+
+            modal.querySelector('.js-wallet-date-cancel')?.addEventListener('click', () => {
+                modal.remove();
+            });
+
+            modal.querySelector('.js-wallet-date-confirm')?.addEventListener('click', () => {
+                this.applyCustomDate();
+            });
 
             // Close on backdrop click
             modal.addEventListener('click', (e) => {
@@ -5588,7 +5824,7 @@
 
                 // Handle display based on transaction type
                 let displayName;
-                let clickHandler = '';
+                let actionAttrs = '';
                 let amountDisplay;
                 let amountClass;
                 let statusText = completedText;
@@ -5610,10 +5846,26 @@
                 // Handle display name and click based on type
                 if (order.transactionType === 'prompt') {
                     displayName = `<i class="fas fa-lightbulb" style="color: #fde68a;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
-                    clickHandler = `WalletModal.showPromptOrderDetail('${order.id}', '${this.escapeHtml(order.snapshot_product_name).replace(/'/g, "\\'")}', ${Math.abs(this.normalizePointValue(order.total_price || order.amount || 0))}, '${order.created_at}', '${order.promptId || ''}')`;
+                    actionAttrs = this.buildDataAttributes({
+                        'wallet-action': 'open-order-detail',
+                        'wallet-order-kind': 'prompt',
+                        'wallet-order-id': this.encodeActionValue(order.id),
+                        'wallet-prompt-name': this.encodeActionValue(order.snapshot_product_name),
+                        'wallet-price': Math.abs(this.normalizePointValue(order.total_price || order.amount || 0)),
+                        'wallet-created-at': this.encodeActionValue(order.created_at),
+                        'wallet-prompt-id': this.encodeActionValue(order.promptId || '')
+                    });
                 } else if (order.transactionType === 'verify') {
                     displayName = `<i class="fas fa-key" style="color: #6b9ece;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
-                    clickHandler = `WalletModal.showVerifyOrderDetail('${order.id}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', ${Math.abs(this.normalizePointValue(order.total_price || order.amount || 0))}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
+                    actionAttrs = this.buildDataAttributes({
+                        'wallet-action': 'open-order-detail',
+                        'wallet-order-kind': 'verify',
+                        'wallet-order-id': this.encodeActionValue(order.id),
+                        'wallet-reference-id': this.encodeActionValue(order.referenceId || ''),
+                        'wallet-points-paid': Math.abs(this.normalizePointValue(order.total_price || order.amount || 0)),
+                        'wallet-created-at': this.encodeActionValue(order.created_at),
+                        'wallet-reason': this.encodeActionValue(order.rawReason || '')
+                    });
                 } else if (order.transactionType === 'shop') {
                     displayName = order.snapshot_product_name || unknownProductText;
                     const count = order.item_count || (order.shop_order_items ? order.shop_order_items.length : 1);
@@ -5622,9 +5874,21 @@
                     }
                     displayName = `<i class="fas fa-shopping-bag" style="color: #22c55e;"></i> ${this.escapeHtml(displayName)}`;
                     if (order.isShopOrder && (order.shopOrderId || order.id)) {
-                        clickHandler = `WalletModal.showOrderDetail('${String(order.shopOrderId || order.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
+                        actionAttrs = this.buildDataAttributes({
+                            'wallet-action': 'open-order-detail',
+                            'wallet-order-kind': 'shop',
+                            'wallet-order-id': this.encodeActionValue(String(order.shopOrderId || order.id))
+                        });
                     } else {
-                        clickHandler = `WalletModal.showRechargeOrderDetail('${order.id}', -${Math.abs(this.normalizePointValue(order.total_price || order.amount || 0))}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
+                        actionAttrs = this.buildDataAttributes({
+                            'wallet-action': 'open-order-detail',
+                            'wallet-order-kind': 'recharge',
+                            'wallet-order-id': this.encodeActionValue(order.id),
+                            'wallet-amount': -Math.abs(this.normalizePointValue(order.total_price || order.amount || 0)),
+                            'wallet-created-at': this.encodeActionValue(order.created_at),
+                            'wallet-reason': this.encodeActionValue(order.rawReason || ''),
+                            'wallet-reference-id': this.encodeActionValue(order.referenceId || '')
+                        });
                     }
 
                     // Map status for shop orders
@@ -5639,24 +5903,46 @@
                 } else if (order.transactionType === 'affiliate') {
                     const meta = order.affiliateRewardMeta || this.getAffiliateRewardMeta(order.rawReason, order.referenceId);
                     displayName = `<i class="fas ${meta.icon}" style="color: ${meta.color};"></i> ${this.escapeHtml(meta.label)}`;
-                    clickHandler = `WalletModal.showAffiliateRewardDetail('${String(order.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', ${this.normalizePointValue(order.amount || order.total_price || 0)}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
+                    actionAttrs = this.buildDataAttributes({
+                        'wallet-action': 'open-order-detail',
+                        'wallet-order-kind': 'affiliate',
+                        'wallet-order-id': this.encodeActionValue(order.id),
+                        'wallet-amount': this.normalizePointValue(order.amount || order.total_price || 0),
+                        'wallet-created-at': this.encodeActionValue(order.created_at),
+                        'wallet-reason': this.encodeActionValue(order.rawReason || ''),
+                        'wallet-reference-id': this.encodeActionValue(order.referenceId || '')
+                    });
                 } else if (order.transactionType === 'recharge') {
                     displayName = `<i class="fas fa-bolt" style="color: #fbbf24;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
-                    clickHandler = `WalletModal.showRechargeOrderDetail('${order.id}', ${this.normalizePointValue(order.amount || order.total_price || 0)}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
+                    actionAttrs = this.buildDataAttributes({
+                        'wallet-action': 'open-order-detail',
+                        'wallet-order-kind': 'recharge',
+                        'wallet-order-id': this.encodeActionValue(order.id),
+                        'wallet-amount': this.normalizePointValue(order.amount || order.total_price || 0),
+                        'wallet-created-at': this.encodeActionValue(order.created_at),
+                        'wallet-reason': this.encodeActionValue(order.rawReason || ''),
+                        'wallet-reference-id': this.encodeActionValue(order.referenceId || '')
+                    });
                 } else if (order.transactionType === 'redeem') {
                     displayName = `<i class="fas fa-ticket-alt" style="color: #f472b6;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
-                    clickHandler = `WalletModal.showRedeemOrderDetail('${order.id}', ${this.normalizePointValue(order.amount)}, '${order.created_at}', '${order.redeemCode || ''}')`;
+                    actionAttrs = this.buildDataAttributes({
+                        'wallet-action': 'open-order-detail',
+                        'wallet-order-kind': 'redeem',
+                        'wallet-order-id': this.encodeActionValue(order.id),
+                        'wallet-amount': this.normalizePointValue(order.amount),
+                        'wallet-created-at': this.encodeActionValue(order.created_at),
+                        'wallet-redeem-code': this.encodeActionValue(order.redeemCode || '')
+                    });
                 } else {
                     // Fallback for other types
                     displayName = `${order.icon || '💳'} ${order.snapshot_product_name || '交易'}`;
-                    clickHandler = '';
+                    actionAttrs = '';
                 }
 
-                const clickAttr = clickHandler ? `onclick="event.stopPropagation(); ${clickHandler}"` : '';
-                const cursorStyle = clickHandler ? 'cursor: pointer;' : '';
+                const cursorStyle = actionAttrs ? 'cursor: pointer;' : '';
 
                 return `
-                    <div class="order-item" ${clickAttr} style="${cursorStyle}">
+                    <div class="order-item"${actionAttrs} style="${cursorStyle}">
                         <div class="order-main">
                             <div class="order-product">${displayName}</div>
                             <div class="order-meta">
@@ -5693,7 +5979,7 @@
                         <div class="wallet-order-modal-title">
                             💡 ${window.i18n?.t('wallet.orderDetails') || '订单详情'}
                         </div>
-                        <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
+                        <button class="wallet-order-close-btn js-wallet-order-close">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>
@@ -5701,7 +5987,7 @@
                         <div class="meta-section">
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.orderNumber') || '订单编号'}</span>
-                                <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${orderId}', event)" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${orderId.substring(0, 8)}...${orderId.slice(-4)}</span>
+                                <span class="detail-val mono js-wallet-copy-prompt-order" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${orderId.substring(0, 8)}...${orderId.slice(-4)}</span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.productType') || '商品类型'}</span>
@@ -5726,7 +6012,7 @@
                         </div>
                         ${promptId ? `
                         <div class="modal-actions">
-                            <button class="action-btn primary" onclick="window.location.href='prompts.html?id=${promptId}'">
+                            <button class="action-btn primary js-wallet-open-prompt-order">
                                 <i class="fas fa-eye"></i> ${window.i18n?.t('wallet.viewPrompt') || '查看提示词'}
                             </button>
                         </div>
@@ -5736,6 +6022,15 @@
             `;
 
             document.body.appendChild(detailOverlay);
+            this.bindOverlayCloseButtons(detailOverlay);
+            detailOverlay.querySelector('.js-wallet-copy-prompt-order')?.addEventListener('click', (event) => {
+                this.copyToClipboard(orderId, event);
+            });
+            if (promptId) {
+                detailOverlay.querySelector('.js-wallet-open-prompt-order')?.addEventListener('click', () => {
+                    window.location.href = `prompts.html?id=${promptId}`;
+                });
+            }
         },
 
         /**
@@ -5759,7 +6054,7 @@
                         <div class="wallet-order-modal-title">
                             🎫 ${window.i18n?.t('wallet.redeemDetails') || '兑换详情'}
                         </div>
-                        <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
+                        <button class="wallet-order-close-btn js-wallet-order-close">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>
@@ -5767,7 +6062,7 @@
                         <div class="meta-section">
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.orderNumber') || '订单编号'}</span>
-                                <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${orderId}', event)" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${orderId.substring(0, 8)}...${orderId.slice(-4)}</span>
+                                <span class="detail-val mono js-wallet-copy-redeem-order" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${orderId.substring(0, 8)}...${orderId.slice(-4)}</span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.transactionType') || '交易类型'}</span>
@@ -5776,7 +6071,7 @@
                             ${redeemCode ? `
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.redeemCode') || '兑换码'}</span>
-                                <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${redeemCode}', event)" style="cursor:pointer; color: #22c55e; font-weight: 600;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${redeemCode}</span>
+                                <span class="detail-val mono js-wallet-copy-redeem-code" style="cursor:pointer; color: #22c55e; font-weight: 600;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${redeemCode}</span>
                             </div>
                             ` : ''}
                             <div class="detail-row">
@@ -5797,6 +6092,15 @@
             `;
 
             document.body.appendChild(detailOverlay);
+            this.bindOverlayCloseButtons(detailOverlay);
+            detailOverlay.querySelector('.js-wallet-copy-redeem-order')?.addEventListener('click', (event) => {
+                this.copyToClipboard(orderId, event);
+            });
+            if (redeemCode) {
+                detailOverlay.querySelector('.js-wallet-copy-redeem-code')?.addEventListener('click', (event) => {
+                    this.copyToClipboard(redeemCode, event);
+                });
+            }
         },
 
         async showAffiliateRewardDetail(orderId, amount, createdAt, reason = '', referenceId = '') {
@@ -5897,7 +6201,7 @@
                         <div class="wallet-order-modal-title">
                             <i class="fas ${meta.icon}" style="color: ${meta.color};"></i> ${this.escapeHtml(detail.reward_label || meta.label)}
                         </div>
-                        <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
+                        <button class="wallet-order-close-btn js-wallet-order-close">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>
@@ -6000,6 +6304,7 @@
                     </div>
                 `;
 
+                this.bindOverlayCloseButtons(detailOverlay);
                 modal.querySelector('.js-copy-affiliate-ledger')?.addEventListener('click', (event) => {
                     this.copyToClipboard(orderId, event);
                 });
@@ -6048,7 +6353,7 @@
                         <div class="wallet-order-modal-title">
                             <i class="fas ${normalizedAmount >= 0 ? 'fa-bolt' : 'fa-shopping-bag'}" style="color: ${normalizedAmount >= 0 ? '#fbbf24' : '#22c55e'};"></i> ${this.escapeHtml(titleText)}
                         </div>
-                        <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
+                        <button class="wallet-order-close-btn js-wallet-order-close">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>
@@ -6090,6 +6395,7 @@
             `;
 
             document.body.appendChild(detailOverlay);
+            this.bindOverlayCloseButtons(detailOverlay);
 
             detailOverlay.querySelector('.js-copy-ledger-order')?.addEventListener('click', (event) => {
                 this.copyToClipboard(orderId, event);
@@ -6181,7 +6487,7 @@
                         <div class="wallet-order-modal-title">
                             <i class="fas fa-key" style="color: #6b9ece;"></i> ${window.i18n?.t('wallet.verifyDetails') || 'Google One 订单详情'}
                         </div>
-                        <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
+                        <button class="wallet-order-close-btn js-wallet-order-close">
                             <i class="fas fa-times"></i>
                         </button>
                     </div>
@@ -6254,6 +6560,7 @@
                     </div>
                 `;
 
+                this.bindOverlayCloseButtons(detailOverlay);
                 modal.querySelector('.js-copy-verify-order')?.addEventListener('click', (event) => {
                     this.copyToClipboard(orderId, event);
                 });
@@ -6373,9 +6680,9 @@
                     : 'display: flex; flex-direction: column; gap: 8px; width: 100%;';
 
                 const contentHtml = `<div style="${gridStyle}">` + items.map((item) => {
-                    const safeContentEscaped = this.escapeHtml(item.content).replace(/`/g, '\\`');
+                    const encodedContent = this.encodeActionValue(item.content);
                     return `
-                    <div class="content-card" style="margin-bottom: 0 !important; cursor: pointer; transition: all 0.2s; padding: 10px 6px !important; display: flex; align-items: center; justify-content: center;" onclick="WalletModal.copyToClipboard(\`${safeContentEscaped}\`, event)" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}" onmouseover="this.style.borderColor='rgba(107, 158, 206, 0.5)'; this.style.background='rgba(255, 255, 255, 0.08)';" onmouseout="this.style.borderColor='rgba(255, 255, 255, 0.1)'; this.style.background='rgba(255, 255, 255, 0.05)';">
+                    <div class="content-card wallet-copy-card js-wallet-copy-content" data-wallet-copy-content="${this.escapeAttribute(encodedContent)}" style="margin-bottom: 0 !important; cursor: pointer; transition: all 0.2s; padding: 10px 6px !important; display: flex; align-items: center; justify-content: center;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">
                         <div class="item-content-box" style="padding: 0 !important; width: 100%; background: transparent !important; border-radius: 0 !important;">
                             <div class="item-text" style="text-align: center; font-size: 13px; letter-spacing: 0.5px; line-height: 1.3;">${this.escapeHtml(item.content)}</div>
                         </div>
@@ -6389,7 +6696,7 @@
                 const allContent = productName ? `${productName}:\n${allContentItems}` : allContentItems;
                 const orderNumberLabel = window.i18n?.t('wallet.orderNumber') || '订单编号';
                 const orderTimeLabel = window.i18n?.t('wallet.orderTime') || '下单时间';
-                window.WalletModal_export = () => {
+                const exportOrderContent = () => {
                     const blob = new Blob([`${orderNumberLabel}: ${order.id}\n${orderTimeLabel}: ${dateStr}\n\n${allContent}`], { type: 'text/plain' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -6398,7 +6705,7 @@
                     a.click();
                     URL.revokeObjectURL(url);
                 };
-                window.WalletModal_copyAll = () => {
+                const copyAllOrderContent = () => {
                     navigator.clipboard.writeText(allContent).then(() => {
                         this.showToast(`✅ ${window.i18n?.t('wallet.copiedAll') || '已复制全部内容'}`, 'success');
                     }).catch(() => this.showToast(window.i18n?.t('wallet.copyFailed') || '复制失败', 'error'));
@@ -6418,7 +6725,7 @@
                             <div class="wallet-order-modal-title">
                                 <i class="fas fa-box-open" style="color: #6b9ece;"></i> ${window.i18n?.t('wallet.orderDetails') || '订单详情'}
                             </div>
-                            <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
+                            <button class="wallet-order-close-btn js-wallet-order-close">
                                 <i class="fas fa-times"></i>
                             </button>
                         </div>
@@ -6426,7 +6733,7 @@
                             <div class="meta-section">
                                 <div class="detail-row">
                                     <span class="detail-label">${window.i18n?.t('wallet.orderNumber') || '订单编号'}</span>
-                                    <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${order.id}', event)" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${order.id.split('-')[0]}...${order.id.slice(-4)}</span>
+                                    <span class="detail-val mono js-wallet-copy-shop-order" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${order.id.split('-')[0]}...${order.id.slice(-4)}</span>
                                 </div>
                                 <div class="detail-row">
                                     <span class="detail-label">${window.i18n?.t('wallet.orderTime') || '下单时间'}</span>
@@ -6438,13 +6745,13 @@
                                 </div>
                             </div>
                             <div class="modal-actions" style="display: flex; gap: 8px; justify-content: flex-end; padding: 4px 0; margin-top: -8px;">
-                                <button class="action-btn-minimal" style="background: transparent; border: none; color: #6b9ece; font-size: 18px; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center;" onmouseover="this.style.background='rgba(107, 158, 206, 0.15)';" onmouseout="this.style.background='transparent';" onclick="WalletModal_copyAll()" title="${window.i18n?.t('wallet.copyAll') || '全部复制'}">
+                                <button class="action-btn-minimal wallet-order-action-btn wallet-order-action-btn-copy js-wallet-copy-all" style="background: transparent; border: none; color: #6b9ece; font-size: 18px; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center;" title="${window.i18n?.t('wallet.copyAll') || '全部复制'}">
                                     <i class="fas fa-copy"></i>
                                 </button>
-                                <button class="action-btn-minimal" style="background: transparent; border: none; color: #9ca3af; font-size: 18px; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center;" onmouseover="this.style.background='rgba(255, 255, 255, 0.1)';" onmouseout="this.style.background='transparent';" onclick="WalletModal_export()" title="${window.i18n?.t('wallet.export') || '导出'}">
+                                <button class="action-btn-minimal wallet-order-action-btn wallet-order-action-btn-neutral js-wallet-export-order" style="background: transparent; border: none; color: #9ca3af; font-size: 18px; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center;" title="${window.i18n?.t('wallet.export') || '导出'}">
                                     <i class="fas fa-download"></i>
                                 </button>
-                                <button class="action-btn-minimal" style="background: transparent; border: none; color: #ef4444; font-size: 18px; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center;" onmouseover="this.style.background='rgba(239, 68, 68, 0.15)';" onmouseout="this.style.background='transparent';" onclick="WalletModal.openTicketModal('${order.id}')" title="${window.i18n?.t('wallet.reportIssue') || '报告问题'}">
+                                <button class="action-btn-minimal wallet-order-action-btn wallet-order-action-btn-danger js-wallet-open-ticket" style="background: transparent; border: none; color: #ef4444; font-size: 18px; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center;" title="${window.i18n?.t('wallet.reportIssue') || '报告问题'}">
                                     <i class="fas fa-exclamation-circle"></i>
                                 </button>
                             </div>
@@ -6454,6 +6761,25 @@
                             </div>
                         </div>
                     `;
+
+                    this.bindOverlayCloseButtons(detailOverlay);
+                    modal.querySelector('.js-wallet-copy-shop-order')?.addEventListener('click', (event) => {
+                        this.copyToClipboard(order.id, event);
+                    });
+                    modal.querySelectorAll('.js-wallet-copy-content').forEach((card) => {
+                        card.addEventListener('click', (event) => {
+                            this.copyToClipboard(this.decodeActionValue(card.dataset.walletCopyContent), event);
+                        });
+                    });
+                    modal.querySelector('.js-wallet-copy-all')?.addEventListener('click', () => {
+                        copyAllOrderContent();
+                    });
+                    modal.querySelector('.js-wallet-export-order')?.addEventListener('click', () => {
+                        exportOrderContent();
+                    });
+                    modal.querySelector('.js-wallet-open-ticket')?.addEventListener('click', () => {
+                        this.openTicketModal(order.id);
+                    });
                 }
             } catch (err) {
                 console.error('[WalletModal] Show order detail failed:', err);
@@ -6667,6 +6993,19 @@
                     margin-bottom: 8px !important;
                     border: 1px solid rgba(255, 255, 255, 0.1) !important;
                     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
+                }
+                .wallet-copy-card:hover {
+                    border-color: rgba(107, 158, 206, 0.5) !important;
+                    background: rgba(255, 255, 255, 0.08) !important;
+                }
+                .wallet-order-action-btn:hover {
+                    background: rgba(255, 255, 255, 0.1) !important;
+                }
+                .wallet-order-action-btn-copy:hover {
+                    background: rgba(107, 158, 206, 0.15) !important;
+                }
+                .wallet-order-action-btn-danger:hover {
+                    background: rgba(239, 68, 68, 0.15) !important;
                 }
                 .item-name {
                     font-size: 13px; font-weight: 600; color: #e2e8f0;
