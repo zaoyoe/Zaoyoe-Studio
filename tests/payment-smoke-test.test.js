@@ -2,10 +2,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+    bootstrapAccessTokenViaAdminLink,
+    buildOtpVerificationAttempts,
     buildPaymentCreatePayload,
+    extractResponseErrorDetail,
     isProductionLikeBaseUrl,
     parseArgs,
     parseRuntimeSupabaseConfig,
+    resolveAccessToken,
     resolveOptions,
     validateConfigPayload,
     validatePaymentCreatePayload
@@ -85,6 +89,20 @@ test('parseRuntimeSupabaseConfig extracts public runtime settings from the emitt
     assert.equal(config.publishableKey, 'publishable-key');
 });
 
+test('parseRuntimeSupabaseConfig surfaces runtime loader errors', () => {
+    assert.throws(
+        () => parseRuntimeSupabaseConfig(
+            [
+                '(function (global) {',
+                '  console.error("Failed to load Supabase runtime config:", "Missing required environment variable: SUPABASE_PUBLISHABLE_KEY");',
+                '  global.__ZAOYOE_SUPABASE_CONFIG__ = null;',
+                '}(typeof window !== "undefined" ? window : globalThis));'
+            ].join('\n')
+        ),
+        /Missing required environment variable: SUPABASE_PUBLISHABLE_KEY/
+    );
+});
+
 test('buildPaymentCreatePayload supports both custom recharge and package flows', () => {
     assert.deepEqual(
         buildPaymentCreatePayload({
@@ -151,4 +169,145 @@ test('validateConfigPayload and validatePaymentCreatePayload enforce expected sm
 
     assert.equal(paymentPayload.status, 'redeemed');
     assert.equal(paymentPayload.checkout_session_id, 'pcs_123');
+});
+
+test('validatePaymentCreatePayload surfaces API-provided auth failures', () => {
+    assert.throws(
+        () => validatePaymentCreatePayload({
+            ok: false,
+            status: 401,
+            statusText: 'Unauthorized',
+            payload: {
+                success: false,
+                message: 'invalid JWT: signature is invalid'
+            }
+        }, 'mock'),
+        /invalid JWT: signature is invalid/
+    );
+});
+
+test('extractResponseErrorDetail prefers structured API errors over raw text', () => {
+    assert.equal(
+        extractResponseErrorDetail({
+            payload: {
+                message: 'structured failure'
+            },
+            text: 'fallback text'
+        }),
+        'structured failure'
+    );
+});
+
+test('buildOtpVerificationAttempts includes both email OTP and token-hash fallbacks', () => {
+    assert.deepEqual(
+        buildOtpVerificationAttempts('smoke@example.com', {
+            email_otp: '123456',
+            hashed_token: 'hash-token'
+        }).map((attempt) => attempt.label),
+        [
+            'magiclink_email_otp',
+            'email_email_otp',
+            'magiclink_token_hash',
+            'email_token_hash'
+        ]
+    );
+});
+
+test('resolveAccessToken falls back to admin magic-link bootstrap when password auth fails', async () => {
+    const calls = [];
+    const publicClient = {
+        auth: {
+            async signInWithPassword() {
+                calls.push('signInWithPassword');
+                return {
+                    data: null,
+                    error: {
+                        message: 'Invalid login credentials'
+                    }
+                };
+            },
+            async signOut() {
+                calls.push('publicSignOut');
+                return {};
+            },
+            async verifyOtp(args) {
+                calls.push(`verifyOtp:${args.type}`);
+                if (args.type === 'magiclink') {
+                    return {
+                        data: {
+                            session: {
+                                access_token: 'bootstrap-token'
+                            }
+                        },
+                        error: null
+                    };
+                }
+
+                return {
+                    data: null,
+                    error: {
+                        message: 'wrong otp type'
+                    }
+                };
+            }
+        }
+    };
+    const adminClient = {
+        auth: {
+            admin: {
+                async generateLink() {
+                    calls.push('generateLink');
+                    return {
+                        data: {
+                            properties: {
+                                email_otp: '123456'
+                            }
+                        },
+                        error: null
+                    };
+                }
+            }
+        }
+    };
+
+    const result = await resolveAccessToken({
+        baseUrl: 'https://preview.example.com',
+        email: 'smoke@example.com',
+        password: 'wrong-password',
+        timeoutMs: 5000
+    }, {
+        SUPABASE_URL: 'https://demo.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: 'publishable-key',
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role'
+    }, {
+        createClient(url, key) {
+            return key === 'service-role'
+                ? adminClient
+                : publicClient;
+        }
+    });
+
+    assert.equal(result.accessToken, 'bootstrap-token');
+    assert.equal(result.authMode, 'admin_magiclink_email_otp');
+    assert.deepEqual(calls, [
+        'signInWithPassword',
+        'publicSignOut',
+        'generateLink',
+        'verifyOtp:magiclink',
+        'publicSignOut'
+    ]);
+});
+
+test('bootstrapAccessTokenViaAdminLink fails clearly when no service-role key is available', async () => {
+    await assert.rejects(
+        bootstrapAccessTokenViaAdminLink({
+            baseUrl: 'https://preview.example.com',
+            email: 'smoke@example.com',
+            timeoutMs: 5000
+        }, {
+            SUPABASE_URL: 'https://demo.supabase.co',
+            SUPABASE_PUBLISHABLE_KEY: 'publishable-key'
+        }),
+        /Missing SUPABASE_SERVICE_ROLE_KEY/
+    );
 });

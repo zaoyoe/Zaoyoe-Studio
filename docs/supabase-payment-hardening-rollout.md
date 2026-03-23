@@ -110,12 +110,14 @@ After the SQL rollout, verify these flows in the deployed app:
 Recommended automated staging smoke test:
 
 1. Fill the optional `PAYMENT_SMOKE_*` values in `server/.env.production` for the target deployment.
-2. Run config-only validation first:
+2. If the deployed `/api/runtime/supabase-config` endpoint is unhealthy or missing `SUPABASE_PUBLISHABLE_KEY`, put `SUPABASE_PUBLISHABLE_KEY` directly in the local env file used by the smoke runner so auth can still bootstrap locally.
+3. If the target smoke user is OAuth-only or password login is disabled, the smoke runner can fall back to an admin-generated magic link as long as the env file also contains a valid `SUPABASE_SERVICE_ROLE_KEY`.
+4. Run config-only validation first:
    - `npm run smoke:payment -- --env-file server/.env.production --config-only`
-3. If the target deployment exposes mock payments for remote smoke usage, run the guarded end-to-end flow:
+5. If the target deployment exposes mock payments for remote smoke usage, run the guarded end-to-end flow:
    - `npm run smoke:payment -- --env-file server/.env.production`
-4. If you intentionally need to run against a production-like host, add `--allow-production-like` and confirm the mock-payment override window is still active before proceeding.
-5. After smoke passes, run the post-rollout verifier:
+6. If you intentionally need to run against a production-like host, add `--allow-production-like` and confirm the mock-payment override window is still active before proceeding.
+7. After smoke passes, run the post-rollout verifier:
    - `npm run verify:payment-rollout -- --env-file server/.env.production --fail-on-finding`
 
 The automated smoke runner validates:

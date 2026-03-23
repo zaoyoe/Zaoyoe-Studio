@@ -27,6 +27,21 @@ const NON_PRODUCTION_HOST_MARKERS = Object.freeze([
     'qa',
     'stg'
 ]);
+const PUBLIC_SUPABASE_KEY_ENV_NAMES = Object.freeze([
+    'SUPABASE_PUBLISHABLE_KEY',
+    'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY'
+]);
+const PUBLIC_SUPABASE_URL_ENV_NAMES = Object.freeze([
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'PUBLIC_SUPABASE_URL',
+    'SUPABASE_URL'
+]);
+const SERVICE_ROLE_ENV_NAMES = Object.freeze([
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_SERVICE_KEY'
+]);
 
 function parseArgs(argv = []) {
     const options = {
@@ -284,10 +299,17 @@ async function fetchJson(baseUrl, pathname, init = {}, timeoutMs = DEFAULT_TIMEO
 }
 
 function parseRuntimeSupabaseConfig(script = '') {
+    let loggedError = '';
     const context = {
         globalThis: {},
         console: {
-            error() {}
+            error(...args) {
+                loggedError = args
+                    .map((value) => String(value || '').trim())
+                    .filter(Boolean)
+                    .join(' ')
+                    .trim();
+            }
         }
     };
     context.global = context.globalThis;
@@ -298,7 +320,7 @@ function parseRuntimeSupabaseConfig(script = '') {
     const url = String(config?.url || '').trim().replace(/\/+$/, '');
     const publishableKey = String(config?.publishableKey || '').trim();
     if (!url || !publishableKey) {
-        throw new Error('Runtime Supabase config is unavailable');
+        throw new Error(loggedError || 'Runtime Supabase config is unavailable');
     }
 
     return {
@@ -333,17 +355,8 @@ function pickFirstValue(values = {}, names = []) {
 }
 
 async function resolveSupabasePublicConfig(baseUrl, envValues = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
-    const url = pickFirstValue(envValues, [
-        'NEXT_PUBLIC_SUPABASE_URL',
-        'PUBLIC_SUPABASE_URL',
-        'SUPABASE_URL'
-    ]).replace(/\/+$/, '');
-    const publishableKey = pickFirstValue(envValues, [
-        'SUPABASE_PUBLISHABLE_KEY',
-        'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
-        'SUPABASE_ANON_KEY',
-        'NEXT_PUBLIC_SUPABASE_ANON_KEY'
-    ]);
+    const url = pickFirstValue(envValues, PUBLIC_SUPABASE_URL_ENV_NAMES).replace(/\/+$/, '');
+    const publishableKey = pickFirstValue(envValues, PUBLIC_SUPABASE_KEY_ENV_NAMES);
 
     if (url && publishableKey) {
         return { url, publishableKey };
@@ -352,7 +365,109 @@ async function resolveSupabasePublicConfig(baseUrl, envValues = {}, timeoutMs = 
     return loadRuntimeSupabaseConfig(baseUrl, timeoutMs);
 }
 
-async function resolveAccessToken(options = {}, envValues = {}) {
+function getSupabaseClientFactory(dependencies = {}) {
+    return typeof dependencies.createClient === 'function'
+        ? dependencies.createClient
+        : createClient;
+}
+
+function createPublicSupabaseClient(publicConfig = {}, dependencies = {}) {
+    const createClientFn = getSupabaseClientFactory(dependencies);
+    return createClientFn(publicConfig.url, publicConfig.publishableKey, {
+        auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false
+        }
+    });
+}
+
+function buildOtpVerificationAttempts(email = '', properties = {}) {
+    const normalizedEmail = String(email || '').trim();
+    const token = String(properties?.email_otp || '').trim();
+    const hashedToken = String(properties?.hashed_token || '').trim();
+
+    return [
+        token
+            ? {
+                label: 'magiclink_email_otp',
+                args: { email: normalizedEmail, token, type: 'magiclink' }
+            }
+            : null,
+        token
+            ? {
+                label: 'email_email_otp',
+                args: { email: normalizedEmail, token, type: 'email' }
+            }
+            : null,
+        hashedToken
+            ? {
+                label: 'magiclink_token_hash',
+                args: { token_hash: hashedToken, type: 'magiclink' }
+            }
+            : null,
+        hashedToken
+            ? {
+                label: 'email_token_hash',
+                args: { token_hash: hashedToken, type: 'email' }
+            }
+            : null
+    ].filter(Boolean);
+}
+
+async function bootstrapAccessTokenViaAdminLink(options = {}, envValues = {}, dependencies = {}) {
+    const serviceRoleKey = pickFirstValue(envValues, SERVICE_ROLE_ENV_NAMES);
+    if (!serviceRoleKey) {
+        throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY for admin magic-link bootstrap');
+    }
+
+    const publicConfig = dependencies.publicConfig
+        || await resolveSupabasePublicConfig(options.baseUrl, envValues, options.timeoutMs);
+    const createClientFn = getSupabaseClientFactory(dependencies);
+    const adminSupabase = createClientFn(publicConfig.url, serviceRoleKey, {
+        auth: {
+            persistSession: false,
+            autoRefreshToken: false
+        }
+    });
+    const publicSupabase = createPublicSupabaseClient(publicConfig, dependencies);
+    const { data: linkData, error: linkError } = await adminSupabase.auth.admin.generateLink({
+        type: 'magiclink',
+        email: options.email
+    });
+
+    if (linkError) {
+        throw new Error(linkError.message || 'Failed to generate magic link for smoke-test user');
+    }
+
+    const attempts = buildOtpVerificationAttempts(options.email, linkData?.properties || {});
+    if (!attempts.length) {
+        throw new Error('Magic-link bootstrap did not return an OTP or token hash');
+    }
+
+    const failures = [];
+    for (const attempt of attempts) {
+        const { data, error } = await publicSupabase.auth.verifyOtp(attempt.args);
+        if (!error && data?.session?.access_token) {
+            try {
+                await publicSupabase.auth.signOut();
+            } catch (_) {
+                // ignore best-effort cleanup failures
+            }
+
+            return {
+                accessToken: data.session.access_token,
+                authMode: `admin_${attempt.label}`
+            };
+        }
+
+        failures.push(error?.message || `${attempt.label} failed`);
+    }
+
+    throw new Error(`Failed to exchange admin-generated magic link for an access token (${failures.join('; ')})`);
+}
+
+async function resolveAccessToken(options = {}, envValues = {}, dependencies = {}) {
     if (options.accessToken) {
         return {
             accessToken: options.accessToken,
@@ -360,46 +475,90 @@ async function resolveAccessToken(options = {}, envValues = {}) {
         };
     }
 
-    if (!options.email || !options.password) {
-        throw new Error('Payment smoke test requires --access-token or both --email and --password');
+    if (!options.email) {
+        throw new Error('Payment smoke test requires --access-token or PAYMENT_SMOKE_EMAIL');
     }
 
-    const publicConfig = await resolveSupabasePublicConfig(options.baseUrl, envValues, options.timeoutMs);
-    const supabase = createClient(publicConfig.url, publicConfig.publishableKey, {
-        auth: {
-            persistSession: false,
-            autoRefreshToken: false,
-            detectSessionInUrl: false
+    const publicConfig = dependencies.publicConfig
+        || await resolveSupabasePublicConfig(options.baseUrl, envValues, options.timeoutMs);
+    const publicSupabase = createPublicSupabaseClient(publicConfig, dependencies);
+    let passwordError = null;
+
+    if (options.password) {
+        const { data, error } = await publicSupabase.auth.signInWithPassword({
+            email: options.email,
+            password: options.password
+        });
+
+        try {
+            await publicSupabase.auth.signOut();
+        } catch (_) {
+            // ignore best-effort cleanup failures
         }
-    });
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-        email: options.email,
-        password: options.password
-    });
+        if (!error && data?.session?.access_token) {
+            return {
+                accessToken: data.session.access_token,
+                authMode: 'email_password'
+            };
+        }
 
-    try {
-        await supabase.auth.signOut();
-    } catch (_) {
-        // ignore best-effort cleanup failures
+        passwordError = error?.message || 'Failed to obtain Supabase access token for smoke test';
     }
 
-    if (error || !data?.session?.access_token) {
-        throw new Error(error?.message || 'Failed to obtain Supabase access token for smoke test');
+    if (pickFirstValue(envValues, SERVICE_ROLE_ENV_NAMES)) {
+        try {
+            return await bootstrapAccessTokenViaAdminLink(options, envValues, {
+                ...dependencies,
+                publicConfig
+            });
+        } catch (bootstrapError) {
+            if (passwordError) {
+                throw new Error(`${passwordError} (admin magic-link fallback failed: ${bootstrapError.message || bootstrapError})`);
+            }
+            throw bootstrapError;
+        }
     }
 
-    return {
-        accessToken: data.session.access_token,
-        authMode: 'email_password'
-    };
+    if (passwordError) {
+        throw new Error(passwordError);
+    }
+
+    throw new Error('Payment smoke test requires --access-token, a working email/password pair, or SUPABASE_SERVICE_ROLE_KEY for admin magic-link bootstrap');
+}
+
+function extractResponseErrorDetail(response = {}) {
+    const payloadMessage = String(
+        response?.payload?.message
+        || response?.payload?.error
+        || response?.payload?.msg
+        || ''
+    ).trim();
+    if (payloadMessage) {
+        return payloadMessage;
+    }
+
+    const text = String(response?.text || '').trim();
+    if (!text) {
+        return '';
+    }
+
+    return text.length > 300
+        ? `${text.slice(0, 297)}...`
+        : text;
 }
 
 function validateConfigPayload(response) {
     if (!response.ok) {
-        throw new Error(`Payment config request failed (${response.status} ${response.statusText})`);
+        const detail = extractResponseErrorDetail(response);
+        throw new Error(
+            detail
+                ? `Payment config request failed (${response.status} ${response.statusText}): ${detail}`
+                : `Payment config request failed (${response.status} ${response.statusText})`
+        );
     }
     if (!response.payload || response.payload.success !== true) {
-        throw new Error(response.payload?.message || 'Payment config payload is invalid');
+        throw new Error(extractResponseErrorDetail(response) || 'Payment config payload is invalid');
     }
 
     return response.payload;
@@ -407,10 +566,15 @@ function validateConfigPayload(response) {
 
 function validatePaymentCreatePayload(response, provider = DEFAULT_PROVIDER) {
     if (!response.ok) {
-        throw new Error(`Payment create request failed (${response.status} ${response.statusText})`);
+        const detail = extractResponseErrorDetail(response);
+        throw new Error(
+            detail
+                ? `Payment create request failed (${response.status} ${response.statusText}): ${detail}`
+                : `Payment create request failed (${response.status} ${response.statusText})`
+        );
     }
     if (!response.payload || response.payload.success !== true) {
-        throw new Error(response.payload?.message || 'Payment create payload is invalid');
+        throw new Error(extractResponseErrorDetail(response) || 'Payment create payload is invalid');
     }
 
     const payload = response.payload;
@@ -537,13 +701,17 @@ if (require.main === module) {
 }
 
 module.exports = {
+    buildOtpVerificationAttempts,
     DEFAULT_ENV_FILE,
     buildPaymentCreatePayload,
+    bootstrapAccessTokenViaAdminLink,
+    extractResponseErrorDetail,
     formatHumanReport,
     isProductionLikeBaseUrl,
     parseArgs,
     parseRuntimeSupabaseConfig,
     readEnvFile,
+    resolveAccessToken,
     resolveOptions,
     runPaymentSmokeTest,
     validateConfigPayload,
