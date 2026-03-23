@@ -31,6 +31,15 @@ const RUNTIME_SCRIPTS = [
     'admin-studio.js'
 ];
 
+const CHAT_WIDGET_PAGES = [
+    'index.html',
+    'guestbook.html',
+    'verify.html',
+    'shop.html',
+    'prompts.html',
+    'privacy.html'
+];
+
 function readVercelConfig() {
     return JSON.parse(readRepoFile('vercel.json'));
 }
@@ -119,6 +128,36 @@ test('frontend entry pages load the shared Supabase runtime config before initia
     }
 
     assert.deepEqual(missing, [], missing.join('\n'));
+});
+
+test('public pages wire the chat widget through the shared bootstrap loader', () => {
+    const violations = [];
+
+    for (const relativePath of CHAT_WIDGET_PAGES) {
+        const source = readRepoFile(relativePath);
+
+        if (!source.includes('css/chat-widget.css')) {
+            violations.push(`${relativePath} is missing css/chat-widget.css`);
+        }
+
+        if (!source.includes('js/components/ChatWidget.js')) {
+            violations.push(`${relativePath} is missing js/components/ChatWidget.js`);
+        }
+
+        if (!source.includes('js/chat-widget-loader.js')) {
+            violations.push(`${relativePath} is missing js/chat-widget-loader.js`);
+        }
+    }
+
+    const inlineInitPages = ['index.html', 'verify.html', 'shop.html', 'prompts.html', 'privacy.html'];
+    for (const relativePath of inlineInitPages) {
+        const source = readRepoFile(relativePath);
+        if (source.includes('new ChatWidget(window.supabaseClient)')) {
+            violations.push(`${relativePath} should rely on js/chat-widget-loader.js instead of inline chat initialization`);
+        }
+    }
+
+    assert.deepEqual(violations, [], violations.join('\n'));
 });
 
 test('shared frontend scripts depend on the unified runtime Supabase helpers', () => {
