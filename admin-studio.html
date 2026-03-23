@@ -2394,11 +2394,11 @@
             <div id="module-points" class="module-container">
                 <!-- Tabs -->
                 <nav class="admin-tabs">
-                    <button class="admin-tab active" data-points-view="batches" onclick="switchPointsView('batches')">📦
+                    <button class="admin-tab active" data-points-view="batches" data-admin-action="points-switch-view" data-points-view-target="batches">📦
                         批次管理</button>
-                    <button class="admin-tab" data-points-view="generate" onclick="switchPointsView('generate')">➕
+                    <button class="admin-tab" data-points-view="generate" data-admin-action="points-switch-view" data-points-view-target="generate">➕
                         生成兑换码</button>
-                    <button class="admin-tab" data-points-view="lookup" onclick="switchPointsView('lookup')">🔍
+                    <button class="admin-tab" data-points-view="lookup" data-admin-action="points-switch-view" data-points-view-target="lookup">🔍
                         查询</button>
                     <div class="admin-tab-indicator"></div>
                 </nav>
@@ -2413,25 +2413,25 @@
                                 <div class="search-bar">
                                     <i class="fas fa-search"></i>
                                     <input type="text" id="batchSearchInput" placeholder="搜索批次名称或兑换码..."
-                                        autocomplete="off" onkeydown="if(event.key==='Enter') searchCodeInBatches()">
+                                        autocomplete="off" data-admin-keydown-action="points-search-enter">
                                 </div>
                                 <div class="filter-dropdowns">
                                     <!-- Date Filter -->
                                     <div class="filter-dropdown" data-filter="batchDate" id="batchDateFilter">
-                                        <button class="filter-btn" onclick="toggleBatchDateFilter()">
+                                        <button class="filter-btn" data-admin-action="points-toggle-date-filter">
                                             <i class="fas fa-calendar-alt"></i>
                                             <span class="filter-label" id="batchDateLabel">日期</span>
                                             <i class="fas fa-chevron-down filter-arrow"></i>
                                         </button>
                                         <div class="filter-popup glass-popup" id="batchDatePopup">
                                             <div class="filter-option selected" data-value="all"
-                                                onclick="filterBatchByDate('all')">全部时间</div>
+                                                data-admin-action="points-filter-date" data-batch-date="all">全部时间</div>
                                             <div class="filter-option" data-value="today"
-                                                onclick="filterBatchByDate('today')">今天</div>
+                                                data-admin-action="points-filter-date" data-batch-date="today">今天</div>
                                             <div class="filter-option" data-value="week"
-                                                onclick="filterBatchByDate('week')">本周</div>
+                                                data-admin-action="points-filter-date" data-batch-date="week">本周</div>
                                             <div class="filter-option" data-value="month"
-                                                onclick="filterBatchByDate('month')">本月</div>
+                                                data-admin-action="points-filter-date" data-batch-date="month">本月</div>
                                             <div class="filter-divider"></div>
                                             <div class="filter-custom-date">
                                                 <label>自定义范围</label>
@@ -2445,52 +2445,52 @@
                                     </div>
                                     <!-- Channel Filter -->
                                     <div class="filter-dropdown" data-filter="batchChannel" id="batchChannelFilter">
-                                        <button class="filter-btn" onclick="toggleBatchChannelFilter()">
+                                        <button class="filter-btn" data-admin-action="points-toggle-channel-filter">
                                             <i class="fas fa-store"></i>
                                             <span class="filter-label" id="batchChannelLabel">渠道</span>
                                             <i class="fas fa-chevron-down filter-arrow"></i>
                                         </button>
                                         <div class="filter-popup glass-popup" id="batchChannelPopup">
                                             <div class="filter-option selected" data-value="all"
-                                                onclick="filterBatchByChannel('all')">全部渠道</div>
+                                                data-admin-action="points-filter-channel" data-batch-channel="all">全部渠道</div>
                                             <div class="filter-option" data-value="xianyu"
-                                                onclick="filterBatchByChannel('xianyu')">闲鱼</div>
+                                                data-admin-action="points-filter-channel" data-batch-channel="xianyu">闲鱼</div>
 
                                             <div class="filter-option" data-value="taobao"
-                                                onclick="filterBatchByChannel('taobao')">淘宝</div>
+                                                data-admin-action="points-filter-channel" data-batch-channel="taobao">淘宝</div>
                                             <div class="filter-option" data-value="manual"
-                                                onclick="filterBatchByChannel('manual')">手动</div>
+                                                data-admin-action="points-filter-channel" data-batch-channel="manual">手动</div>
                                             <div class="filter-option" data-value="promotion"
-                                                onclick="filterBatchByChannel('promotion')">促销</div>
+                                                data-admin-action="points-filter-channel" data-batch-channel="promotion">促销</div>
                                             <div class="filter-option" data-value="test"
-                                                onclick="filterBatchByChannel('test')">测试</div>
+                                                data-admin-action="points-filter-channel" data-batch-channel="test">测试</div>
                                         </div>
                                     </div>
                                     <!-- Package Filter -->
                                     <div class="filter-dropdown" data-filter="batchPackage" id="batchPackageFilter">
-                                        <button class="filter-btn" onclick="toggleBatchPackageFilter()">
+                                        <button class="filter-btn" data-admin-action="points-toggle-package-filter">
                                             <i class="fas fa-gift"></i>
                                             <span class="filter-label" id="batchPackageLabel">套餐</span>
                                             <i class="fas fa-chevron-down filter-arrow"></i>
                                         </button>
                                         <div class="filter-popup glass-popup" id="batchPackagePopup">
                                             <div class="filter-option selected" data-value="all"
-                                                onclick="filterBatchByPackage('all')">全部套餐</div>
+                                                data-admin-action="points-filter-package" data-batch-package="all">全部套餐</div>
                                             <!-- Populated dynamically -->
                                         </div>
                                     </div>
                                     <!-- Export Dropdown (moved here, next to Package filter) -->
                                     <div class="filter-dropdown" data-filter="batchExport" id="batchExportDropdown">
-                                        <button class="filter-btn" onclick="toggleBatchExportMenu()">
+                                        <button class="filter-btn" data-admin-action="points-toggle-export-menu">
                                             <i class="fas fa-file-export"></i>
                                             <span class="filter-label">导出</span>
                                             <i class="fas fa-chevron-down filter-arrow"></i>
                                         </button>
                                         <div class="filter-popup glass-popup" id="batchExportPopup">
-                                            <div class="filter-option" onclick="exportBatchList()">
+                                            <div class="filter-option" data-admin-action="points-export-batch-list">
                                                 <i class="fas fa-list"></i> 导出批次列表
                                             </div>
-                                            <div class="filter-option" onclick="exportSelectedBatches()"
+                                            <div class="filter-option" data-admin-action="points-export-selected-batches"
                                                 id="exportSelectedOption" style="display: none;">
                                                 <i class="fas fa-check-double"></i> 导出选中批次
                                             </div>
@@ -2498,22 +2498,22 @@
                                     </div>
                                     <!-- Batch Select Toggle Button (after Package filter) -->
                                     <button class="btn-icon batch-select-btn" id="batchSelectToggle"
-                                        onclick="toggleBatchSelectMode()" title="选择模式">
+                                        data-admin-action="points-toggle-select-mode" title="选择模式">
                                         <i class="fas fa-check-square"></i>
                                     </button>
                                     <!-- Batch Actions Menu (moved here, next to checkbox toggle) -->
                                     <div class="batch-menu-container" id="pointsBatchMenuContainer"
                                         style="display: none;">
-                                        <button class="btn-icon" onclick="togglePointsBatchActionsMenu()">
+                                        <button class="btn-icon" data-admin-action="points-toggle-actions-menu">
                                             <i class="fas fa-ellipsis-h"></i>
                                         </button>
                                         <div class="batch-menu-popup glass-popup" id="pointsBatchActionsMenu">
-                                            <div class="batch-menu-item" onclick="batchInvalidateCodes()">
+                                            <div class="batch-menu-item" data-admin-action="points-batch-invalidate">
                                                 <i class="fas fa-ban"></i>
                                                 <span>作废未使用</span>
                                             </div>
                                             <div class="batch-menu-divider"></div>
-                                            <div class="batch-menu-item danger" onclick="batchDeleteBatches()">
+                                            <div class="batch-menu-item danger" data-admin-action="points-batch-delete">
                                                 <i class="fas fa-trash"></i>
                                                 <span>删除选中</span>
                                             </div>
@@ -2536,22 +2536,22 @@
                                     <th class="checkbox-col" id="batchCheckboxHeader" style="display: none;">
                                         <label class="custom-checkbox">
                                             <input type="checkbox" id="selectAllBatches"
-                                                onchange="toggleSelectAllBatches()" title="全选当前页">
+                                                data-admin-change-action="points-toggle-select-all-batches" title="全选当前页">
                                             <span class="checkmark"></span>
                                         </label>
                                     </th>
-                                    <th class="sortable" data-sort="name" onclick="sortBatches('name')">
+                                    <th class="sortable" data-sort="name" data-admin-action="points-sort-batches" data-sort-field="name">
                                         批次名称 <i class="fas fa-sort sort-icon"></i>
                                     </th>
                                     <th>套餐</th>
                                     <th>渠道</th>
-                                    <th class="sortable" data-sort="total_count" onclick="sortBatches('total_count')">
+                                    <th class="sortable" data-sort="total_count" data-admin-action="points-sort-batches" data-sort-field="total_count">
                                         总数 <i class="fas fa-sort sort-icon"></i>
                                     </th>
-                                    <th class="sortable" data-sort="used_count" onclick="sortBatches('used_count')">
+                                    <th class="sortable" data-sort="used_count" data-admin-action="points-sort-batches" data-sort-field="used_count">
                                         已用 <i class="fas fa-sort sort-icon"></i>
                                     </th>
-                                    <th class="sortable" data-sort="created_at" onclick="sortBatches('created_at')">
+                                    <th class="sortable" data-sort="created_at" data-admin-action="points-sort-batches" data-sort-field="created_at">
                                         创建时间 <i class="fas fa-sort-down sort-icon active"></i>
                                     </th>
                                     <th>操作</th>
@@ -2572,7 +2572,7 @@
                             <div class="section-title">
                                 <i class="fas fa-cog"></i> 配置参数
                             </div>
-                            <form id="generateCodesForm" onsubmit="generateCodes(event)" class="prompt-form">
+                            <form id="generateCodesForm" class="prompt-form">
                                 <div class="form-group">
                                     <label>批次名称</label>
                                     <input type="text" id="batchName" placeholder="如: 闲鱼1月活动" required>
@@ -2656,10 +2656,10 @@
                                     style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                                     <h4 style="margin: 0; color: #22c55e;"><i class="fas fa-check-circle"></i> 生成成功</h4>
                                     <div class="codes-actions">
-                                        <button class="btn-sm btn-secondary" onclick="copyAllCodes()">
+                                        <button class="btn-sm btn-secondary" data-admin-action="points-copy-all-codes">
                                             <i class="fas fa-copy"></i> 复制
                                         </button>
-                                        <button class="btn-sm btn-secondary" onclick="downloadCodesCSV()">
+                                        <button class="btn-sm btn-secondary" data-admin-action="points-download-codes-csv">
                                             <i class="fas fa-download"></i> CSV
                                         </button>
                                     </div>
@@ -2681,7 +2681,7 @@
                                     <i class="fas fa-search" style="color: var(--text-dim);"></i>
                                     <input type="text" id="lookupCodeInput" placeholder="输入兑换码或订单号" maxlength="50">
                                 </div>
-                                <button class="btn-primary lookup-btn" onclick="lookupCode()">查询</button>
+                                <button class="btn-primary lookup-btn" data-admin-action="points-lookup-code">查询</button>
                             </div>
                         </div>
 
@@ -2774,32 +2774,32 @@
                         <div class="filter-dropdowns">
                             <!-- Status Filter -->
                             <div class="filter-dropdown" data-filter="userStatus">
-                                <button class="filter-btn" onclick="toggleUserStatusFilter()">
+                                <button class="filter-btn" data-admin-action="users-toggle-status-filter">
                                     <i class="fas fa-shield-alt"></i>
                                     <span class="filter-label">状态</span>
                                     <i class="fas fa-chevron-down filter-arrow"></i>
                                 </button>
                                 <div class="filter-popup glass-popup">
                                     <div class="filter-option selected" data-value="all"
-                                        onclick="filterUserByStatus('all')">全部</div>
+                                        data-admin-action="users-filter-status" data-user-status="all">全部</div>
                                     <div class="filter-option" data-value="active"
-                                        onclick="filterUserByStatus('active')">正常</div>
+                                        data-admin-action="users-filter-status" data-user-status="active">正常</div>
                                     <div class="filter-option" data-value="banned"
-                                        onclick="filterUserByStatus('banned')">封禁中</div>
+                                        data-admin-action="users-filter-status" data-user-status="banned">封禁中</div>
                                 </div>
                             </div>
 
                             <!-- Level Filter -->
                             <div class="filter-dropdown" data-filter="userLevel">
-                                <button class="filter-btn" onclick="toggleUserLevelFilter()">
+                                <button class="filter-btn" data-admin-action="users-toggle-level-filter">
                                     <i class="fas fa-star"></i>
                                     <span class="filter-label">等级</span>
                                     <i class="fas fa-chevron-down filter-arrow"></i>
                                 </button>
                                 <div class="filter-popup glass-popup">
                                     <div class="filter-option selected" data-value="all"
-                                        onclick="filterUserByLevel('all')">全部</div>
-                                    <div class="filter-option" data-value="vip" onclick="filterUserByLevel('vip')">VIP
+                                        data-admin-action="users-filter-level" data-user-level="all">全部</div>
+                                    <div class="filter-option" data-value="vip" data-admin-action="users-filter-level" data-user-level="vip">VIP
                                         会员</div>
                                 </div>
                             </div>
@@ -2807,17 +2807,17 @@
                             <!-- Role Filter (Super Admin Only) -->
                             <div class="filter-dropdown" data-filter="userRole" id="adminRoleFilter"
                                 style="display: none;">
-                                <button class="filter-btn" onclick="toggleUserRoleFilter()">
+                                <button class="filter-btn" data-admin-action="users-toggle-role-filter">
                                     <i class="fas fa-user-shield"></i>
                                     <span class="filter-label">角色</span>
                                     <i class="fas fa-chevron-down filter-arrow"></i>
                                 </button>
                                 <div class="filter-popup glass-popup">
                                     <div class="filter-option selected" data-value="all"
-                                        onclick="filterUserByRole('all')">全部</div>
-                                    <div class="filter-option" data-value="admin" onclick="filterUserByRole('admin')">
+                                        data-admin-action="users-filter-role" data-user-role="all">全部</div>
+                                    <div class="filter-option" data-value="admin" data-admin-action="users-filter-role" data-user-role="admin">
                                         管理员</div>
-                                    <div class="filter-option" data-value="user" onclick="filterUserByRole('user')">普通用户
+                                    <div class="filter-option" data-value="user" data-admin-action="users-filter-role" data-user-role="user">普通用户
                                     </div>
                                 </div>
                             </div>
@@ -2829,45 +2829,45 @@
                             </div>
                             <label class="toggle-switch-sm">
                                 <input type="checkbox" id="userShowTestAccountsToggle"
-                                    onchange="toggleUserTestAccountVisibility(this.checked)">
+                                    data-admin-change-action="users-toggle-test-accounts">
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>
                         <!-- Batch Actions (like Gallery Manage) -->
                         <div class="batch-actions-wrapper">
-                            <button class="batch-btn" id="userSelectModeBtn" onclick="toggleUserSelectMode()"
+                            <button class="batch-btn" id="userSelectModeBtn" data-admin-action="users-toggle-select-mode"
                                 title="选择模式">
                                 <i class="fas fa-check-square"></i>
                             </button>
                             <div class="batch-menu-container" id="userBatchMenuContainer" style="display: none;">
-                                <button class="batch-btn" id="userBatchMenuTrigger" onclick="toggleUserBatchMenu()"
+                                <button class="batch-btn" id="userBatchMenuTrigger" data-admin-action="users-toggle-batch-menu"
                                     title="批量操作">
                                     <i class="fas fa-ellipsis-h"></i>
                                 </button>
                                 <div class="batch-dropdown-menu" id="userBatchDropdownMenu">
-                                    <div class="batch-menu-item" onclick="selectAllUsersOnPage()">
+                                    <div class="batch-menu-item" data-admin-action="users-select-all-page">
                                         <i class="fas fa-check-double"></i>
                                         <span>全选当前页</span>
                                     </div>
                                     <div class="batch-menu-divider"></div>
-                                    <div class="batch-menu-item" onclick="batchSendNotification()">
+                                    <div class="batch-menu-item" data-admin-action="users-batch-send-notification">
                                         <i class="fas fa-bell"></i>
                                         <span>发送通知</span>
                                     </div>
-                                    <div class="batch-menu-item" onclick="batchAdjustPoints()">
+                                    <div class="batch-menu-item" data-admin-action="users-batch-adjust-points">
                                         <i class="fas fa-coins"></i>
                                         <span>调整积分</span>
                                     </div>
-                                    <div class="batch-menu-item" onclick="batchAddTags()">
+                                    <div class="batch-menu-item" data-admin-action="users-batch-add-tags">
                                         <i class="fas fa-tags"></i>
                                         <span>添加标签</span>
                                     </div>
-                                    <div class="batch-menu-item" onclick="batchExportUsers()">
+                                    <div class="batch-menu-item" data-admin-action="users-batch-export">
                                         <i class="fas fa-download"></i>
                                         <span>导出数据</span>
                                     </div>
                                     <div class="batch-menu-divider"></div>
-                                    <div class="batch-menu-item danger" onclick="batchBanUsers()">
+                                    <div class="batch-menu-item danger" data-admin-action="users-batch-ban">
                                         <i class="fas fa-ban"></i>
                                         <span>封禁管理</span>
                                     </div>
@@ -2922,7 +2922,7 @@
                         <div class="user-modal-header">
 
                             <h2 class="modal-title">用户详情</h2>
-                            <button class="modal-close-btn" onclick="closeUserModal()">
+                            <button class="modal-close-btn" data-admin-action="users-close-modal">
                                 <i class="fas fa-times"></i>
                             </button>
                         </div>
@@ -2939,28 +2939,28 @@
                                 <!-- Tab Navigation -->
                                 <div class="user-tab-nav">
                                     <button class="user-tab-btn active" data-tab="ledger"
-                                        onclick="switchUserTab('ledger')">
+                                        data-admin-action="users-switch-tab" data-user-tab="ledger">
                                         <i class="fas fa-chart-line"></i> 积分流水
                                     </button>
                                     <button class="user-tab-btn" data-tab="activity"
-                                        onclick="switchUserTab('activity')">
+                                        data-admin-action="users-switch-tab" data-user-tab="activity">
                                         <i class="fas fa-history"></i> 近期动态
                                     </button>
-                                    <button class="user-tab-btn" data-tab="notes" onclick="switchUserTab('notes')">
+                                    <button class="user-tab-btn" data-tab="notes" data-admin-action="users-switch-tab" data-user-tab="notes">
                                         <i class="far fa-sticky-note"></i> 备注
                                     </button>
-                                    <button class="user-tab-btn" data-tab="audit" onclick="switchUserTab('audit')">
+                                    <button class="user-tab-btn" data-tab="audit" data-admin-action="users-switch-tab" data-user-tab="audit">
                                         <i class="fas fa-shield-alt"></i> 审计
                                     </button>
-                                    <button class="user-tab-btn" data-tab="blocks" onclick="switchUserTab('blocks')">
+                                    <button class="user-tab-btn" data-tab="blocks" data-admin-action="users-switch-tab" data-user-tab="blocks">
                                         <i class="fas fa-ban"></i> 封禁记录
                                     </button>
                                     <button class="user-tab-btn" data-tab="affiliate"
-                                        onclick="switchUserTab('affiliate')">
+                                        data-admin-action="users-switch-tab" data-user-tab="affiliate">
                                         <i class="fas fa-share-alt"></i> 推广
                                     </button>
                                     <button class="user-tab-btn" data-tab="relatives"
-                                        onclick="switchUserTab('relatives')">
+                                        data-admin-action="users-switch-tab" data-user-tab="relatives">
                                         <i class="fas fa-users-cog"></i> 关联账号
                                     </button>
                                     <div class="tab-indicator"></div>

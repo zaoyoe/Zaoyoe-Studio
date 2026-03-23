@@ -329,6 +329,108 @@ function bindAdminStudioDelegatedControls() {
             case 'analytics-apply-custom-range':
                 window.applyCustomRange?.();
                 break;
+            case 'points-switch-view':
+                window.switchPointsView?.(actionEl.dataset.pointsViewTarget);
+                break;
+            case 'points-toggle-date-filter':
+                window.toggleBatchDateFilter?.();
+                break;
+            case 'points-filter-date':
+                window.filterBatchByDate?.(actionEl.dataset.batchDate);
+                break;
+            case 'points-toggle-channel-filter':
+                window.toggleBatchChannelFilter?.();
+                break;
+            case 'points-filter-channel':
+                window.filterBatchByChannel?.(actionEl.dataset.batchChannel);
+                break;
+            case 'points-toggle-package-filter':
+                window.toggleBatchPackageFilter?.();
+                break;
+            case 'points-filter-package':
+                window.filterBatchByPackage?.(actionEl.dataset.batchPackage);
+                break;
+            case 'points-toggle-export-menu':
+                window.toggleBatchExportMenu?.();
+                break;
+            case 'points-export-batch-list':
+                window.exportBatchList?.();
+                break;
+            case 'points-export-selected-batches':
+                window.exportSelectedBatches?.();
+                break;
+            case 'points-toggle-select-mode':
+                window.toggleBatchSelectMode?.();
+                break;
+            case 'points-toggle-actions-menu':
+                window.togglePointsBatchActionsMenu?.();
+                break;
+            case 'points-batch-invalidate':
+                window.batchInvalidateCodes?.();
+                break;
+            case 'points-batch-delete':
+                window.batchDeleteBatches?.();
+                break;
+            case 'points-sort-batches':
+                window.sortBatches?.(actionEl.dataset.sortField);
+                break;
+            case 'points-copy-all-codes':
+                window.copyAllCodes?.();
+                break;
+            case 'points-download-codes-csv':
+                window.downloadCodesCSV?.();
+                break;
+            case 'points-lookup-code':
+                window.lookupCode?.();
+                break;
+            case 'users-toggle-status-filter':
+                window.toggleUserStatusFilter?.();
+                break;
+            case 'users-filter-status':
+                window.filterUserByStatus?.(actionEl.dataset.userStatus);
+                break;
+            case 'users-toggle-level-filter':
+                window.toggleUserLevelFilter?.();
+                break;
+            case 'users-filter-level':
+                window.filterUserByLevel?.(actionEl.dataset.userLevel);
+                break;
+            case 'users-toggle-role-filter':
+                window.toggleUserRoleFilter?.();
+                break;
+            case 'users-filter-role':
+                window.filterUserByRole?.(actionEl.dataset.userRole);
+                break;
+            case 'users-toggle-select-mode':
+                window.toggleUserSelectMode?.();
+                break;
+            case 'users-toggle-batch-menu':
+                window.toggleUserBatchMenu?.();
+                break;
+            case 'users-select-all-page':
+                window.selectAllUsersOnPage?.();
+                break;
+            case 'users-batch-send-notification':
+                window.batchSendNotification?.();
+                break;
+            case 'users-batch-adjust-points':
+                window.batchAdjustPoints?.();
+                break;
+            case 'users-batch-add-tags':
+                window.batchAddTags?.();
+                break;
+            case 'users-batch-export':
+                window.batchExportUsers?.();
+                break;
+            case 'users-batch-ban':
+                window.batchBanUsers?.();
+                break;
+            case 'users-close-modal':
+                window.closeUserModal?.();
+                break;
+            case 'users-switch-tab':
+                window.switchUserTab?.(actionEl.dataset.userTab);
+                break;
             default:
                 break;
         }
@@ -352,11 +454,51 @@ function bindAdminStudioDelegatedControls() {
             case 'payments-change-active-provider':
                 window.handlePaymentChannelActiveChange?.(actionEl.value);
                 break;
+            case 'points-toggle-select-all-batches':
+                window.toggleSelectAllBatches?.();
+                break;
             case 'homepage-handle-screenshot-upload':
                 window.HomepageAdmin?._handleScreenshotUpload?.(actionEl);
                 break;
+            case 'users-toggle-test-accounts':
+                window.toggleUserTestAccountVisibility?.(actionEl.checked);
+                break;
             default:
                 break;
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) {
+            return;
+        }
+
+        const actionEl = target.closest('[data-admin-keydown-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.adminKeydownAction) {
+            case 'points-search-enter':
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    window.searchCodeInBatches?.();
+                }
+                break;
+            default:
+                break;
+        }
+    });
+
+    document.addEventListener('submit', (event) => {
+        const form = event.target instanceof HTMLFormElement ? event.target : null;
+        if (!form) {
+            return;
+        }
+
+        if (form.id === 'generateCodesForm') {
+            window.generateCodes?.(event);
         }
     });
 }

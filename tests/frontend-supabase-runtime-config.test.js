@@ -368,6 +368,100 @@ test('admin studio routes hardened shell and dashboard controls through delegate
     assert.equal(adminStudioScript.includes('[data-admin-change-action]'), true, 'admin-studio.js should delegate change controls');
 });
 
+test('admin studio points and users controls route through delegated actions', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+
+    const removedInlineMarkers = [
+        `onclick="switchPointsView('batches')"`,
+        `onkeydown="if(event.key==='Enter') searchCodeInBatches()"`,
+        `onclick="toggleBatchDateFilter()"`,
+        `onclick="filterBatchByDate('all')"`,
+        `onclick="toggleBatchChannelFilter()"`,
+        `onclick="filterBatchByChannel('all')"`,
+        `onclick="toggleBatchPackageFilter()"`,
+        `onclick="filterBatchByPackage('all')"`,
+        `onclick="toggleBatchExportMenu()"`,
+        `onclick="exportBatchList()"`,
+        `onclick="toggleBatchSelectMode()"`,
+        `onclick="togglePointsBatchActionsMenu()"`,
+        `onclick="batchInvalidateCodes()"`,
+        `onchange="toggleSelectAllBatches()"`,
+        `onclick="sortBatches('name')"`,
+        `onsubmit="generateCodes(event)"`,
+        `onclick="copyAllCodes()"`,
+        `onclick="downloadCodesCSV()"`,
+        `onclick="lookupCode()"`,
+        `onclick="toggleUserStatusFilter()"`,
+        `onclick="filterUserByStatus('all')"`,
+        `onclick="toggleUserLevelFilter()"`,
+        `onclick="filterUserByLevel('all')"`,
+        `onclick="toggleUserRoleFilter()"`,
+        `onclick="filterUserByRole('all')"`,
+        `onchange="toggleUserTestAccountVisibility(this.checked)"`,
+        `onclick="toggleUserSelectMode()"`,
+        `onclick="toggleUserBatchMenu()"`,
+        `onclick="selectAllUsersOnPage()"`,
+        `onclick="batchSendNotification()"`,
+        `onclick="batchAdjustPoints()"`,
+        `onclick="batchAddTags()"`,
+        `onclick="batchExportUsers()"`,
+        `onclick="batchBanUsers()"`,
+        `onclick="closeUserModal()"`,
+        `onclick="switchUserTab('ledger')"`
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(adminStudioSource.includes(marker), false, `admin-studio.html should not contain ${marker}`);
+    }
+
+    const delegatedMarkers = [
+        'data-admin-action="points-switch-view"',
+        'data-admin-keydown-action="points-search-enter"',
+        'data-admin-action="points-toggle-date-filter"',
+        'data-admin-action="points-filter-date"',
+        'data-admin-action="points-toggle-channel-filter"',
+        'data-admin-action="points-filter-channel"',
+        'data-admin-action="points-toggle-package-filter"',
+        'data-admin-action="points-filter-package"',
+        'data-admin-action="points-toggle-export-menu"',
+        'data-admin-action="points-export-batch-list"',
+        'data-admin-action="points-toggle-select-mode"',
+        'data-admin-action="points-toggle-actions-menu"',
+        'data-admin-change-action="points-toggle-select-all-batches"',
+        'data-admin-action="points-sort-batches"',
+        'data-admin-action="points-copy-all-codes"',
+        'data-admin-action="points-download-codes-csv"',
+        'data-admin-action="points-lookup-code"',
+        'data-admin-action="users-toggle-status-filter"',
+        'data-admin-action="users-filter-status"',
+        'data-admin-action="users-toggle-level-filter"',
+        'data-admin-action="users-filter-level"',
+        'data-admin-action="users-toggle-role-filter"',
+        'data-admin-action="users-filter-role"',
+        'data-admin-change-action="users-toggle-test-accounts"',
+        'data-admin-action="users-toggle-select-mode"',
+        'data-admin-action="users-toggle-batch-menu"',
+        'data-admin-action="users-select-all-page"',
+        'data-admin-action="users-batch-send-notification"',
+        'data-admin-action="users-batch-adjust-points"',
+        'data-admin-action="users-batch-add-tags"',
+        'data-admin-action="users-batch-export"',
+        'data-admin-action="users-batch-ban"',
+        'data-admin-action="users-close-modal"',
+        'data-admin-action="users-switch-tab"'
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+
+    assert.equal(adminStudioScript.includes('points-switch-view'), true, 'admin-studio.js should handle points tab delegation');
+    assert.equal(adminStudioScript.includes('users-switch-tab'), true, 'admin-studio.js should handle user modal tab delegation');
+    assert.equal(adminStudioScript.includes('[data-admin-keydown-action]'), true, 'admin-studio.js should delegate keydown-based admin controls');
+    assert.equal(adminStudioScript.includes("form.id === 'generateCodesForm'"), true, 'admin-studio.js should delegate points generate form submission');
+});
+
 test('shop admin pagination and inventory/product workflows no longer emit targeted inline handlers', () => {
     const shopSource = readRepoFile('js/admin-shop.js');
     const adminStudioSource = readRepoFile('admin-studio.html');
