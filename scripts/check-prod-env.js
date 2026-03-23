@@ -177,6 +177,7 @@ function parseArgs(argv = []) {
         envFile: '',
         baseUrl: '',
         checkAppRuntime: false,
+        runtimeOnly: false,
         validateSupabase: false,
         validatePaymentSchema: false,
         timeoutMs: 10000
@@ -206,6 +207,11 @@ function parseArgs(argv = []) {
             continue;
         }
 
+        if (value === '--runtime-only') {
+            options.runtimeOnly = true;
+            continue;
+        }
+
         if (value === '--env-file') {
             options.envFile = path.resolve(process.cwd(), String(argv[index + 1] || '').trim());
             index += 1;
@@ -225,6 +231,68 @@ function parseArgs(argv = []) {
     }
 
     return options;
+}
+
+function buildLocalEnvironmentChecks({ options = {}, env = process.env } = {}) {
+    if (options.runtimeOnly) {
+        return [];
+    }
+
+    const serviceRoleKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+    const adminEncryptionKey = String(env.ADMIN_CONFIG_ENCRYPTION_KEY || '').trim();
+    const adminStudioAccessSecret = String(env.ADMIN_STUDIO_ACCESS_SECRET || '').trim();
+    const quoteSecret = readFirstAvailableEnv(QUOTE_SECRET_ENV_NAMES);
+    const runtime = isProductionLikeRuntime(env);
+
+    return [
+        {
+            label: 'SUPABASE_SERVICE_ROLE_KEY',
+            ok: Boolean(serviceRoleKey),
+            details: serviceRoleKey
+                ? `set, fingerprint=${fingerprintSecret(serviceRoleKey)}`
+                : 'missing'
+        },
+        {
+            label: 'ADMIN_CONFIG_ENCRYPTION_KEY',
+            ok: Boolean(adminEncryptionKey) && adminEncryptionKey !== serviceRoleKey,
+            details: !adminEncryptionKey
+                ? 'missing'
+                : adminEncryptionKey === serviceRoleKey
+                    ? 'must not equal SUPABASE_SERVICE_ROLE_KEY'
+                    : `set, independent, fingerprint=${fingerprintSecret(adminEncryptionKey)}`
+        },
+        {
+            label: 'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
+            ok: Boolean(quoteSecret.value) && quoteSecret.value !== serviceRoleKey,
+            details: !quoteSecret.value
+                ? 'missing (checked PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET / PAYMENT_CUSTOM_QUOTE_SECRET / PAYMENT_QUOTE_SECRET)'
+                : quoteSecret.value === serviceRoleKey
+                    ? `source=${quoteSecret.name}, but it must not equal SUPABASE_SERVICE_ROLE_KEY`
+                    : `set via ${quoteSecret.name}, independent, fingerprint=${fingerprintSecret(quoteSecret.value)}`
+        },
+        {
+            label: 'ADMIN_STUDIO_ACCESS_SECRET',
+            ok: Boolean(adminStudioAccessSecret)
+                && adminStudioAccessSecret !== serviceRoleKey
+                && adminStudioAccessSecret !== adminEncryptionKey,
+            details: !adminStudioAccessSecret
+                ? 'missing'
+                : adminStudioAccessSecret === serviceRoleKey
+                    ? 'must not equal SUPABASE_SERVICE_ROLE_KEY'
+                    : adminStudioAccessSecret === adminEncryptionKey
+                        ? 'should be independent from ADMIN_CONFIG_ENCRYPTION_KEY'
+                        : `set, independent, fingerprint=${fingerprintSecret(adminStudioAccessSecret)}`
+        },
+        {
+            label: 'production-like runtime',
+            ok: runtime.productionLike || options.allowNonProduction,
+            details: runtime.productionLike
+                ? `enabled via ${runtime.source}`
+                : options.allowNonProduction
+                    ? 'not production-like, but allowed by --allow-non-production'
+                    : 'missing production marker (set DEPLOYMENT_TIER=production if VERCEL_ENV / RAILWAY_ENVIRONMENT_NAME are unavailable)'
+        }
+    ];
 }
 
 function loadEnvFile(envFile) {
@@ -514,62 +582,10 @@ async function runAppRuntimeValidation({
 async function main() {
     const options = parseArgs(process.argv.slice(2));
     loadEnvFile(options.envFile);
-
-    const serviceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY');
-    const adminEncryptionKey = readEnv('ADMIN_CONFIG_ENCRYPTION_KEY');
-    const adminStudioAccessSecret = readEnv('ADMIN_STUDIO_ACCESS_SECRET');
-    const quoteSecret = readFirstAvailableEnv(QUOTE_SECRET_ENV_NAMES);
-    const runtime = isProductionLikeRuntime(process.env);
-
-    const checks = [
-        {
-            label: 'SUPABASE_SERVICE_ROLE_KEY',
-            ok: Boolean(serviceRoleKey),
-            details: serviceRoleKey
-                ? `set, fingerprint=${fingerprintSecret(serviceRoleKey)}`
-                : 'missing'
-        },
-        {
-            label: 'ADMIN_CONFIG_ENCRYPTION_KEY',
-            ok: Boolean(adminEncryptionKey) && adminEncryptionKey !== serviceRoleKey,
-            details: !adminEncryptionKey
-                ? 'missing'
-                : adminEncryptionKey === serviceRoleKey
-                    ? 'must not equal SUPABASE_SERVICE_ROLE_KEY'
-                    : `set, independent, fingerprint=${fingerprintSecret(adminEncryptionKey)}`
-        },
-        {
-            label: 'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
-            ok: Boolean(quoteSecret.value) && quoteSecret.value !== serviceRoleKey,
-            details: !quoteSecret.value
-                ? 'missing (checked PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET / PAYMENT_CUSTOM_QUOTE_SECRET / PAYMENT_QUOTE_SECRET)'
-                : quoteSecret.value === serviceRoleKey
-                    ? `source=${quoteSecret.name}, but it must not equal SUPABASE_SERVICE_ROLE_KEY`
-                    : `set via ${quoteSecret.name}, independent, fingerprint=${fingerprintSecret(quoteSecret.value)}`
-        },
-        {
-            label: 'ADMIN_STUDIO_ACCESS_SECRET',
-            ok: Boolean(adminStudioAccessSecret)
-                && adminStudioAccessSecret !== serviceRoleKey
-                && adminStudioAccessSecret !== adminEncryptionKey,
-            details: !adminStudioAccessSecret
-                ? 'missing'
-                : adminStudioAccessSecret === serviceRoleKey
-                    ? 'must not equal SUPABASE_SERVICE_ROLE_KEY'
-                    : adminStudioAccessSecret === adminEncryptionKey
-                        ? 'should be independent from ADMIN_CONFIG_ENCRYPTION_KEY'
-                        : `set, independent, fingerprint=${fingerprintSecret(adminStudioAccessSecret)}`
-        },
-        {
-            label: 'production-like runtime',
-            ok: runtime.productionLike || options.allowNonProduction,
-            details: runtime.productionLike
-                ? `enabled via ${runtime.source}`
-                : options.allowNonProduction
-                    ? 'not production-like, but allowed by --allow-non-production'
-                    : 'missing production marker (set DEPLOYMENT_TIER=production if VERCEL_ENV / RAILWAY_ENVIRONMENT_NAME are unavailable)'
-        }
-    ];
+    const checks = buildLocalEnvironmentChecks({
+        options,
+        env: process.env
+    });
 
     if (options.validateSupabase || options.validatePaymentSchema) {
         checks.push(...await runSupabaseValidation({
@@ -589,6 +605,9 @@ async function main() {
     console.log('Compare ADMIN_CONFIG_ENCRYPTION_KEY, PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET, and ADMIN_STUDIO_ACCESS_SECRET fingerprints across Vercel and Railway; they should match.');
     if (options.envFile) {
         console.log(`Loaded env file: ${options.envFile}`);
+    }
+    if (options.runtimeOnly) {
+        console.log('Runtime-only mode: skipping local secret/env completeness checks.');
     }
     console.log('');
 
@@ -644,6 +663,7 @@ if (require.main === module) {
 
 module.exports = {
     buildAuthCheckProbeResult,
+    buildLocalEnvironmentChecks,
     buildPlatformEnvChecklist,
     buildRuntimeConfigCheckResult,
     fetchJson,

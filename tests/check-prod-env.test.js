@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
     buildAuthCheckProbeResult,
+    buildLocalEnvironmentChecks,
     buildPlatformEnvChecklist,
     buildRuntimeConfigCheckResult,
     parseArgs,
@@ -28,6 +29,7 @@ test('check-prod-env parseArgs collects app runtime flags', () => {
         '--validate-supabase',
         '--validate-payment-schema',
         '--check-app-runtime',
+        '--runtime-only',
         '--base-url', 'https://www.zaoyoe.com',
         '--timeout-ms', '4321',
         '--allow-non-production'
@@ -37,9 +39,33 @@ test('check-prod-env parseArgs collects app runtime flags', () => {
     assert.equal(options.validateSupabase, true);
     assert.equal(options.validatePaymentSchema, true);
     assert.equal(options.checkAppRuntime, true);
+    assert.equal(options.runtimeOnly, true);
     assert.equal(options.baseUrl, 'https://www.zaoyoe.com');
     assert.equal(options.timeoutMs, 4321);
     assert.equal(options.allowNonProduction, true);
+});
+
+test('buildLocalEnvironmentChecks skips local secret failures in runtime-only mode', () => {
+    assert.deepEqual(
+        buildLocalEnvironmentChecks({
+            options: {
+                runtimeOnly: true
+            },
+            env: {}
+        }),
+        []
+    );
+
+    const checks = buildLocalEnvironmentChecks({
+        options: {
+            runtimeOnly: false,
+            allowNonProduction: true
+        },
+        env: {}
+    });
+    assert.equal(checks.length, 5);
+    assert.equal(checks[0].label, 'SUPABASE_SERVICE_ROLE_KEY');
+    assert.equal(checks[0].ok, false);
 });
 
 test('resolveAppBaseUrl prefers explicit CLI value and normalizes trailing slashes', () => {

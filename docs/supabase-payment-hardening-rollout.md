@@ -120,6 +120,8 @@ Recommended automated staging smoke test:
 6. If you intentionally need to run against a production-like host, add `--allow-production-like` and confirm the mock-payment override window is still active before proceeding.
 7. After smoke passes, run the post-rollout verifier:
    - `npm run verify:payment-rollout -- --env-file server/.env.production --fail-on-finding`
+8. If you only need to audit the public deployment from a machine without private Vercel / Railway env files, use runtime-only mode:
+   - `npm run check:prod-env -- --base-url https://www.zaoyoe.com --check-app-runtime --runtime-only`
 
 The automated smoke runner validates:
 
