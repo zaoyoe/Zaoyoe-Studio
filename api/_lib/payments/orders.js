@@ -21,6 +21,7 @@ const ACTIVE_CHECKOUT_SESSION_STATUSES = ['created', 'redirect_ready', 'failed']
 const TERMINAL_CHECKOUT_SESSION_STATUSES = ['completed', 'cancelled', 'expired'];
 const PENDING_PROVIDER_ORDER_PREFIX = 'PENDING';
 const CUSTOM_RECHARGE_QUOTE_PREFIX = 'crq';
+const PAYMENT_INTENT_CLAIM_PREFIX = 'pic';
 const DEFAULT_CUSTOM_RECHARGE_MIN_POINTS = 1;
 const DEFAULT_CUSTOM_RECHARGE_MAX_POINTS = 50000;
 const DEFAULT_CUSTOM_RECHARGE_STEP = 1;
@@ -319,6 +320,227 @@ function verifyCustomRechargeQuoteToken(token, {
         paidAmount,
         pricingMode: String(payload.pricing_mode || 'fixed_rate').trim().toLowerCase() || 'fixed_rate',
         pointsPerCny: Number(payload.points_per_cny) || DEFAULT_CUSTOM_RECHARGE_POINTS_PER_CNY,
+        issuedAt: String(payload.issued_at || '').trim() || null,
+        expiresAt: String(payload.expires_at || '').trim() || null
+    };
+}
+
+function getPaymentIntentClaimSecret(env = process.env) {
+    return getCustomRechargeQuoteSecret(env);
+}
+
+function signPaymentIntentClaimPayload(payload, env = process.env) {
+    const secret = getPaymentIntentClaimSecret(env);
+    if (!secret) {
+        throw new Error('支付认领签名密钥未配置');
+    }
+
+    const body = encodeBase64Url(JSON.stringify(payload || {}));
+    const signature = crypto
+        .createHmac('sha256', secret)
+        .update(body)
+        .digest('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+
+    return `${PAYMENT_INTENT_CLAIM_PREFIX}.${body}.${signature}`;
+}
+
+function hashPaymentIntentClaimToken(token = '') {
+    return crypto
+        .createHash('sha256')
+        .update(String(token || ''))
+        .digest('hex');
+}
+
+function buildPaymentIntentClaimId(checkoutSessionId = '') {
+    const sessionSuffix = String(checkoutSessionId || '')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(-8)
+        .toUpperCase();
+
+    return `PIC_${sessionSuffix || 'SESSION'}_${Date.now()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+}
+
+function issuePaymentIntentClaimToken({
+    userId,
+    site,
+    providerKey,
+    checkoutSessionId,
+    packageId = null,
+    packageName = '',
+    expectedAmount,
+    pointsAmount,
+    chargeType = '',
+    expiresAt = null,
+    env = process.env
+}) {
+    const normalizedUserId = String(userId || '').trim();
+    if (!normalizedUserId) {
+        throw new Error('支付认领缺少 user_id');
+    }
+
+    const normalizedCheckoutSessionId = String(checkoutSessionId || '').trim();
+    if (!normalizedCheckoutSessionId) {
+        throw new Error('支付认领缺少 checkout_session_id');
+    }
+
+    const normalizedSite = requireSupportedSite(site);
+    const normalizedProvider = String(providerKey || 'afdian').trim().toLowerCase() || 'afdian';
+    const normalizedExpectedAmount = normalizeCurrency(expectedAmount, null);
+    const normalizedPointsAmount = normalizeInteger(pointsAmount, 0);
+    const normalizedChargeType = sanitizeText(
+        chargeType || (packageId ? 'package' : 'custom'),
+        packageId ? 'package' : 'custom',
+        32
+    ).toLowerCase();
+
+    if (!Number.isFinite(normalizedExpectedAmount) || normalizedExpectedAmount <= 0) {
+        throw new Error('支付认领缺少有效金额');
+    }
+    if (!Number.isFinite(normalizedPointsAmount) || normalizedPointsAmount <= 0) {
+        throw new Error('支付认领缺少有效积分');
+    }
+
+    const issuedAt = new Date();
+    const requestedExpiry = Date.parse(String(expiresAt || ''));
+    const resolvedExpiry = Number.isFinite(requestedExpiry) && requestedExpiry > issuedAt.getTime()
+        ? new Date(requestedExpiry)
+        : new Date(issuedAt.getTime() + CHECKOUT_SESSION_EXPIRY_HOURS * 60 * 60 * 1000);
+    const payload = {
+        version: 1,
+        type: 'payment_intent_claim',
+        intent_id: buildPaymentIntentClaimId(normalizedCheckoutSessionId),
+        provider: normalizedProvider,
+        user_id: normalizedUserId,
+        site: normalizedSite,
+        checkout_session_id: normalizedCheckoutSessionId,
+        package_id: String(packageId || '').trim() || null,
+        package_name: sanitizeText(packageName, packageId ? '充值套餐' : '自定义充值'),
+        expected_amount: normalizedExpectedAmount,
+        points_amount: normalizedPointsAmount,
+        charge_type: normalizedChargeType || (packageId ? 'package' : 'custom'),
+        issued_at: issuedAt.toISOString(),
+        expires_at: resolvedExpiry.toISOString()
+    };
+    const token = signPaymentIntentClaimPayload(payload, env);
+
+    return {
+        intentId: payload.intent_id,
+        token,
+        tokenHash: hashPaymentIntentClaimToken(token),
+        userId: payload.user_id,
+        site: payload.site,
+        provider: payload.provider,
+        checkoutSessionId: payload.checkout_session_id,
+        packageId: payload.package_id,
+        packageName: payload.package_name,
+        expectedAmount: payload.expected_amount,
+        pointsAmount: payload.points_amount,
+        chargeType: payload.charge_type,
+        issuedAt: payload.issued_at,
+        expiresAt: payload.expires_at
+    };
+}
+
+function verifyPaymentIntentClaimToken(token, {
+    env = process.env,
+    userId = '',
+    site = '',
+    providerKey = ''
+} = {}) {
+    const normalizedToken = String(token || '').trim();
+    if (!normalizedToken) return null;
+
+    const [prefix, body, signature] = normalizedToken.split('.');
+    if (prefix !== PAYMENT_INTENT_CLAIM_PREFIX || !body || !signature) {
+        return null;
+    }
+
+    let secret = '';
+    try {
+        secret = getPaymentIntentClaimSecret(env);
+    } catch (_) {
+        return null;
+    }
+    if (!secret) {
+        return null;
+    }
+
+    const expectedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(body)
+        .digest('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+
+    if (signature !== expectedSignature) {
+        return null;
+    }
+
+    let payload;
+    try {
+        payload = JSON.parse(decodeBase64Url(body));
+    } catch (_) {
+        return null;
+    }
+
+    if (!payload || payload.type !== 'payment_intent_claim') {
+        return null;
+    }
+
+    const expiresAt = Date.parse(String(payload.expires_at || ''));
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        return null;
+    }
+
+    const normalizedUserId = String(userId || '').trim();
+    if (normalizedUserId && String(payload.user_id || '').trim() !== normalizedUserId) {
+        return null;
+    }
+
+    let normalizedSite = '';
+    try {
+        normalizedSite = requireSupportedSite(site, { allowEmpty: true });
+    } catch (_) {
+        return null;
+    }
+
+    const payloadSite = normalizeSiteValue(payload.site, { fallback: '' });
+    if (!payloadSite) {
+        return null;
+    }
+    if (normalizedSite && payloadSite !== normalizedSite) {
+        return null;
+    }
+
+    const normalizedProvider = String(providerKey || '').trim().toLowerCase();
+    if (normalizedProvider && String(payload.provider || '').trim().toLowerCase() !== normalizedProvider) {
+        return null;
+    }
+
+    const checkoutSessionId = String(payload.checkout_session_id || '').trim();
+    const pointsAmount = normalizeInteger(payload.points_amount, 0);
+    const expectedAmount = normalizeCurrency(payload.expected_amount, null);
+    if (!checkoutSessionId || pointsAmount <= 0 || expectedAmount === null || expectedAmount <= 0) {
+        return null;
+    }
+
+    return {
+        intentId: String(payload.intent_id || '').trim(),
+        token: normalizedToken,
+        tokenHash: hashPaymentIntentClaimToken(normalizedToken),
+        userId: String(payload.user_id || '').trim(),
+        site: payloadSite,
+        provider: String(payload.provider || '').trim().toLowerCase() || 'afdian',
+        checkoutSessionId,
+        packageId: String(payload.package_id || '').trim() || null,
+        packageName: String(payload.package_name || '').trim() || null,
+        expectedAmount,
+        pointsAmount,
+        chargeType: String(payload.charge_type || '').trim().toLowerCase() || 'package',
         issuedAt: String(payload.issued_at || '').trim() || null,
         expiresAt: String(payload.expires_at || '').trim() || null
     };
@@ -1983,6 +2205,27 @@ async function createPaymentRequest({
             }
         }
 
+        let paymentClaim = null;
+        if (providerKey === 'afdian') {
+            try {
+                paymentClaim = issuePaymentIntentClaimToken({
+                    userId: user.id,
+                    site,
+                    providerKey,
+                    checkoutSessionId: updatedSession?.id || checkoutSession.id,
+                    packageId: packageId || null,
+                    packageName,
+                    expectedAmount: paidAmount,
+                    pointsAmount: grantedPoints,
+                    chargeType: isCustomRecharge ? 'custom' : 'package',
+                    expiresAt: updatedSession?.expires_at || checkoutSession.expires_at,
+                    env
+                });
+            } catch (claimError) {
+                console.warn('[Payments] Failed to issue payment intent claim token:', claimError.message);
+            }
+        }
+
         return {
             success: true,
             provider: providerKey,
@@ -2009,6 +2252,22 @@ async function createPaymentRequest({
                     pricing_mode: customQuote.pricingMode,
                     points_per_cny: customQuote.pointsPerCny
                 }
+                : null,
+            payment_claim: paymentClaim
+                ? {
+                    intent_id: paymentClaim.intentId,
+                    token: paymentClaim.token,
+                    provider: paymentClaim.provider,
+                    site: paymentClaim.site,
+                    checkout_session_id: paymentClaim.checkoutSessionId,
+                    package_id: paymentClaim.packageId,
+                    package_name: paymentClaim.packageName,
+                    expected_amount: paymentClaim.expectedAmount,
+                    points_amount: paymentClaim.pointsAmount,
+                    charge_type: paymentClaim.chargeType,
+                    issued_at: paymentClaim.issuedAt,
+                    expires_at: paymentClaim.expiresAt
+                }
                 : null
         };
     } catch (error) {
@@ -2027,9 +2286,11 @@ async function createPaymentRequest({
 
 module.exports = {
     __testUtils: {
+        buildPaymentIntentClaimId,
         createPendingPaymentOrderForCheckoutSession,
         getMockPaymentRuntimeState,
         getCustomRechargeQuoteSecret,
+        getPaymentIntentClaimSecret,
         isSupportedSite,
         getRemoteMockPaymentExpiryOverride,
         ensureMockPaymentAvailable,
@@ -2042,11 +2303,13 @@ module.exports = {
     findCheckoutSessionCandidates,
     getMockPaymentRuntimeState,
     issueCustomRechargeQuote,
+    issuePaymentIntentClaimToken,
     loadCheckoutSessionForUser,
     loadPointsPackage,
     resolvePendingPaymentOrderFromCheckoutContext,
     reconcileCheckoutSessionForPaymentOrder,
     sanitizeSite,
     updateCheckoutSession,
-    verifyCustomRechargeQuoteToken
+    verifyCustomRechargeQuoteToken,
+    verifyPaymentIntentClaimToken
 };
