@@ -8724,13 +8724,13 @@ Example output format:
 
         // Handle if called via button click (legacy/subtab)
         if (typeof categoryOrBtn !== 'string' && categoryOrBtn.tagName) {
-            // It's an element, but wait, onclick="filter('gemini', this)" means arg1 is string, arg2 is el.
-            // If onclick="filter(this.value)" from select, arg1 is string, arg2 undefined.
+            // Legacy callers could pass the clicked element as the first argument.
+            // Value-only callers could pass only the selected category string.
         }
 
         // Correct logic:
         // By default, categoryOrBtn is the Category String.
-        // btnEl is optional (passed from button onclick).
+        // btnEl is optional when the caller also passes the originating button.
 
         this.currentImportCategory = category;
 

@@ -400,12 +400,17 @@ function displayMessages(messages) {
                 ${msg.image_url ? `<img src="${msg.image_url}" class="message-image">` : ''}
                 <div class="message-footer">
                     <span class="message-time">${formatTime(msg.created_at)}</span>
-                    <button class="like-btn ${isLiked('message', msg.id) ? 'active' : ''}" onclick="toggleLike('message', '${msg.id}')">
+                    <button class="like-btn ${isLiked('message', msg.id) ? 'active' : ''}" data-guestbook-action="toggle-like" data-guestbook-id="${msg.id}">
                         ❤️ ${msg.like_count || 0}
                     </button>
                 </div>
             </div>
         `).join('');
+        container.querySelectorAll('[data-guestbook-action="toggle-like"]').forEach((button) => {
+            button.addEventListener('click', () => {
+                toggleLike('message', button.dataset.guestbookId);
+            });
+        });
         container.style.opacity = '1';
     }
 }

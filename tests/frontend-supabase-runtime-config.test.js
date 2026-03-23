@@ -1651,3 +1651,52 @@ test('payments runtime controls, site filter, and admin chat menu route through 
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
 });
+
+test('final frontend runtime remnants route through delegated or bound listeners instead of inline attributes', () => {
+    const notificationSource = readRepoFile('notification-client.js');
+    const announcementSource = readRepoFile('announcement-loader.js');
+    const guestbookSource = readRepoFile('supabase-guestbook-functions.js');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const shopSource = readRepoFile('js/admin-shop.js');
+
+    const removedInlineMarkers = [
+        'onclick="clearAllNotifications(event)"',
+        `onclick="this.parentElement.remove(); localStorage.setItem('`,
+        `onclick="toggleLike('message', '`,
+        'onclick="removeFile(',
+        `onclick="filter('gemini', this)"`,
+        `onclick="filter(this.value)"`
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(
+            notificationSource.includes(marker)
+                || announcementSource.includes(marker)
+                || guestbookSource.includes(marker)
+                || adminStudioScript.includes(marker)
+                || shopSource.includes(marker),
+            false,
+            `final runtime remnants should not contain ${marker}`
+        );
+    }
+
+    const delegatedMarkers = [
+        'data-notif-action="clear-all"',
+        'function handleDrawerClick(e)',
+        'data-announcement-action="acknowledge"',
+        "querySelector('[data-announcement-action=\"acknowledge\"]')?.addEventListener('click'",
+        'data-guestbook-action="toggle-like"',
+        `querySelectorAll('[data-guestbook-action="toggle-like"]')`,
+        'data-admin-action="ai-remove-preview"',
+        "case 'ai-remove-preview':"
+    ];
+
+    assert.equal(notificationSource.includes(delegatedMarkers[0]), true, 'notification-client.js should render a delegated clear-all control');
+    assert.equal(notificationSource.includes(delegatedMarkers[1]), true, 'notification-client.js should handle delegated drawer actions');
+    assert.equal(announcementSource.includes(delegatedMarkers[2]), true, 'announcement-loader.js should render a bound acknowledge action');
+    assert.equal(announcementSource.includes(delegatedMarkers[3]), true, 'announcement-loader.js should bind the acknowledge button');
+    assert.equal(guestbookSource.includes(delegatedMarkers[4]), true, 'supabase-guestbook-functions.js should render delegated like actions');
+    assert.equal(guestbookSource.includes(delegatedMarkers[5]), true, 'supabase-guestbook-functions.js should bind fallback like actions');
+    assert.equal(adminStudioScript.includes(delegatedMarkers[6]), true, 'admin-studio.js should render delegated preview removal controls');
+    assert.equal(adminStudioScript.includes(delegatedMarkers[7]), true, 'admin-studio.js should handle delegated preview removal controls');
+});
