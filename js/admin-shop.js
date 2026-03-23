@@ -623,6 +623,9 @@ Example output format:
                 case 'product-add-tiered-pricing':
                     this.addTieredPricingRow();
                     break;
+                case 'product-remove-tiered-pricing-row':
+                    actionEl.closest('.tiered-pricing-row')?.remove();
+                    break;
                 case 'product-toggle-delivery-type-dropdown':
                     this.toggleDeliveryTypeDropdown();
                     break;
@@ -661,6 +664,12 @@ Example output format:
                 case 'orders-export':
                     this.exportOrders();
                     break;
+                case 'delivery-copy-restore-link':
+                    this.copyDeliveryRestoreLink();
+                    break;
+                case 'delivery-clear-all-filter-breadcrumbs':
+                    this.clearAllDeliveryFilterBreadcrumbs();
+                    break;
                 case 'delivery-apply-task-query':
                     this.applyDeliveryTaskQuery();
                     break;
@@ -672,6 +681,106 @@ Example output format:
                 }
                 case 'delivery-save-strategy':
                     this.saveDeliveryStrategy();
+                    break;
+                case 'delivery-task-action':
+                    this.performDeliveryTaskAction(
+                        actionEl.dataset.deliveryTaskId,
+                        actionEl.dataset.deliveryTaskCommand
+                    );
+                    break;
+                case 'delivery-jump-audit':
+                    this.jumpToDeliveryConflictAuditForTask(
+                        actionEl.dataset.deliveryTaskId,
+                        actionEl.dataset.deliveryOrderId
+                    );
+                    break;
+                case 'delivery-conflict-audit-select':
+                    this.toggleDeliveryConflictAuditSelection(
+                        actionEl.dataset.deliveryAuditId,
+                        actionEl.dataset.deliveryAuditCreatedAt,
+                        actionEl.dataset.deliveryTaskId,
+                        actionEl.dataset.deliveryOrderId,
+                        actionEl.dataset.deliveryTargetKey,
+                        actionEl.dataset.deliveryChannelKey,
+                        actionEl.dataset.deliveryReasonKey,
+                        actionEl.dataset.deliveryScope
+                    );
+                    break;
+                case 'delivery-conflict-audit-reason-quick-filter':
+                    this.applyDeliveryConflictAuditReasonQuickFilter(actionEl.dataset.deliveryReasonKey);
+                    break;
+                case 'delivery-conflict-audit-target-quick-filter':
+                    this.applyDeliveryConflictAuditTargetQuickFilter(actionEl.dataset.deliveryTargetKey);
+                    break;
+                case 'delivery-conflict-audit-channel-quick-filter':
+                    this.applyDeliveryConflictAuditChannelQuickFilter(actionEl.dataset.deliveryChannelKey);
+                    break;
+                case 'delivery-toggle-conflict-dead-letter-focus':
+                    this.toggleDeliveryConflictDeadLetterFocus();
+                    break;
+                case 'delivery-hotspot-filter':
+                    this.applyDeliveryHotspotFilter(
+                        actionEl.dataset.deliveryHotspotType,
+                        actionEl.dataset.deliveryHotspotKey
+                    );
+                    break;
+                case 'delivery-hotspot-metric-drilldown':
+                    this.applyDeliveryHotspotMetricDrilldown(
+                        actionEl.dataset.deliveryHotspotType,
+                        actionEl.dataset.deliveryHotspotKey,
+                        actionEl.dataset.deliveryHotspotMetric
+                    );
+                    break;
+                case 'delivery-hotspot-reason-drilldown':
+                    this.applyDeliveryHotspotReasonDrilldown(
+                        actionEl.dataset.deliveryHotspotType,
+                        actionEl.dataset.deliveryHotspotKey,
+                        actionEl.dataset.deliveryReasonKey
+                    );
+                    break;
+                case 'delivery-conflict-bucket-toggle':
+                    this.toggleDeliveryConflictBucketFilter(
+                        actionEl.dataset.deliveryBucketStart,
+                        actionEl.dataset.deliveryBucketEnd,
+                        actionEl.dataset.deliveryBucketLabel
+                    );
+                    break;
+                case 'delivery-conflict-bucket-dead-letter-focus':
+                    this.toggleDeliveryConflictDeadLetterBucketFocus(
+                        actionEl.dataset.deliveryBucketStart,
+                        actionEl.dataset.deliveryBucketEnd,
+                        actionEl.dataset.deliveryBucketLabel
+                    );
+                    break;
+                case 'delivery-clear-task-query':
+                    this.clearDeliveryTaskQuery();
+                    break;
+                case 'delivery-clear-conflict-bucket':
+                    this.clearDeliveryConflictBucketFilter();
+                    break;
+                case 'delivery-clear-conflict-audit-selection':
+                    this.clearDeliveryConflictAuditSelection();
+                    break;
+                case 'delivery-clear-conflict-dead-letter-focus':
+                    this.clearDeliveryConflictDeadLetterFocus();
+                    break;
+                case 'delivery-clear-task-status-filter':
+                    this.clearDeliveryTaskStatusFilter();
+                    break;
+                case 'delivery-clear-dead-letter-reason-filter':
+                    this.clearDeliveryDeadLetterReasonFilter();
+                    break;
+                case 'delivery-clear-lock-state-filter':
+                    this.clearDeliveryLockStateFilter();
+                    break;
+                case 'delivery-clear-conflict-audit-reason-filter':
+                    this.clearDeliveryConflictAuditReasonFilter();
+                    break;
+                case 'delivery-clear-conflict-audit-target-filter':
+                    this.clearDeliveryConflictAuditTargetFilter();
+                    break;
+                case 'delivery-clear-conflict-audit-channel-filter':
+                    this.clearDeliveryConflictAuditChannelFilter();
                     break;
                 case 'delivery-apply-conflict-audit-filters':
                     this.applyDeliveryConflictAuditFilters();
@@ -3951,7 +4060,7 @@ Example output format:
                 <input type="number" class="modern-input tp-price" placeholder="8" value="${price}" style="padding: 8px; flex: 1; min-width: 50px;">
                 <span style="color: rgba(255,255,255,0.5); font-size: 13px;">积分</span>
             </div>
-            <button type="button" onclick="this.parentElement.remove()" style="background: rgba(239,68,68,0.1); border: none; color: #ef4444; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.2)'" onmouseout="this.style.background='rgba(239,68,68,0.1)'">
+            <button type="button" data-shop-action="product-remove-tiered-pricing-row" style="background: rgba(239,68,68,0.1); border: none; color: #ef4444; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; transition: all 0.2s;" title="删除阶梯价规则">
                 <i class="fas fa-trash-alt"></i>
             </button>
         `;
@@ -4014,17 +4123,29 @@ Example output format:
         return `<span class="shop-delivery-meta-badge" style="color:${colors.text};background:${colors.bg};border-color:${colors.border};">${this.escapeHtml(label)}</span>`;
     },
 
-    renderDeliveryFilterBreadcrumb: function ({ label, tone = 'neutral', title = '', preview = '', onRemove = '' } = {}) {
+    buildDeliveryDataAttributes: function (attributes = {}) {
+        return Object.entries(attributes)
+            .filter(([, value]) => value !== undefined && value !== null && value !== false && value !== '')
+            .map(([key, value]) => ` data-${key}="${this.escapeForAttr(String(value))}"`)
+            .join('');
+    },
+
+    renderDeliveryFilterBreadcrumb: function ({ label, tone = 'neutral', title = '', preview = '', removeAction = '', removeAttrs = {} } = {}) {
         const colors = this.getDeliveryToneStyles(tone);
         const titleAttr = title ? ` title="${this.escapeHtml(title)}"` : '';
         const previewAttr = preview ? ` data-preview="${this.escapeHtml(preview)}"` : '';
-        const onClickAttr = onRemove ? ` onclick="${onRemove}"` : '';
+        const actionAttrs = removeAction
+            ? this.buildDeliveryDataAttributes({
+                'shop-action': removeAction,
+                ...removeAttrs
+            })
+            : '';
         return `
             <button
                 type="button"
                 class="shop-delivery-filter-crumb"
                 style="color:${colors.text};background:${colors.bg};border-color:${colors.border};"
-                ${titleAttr}${previewAttr}${onClickAttr}
+                ${titleAttr}${previewAttr}${actionAttrs}
             >
                 <span>${this.escapeHtml(label)}</span>
                 <i class="fas fa-times"></i>
@@ -4032,30 +4153,40 @@ Example output format:
         `;
     },
 
-    renderDeliveryQuickFilterChip: function ({ label, tone = 'neutral', active = false, title = '', onClick = '' } = {}) {
+    renderDeliveryQuickFilterChip: function ({ label, tone = 'neutral', active = false, title = '', action = '', actionAttrs = {} } = {}) {
         const colors = this.getDeliveryToneStyles(tone);
         const textColor = active ? colors.text : 'rgba(226, 232, 240, 0.82)';
         const background = active ? colors.bg : 'rgba(255, 255, 255, 0.05)';
         const borderColor = active ? colors.border : 'rgba(255, 255, 255, 0.08)';
         const titleAttr = title ? ` title="${this.escapeHtml(title)}"` : '';
-        const onclickAttr = onClick ? ` onclick="${onClick}"` : '';
+        const delegatedAttrs = action
+            ? this.buildDeliveryDataAttributes({
+                'shop-action': action,
+                ...actionAttrs
+            })
+            : '';
         const activeClass = active ? ' shop-delivery-meta-chip--active' : '';
-        return `<button type="button" class="shop-delivery-meta-chip shop-delivery-meta-chip--action${activeClass}"${titleAttr}${onclickAttr} style="color:${textColor};background:${background};border-color:${borderColor};">${this.escapeHtml(label)}</button>`;
+        return `<button type="button" class="shop-delivery-meta-chip shop-delivery-meta-chip--action${activeClass}"${titleAttr}${delegatedAttrs} style="color:${textColor};background:${background};border-color:${borderColor};">${this.escapeHtml(label)}</button>`;
     },
 
-    renderDeliveryTrendLegendButton: function ({ label, tone = 'neutral', active = false, title = '', onClick = '' } = {}) {
+    renderDeliveryTrendLegendButton: function ({ label, tone = 'neutral', active = false, title = '', action = '', actionAttrs = {} } = {}) {
         const colors = this.getDeliveryToneStyles(tone);
         const textColor = active ? colors.text : 'rgba(226, 232, 240, 0.72)';
         const background = active ? colors.bg : 'rgba(255, 255, 255, 0.04)';
         const borderColor = active ? colors.border : 'rgba(255, 255, 255, 0.08)';
         const titleAttr = title ? ` title="${this.escapeHtml(title)}"` : '';
-        const onclickAttr = onClick ? ` onclick="${onClick}"` : '';
+        const delegatedAttrs = action
+            ? this.buildDeliveryDataAttributes({
+                'shop-action': action,
+                ...actionAttrs
+            })
+            : '';
         const activeClass = active ? ' shop-delivery-trend-legend-item--active' : '';
         return `
             <button
                 type="button"
                 class="shop-delivery-trend-legend-item${activeClass}"
-               ${titleAttr}${onclickAttr}
+               ${titleAttr}${delegatedAttrs}
                 style="color:${textColor};background:${background};border-color:${borderColor};"
             >
                 <i class="fas fa-circle" style="color:${colors.text};"></i>
@@ -4074,7 +4205,10 @@ Example output format:
             tone,
             active,
             title: active ? '再次点击可清除此原因过滤' : `点击按${label}反筛冲突审计`,
-            onClick: `ShopAdmin.applyDeliveryConflictAuditReasonQuickFilter('${encodeURIComponent(String(reasonKey || 'all'))}')`
+            action: 'delivery-conflict-audit-reason-quick-filter',
+            actionAttrs: {
+                'delivery-reason-key': encodeURIComponent(String(reasonKey || 'all'))
+            }
         });
     },
 
@@ -4216,7 +4350,7 @@ Example output format:
                 label: `${sourceMeta.label}: ${this.truncateText(query, 44)}`,
                 tone: sourceMeta.tone,
                 preview: this.buildDeliveryFilterPreviewText(['主任务', '死信', '锁冲突', '全局占位']),
-                onRemove: 'ShopAdmin.clearDeliveryTaskQuery()',
+                removeAction: 'delivery-clear-task-query',
                 title: '移除关键字 / 热点筛选'
             });
         }
@@ -4227,7 +4361,7 @@ Example output format:
                 label: `冲突时段: ${this.getDeliveryConflictBucketLabel(bucket)}`,
                 tone: 'warn',
                 preview: this.buildDeliveryFilterPreviewText(['主任务', '死信', '锁冲突', '全局占位', '冲突审计']),
-                onRemove: 'ShopAdmin.clearDeliveryConflictBucketFilter()',
+                removeAction: 'delivery-clear-conflict-bucket',
                 title: '移除冲突时段联动'
             });
         }
@@ -4238,7 +4372,7 @@ Example output format:
                 label: `任务锁定: ${this.truncateText(auditSelection.taskId || auditSelection.orderId || auditSelection.auditId, 26)}`,
                 tone: 'processing',
                 preview: this.buildDeliveryFilterPreviewText(['主任务', '死信', '锁冲突', '全局占位', '冲突审计']),
-                onRemove: 'ShopAdmin.clearDeliveryConflictAuditSelection()',
+                removeAction: 'delivery-clear-conflict-audit-selection',
                 title: '移除审计记录锁定'
             });
         }
@@ -4249,7 +4383,7 @@ Example output format:
                 label: '冲突死信联动',
                 tone: 'danger',
                 preview: this.buildDeliveryFilterPreviewText(['主任务', '死信']),
-                onRemove: 'ShopAdmin.clearDeliveryConflictDeadLetterFocus()',
+                removeAction: 'delivery-clear-conflict-dead-letter-focus',
                 title: '移除冲突死信联动'
             });
         } else {
@@ -4260,7 +4394,7 @@ Example output format:
                     label: `任务状态: ${taskStatusMeta.label}`,
                     tone: taskStatusMeta.tone,
                     preview: this.buildDeliveryFilterPreviewText(['主任务']),
-                    onRemove: 'ShopAdmin.clearDeliveryTaskStatusFilter()',
+                    removeAction: 'delivery-clear-task-status-filter',
                     title: '移除任务状态筛选'
                 });
             }
@@ -4271,7 +4405,7 @@ Example output format:
                     label: `死信原因: ${deadLetterMeta.label}`,
                     tone: deadLetterMeta.tone,
                     preview: this.buildDeliveryFilterPreviewText(['死信']),
-                    onRemove: 'ShopAdmin.clearDeliveryDeadLetterReasonFilter()',
+                    removeAction: 'delivery-clear-dead-letter-reason-filter',
                     title: '移除死信原因筛选'
                 });
             }
@@ -4284,7 +4418,7 @@ Example output format:
                 label: `锁视角: ${lockStateMeta.label}`,
                 tone: lockStateMeta.tone,
                 preview: this.buildDeliveryFilterPreviewText(['锁冲突']),
-                onRemove: 'ShopAdmin.clearDeliveryLockStateFilter()',
+                removeAction: 'delivery-clear-lock-state-filter',
                 title: '移除锁状态筛选'
             });
         }
@@ -4295,7 +4429,7 @@ Example output format:
                 label: `审计原因: ${this.getDeliveryConflictAuditReasonLabel(auditReason)}`,
                 tone: this.getDeliveryConflictReasonTone(auditReason),
                 preview: this.buildDeliveryFilterPreviewText(['冲突审计']),
-                onRemove: 'ShopAdmin.clearDeliveryConflictAuditReasonFilter()',
+                removeAction: 'delivery-clear-conflict-audit-reason-filter',
                 title: '移除冲突审计原因筛选'
             });
         }
@@ -4306,7 +4440,7 @@ Example output format:
                 label: `审计目标: ${this.truncateText(auditTarget, 36)}`,
                 tone: 'processing',
                 preview: this.buildDeliveryFilterPreviewText(['冲突审计']),
-                onRemove: 'ShopAdmin.clearDeliveryConflictAuditTargetFilter()',
+                removeAction: 'delivery-clear-conflict-audit-target-filter',
                 title: '移除冲突审计目标筛选'
             });
         }
@@ -4317,7 +4451,7 @@ Example output format:
                 label: `审计通道: ${this.truncateText(auditChannel, 30)}`,
                 tone: 'danger',
                 preview: this.buildDeliveryFilterPreviewText(['冲突审计']),
-                onRemove: 'ShopAdmin.clearDeliveryConflictAuditChannelFilter()',
+                removeAction: 'delivery-clear-conflict-audit-channel-filter',
                 title: '移除冲突审计通道筛选'
             });
         }
@@ -4542,7 +4676,9 @@ Example output format:
             <button
                 type="button"
                 class="shop-delivery-action-btn${isActive ? ' shop-delivery-action-btn--linked' : ''}"
-                onclick="ShopAdmin.jumpToDeliveryConflictAuditForTask('${taskId}', '${orderId}')"
+                data-shop-action="delivery-jump-audit"
+                data-delivery-task-id="${this.escapeForAttr(taskId)}"
+                data-delivery-order-id="${this.escapeForAttr(orderId)}"
             >
                 <i class="fas fa-arrow-down"></i> ${isActive ? '回到审计' : '跳冲突审计'}
             </button>
@@ -4600,7 +4736,7 @@ Example output format:
                         <span class="shop-delivery-table-note shop-delivery-table-note--soft">${this.escapeHtml(restoreLinkMeta.note)}</span>
                     </div>
                     <div class="shop-delivery-controls shop-delivery-controls--banner">
-                        <button type="button" class="${restoreLinkButtonClass}" onclick="ShopAdmin.copyDeliveryRestoreLink()">
+                        <button type="button" class="${restoreLinkButtonClass}" data-shop-action="delivery-copy-restore-link">
                             <i class="fas ${this.escapeHtml(restoreLinkMeta.icon)}"></i> ${this.escapeHtml(restoreLinkMeta.label)}
                         </button>
                     </div>
@@ -4620,10 +4756,10 @@ Example output format:
                     <span class="shop-delivery-table-note shop-delivery-table-note--soft">${this.escapeHtml(restoreLinkMeta.note)}</span>
                 </div>
                 <div class="shop-delivery-controls shop-delivery-controls--banner">
-                    <button type="button" class="${restoreLinkButtonClass}" onclick="ShopAdmin.copyDeliveryRestoreLink()">
+                    <button type="button" class="${restoreLinkButtonClass}" data-shop-action="delivery-copy-restore-link">
                         <i class="fas ${this.escapeHtml(restoreLinkMeta.icon)}"></i> ${this.escapeHtml(restoreLinkMeta.label)}
                     </button>
-                    <button type="button" class="shop-delivery-inline-btn" onclick="ShopAdmin.clearAllDeliveryFilterBreadcrumbs()">
+                    <button type="button" class="shop-delivery-inline-btn" data-shop-action="delivery-clear-all-filter-breadcrumbs">
                         <i class="fas fa-broom"></i> 清空全部
                     </button>
                 </div>
@@ -5075,17 +5211,18 @@ Example output format:
             || lockState === 'lock_missing'
             || lockState === 'locked_unknown'
         );
+        const encodedTaskId = this.escapeForAttr(String(task.id || ''));
 
         if (task.status !== 'delivered') {
-            actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'requeue')">重排队</button>`);
-            actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'replay')">人工重放</button>`);
-            actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'mark_delivered')">标已履约</button>`);
+            actions.push(`<button class="shop-delivery-action-btn" data-shop-action="delivery-task-action" data-delivery-task-id="${encodedTaskId}" data-delivery-task-command="requeue">重排队</button>`);
+            actions.push(`<button class="shop-delivery-action-btn" data-shop-action="delivery-task-action" data-delivery-task-id="${encodedTaskId}" data-delivery-task-command="replay">人工重放</button>`);
+            actions.push(`<button class="shop-delivery-action-btn" data-shop-action="delivery-task-action" data-delivery-task-id="${encodedTaskId}" data-delivery-task-command="mark_delivered">标已履约</button>`);
         }
         if (canForceUnlock) {
-            actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'force_unlock')">强制解锁</button>`);
+            actions.push(`<button class="shop-delivery-action-btn" data-shop-action="delivery-task-action" data-delivery-task-id="${encodedTaskId}" data-delivery-task-command="force_unlock">强制解锁</button>`);
         }
         if (allowDeadLetter && task.status !== 'dead_letter') {
-            actions.push(`<button class="shop-delivery-action-btn danger" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'mark_dead_letter')">标死信</button>`);
+            actions.push(`<button class="shop-delivery-action-btn danger" data-shop-action="delivery-task-action" data-delivery-task-id="${encodedTaskId}" data-delivery-task-command="mark_dead_letter">标死信</button>`);
         }
 
         return actions.length
@@ -5252,7 +5389,7 @@ Example output format:
                     tone: total ? 'warn' : 'muted',
                     active: true,
                     title: '点击清除冲突审计二次过滤',
-                    onClick: 'ShopAdmin.clearDeliveryConflictAuditFilters()'
+                    action: 'delivery-clear-conflict-audit-filters'
                 })
                 : this.renderDeliveryMetaBadge(`最近 ${total} 条`, total ? 'warn' : 'muted'),
             this.renderConflictAuditSummaryReasonBadge({
@@ -5305,7 +5442,7 @@ Example output format:
                     title: deadLetterFocusActive
                         ? '再次点击可清除死信联动筛选'
                         : '点击联动到冲突死信任务与死信子表',
-                    onClick: 'ShopAdmin.toggleDeliveryConflictDeadLetterFocus()'
+                    action: 'delivery-toggle-conflict-dead-letter-focus'
                 })
                 : this.renderDeliveryMetaBadge('冲突死信 0', 'muted'),
             this.renderDeliveryMetaBadge(`最新 ${latestConflict}`, summary.latest_conflict_at ? 'neutral' : 'muted'),
@@ -5372,7 +5509,10 @@ Example output format:
                 tone: reasonTone,
                 active: activeReasonFilter === reasonKey,
                 title: activeReasonFilter === reasonKey ? '再次点击可清除此原因过滤' : '点击按该冲突原因二次过滤',
-                onClick: `event.preventDefault(); event.stopPropagation(); ShopAdmin.applyDeliveryConflictAuditReasonQuickFilter('${encodeURIComponent(reasonKey)}')`
+                action: 'delivery-conflict-audit-reason-quick-filter',
+                actionAttrs: {
+                    'delivery-reason-key': encodeURIComponent(reasonKey)
+                }
             });
             const targetFilterChip = targetKey
                 ? this.renderDeliveryQuickFilterChip({
@@ -5380,7 +5520,10 @@ Example output format:
                     tone: 'processing',
                     active: activeTargetFilter === targetKey,
                     title: activeTargetFilter === targetKey ? '再次点击可清除此目标过滤' : '点击按该目标二次过滤',
-                    onClick: `event.preventDefault(); event.stopPropagation(); ShopAdmin.applyDeliveryConflictAuditTargetQuickFilter('${encodedTargetKey}')`
+                    action: 'delivery-conflict-audit-target-quick-filter',
+                    actionAttrs: {
+                        'delivery-target-key': encodedTargetKey
+                    }
                 })
                 : '<span class="shop-delivery-table-note">—</span>';
             const channelFilterChip = channelKey
@@ -5389,7 +5532,10 @@ Example output format:
                     tone: 'danger',
                     active: activeChannelFilter === channelKey,
                     title: activeChannelFilter === channelKey ? '再次点击可清除此通道过滤' : '点击按该通道二次过滤',
-                    onClick: `event.preventDefault(); event.stopPropagation(); ShopAdmin.applyDeliveryConflictAuditChannelQuickFilter('${encodedChannelKey}')`
+                    action: 'delivery-conflict-audit-channel-quick-filter',
+                    actionAttrs: {
+                        'delivery-channel-key': encodedChannelKey
+                    }
                 })
                 : '<span class="shop-delivery-table-note">—</span>';
 
@@ -5397,7 +5543,15 @@ Example output format:
                 <tr
                     class="shop-delivery-audit-row shop-delivery-audit-row--action${isActive ? ' shop-delivery-audit-row--active' : ''}"
                     data-audit-id="${this.escapeHtml(String(record.id || ''))}"
-                    onclick="ShopAdmin.toggleDeliveryConflictAuditSelection('${encodedRecordId}', '${encodedCreatedAt}', '${encodedTaskId}', '${encodedOrderId}', '${encodedTargetKey}', '${encodedChannelKey}', '${encodedReasonKey}', '${encodedScope}')"
+                    data-shop-action="delivery-conflict-audit-select"
+                    data-delivery-audit-id="${this.escapeForAttr(encodedRecordId)}"
+                    data-delivery-audit-created-at="${this.escapeForAttr(encodedCreatedAt)}"
+                    data-delivery-task-id="${this.escapeForAttr(encodedTaskId)}"
+                    data-delivery-order-id="${this.escapeForAttr(encodedOrderId)}"
+                    data-delivery-target-key="${this.escapeForAttr(encodedTargetKey)}"
+                    data-delivery-channel-key="${this.escapeForAttr(encodedChannelKey)}"
+                    data-delivery-reason-key="${this.escapeForAttr(encodedReasonKey)}"
+                    data-delivery-scope="${this.escapeForAttr(encodedScope)}"
                     title="${isActive ? '再次点击可取消任务锁定' : '点击锁定该任务、对应时间桶和热点上下文'}"
                 >
                     <td data-label="时间">
@@ -5664,7 +5818,12 @@ Example output format:
                         tone: Number(item.dead_letter_count || 0) ? 'danger' : 'muted',
                         active: isDeadLetterActive,
                         title: isDeadLetterActive ? '再次点击可退出该热点的冲突死信下钻' : '点击下钻到该热点的冲突死信',
-                        onClick: `ShopAdmin.applyDeliveryHotspotMetricDrilldown('${type}', '${encodedKey}', 'dead_letter')`
+                        action: 'delivery-hotspot-metric-drilldown',
+                        actionAttrs: {
+                            'delivery-hotspot-type': type,
+                            'delivery-hotspot-key': encodedKey,
+                            'delivery-hotspot-metric': 'dead_letter'
+                        }
                     })
                     : this.renderDeliveryMetaBadge('冲突死信 0', 'muted'),
                 (Number(item.manual_count || 0) || isManualActive)
@@ -5673,7 +5832,12 @@ Example output format:
                         tone: Number(item.manual_count || 0) ? 'neutral' : 'muted',
                         active: isManualActive,
                         title: isManualActive ? '再次点击可退出该热点的人工冲突下钻' : '点击下钻到该热点的人工冲突',
-                        onClick: `ShopAdmin.applyDeliveryHotspotMetricDrilldown('${type}', '${encodedKey}', 'manual')`
+                        action: 'delivery-hotspot-metric-drilldown',
+                        actionAttrs: {
+                            'delivery-hotspot-type': type,
+                            'delivery-hotspot-key': encodedKey,
+                            'delivery-hotspot-metric': 'manual'
+                        }
                     })
                     : this.renderDeliveryMetaBadge('人工 0', 'muted'),
                 item.latest_reason_label
@@ -5684,7 +5848,12 @@ Example output format:
                                 tone: this.getDeliveryConflictReasonTone(latestReasonKey),
                                 active: isLatestReasonActive,
                                 title: isLatestReasonActive ? '再次点击可退出该热点的最新原因下钻' : '点击按该热点的最新原因下钻',
-                                onClick: `ShopAdmin.applyDeliveryHotspotReasonDrilldown('${type}', '${encodedKey}', '${encodeURIComponent(latestReasonKey)}')`
+                                action: 'delivery-hotspot-reason-drilldown',
+                                actionAttrs: {
+                                    'delivery-hotspot-type': type,
+                                    'delivery-hotspot-key': encodedKey,
+                                    'delivery-reason-key': encodeURIComponent(latestReasonKey)
+                                }
                             })
                             : this.renderDeliveryMetaBadge(item.latest_reason_label, 'neutral')
                     )
@@ -5698,7 +5867,9 @@ Example output format:
                     <button
                         type="button"
                         class="shop-delivery-hotspot-hitarea"
-                        onclick="ShopAdmin.applyDeliveryHotspotFilter('${type}', '${encodedKey}')"
+                        data-shop-action="delivery-hotspot-filter"
+                        data-delivery-hotspot-type="${this.escapeForAttr(type)}"
+                        data-delivery-hotspot-key="${this.escapeForAttr(encodedKey)}"
                         title="点击按${type === 'channel' ? '通道' : '目标'}联动履约页"
                     >
                         <div class="shop-delivery-hotspot-topline">
@@ -5793,7 +5964,10 @@ Example output format:
                                         <button
                                             type="button"
                                             class="shop-delivery-trend-bar-hitarea shop-delivery-trend-bar--action"
-                                            onclick="ShopAdmin.toggleDeliveryConflictBucketFilter('${encodeURIComponent(bucket.bucket_at || '')}', '${encodeURIComponent(bucket.bucket_end_at || '')}', '${encodeURIComponent(bucket.label || '')}')"
+                                            data-shop-action="delivery-conflict-bucket-toggle"
+                                            data-delivery-bucket-start="${this.escapeForAttr(encodeURIComponent(bucket.bucket_at || ''))}"
+                                            data-delivery-bucket-end="${this.escapeForAttr(encodeURIComponent(bucket.bucket_end_at || ''))}"
+                                            data-delivery-bucket-label="${this.escapeForAttr(encodeURIComponent(bucket.label || ''))}"
                                             title="${this.escapeHtml(titleText)}"
                                         >
                                             <div class="shop-delivery-trend-bar-column">
@@ -5806,7 +5980,10 @@ Example output format:
                                                 type="button"
                                                 class="shop-delivery-trend-bar-dead-hitarea${isDeadActive ? ' shop-delivery-trend-bar-dead-hitarea--active' : ''}"
                                                 style="height:${deadHeight}%"
-                                                onclick="ShopAdmin.toggleDeliveryConflictDeadLetterBucketFocus('${encodeURIComponent(bucket.bucket_at || '')}', '${encodeURIComponent(bucket.bucket_end_at || '')}', '${encodeURIComponent(bucket.label || '')}')"
+                                                data-shop-action="delivery-conflict-bucket-dead-letter-focus"
+                                                data-delivery-bucket-start="${this.escapeForAttr(encodeURIComponent(bucket.bucket_at || ''))}"
+                                                data-delivery-bucket-end="${this.escapeForAttr(encodeURIComponent(bucket.bucket_end_at || ''))}"
+                                                data-delivery-bucket-label="${this.escapeForAttr(encodeURIComponent(bucket.label || ''))}"
                                                 title="${this.escapeHtml(`${bucket.label || ''} · 冲突死信 ${Number(bucket.dead_letter || 0)} · 点击联动死信任务与冲突策略`)}"
                                             ></button>
                                         ` : ''}
@@ -5824,35 +6001,47 @@ Example output format:
                         tone: 'neutral',
                         active: this.isDeliveryConflictTrendLegendActive('total'),
                         title: '点击清除冲突类型反筛',
-                        onClick: `ShopAdmin.applyDeliveryConflictAuditReasonQuickFilter('${encodeURIComponent('all')}')`
+                        action: 'delivery-conflict-audit-reason-quick-filter',
+                        actionAttrs: {
+                            'delivery-reason-key': encodeURIComponent('all')
+                        }
                     })}
                     ${this.renderDeliveryTrendLegendButton({
                         label: `目标 ${Number(trend.target_conflicts || 0)}`,
                         tone: 'processing',
                         active: this.isDeliveryConflictTrendLegendActive('target'),
                         title: '点击按目标类冲突反筛冲突审计',
-                        onClick: `ShopAdmin.applyDeliveryConflictAuditReasonQuickFilter('${encodeURIComponent('target_conflicts')}')`
+                        action: 'delivery-conflict-audit-reason-quick-filter',
+                        actionAttrs: {
+                            'delivery-reason-key': encodeURIComponent('target_conflicts')
+                        }
                     })}
                     ${this.renderDeliveryTrendLegendButton({
                         label: `通道 ${Number(trend.channel_conflicts || 0)}`,
                         tone: 'danger',
                         active: this.isDeliveryConflictTrendLegendActive('channel'),
                         title: '点击按通道类冲突反筛冲突审计',
-                        onClick: `ShopAdmin.applyDeliveryConflictAuditReasonQuickFilter('${encodeURIComponent('channel_conflicts')}')`
+                        action: 'delivery-conflict-audit-reason-quick-filter',
+                        actionAttrs: {
+                            'delivery-reason-key': encodeURIComponent('channel_conflicts')
+                        }
                     })}
                     ${this.renderDeliveryTrendLegendButton({
                         label: `人工 ${Number(trend.manual_conflicts || 0)}`,
                         tone: 'neutral',
                         active: this.isDeliveryConflictTrendLegendActive('manual'),
                         title: '点击按人工冲突反筛冲突审计',
-                        onClick: `ShopAdmin.applyDeliveryConflictAuditReasonQuickFilter('${encodeURIComponent('manual_force_unlock')}')`
+                        action: 'delivery-conflict-audit-reason-quick-filter',
+                        actionAttrs: {
+                            'delivery-reason-key': encodeURIComponent('manual_force_unlock')
+                        }
                     })}
                     ${this.renderDeliveryTrendLegendButton({
                         label: `冲突死信 ${Number(trend.dead_letter_conflicts || 0)}`,
                         tone: 'danger',
                         active: this.isDeliveryConflictTrendLegendActive('dead_letter'),
                         title: '点击联动冲突死信任务与死信子表',
-                        onClick: 'ShopAdmin.toggleDeliveryConflictDeadLetterFocus()'
+                        action: 'delivery-toggle-conflict-dead-letter-focus'
                     })}
                 `;
             }
