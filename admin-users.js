@@ -571,7 +571,7 @@ function renderUsersTable() {
                 <label class="custom-checkbox">
                     <input type="checkbox" id="selectAllUsers" 
                            ${allOnPageSelected ? 'checked' : ''} 
-                           onchange="toggleSelectAllPage()" 
+                           data-admin-change-action="users-toggle-select-all-page"
                            title="全选当前页">
                     <span class="checkmark"></span>
                 </label>
@@ -632,13 +632,14 @@ function renderUsersTable() {
         }
 
         return `
-        <tr class="user-row ${userState.selectedUsers.has(u.id) ? 'selected' : ''}" onclick="openUserDrawer('${u.id}')">
+        <tr class="user-row ${userState.selectedUsers.has(u.id) ? 'selected' : ''}" data-admin-action="users-open-drawer" data-user-id="${encodeURIComponent(u.id)}">
             ${userState.selectMode ? `
-            <td class="checkbox-col" onclick="event.stopPropagation()">
+            <td class="checkbox-col" data-admin-action="users-stop-propagation">
                 <label class="custom-checkbox">
                     <input type="checkbox" 
                            ${userState.selectedUsers.has(u.id) ? 'checked' : ''} 
-                           onchange="toggleUserSelection('${u.id}')"
+                           data-admin-change-action="users-toggle-selection"
+                           data-user-id="${encodeURIComponent(u.id)}"
                            class="user-checkbox">
                     <span class="checkmark"></span>
                 </label>
@@ -647,7 +648,7 @@ function renderUsersTable() {
             <td>
                 <div class="user-cell">
                     ${u.avatar_url
-                ? `<img src="${u.avatar_url}" class="user-avatar-small" onerror="this.src='https://via.placeholder.com/40'">`
+                ? `<img src="${u.avatar_url}" class="user-avatar-small" data-avatar-fallback-src="https://via.placeholder.com/40">`
                 : generateInitialsAvatar(u.username)
             }
                     <div class="user-info">
@@ -1876,7 +1877,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
             <!-- User Card (Horizontal) -->
         <div class="user-card">
             ${user.avatar_url
-            ? `<img src="${user.avatar_url}" class="user-avatar-large" onerror="this.src='https://via.placeholder.com/80'">`
+            ? `<img src="${user.avatar_url}" class="user-avatar-large" data-avatar-fallback-src="https://via.placeholder.com/80">`
             : generateInitialsAvatar(user.username, 64)}
             
             <div class="user-details">
@@ -1893,7 +1894,9 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                     
                     <div class="meta-icon-wrapper info" 
                          data-tooltip="${user.id}" 
-                         onclick="navigator.clipboard.writeText('${user.id}').then(() => { const el = this; const old = el.getAttribute('data-tooltip'); el.setAttribute('data-tooltip', '✅ ID 已复制!'); setTimeout(() => el.setAttribute('data-tooltip', old), 2000); })"
+                         data-admin-action="users-copy-meta"
+                         data-copy-value="${encodeURIComponent(user.id)}"
+                         data-copy-success="✅ ID 已复制!"
                          style="cursor: pointer;">
                         <i class="fas fa-info-circle"></i>
                     </div>
@@ -1926,7 +1929,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                 <!-- Inline Add Button -->
                 ${!user.tags.length ? `
                 <div class="add-tag-wrapper" id="addTagWrapper_${user.id}" style="margin-left:auto;">
-                    <button class="add-tag-btn" onclick="showTagInput('${user.id}')" title="添加标签">
+                    <button class="add-tag-btn" type="button" data-admin-action="users-show-tag-input" data-user-id="${encodeURIComponent(user.id)}" title="添加标签">
                         <i class="fas fa-plus"></i>
                     </button>
                 </div>` : ''}
@@ -1937,12 +1940,12 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                     ${user.tags.map(tag => `
                         <span class="modal-tag ${getTagClass(tag)}">
                             ${getTagLabel(tag)}
-                            <button class="tag-remove-btn" onclick="removeUserTag('${user.id}', '${tag}')">&times;</button>
+                            <button class="tag-remove-btn" type="button" data-admin-action="users-remove-tag" data-user-id="${encodeURIComponent(user.id)}" data-user-tag="${encodeURIComponent(tag)}">&times;</button>
                         </span>
                     `).join('')}
                     
                     <div class="add-tag-wrapper" id="addTagWrapper_${user.id}">
-                        <button class="add-tag-btn" onclick="showTagInput('${user.id}')">
+                        <button class="add-tag-btn" type="button" data-admin-action="users-show-tag-input" data-user-id="${encodeURIComponent(user.id)}">
                             <i class="fas fa-plus"></i>
                         </button>
                     </div>
@@ -1965,7 +1968,8 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                 '<div class="super-admin-badge">⭐ 超管</div>' :
                 `<label class="toggle-switch admin-switch-reset">
                         <input type="checkbox" id="modalAdminToggle" ${roleInfo.is_admin ? 'checked' : ''} 
-                            onchange="handleModalAdminToggle('${user.id}', this.checked)">
+                            data-admin-change-action="users-toggle-modal-admin"
+                            data-user-id="${encodeURIComponent(user.id)}">
                         <span class="toggle-slider"></span>
                     </label>`
             }
@@ -1996,7 +2000,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                         <input type="text" id="modalRoleExpiry" placeholder="日期和时间"
                             data-initial-value="${roleInfo.expires_at || ''}">
                     </div>
-                    <button class="perm-save-btn" onclick="saveModalAdminPermissions('${user.id}')">
+                    <button class="perm-save-btn" type="button" data-admin-action="users-save-modal-admin-permissions" data-user-id="${encodeURIComponent(user.id)}">
                         <i class="fas fa-save"></i> 保存权限
                     </button>
                 </div>
@@ -2089,20 +2093,20 @@ function renderModalActions(user) {
     }
 
     actionsPanel.innerHTML = `
-        <button class="modal-action-btn ${user.is_banned ? '' : 'danger'}" onclick="toggleUserBlock('${user.id}', ${user.is_banned})">
+        <button class="modal-action-btn ${user.is_banned ? '' : 'danger'}" type="button" data-admin-action="users-toggle-block" data-user-id="${encodeURIComponent(user.id)}" data-user-banned="${user.is_banned ? '1' : '0'}">
             <i class="fas ${user.is_banned ? 'fa-unlock' : 'fa-ban'}"></i>
             ${user.is_banned ? '解除封禁' : '封禁用户'}
         </button>
-        <button class="modal-action-btn" onclick="adjustUserPoints('${user.id}')">
+        <button class="modal-action-btn" type="button" data-admin-action="users-adjust-points" data-user-id="${encodeURIComponent(user.id)}">
             <i class="fas fa-coins"></i> 调整积分
         </button>
-        <button class="modal-action-btn" onclick="resetUserAvatar('${user.id}')">
+        <button class="modal-action-btn" type="button" data-admin-action="users-reset-avatar" data-user-id="${encodeURIComponent(user.id)}">
             <i class="fas fa-user-circle"></i> 重置头像
         </button>
-        <button class="modal-action-btn warning" onclick="clearAllUserContent('${user.id}')">
+        <button class="modal-action-btn warning" type="button" data-admin-action="users-clear-content" data-user-id="${encodeURIComponent(user.id)}">
             <i class="fas fa-trash-alt"></i> 清空内容
         </button>
-        <button class="modal-action-btn notifications-bell" onclick="showNotificationModal('${user.id}')" title="发送系统通知">
+        <button class="modal-action-btn notifications-bell" type="button" data-admin-action="users-show-notification" data-user-id="${encodeURIComponent(user.id)}" title="发送系统通知">
             <i class="fas fa-bell"></i>
         </button>
     `;
@@ -2184,30 +2188,47 @@ function renderUserTab(tabName) {
     }
 }
 
+function buildUserTabToolbar(tabName, options = {}) {
+    const {
+        includeCustomDate = false,
+        exportLabel = '导出 Excel'
+    } = options;
+
+    const baseRanges = [
+        ['all', '全部时间'],
+        ['today', '今天'],
+        ['week', '本周'],
+        ['month', '本月']
+    ];
+
+    return `
+        <div class="tab-toolbar" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+            <div class="modal-dropdown" id="${tabName}TimeDropdown">
+                <div class="modal-dropdown-trigger" data-admin-action="users-toggle-modal-dropdown" data-dropdown-id="${tabName}TimeDropdown" style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;background:transparent;border:1px solid var(--border-color);border-radius:6px;font-size:0.85rem;color:var(--text-dim);">
+                    <i class="far fa-calendar-alt"></i>
+                    <span id="${tabName}TimeLabel">全部时间</span>
+                    <i class="fas fa-chevron-down"></i>
+                </div>
+                <div class="modal-dropdown-menu">
+                    ${baseRanges.map(([range, label]) => `
+                        <div class="modal-dropdown-item" data-admin-action="users-filter-tab-date" data-user-tab-name="${tabName}" data-user-date-range="${range}" data-user-date-label="${label}">${label}</div>
+                    `).join('')}
+                    ${includeCustomDate ? `<div class="modal-dropdown-item" data-admin-action="users-open-custom-date-picker" data-user-tab-name="${tabName}">📅 自定义</div>` : ''}
+                </div>
+            </div>
+            <button class="btn-export" type="button" data-admin-action="users-export-tab-data" data-user-tab-name="${tabName}" style="background:transparent;border:1px solid var(--border-color);padding:6px 12px;border-radius:6px;font-size:0.85rem;cursor:pointer;color:var(--text-dim);">
+                <i class="fas fa-download"></i> ${exportLabel}
+            </button>
+        </div>
+    `;
+}
+
 // Render Ledger Tab
 function renderLedgerTab(container) {
     const data = currentModalData.pointsLedger || [];
 
     container.innerHTML = `
-        <div class="tab-toolbar">
-            <div class="modal-dropdown" id="ledgerTimeDropdown">
-                <div class="modal-dropdown-trigger" onclick="toggleModalDropdown('ledgerTimeDropdown')" style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;background:transparent;border:1px solid var(--border-color);border-radius:6px;font-size:0.85rem;color:var(--text-dim);">
-                    <i class="far fa-calendar-alt"></i>
-                    <span id="ledgerTimeLabel">全部时间</span>
-                    <i class="fas fa-chevron-down"></i>
-                </div>
-                <div class="modal-dropdown-menu">
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('ledger', 'all', '全部时间')">全部时间</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('ledger', 'today', '今天')">今天</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('ledger', 'week', '本周')">本周</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('ledger', 'month', '本月')">本月</div>
-                    <div class="modal-dropdown-item" onclick="openCustomDatePicker('ledger')">📅 自定义</div>
-                </div>
-            </div>
-            <button class="btn-export" onclick="exportTabData('ledger')">
-                <i class="fas fa-download"></i> 导出 Excel
-            </button>
-        </div>
+        ${buildUserTabToolbar('ledger', { includeCustomDate: true })}
         <input type="text" id="ledgerDatePicker" style="position:absolute; visibility:hidden; height:0; width:0;" placeholder="选择日期范围">
         <div class="data-list" id="ledgerList">
             ${renderLedgerItems(data)}
@@ -2223,14 +2244,14 @@ function renderLedgerItems(data) {
     return data.map(record => {
         const meta = getAdminLedgerMeta(record);
         const normalizedAmount = normalizeAdminLedgerValue(record.amount);
-        const recordId = String(record.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const recordId = encodeURIComponent(String(record.id || ''));
         const amountText = `${normalizedAmount >= 0 ? '+' : ''}${formatAdminPointValue(normalizedAmount)} 分`;
         const referenceChip = meta.referenceLabel
             ? `<span class="admin-ledger-chip admin-ledger-chip-mono">${escapeHtml(meta.referenceLabel)}</span>`
             : '';
 
         return `
-            <div class="data-list-item admin-ledger-item" style="border-left-color: ${meta.accent};" onclick="openAdminLedgerDetail('${recordId}')">
+            <div class="data-list-item admin-ledger-item" style="border-left-color: ${meta.accent};" data-admin-action="users-open-ledger-detail" data-ledger-id="${recordId}">
                 <div class="admin-ledger-icon" style="--ledger-accent:${meta.accent};">
                     <i class="fas ${meta.icon}"></i>
                 </div>
@@ -2961,7 +2982,7 @@ function renderAdminLedgerDetailModal(detail) {
                     <div class="admin-ledger-modal-title">${escapeHtml(detail.meta.title)}</div>
                     <div class="admin-ledger-modal-subtitle">${escapeHtml(detail.meta.subtitle)}</div>
                 </div>
-                <button class="modal-close-btn" onclick="closeAdminLedgerDetailModal()">
+                <button class="modal-close-btn" type="button" data-admin-action="users-close-ledger-detail">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -3087,6 +3108,12 @@ function filterTabByDate(tabName, range, label) {
             case 'blocks':
                 listEl.innerHTML = renderBlocksItems(data);
                 break;
+            case 'notes':
+                listEl.innerHTML = renderNotesItems(data);
+                break;
+            case 'audit':
+                listEl.innerHTML = renderAuditItems(data);
+                break;
         }
     }
 }
@@ -3198,25 +3225,7 @@ function renderActivityTab(container) {
     const data = currentModalData.contentLog || [];
 
     container.innerHTML = `
-        <div class="tab-toolbar">
-            <div class="modal-dropdown" id="activityTimeDropdown">
-                <div class="modal-dropdown-trigger" onclick="toggleModalDropdown('activityTimeDropdown')" style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;background:transparent;border:1px solid var(--border-color);border-radius:6px;font-size:0.85rem;color:var(--text-dim);">
-                    <i class="far fa-calendar-alt"></i>
-                    <span id="activityTimeLabel">全部时间</span>
-                    <i class="fas fa-chevron-down"></i>
-                </div>
-                <div class="modal-dropdown-menu">
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('activity', 'all', '全部时间')">全部时间</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('activity', 'today', '今天')">今天</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('activity', 'week', '本周')">本周</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('activity', 'month', '本月')">本月</div>
-                    <div class="modal-dropdown-item" onclick="openCustomDatePicker('activity')">📅 自定义</div>
-                </div>
-            </div>
-            <button class="btn-export" onclick="exportTabData('activity')">
-                <i class="fas fa-download"></i> 导出 Excel
-            </button>
-        </div>
+        ${buildUserTabToolbar('activity', { includeCustomDate: true })}
         <input type="text" id="activityDatePicker" style="position:absolute; visibility:hidden; height:0; width:0;" placeholder="选择日期范围">
         <div class="data-list" id="activityList">
             ${renderActivityItems(data)}
@@ -3247,25 +3256,7 @@ function renderBlocksTab(container) {
     const data = currentModalData.blockHistory || [];
 
     container.innerHTML = `
-        <div class="tab-toolbar">
-            <div class="modal-dropdown" id="blocksTimeDropdown">
-                <div class="modal-dropdown-trigger" onclick="toggleModalDropdown('blocksTimeDropdown')" style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;background:transparent;border:1px solid var(--border-color);border-radius:6px;font-size:0.85rem;color:var(--text-dim);">
-                    <i class="far fa-calendar-alt"></i>
-                    <span id="blocksTimeLabel">全部时间</span>
-                    <i class="fas fa-chevron-down"></i>
-                </div>
-                <div class="modal-dropdown-menu">
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('blocks', 'all', '全部时间')">全部时间</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('blocks', 'today', '今天')">今天</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('blocks', 'week', '本周')">本周</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('blocks', 'month', '本月')">本月</div>
-                    <div class="modal-dropdown-item" onclick="openCustomDatePicker('blocks')">📅 自定义</div>
-                </div>
-            </div>
-            <button class="btn-export" onclick="exportTabData('blocks')">
-                <i class="fas fa-download"></i> 导出 Excel
-            </button>
-        </div>
+        ${buildUserTabToolbar('blocks', { includeCustomDate: true })}
         <input type="text" id="blocksDatePicker" style="position:absolute; visibility:hidden; height:0; width:0;" placeholder="选择日期范围">
         <div class="data-list" id="blocksList">
             ${renderBlocksItems(data)}
@@ -3298,7 +3289,7 @@ function renderRelatedTab(container) {
     container.innerHTML = `
         <div class="data-list">
             ${data.length > 0 ? data.map(acc => `
-                <div class="data-list-item" style="cursor:pointer;" onclick="openUserModal('${acc.related_user_id}')">
+                <div class="data-list-item" style="cursor:pointer;" data-admin-action="users-open-user-modal" data-user-id="${encodeURIComponent(acc.related_user_id)}">
                     <div style="width:40px;height:40px;border-radius:50%;background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center;">
                         <i class="fas fa-user-circle" style="color:#f59e0b;font-size:1.2rem;"></i>
                     </div>
@@ -3338,7 +3329,7 @@ function renderAffiliateTab(container) {
             <div class="empty-state" style="text-align:center;padding:48px;color:var(--text-dim);">
                 <div style="font-size:1rem;color:#fca5a5;margin-bottom:10px;">推广数据加载失败</div>
                 <div style="margin-bottom:18px;">${escapeHtml(affiliateState.error)}</div>
-                <button class="btn-export" onclick="currentModalData.affiliate = createEmptyAffiliateModalState(); renderUserTab('affiliate');">
+                <button class="btn-export" type="button" data-admin-action="users-reload-affiliate">
                     <i class="fas fa-rotate-right"></i> 重新加载
                 </button>
             </div>
@@ -3371,7 +3362,7 @@ function renderAffiliateTab(container) {
                         <div class="affiliate-admin-link-label">推广链接</div>
                         <div class="affiliate-admin-link-value">${escapeHtml(inviteLink || '暂未生成推广链接')}</div>
                     </div>
-                    <button class="btn-export affiliate-admin-export-btn" onclick="exportTabData('affiliate')">
+                    <button class="btn-export affiliate-admin-export-btn" type="button" data-admin-action="users-export-tab-data" data-user-tab-name="affiliate">
                         <i class="fas fa-download"></i> 导出推广记录
                     </button>
                 </div>
@@ -3538,6 +3529,11 @@ function renderAffiliateTab(container) {
             </div>
         </div>
     `;
+}
+
+function reloadAffiliateModalData() {
+    currentModalData.affiliate = createEmptyAffiliateModalState();
+    renderUserTab('affiliate');
 }
 
 // Close Modal
@@ -5014,8 +5010,8 @@ function showTagInput(userId) {
         <div class="custom-tag-input-wrapper">
             <input type="text" class="custom-tag-input" 
                    placeholder="输入标签..." 
-                   onkeydown="handleTagInputKey(event, '${userId}')" 
-                   onblur="resetTagInput('${userId}', this)"
+                   data-users-tag-input="1"
+                   data-user-id="${userId}"
                    style="width: 80px; padding: 3px 8px; border-radius: 20px; border: 1px solid #cbd5e1; font-size: 0.75rem; background: transparent; color: inherit; outline: none; transition: all 0.2s;"
             >
         </div>
@@ -5051,7 +5047,7 @@ function resetTagInput(userId, inputElement) {
         const wrapper = document.getElementById(`addTagWrapper_${userId}`);
         if (wrapper) {
             wrapper.innerHTML = `
-                <button class="add-tag-btn" onclick="showTagInput('${userId}')">
+                <button class="add-tag-btn" type="button" data-admin-action="users-show-tag-input" data-user-id="${encodeURIComponent(userId)}">
                     <i class="fas fa-plus"></i>
                 </button>
             `;
@@ -5273,6 +5269,64 @@ window.saveModalAdminPermissions = saveModalAdminPermissions;
 window.filterTabByDate = filterTabByDate;
 window.openCustomDatePicker = openCustomDatePicker;
 
+function bindAdminUsersRuntimeDelegates() {
+    if (document.documentElement.dataset.adminUsersRuntimeDelegatesBound === '1') {
+        return;
+    }
+
+    document.documentElement.dataset.adminUsersRuntimeDelegatesBound = '1';
+
+    document.addEventListener('error', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLImageElement)) {
+            return;
+        }
+
+        const fallbackSrc = target.dataset.avatarFallbackSrc;
+        if (!fallbackSrc || target.dataset.avatarFallbackApplied === '1') {
+            return;
+        }
+
+        target.dataset.avatarFallbackApplied = '1';
+        target.src = fallbackSrc;
+    }, true);
+
+    document.addEventListener('input', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLTextAreaElement)) {
+            return;
+        }
+
+        if (target.matches('[data-users-note-input="1"]')) {
+            window.autoResizeNotesInput?.(target);
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) {
+            return;
+        }
+
+        if (target.matches('[data-users-tag-input="1"]')) {
+            handleTagInputKey(event, target.dataset.userId || '');
+        }
+    });
+
+    document.addEventListener('focusout', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) {
+            return;
+        }
+
+        if (target.matches('[data-users-tag-input="1"]')) {
+            resetTagInput(target.dataset.userId || '', target);
+        }
+    });
+}
+
+bindAdminUsersRuntimeDelegates();
+
 // ==========================================
 // NOTES TAB
 // ==========================================
@@ -5284,32 +5338,15 @@ window.autoResizeNotesInput = function (el) {
 
 async function renderNotesTab(container) {
     container.innerHTML = `
-        <div class="tab-toolbar" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
-            <div class="modal-dropdown" id="notesTimeDropdown">
-                <div class="modal-dropdown-trigger" onclick="toggleModalDropdown('notesTimeDropdown')" style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;background:transparent;border:1px solid var(--border-color);border-radius:6px;font-size:0.85rem;color:var(--text-dim);">
-                    <i class="far fa-calendar-alt"></i>
-                    <span id="notesTimeLabel">全部时间</span>
-                    <i class="fas fa-chevron-down"></i>
-                </div>
-                <div class="modal-dropdown-menu">
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('notes', 'all', '全部时间')">全部时间</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('notes', 'today', '今天')">今天</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('notes', 'week', '本周')">本周</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('notes', 'month', '本月')">本月</div>
-                </div>
-            </div>
-            <button class="btn-export" onclick="exportTabData('notes')" style="background:transparent;border:1px solid var(--border-color);padding:6px 12px;border-radius:6px;font-size:0.85rem;cursor:pointer;color:var(--text-dim);">
-                <i class="fas fa-download"></i> 导出 Excel
-            </button>
-        </div>
+        ${buildUserTabToolbar('notes')}
         <div class="notes-container" style="display:flex;flex-direction:column;height:calc(100% - 60px);max-height:600px;">
              <div class="notes-list" id="notesList" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;">
                  <div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载备注...</div>
              </div>
              <div class="notes-input-area" style="padding:16px;background:transparent">
                  <div style="display:flex;align-items:flex-end;gap:10px;">
-                     <textarea id="newNoteInput" placeholder="添加内部备注..." rows="1" oninput="autoResizeNotesInput(this)" style="flex:1;min-height:38px;max-height:120px;padding:8px 0;border:none;border-bottom:1px solid var(--card-border);background:transparent;color:inherit;outline:none;resize:none;font-family:inherit;font-size:0.9rem;line-height:1.5;overflow-y:auto;box-sizing:border-box;display:block;"></textarea>
-                     <button class="btn-primary" onclick="submitUserNote()" style="padding:0 20px;height:38px;border-radius:8px;flex-shrink:0;"><i class="fas fa-paper-plane"></i></button>
+                     <textarea id="newNoteInput" placeholder="添加内部备注..." rows="1" data-users-note-input="1" style="flex:1;min-height:38px;max-height:120px;padding:8px 0;border:none;border-bottom:1px solid var(--card-border);background:transparent;color:inherit;outline:none;resize:none;font-family:inherit;font-size:0.9rem;line-height:1.5;overflow-y:auto;box-sizing:border-box;display:block;"></textarea>
+                     <button class="btn-primary" type="button" data-admin-action="users-submit-note" style="padding:0 20px;height:38px;border-radius:8px;flex-shrink:0;"><i class="fas fa-paper-plane"></i></button>
                  </div>
                  </div>
              </div>
@@ -5388,24 +5425,7 @@ async function submitUserNote() {
 // ==========================================
 async function renderAuditTab(container) {
     container.innerHTML = `
-        <div class="tab-toolbar" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
-            <div class="modal-dropdown" id="auditTimeDropdown">
-                <div class="modal-dropdown-trigger" onclick="toggleModalDropdown('auditTimeDropdown')" style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;background:transparent;border:1px solid var(--border-color);border-radius:6px;font-size:0.85rem;color:var(--text-dim);">
-                    <i class="far fa-calendar-alt"></i>
-                    <span id="auditTimeLabel">全部时间</span>
-                    <i class="fas fa-chevron-down"></i>
-                </div>
-                <div class="modal-dropdown-menu">
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('audit', 'all', '全部时间')">全部时间</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('audit', 'today', '今天')">今天</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('audit', 'week', '本周')">本周</div>
-                    <div class="modal-dropdown-item" onclick="filterTabByDate('audit', 'month', '本月')">本月</div>
-                </div>
-            </div>
-            <button class="btn-export" onclick="exportTabData('audit')" style="background:transparent;border:1px solid var(--border-color);padding:6px 12px;border-radius:6px;font-size:0.85rem;cursor:pointer;color:var(--text-dim);">
-                <i class="fas fa-download"></i> 导出 Excel
-            </button>
-        </div>
+        ${buildUserTabToolbar('audit')}
         <div class="audit-list" id="auditList" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
             <div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载审计日志...</div>
         </div>
@@ -5536,7 +5556,7 @@ function showNotificationModal(userId) {
             <div class="custom-modal" style="width:400px;">
                 <div class="modal-header">
                     <h3 class="modal-title"><i class="far fa-bell" style="margin-right: 8px;"></i> 通知</h3>
-                    <button class="modal-close-btn" onclick="this.closest('.custom-modal-overlay').click()"><i class="fas fa-times"></i></button>
+                    <button class="modal-close-btn" type="button" data-admin-action="users-close-notification-modal"><i class="fas fa-times"></i></button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
@@ -5550,15 +5570,15 @@ function showNotificationModal(userId) {
                     <div class="form-group">
                         <label>类型</label>
                         <div class="notif-type-selector" style="display:flex;gap:8px;">
-                            <button class="type-btn active" data-type="info" onclick="selectNotifType(this, 'info')"><i class="fas fa-info-circle"></i> 信息</button>
-                            <button class="type-btn" data-type="warning" onclick="selectNotifType(this, 'warning')"><i class="fas fa-exclamation-triangle"></i> 警告</button>
-                            <button class="type-btn" data-type="success" onclick="selectNotifType(this, 'success')"><i class="fas fa-check-circle"></i> 成功</button>
+                            <button class="type-btn active" type="button" data-type="info" data-admin-action="users-select-notification-type" data-notification-type="info"><i class="fas fa-info-circle"></i> 信息</button>
+                            <button class="type-btn" type="button" data-type="warning" data-admin-action="users-select-notification-type" data-notification-type="warning"><i class="fas fa-exclamation-triangle"></i> 警告</button>
+                            <button class="type-btn" type="button" data-type="success" data-admin-action="users-select-notification-type" data-notification-type="success"><i class="fas fa-check-circle"></i> 成功</button>
                         </div>
                         <input type="hidden" id="notifType" value="info">
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button class="send-notification-btn" onclick="sendSystemNotification('${userId}')"><i class="fas fa-paper-plane"></i></button>
+                    <button class="send-notification-btn" type="button" data-admin-action="users-send-notification" data-user-id="${encodeURIComponent(userId)}"><i class="fas fa-paper-plane"></i></button>
                 </div>
             </div>
         `;
@@ -5633,8 +5653,10 @@ function showNotificationModal(userId) {
     document.getElementById('notifTitle').value = '';
     document.getElementById('notifContent').value = '';
     const btnParam = modal.querySelector('.send-notification-btn');
-    btnParam.onclick = () => sendSystemNotification(userId); // Update onclick with current userId
-    selectNotifType(modal.querySelector('[data-type="info"]'), 'info');
+    if (btnParam) {
+        btnParam.dataset.userId = encodeURIComponent(userId);
+    }
+    selectNotifType('info');
 
     modal.style.display = 'flex';
     // Force reflow to enable transition
@@ -5642,10 +5664,33 @@ function showNotificationModal(userId) {
     modal.classList.add('active');
 }
 
-function selectNotifType(btn, type) {
-    document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('notifType').value = type;
+function closeNotificationModal() {
+    const modal = document.getElementById('notificationModal');
+    if (!modal) {
+        return;
+    }
+
+    modal.classList.remove('active');
+    setTimeout(() => {
+        modal.style.display = 'none';
+    }, 300);
+}
+
+function selectNotifType(buttonOrType, maybeType = null) {
+    const type = maybeType || String(buttonOrType || 'info');
+    const btn = buttonOrType instanceof Element
+        ? buttonOrType
+        : document.querySelector(`#notificationModal .type-btn[data-type="${type}"]`);
+
+    document.querySelectorAll('#notificationModal .type-btn').forEach((button) => button.classList.remove('active'));
+    if (btn) {
+        btn.classList.add('active');
+    }
+
+    const typeInput = document.getElementById('notifType');
+    if (typeInput) {
+        typeInput.value = type;
+    }
 }
 
 async function sendSystemNotification(userId, titleArg = null, contentArg = null, typeArg = null) {
@@ -5694,12 +5739,7 @@ async function sendSystemNotification(userId, titleArg = null, contentArg = null
 
         if (isManual) {
             alert('✅ 通知发送成功');
-            // Close modal using new logic
-            const modal = document.getElementById('notificationModal');
-            if (modal) {
-                modal.classList.remove('active');
-                setTimeout(() => modal.style.display = 'none', 300);
-            }
+            closeNotificationModal();
         }
 
         logAdminAction('SEND_NOTIFICATION', userId, { title, type });
@@ -5716,8 +5756,14 @@ async function sendSystemNotification(userId, titleArg = null, contentArg = null
 }
 
 // Expose functions globally
+window.toggleUserSelection = toggleUserSelection;
+window.toggleSelectAllPage = toggleSelectAllPage;
+window.showTagInput = showTagInput;
 window.renderNotesTab = renderNotesTab;
 window.submitUserNote = submitUserNote;
 window.renderAuditTab = renderAuditTab;
+window.reloadAffiliateModalData = reloadAffiliateModalData;
 window.showNotificationModal = showNotificationModal;
+window.closeNotificationModal = closeNotificationModal;
+window.selectNotifType = selectNotifType;
 window.sendSystemNotification = sendSystemNotification;
