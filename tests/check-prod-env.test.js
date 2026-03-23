@@ -94,6 +94,28 @@ test('buildLocalEnvironmentChecks requires proxy trust and webhook allowlist in 
     assert.match(allowlistCheck.details, /missing AFDIAN_WEBHOOK_ALLOWED_IPS/);
 });
 
+test('buildLocalEnvironmentChecks treats the fail-closed webhook placeholder as incomplete hardening', () => {
+    const checks = buildLocalEnvironmentChecks({
+        options: {
+            runtimeOnly: false,
+            allowNonProduction: false
+        },
+        env: {
+            SUPABASE_SERVICE_ROLE_KEY: 'service-role',
+            ADMIN_CONFIG_ENCRYPTION_KEY: 'enc-key',
+            PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote-key',
+            ADMIN_STUDIO_ACCESS_SECRET: 'studio-key',
+            DEPLOYMENT_TIER: 'production',
+            TRUSTED_PROXY_IPS: '100.64.0.5/32,100.64.0.6/32',
+            AFDIAN_WEBHOOK_ALLOWED_IPS: '203.0.113.254/32'
+        }
+    });
+
+    const allowlistCheck = checks.find((check) => check.label === 'Afdian webhook IP allowlist');
+    assert.equal(allowlistCheck.ok, false);
+    assert.match(allowlistCheck.details, /fail-closed placeholder/);
+});
+
 test('classifySupabaseKey and buildLocalEnvironmentChecks reject publishable keys in the service-role slot', () => {
     assert.equal(classifySupabaseKey('sb_secret_demo'), 'secret');
     assert.equal(classifySupabaseKey('sb_publishable_demo'), 'publishable');
@@ -244,6 +266,15 @@ test('buildPlatformEnvChecklist renders the expected Vercel and Railway variable
     assert.equal(checklist.vercel.at(-2).value, '10.0.0.0/8');
     assert.equal(checklist.vercel.at(-1).name, 'TRUST_ALL_PROXIES');
     assert.equal(checklist.vercel.at(-1).value, 'false');
+});
+
+test('buildPlatformEnvChecklist annotates the fail-closed webhook placeholder', () => {
+    const checklist = buildPlatformEnvChecklist({
+        AFDIAN_WEBHOOK_ALLOWED_IPS: '203.0.113.254/32'
+    });
+
+    const webhookAllowlist = checklist.railway.find((item) => item.name === 'AFDIAN_WEBHOOK_ALLOWED_IPS');
+    assert.equal(webhookAllowlist.value, '203.0.113.254/32 (fail-closed placeholder)');
 });
 
 test('runAppRuntimeValidation checks runtime config and payment config endpoint health', async () => {

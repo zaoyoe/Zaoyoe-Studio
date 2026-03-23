@@ -3,6 +3,10 @@ const path = require('path');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
+const {
+    describeAfdianAllowlist,
+    isFailClosedAfdianAllowlist
+} = require('./_lib/afdian-network-guards');
 
 const DEFAULT_ENV_FILES = [
     path.resolve(__dirname, '../server/.env'),
@@ -119,6 +123,7 @@ function summarizeEnvFile(record) {
     const trustAllProxies = String(values.TRUST_ALL_PROXIES || '').trim().toLowerCase();
     const afdianWebhookTrustedProxies = String(values.AFDIAN_WEBHOOK_TRUSTED_PROXIES || '').trim();
     const afdianWebhookAllowedIps = String(values.AFDIAN_WEBHOOK_ALLOWED_IPS || '').trim();
+    const afdianWebhookAllowlistPlaceholder = isFailClosedAfdianAllowlist(afdianWebhookAllowedIps);
     const quoteSecret = pickFirstAvailable(values, [
         'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
         'PAYMENT_CUSTOM_QUOTE_SECRET',
@@ -160,7 +165,8 @@ function summarizeEnvFile(record) {
         securityNetwork: {
             trustedProxyIps,
             afdianWebhookTrustedProxies,
-            afdianWebhookAllowedIps
+            afdianWebhookAllowedIps,
+            afdianWebhookAllowlistPlaceholder
         },
         live: null
     };
@@ -304,6 +310,13 @@ function buildDriftFindings(summaries = []) {
                     message: `Production-like env is missing AFDIAN_WEBHOOK_ALLOWED_IPS: ${summary.envFile}`,
                     envFiles: [summary.envFile]
                 });
+            } else if (summary.securityNetwork?.afdianWebhookAllowlistPlaceholder) {
+                findings.push({
+                    severity: 'medium',
+                    type: 'webhook_allowlist_placeholder',
+                    message: `Production-like env is still using the fail-closed AFDIAN_WEBHOOK_ALLOWED_IPS placeholder: ${summary.envFile}`,
+                    envFiles: [summary.envFile]
+                });
             }
         }
     }
@@ -331,7 +344,7 @@ function formatHumanReport({ summaries = [], findings = [] }) {
         lines.push(`  deployment_tier: ${summary.runtime?.deploymentTier || '(missing)'}`);
         lines.push(`  trusted_proxy_ips: ${summary.securityNetwork?.trustedProxyIps || '(missing)'}`);
         lines.push(`  webhook_trusted_proxies: ${summary.securityNetwork?.afdianWebhookTrustedProxies || '(missing)'}`);
-        lines.push(`  webhook_allowed_ips: ${summary.securityNetwork?.afdianWebhookAllowedIps || '(missing)'}`);
+        lines.push(`  webhook_allowed_ips: ${describeAfdianAllowlist(summary.securityNetwork?.afdianWebhookAllowedIps || '')}`);
 
         if (summary.live) {
             lines.push(`  live_access: ${summary.live.ok ? 'ok' : 'fail'} (${summary.live.status} ${summary.live.statusText || ''})`.trim());

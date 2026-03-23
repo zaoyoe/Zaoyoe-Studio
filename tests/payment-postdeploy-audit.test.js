@@ -55,6 +55,9 @@ test('buildFindings highlights remote mock risk and leftover smoke artifacts', (
                 payment_events: 2,
                 points_ledger: 1
             }
+        },
+        network: {
+            webhook_allowlist_placeholder: true
         }
     });
 
@@ -63,7 +66,8 @@ test('buildFindings highlights remote mock risk and leftover smoke artifacts', (
         [
             'remote_mock_payment_still_enabled',
             'smoke_payment_artifacts_present',
-            'smoke_users_still_present'
+            'smoke_users_still_present',
+            'afdian_webhook_allowlist_placeholder'
         ]
     );
 });
@@ -82,6 +86,11 @@ test('formatHumanReport renders a readable audit summary', () => {
                 allowed: true,
                 reason: 'remote_whitelist_until_enabled'
             }
+        },
+        network: {
+            trusted_proxy_ips: '100.64.0.5/32,100.64.0.6/32',
+            afdian_webhook_trusted_proxies: '100.64.0.5/32,100.64.0.6/32',
+            afdian_webhook_allowed_ips: '203.0.113.254/32'
         },
         artifacts: {
             auth_users: 1,
@@ -106,6 +115,7 @@ test('formatHumanReport renders a readable audit summary', () => {
 
     assert.match(report, /Payment Postdeploy Audit/);
     assert.match(report, /mock_allowed: yes/);
+    assert.match(report, /webhook_allowed_ips: 203\.0\.113\.254\/32 \(fail-closed placeholder\)/);
     assert.match(report, /\[high\]/);
     assert.match(report, /ACTION_REQUIRED/);
 });

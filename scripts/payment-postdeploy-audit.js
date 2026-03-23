@@ -2,6 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
+const {
+    describeAfdianAllowlist,
+    isFailClosedAfdianAllowlist
+} = require('./_lib/afdian-network-guards');
 
 const DEFAULT_ENV_FILE = path.resolve(__dirname, '../server/.env.production');
 const DEFAULT_SAMPLE_LIMIT = 10;
@@ -225,6 +229,14 @@ function buildFindings(summary = {}) {
         });
     }
 
+    if (summary.network?.webhook_allowlist_placeholder) {
+        findings.push({
+            severity: 'medium',
+            key: 'afdian_webhook_allowlist_placeholder',
+            message: 'AFDIAN_WEBHOOK_ALLOWED_IPS is still set to the fail-closed placeholder; replace it after the first real Afdian webhook'
+        });
+    }
+
     return findings;
 }
 
@@ -251,6 +263,13 @@ function formatHumanReport(summary = {}) {
             lines.push(`  mock_reason: ${mockRuntime.reason}`);
         }
     }
+    lines.push('');
+
+    const network = summary.network || {};
+    lines.push('network');
+    lines.push(`  trusted_proxy_ips: ${network.trusted_proxy_ips || '(missing)'}`);
+    lines.push(`  webhook_trusted_proxies: ${network.afdian_webhook_trusted_proxies || '(missing)'}`);
+    lines.push(`  webhook_allowed_ips: ${describeAfdianAllowlist(network.afdian_webhook_allowed_ips || '')}`);
     lines.push('');
 
     const artifacts = summary.artifacts || {};
@@ -309,6 +328,9 @@ async function runAudit({
     const resolvedSmokeEmail = String(smokeEmail || envValues.PAYMENT_SMOKE_EMAIL || '').trim();
     const normalizedOrderPrefix = String(orderPrefix || DEFAULT_ORDER_PREFIX).trim() || DEFAULT_ORDER_PREFIX;
     const likePattern = `${normalizedOrderPrefix}%`;
+    const trustedProxyIps = String(envValues.TRUSTED_PROXY_IPS || envValues.TRUSTED_PROXY_CIDRS || '').trim();
+    const afdianWebhookTrustedProxies = String(envValues.AFDIAN_WEBHOOK_TRUSTED_PROXIES || '').trim();
+    const afdianWebhookAllowedIps = String(envValues.AFDIAN_WEBHOOK_ALLOWED_IPS || '').trim();
 
     const smokeUsers = await listSmokeUsers(supabaseAdmin, resolvedSmokeEmail);
     const smokeUserIds = smokeUsers.map((user) => user.id).filter(Boolean);
@@ -411,6 +433,12 @@ async function runAudit({
                 statusText: paymentConfig.statusText,
                 mock_payment: paymentConfig.payload?.runtime?.mock_payment || null
             },
+        network: {
+            trusted_proxy_ips: trustedProxyIps,
+            afdian_webhook_trusted_proxies: afdianWebhookTrustedProxies,
+            afdian_webhook_allowed_ips: afdianWebhookAllowedIps,
+            webhook_allowlist_placeholder: isFailClosedAfdianAllowlist(afdianWebhookAllowedIps)
+        },
         artifacts: {
             auth_users: smokeUsers.length,
             counts: {

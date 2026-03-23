@@ -6,6 +6,10 @@ const { createClient } = require('@supabase/supabase-js');
 const {
     getFirstEnvValue
 } = require('../api/_lib/public-runtime-config');
+const {
+    describeAfdianAllowlist,
+    isFailClosedAfdianAllowlist
+} = require('./_lib/afdian-network-guards');
 
 const PUBLIC_SUPABASE_URL_ENV_NAMES = Object.freeze([
     'SUPABASE_URL',
@@ -258,6 +262,7 @@ function buildLocalEnvironmentChecks({ options = {}, env = process.env } = {}) {
     const trustAllProxies = String(env.TRUST_ALL_PROXIES || '').trim().toLowerCase();
     const webhookTrustedProxies = String(env.AFDIAN_WEBHOOK_TRUSTED_PROXIES || '').trim();
     const webhookAllowedIps = String(env.AFDIAN_WEBHOOK_ALLOWED_IPS || '').trim();
+    const webhookAllowlistPlaceholder = isFailClosedAfdianAllowlist(webhookAllowedIps);
     const proxyTrustConfigured = trustAllProxies === 'true'
         || trustAllProxies === '1'
         || Boolean(trustedProxyIps)
@@ -327,9 +332,11 @@ function buildLocalEnvironmentChecks({ options = {}, env = process.env } = {}) {
         },
         {
             label: 'Afdian webhook IP allowlist',
-            ok: !requireStrictNetworkGuards || Boolean(webhookAllowedIps),
+            ok: !requireStrictNetworkGuards || (Boolean(webhookAllowedIps) && !webhookAllowlistPlaceholder),
             details: webhookAllowedIps
-                ? 'configured via AFDIAN_WEBHOOK_ALLOWED_IPS'
+                ? webhookAllowlistPlaceholder
+                    ? 'configured via AFDIAN_WEBHOOK_ALLOWED_IPS, but still using the fail-closed placeholder; replace it after the first real Afdian webhook'
+                    : 'configured via AFDIAN_WEBHOOK_ALLOWED_IPS'
                 : 'missing AFDIAN_WEBHOOK_ALLOWED_IPS for a production-like runtime'
         }
     ];
@@ -525,7 +532,7 @@ function buildPlatformEnvChecklist(env = process.env) {
             { name: 'APP_BASE_URL', value: renderChecklistValue(appBaseUrl) },
             { name: 'TRUSTED_PROXY_IPS', value: renderChecklistValue(trustedProxyIps) },
             { name: 'AFDIAN_WEBHOOK_TRUSTED_PROXIES', value: renderChecklistValue(afdianWebhookTrustedProxies) },
-            { name: 'AFDIAN_WEBHOOK_ALLOWED_IPS', value: renderChecklistValue(afdianWebhookAllowedIps) }
+            { name: 'AFDIAN_WEBHOOK_ALLOWED_IPS', value: describeAfdianAllowlist(afdianWebhookAllowedIps) }
         ]
     };
 }
