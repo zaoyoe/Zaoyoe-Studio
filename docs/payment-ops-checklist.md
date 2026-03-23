@@ -102,6 +102,8 @@
    - 也可以直接运行：`npm run inspect:proxy-chain -- --env-file server/.env.staging --base-url https://www.zaoyoe.com --admin-email zaoyoe@gmail.com`
    - 该脚本会自动采样线上 Railway 代理链，并输出推荐的 `TRUSTED_PROXY_IPS` / `AFDIAN_WEBHOOK_TRUSTED_PROXIES`
    - 如果爱发电开发者认证还没开通，脚本会建议先把 `AFDIAN_WEBHOOK_ALLOWED_IPS` 设成 `203.0.113.254/32`，让 webhook 先保持 fail-closed，等首个真实回调出现后再替换成真实源 IP
+   - 如果想把“当前是不是安全待命”一次性看完，直接运行：`npm run afdian:readiness -- --env-file server/.env.staging --base-url https://www.zaoyoe.com --admin-email zaoyoe@gmail.com`
+   - `SAFE_PENDING_AFDIAN_APPROVAL` 就是当前爱发电未开通阶段的目标状态；更多说明见 `docs/afdian-pending-activation-handoff.md`
 8. 重新部署：
    - Vercel
    - Railway（如果它依赖这个 key）

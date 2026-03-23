@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "AI Prompt Gallery",
   "scripts": {
+    "afdian:readiness": "node scripts/afdian-readiness-gate.js",
     "audit:env-drift": "node scripts/check-env-drift.js",
     "audit:payment-closeout": "node scripts/payment-postdeploy-audit.js",
     "cleanup:payment-fixtures": "node scripts/payment-cleanup-fixtures.js",
