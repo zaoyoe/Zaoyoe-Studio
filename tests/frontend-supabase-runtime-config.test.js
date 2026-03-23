@@ -216,6 +216,7 @@ test('critical auth pages consume delegated profile modal and form bindings', ()
 test('prompts, guestbook, and shop entry pages no longer ship inline handler attributes', () => {
     const inlineHandlerPattern = /\bon(?:click|change|submit|mousedown|mouseup|input|keydown|mouseover|mouseout|error|load)\s*=\s*["']/i;
     const files = [
+        'index.html',
         'prompts.html',
         'guestbook.html',
         'shop.html'
@@ -234,6 +235,7 @@ test('prompts, guestbook, and shop entry pages no longer ship inline handler att
 test('gallery and shop renderers no longer generate inline handler attributes in client scripts', () => {
     const inlineHandlerPattern = /\bon(?:click|change|submit|mousedown|mouseup|input|keydown|mouseover|mouseout|error|load)\s*=\s*["']/i;
     const files = [
+        'js/framer_home.js',
         'prompts-poetry.js',
         'guestbook.js',
         'js/shop-client.js'
@@ -247,4 +249,14 @@ test('gallery and shop renderers no longer generate inline handler attributes in
             `${relativePath} should not generate inline event handler attributes`
         );
     }
+});
+
+test('homepage entry points expose delegated guestbook triggers instead of inline handlers', () => {
+    const indexSource = readRepoFile('index.html');
+    const framerHomeSource = readRepoFile('js/framer_home.js');
+
+    assert.equal(indexSource.includes('data-home-open-guestbook="1"'), true, 'index.html should expose delegated guestbook triggers');
+    assert.equal(indexSource.includes('data-home-trigger-upload="1"'), true, 'index.html should expose delegated upload triggers');
+    assert.equal(framerHomeSource.includes("closest('[data-home-open-guestbook=\"1\"]')"), true, 'js/framer_home.js should delegate homepage guestbook triggers');
+    assert.equal(framerHomeSource.includes("closest('[data-home-trigger-upload=\"1\"]')"), true, 'js/framer_home.js should delegate homepage upload triggers');
 });
