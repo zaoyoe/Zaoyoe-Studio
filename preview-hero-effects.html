@@ -380,14 +380,14 @@
 
     <!-- 切换导航 -->
     <nav class="preview-nav">
-        <button class="active" onclick="showDemo('grid')">方案1: 光晕网格</button>
-        <button onclick="showDemo('blobs')">方案2: 流动渐变</button>
-        <button onclick="showDemo('stars')">方案3: 星空粒子</button>
-        <button onclick="showDemo('combo')">方案4: 网格+光晕</button>
-        <button onclick="showDemo('aurora')">方案5: 极光波浪</button>
-        <button onclick="showDemo('raycast')">方案6: Raycast 光束(红)</button>
-        <button onclick="showDemo('raycast-blue')">方案7: Raycast 光束(蓝紫)</button>
-        <button onclick="showDemo('raycast-enhanced')">方案8: Raycast 极致版(推荐)</button>
+        <button class="active" type="button" data-demo-id="grid">方案1: 光晕网格</button>
+        <button type="button" data-demo-id="blobs">方案2: 流动渐变</button>
+        <button type="button" data-demo-id="stars">方案3: 星空粒子</button>
+        <button type="button" data-demo-id="combo">方案4: 网格+光晕</button>
+        <button type="button" data-demo-id="aurora">方案5: 极光波浪</button>
+        <button type="button" data-demo-id="raycast">方案6: Raycast 光束(红)</button>
+        <button type="button" data-demo-id="raycast-blue">方案7: Raycast 光束(蓝紫)</button>
+        <button type="button" data-demo-id="raycast-enhanced">方案8: Raycast 极致版(推荐)</button>
     </nav>
 
     <!-- 方案1: 渐变光晕网格 -->
@@ -816,14 +816,33 @@
 
     <script>
         // 方案切换
-        function showDemo(id) {
+        function showDemo(id, buttonEl = null) {
             document.querySelectorAll('.hero-demo').forEach(d => d.classList.remove('active'));
             document.querySelectorAll('.preview-nav button').forEach(b => b.classList.remove('active'));
             document.getElementById('demo-' + id).classList.add('active');
-            event.target.classList.add('active');
+            if (buttonEl) {
+                buttonEl.classList.add('active');
+            }
 
             // 星空方案需要启动 canvas
             if (id === 'stars') initStarfield();
+        }
+
+        function bindDemoNavigation() {
+            const nav = document.querySelector('.preview-nav');
+            if (!nav || nav.dataset.demoNavBound === '1') {
+                return;
+            }
+
+            nav.dataset.demoNavBound = '1';
+            nav.addEventListener('click', (event) => {
+                const button = event.target.closest('button[data-demo-id]');
+                if (!button) {
+                    return;
+                }
+
+                showDemo(button.dataset.demoId, button);
+            });
         }
 
         // 方案3: 星空粒子实现
@@ -896,6 +915,8 @@
             }
             draw();
         }
+
+        bindDemoNavigation();
     </script>
 </body>
 

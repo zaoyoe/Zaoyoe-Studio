@@ -259,7 +259,7 @@
 
 <body>
 
-    <h1 onclick="triggerAll()">Rich & Figurative Icons (Set 3)</h1>
+    <h1 data-preview-trigger-all="1">Rich & Figurative Icons (Set 3)</h1>
     <p class="subtitle">Detailed compositions with depth, gradients, and engaging interactions</p>
 
     <!-- Set 3A: Neo-Glass 3D -->
@@ -267,7 +267,7 @@
         <h2>Set A: Neo-Glass 3D (浮空玻璃 3D)</h2>
         <div class="icons-row">
             <!-- Prompts: Flying Card + Magic Wand -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
                     <defs>
                         <linearGradient id="g3d_p_1" x1="0" y1="0" x2="80" y2="80">
@@ -302,7 +302,7 @@
             </div>
 
             <!-- Shop: Floating Iso Box -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
                     <defs>
                         <linearGradient id="g3d_s_1" x1="40" y1="20" x2="40" y2="70">
@@ -328,7 +328,7 @@
             </div>
 
             <!-- Verify: Holographic Shield -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
                     <defs>
                         <linearGradient id="g3d_v_1" x1="40" y1="10" x2="40" y2="70">
@@ -352,7 +352,7 @@
             </div>
 
             <!-- Guestbook: Open Magic Book -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
                     <defs>
                         <linearGradient id="g3d_b_1" x1="0" y1="0" x2="80" y2="0">
@@ -381,7 +381,7 @@
         <h2>Set B: Cyber HUD (赛博仪表 - 精细科技)</h2>
         <div class="icons-row">
             <!-- Prompts -->
-            <div class="icon-wrapper" onclick="animateIcon(this)" style="color: #F472B6">
+            <div class="icon-wrapper" style="color: #F472B6">
                 <svg width="70" height="70" viewBox="0 0 70 70" fill="none">
                     <circle cx="35" cy="35" r="32" stroke="currentColor" stroke-width="1" stroke-opacity="0.3"
                         stroke-dasharray="4 4" class="ring ring-outer" />
@@ -395,7 +395,7 @@
             </div>
 
             <!-- Shop -->
-            <div class="icon-wrapper" onclick="animateIcon(this)" style="color: #4ADE80">
+            <div class="icon-wrapper" style="color: #4ADE80">
                 <svg width="70" height="70" viewBox="0 0 70 70" fill="none">
                     <path d="M10 20 L20 10 H50 L60 20 V50 L50 60 H20 L10 50 Z" stroke="currentColor" stroke-width="1"
                         stroke-opacity="0.5" class="ring ring-outer" />
@@ -408,7 +408,7 @@
             </div>
 
             <!-- Verify -->
-            <div class="icon-wrapper" onclick="animateIcon(this)" style="color: #667EEA">
+            <div class="icon-wrapper" style="color: #667EEA">
                 <svg width="70" height="70" viewBox="0 0 70 70" fill="none">
                     <path d="M35 5 V10 M65 35 H60 M35 65 V60 M5 35 H10" stroke="currentColor" stroke-width="2"
                         class="ring ring-outer" />
@@ -423,7 +423,7 @@
             </div>
 
             <!-- Guestbook -->
-            <div class="icon-wrapper" onclick="animateIcon(this)" style="color: #F59E0B">
+            <div class="icon-wrapper" style="color: #F59E0B">
                 <svg width="70" height="70" viewBox="0 0 70 70" fill="none">
                     <rect x="15" y="15" width="40" height="40" rx="4" stroke="currentColor" stroke-width="1"
                         stroke-opacity="0.5" class="ring ring-outer" />
@@ -442,7 +442,7 @@
         <h2>Set C: Illustrative Pop (波普插画 - 平面色彩)</h2>
         <div class="icons-row">
             <!-- Prompts -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="60" height="60" viewBox="0 0 60 60">
                     <circle cx="30" cy="30" r="28" fill="#FCE7F3" />
                     <path d="M30 15 L35 25 L45 28 L35 32 L30 42 L25 32 L15 28 L25 25 Z" fill="#EC4899" />
@@ -451,7 +451,7 @@
                 <div class="icon-label">Prompts</div>
             </div>
             <!-- Shop -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="60" height="60" viewBox="0 0 60 60">
                     <rect x="10" y="15" width="40" height="35" rx="8" fill="#DCFCE7" />
                     <rect x="15" y="20" width="30" height="25" rx="4" fill="#22C55E" />
@@ -461,7 +461,7 @@
                 <div class="icon-label">Shop</div>
             </div>
             <!-- Verify -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="60" height="60" viewBox="0 0 60 60">
                     <path d="M30 55 C30 55 55 45 55 15 V10 L30 5 L5 10 V15 C5 45 30 55 30 55 Z" fill="#E0E7FF" />
                     <path d="M30 48 C30 48 48 40 48 18 V15 L30 12 L12 15 V18 C12 40 30 48 30 48 Z" fill="#6366F1" />
@@ -471,7 +471,7 @@
                 <div class="icon-label">Verify</div>
             </div>
             <!-- Guestbook -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="60" height="60" viewBox="0 0 60 60">
                     <rect x="12" y="10" width="36" height="40" fill="#FFFBEB" stroke="#B45309" stroke-width="2" />
                     <path d="M12 10 L8 50 L44 50" fill="#F59E0B" opacity="0.5" />
@@ -494,6 +494,35 @@
                 element.classList.remove('active');
             }, 1000);
         }
+
+        function triggerAll() {
+            const icons = document.querySelectorAll('.icon-wrapper');
+            icons.forEach((icon, index) => {
+                setTimeout(() => animateIcon(icon), index * 100);
+            });
+        }
+
+        function bindPreviewInteractions() {
+            if (document.body.dataset.previewInteractionsBound === '1') {
+                return;
+            }
+
+            document.body.dataset.previewInteractionsBound = '1';
+            document.addEventListener('click', (event) => {
+                const trigger = event.target.closest('[data-preview-trigger-all="1"]');
+                if (trigger) {
+                    triggerAll();
+                    return;
+                }
+
+                const icon = event.target.closest('.icon-wrapper');
+                if (icon) {
+                    animateIcon(icon);
+                }
+            });
+        }
+
+        bindPreviewInteractions();
     </script>
 </body>
 

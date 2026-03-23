@@ -55,7 +55,8 @@
             border: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        .icon-wrapper:hover {
+        .icon-wrapper:hover,
+        .icon-wrapper.active {
             background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01));
             border-color: rgba(255, 255, 255, 0.1);
             transform: translateY(-5px);
@@ -69,7 +70,8 @@
             letter-spacing: 0.5px;
         }
 
-        .icon-wrapper:hover .icon-label {
+        .icon-wrapper:hover .icon-label,
+        .icon-wrapper.active .icon-label {
             color: #fff;
         }
 
@@ -95,18 +97,21 @@
             transition: 0.5s;
         }
 
-        .icon-wrapper:hover .c-nebula .ring-1 {
+        .icon-wrapper:hover .c-nebula .ring-1,
+        .icon-wrapper.active .c-nebula .ring-1 {
             transform: rotate(180deg) scale(1.1);
             stroke: #F472B6;
             stroke-width: 2;
         }
 
-        .icon-wrapper:hover .c-nebula .ring-2 {
+        .icon-wrapper:hover .c-nebula .ring-2,
+        .icon-wrapper.active .c-nebula .ring-2 {
             transform: rotate(-90deg) scale(0.9);
             stroke: #FBCFE8;
         }
 
-        .icon-wrapper:hover .c-nebula .center-star {
+        .icon-wrapper:hover .c-nebula .center-star,
+        .icon-wrapper.active .c-nebula .center-star {
             animation: starSpinFast 1s linear infinite;
         }
 
@@ -137,22 +142,26 @@
         }
 
         /* Default state: assembled */
-        .icon-wrapper:hover .c-construct .block-top {
+        .icon-wrapper:hover .c-construct .block-top,
+        .icon-wrapper.active .c-construct .block-top {
             transform: translateY(-8px) translateX(4px);
             fill: #F472B6;
         }
 
-        .icon-wrapper:hover .c-construct .block-left {
+        .icon-wrapper:hover .c-construct .block-left,
+        .icon-wrapper.active .c-construct .block-left {
             transform: translateX(-6px);
             fill: #DB2777;
         }
 
-        .icon-wrapper:hover .c-construct .block-right {
+        .icon-wrapper:hover .c-construct .block-right,
+        .icon-wrapper.active .c-construct .block-right {
             transform: translateX(6px);
             fill: #BE185D;
         }
 
-        .icon-wrapper:hover .c-construct .core {
+        .icon-wrapper:hover .c-construct .core,
+        .icon-wrapper.active .c-construct .core {
             transform: scale(1.2);
             fill: #FFF;
         }
@@ -171,13 +180,15 @@
             transform-origin: center;
         }
 
-        .icon-wrapper:hover .c-rune path {
+        .icon-wrapper:hover .c-rune path,
+        .icon-wrapper.active .c-rune path {
             animation: drawRune 1.5s ease-in-out forwards;
             filter: drop-shadow(0 0 5px #F472B6);
             stroke: #F472B6;
         }
 
-        .icon-wrapper:hover .c-rune .sparkle {
+        .icon-wrapper:hover .c-rune .sparkle,
+        .icon-wrapper.active .c-rune .sparkle {
             opacity: 1;
             transform: scale(1);
             animation: sparklePop 0.5s ease-out infinite alternate;
@@ -220,14 +231,16 @@
             transition: 0.3s;
         }
 
-        .icon-wrapper:hover .c-data .icon-main {
+        .icon-wrapper:hover .c-data .icon-main,
+        .icon-wrapper.active .c-data .icon-main {
             fill: #111;
             stroke: #F472B6;
             stroke-width: 2;
             transform: scale(1.05);
         }
 
-        .icon-wrapper:hover .c-data .stream-line {
+        .icon-wrapper:hover .c-data .stream-line,
+        .icon-wrapper.active .c-data .stream-line {
             opacity: 1;
             animation: streamFlow 0.5s linear infinite;
             stroke: #F472B6;
@@ -243,7 +256,7 @@
 
 <body>
 
-    <h1 onclick="triggerAll()">Refined Prompts Animation (Set 8)</h1>
+    <h1 data-preview-trigger-all="1">Refined Prompts Animation (Set 8)</h1>
     <p class="subtitle">Interact to see multi-element decomposition and recomposition</p>
 
     <div class="set-container">
@@ -317,6 +330,45 @@
         </div>
     </div>
 
+    <script>
+        function animateIcon(element) {
+            element.classList.remove('active');
+            void element.offsetWidth;
+            element.classList.add('active');
+            setTimeout(() => {
+                element.classList.remove('active');
+            }, 1000);
+        }
+
+        function triggerAll() {
+            const icons = document.querySelectorAll('.icon-wrapper');
+            icons.forEach((icon, index) => {
+                setTimeout(() => animateIcon(icon), index * 160);
+            });
+        }
+
+        function bindPreviewInteractions() {
+            if (document.body.dataset.previewInteractionsBound === '1') {
+                return;
+            }
+
+            document.body.dataset.previewInteractionsBound = '1';
+            document.addEventListener('click', (event) => {
+                const trigger = event.target.closest('[data-preview-trigger-all="1"]');
+                if (trigger) {
+                    triggerAll();
+                    return;
+                }
+
+                const icon = event.target.closest('.icon-wrapper');
+                if (icon) {
+                    animateIcon(icon);
+                }
+            });
+        }
+
+        bindPreviewInteractions();
+    </script>
 </body>
 
 </html>

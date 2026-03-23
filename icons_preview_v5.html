@@ -242,26 +242,26 @@
 
 <body>
 
-    <h1 onclick="triggerAll()">Animations for Existing Icons (Set 5)</h1>
+    <h1 data-preview-trigger-all="1">Animations for Existing Icons (Set 5)</h1>
     <p class="subtitle">Applying interactive animations to your current Font Awesome icons</p>
 
     <!-- Set 5A: Soft Glow -->
     <div class="set-container set-glow">
         <h2>Set A: Soft Glow (呼吸发光 - 柔和质感)</h2>
         <div class="icons-row">
-            <div class="icon-wrapper color-prompts" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-prompts">
                 <div class="icon-box"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
                 <div class="icon-label">Prompts</div>
             </div>
-            <div class="icon-wrapper color-shop" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-shop">
                 <div class="icon-box"><i class="fa-solid fa-store"></i></div>
                 <div class="icon-label">Shop</div>
             </div>
-            <div class="icon-wrapper color-verify" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-verify">
                 <div class="icon-box"><i class="fa-solid fa-robot"></i></div>
                 <div class="icon-label">Verify</div>
             </div>
-            <div class="icon-wrapper color-guestbook" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-guestbook">
                 <div class="icon-box"><i class="fa-solid fa-comment-dots"></i></div>
                 <div class="icon-label">Guestbook</div>
             </div>
@@ -272,19 +272,19 @@
     <div class="set-container set-bounce">
         <h2>Set B: Elastic Bounce (Q弹果冻 - 趣味反馈)</h2>
         <div class="icons-row">
-            <div class="icon-wrapper color-prompts" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-prompts">
                 <div class="icon-box"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
                 <div class="icon-label">Prompts</div>
             </div>
-            <div class="icon-wrapper color-shop" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-shop">
                 <div class="icon-box"><i class="fa-solid fa-store"></i></div>
                 <div class="icon-label">Shop</div>
             </div>
-            <div class="icon-wrapper color-verify" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-verify">
                 <div class="icon-box"><i class="fa-solid fa-robot"></i></div>
                 <div class="icon-label">Verify</div>
             </div>
-            <div class="icon-wrapper color-guestbook" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-guestbook">
                 <div class="icon-box"><i class="fa-solid fa-comment-dots"></i></div>
                 <div class="icon-label">Guestbook</div>
             </div>
@@ -295,19 +295,19 @@
     <div class="set-container set-flip">
         <h2>Set C: 3D Flip (立体翻转 - 空间层次)</h2>
         <div class="icons-row">
-            <div class="icon-wrapper color-prompts" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-prompts">
                 <div class="icon-box"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
                 <div class="icon-label">Prompts</div>
             </div>
-            <div class="icon-wrapper color-shop" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-shop">
                 <div class="icon-box"><i class="fa-solid fa-store"></i></div>
                 <div class="icon-label">Shop</div>
             </div>
-            <div class="icon-wrapper color-verify" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-verify">
                 <div class="icon-box"><i class="fa-solid fa-robot"></i></div>
                 <div class="icon-label">Verify</div>
             </div>
-            <div class="icon-wrapper color-guestbook" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-guestbook">
                 <div class="icon-box"><i class="fa-solid fa-comment-dots"></i></div>
                 <div class="icon-label">Guestbook</div>
             </div>
@@ -318,19 +318,19 @@
     <div class="set-container set-burst">
         <h2>Set D: Ring Burst (能量扩散 - 强烈冲击)</h2>
         <div class="icons-row">
-            <div class="icon-wrapper color-prompts" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-prompts">
                 <div class="icon-box"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
                 <div class="icon-label">Prompts</div>
             </div>
-            <div class="icon-wrapper color-shop" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-shop">
                 <div class="icon-box"><i class="fa-solid fa-store"></i></div>
                 <div class="icon-label">Shop</div>
             </div>
-            <div class="icon-wrapper color-verify" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-verify">
                 <div class="icon-box"><i class="fa-solid fa-robot"></i></div>
                 <div class="icon-label">Verify</div>
             </div>
-            <div class="icon-wrapper color-guestbook" onclick="animateIcon(this)">
+            <div class="icon-wrapper color-guestbook">
                 <div class="icon-box"><i class="fa-solid fa-comment-dots"></i></div>
                 <div class="icon-label">Guestbook</div>
             </div>
@@ -353,6 +353,28 @@
                 setTimeout(() => animateIcon(icon), index * 100);
             });
         }
+
+        function bindPreviewInteractions() {
+            if (document.body.dataset.previewInteractionsBound === '1') {
+                return;
+            }
+
+            document.body.dataset.previewInteractionsBound = '1';
+            document.addEventListener('click', (event) => {
+                const trigger = event.target.closest('[data-preview-trigger-all="1"]');
+                if (trigger) {
+                    triggerAll();
+                    return;
+                }
+
+                const icon = event.target.closest('.icon-wrapper');
+                if (icon) {
+                    animateIcon(icon);
+                }
+            });
+        }
+
+        bindPreviewInteractions();
     </script>
 </body>
 

@@ -299,6 +299,61 @@ test('debug realtime page binds diagnostics controls without inline handlers', (
     }
 });
 
+test('non-production utility and preview pages no longer ship inline handler attributes', () => {
+    const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|keyup|mouseover|mouseout|error|load|mousedown|mouseup|blur|focus)\s*=\s*["']/i;
+    const files = [
+        'tools/migrate-prompts-bilingual.html',
+        'preview-hero-effects.html',
+        'test-lang-toggle.html',
+        'test-realtime-simple.html',
+        'icons_preview_v2.html',
+        'icons_preview_v3.html',
+        'icons_preview_v4.html',
+        'icons_preview_v5.html',
+        'icons_preview_v6.html',
+        'icons_preview_v7.html',
+        'icons_preview_v8.html'
+    ];
+
+    for (const relativePath of files) {
+        const source = readRepoFile(relativePath);
+        assert.equal(
+            inlineHandlerPattern.test(source),
+            false,
+            `${relativePath} should not contain inline event handler attributes`
+        );
+    }
+
+    const migrateSource = readRepoFile('tools/migrate-prompts-bilingual.html');
+    const previewSource = readRepoFile('preview-hero-effects.html');
+    const langSource = readRepoFile('test-lang-toggle.html');
+    const realtimeSource = readRepoFile('test-realtime-simple.html');
+
+    assert.equal(migrateSource.includes("document.getElementById('loadBtn')?.addEventListener('click'"), true, 'tools/migrate-prompts-bilingual.html should bind load via addEventListener');
+    assert.equal(migrateSource.includes("document.getElementById('startBtn')?.addEventListener('click'"), true, 'tools/migrate-prompts-bilingual.html should bind start via addEventListener');
+    assert.equal(migrateSource.includes("document.getElementById('stopBtn')?.addEventListener('click'"), true, 'tools/migrate-prompts-bilingual.html should bind stop via addEventListener');
+    assert.equal(previewSource.includes('data-demo-id="grid"'), true, 'preview-hero-effects.html should expose delegated demo buttons');
+    assert.equal(previewSource.includes('function bindDemoNavigation()'), true, 'preview-hero-effects.html should bind demo navigation centrally');
+    assert.equal(langSource.includes("document.getElementById('langToggleTest')?.addEventListener('click'"), true, 'test-lang-toggle.html should bind the language toggle');
+    assert.equal(realtimeSource.includes("document.getElementById('testConnectionBtn')?.addEventListener('click'"), true, 'test-realtime-simple.html should bind the realtime test button');
+
+    const previewFiles = [
+        'icons_preview_v2.html',
+        'icons_preview_v3.html',
+        'icons_preview_v4.html',
+        'icons_preview_v5.html',
+        'icons_preview_v6.html',
+        'icons_preview_v7.html',
+        'icons_preview_v8.html'
+    ];
+
+    for (const relativePath of previewFiles) {
+        const source = readRepoFile(relativePath);
+        assert.equal(source.includes('data-preview-trigger-all="1"'), true, `${relativePath} should expose a delegated preview trigger`);
+        assert.equal(source.includes('function bindPreviewInteractions()'), true, `${relativePath} should bind preview interactions centrally`);
+    }
+});
+
 test('gallery and shop renderers no longer generate inline handler attributes in client scripts', () => {
     const inlineHandlerPattern = /\bon(?:click|change|submit|mousedown|mouseup|input|keydown|mouseover|mouseout|error|load)\s*=\s*["']/i;
     const files = [
