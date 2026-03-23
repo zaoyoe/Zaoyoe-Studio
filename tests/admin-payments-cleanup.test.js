@@ -282,9 +282,9 @@ function createFixtureState() {
                 { id: 'real-user' }
             ],
             points_balance: [
-                { id: 'balance-legacy', user_id: 'legacy-user' },
-                { id: 'balance-smoke', user_id: 'smoke-user' },
-                { id: 'balance-real', user_id: 'real-user' }
+                { user_id: 'legacy-user', site: 'cn' },
+                { user_id: 'smoke-user', site: 'cn' },
+                { user_id: 'real-user', site: 'cn' }
             ],
             points_ledger: [
                 { id: 'ledger-legacy-bonus', user_id: 'legacy-user', created_by: 'legacy-user', reference_id: 'REG_BONUS_legacy-user' },
