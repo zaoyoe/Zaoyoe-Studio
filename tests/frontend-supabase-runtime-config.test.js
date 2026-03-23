@@ -666,7 +666,15 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         `oninput="autoResizeNotesInput(this)"`,
         `onclick="submitUserNote()"`,
         `onclick="selectNotifType(this, 'info')"`,
-        `onclick="sendSystemNotification('`
+        `onclick="sendSystemNotification('`,
+        `onclick="window._resolveBatchTag('`,
+        `onclick="this.closest('.modal-overlay').remove()"`,
+        `onclick="if(event.target === this) closeBanUserModal()"`,
+        `onclick="toggleBanSelection(this, 'guestbook', 'unban')"`,
+        `onclick="showBanDetails(null)"`,
+        `onclick="executeBanSelection()"`,
+        `onclick="closePointsModal()"`,
+        `onclick="closeClearContentModal()"`
     ];
 
     for (const marker of removedInlineMarkers) {
@@ -702,8 +710,20 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         'data-admin-action="users-close-notification-modal"',
         'data-admin-action="users-select-notification-type"',
         'data-admin-action="users-send-notification"',
+        'data-batch-tag-value="',
+        'data-batch-tag-close="1"',
+        'data-batch-tag-submit="1"',
+        'data-users-ban-action="close"',
+        'data-users-ban-action="select"',
+        'data-users-ban-action="details"',
+        'data-users-ban-action="confirm"',
+        'data-users-points-action="close"',
+        'data-users-clear-action="close"',
         'document.documentElement.dataset.adminUsersRuntimeDelegatesBound',
-        "target.matches('[data-users-tag-input=\"1\"]')"
+        "target.matches('[data-users-tag-input=\"1\"]')",
+        'function bindBanUserModalInteractions(overlay)',
+        'function bindPointsModalInteractions(overlay)',
+        'function bindClearContentModalInteractions(overlay)'
     ];
 
     for (const marker of delegatedMarkers) {

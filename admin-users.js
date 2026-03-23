@@ -1155,14 +1155,14 @@ function showBatchTagModal(count) {
         modal.className = 'modal-overlay active';
 
         const tagButtons = Object.entries(TAG_CONFIG)
-            .map(([key, config]) => `<button class="tag-option ${config.class}" onclick="window._resolveBatchTag('${key}')">${config.label}</button>`)
+            .map(([key, config]) => `<button class="tag-option ${config.class}" type="button" data-batch-tag-value="${escapeHtml(key)}">${config.label}</button>`)
             .join('');
 
         modal.innerHTML = `
             <div class="modal-content" style="max-width: 400px;">
                 <div class="modal-header">
                     <h3>批量添加标签 (${count} 人)</h3>
-                    <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+                    <button class="modal-close" type="button" data-batch-tag-close="1">&times;</button>
                 </div>
                 <div class="modal-body" style="padding: 20px;">
                     <p style="margin-bottom: 16px; color: var(--text-dim);">选择要添加的标签：</p>
@@ -1172,15 +1172,14 @@ function showBatchTagModal(count) {
                     <div style="margin-top: 16px;">
                         <input type="text" id="customTagInput" placeholder="或输入自定义标签..." 
                                style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-main);">
-                        <button class="btn-secondary" style="width: 100%; margin-top: 8px;" 
-                                onclick="window._resolveBatchTag(document.getElementById('customTagInput').value)">添加自定义标签</button>
+                        <button class="btn-secondary" type="button" style="width: 100%; margin-top: 8px;" data-batch-tag-submit="1">添加自定义标签</button>
                     </div>
                 </div>
             </div>
         `;
         document.body.appendChild(modal);
 
-        window._resolveBatchTag = (tag) => {
+        const resolveBatchTag = (tag) => {
             if (!tag || !tag.trim()) {
                 showToast('请选择或输入标签', 'error');
                 return;
@@ -1190,6 +1189,25 @@ function showBatchTagModal(count) {
         };
 
         modal.addEventListener('click', (e) => {
+            const actionEl = e.target instanceof Element ? e.target.closest('[data-batch-tag-value],[data-batch-tag-close],[data-batch-tag-submit]') : null;
+            if (actionEl) {
+                if (actionEl.hasAttribute('data-batch-tag-close')) {
+                    modal.remove();
+                    resolve(null);
+                    return;
+                }
+
+                if (actionEl.hasAttribute('data-batch-tag-submit')) {
+                    resolveBatchTag(document.getElementById('customTagInput')?.value || '');
+                    return;
+                }
+
+                if (actionEl.hasAttribute('data-batch-tag-value')) {
+                    resolveBatchTag(actionEl.getAttribute('data-batch-tag-value') || '');
+                    return;
+                }
+            }
+
             if (e.target === modal) {
                 modal.remove();
                 resolve(null);
@@ -4056,11 +4074,11 @@ function injectBanUserModal() {
     if (document.getElementById('banUserModalOverlay')) return;
 
     const modalHtml = `
-    <div id="banUserModalOverlay" class="custom-modal-overlay" onclick="if(event.target === this) closeBanUserModal()">
+    <div id="banUserModalOverlay" class="custom-modal-overlay">
         <div class="custom-modal ban-user-modal">
             <div class="modal-header">
                 <h3 class="modal-title" style="color:#ef4444;">🚫 封禁管理</h3>
-                <button class="modal-close-btn" onclick="closeBanUserModal()"><i class="fas fa-times"></i></button>
+                <button class="modal-close-btn" type="button" data-users-ban-action="close"><i class="fas fa-times"></i></button>
             </div>
             <div class="modal-body" style="padding: 0 24px 24px 24px;">
                  <input type="hidden" id="banTargetUserId">
@@ -4071,10 +4089,10 @@ function injectBanUserModal() {
                         <i class="fas fa-comment-alt"></i> 留言板权限
                      </div>
                      <div class="scope-options-pills">
-                         <div class="scope-pill selected" data-scope="guestbook" data-days="unban" onclick="toggleBanSelection(this, 'guestbook', 'unban')">正常</div>
-                         <div class="scope-pill" data-scope="guestbook" data-days="3" onclick="toggleBanSelection(this, 'guestbook', 3)">3天</div>
-                         <div class="scope-pill" data-scope="guestbook" data-days="30" onclick="toggleBanSelection(this, 'guestbook', 30)">30天</div>
-                         <div class="scope-pill danger" data-scope="guestbook" data-days="permanent" onclick="toggleBanSelection(this, 'guestbook', null)">永久封禁</div>
+                         <div class="scope-pill selected" data-scope="guestbook" data-days="unban" data-users-ban-action="select">正常</div>
+                         <div class="scope-pill" data-scope="guestbook" data-days="3" data-users-ban-action="select">3天</div>
+                         <div class="scope-pill" data-scope="guestbook" data-days="30" data-users-ban-action="select">30天</div>
+                         <div class="scope-pill danger" data-scope="guestbook" data-days="permanent" data-users-ban-action="select">永久封禁</div>
                      </div>
                  </div>
 
@@ -4083,11 +4101,11 @@ function injectBanUserModal() {
                         <i class="fas fa-images"></i> 画廊权限
                      </div>
                      <div class="scope-options-pills">
-                         <div class="scope-pill selected" data-scope="gallery" data-days="unban" onclick="toggleBanSelection(this, 'gallery', 'unban')">正常</div>
-                         <div class="scope-pill" data-scope="gallery" data-days="3" onclick="toggleBanSelection(this, 'gallery', 3)">3天</div>
-                         <div class="scope-pill" data-scope="gallery" data-days="7" onclick="toggleBanSelection(this, 'gallery', 7)">7天</div>
-                         <div class="scope-pill" data-scope="gallery" data-days="30" onclick="toggleBanSelection(this, 'gallery', 30)">30天</div>
-                         <div class="scope-pill danger" data-scope="gallery" data-days="permanent" onclick="toggleBanSelection(this, 'gallery', null)">永久封禁</div>
+                         <div class="scope-pill selected" data-scope="gallery" data-days="unban" data-users-ban-action="select">正常</div>
+                         <div class="scope-pill" data-scope="gallery" data-days="3" data-users-ban-action="select">3天</div>
+                         <div class="scope-pill" data-scope="gallery" data-days="7" data-users-ban-action="select">7天</div>
+                         <div class="scope-pill" data-scope="gallery" data-days="30" data-users-ban-action="select">30天</div>
+                         <div class="scope-pill danger" data-scope="gallery" data-days="permanent" data-users-ban-action="select">永久封禁</div>
                      </div>
                  </div>
 
@@ -4096,31 +4114,77 @@ function injectBanUserModal() {
                         <i class="fas fa-coins"></i> 积分消费
                      </div>
                      <div class="scope-options-pills">
-                         <div class="scope-pill selected" data-scope="points_usage" data-days="unban" onclick="toggleBanSelection(this, 'points_usage', 'unban')">正常</div>
-                         <div class="scope-pill" data-scope="points_usage" data-days="3" onclick="toggleBanSelection(this, 'points_usage', 3)">3天</div>
-                         <div class="scope-pill" data-scope="points_usage" data-days="7" onclick="toggleBanSelection(this, 'points_usage', 7)">7天</div>
-                         <div class="scope-pill" data-scope="points_usage" data-days="30" onclick="toggleBanSelection(this, 'points_usage', 30)">30天</div>
-                         <div class="scope-pill danger" data-scope="points_usage" data-days="permanent" onclick="toggleBanSelection(this, 'points_usage', null)">永久封禁</div>
+                         <div class="scope-pill selected" data-scope="points_usage" data-days="unban" data-users-ban-action="select">正常</div>
+                         <div class="scope-pill" data-scope="points_usage" data-days="3" data-users-ban-action="select">3天</div>
+                         <div class="scope-pill" data-scope="points_usage" data-days="7" data-users-ban-action="select">7天</div>
+                         <div class="scope-pill" data-scope="points_usage" data-days="30" data-users-ban-action="select">30天</div>
+                         <div class="scope-pill danger" data-scope="points_usage" data-days="permanent" data-users-ban-action="select">永久封禁</div>
                      </div>
                  </div>
                  
                  <div class="ban-scope-group" style="margin-top:20px;padding-top:15px;border-top:1px dashed rgba(0,0,0,0.1);">
                     <div class="scope-options-pills no-indicator">
-                        <div class="scope-pill success" style="width:100%;justify-content:center;" onclick="toggleBanSelection(this, 'all', 'unban')">
+                        <div class="scope-pill success" style="width:100%;justify-content:center;" data-scope="all" data-days="unban" data-users-ban-action="select">
                             <i class="fas fa-shield-alt" style="margin-right:6px;"></i> 解除该用户所有封禁
                         </div>
                     </div>
                  </div>
                  
                  <div class="ban-actions" style="margin-top:24px;display:flex;gap:12px;justify-content:flex-end;">
-                    <button class="modal-btn" onclick="showBanDetails(null)" style="margin-right:auto;background:transparent;border:1px solid rgba(0,0,0,0.1);color:#64748b;">状态详情</button>
-                    <button id="btnBanConfirm" class="modal-btn confirm" onclick="executeBanSelection()">确认执行</button>
+                    <button class="modal-btn" type="button" data-users-ban-action="details" style="margin-right:auto;background:transparent;border:1px solid rgba(0,0,0,0.1);color:#64748b;">状态详情</button>
+                    <button id="btnBanConfirm" class="modal-btn confirm" type="button" data-users-ban-action="confirm">确认执行</button>
                  </div>
             </div>
         </div>
     </div>`;
 
     document.body.insertAdjacentHTML('beforeend', modalHtml);
+    bindBanUserModalInteractions(document.getElementById('banUserModalOverlay'));
+}
+
+function normalizeBanDaysValue(value) {
+    if (value === 'unban') return 'unban';
+    if (value === 'permanent') return null;
+    const parsed = parseInt(String(value || ''), 10);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function bindBanUserModalInteractions(overlay) {
+    if (!overlay || overlay.dataset.usersBanBound === '1') {
+        return;
+    }
+
+    overlay.dataset.usersBanBound = '1';
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) {
+            closeBanUserModal();
+            return;
+        }
+
+        const actionEl = event.target instanceof Element ? event.target.closest('[data-users-ban-action]') : null;
+        if (!actionEl || !overlay.contains(actionEl)) {
+            return;
+        }
+
+        switch (actionEl.dataset.usersBanAction) {
+            case 'close':
+                closeBanUserModal();
+                break;
+            case 'select':
+                toggleBanSelection(
+                    actionEl,
+                    actionEl.dataset.scope || '',
+                    normalizeBanDaysValue(actionEl.dataset.days)
+                );
+                break;
+            case 'details':
+                showBanDetails(null);
+                break;
+            case 'confirm':
+                executeBanSelection();
+                break;
+        }
+    });
 }
 
 
@@ -4534,11 +4598,11 @@ function injectPointsModal() {
     if (document.getElementById('pointsModalOverlay')) return;
 
     const modalHtml = `
-        <div id="pointsModalOverlay" class="custom-modal-overlay" onclick="closePointsModal()">
-            <div class="custom-modal ban-user-modal points-adjustment-modal" onclick="event.stopPropagation()">
+        <div id="pointsModalOverlay" class="custom-modal-overlay">
+            <div class="custom-modal ban-user-modal points-adjustment-modal">
                 <div class="modal-header">
                     <h3 class="modal-title">⚖️ 调整积分</h3>
-                    <button class="modal-close-btn" onclick="closePointsModal()"><i class="fas fa-times"></i></button>
+                    <button class="modal-close-btn" type="button" data-users-points-action="close"><i class="fas fa-times"></i></button>
                 </div>
                 <div class="modal-body">
                     <div class="data-row">
@@ -4567,6 +4631,30 @@ function injectPointsModal() {
     </div > `;
 
     document.body.insertAdjacentHTML('beforeend', modalHtml);
+    bindPointsModalInteractions(document.getElementById('pointsModalOverlay'));
+}
+
+function bindPointsModalInteractions(overlay) {
+    if (!overlay || overlay.dataset.usersPointsBound === '1') {
+        return;
+    }
+
+    overlay.dataset.usersPointsBound = '1';
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) {
+            closePointsModal();
+            return;
+        }
+
+        const actionEl = event.target instanceof Element ? event.target.closest('[data-users-points-action]') : null;
+        if (!actionEl || !overlay.contains(actionEl)) {
+            return;
+        }
+
+        if (actionEl.dataset.usersPointsAction === 'close') {
+            closePointsModal();
+        }
+    });
 }
 
 function closePointsModal() {
@@ -4699,11 +4787,11 @@ function injectClearContentModal() {
     if (document.getElementById('clearContentModalOverlay')) return;
 
     const modalHtml = `
-        <div id="clearContentModalOverlay" class="custom-modal-overlay" onclick="if(event.target === this) closeClearContentModal()">
+        <div id="clearContentModalOverlay" class="custom-modal-overlay">
             <div class="custom-modal ban-user-modal danger-modal">
                 <div class="modal-header">
                     <h3 class="modal-title" style="color:#ef4444;">⚠️ 危险操作</h3>
-                    <button class="modal-close-btn" onclick="closeClearContentModal()"><i class="fas fa-times"></i></button>
+                    <button class="modal-close-btn" type="button" data-users-clear-action="close"><i class="fas fa-times"></i></button>
                 </div>
                 <div class="modal-body">
                     <div class="checklist-container" style="background:rgba(0,0,0,0.02); padding:16px; border-radius:8px; margin-bottom:20px; border:1px solid rgba(0,0,0,0.05);">
@@ -4747,13 +4835,37 @@ function injectClearContentModal() {
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button class="modal-btn cancel" onclick="closeClearContentModal()">取消</button>
+                    <button class="modal-btn cancel" type="button" data-users-clear-action="close">取消</button>
                     <button class="modal-btn danger" id="ccConfirmBtn" style="background:#ef4444; color:white; border:none; box-shadow:0 2px 8px rgba(239, 68, 68, 0.4);">确认清空</button>
                 </div>
             </div>
     </div > `;
 
     document.body.insertAdjacentHTML('beforeend', modalHtml);
+    bindClearContentModalInteractions(document.getElementById('clearContentModalOverlay'));
+}
+
+function bindClearContentModalInteractions(overlay) {
+    if (!overlay || overlay.dataset.usersClearBound === '1') {
+        return;
+    }
+
+    overlay.dataset.usersClearBound = '1';
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) {
+            closeClearContentModal();
+            return;
+        }
+
+        const actionEl = event.target instanceof Element ? event.target.closest('[data-users-clear-action]') : null;
+        if (!actionEl || !overlay.contains(actionEl)) {
+            return;
+        }
+
+        if (actionEl.dataset.usersClearAction === 'close') {
+            closeClearContentModal();
+        }
+    });
 }
 
 function closeClearContentModal() {
