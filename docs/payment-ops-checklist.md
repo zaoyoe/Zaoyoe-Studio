@@ -99,6 +99,9 @@
    - `GET /api/admin/network/request-context`
    - 这个接口会返回当前请求看到的 `socket_ip`、`x-forwarded-for/forwarded`、解析后的 `resolved_client_ip`，以及当前代理链配置缺口
    - 真正的 `AFDIAN_WEBHOOK_ALLOWED_IPS` 仍要结合爱发电官方来源和 Railway 日志确认；当 webhook 因白名单被拦时，日志里现在会打印完整的结构化网络上下文
+   - 也可以直接运行：`npm run inspect:proxy-chain -- --env-file server/.env.staging --base-url https://www.zaoyoe.com --admin-email zaoyoe@gmail.com`
+   - 该脚本会自动采样线上 Railway 代理链，并输出推荐的 `TRUSTED_PROXY_IPS` / `AFDIAN_WEBHOOK_TRUSTED_PROXIES`
+   - 如果爱发电开发者认证还没开通，脚本会建议先把 `AFDIAN_WEBHOOK_ALLOWED_IPS` 设成 `203.0.113.254/32`，让 webhook 先保持 fail-closed，等首个真实回调出现后再替换成真实源 IP
 8. 重新部署：
    - Vercel
    - Railway（如果它依赖这个 key）
