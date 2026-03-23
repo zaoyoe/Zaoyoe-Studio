@@ -50,6 +50,16 @@ function fingerprintSecret(value) {
         .slice(0, 12);
 }
 
+function classifySupabaseKey(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return 'missing';
+    if (/^sb_secret_/i.test(normalized)) return 'secret';
+    if (/^sb_publishable_/i.test(normalized)) return 'publishable';
+    if (/^sb_anon_/i.test(normalized)) return 'anon';
+    if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(normalized)) return 'jwt_like';
+    return 'unknown';
+}
+
 function isProductionLikeRuntime(env = process.env) {
     const vercelEnv = String(env.VERCEL_ENV || '').trim().toLowerCase();
     const railwayEnv = String(env.RAILWAY_ENVIRONMENT_NAME || '').trim().toLowerCase();
@@ -177,6 +187,7 @@ function parseArgs(argv = []) {
         envFile: '',
         baseUrl: '',
         checkAppRuntime: false,
+        runtimeOnly: false,
         validateSupabase: false,
         validatePaymentSchema: false,
         timeoutMs: 10000
@@ -206,6 +217,11 @@ function parseArgs(argv = []) {
             continue;
         }
 
+        if (value === '--runtime-only') {
+            options.runtimeOnly = true;
+            continue;
+        }
+
         if (value === '--env-file') {
             options.envFile = path.resolve(process.cwd(), String(argv[index + 1] || '').trim());
             index += 1;
@@ -225,6 +241,98 @@ function parseArgs(argv = []) {
     }
 
     return options;
+}
+
+function buildLocalEnvironmentChecks({ options = {}, env = process.env } = {}) {
+    if (options.runtimeOnly) {
+        return [];
+    }
+
+    const serviceRoleKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+    const serviceRoleKeyKind = classifySupabaseKey(serviceRoleKey);
+    const adminEncryptionKey = String(env.ADMIN_CONFIG_ENCRYPTION_KEY || '').trim();
+    const adminStudioAccessSecret = String(env.ADMIN_STUDIO_ACCESS_SECRET || '').trim();
+    const quoteSecret = readFirstAvailableEnv(QUOTE_SECRET_ENV_NAMES);
+    const runtime = isProductionLikeRuntime(env);
+    const trustedProxyIps = String(env.TRUSTED_PROXY_IPS || env.TRUSTED_PROXY_CIDRS || '').trim();
+    const trustAllProxies = String(env.TRUST_ALL_PROXIES || '').trim().toLowerCase();
+    const webhookTrustedProxies = String(env.AFDIAN_WEBHOOK_TRUSTED_PROXIES || '').trim();
+    const webhookAllowedIps = String(env.AFDIAN_WEBHOOK_ALLOWED_IPS || '').trim();
+    const proxyTrustConfigured = trustAllProxies === 'true'
+        || trustAllProxies === '1'
+        || Boolean(trustedProxyIps)
+        || Boolean(webhookTrustedProxies);
+    const requireStrictNetworkGuards = runtime.productionLike;
+
+    return [
+        {
+            label: 'SUPABASE_SERVICE_ROLE_KEY',
+            ok: Boolean(serviceRoleKey) && !['publishable', 'anon'].includes(serviceRoleKeyKind),
+            details: !serviceRoleKey
+                ? 'missing'
+                : ['publishable', 'anon'].includes(serviceRoleKeyKind)
+                    ? `looks like a ${serviceRoleKeyKind} key; use an sb_secret_/service-role key instead`
+                    : `set, kind=${serviceRoleKeyKind}, fingerprint=${fingerprintSecret(serviceRoleKey)}`
+        },
+        {
+            label: 'ADMIN_CONFIG_ENCRYPTION_KEY',
+            ok: Boolean(adminEncryptionKey) && adminEncryptionKey !== serviceRoleKey,
+            details: !adminEncryptionKey
+                ? 'missing'
+                : adminEncryptionKey === serviceRoleKey
+                    ? 'must not equal SUPABASE_SERVICE_ROLE_KEY'
+                    : `set, independent, fingerprint=${fingerprintSecret(adminEncryptionKey)}`
+        },
+        {
+            label: 'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
+            ok: Boolean(quoteSecret.value) && quoteSecret.value !== serviceRoleKey,
+            details: !quoteSecret.value
+                ? 'missing (checked PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET / PAYMENT_CUSTOM_QUOTE_SECRET / PAYMENT_QUOTE_SECRET)'
+                : quoteSecret.value === serviceRoleKey
+                    ? `source=${quoteSecret.name}, but it must not equal SUPABASE_SERVICE_ROLE_KEY`
+                    : `set via ${quoteSecret.name}, independent, fingerprint=${fingerprintSecret(quoteSecret.value)}`
+        },
+        {
+            label: 'ADMIN_STUDIO_ACCESS_SECRET',
+            ok: Boolean(adminStudioAccessSecret)
+                && adminStudioAccessSecret !== serviceRoleKey
+                && adminStudioAccessSecret !== adminEncryptionKey,
+            details: !adminStudioAccessSecret
+                ? 'missing'
+                : adminStudioAccessSecret === serviceRoleKey
+                    ? 'must not equal SUPABASE_SERVICE_ROLE_KEY'
+                    : adminStudioAccessSecret === adminEncryptionKey
+                        ? 'should be independent from ADMIN_CONFIG_ENCRYPTION_KEY'
+                        : `set, independent, fingerprint=${fingerprintSecret(adminStudioAccessSecret)}`
+        },
+        {
+            label: 'production-like runtime',
+            ok: runtime.productionLike || options.allowNonProduction,
+            details: runtime.productionLike
+                ? `enabled via ${runtime.source}`
+                : options.allowNonProduction
+                    ? 'not production-like, but allowed by --allow-non-production'
+                    : 'missing production marker (set DEPLOYMENT_TIER=production if VERCEL_ENV / RAILWAY_ENVIRONMENT_NAME are unavailable)'
+        },
+        {
+            label: 'trusted proxy chain',
+            ok: !requireStrictNetworkGuards || proxyTrustConfigured,
+            details: proxyTrustConfigured
+                ? trustAllProxies === 'true' || trustAllProxies === '1'
+                    ? 'enabled via TRUST_ALL_PROXIES'
+                    : webhookTrustedProxies
+                        ? 'configured via AFDIAN_WEBHOOK_TRUSTED_PROXIES'
+                        : 'configured via TRUSTED_PROXY_IPS'
+                : 'missing TRUSTED_PROXY_IPS / AFDIAN_WEBHOOK_TRUSTED_PROXIES (or set TRUST_ALL_PROXIES=true only if you fully trust the ingress chain)'
+        },
+        {
+            label: 'Afdian webhook IP allowlist',
+            ok: !requireStrictNetworkGuards || Boolean(webhookAllowedIps),
+            details: webhookAllowedIps
+                ? 'configured via AFDIAN_WEBHOOK_ALLOWED_IPS'
+                : 'missing AFDIAN_WEBHOOK_ALLOWED_IPS for a production-like runtime'
+        }
+    ];
 }
 
 function loadEnvFile(envFile) {
@@ -300,6 +408,15 @@ function buildRuntimeConfigCheckResult(runtimeConfig, expected = {}) {
             label: 'app runtime Supabase config',
             ok: false,
             details: runtimeConfig?.error || 'Runtime Supabase config is unavailable'
+        };
+    }
+
+    const runtimePublishableKeyKind = classifySupabaseKey(runtimeConfig.publishableKey);
+    if (runtimePublishableKeyKind === 'secret') {
+        return {
+            label: 'app runtime Supabase config',
+            ok: false,
+            details: 'runtime publishable key looks like a secret/service key'
         };
     }
 
@@ -379,6 +496,10 @@ function buildPlatformEnvChecklist(env = process.env) {
     const appBaseUrl = resolveAppBaseUrl({}, env);
     const smokeBaseUrl = normalizeBaseUrl(String(env.PAYMENT_SMOKE_BASE_URL || '').trim());
     const deploymentTier = String(env.DEPLOYMENT_TIER || env.APP_ENV || '').trim();
+    const trustedProxyIps = String(env.TRUSTED_PROXY_IPS || env.TRUSTED_PROXY_CIDRS || '').trim();
+    const trustAllProxies = String(env.TRUST_ALL_PROXIES || '').trim();
+    const afdianWebhookTrustedProxies = String(env.AFDIAN_WEBHOOK_TRUSTED_PROXIES || '').trim();
+    const afdianWebhookAllowedIps = String(env.AFDIAN_WEBHOOK_ALLOWED_IPS || '').trim();
 
     return {
         vercel: [
@@ -390,7 +511,9 @@ function buildPlatformEnvChecklist(env = process.env) {
             { name: 'ADMIN_STUDIO_ACCESS_SECRET', value: renderChecklistValue(adminStudioAccessSecret, { sensitive: true }) },
             { name: 'DEPLOYMENT_TIER', value: renderChecklistValue(deploymentTier) },
             { name: 'APP_BASE_URL', value: renderChecklistValue(appBaseUrl) },
-            { name: 'PAYMENT_SMOKE_BASE_URL', value: renderChecklistValue(smokeBaseUrl || appBaseUrl) }
+            { name: 'PAYMENT_SMOKE_BASE_URL', value: renderChecklistValue(smokeBaseUrl || appBaseUrl) },
+            { name: 'TRUSTED_PROXY_IPS', value: renderChecklistValue(trustedProxyIps) },
+            { name: 'TRUST_ALL_PROXIES', value: renderChecklistValue(trustAllProxies) }
         ],
         railway: [
             { name: 'SUPABASE_URL', value: renderChecklistValue(supabaseUrl) },
@@ -399,7 +522,10 @@ function buildPlatformEnvChecklist(env = process.env) {
             { name: 'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET', value: renderChecklistValue(quoteSecret, { sensitive: true }) },
             { name: 'ADMIN_STUDIO_ACCESS_SECRET', value: renderChecklistValue(adminStudioAccessSecret, { sensitive: true }) },
             { name: 'DEPLOYMENT_TIER', value: renderChecklistValue(deploymentTier) },
-            { name: 'APP_BASE_URL', value: renderChecklistValue(appBaseUrl) }
+            { name: 'APP_BASE_URL', value: renderChecklistValue(appBaseUrl) },
+            { name: 'TRUSTED_PROXY_IPS', value: renderChecklistValue(trustedProxyIps) },
+            { name: 'AFDIAN_WEBHOOK_TRUSTED_PROXIES', value: renderChecklistValue(afdianWebhookTrustedProxies) },
+            { name: 'AFDIAN_WEBHOOK_ALLOWED_IPS', value: renderChecklistValue(afdianWebhookAllowedIps) }
         ]
     };
 }
@@ -505,62 +631,10 @@ async function runAppRuntimeValidation({
 async function main() {
     const options = parseArgs(process.argv.slice(2));
     loadEnvFile(options.envFile);
-
-    const serviceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY');
-    const adminEncryptionKey = readEnv('ADMIN_CONFIG_ENCRYPTION_KEY');
-    const adminStudioAccessSecret = readEnv('ADMIN_STUDIO_ACCESS_SECRET');
-    const quoteSecret = readFirstAvailableEnv(QUOTE_SECRET_ENV_NAMES);
-    const runtime = isProductionLikeRuntime(process.env);
-
-    const checks = [
-        {
-            label: 'SUPABASE_SERVICE_ROLE_KEY',
-            ok: Boolean(serviceRoleKey),
-            details: serviceRoleKey
-                ? `set, fingerprint=${fingerprintSecret(serviceRoleKey)}`
-                : 'missing'
-        },
-        {
-            label: 'ADMIN_CONFIG_ENCRYPTION_KEY',
-            ok: Boolean(adminEncryptionKey) && adminEncryptionKey !== serviceRoleKey,
-            details: !adminEncryptionKey
-                ? 'missing'
-                : adminEncryptionKey === serviceRoleKey
-                    ? 'must not equal SUPABASE_SERVICE_ROLE_KEY'
-                    : `set, independent, fingerprint=${fingerprintSecret(adminEncryptionKey)}`
-        },
-        {
-            label: 'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
-            ok: Boolean(quoteSecret.value) && quoteSecret.value !== serviceRoleKey,
-            details: !quoteSecret.value
-                ? 'missing (checked PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET / PAYMENT_CUSTOM_QUOTE_SECRET / PAYMENT_QUOTE_SECRET)'
-                : quoteSecret.value === serviceRoleKey
-                    ? `source=${quoteSecret.name}, but it must not equal SUPABASE_SERVICE_ROLE_KEY`
-                    : `set via ${quoteSecret.name}, independent, fingerprint=${fingerprintSecret(quoteSecret.value)}`
-        },
-        {
-            label: 'ADMIN_STUDIO_ACCESS_SECRET',
-            ok: Boolean(adminStudioAccessSecret)
-                && adminStudioAccessSecret !== serviceRoleKey
-                && adminStudioAccessSecret !== adminEncryptionKey,
-            details: !adminStudioAccessSecret
-                ? 'missing'
-                : adminStudioAccessSecret === serviceRoleKey
-                    ? 'must not equal SUPABASE_SERVICE_ROLE_KEY'
-                    : adminStudioAccessSecret === adminEncryptionKey
-                        ? 'should be independent from ADMIN_CONFIG_ENCRYPTION_KEY'
-                        : `set, independent, fingerprint=${fingerprintSecret(adminStudioAccessSecret)}`
-        },
-        {
-            label: 'production-like runtime',
-            ok: runtime.productionLike || options.allowNonProduction,
-            details: runtime.productionLike
-                ? `enabled via ${runtime.source}`
-                : options.allowNonProduction
-                    ? 'not production-like, but allowed by --allow-non-production'
-                    : 'missing production marker (set DEPLOYMENT_TIER=production if VERCEL_ENV / RAILWAY_ENVIRONMENT_NAME are unavailable)'
-        }
-    ];
+    const checks = buildLocalEnvironmentChecks({
+        options,
+        env: process.env
+    });
 
     if (options.validateSupabase || options.validatePaymentSchema) {
         checks.push(...await runSupabaseValidation({
@@ -580,6 +654,9 @@ async function main() {
     console.log('Compare ADMIN_CONFIG_ENCRYPTION_KEY, PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET, and ADMIN_STUDIO_ACCESS_SECRET fingerprints across Vercel and Railway; they should match.');
     if (options.envFile) {
         console.log(`Loaded env file: ${options.envFile}`);
+    }
+    if (options.runtimeOnly) {
+        console.log('Runtime-only mode: skipping local secret/env completeness checks.');
     }
     console.log('');
 
@@ -635,8 +712,10 @@ if (require.main === module) {
 
 module.exports = {
     buildAuthCheckProbeResult,
+    buildLocalEnvironmentChecks,
     buildPlatformEnvChecklist,
     buildRuntimeConfigCheckResult,
+    classifySupabaseKey,
     fetchJson,
     fetchText,
     fingerprintSecret,

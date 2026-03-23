@@ -6,6 +6,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 const DEFAULT_ENV_FILES = [
     path.resolve(__dirname, '../server/.env'),
+    path.resolve(__dirname, '../server/.env.staging'),
     path.resolve(__dirname, '../server/.env.production')
 ];
 
@@ -18,6 +19,16 @@ function fingerprintSecret(value) {
         .update(normalized)
         .digest('hex')
         .slice(0, 12);
+}
+
+function classifySupabaseKey(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return 'missing';
+    if (/^sb_secret_/i.test(normalized)) return 'secret';
+    if (/^sb_publishable_/i.test(normalized)) return 'publishable';
+    if (/^sb_anon_/i.test(normalized)) return 'anon';
+    if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(normalized)) return 'jwt_like';
+    return 'unknown';
 }
 
 function parseArgs(argv = []) {
@@ -99,9 +110,15 @@ function pickFirstAvailable(values, names = []) {
 function summarizeEnvFile(record) {
     const values = record.values || {};
     const supabaseUrl = String(values.SUPABASE_URL || '').trim();
+    const supabaseServiceRoleKey = String(values.SUPABASE_SERVICE_ROLE_KEY || '').trim();
     const projectHost = supabaseUrl
         ? supabaseUrl.replace(/^https?:\/\//i, '').replace(/\/+$/, '')
         : '';
+    const deploymentTier = String(values.DEPLOYMENT_TIER || values.APP_ENV || '').trim().toLowerCase();
+    const trustedProxyIps = String(values.TRUSTED_PROXY_IPS || values.TRUSTED_PROXY_CIDRS || '').trim();
+    const trustAllProxies = String(values.TRUST_ALL_PROXIES || '').trim().toLowerCase();
+    const afdianWebhookTrustedProxies = String(values.AFDIAN_WEBHOOK_TRUSTED_PROXIES || '').trim();
+    const afdianWebhookAllowedIps = String(values.AFDIAN_WEBHOOK_ALLOWED_IPS || '').trim();
     const quoteSecret = pickFirstAvailable(values, [
         'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
         'PAYMENT_CUSTOM_QUOTE_SECRET',
@@ -113,8 +130,11 @@ function summarizeEnvFile(record) {
         exists: record.exists,
         projectHost,
         supabaseUrl,
+        keyKinds: {
+            supabase_service_role_key: classifySupabaseKey(supabaseServiceRoleKey)
+        },
         fingerprints: {
-            supabase_service_role_key: fingerprintSecret(values.SUPABASE_SERVICE_ROLE_KEY),
+            supabase_service_role_key: fingerprintSecret(supabaseServiceRoleKey),
             admin_config_encryption_key: fingerprintSecret(values.ADMIN_CONFIG_ENCRYPTION_KEY),
             payment_custom_recharge_quote_secret: fingerprintSecret(quoteSecret.value),
             admin_studio_access_secret: fingerprintSecret(values.ADMIN_STUDIO_ACCESS_SECRET)
@@ -127,7 +147,20 @@ function summarizeEnvFile(record) {
             supabase_service_role_key: !String(values.SUPABASE_SERVICE_ROLE_KEY || '').trim(),
             admin_config_encryption_key: !String(values.ADMIN_CONFIG_ENCRYPTION_KEY || '').trim(),
             payment_custom_recharge_quote_secret: !String(quoteSecret.value || '').trim(),
-            admin_studio_access_secret: !String(values.ADMIN_STUDIO_ACCESS_SECRET || '').trim()
+            admin_studio_access_secret: !String(values.ADMIN_STUDIO_ACCESS_SECRET || '').trim(),
+            trusted_proxy_ips: !trustedProxyIps,
+            afdian_webhook_trusted_proxies: !afdianWebhookTrustedProxies,
+            afdian_webhook_allowed_ips: !afdianWebhookAllowedIps
+        },
+        runtime: {
+            deploymentTier,
+            productionLike: deploymentTier === 'production',
+            trustAllProxies: trustAllProxies === 'true' || trustAllProxies === '1'
+        },
+        securityNetwork: {
+            trustedProxyIps,
+            afdianWebhookTrustedProxies,
+            afdianWebhookAllowedIps
         },
         live: null
     };
@@ -240,6 +273,39 @@ function buildDriftFindings(summaries = []) {
                 envFiles: [summary.envFile]
             });
         }
+
+        if (['publishable', 'anon'].includes(summary.keyKinds?.supabase_service_role_key)) {
+            findings.push({
+                severity: 'high',
+                type: 'invalid_service_role_key_kind',
+                message: `SUPABASE_SERVICE_ROLE_KEY in ${summary.envFile} looks like a ${summary.keyKinds.supabase_service_role_key} key instead of a service-role key`,
+                envFiles: [summary.envFile]
+            });
+        }
+
+        if (summary.runtime?.productionLike) {
+            const proxyTrustConfigured = summary.runtime.trustAllProxies
+                || !summary.missing.trusted_proxy_ips
+                || !summary.missing.afdian_webhook_trusted_proxies;
+
+            if (!proxyTrustConfigured) {
+                findings.push({
+                    severity: 'high',
+                    type: 'proxy_trust_chain_missing',
+                    message: `Production-like env is missing TRUSTED_PROXY_IPS / AFDIAN_WEBHOOK_TRUSTED_PROXIES: ${summary.envFile}`,
+                    envFiles: [summary.envFile]
+                });
+            }
+
+            if (summary.missing.afdian_webhook_allowed_ips) {
+                findings.push({
+                    severity: 'high',
+                    type: 'webhook_allowlist_missing',
+                    message: `Production-like env is missing AFDIAN_WEBHOOK_ALLOWED_IPS: ${summary.envFile}`,
+                    envFiles: [summary.envFile]
+                });
+            }
+        }
     }
 
     return findings;
@@ -257,10 +323,15 @@ function formatHumanReport({ summaries = [], findings = [] }) {
         }
 
         lines.push(`  host: ${summary.projectHost || '(missing)'}`);
+        lines.push(`  service_role_kind: ${summary.keyKinds?.supabase_service_role_key || 'missing'}`);
         lines.push(`  service_role_fp: ${summary.fingerprints.supabase_service_role_key}`);
         lines.push(`  admin_encryption_fp: ${summary.fingerprints.admin_config_encryption_key}`);
         lines.push(`  quote_secret_fp: ${summary.fingerprints.payment_custom_recharge_quote_secret}`);
         lines.push(`  admin_studio_fp: ${summary.fingerprints.admin_studio_access_secret}`);
+        lines.push(`  deployment_tier: ${summary.runtime?.deploymentTier || '(missing)'}`);
+        lines.push(`  trusted_proxy_ips: ${summary.securityNetwork?.trustedProxyIps || '(missing)'}`);
+        lines.push(`  webhook_trusted_proxies: ${summary.securityNetwork?.afdianWebhookTrustedProxies || '(missing)'}`);
+        lines.push(`  webhook_allowed_ips: ${summary.securityNetwork?.afdianWebhookAllowedIps || '(missing)'}`);
 
         if (summary.live) {
             lines.push(`  live_access: ${summary.live.ok ? 'ok' : 'fail'} (${summary.live.status} ${summary.live.statusText || ''})`.trim());
@@ -322,6 +393,7 @@ if (require.main === module) {
 
 module.exports = {
     buildDriftFindings,
+    classifySupabaseKey,
     fingerprintSecret,
     parseArgs,
     summarizeEnvFile

@@ -104,7 +104,10 @@ async function withPaymentHandler(handlerRelativePath, options, callback) {
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../_lib/admin' || request === '../../_lib/admin') {
             return {
-                async requireAuthenticatedUser() {
+                async requireAuthenticatedUser(req) {
+                    if (typeof options.requireAuthenticatedUser === 'function') {
+                        return options.requireAuthenticatedUser(req);
+                    }
                     return options.authResult;
                 },
                 async parseJsonBody(req) {
@@ -115,6 +118,10 @@ async function withPaymentHandler(handlerRelativePath, options, callback) {
                     res.end(JSON.stringify(payload));
                 }
             };
+        }
+
+        if ((request === '../_lib/request-security' || request === '../../_lib/request-security') && options.requestSecurityModule) {
+            return options.requestSecurityModule;
         }
 
         if (request === '../_lib/payments/orders' || request === '../../_lib/payments/orders') {
@@ -375,6 +382,54 @@ test('payment create handler passes request and admin Supabase clients separatel
         assert.equal(state.paymentCalls[0].action, 'create');
         assert.equal(state.paymentCalls[0].payload.supabase.kind, 'request');
         assert.equal(state.paymentCalls[0].payload.adminSupabase.kind, 'admin');
+    });
+});
+
+test('payment create handler returns 429 when rate-limited before auth or order writes', async () => {
+    let authCalled = false;
+
+    await withPaymentHandler('../api/payments/create.js', {
+        requireAuthenticatedUser() {
+            authCalled = true;
+            throw new Error('should not run');
+        },
+        requestSecurityModule: {
+            resolveClientIp() {
+                return '203.0.113.21';
+            },
+            takeRateLimitToken() {
+                return {
+                    allowed: false,
+                    limit: 12,
+                    remaining: 0,
+                    resetAt: Date.now() + 15_000,
+                    retryAfterSeconds: 15
+                };
+            },
+            applyRateLimitHeaders(res) {
+                res.setHeader('Retry-After', '15');
+            }
+        }
+    }, async ({ handler, state }) => {
+        const req = {
+            method: 'POST',
+            headers: {
+                host: 'zaoyoe.com'
+            },
+            body: {
+                package_id: 'pkg-1'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 429);
+        assert.equal(payload.success, false);
+        assert.equal(payload.code, 'rate_limited');
+        assert.equal(state.paymentCalls.length, 0);
+        assert.equal(authCalled, false);
     });
 });
 

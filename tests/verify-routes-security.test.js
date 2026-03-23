@@ -508,7 +508,8 @@ async function dispatchRoute(app, {
     method = 'GET',
     url = '/',
     headers = {},
-    body = null
+    body = null,
+    remoteAddress = ''
 } = {}) {
     const parsedUrl = new URL(url, 'http://local.test');
     const normalizedHeaders = Object.fromEntries(
@@ -521,7 +522,13 @@ async function dispatchRoute(app, {
         headers: normalizedHeaders,
         body,
         params,
-        query: Object.fromEntries(parsedUrl.searchParams.entries())
+        query: Object.fromEntries(parsedUrl.searchParams.entries()),
+        socket: {
+            remoteAddress
+        },
+        connection: {
+            remoteAddress
+        }
     };
 
     const responseState = {
@@ -737,6 +744,65 @@ test('queue endpoint allows admins and proxies upstream data', async () => {
         } finally {
             global.fetch = originalFetch;
         }
+    });
+});
+
+test('network request-context endpoint requires admin privileges', async () => {
+    await withTestServer({
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        }
+    }, async ({ app }) => {
+        const response = await dispatchRoute(app, {
+            url: '/api/admin/network/request-context',
+            headers: {
+                Authorization: 'Bearer member-token'
+            },
+            remoteAddress: '10.0.0.2'
+        });
+        const payload = response.json();
+
+        assert.equal(response.status, 403);
+        assert.equal(payload.code, 'admin_required');
+    });
+});
+
+test('network request-context endpoint returns proxy diagnostics for admins', async () => {
+    await withTestServer({
+        tokens: {
+            'admin-token': { id: 'admin-1', email: 'admin@example.com' }
+        },
+        permissions: {
+            'admin-1': { is_admin: true, is_super_admin: false }
+        }
+    }, async ({ app }) => {
+        const response = await withEnv({
+            TRUST_ALL_PROXIES: 'false',
+            TRUSTED_PROXY_IPS: '10.0.0.0/8',
+            AFDIAN_WEBHOOK_TRUSTED_PROXIES: '10.0.0.0/8',
+            AFDIAN_WEBHOOK_ALLOWED_IPS: '198.51.100.0/24'
+        }, async () => dispatchRoute(app, {
+            url: '/api/admin/network/request-context',
+            headers: {
+                Authorization: 'Bearer admin-token',
+                Host: 'zaoyoe-verify-server-production.up.railway.app',
+                'x-forwarded-for': '198.51.100.23, 10.0.0.2',
+                forwarded: 'for=198.51.100.23;proto=https'
+            },
+            remoteAddress: '10.0.0.2'
+        }));
+        const payload = response.json();
+
+        assert.equal(response.status, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.request_context.app_proxy.socket_ip, '10.0.0.2');
+        assert.equal(payload.request_context.app_proxy.resolved_client_ip, '198.51.100.23');
+        assert.equal(payload.request_context.app_proxy.direct_peer_trusted, true);
+        assert.equal(payload.request_context.app_proxy.used_forwarded_chain, true);
+        assert.deepEqual(payload.request_context.app_proxy.trusted_proxies, ['10.0.0.0/8']);
+        assert.equal(payload.request_context.afdian_webhook.allowlist_configured, true);
+        assert.equal(payload.request_context.afdian_webhook.would_pass_allowlist, true);
+        assert.equal(Array.isArray(payload.findings), true);
     });
 });
 
@@ -1082,6 +1148,80 @@ test('afdian webhook marks process_rpc_failed when fn_process_afdian_payment err
         assert.equal(state.paymentEvents[0].processing_result, 'process_rpc_failed');
         assert.equal(state.paymentEvents[0].error_message, 'fn_process_afdian_payment exploded');
         assert.equal(state.paymentEvents[0].response_status, 500);
+    });
+});
+
+test('afdian webhook rejects requests outside the configured source IP allowlist', async () => {
+    const state = {
+        paymentEvents: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const response = await withEnv({
+            AFDIAN_WEBHOOK_ALLOWED_IPS: '203.0.113.0/24'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/webhook',
+            headers: {
+                'x-forwarded-for': '198.51.100.22'
+            },
+            body: {
+                ec: 200,
+                sign: 'ignored',
+                data: {
+                    type: 'order',
+                    order: {
+                        out_trade_no: 'AFD-IP-BLOCKED',
+                        status: 2,
+                        total_amount: '5.00'
+                    }
+                }
+            }
+        }));
+        const payload = response.json();
+
+        assert.equal(response.status, 403);
+        assert.deepEqual(payload, { ec: 403, em: 'forbidden' });
+        assert.equal(state.paymentEvents.length, 0);
+    });
+});
+
+test('afdian query endpoint returns 429 when a single client exceeds the rate limit window', async () => {
+    await withTestServer({}, async ({ app }) => {
+        const firstResponse = await withEnv({
+            AFDIAN_QUERY_RATE_LIMIT_MAX: '1',
+            AFDIAN_QUERY_RATE_LIMIT_WINDOW_MS: '60000'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/query',
+            headers: {
+                'x-forwarded-for': '203.0.113.40'
+            },
+            body: {
+                order_no: 'ORDER-1'
+            }
+        }));
+
+        const secondResponse = await withEnv({
+            AFDIAN_QUERY_RATE_LIMIT_MAX: '1',
+            AFDIAN_QUERY_RATE_LIMIT_WINDOW_MS: '60000'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/query',
+            headers: {
+                'x-forwarded-for': '203.0.113.40'
+            },
+            body: {
+                order_no: 'ORDER-1'
+            }
+        }));
+        const secondPayload = secondResponse.json();
+
+        assert.equal(firstResponse.status, 401);
+        assert.equal(secondResponse.status, 429);
+        assert.equal(secondPayload.success, false);
+        assert.equal(secondPayload.code, 'rate_limited');
+        assert.equal(secondPayload.retry_after_seconds > 0, true);
     });
 });
 

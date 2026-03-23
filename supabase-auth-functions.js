@@ -66,6 +66,160 @@ window.closeUserDropdown = closeUserDropdown;
 const AUTH_ORIGIN_CACHE_KEY = 'zaoyoe_auth_origin_cache_v1';
 const PENDING_AUTH_ORIGIN_KEY = 'zaoyoe_pending_auth_origin_v1';
 const AUTH_ORIGIN_CACHE_TTL = 10 * 60 * 1000;
+const REMEMBERED_LOGIN_EMAIL_KEY = 'zaoyoe_remembered_login_email_v1';
+const LEGACY_AUTH_SECRET_KEYS = Object.freeze([
+    'remembered_credentials',
+    'saved_passwords'
+]);
+
+function clearLegacyRememberedAuthSecrets() {
+    LEGACY_AUTH_SECRET_KEYS.forEach((key) => {
+        try {
+            localStorage.removeItem(key);
+        } catch (err) {
+            console.warn('Failed to clear legacy auth secret:', key, err);
+        }
+    });
+}
+
+function readRememberedLoginEmail() {
+    try {
+        const raw = localStorage.getItem(REMEMBERED_LOGIN_EMAIL_KEY);
+        if (!raw) return null;
+
+        const parsed = JSON.parse(raw);
+        const email = String(parsed?.email || '').trim();
+        const expiry = Number(parsed?.expiry || 0);
+        if (!email || !Number.isFinite(expiry) || expiry <= Date.now()) {
+            localStorage.removeItem(REMEMBERED_LOGIN_EMAIL_KEY);
+            return null;
+        }
+
+        return {
+            email,
+            expiry
+        };
+    } catch (err) {
+        console.warn('Failed to read remembered login email:', err);
+        localStorage.removeItem(REMEMBERED_LOGIN_EMAIL_KEY);
+        return null;
+    }
+}
+
+function persistRememberedLoginEmail(email) {
+    const normalizedEmail = String(email || '').trim();
+    if (!normalizedEmail) {
+        localStorage.removeItem(REMEMBERED_LOGIN_EMAIL_KEY);
+        return;
+    }
+
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + 30);
+
+    try {
+        localStorage.setItem(REMEMBERED_LOGIN_EMAIL_KEY, JSON.stringify({
+            email: normalizedEmail,
+            expiry: expiryDate.getTime()
+        }));
+    } catch (err) {
+        console.warn('Failed to persist remembered login email:', err);
+    }
+}
+
+function removeRememberedLoginEmail() {
+    try {
+        localStorage.removeItem(REMEMBERED_LOGIN_EMAIL_KEY);
+    } catch (err) {
+        console.warn('Failed to clear remembered login email:', err);
+    }
+}
+
+function restoreRememberedLoginState() {
+    clearLegacyRememberedAuthSecrets();
+
+    const remembered = readRememberedLoginEmail();
+    const emailInput = document.getElementById('login-email');
+    const rememberMeInput = document.getElementById('rememberMe');
+
+    if (emailInput) {
+        emailInput.value = remembered?.email || '';
+        emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+        emailInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    if (rememberMeInput) {
+        rememberMeInput.checked = Boolean(remembered?.email);
+    }
+}
+
+function buildLockedAccountMessage(remainingSeconds = 0) {
+    const minutes = Math.max(1, Math.ceil(Number(remainingSeconds || 0) / 60));
+    return formatAuthText('auth.accountLockedRetry', '账户已锁定。由于多次登录失败，请在 {minutes} 分钟后重试。', {
+        minutes
+    });
+}
+
+function getIpBlockedMessage() {
+    return authT('auth.ipBlocked', '当前网络请求过于频繁，已被临时拦截，请稍后再试。');
+}
+
+function normalizeLoginSecurityState(payload) {
+    const security = payload?.security || {};
+    return {
+        ipBlocked: security.ip_blocked === true,
+        ipBlockReason: security.ip_block_reason || '',
+        ipBlockExpiresAt: security.ip_block_expires_at || null,
+        accountLocked: security.account_locked === true,
+        lockedUntil: security.locked_until || null,
+        remainingSeconds: Math.max(0, Number(security.remaining_seconds) || 0),
+        retryAfterSeconds: Math.max(0, Number(payload?.retry_after_seconds) || 0)
+    };
+}
+
+async function requestLoginSecurityAction(action, email) {
+    const normalizedEmail = String(email || '').trim();
+    if (!normalizedEmail) return null;
+
+    try {
+        const response = await fetch('/api/auth/login-security', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8'
+            },
+            body: JSON.stringify({
+                action,
+                email: normalizedEmail
+            })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (response.status === 429) {
+            return {
+                ...normalizeLoginSecurityState(payload),
+                rateLimited: true
+            };
+        }
+
+        if (!response.ok) {
+            throw new Error(payload?.message || `HTTP ${response.status}`);
+        }
+
+        return {
+            ...normalizeLoginSecurityState(payload),
+            rateLimited: false
+        };
+    } catch (err) {
+        console.warn(`Login security action failed (${action}):`, err?.message || err);
+        return null;
+    }
+}
+
+function isInvalidCredentialsError(error) {
+    const message = String(error?.message || '');
+    return message.includes('Invalid login credentials')
+        || message.includes('invalid_credentials')
+        || message.includes('Invalid credentials');
+}
 
 function getCurrentAuthSite() {
     return String(window.SiteConfig?.site || 'cn').trim() || 'cn';
@@ -402,6 +556,28 @@ async function handleLogin(event) {
     }
 
     try {
+        const preflightSecurity = await requestLoginSecurityAction('preflight', email);
+        if (preflightSecurity?.rateLimited) {
+            showAuthFeedback(
+                formatAuthText('auth.waitSecondsRetry', '请等待 {seconds} 秒后再试', {
+                    seconds: Math.max(1, preflightSecurity.retryAfterSeconds || 60)
+                }),
+                'error',
+                'login'
+            );
+            return;
+        }
+
+        if (preflightSecurity?.ipBlocked) {
+            showAuthFeedback(getIpBlockedMessage(), 'error', 'login');
+            return;
+        }
+
+        if (preflightSecurity?.accountLocked) {
+            showAuthFeedback(buildLockedAccountMessage(preflightSecurity.remainingSeconds), 'error', 'login');
+            return;
+        }
+
         // Step 1: 尝试登录
         const { data, error } = await window.supabaseClient.auth.signInWithPassword({
             email: email,
@@ -409,6 +585,9 @@ async function handleLogin(event) {
         });
 
         if (error) {
+            if (isInvalidCredentialsError(error)) {
+                error.loginSecurity = await requestLoginSecurityAction('record_failure', email);
+            }
             throw error;
         }
 
@@ -424,30 +603,13 @@ async function handleLogin(event) {
             .eq('id', data.user.id)
             .single();
 
-        // 记住我功能
+        clearLegacyRememberedAuthSecrets();
+
+        // 记住邮箱功能
         if (rememberMe) {
-            const expiryDate = new Date();
-            expiryDate.setDate(expiryDate.getDate() + 30);
-
-            const credentials = {
-                email: email,
-                password: btoa(password),
-                expiry: expiryDate.getTime()
-            };
-
-            localStorage.setItem('remembered_credentials', JSON.stringify(credentials));
-
-            // 多账号密码库
-            let savedPasswords = {};
-            try {
-                const saved = localStorage.getItem('saved_passwords');
-                if (saved) savedPasswords = JSON.parse(saved);
-            } catch (e) { console.error('读取密码库失败', e); }
-
-            savedPasswords[email] = btoa(password);
-            localStorage.setItem('saved_passwords', JSON.stringify(savedPasswords));
+            persistRememberedLoginEmail(email);
         } else {
-            localStorage.removeItem('remembered_credentials');
+            removeRememberedLoginEmail();
         }
 
         // 关闭模态框
@@ -502,8 +664,17 @@ async function handleLogin(event) {
     } catch (error) {
         console.error('登录失败:', error);
 
+        const securityState = error?.loginSecurity || null;
         let errorMessage = '登录失败';
-        if (error.message.includes('Invalid login credentials')) {
+        if (securityState?.rateLimited) {
+            errorMessage = formatAuthText('auth.waitSecondsRetry', '请等待 {seconds} 秒后再试', {
+                seconds: Math.max(1, securityState.retryAfterSeconds || 60)
+            });
+        } else if (securityState?.ipBlocked) {
+            errorMessage = getIpBlockedMessage();
+        } else if (securityState?.accountLocked) {
+            errorMessage = buildLockedAccountMessage(securityState.remainingSeconds);
+        } else if (error.message.includes('Invalid login credentials')) {
             errorMessage = authT('auth.credentialsIncorrect', '用户名或密码错误');
         } else {
             errorMessage = error.message || '未知错误';
@@ -650,8 +821,8 @@ async function handleLogout(event) {
         console.error('❌ Supabase logout failed:', error);
     }
 
-    localStorage.removeItem('remembered_credentials');
-    console.log('🗑️ 已清除自动登录凭证');
+    clearLegacyRememberedAuthSecrets();
+    console.log('🗑️ 已清除历史密码缓存');
 
     // 重置UI
     const defaultIcon = document.getElementById('defaultAuthIcon');
@@ -2312,7 +2483,7 @@ async function forceLogout(event) {
     wipeStorage(localStorage);
     wipeStorage(sessionStorage);
 
-    localStorage.removeItem('remembered_credentials');
+    clearLegacyRememberedAuthSecrets();
     localStorage.removeItem('cached_user_profile');
 
     updateUserUI(null, { clearCacheOnLogout: true });
@@ -2325,6 +2496,7 @@ window.forceLogout = forceLogout;
 // ==================== 页面加载时检查登录状态 ====================
 async function initializeAuthPageBoot() {
     console.log('📄 页面加载完成');
+    clearLegacyRememberedAuthSecrets();
 
     // 🆕 Instant UI restoration from cache (prevents avatar flash on hard refresh)
     const cachedProfile = localStorage.getItem('cached_user_profile');
@@ -2350,6 +2522,8 @@ async function initializeAuthPageBoot() {
     } catch (err) {
         console.warn('⚠️ Google identity preload failed:', err?.message || err);
     }
+
+    restoreRememberedLoginState();
 
     // 🆕 OAuth Callback Handler:
     // Handle BOTH PKCE flow (?code=XXXX) and Implicit flow (#access_token=...)
@@ -3331,9 +3505,10 @@ async function handleSwitchAccount(event) {
         console.error('Supabase signOut error:', e);
     }
 
-    // 清除记住的凭证
-    localStorage.removeItem('remembered_credentials');
-    console.log('🗑️ 已清除记住的凭证');
+    // 切换账户时清除记住的邮箱与历史密码缓存
+    removeRememberedLoginEmail();
+    clearLegacyRememberedAuthSecrets();
+    console.log('🗑️ 已清除记住的邮箱与历史密码缓存');
 
     // 重置UI为未登录状态
     updateUserUI(null, { clearCacheOnLogout: true });
@@ -3593,6 +3768,7 @@ window.recordLoginIP = recordLoginIP;
 // 挂载到 window
 window.handleRegister = handleRegister;
 window.handleLogin = handleLogin;
+window.restoreRememberedLoginState = restoreRememberedLoginState;
 window.handlePasswordReset = handlePasswordReset;
 window.checkAuthState = checkAuthState;
 window.updateUserUI = updateUserUI;

@@ -37,7 +37,9 @@ Deprecated scripts that must not be executed anymore:
 3. Make sure the app rollout that depends on these SQL changes is ready to deploy.
 4. Do not run deprecated root SQL scripts from the repository root.
 5. Before applying `20260322_constrain_payment_sites.sql`, scan the target project for historical `site` anomalies:
-   - Cross-env drift audit: `npm run audit:env-drift -- --env-file server/.env --env-file server/.env.production --check-live --fail-on-drift`
+   - Cross-env drift audit: `npm run audit:env-drift -- --check-live --fail-on-drift`
+     - By default this now auto-discovers `server/.env`, `server/.env.staging`, and `server/.env.production` when they exist locally.
+     - The drift audit now fails fast if `SUPABASE_SERVICE_ROLE_KEY` looks like a `sb_publishable_*` or `sb_anon_*` key instead of a service-role key.
    - SQL editor: [/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql)
    - CLI / service-role env: `npm run scan:payment-sites -- --env-file server/.env.production --fail-on-anomaly`
    - Combined preflight: `npm run preflight:payment-rollout -- --env-file server/.env.production`
@@ -120,6 +122,8 @@ Recommended automated staging smoke test:
 6. If you intentionally need to run against a production-like host, add `--allow-production-like` and confirm the mock-payment override window is still active before proceeding.
 7. After smoke passes, run the post-rollout verifier:
    - `npm run verify:payment-rollout -- --env-file server/.env.production --fail-on-finding`
+8. If you only need to audit the public deployment from a machine without private Vercel / Railway env files, use runtime-only mode:
+   - `npm run check:prod-env -- --base-url https://www.zaoyoe.com --check-app-runtime --runtime-only`
 
 The automated smoke runner validates:
 
