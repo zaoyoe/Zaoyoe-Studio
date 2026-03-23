@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -29,6 +30,56 @@ const RUNTIME_SCRIPTS = [
     'admin-config.js',
     'admin-studio.js'
 ];
+
+function readVercelConfig() {
+    return JSON.parse(readRepoFile('vercel.json'));
+}
+
+function getGlobalCspHeaderValue() {
+    const config = readVercelConfig();
+    const globalHeaders = Array.isArray(config.headers) ? config.headers : [];
+    const match = globalHeaders
+        .flatMap((entry) => Array.isArray(entry?.headers) ? entry.headers : [])
+        .find((header) => header?.key === 'Content-Security-Policy');
+
+    return String(match?.value || '');
+}
+
+function parseCspDirectives(cspValue) {
+    return new Map(
+        String(cspValue || '')
+            .split(';')
+            .map((directive) => directive.trim())
+            .filter(Boolean)
+            .map((directive) => {
+                const [name, ...values] = directive.split(/\s+/);
+                return [name, values];
+            })
+    );
+}
+
+function collectInlineScriptHashes(relativePaths = []) {
+    const hashes = new Set();
+
+    for (const relativePath of relativePaths) {
+        const source = readRepoFile(relativePath);
+        for (const match of source.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+            const attributes = String(match[1] || '');
+            if (/\bsrc\s*=/.test(attributes)) {
+                continue;
+            }
+
+            const body = String(match[2] || '').trim();
+            if (!body) {
+                continue;
+            }
+
+            hashes.add(`'sha256-${crypto.createHash('sha256').update(body, 'utf8').digest('base64')}'`);
+        }
+    }
+
+    return [...hashes].sort();
+}
 
 function readRepoFile(relativePath) {
     return fs.readFileSync(path.join(REPO_ROOT, relativePath), 'utf8');
@@ -92,7 +143,28 @@ test('shared frontend scripts depend on the unified runtime Supabase helpers', (
 });
 
 test('vercel CSP does not allow unsafe-eval in frontend script execution', () => {
-    const source = readRepoFile('vercel.json');
+    const cspValue = getGlobalCspHeaderValue();
 
-    assert.equal(source.includes("'unsafe-eval'"), false);
+    assert.equal(cspValue.includes("'unsafe-eval'"), false);
+});
+
+test('vercel CSP restricts inline script elements to hashed runtime pages while isolating legacy event attributes', () => {
+    const cspValue = getGlobalCspHeaderValue();
+    const directives = parseCspDirectives(cspValue);
+    const scriptSrc = directives.get('script-src') || [];
+    const scriptSrcElem = directives.get('script-src-elem') || [];
+    const scriptSrcAttr = directives.get('script-src-attr') || [];
+    const expectedHashes = collectInlineScriptHashes(RUNTIME_PAGES);
+
+    assert.notEqual(scriptSrc.length, 0, 'Missing script-src directive');
+    assert.notEqual(scriptSrcElem.length, 0, 'Missing script-src-elem directive');
+    assert.deepEqual(scriptSrcAttr, ["'unsafe-inline'"], 'script-src-attr should stay isolated to legacy inline handlers');
+    assert.equal(scriptSrc.includes("'unsafe-inline'"), false, 'script-src should no longer broadly allow unsafe-inline');
+    assert.equal(scriptSrcElem.includes("'unsafe-inline'"), false, 'script-src-elem should no longer broadly allow unsafe-inline');
+
+    const missingFromScriptSrc = expectedHashes.filter((hash) => !scriptSrc.includes(hash));
+    const missingFromScriptSrcElem = expectedHashes.filter((hash) => !scriptSrcElem.includes(hash));
+
+    assert.deepEqual(missingFromScriptSrc, [], `script-src is missing inline script hashes:\n${missingFromScriptSrc.join('\n')}`);
+    assert.deepEqual(missingFromScriptSrcElem, [], `script-src-elem is missing inline script hashes:\n${missingFromScriptSrcElem.join('\n')}`);
 });
