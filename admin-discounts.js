@@ -13,6 +13,15 @@ const AdminDiscounts = {
         search: ''
     },
 
+    escapeHtml: function (value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    },
+
     init: function () {
         console.log('🎟️ Initializing Discounts Module...');
         this.loadDiscounts();
@@ -130,6 +139,9 @@ const AdminDiscounts = {
             const isExpired = d.expires_at && new Date(d.expires_at) < now;
             const isExhausted = d.max_uses > 0 && d.used_count >= d.max_uses;
             const isPracticallyUsed = !d.is_active || isExpired || isExhausted;
+            const escapedCode = this.escapeHtml(d.code);
+            const escapedId = this.escapeHtml(d.id);
+            const nextActiveState = (!d.is_active).toString();
 
             const typeLabel = d.discount_type === 'percent'
                 ? `<span style="color:#60a5fa;font-weight:600;">${100 - d.discount_value}折</span>`
@@ -149,9 +161,13 @@ const AdminDiscounts = {
             return `
             <tr class="${isPracticallyUsed ? 'opacity-70' : ''}">
                 <td>
-                    <span style="font-family:'SF Mono',Consolas,monospace; font-size:14px; font-weight:500; letter-spacing:0.5px; color:#e8edf4; cursor:pointer; transition:color 0.2s;" onclick="AdminDiscounts.copyCode('${d.code}')" title="点击复制">
-                        ${d.code}
-                    </span>
+                    <button type="button"
+                        data-admin-action="discounts-copy-code"
+                        data-discount-code="${escapedCode}"
+                        title="点击复制"
+                        style="font-family:'SF Mono',Consolas,monospace; font-size:14px; font-weight:500; letter-spacing:0.5px; color:#e8edf4; cursor:pointer; transition:color 0.2s; background:none; border:none; padding:0;">
+                        ${escapedCode}
+                    </button>
                 </td>
                 <td>${typeLabel}</td>
                 <td>
@@ -165,12 +181,20 @@ const AdminDiscounts = {
                 </td>
                 <td>
                     <div class="action-buttons" style="display: flex; justify-content: center; gap: 8px;">
-                        <button class="action-btn ${d.is_active ? 'warning' : 'success'}" 
-                                onclick="AdminDiscounts.toggleStatus('${d.id}', ${!d.is_active})" 
+                        <button class="action-btn ${d.is_active ? 'warning' : 'success'}"
+                                type="button"
+                                data-admin-action="discounts-toggle-status"
+                                data-discount-id="${escapedId}"
+                                data-discount-next-active="${nextActiveState}"
                                 title="${d.is_active ? '停用' : '启用'}">
                             <i class="fas ${d.is_active ? 'fa-ban' : 'fa-check'}"></i>
                         </button>
-                        <button class="action-btn danger" onclick="AdminDiscounts.deleteCode('${d.id}', '${d.code}')" title="删除">
+                        <button class="action-btn danger"
+                                type="button"
+                                data-admin-action="discounts-delete-code"
+                                data-discount-id="${escapedId}"
+                                data-discount-code="${escapedCode}"
+                                title="删除">
                             <i class="fas fa-trash-alt"></i>
                         </button>
                     </div>
@@ -198,10 +222,18 @@ const AdminDiscounts = {
         pContainer.innerHTML = `
             <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-top: 20px;">
                 <div class="pagination-control">
-                    <button class="pagination-btn" onclick="AdminDiscounts.goToPage(${this.currentPage - 1})" ${this.currentPage <= 1 ? 'disabled' : ''}>−</button>
+                    <button class="pagination-btn"
+                        type="button"
+                        data-admin-action="discounts-pagination-go"
+                        data-discount-page="${Math.max(this.currentPage - 1, 1)}"
+                        ${this.currentPage <= 1 ? 'disabled' : ''}>−</button>
                     <input type="number" class="pagination-input" value="${this.currentPage}" min="1" max="${totalPages}"
-                        onchange="AdminDiscounts.goToPage(parseInt(this.value)||1)">
-                    <button class="pagination-btn" onclick="AdminDiscounts.goToPage(${this.currentPage + 1})" ${this.currentPage >= totalPages ? 'disabled' : ''}>+</button>
+                        data-admin-change-action="discounts-pagination-go">
+                    <button class="pagination-btn"
+                        type="button"
+                        data-admin-action="discounts-pagination-go"
+                        data-discount-page="${Math.min(this.currentPage + 1, totalPages)}"
+                        ${this.currentPage >= totalPages ? 'disabled' : ''}>+</button>
                 </div>
                 <div class="pagination-total" style="margin:0;">共 ${totalPages} 页 / ${this.filteredDiscounts.length} 条</div>
             </div>
