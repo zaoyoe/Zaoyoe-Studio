@@ -132,7 +132,11 @@ test('buildPlatformEnvChecklist renders the expected Vercel and Railway variable
         ADMIN_STUDIO_ACCESS_SECRET: 'studio_demo',
         DEPLOYMENT_TIER: 'production',
         APP_BASE_URL: 'https://www.zaoyoe.com',
-        PAYMENT_SMOKE_BASE_URL: 'https://preview.zaoyoe.com'
+        PAYMENT_SMOKE_BASE_URL: 'https://preview.zaoyoe.com',
+        TRUSTED_PROXY_IPS: '10.0.0.0/8',
+        TRUST_ALL_PROXIES: 'false',
+        AFDIAN_WEBHOOK_TRUSTED_PROXIES: '100.64.0.0/10',
+        AFDIAN_WEBHOOK_ALLOWED_IPS: '203.0.113.0/24'
     });
 
     assert.equal(checklist.vercel[0].name, 'SUPABASE_URL');
@@ -148,9 +152,16 @@ test('buildPlatformEnvChecklist renders the expected Vercel and Railway variable
             'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
             'ADMIN_STUDIO_ACCESS_SECRET',
             'DEPLOYMENT_TIER',
-            'APP_BASE_URL'
+            'APP_BASE_URL',
+            'TRUSTED_PROXY_IPS',
+            'AFDIAN_WEBHOOK_TRUSTED_PROXIES',
+            'AFDIAN_WEBHOOK_ALLOWED_IPS'
         ]
     );
+    assert.equal(checklist.vercel.at(-2).name, 'TRUSTED_PROXY_IPS');
+    assert.equal(checklist.vercel.at(-2).value, '10.0.0.0/8');
+    assert.equal(checklist.vercel.at(-1).name, 'TRUST_ALL_PROXIES');
+    assert.equal(checklist.vercel.at(-1).value, 'false');
 });
 
 test('runAppRuntimeValidation checks runtime config and payment config endpoint health', async () => {

@@ -379,6 +379,10 @@ function buildPlatformEnvChecklist(env = process.env) {
     const appBaseUrl = resolveAppBaseUrl({}, env);
     const smokeBaseUrl = normalizeBaseUrl(String(env.PAYMENT_SMOKE_BASE_URL || '').trim());
     const deploymentTier = String(env.DEPLOYMENT_TIER || env.APP_ENV || '').trim();
+    const trustedProxyIps = String(env.TRUSTED_PROXY_IPS || env.TRUSTED_PROXY_CIDRS || '').trim();
+    const trustAllProxies = String(env.TRUST_ALL_PROXIES || '').trim();
+    const afdianWebhookTrustedProxies = String(env.AFDIAN_WEBHOOK_TRUSTED_PROXIES || '').trim();
+    const afdianWebhookAllowedIps = String(env.AFDIAN_WEBHOOK_ALLOWED_IPS || '').trim();
 
     return {
         vercel: [
@@ -390,7 +394,9 @@ function buildPlatformEnvChecklist(env = process.env) {
             { name: 'ADMIN_STUDIO_ACCESS_SECRET', value: renderChecklistValue(adminStudioAccessSecret, { sensitive: true }) },
             { name: 'DEPLOYMENT_TIER', value: renderChecklistValue(deploymentTier) },
             { name: 'APP_BASE_URL', value: renderChecklistValue(appBaseUrl) },
-            { name: 'PAYMENT_SMOKE_BASE_URL', value: renderChecklistValue(smokeBaseUrl || appBaseUrl) }
+            { name: 'PAYMENT_SMOKE_BASE_URL', value: renderChecklistValue(smokeBaseUrl || appBaseUrl) },
+            { name: 'TRUSTED_PROXY_IPS', value: renderChecklistValue(trustedProxyIps) },
+            { name: 'TRUST_ALL_PROXIES', value: renderChecklistValue(trustAllProxies) }
         ],
         railway: [
             { name: 'SUPABASE_URL', value: renderChecklistValue(supabaseUrl) },
@@ -399,7 +405,10 @@ function buildPlatformEnvChecklist(env = process.env) {
             { name: 'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET', value: renderChecklistValue(quoteSecret, { sensitive: true }) },
             { name: 'ADMIN_STUDIO_ACCESS_SECRET', value: renderChecklistValue(adminStudioAccessSecret, { sensitive: true }) },
             { name: 'DEPLOYMENT_TIER', value: renderChecklistValue(deploymentTier) },
-            { name: 'APP_BASE_URL', value: renderChecklistValue(appBaseUrl) }
+            { name: 'APP_BASE_URL', value: renderChecklistValue(appBaseUrl) },
+            { name: 'TRUSTED_PROXY_IPS', value: renderChecklistValue(trustedProxyIps) },
+            { name: 'AFDIAN_WEBHOOK_TRUSTED_PROXIES', value: renderChecklistValue(afdianWebhookTrustedProxies) },
+            { name: 'AFDIAN_WEBHOOK_ALLOWED_IPS', value: renderChecklistValue(afdianWebhookAllowedIps) }
         ]
     };
 }
