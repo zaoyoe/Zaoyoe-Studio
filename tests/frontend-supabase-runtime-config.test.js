@@ -639,6 +639,111 @@ test('admin studio points and users controls route through delegated actions', (
     assert.equal(adminStudioScript.includes("form.id === 'generateCodesForm'"), true, 'admin-studio.js should delegate points generate form submission');
 });
 
+test('admin user runtime renderers route list, modal, toolbar, and notification controls through delegated actions', () => {
+    const adminUsersSource = readRepoFile('admin-users.js');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+
+    const removedInlineMarkers = [
+        `onclick="openUserDrawer('`,
+        `<td class="checkbox-col" onclick="event.stopPropagation()">`,
+        `onchange="toggleUserSelection('`,
+        `onclick="navigator.clipboard.writeText('`,
+        `onclick="showTagInput('`,
+        `onclick="removeUserTag('`,
+        `onchange="handleModalAdminToggle('`,
+        `onclick="saveModalAdminPermissions('`,
+        `onclick="toggleUserBlock('`,
+        `onclick="adjustUserPoints('`,
+        `onclick="resetUserAvatar('`,
+        `onclick="clearAllUserContent('`,
+        `onclick="showNotificationModal('`,
+        `onclick="toggleModalDropdown('ledgerTimeDropdown')"`,
+        `onclick="filterTabByDate('ledger', 'all', '全部时间')"`,
+        `onclick="openCustomDatePicker('ledger')"`,
+        `onclick="exportTabData('ledger')"`,
+        `onclick="openAdminLedgerDetail('`,
+        `onclick="openUserModal('`,
+        `oninput="autoResizeNotesInput(this)"`,
+        `onclick="submitUserNote()"`,
+        `onclick="selectNotifType(this, 'info')"`,
+        `onclick="sendSystemNotification('`
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(adminUsersSource.includes(marker), false, `admin-users.js should not contain ${marker}`);
+    }
+
+    const delegatedMarkers = [
+        'data-admin-action="users-open-drawer"',
+        'data-admin-change-action="users-toggle-select-all-page"',
+        'data-admin-change-action="users-toggle-selection"',
+        'data-avatar-fallback-src="https://via.placeholder.com/40"',
+        'data-avatar-fallback-src="https://via.placeholder.com/80"',
+        'data-admin-action="users-copy-meta"',
+        'data-admin-action="users-show-tag-input"',
+        'data-admin-action="users-remove-tag"',
+        'data-admin-change-action="users-toggle-modal-admin"',
+        'data-admin-action="users-save-modal-admin-permissions"',
+        'data-admin-action="users-toggle-block"',
+        'data-admin-action="users-adjust-points"',
+        'data-admin-action="users-reset-avatar"',
+        'data-admin-action="users-clear-content"',
+        'data-admin-action="users-show-notification"',
+        'data-admin-action="users-toggle-modal-dropdown"',
+        'data-admin-action="users-filter-tab-date"',
+        'data-admin-action="users-open-custom-date-picker"',
+        'data-admin-action="users-export-tab-data"',
+        'data-admin-action="users-open-ledger-detail"',
+        'data-admin-action="users-close-ledger-detail"',
+        'data-admin-action="users-open-user-modal"',
+        'data-admin-action="users-reload-affiliate"',
+        'data-users-note-input="1"',
+        'data-admin-action="users-submit-note"',
+        'data-admin-action="users-close-notification-modal"',
+        'data-admin-action="users-select-notification-type"',
+        'data-admin-action="users-send-notification"',
+        'document.documentElement.dataset.adminUsersRuntimeDelegatesBound',
+        "target.matches('[data-users-tag-input=\"1\"]')"
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(adminUsersSource.includes(marker), true, `admin-users.js should contain ${marker}`);
+    }
+
+    const delegatedHandlerMarkers = [
+        "case 'users-open-drawer':",
+        "case 'users-stop-propagation':",
+        "case 'users-copy-meta':",
+        "case 'users-show-tag-input':",
+        "case 'users-remove-tag':",
+        "case 'users-save-modal-admin-permissions':",
+        "case 'users-toggle-block':",
+        "case 'users-adjust-points':",
+        "case 'users-reset-avatar':",
+        "case 'users-clear-content':",
+        "case 'users-show-notification':",
+        "case 'users-toggle-modal-dropdown':",
+        "case 'users-filter-tab-date':",
+        "case 'users-open-custom-date-picker':",
+        "case 'users-export-tab-data':",
+        "case 'users-open-ledger-detail':",
+        "case 'users-close-ledger-detail':",
+        "case 'users-open-user-modal':",
+        "case 'users-reload-affiliate':",
+        "case 'users-submit-note':",
+        "case 'users-close-notification-modal':",
+        "case 'users-select-notification-type':",
+        "case 'users-send-notification':",
+        "case 'users-toggle-select-all-page':",
+        "case 'users-toggle-selection':",
+        "case 'users-toggle-modal-admin':"
+    ];
+
+    for (const marker of delegatedHandlerMarkers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+});
+
 test('admin studio settings, discounts, and tickets controls route through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');

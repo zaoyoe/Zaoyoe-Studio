@@ -643,6 +643,98 @@ function bindAdminStudioDelegatedControls() {
             case 'users-switch-tab':
                 window.switchUserTab?.(actionEl.dataset.userTab);
                 break;
+            case 'users-open-drawer':
+                window.openUserDrawer?.(decodeURIComponent(actionEl.dataset.userId || ''));
+                break;
+            case 'users-stop-propagation':
+                event.stopPropagation();
+                break;
+            case 'users-copy-meta': {
+                const copyValue = decodeURIComponent(actionEl.dataset.copyValue || '');
+                if (!copyValue || !navigator?.clipboard?.writeText) {
+                    break;
+                }
+
+                navigator.clipboard.writeText(copyValue).then(() => {
+                    const originalTooltip = actionEl.getAttribute('data-tooltip') || '';
+                    const successTooltip = actionEl.dataset.copySuccess || '已复制';
+                    actionEl.setAttribute('data-tooltip', successTooltip);
+                    setTimeout(() => actionEl.setAttribute('data-tooltip', originalTooltip), 2000);
+                }).catch((error) => {
+                    console.warn('Failed to copy user metadata', error);
+                });
+                break;
+            }
+            case 'users-show-tag-input':
+                window.showTagInput?.(decodeURIComponent(actionEl.dataset.userId || ''));
+                break;
+            case 'users-remove-tag':
+                window.removeUserTag?.(
+                    decodeURIComponent(actionEl.dataset.userId || ''),
+                    decodeURIComponent(actionEl.dataset.userTag || '')
+                );
+                break;
+            case 'users-save-modal-admin-permissions':
+                window.saveModalAdminPermissions?.(decodeURIComponent(actionEl.dataset.userId || ''));
+                break;
+            case 'users-toggle-block':
+                window.toggleUserBlock?.(
+                    decodeURIComponent(actionEl.dataset.userId || ''),
+                    actionEl.dataset.userBanned === '1'
+                );
+                break;
+            case 'users-adjust-points':
+                window.adjustUserPoints?.(decodeURIComponent(actionEl.dataset.userId || ''));
+                break;
+            case 'users-reset-avatar':
+                window.resetUserAvatar?.(decodeURIComponent(actionEl.dataset.userId || ''));
+                break;
+            case 'users-clear-content':
+                window.clearAllUserContent?.(decodeURIComponent(actionEl.dataset.userId || ''));
+                break;
+            case 'users-show-notification':
+                window.showNotificationModal?.(decodeURIComponent(actionEl.dataset.userId || ''));
+                break;
+            case 'users-toggle-modal-dropdown':
+                window.toggleModalDropdown?.(actionEl.dataset.dropdownId);
+                break;
+            case 'users-filter-tab-date':
+                window.filterTabByDate?.(
+                    actionEl.dataset.userTabName,
+                    actionEl.dataset.userDateRange,
+                    actionEl.dataset.userDateLabel
+                );
+                break;
+            case 'users-open-custom-date-picker':
+                window.openCustomDatePicker?.(actionEl.dataset.userTabName);
+                break;
+            case 'users-export-tab-data':
+                window.exportTabData?.(actionEl.dataset.userTabName);
+                break;
+            case 'users-open-ledger-detail':
+                window.openAdminLedgerDetail?.(decodeURIComponent(actionEl.dataset.ledgerId || ''));
+                break;
+            case 'users-close-ledger-detail':
+                window.closeAdminLedgerDetailModal?.();
+                break;
+            case 'users-open-user-modal':
+                window.openUserModal?.(decodeURIComponent(actionEl.dataset.userId || ''));
+                break;
+            case 'users-reload-affiliate':
+                window.reloadAffiliateModalData?.();
+                break;
+            case 'users-submit-note':
+                window.submitUserNote?.();
+                break;
+            case 'users-close-notification-modal':
+                window.closeNotificationModal?.();
+                break;
+            case 'users-select-notification-type':
+                window.selectNotifType?.(actionEl.dataset.notificationType);
+                break;
+            case 'users-send-notification':
+                window.sendSystemNotification?.(decodeURIComponent(actionEl.dataset.userId || ''));
+                break;
             case 'settings-toggle-decoration':
                 window.toggleDecoration?.();
                 break;
@@ -803,6 +895,18 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'users-toggle-test-accounts':
                 window.toggleUserTestAccountVisibility?.(actionEl.checked);
+                break;
+            case 'users-toggle-select-all-page':
+                window.toggleSelectAllPage?.();
+                break;
+            case 'users-toggle-selection':
+                window.toggleUserSelection?.(decodeURIComponent(actionEl.dataset.userId || ''));
+                break;
+            case 'users-toggle-modal-admin':
+                window.handleModalAdminToggle?.(
+                    decodeURIComponent(actionEl.dataset.userId || ''),
+                    actionEl.checked
+                );
                 break;
             case 'settings-update-package-field': {
                 const index = parseInt(actionEl.dataset.packageIndex || '', 10);
