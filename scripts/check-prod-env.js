@@ -243,6 +243,15 @@ function buildLocalEnvironmentChecks({ options = {}, env = process.env } = {}) {
     const adminStudioAccessSecret = String(env.ADMIN_STUDIO_ACCESS_SECRET || '').trim();
     const quoteSecret = readFirstAvailableEnv(QUOTE_SECRET_ENV_NAMES);
     const runtime = isProductionLikeRuntime(env);
+    const trustedProxyIps = String(env.TRUSTED_PROXY_IPS || env.TRUSTED_PROXY_CIDRS || '').trim();
+    const trustAllProxies = String(env.TRUST_ALL_PROXIES || '').trim().toLowerCase();
+    const webhookTrustedProxies = String(env.AFDIAN_WEBHOOK_TRUSTED_PROXIES || '').trim();
+    const webhookAllowedIps = String(env.AFDIAN_WEBHOOK_ALLOWED_IPS || '').trim();
+    const proxyTrustConfigured = trustAllProxies === 'true'
+        || trustAllProxies === '1'
+        || Boolean(trustedProxyIps)
+        || Boolean(webhookTrustedProxies);
+    const requireStrictNetworkGuards = runtime.productionLike;
 
     return [
         {
@@ -291,6 +300,24 @@ function buildLocalEnvironmentChecks({ options = {}, env = process.env } = {}) {
                 : options.allowNonProduction
                     ? 'not production-like, but allowed by --allow-non-production'
                     : 'missing production marker (set DEPLOYMENT_TIER=production if VERCEL_ENV / RAILWAY_ENVIRONMENT_NAME are unavailable)'
+        },
+        {
+            label: 'trusted proxy chain',
+            ok: !requireStrictNetworkGuards || proxyTrustConfigured,
+            details: proxyTrustConfigured
+                ? trustAllProxies === 'true' || trustAllProxies === '1'
+                    ? 'enabled via TRUST_ALL_PROXIES'
+                    : webhookTrustedProxies
+                        ? 'configured via AFDIAN_WEBHOOK_TRUSTED_PROXIES'
+                        : 'configured via TRUSTED_PROXY_IPS'
+                : 'missing TRUSTED_PROXY_IPS / AFDIAN_WEBHOOK_TRUSTED_PROXIES (or set TRUST_ALL_PROXIES=true only if you fully trust the ingress chain)'
+        },
+        {
+            label: 'Afdian webhook IP allowlist',
+            ok: !requireStrictNetworkGuards || Boolean(webhookAllowedIps),
+            details: webhookAllowedIps
+                ? 'configured via AFDIAN_WEBHOOK_ALLOWED_IPS'
+                : 'missing AFDIAN_WEBHOOK_ALLOWED_IPS for a production-like runtime'
         }
     ];
 }

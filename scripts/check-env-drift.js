@@ -102,6 +102,11 @@ function summarizeEnvFile(record) {
     const projectHost = supabaseUrl
         ? supabaseUrl.replace(/^https?:\/\//i, '').replace(/\/+$/, '')
         : '';
+    const deploymentTier = String(values.DEPLOYMENT_TIER || values.APP_ENV || '').trim().toLowerCase();
+    const trustedProxyIps = String(values.TRUSTED_PROXY_IPS || values.TRUSTED_PROXY_CIDRS || '').trim();
+    const trustAllProxies = String(values.TRUST_ALL_PROXIES || '').trim().toLowerCase();
+    const afdianWebhookTrustedProxies = String(values.AFDIAN_WEBHOOK_TRUSTED_PROXIES || '').trim();
+    const afdianWebhookAllowedIps = String(values.AFDIAN_WEBHOOK_ALLOWED_IPS || '').trim();
     const quoteSecret = pickFirstAvailable(values, [
         'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
         'PAYMENT_CUSTOM_QUOTE_SECRET',
@@ -127,7 +132,20 @@ function summarizeEnvFile(record) {
             supabase_service_role_key: !String(values.SUPABASE_SERVICE_ROLE_KEY || '').trim(),
             admin_config_encryption_key: !String(values.ADMIN_CONFIG_ENCRYPTION_KEY || '').trim(),
             payment_custom_recharge_quote_secret: !String(quoteSecret.value || '').trim(),
-            admin_studio_access_secret: !String(values.ADMIN_STUDIO_ACCESS_SECRET || '').trim()
+            admin_studio_access_secret: !String(values.ADMIN_STUDIO_ACCESS_SECRET || '').trim(),
+            trusted_proxy_ips: !trustedProxyIps,
+            afdian_webhook_trusted_proxies: !afdianWebhookTrustedProxies,
+            afdian_webhook_allowed_ips: !afdianWebhookAllowedIps
+        },
+        runtime: {
+            deploymentTier,
+            productionLike: deploymentTier === 'production',
+            trustAllProxies: trustAllProxies === 'true' || trustAllProxies === '1'
+        },
+        securityNetwork: {
+            trustedProxyIps,
+            afdianWebhookTrustedProxies,
+            afdianWebhookAllowedIps
         },
         live: null
     };
@@ -240,6 +258,30 @@ function buildDriftFindings(summaries = []) {
                 envFiles: [summary.envFile]
             });
         }
+
+        if (summary.runtime?.productionLike) {
+            const proxyTrustConfigured = summary.runtime.trustAllProxies
+                || !summary.missing.trusted_proxy_ips
+                || !summary.missing.afdian_webhook_trusted_proxies;
+
+            if (!proxyTrustConfigured) {
+                findings.push({
+                    severity: 'high',
+                    type: 'proxy_trust_chain_missing',
+                    message: `Production-like env is missing TRUSTED_PROXY_IPS / AFDIAN_WEBHOOK_TRUSTED_PROXIES: ${summary.envFile}`,
+                    envFiles: [summary.envFile]
+                });
+            }
+
+            if (summary.missing.afdian_webhook_allowed_ips) {
+                findings.push({
+                    severity: 'high',
+                    type: 'webhook_allowlist_missing',
+                    message: `Production-like env is missing AFDIAN_WEBHOOK_ALLOWED_IPS: ${summary.envFile}`,
+                    envFiles: [summary.envFile]
+                });
+            }
+        }
     }
 
     return findings;
@@ -261,6 +303,10 @@ function formatHumanReport({ summaries = [], findings = [] }) {
         lines.push(`  admin_encryption_fp: ${summary.fingerprints.admin_config_encryption_key}`);
         lines.push(`  quote_secret_fp: ${summary.fingerprints.payment_custom_recharge_quote_secret}`);
         lines.push(`  admin_studio_fp: ${summary.fingerprints.admin_studio_access_secret}`);
+        lines.push(`  deployment_tier: ${summary.runtime?.deploymentTier || '(missing)'}`);
+        lines.push(`  trusted_proxy_ips: ${summary.securityNetwork?.trustedProxyIps || '(missing)'}`);
+        lines.push(`  webhook_trusted_proxies: ${summary.securityNetwork?.afdianWebhookTrustedProxies || '(missing)'}`);
+        lines.push(`  webhook_allowed_ips: ${summary.securityNetwork?.afdianWebhookAllowedIps || '(missing)'}`);
 
         if (summary.live) {
             lines.push(`  live_access: ${summary.live.ok ? 'ok' : 'fail'} (${summary.live.status} ${summary.live.statusText || ''})`.trim());

@@ -63,9 +63,34 @@ test('buildLocalEnvironmentChecks skips local secret failures in runtime-only mo
         },
         env: {}
     });
-    assert.equal(checks.length, 5);
+    assert.equal(checks.length, 7);
     assert.equal(checks[0].label, 'SUPABASE_SERVICE_ROLE_KEY');
     assert.equal(checks[0].ok, false);
+    assert.equal(checks[5].label, 'trusted proxy chain');
+    assert.equal(checks[6].label, 'Afdian webhook IP allowlist');
+});
+
+test('buildLocalEnvironmentChecks requires proxy trust and webhook allowlist in production-like envs', () => {
+    const checks = buildLocalEnvironmentChecks({
+        options: {
+            runtimeOnly: false,
+            allowNonProduction: false
+        },
+        env: {
+            SUPABASE_SERVICE_ROLE_KEY: 'service-role',
+            ADMIN_CONFIG_ENCRYPTION_KEY: 'enc-key',
+            PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote-key',
+            ADMIN_STUDIO_ACCESS_SECRET: 'studio-key',
+            DEPLOYMENT_TIER: 'production'
+        }
+    });
+
+    const proxyCheck = checks.find((check) => check.label === 'trusted proxy chain');
+    const allowlistCheck = checks.find((check) => check.label === 'Afdian webhook IP allowlist');
+    assert.equal(proxyCheck.ok, false);
+    assert.match(proxyCheck.details, /missing TRUSTED_PROXY_IPS/);
+    assert.equal(allowlistCheck.ok, false);
+    assert.match(allowlistCheck.details, /missing AFDIAN_WEBHOOK_ALLOWED_IPS/);
 });
 
 test('resolveAppBaseUrl prefers explicit CLI value and normalizes trailing slashes', () => {

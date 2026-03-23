@@ -32,7 +32,11 @@ test('summarizeEnvFile fingerprints key secrets and quote aliases', () => {
             SUPABASE_SERVICE_ROLE_KEY: 'service-a',
             ADMIN_CONFIG_ENCRYPTION_KEY: 'encrypt-a',
             PAYMENT_QUOTE_SECRET: 'quote-a',
-            ADMIN_STUDIO_ACCESS_SECRET: 'studio-a'
+            ADMIN_STUDIO_ACCESS_SECRET: 'studio-a',
+            DEPLOYMENT_TIER: 'production',
+            TRUSTED_PROXY_IPS: '10.0.0.0/8',
+            AFDIAN_WEBHOOK_TRUSTED_PROXIES: '100.64.0.0/10',
+            AFDIAN_WEBHOOK_ALLOWED_IPS: '203.0.113.0/24'
         }
     });
 
@@ -40,6 +44,9 @@ test('summarizeEnvFile fingerprints key secrets and quote aliases', () => {
     assert.equal(summary.fingerprints.supabase_service_role_key, fingerprintSecret('service-a'));
     assert.equal(summary.fingerprints.payment_custom_recharge_quote_secret, fingerprintSecret('quote-a'));
     assert.equal(summary.sources.payment_custom_recharge_quote_secret, 'PAYMENT_QUOTE_SECRET');
+    assert.equal(summary.runtime.productionLike, true);
+    assert.equal(summary.securityNetwork.trustedProxyIps, '10.0.0.0/8');
+    assert.equal(summary.securityNetwork.afdianWebhookAllowedIps, '203.0.113.0/24');
 });
 
 test('buildDriftFindings flags same-host service role drift and shared secret drift', () => {
@@ -54,6 +61,15 @@ test('buildDriftFindings flags same-host service role drift and shared secret dr
                 payment_custom_recharge_quote_secret: 'quote111',
                 admin_studio_access_secret: 'studio111'
             },
+            missing: {
+                trusted_proxy_ips: false,
+                afdian_webhook_trusted_proxies: false,
+                afdian_webhook_allowed_ips: false
+            },
+            runtime: {
+                productionLike: true,
+                trustAllProxies: false
+            },
             live: { ok: true }
         },
         {
@@ -66,6 +82,15 @@ test('buildDriftFindings flags same-host service role drift and shared secret dr
                 payment_custom_recharge_quote_secret: 'quote111',
                 admin_studio_access_secret: 'studio999'
             },
+            missing: {
+                trusted_proxy_ips: true,
+                afdian_webhook_trusted_proxies: true,
+                afdian_webhook_allowed_ips: true
+            },
+            runtime: {
+                productionLike: true,
+                trustAllProxies: false
+            },
             live: { ok: false }
         }
     ]);
@@ -73,4 +98,6 @@ test('buildDriftFindings flags same-host service role drift and shared secret dr
     assert.equal(findings.some((item) => item.type === 'service_role_drift'), true);
     assert.equal(findings.some((item) => item.type === 'shared_secret_drift'), true);
     assert.equal(findings.some((item) => item.type === 'live_access_failed'), true);
+    assert.equal(findings.some((item) => item.type === 'proxy_trust_chain_missing'), true);
+    assert.equal(findings.some((item) => item.type === 'webhook_allowlist_missing'), true);
 });
