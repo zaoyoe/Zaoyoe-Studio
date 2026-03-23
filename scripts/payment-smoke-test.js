@@ -449,12 +449,6 @@ async function bootstrapAccessTokenViaAdminLink(options = {}, envValues = {}, de
     for (const attempt of attempts) {
         const { data, error } = await publicSupabase.auth.verifyOtp(attempt.args);
         if (!error && data?.session?.access_token) {
-            try {
-                await publicSupabase.auth.signOut();
-            } catch (_) {
-                // ignore best-effort cleanup failures
-            }
-
             return {
                 accessToken: data.session.access_token,
                 authMode: `admin_${attempt.label}`
@@ -489,12 +483,6 @@ async function resolveAccessToken(options = {}, envValues = {}, dependencies = {
             email: options.email,
             password: options.password
         });
-
-        try {
-            await publicSupabase.auth.signOut();
-        } catch (_) {
-            // ignore best-effort cleanup failures
-        }
 
         if (!error && data?.session?.access_token) {
             return {

@@ -251,6 +251,45 @@ test('runOptionalAuthCheck tolerates older deployments where the endpoint is not
     });
 });
 
+test('resolveAccessToken keeps a successful password session token usable for subsequent API calls', async () => {
+    const calls = [];
+    const result = await resolveAccessToken({
+        baseUrl: 'https://preview.example.com',
+        email: 'smoke@example.com',
+        password: 'correct-password',
+        timeoutMs: 5000
+    }, {
+        SUPABASE_URL: 'https://demo.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: 'publishable-key'
+    }, {
+        createClient() {
+            return {
+                auth: {
+                    async signInWithPassword() {
+                        calls.push('signInWithPassword');
+                        return {
+                            data: {
+                                session: {
+                                    access_token: 'password-token'
+                                }
+                            },
+                            error: null
+                        };
+                    },
+                    async signOut() {
+                        calls.push('publicSignOut');
+                        return {};
+                    }
+                }
+            };
+        }
+    });
+
+    assert.equal(result.accessToken, 'password-token');
+    assert.equal(result.authMode, 'email_password');
+    assert.deepEqual(calls, ['signInWithPassword']);
+});
+
 test('resolveAccessToken falls back to admin magic-link bootstrap when password auth fails', async () => {
     const calls = [];
     const publicClient = {
@@ -329,10 +368,8 @@ test('resolveAccessToken falls back to admin magic-link bootstrap when password 
     assert.equal(result.authMode, 'admin_magiclink_email_otp');
     assert.deepEqual(calls, [
         'signInWithPassword',
-        'publicSignOut',
         'generateLink',
-        'verifyOtp:magiclink',
-        'publicSignOut'
+        'verifyOtp:magiclink'
     ]);
 });
 
