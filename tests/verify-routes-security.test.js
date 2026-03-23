@@ -3,6 +3,9 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const path = require('node:path');
 const Module = require('node:module');
+const {
+    buildHupijiaoHash
+} = require('../api/_lib/payments/hupijiao');
 
 function createQueryBuilder(executor) {
     const state = {
@@ -146,6 +149,7 @@ function createSupabaseStub(state = {}) {
     const verificationLogs = state.verificationLogs || [];
     const paymentEvents = state.paymentEvents || [];
     const paymentOrders = state.paymentOrders || [];
+    const paymentCheckoutSessions = state.paymentCheckoutSessions || [];
     const pointsLedger = state.pointsLedger || [];
     const pointsPackages = state.pointsPackages || [];
     const adminSecretStore = state.adminSecretStore || [];
@@ -161,6 +165,10 @@ function createSupabaseStub(state = {}) {
     const rechargeOptions = state.rechargeOptions || null;
     const afdianProcessPaymentResult = state.afdianProcessPaymentResult || { status: 'pending_review', payment_order_id: null };
     const afdianProcessPaymentError = state.afdianProcessPaymentError || null;
+    state.paymentEvents = paymentEvents;
+    state.paymentOrders = paymentOrders;
+    state.paymentCheckoutSessions = paymentCheckoutSessions;
+    state.pointsLedger = pointsLedger;
     state.metrics = state.metrics || {};
     state.metrics.deductCalls = Number(state.metrics.deductCalls || 0);
 
@@ -222,6 +230,31 @@ function createSupabaseStub(state = {}) {
                 return createRpcResult({
                     deducted: Number(args.p_amount) || 0
                 });
+            }
+
+            if (name === 'fn_recharge_points') {
+                pointsLedger.push({
+                    id: `ledger-${pointsLedger.length + 1}`,
+                    user_id: args.target_user_id,
+                    amount: Math.abs(Number(args.p_paid) || 0) + Math.abs(Number(args.p_bonus) || 0),
+                    paid_points: Math.abs(Number(args.p_paid) || 0),
+                    bonus_points: Math.abs(Number(args.p_bonus) || 0),
+                    reference_id: args.p_reference_id,
+                    site: args.p_site || null,
+                    created_at: new Date().toISOString()
+                });
+                return createRpcResult({
+                    paid: Number(args.p_paid) || 0,
+                    bonus: Number(args.p_bonus) || 0
+                });
+            }
+
+            if (name === 'fn_update_payment_checkout_session') {
+                const row = paymentCheckoutSessions.find((item) => item.id === args.p_session_id) || null;
+                if (row) {
+                    Object.assign(row, args.p_patch || {});
+                }
+                return createRpcResult(row, null);
             }
 
             throw new Error(`Unexpected RPC in test stub: ${name}`);
@@ -364,6 +397,72 @@ function createSupabaseStub(state = {}) {
                     };
                 }
 
+                if (table === 'payment_orders' && query.mode === 'insert') {
+                    const rows = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    const inserted = rows.map((row, index) => {
+                        const nextRow = {
+                            id: row.id || `payment-order-${paymentOrders.length + index + 1}`,
+                            created_at: row.created_at || new Date().toISOString(),
+                            updated_at: row.updated_at || row.created_at || new Date().toISOString(),
+                            ...row
+                        };
+                        paymentOrders.push(nextRow);
+                        return nextRow;
+                    });
+
+                    return {
+                        data: query.single || query.maybeSingle ? (inserted[0] || null) : inserted,
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_orders' && query.mode === 'update') {
+                    const matched = applyCommonFilters(paymentOrders, query);
+                    matched.forEach((row) => {
+                        Object.assign(row, query.payload || {});
+                    });
+                    return {
+                        data: query.single || query.maybeSingle ? (matched[0] || null) : matched,
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_checkout_sessions' && query.mode === 'select') {
+                    let rows = applyCommonFilters(paymentCheckoutSessions, query);
+                    if (query.order?.column) {
+                        const ascending = query.order.options?.ascending !== false;
+                        rows = [...rows].sort((left, right) => {
+                            const leftValue = left[query.order.column];
+                            const rightValue = right[query.order.column];
+                            if (leftValue === rightValue) return 0;
+                            if (leftValue == null) return 1;
+                            if (rightValue == null) return -1;
+                            return ascending
+                                ? (leftValue > rightValue ? 1 : -1)
+                                : (leftValue < rightValue ? 1 : -1);
+                        });
+                    }
+                    if (Number.isFinite(query.limit)) {
+                        rows = rows.slice(0, query.limit);
+                    }
+
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_checkout_sessions' && query.mode === 'update') {
+                    const matched = applyCommonFilters(paymentCheckoutSessions, query);
+                    matched.forEach((row) => {
+                        Object.assign(row, query.payload || {});
+                    });
+                    return {
+                        data: query.single || query.maybeSingle ? (matched[0] || null) : matched,
+                        error: null
+                    };
+                }
+
                 if (table === 'points_ledger' && query.mode === 'select') {
                     let rows = applyCommonFilters(pointsLedger, query);
                     if (query.order?.column) {
@@ -415,6 +514,10 @@ function createSupabaseStub(state = {}) {
                         Object.assign(row, query.payload || {});
                     });
                     return { data: matched, error: null };
+                }
+
+                if (table === 'payment_query_attempts' && query.mode === 'insert') {
+                    return { data: null, error: null };
                 }
 
                 throw new Error(`Unexpected table access in test stub: ${table}/${query.mode}`);
@@ -1219,6 +1322,115 @@ test('afdian webhook rejects requests outside the configured source IP allowlist
         assert.equal(response.status, 403);
         assert.deepEqual(payload, { ec: 403, em: 'forbidden' });
         assert.equal(state.paymentEvents.length, 0);
+    });
+});
+
+test('hupijiao webhook verifies the signature and auto-credits the linked order', async () => {
+    const state = {
+        paymentEvents: [],
+        paymentOrders: [
+            {
+                id: 'pay-order-hj-1',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_ORDER_1',
+                checkout_session_id: 'checkout-hj-1',
+                user_id: 'user-1',
+                site: 'cn',
+                package_id: 'pkg-1',
+                package_name: '虎皮椒套餐',
+                expected_amount: 9.9,
+                paid_amount: null,
+                points_amount: 110,
+                status: 'pending',
+                sign_verified: false,
+                amount_verified: false,
+                provider_metadata: {},
+                raw_payload: {
+                    request: {
+                        points_amount: 100,
+                        bonus_points: 10
+                    }
+                },
+                created_at: '2026-03-23T00:00:00.000Z'
+            }
+        ],
+        paymentCheckoutSessions: [
+            {
+                id: 'checkout-hj-1',
+                session_key: 'PCS_HUPIJIAO_TEST_1',
+                provider: 'hupijiao',
+                user_id: 'user-1',
+                site: 'cn',
+                package_id: 'pkg-1',
+                package_name: '虎皮椒套餐',
+                requested_points: 100,
+                bonus_points: 10,
+                granted_points: 110,
+                expected_amount: 9.9,
+                status: 'redirect_ready',
+                payment_order_id: null,
+                provider_metadata: {
+                    provider_order_no: 'HJ_ORDER_1'
+                },
+                created_at: '2026-03-23T00:00:00.000Z'
+            }
+        ]
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const payload = {
+            trade_order_id: 'HJ_ORDER_1',
+            total_fee: '9.90',
+            transaction_id: 'TXN_HJ_1',
+            open_order_id: 'OPEN_HJ_1',
+            order_title: '虎皮椒套餐',
+            status: 'OD',
+            appid: 'appid-123',
+            time: '1742710999',
+            nonce_str: 'nonce_hj_1',
+            attach: JSON.stringify({
+                provider: 'hupijiao',
+                user_id: 'user-1',
+                site: 'cn',
+                checkout_session_id: 'checkout-hj-1',
+                checkout_session_key: 'PCS_HUPIJIAO_TEST_1',
+                package_id: 'pkg-1',
+                package_name: '虎皮椒套餐',
+                paid_points: 100,
+                bonus_points: 10,
+                granted_points: 110,
+                expected_amount: 9.9,
+                charge_type: 'package'
+            })
+        };
+        payload.hash = buildHupijiaoHash(payload, 'secret-123');
+
+        const response = await withEnv({
+            HUPIJIAO_SECRET_KEY: 'secret-123'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/payments/hupijiao/webhook',
+            body: payload
+        }));
+
+        const paymentOrder = state.paymentOrders.find((item) => item.id === 'pay-order-hj-1');
+        const checkoutSession = state.paymentCheckoutSessions.find((item) => item.id === 'checkout-hj-1');
+
+        assert.equal(response.status, 200);
+        assert.equal(response.text, 'success');
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].processing_result, 'processed_paid');
+        assert.equal(state.paymentEvents[0].signature_valid, true);
+        assert.equal(state.paymentEvents[0].amount_valid, true);
+        assert.equal(state.pointsLedger.length, 1);
+        assert.equal(state.pointsLedger[0].user_id, 'user-1');
+        assert.equal(state.pointsLedger[0].reference_id, 'hupijiao_HJ_ORDER_1');
+        assert.equal(paymentOrder.status, 'redeemed');
+        assert.equal(paymentOrder.sign_verified, true);
+        assert.equal(paymentOrder.amount_verified, true);
+        assert.equal(paymentOrder.provider_metadata.transaction_id, 'TXN_HJ_1');
+        assert.equal(checkoutSession.status, 'completed');
+        assert.equal(checkoutSession.payment_order_id, 'pay-order-hj-1');
     });
 });
 

@@ -6,6 +6,12 @@ const HUPIJIAO_QUERY_PATH = '/payment/query.html';
 const HUPIJIAO_REFUND_PATH = '/payment/refund.html';
 const HUPIJIAO_PLUGIN_ID = 'zaoyoe-node-adapter';
 const HUPIJIAO_API_VERSION = '1.1';
+const HUPIJIAO_STATUS_LABELS = Object.freeze({
+    OD: 'paid',
+    CD: 'refunded',
+    RD: 'refund_pending',
+    UD: 'refund_failed'
+});
 
 function sanitizeText(value, fallback = '', maxLength = 500) {
     if (typeof value !== 'string') return fallback;
@@ -59,6 +65,26 @@ function stringifyAttachValue(value) {
     }
 }
 
+function parseHupijiaoAttach(value = '') {
+    const normalized = stringifyAttachValue(value);
+    if (!normalized) {
+        return {};
+    }
+
+    try {
+        const parsed = JSON.parse(normalized);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            return parsed;
+        }
+    } catch (_) {
+        // Fall through to the raw fallback below.
+    }
+
+    return {
+        raw: normalized
+    };
+}
+
 function normalizeHashSource(payload = {}) {
     const result = {};
 
@@ -107,6 +133,19 @@ function verifyHupijiaoHash(payload = {}, secret = '', receivedHash = '') {
         expectedHash,
         receivedHash: remoteHash
     };
+}
+
+function normalizeHupijiaoPaymentStatus(status = '') {
+    const normalized = String(status || '').trim().toUpperCase();
+    return HUPIJIAO_STATUS_LABELS[normalized] || (normalized ? 'pending' : 'unknown');
+}
+
+function getHupijiaoGatewayOrderId(payload = {}) {
+    return sanitizeText(
+        payload?.open_order_id || payload?.openid || payload?.orderid,
+        '',
+        120
+    );
 }
 
 function buildHupijiaoTradeOrderId(checkoutSessionKey = '') {
@@ -426,7 +465,10 @@ module.exports = {
     buildHupijiaoRefundPayload,
     buildHupijiaoTradeOrderId,
     createHupijiaoPayment,
+    getHupijiaoGatewayOrderId,
     normalizeHupijiaoConfig,
+    normalizeHupijiaoPaymentStatus,
+    parseHupijiaoAttach,
     queryHupijiaoPayment,
     refundHupijiaoPayment,
     requestHupijiaoJson,

@@ -161,17 +161,21 @@
    - `recharge_options.mock_payment_enabled = false`
    - `runtime.mock_payment.allowed = false`
 
-## 7. 后续接入虎皮椒时的最低要求
+## 7. 虎皮椒上线前最少复核项
 
-当前默认策略：
-- 虎皮椒在代码里已改成 `fail-closed`
-- 没有补完整条统一落单链路前，不要在商业环境直接开放给用户
+当前代码状态：
+- 虎皮椒已经能真实创建支付
+- `/api/payments/hupijiao/webhook` 已能验签、落 `payment_events`、更新 `payment_orders`、自动入账
+- `queryOrder` 已接进统一 adapter
+- 退款 helper 已就绪，但后台退款流还没真正开放
 
-后续接虎皮椒时，不要再新写一套散落逻辑，直接补到统一 provider adapter：
+上线前至少确认这几项：
 
-1. `createCheckout`
-2. `verifyWebhook`
-3. `queryOrder`
-4. `refund`
-5. 自动入账
-6. 异常回调记录到 `payment_events`
+1. 后台 `payment_channels.active_provider` 已切到 `hupijiao`
+2. `merchant_id(APPID)`、`HUPIJIAO_SECRET_KEY`、`notify_url`、`return_url` 已配置完整
+3. `notify_url` 指向 Railway 服务端的 `/api/payments/hupijiao/webhook`
+4. 至少做 1 笔正式小额联调，确认 `payment_events`、`payment_orders`、`payment_checkout_sessions` 都有联动更新
+5. 如果要收紧来源链路，再补：
+   - `HUPIJIAO_WEBHOOK_TRUSTED_PROXIES`
+   - `HUPIJIAO_WEBHOOK_ALLOWED_IPS`
+6. 没接通后台退款前，不要把虎皮椒当成“已完成售后闭环”的通道

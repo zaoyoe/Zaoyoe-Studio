@@ -3,7 +3,13 @@ const {
     normalizeSiteValue
 } = require('../site');
 const {
-    normalizeHupijiaoConfig
+    buildHupijiaoTradeOrderId,
+    createHupijiaoPayment,
+    getHupijiaoGatewayOrderId,
+    normalizeHupijiaoConfig,
+    normalizeHupijiaoPaymentStatus,
+    queryHupijiaoPayment,
+    verifyHupijiaoHash
 } = require('./hupijiao');
 const {
     loadStoredPaymentConfigs,
@@ -24,6 +30,12 @@ function amountsMatch(expected, actual, epsilon = 0.01) {
     const left = roundCurrencyAmount(expected);
     const right = roundCurrencyAmount(actual);
     return Math.abs(left - right) <= epsilon;
+}
+
+function sanitizeText(value, fallback = '', maxLength = 240) {
+    if (typeof value !== 'string') return fallback;
+    const normalized = value.trim();
+    return normalized ? normalized.slice(0, maxLength) : fallback;
 }
 
 function buildHashedEventKey(provider, keyParts = [], payload = null) {
@@ -265,10 +277,10 @@ const providerRegistry = {
         key: 'hupijiao',
         label: '虎皮椒',
         supports: {
-            createCheckout: false,
-            webhook: false,
-            queryOrder: false,
-            autoCredit: false
+            createCheckout: true,
+            webhook: true,
+            queryOrder: true,
+            autoCredit: true
         },
         async resolveRuntimeContext({ supabase, env = process.env, config = null } = {}) {
             const loaded = config
@@ -291,8 +303,9 @@ const providerRegistry = {
                 provider: 'hupijiao',
                 channelConfig: loaded.paymentChannels.providers.hupijiao,
                 activeProvider: loaded.paymentChannels.active_provider,
-                implemented: false,
+                implemented: true,
                 integration,
+                requestOrigin: env.APP_BASE_URL,
                 secretValues: {
                     hupijiao_api_key: secrets.hupijiao_api_key?.value || '',
                     hupijiao_secret_key: secrets.hupijiao_secret_key?.value || ''
@@ -300,7 +313,26 @@ const providerRegistry = {
                 secretMeta: secrets
             };
         },
-        createCheckoutContext({ runtimeContext } = {}) {
+        buildEventKey({ providerOrderNo, transactionId, status, payload } = {}) {
+            return buildHashedEventKey('hupijiao', [
+                String(providerOrderNo || '').trim() || 'unknown',
+                String(transactionId || '').trim() || 'na',
+                String(status || '').trim().toUpperCase() || 'na'
+            ], payload);
+        },
+        async createCheckoutContext({
+            runtimeContext,
+            checkoutSession,
+            site,
+            packageId,
+            packageName,
+            paidPoints,
+            bonusPoints,
+            grantedPoints,
+            paidAmount,
+            isCustomRecharge,
+            customQuote
+        } = {}) {
             const channelConfig = runtimeContext?.channelConfig || {};
             const integration = runtimeContext?.integration || normalizeHupijiaoConfig({
                 channelConfig,
@@ -310,27 +342,174 @@ const providerRegistry = {
             const missingFields = Array.isArray(integration?.missingFields)
                 ? integration.missingFields
                 : [];
-            const readinessHint = missingFields.length
-                ? `当前还缺少：${missingFields.join(', ')}。`
-                : `APPID / SECRET / notify_url 已可用于官方 API 联调。`;
+            if (missingFields.length) {
+                return {
+                    supported: false,
+                    action: 'redirect',
+                    displayName: channelConfig.display_name || '虎皮椒',
+                    message: `当前还缺少：${missingFields.join(', ')}。请先补齐 APPID / SECRET / notify_url 后再启用虎皮椒真实支付。`
+                };
+            }
+
+            const normalizedAmount = roundCurrencyAmount(paidAmount);
+            if (!(normalizedAmount > 0)) {
+                return {
+                    supported: false,
+                    action: 'redirect',
+                    displayName: channelConfig.display_name || '虎皮椒',
+                    message: '虎皮椒订单金额无效，暂时无法拉起支付。'
+                };
+            }
+
+            const sessionId = String(checkoutSession?.id || '').trim();
+            const sessionKey = String(checkoutSession?.session_key || '').trim();
+            const tradeOrderId = buildHupijiaoTradeOrderId(sessionKey || sessionId || `${site}:${packageName}`);
+            const normalizedSite = normalizeSiteValue(site);
+            const title = isCustomRecharge
+                ? `积分充值 ${normalizePointValue(grantedPoints, 0)} 点`
+                : (String(packageName || '').trim() || `积分充值 ${normalizePointValue(grantedPoints, 0)} 点`);
+            const attach = {
+                provider: 'hupijiao',
+                user_id: sanitizeText(checkoutSession?.user_id, '', 80),
+                site: normalizedSite,
+                checkout_session_id: sessionId || null,
+                checkout_session_key: sessionKey || null,
+                package_id: sanitizeText(packageId, '', 80) || null,
+                package_name: sanitizeText(packageName, '', 120) || null,
+                paid_points: normalizePointValue(paidPoints, 0),
+                bonus_points: normalizePointValue(bonusPoints, 0),
+                granted_points: normalizePointValue(grantedPoints, 0),
+                expected_amount: normalizedAmount,
+                charge_type: isCustomRecharge ? 'custom' : 'package',
+                custom_quote_id: sanitizeText(customQuote?.quoteId, '', 120) || null
+            };
+
+            const paymentResult = await createHupijiaoPayment({
+                channelConfig,
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || '',
+                tradeOrderId,
+                amount: normalizedAmount,
+                title,
+                attach
+            });
+            const gatewayPayload = paymentResult.response?.data || {};
+            const gatewayErrcode = Number(gatewayPayload.errcode ?? 0);
+            const gatewayErrmsg = sanitizeText(gatewayPayload.errmsg, '', 240);
+            if (gatewayErrcode !== 0) {
+                return {
+                    supported: false,
+                    action: 'redirect',
+                    displayName: channelConfig.display_name || '虎皮椒',
+                    message: gatewayErrmsg || '虎皮椒下单失败，请稍后重试。'
+                };
+            }
+
+            const checkoutUrl = sanitizeText(
+                gatewayPayload.url || gatewayPayload.url_qrcode || channelConfig.checkout_url,
+                '',
+                1000
+            );
+            if (!checkoutUrl) {
+                return {
+                    supported: false,
+                    action: 'redirect',
+                    displayName: channelConfig.display_name || '虎皮椒',
+                    message: '虎皮椒未返回可用支付链接，请检查网关配置。'
+                };
+            }
+
+            const openOrderId = getHupijiaoGatewayOrderId(gatewayPayload);
+            const qrcodeUrl = sanitizeText(gatewayPayload.url_qrcode, '', 1000) || null;
             return {
-                supported: false,
+                supported: true,
                 action: 'redirect',
                 displayName: channelConfig.display_name || '虎皮椒',
-                message: `${readinessHint} 但统一落单、验签回调、查单和自动入账闭环尚未完成，已默认禁止拉起真实支付。请先切换到爱发电或继续完成虎皮椒全链路接入后再启用。`
+                checkoutUrl,
+                queryMode: 'provider_order_no',
+                providerOrderNo: tradeOrderId,
+                providerMetadata: {
+                    provider_order_no: tradeOrderId,
+                    gateway_open_order_id: openOrderId || null,
+                    qrcode_url: qrcodeUrl,
+                    gateway_errcode: gatewayErrcode,
+                    gateway_errmsg: gatewayErrmsg || null,
+                    charge_type: isCustomRecharge ? 'custom' : 'package'
+                },
+                summary: {
+                    grantedPoints: normalizePointValue(grantedPoints, 0),
+                    expectedAmount: normalizedAmount,
+                    trade_order_id: tradeOrderId,
+                    open_order_id: openOrderId || null,
+                    qrcode_url: qrcodeUrl
+                },
+                message: (isCustomRecharge
+                    ? channelConfig.custom_amount_hint
+                    : channelConfig.package_hint)
+                    || `虎皮椒支付链接已生成，请在新窗口完成支付后返回页面查看状态。`
             };
         },
-        verifyWebhook() {
+        verifyWebhook({ payload, runtimeContext, secret } = {}) {
+            const integration = runtimeContext?.integration || normalizeHupijiaoConfig({
+                channelConfig: runtimeContext?.channelConfig || {},
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || ''
+            });
+            const secretValue = sanitizeText(secret || integration.appSecret, '', 240);
+            if (!secretValue) {
+                return {
+                    supported: false,
+                    valid: false,
+                    reason: 'missing_secret',
+                    expectedHash: '',
+                    receivedHash: sanitizeText(payload?.hash, '', 120).toLowerCase()
+                };
+            }
+
+            const verification = verifyHupijiaoHash(payload || {}, secretValue);
             return {
-                supported: false,
-                valid: false,
-                reason: 'not_implemented'
+                supported: true,
+                valid: verification.valid,
+                reason: verification.valid
+                    ? ''
+                    : (verification.receivedHash ? 'signature_mismatch' : 'missing_signature'),
+                ...verification
             };
         },
-        queryOrder() {
+        async queryOrder({ runtimeContext, providerOrderNo = '', openOrderId = '' } = {}) {
+            const integration = runtimeContext?.integration || normalizeHupijiaoConfig({
+                channelConfig: runtimeContext?.channelConfig || {},
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || ''
+            });
+            if (!integration?.appId || !integration?.appSecret) {
+                return {
+                    supported: false,
+                    message: '虎皮椒查询配置不完整，请先补齐 APPID / SECRET。'
+                };
+            }
+
+            const queryResult = await queryHupijiaoPayment({
+                channelConfig: runtimeContext?.channelConfig || {},
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || '',
+                tradeOrderId: providerOrderNo,
+                openOrderId
+            });
+            const gatewayPayload = queryResult.response?.data || {};
+            const gatewayErrcode = Number(gatewayPayload.errcode ?? 0);
+            const orderData = gatewayPayload.data && typeof gatewayPayload.data === 'object'
+                ? gatewayPayload.data
+                : {};
+            const statusRaw = sanitizeText(orderData.status, '', 12).toUpperCase();
             return {
-                supported: false,
-                message: '虎皮椒订单查询能力待接入。'
+                supported: true,
+                success: gatewayErrcode === 0,
+                providerOrderNo: sanitizeText(orderData.out_trade_order || providerOrderNo, '', 120) || null,
+                openOrderId: sanitizeText(orderData.open_order_id || openOrderId, '', 120) || null,
+                status: normalizeHupijiaoPaymentStatus(statusRaw),
+                statusRaw,
+                message: sanitizeText(gatewayPayload.errmsg, gatewayErrcode === 0 ? 'success' : '虎皮椒查单失败', 240)
             };
         }
     }
