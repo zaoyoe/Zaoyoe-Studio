@@ -102,6 +102,8 @@
 8. 重新部署：
    - Vercel
    - Railway（如果它依赖这个 key）
+   - Railway 的 `Root Directory` 必须指向仓库根目录 `.`，不要再设成 `server`
+   - 原因：`server/index.js` 会加载仓库根目录下的共享模块 `api/_lib/*`；如果只部署 `server/` 子目录，进程会在启动前崩掉，最终表现为 `/healthz` 持续 healthcheck failure
 9. 部署后重新验证：
    - 管理员后台
    - 钱包充值
