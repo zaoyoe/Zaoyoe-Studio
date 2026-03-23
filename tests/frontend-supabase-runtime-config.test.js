@@ -886,6 +886,41 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
     }
 });
 
+test('verify widget runtime renderers route wallet/login/form/history actions through delegated bindings', () => {
+    const verifyWidgetSource = readRepoFile('verify-widget.js');
+    const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|keyup|mouseover|mouseout|error|load)\s*=\s*["']/i;
+
+    assert.equal(
+        inlineHandlerPattern.test(verifyWidgetSource),
+        false,
+        'verify-widget.js should not emit inline event handler attributes'
+    );
+
+    const delegatedMarkers = [
+        'function bindDelegatedUi(container)',
+        "container.dataset.verifyDelegatesBound === '1'",
+        "data-verify-action=\"wallet-open\"",
+        "data-verify-action=\"login-gate\"",
+        "data-verify-action=\"toggle-password\"",
+        "data-verify-action=\"reset-form\"",
+        "data-verify-action=\"submit\"",
+        "data-verify-action=\"export-history\"",
+        "data-verify-action=\"refresh-history\"",
+        "data-verify-action=\"copy-history-id\"",
+        "case 'wallet-open':",
+        "case 'login-gate':",
+        "case 'toggle-password':",
+        "case 'reset-form':",
+        "case 'submit':",
+        "case 'copy-history-id':",
+        'bindDelegatedUi(container);'
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(verifyWidgetSource.includes(marker), true, `verify-widget.js should contain ${marker}`);
+    }
+});
+
 test('admin studio settings, discounts, and tickets controls route through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
