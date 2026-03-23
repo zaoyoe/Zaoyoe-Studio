@@ -281,11 +281,7 @@ test('critical auth pages consume delegated profile modal and form bindings', ()
     assert.equal(verifySource.includes('data-modal-dismiss-managed="1"'), true, 'verify.html should use managed modal dismissal for comingSoonModal');
 
     assert.equal(resetPasswordSource.includes('onsubmit="handleNewPasswordSubmit(event)"'), false, 'reset-password.html should not inline form submission');
-    assert.equal(
-        resetPasswordSource.includes("addEventListener('submit', handleNewPasswordSubmit)"),
-        true,
-        'reset-password.html should bind submission via addEventListener'
-    );
+    assert.equal(resetPasswordSource.includes('./js/reset-password-page.js'), true, 'reset-password.html should load the reset password bootstrap file');
 });
 
 test('public and debug entry pages no longer ship inline handler attributes', () => {
@@ -342,6 +338,43 @@ test('privacy page reuses the shared Supabase bootstrap instead of inlining a du
     assert.equal(source.includes('./supabase-client.js'), true, 'privacy.html should load the shared supabase-client.js bootstrap');
     assert.equal(source.includes('window.supabaseClient = supabase.createClient'), false, 'privacy.html should not inline a duplicate Supabase client bootstrap');
     assert.equal(source.includes("localStorage.getItem('chat_session_id')"), false, 'privacy.html should not duplicate chat session initialization');
+});
+
+test('shared theme preload replaces duplicated inline theme bootstraps on public and admin pages', () => {
+    const files = [
+        'guestbook.html',
+        'shop.html',
+        'reset-password.html',
+        'prompts.html',
+        'admin-studio.html'
+    ];
+
+    for (const relativePath of files) {
+        const source = readRepoFile(relativePath);
+        assert.equal(source.includes('./js/theme-preload.js') || source.includes('js/theme-preload.js'), true, `${relativePath} should load js/theme-preload.js`);
+        assert.equal(source.includes("const savedTheme = localStorage.getItem('theme');"), false, `${relativePath} should not inline a duplicated savedTheme bootstrap`);
+    }
+});
+
+test('auth and verify runtime pages externalize page bootstraps instead of embedding large inline scripts', () => {
+    const authCallbackSource = readRepoFile('auth-callback.html');
+    const resetPasswordSource = readRepoFile('reset-password.html');
+    const verifySource = readRepoFile('verify.html');
+    const guestbookSource = readRepoFile('guestbook.html');
+
+    assert.equal(authCallbackSource.includes('./js/auth-callback-page.js'), true, 'auth-callback.html should load the shared auth callback bootstrap file');
+    assert.equal(authCallbackSource.includes('exchangeCodeForSession(code)'), false, 'auth-callback.html should not inline OAuth session exchange logic');
+
+    assert.equal(resetPasswordSource.includes('./js/reset-password-page.js'), true, 'reset-password.html should load the reset password bootstrap file');
+    assert.equal(resetPasswordSource.includes('window.supabaseClient = supabase.createClient'), false, 'reset-password.html should not inline Supabase client bootstrap');
+    assert.equal(resetPasswordSource.includes('handleNewPasswordSubmit(event)'), false, 'reset-password.html should not inline the reset password submission handler');
+
+    assert.equal(verifySource.includes('./js/verify-page.js'), true, 'verify.html should load the verify page bootstrap file');
+    assert.equal(verifySource.includes('window.VERIFY_SERVER_URL ='), false, 'verify.html should not inline verify server globals');
+    assert.equal(verifySource.includes('verify-prerender-style'), false, 'verify.html should not inline prerender style injection logic');
+
+    assert.equal(guestbookSource.includes('./js/guestbook-optional-enhancements.js'), true, 'guestbook.html should load the guestbook optional enhancements bootstrap file');
+    assert.equal(guestbookSource.includes('scheduleOptionalGuestbookEnhancements'), false, 'guestbook.html should not inline optional guestbook enhancement boot logic');
 });
 
 test('non-production utility and preview pages no longer ship inline handler attributes', () => {
