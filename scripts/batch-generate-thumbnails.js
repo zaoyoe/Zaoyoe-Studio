@@ -22,6 +22,16 @@
     const THUMB_QUALITY = 0.8;
     const BATCH_SIZE = 5; // 每批处理数量
     const DELAY_BETWEEN_BATCHES = 2000; // 批次间延迟 (ms)
+    const supabaseUrl = (window.__PUBLIC_RUNTIME_CONFIG__ && window.__PUBLIC_RUNTIME_CONFIG__.supabaseUrl)
+        || window.supabaseClient?.supabaseUrl
+        || null;
+
+    if (!supabaseUrl) {
+        console.error('❌ 无法解析 Supabase URL，请先在 Admin Studio 中加载 runtime config 后再执行脚本');
+        return;
+    }
+
+    const uploadToR2Url = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1/upload-to-r2`;
 
     // Statistics
     let stats = {
@@ -124,7 +134,7 @@
     // Helper: Upload thumbnail to R2
     async function uploadThumbnail(base64, filename) {
         const response = await fetch(
-            'https://mmkugdibsaeoevliebzk.supabase.co/functions/v1/upload-to-r2',
+            uploadToR2Url,
             {
                 method: 'POST',
                 headers: {

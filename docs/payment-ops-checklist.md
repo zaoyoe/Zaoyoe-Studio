@@ -65,14 +65,32 @@
 2. 进入 `Settings -> API Keys`。
 3. 重新生成 / 轮换 `secret/service role key`。
 4. 把新的 key 更新到：
-   - Vercel 的 `SUPABASE_SERVICE_ROLE_KEY`
-   - Railway / verify server 的 `SUPABASE_SERVICE_ROLE_KEY`（如果该服务也在使用）
-5. 如果你打算一并轮换后台加密种子，再同步更新：
-   - `ADMIN_CONFIG_ENCRYPTION_KEY`
-6. 重新部署：
+   - Vercel 的：
+     - `SUPABASE_URL`
+     - `SUPABASE_PUBLISHABLE_KEY`
+     - `SUPABASE_SERVICE_ROLE_KEY`
+     - `ADMIN_CONFIG_ENCRYPTION_KEY`
+     - `PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET`
+     - `ADMIN_STUDIO_ACCESS_SECRET`
+     - `ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL`（如果仍需远程模拟支付）
+   - Railway / verify server 的：
+     - `SUPABASE_URL`
+     - `SUPABASE_SERVICE_ROLE_KEY`
+     - `PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET`
+     - `ALLOWED_ORIGINS`
+5. 轮换或补齐变量后，先跑：
+   - `npm run check:prod-env -- --env-file server/.env.staging --validate-supabase --validate-payment-schema --check-app-runtime`
+   - `npm run smoke:payment -- --env-file server/.env.staging --config-only --allow-production-like`
+6. `check:prod-env` 现在会额外输出两块关键信息：
+   - `app payment auth-check endpoint`
+     - `401 Unauthorized` 表示新版本已部署，JWT 探针接口在线
+     - `404 Not Found` 表示线上还没 redeploy 到最新代码
+   - `Platform env checklist`
+     - `Vercel` 和 `Railway / verify server` 各自该补哪些变量，会逐项列出来
+7. 重新部署：
    - Vercel
    - Railway（如果它依赖这个 key）
-7. 部署后重新验证：
+8. 部署后重新验证：
    - 管理员后台
    - 钱包充值
    - 爱发电订单查询

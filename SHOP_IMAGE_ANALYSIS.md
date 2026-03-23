@@ -129,7 +129,7 @@ handleIconUpload: async function (input) {
     const { data: { session } } = await supabaseClient.auth.getSession();
     
     const response = await fetch(
-        'https://mmkugdibsaeoevliebzk.supabase.co/functions/v1/upload-avatar',
+        'https://<your-project-ref>.supabase.co/functions/v1/upload-avatar',
         {
             method: 'POST',
             headers: {

@@ -40,14 +40,14 @@ supabase login
 cd /Volumes/chao/AI/xianyu_profit_calculator
 
 # Link到项目
-supabase link --project-ref mmkugdibsaeoevliebzk
+supabase link --project-ref <your-project-ref>
 ```
 
 ### Step 4: 设置环境变量（Secrets）
 
 ```bash
 # 设置 R2 凭证
-supabase secrets set R2_ENDPOINT=https://cd39b0e8dba64c7f804d8e00d40e5d4a.r2.cloudflarestorage.com
+supabase secrets set R2_ENDPOINT=https://<your-account-id>.r2.cloudflarestorage.com
 supabase secrets set R2_ACCESS_KEY=<您的R2 Access Key ID>
 supabase secrets set R2_SECRET_KEY=<您的R2 Secret Access Key>
 ```
@@ -64,7 +64,7 @@ supabase functions deploy upload-to-r2
 ```
 Deploying Function upload-to-r2...
 ✓ Function upload-to-r2 deployed successfully
-URL: https://mmkugdibsaeoevliebzk.supabase.co/functions/v1/upload-to-r2
+URL: https://<your-project-ref>.supabase.co/functions/v1/upload-to-r2
 ```
 
 ---
@@ -88,7 +88,7 @@ EOF
 
 # 调用函数（需要有效的access token）
 curl -X POST \
-  https://mmkugdibsaeoevliebzk.supabase.co/functions/v1/upload-to-r2 \
+  https://<your-project-ref>.supabase.co/functions/v1/upload-to-r2 \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d @test-upload.json
@@ -170,7 +170,7 @@ supabase functions logs upload-to-r2 --limit 100
 
 ### Supabase Dashboard
 
-访问: https://supabase.com/dashboard/project/mmkugdibsaeoevliebzk/functions
+访问: https://supabase.com/dashboard/project/<your-project-ref>/functions
 
 查看:
 - 调用次数

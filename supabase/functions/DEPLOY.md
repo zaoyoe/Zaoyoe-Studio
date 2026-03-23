@@ -20,7 +20,7 @@ supabase login
 ### 3. 链接项目
 ```bash
 cd /Volumes/chao/AI/xianyu_profit_calculator
-supabase link --project-ref mmkugdibsaeoevliebzk
+supabase link --project-ref <your-project-ref>
 ```
 
 ### 4. 部署 Edge Function
@@ -35,7 +35,7 @@ supabase functions deploy verify
 部署完成后，在 **Admin Studio → 内容设置 → 验证服务** 中：
 
 1. 设置 **每次验证价格**: 3 积分
-2. 输入 **Batch API Key**: `cdk_=_vgb6#kJqYeu-mzD5%@6dQ8vVc4OB@-`
+2. 输入 **Batch API Key**: 使用你自己的真实密钥，通过受控后台配置注入，不要在文档、脚本或仓库文件里明文保存
 3. 启用 **验证服务**
 
 ---
