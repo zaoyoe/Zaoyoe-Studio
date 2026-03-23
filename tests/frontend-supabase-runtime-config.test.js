@@ -90,3 +90,9 @@ test('shared frontend scripts depend on the unified runtime Supabase helpers', (
 
     assert.deepEqual(missing, [], missing.join('\n'));
 });
+
+test('vercel CSP does not allow unsafe-eval in frontend script execution', () => {
+    const source = readRepoFile('vercel.json');
+
+    assert.equal(source.includes("'unsafe-eval'"), false);
+});

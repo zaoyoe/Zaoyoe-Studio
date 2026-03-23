@@ -194,7 +194,36 @@ async function getVerifyConfig() {
 }
 
 function getCurrentSite(req, explicitSite) {
-    return explicitSite || (req.headers.origin?.includes('zaoyoe.xyz') ? 'intl' : 'cn');
+    if (explicitSite) {
+        return sanitizeSite(explicitSite);
+    }
+
+    const requestHints = [
+        req?.headers?.origin,
+        req?.headers?.referer,
+        req?.headers?.['x-forwarded-host'],
+        req?.headers?.host,
+        req?.hostname
+    ];
+
+    for (const hint of requestHints) {
+        const normalizedHint = String(hint || '').trim().toLowerCase();
+        if (!normalizedHint) continue;
+        if (normalizedHint.includes('zaoyoe.xyz')) return 'intl';
+        if (normalizedHint.includes('zaoyoe.com')) return 'cn';
+    }
+
+    return 'cn';
+}
+
+function isProductionLikeRuntime(env = process.env) {
+    const vercelEnv = String(env?.VERCEL_ENV || '').trim().toLowerCase();
+    const railwayEnv = String(env?.RAILWAY_ENVIRONMENT_NAME || '').trim().toLowerCase();
+    const deploymentTier = String(env?.DEPLOYMENT_TIER || env?.APP_ENV || '').trim().toLowerCase();
+
+    return vercelEnv === 'production'
+        || railwayEnv === 'production'
+        || deploymentTier === 'production';
 }
 
 function resolveRequestClientIp(req, options = {}) {
@@ -809,6 +838,89 @@ async function loadAfdianQuerySnapshot(orderNo) {
     return {
         afdianOrder,
         paymentOrder: paymentOrder || null
+    };
+}
+
+async function loadPaymentOrderSiteById(paymentOrderId) {
+    const normalizedPaymentOrderId = String(paymentOrderId || '').trim();
+    if (!normalizedPaymentOrderId) return '';
+
+    const { data, error } = await supabase
+        .from('payment_orders')
+        .select('site')
+        .eq('id', normalizedPaymentOrderId)
+        .maybeSingle();
+
+    if (error) {
+        throw new Error(error.message || 'Failed to inspect payment order site');
+    }
+
+    return String(data?.site || '').trim();
+}
+
+async function loadCheckoutSessionSiteById(checkoutSessionId) {
+    const normalizedCheckoutSessionId = String(checkoutSessionId || '').trim();
+    if (!normalizedCheckoutSessionId) return '';
+
+    const { data, error } = await supabase
+        .from('payment_checkout_sessions')
+        .select('site')
+        .eq('id', normalizedCheckoutSessionId)
+        .maybeSingle();
+
+    if (error) {
+        throw new Error(error.message || 'Failed to inspect checkout session site');
+    }
+
+    return String(data?.site || '').trim();
+}
+
+async function resolveAfdianWebhookContext({
+    req,
+    orderNo,
+    resolvedPackage = null,
+    amount
+}) {
+    const fallbackSite = getCurrentSite(req);
+    const snapshot = await loadAfdianQuerySnapshot(orderNo);
+    const snapshotSite = String(snapshot.paymentOrder?.site || snapshot.afdianOrder?.site || '').trim();
+    if (snapshotSite) {
+        return {
+            currentSite: sanitizeSite(snapshotSite),
+            pendingPaymentOrder: snapshot.paymentOrder?.id
+                ? {
+                    paymentOrderId: snapshot.paymentOrder.id,
+                    checkoutSessionId: snapshot.paymentOrder.checkout_session_id || null,
+                    resolvedBy: 'existing_payment_order'
+                }
+                : null
+        };
+    }
+
+    const pendingPaymentOrder = await resolvePendingPaymentOrderFromCheckoutContext({
+        supabase,
+        providerKey: 'afdian',
+        providerOrderNo: orderNo,
+        site: '',
+        packageId: resolvedPackage?.packageId ?? null,
+        packageName: resolvedPackage?.packageName ?? null,
+        expectedAmount: resolvedPackage?.expectedAmount ?? amount,
+        paidAmount: amount,
+        pointsAmount: resolvedPackage?.pointsTotal ?? 0,
+        lookbackMinutes: 120
+    });
+
+    let resolvedSite = '';
+    if (pendingPaymentOrder?.paymentOrderId) {
+        resolvedSite = await loadPaymentOrderSiteById(pendingPaymentOrder.paymentOrderId);
+    }
+    if (!resolvedSite && pendingPaymentOrder?.checkoutSessionId) {
+        resolvedSite = await loadCheckoutSessionSiteById(pendingPaymentOrder.checkoutSessionId);
+    }
+
+    return {
+        currentSite: sanitizeSite(resolvedSite || fallbackSite),
+        pendingPaymentOrder
     };
 }
 
@@ -2689,6 +2801,10 @@ app.post('/api/payments/hupijiao/webhook', async (req, res) => {
 
     const webhookTrustedProxies = getHupijiaoWebhookTrustedProxies();
     const webhookAllowedIps = String(process.env.HUPIJIAO_WEBHOOK_ALLOWED_IPS || '').trim();
+    if (isProductionLikeRuntime() && !webhookAllowedIps) {
+        console.warn('[Hupijiao] Webhook blocked because HUPIJIAO_WEBHOOK_ALLOWED_IPS is missing in a production-like runtime');
+        return res.status(503).end('webhook source allowlist not configured');
+    }
     const webhookContext = buildRequestNetworkContext(req, {
         trustedProxies: webhookTrustedProxies,
         allowedIps: webhookAllowedIps
@@ -2940,6 +3056,10 @@ app.post('/api/afdian/webhook', async (req, res) => {
 
     const webhookTrustedProxies = getAfdianWebhookTrustedProxies();
     const webhookAllowedIps = String(process.env.AFDIAN_WEBHOOK_ALLOWED_IPS || '').trim();
+    if (isProductionLikeRuntime() && !webhookAllowedIps) {
+        console.warn('[Afdian] Webhook blocked because AFDIAN_WEBHOOK_ALLOWED_IPS is missing in a production-like runtime');
+        return res.status(503).json({ ec: 503, em: 'webhook source allowlist not configured' });
+    }
     const webhookContext = buildRequestNetworkContext(req, {
         trustedProxies: webhookTrustedProxies,
         allowedIps: webhookAllowedIps
@@ -2969,7 +3089,6 @@ app.post('/api/afdian/webhook', async (req, res) => {
     const orderNo = String(order.out_trade_no || '').trim();
     const status = Number(order.status);
     const eventKey = buildAfdianEventKey(orderNo, status, payload);
-    const currentSite = getCurrentSite(req);
 
     try {
         console.log('[Afdian] Raw payload:', JSON.stringify(payload).substring(0, 500));
@@ -3064,17 +3183,11 @@ app.post('/api/afdian/webhook', async (req, res) => {
             amount,
             amountValid
         });
-        const pendingPaymentOrder = await resolvePendingPaymentOrderFromCheckoutContext({
-            supabase,
-            providerKey: 'afdian',
-            providerOrderNo: orderNo,
-            site: currentSite,
-            packageId: resolvedPackage?.packageId ?? null,
-            packageName: resolvedPackage?.packageName ?? null,
-            expectedAmount: resolvedPackage?.expectedAmount ?? amount,
-            paidAmount: amount,
-            pointsAmount: resolvedPackage?.pointsTotal ?? 0,
-            lookbackMinutes: 120
+        const { currentSite, pendingPaymentOrder } = await resolveAfdianWebhookContext({
+            req,
+            orderNo,
+            resolvedPackage,
+            amount
         });
 
         const { data: processResult, error: processRpcError } = await processAfdianPayment({
@@ -3087,7 +3200,7 @@ app.post('/api/afdian/webhook', async (req, res) => {
             points: resolvedPackage?.pointsTotal ?? 0,
             packageId: resolvedPackage?.packageId ?? null,
             packageName: resolvedPackage?.packageName ?? null,
-            site: getCurrentSite(req),
+            site: currentSite,
             signatureValid,
             amountValid,
             payload,
