@@ -4,6 +4,7 @@
   "description": "AI Prompt Gallery",
   "scripts": {
     "audit:env-drift": "node scripts/check-env-drift.js",
+    "audit:payment-closeout": "node scripts/payment-postdeploy-audit.js",
     "check:prod-env": "node scripts/check-prod-env.js",
     "optimize-images": "node scripts/optimize-images.js",
     "preflight:payment-rollout": "node scripts/payment-rollout-preflight.js",

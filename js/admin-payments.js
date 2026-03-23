@@ -39,6 +39,8 @@
         'approve_amount_mismatch',
         'reject_amount_mismatch'
     ]);
+    const CLEANUP_SCOPE_HTML = '只会清理订单号前缀为 <code>AUTO_CDX_*</code> 或 <code>SMOKE_*</code> 的测试订单，以及邮箱匹配 <code>codex.*@example.com</code> 或 <code>smoke-payment-*@zaoyoe.invalid</code> 的测试账号。';
+    const CLEANUP_SCOPE_TEXT = '将删除 AUTO_CDX_* / SMOKE_* 测试订单，以及 codex.*@example.com / smoke-payment-*@zaoyoe.invalid 测试账号。此操作不可撤销，是否继续？';
 
     function escapeHtml(value) {
         return String(value ?? '')
@@ -1481,7 +1483,7 @@
                 </div>
             </div>
             <div class="payments-cleanup-note">
-                只会清理订单号前缀为 <code>AUTO_CDX_</code> 的测试订单，以及邮箱匹配 <code>codex.*@example.com</code> 的测试账号。
+                ${CLEANUP_SCOPE_HTML}
             </div>
             <div class="payments-cleanup-samples">
                 <div>
@@ -1532,7 +1534,7 @@
                 <span>${escapeHtml(message || '测试数据扫描暂时不可用，请稍后再试。')}</span>
             </div>
             <div class="payments-cleanup-note">
-                不影响上方支付概览和异常队列。这个区域仅用于清理 <code>AUTO_CDX_</code> 测试订单与 <code>codex.*@example.com</code> 测试账号。
+                不影响上方支付概览和异常队列。${CLEANUP_SCOPE_HTML}
             </div>
         `;
     }
@@ -1785,7 +1787,7 @@
             return;
         }
 
-        const confirmed = window.confirm('将删除 AUTO_CDX_* 测试订单与 codex.*@example.com 测试账号。此操作不可撤销，是否继续？');
+        const confirmed = window.confirm(CLEANUP_SCOPE_TEXT);
         if (!confirmed) return;
 
         try {
