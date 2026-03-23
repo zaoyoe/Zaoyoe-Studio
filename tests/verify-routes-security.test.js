@@ -150,6 +150,7 @@ function createSupabaseStub(state = {}) {
     const paymentEvents = state.paymentEvents || [];
     const paymentOrders = state.paymentOrders || [];
     const paymentCheckoutSessions = state.paymentCheckoutSessions || [];
+    const afdianOrders = state.afdianOrders || [];
     const pointsLedger = state.pointsLedger || [];
     const pointsPackages = state.pointsPackages || [];
     const adminSecretStore = state.adminSecretStore || [];
@@ -165,10 +166,13 @@ function createSupabaseStub(state = {}) {
     const rechargeOptions = state.rechargeOptions || null;
     const afdianProcessPaymentResult = state.afdianProcessPaymentResult || { status: 'pending_review', payment_order_id: null };
     const afdianProcessPaymentError = state.afdianProcessPaymentError || null;
+    const rpcCalls = state.rpcCalls || [];
     state.paymentEvents = paymentEvents;
     state.paymentOrders = paymentOrders;
     state.paymentCheckoutSessions = paymentCheckoutSessions;
+    state.afdianOrders = afdianOrders;
     state.pointsLedger = pointsLedger;
+    state.rpcCalls = rpcCalls;
     state.metrics = state.metrics || {};
     state.metrics.deductCalls = Number(state.metrics.deductCalls || 0);
 
@@ -183,6 +187,7 @@ function createSupabaseStub(state = {}) {
             }
         },
         rpc(name, args = {}) {
+            rpcCalls.push({ name, args });
             if (name === 'get_user_permissions') {
                 return createRpcResult(
                     permissions[args.p_user_id] || {
@@ -459,6 +464,31 @@ function createSupabaseStub(state = {}) {
                     });
                     return {
                         data: query.single || query.maybeSingle ? (matched[0] || null) : matched,
+                        error: null
+                    };
+                }
+
+                if (table === 'afdian_orders' && query.mode === 'select') {
+                    let rows = applyCommonFilters(afdianOrders, query);
+                    if (query.order?.column) {
+                        const ascending = query.order.options?.ascending !== false;
+                        rows = [...rows].sort((left, right) => {
+                            const leftValue = left[query.order.column];
+                            const rightValue = right[query.order.column];
+                            if (leftValue === rightValue) return 0;
+                            if (leftValue == null) return 1;
+                            if (rightValue == null) return -1;
+                            return ascending
+                                ? (leftValue > rightValue ? 1 : -1)
+                                : (leftValue < rightValue ? 1 : -1);
+                        });
+                    }
+                    if (Number.isFinite(query.limit)) {
+                        rows = rows.slice(0, query.limit);
+                    }
+
+                    return {
+                        data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
                         error: null
                     };
                 }
@@ -1325,6 +1355,131 @@ test('afdian webhook rejects requests outside the configured source IP allowlist
     });
 });
 
+test('afdian webhook fails closed in production-like runtimes when the source IP allowlist is missing', async () => {
+    const state = {
+        paymentEvents: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const response = await withEnv({
+            DEPLOYMENT_TIER: 'production'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/webhook',
+            body: {
+                ec: 200,
+                sign: 'ignored',
+                data: {
+                    type: 'order',
+                    order: {
+                        out_trade_no: 'AFD-NO-ALLOWLIST',
+                        status: 2,
+                        total_amount: '5.00'
+                    }
+                }
+            }
+        }));
+        const payload = response.json();
+
+        assert.equal(response.status, 503);
+        assert.deepEqual(payload, { ec: 503, em: 'webhook source allowlist not configured' });
+        assert.equal(state.paymentEvents.length, 0);
+    });
+});
+
+test('afdian webhook resolves site from the linked pending checkout session when the request origin is not site-specific', async () => {
+    const nowIso = new Date().toISOString();
+    const state = {
+        paymentEvents: [],
+        paymentCheckoutSessions: [
+            {
+                id: 'checkout-afd-intl-1',
+                user_id: 'user-intl-1',
+                provider: 'afdian',
+                site: 'intl',
+                package_id: 'pkg-intl-1',
+                package_name: 'Intl Package',
+                expected_amount: 20,
+                requested_points: 200,
+                granted_points: 200,
+                status: 'redirect_ready',
+                payment_order_id: null,
+                created_at: nowIso,
+                provider_metadata: {}
+            }
+        ],
+        paymentOrders: [
+            {
+                id: 'pay-order-afd-intl-pending',
+                provider: 'afdian',
+                provider_order_no: 'PENDING_AFDIAN_INTL_CHECKOUT_1',
+                checkout_session_id: 'checkout-afd-intl-1',
+                site: 'intl',
+                status: 'pending',
+                provider_metadata: {
+                    provider_order_pending: true,
+                    provider_order_resolved: false
+                },
+                created_at: nowIso
+            }
+        ],
+        pointsPackages: [
+            {
+                id: 'pkg-intl-1',
+                name: 'Intl Package',
+                points_amount: 200,
+                bonus_points: 0,
+                price_cny: 20,
+                sku_id: 'sku-intl-20',
+                is_active: true
+            }
+        ],
+        afdianProcessPaymentResult: {
+            status: 'paid',
+            payment_order_id: 'pay-order-afd-intl-pending'
+        }
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const payloadData = {
+            type: 'order',
+            order: {
+                out_trade_no: 'AFD-REAL-INTL-1',
+                status: 2,
+                plan_id: 'sku-intl-20',
+                total_amount: '20.00',
+                user_id: 'afd-user-1'
+            }
+        };
+        const sign = crypto
+            .createHash('md5')
+            .update(`afdian-secret${JSON.stringify(payloadData)}`)
+            .digest('hex');
+
+        const response = await withEnv({
+            AFDIAN_TOKEN: 'afdian-secret'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/webhook',
+            headers: {
+                host: 'zaoyoe-verify-server-production.up.railway.app'
+            },
+            body: {
+                ec: 200,
+                sign,
+                data: payloadData
+            }
+        }));
+        const payload = response.json();
+        const processCall = state.rpcCalls.find((call) => call.name === 'fn_process_afdian_payment');
+
+        assert.equal(response.status, 200);
+        assert.deepEqual(payload, { ec: 200, em: '' });
+        assert.ok(processCall);
+        assert.equal(processCall.args.p_site, 'intl');
+    });
+});
+
 test('hupijiao webhook verifies the signature and auto-credits the linked order', async () => {
     const state = {
         paymentEvents: [],
@@ -1431,6 +1586,31 @@ test('hupijiao webhook verifies the signature and auto-credits the linked order'
         assert.equal(paymentOrder.provider_metadata.transaction_id, 'TXN_HJ_1');
         assert.equal(checkoutSession.status, 'completed');
         assert.equal(checkoutSession.payment_order_id, 'pay-order-hj-1');
+    });
+});
+
+test('hupijiao webhook fails closed in production-like runtimes when the source IP allowlist is missing', async () => {
+    const state = {
+        paymentEvents: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const response = await withEnv({
+            DEPLOYMENT_TIER: 'production'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/payments/hupijiao/webhook',
+            body: {
+                trade_order_id: 'HJ-NO-ALLOWLIST',
+                transaction_id: 'txn-hj-no-allowlist',
+                status: 'SUCCESS',
+                total_fee: '5.00'
+            }
+        }));
+
+        assert.equal(response.status, 503);
+        assert.equal(response.text, 'webhook source allowlist not configured');
+        assert.equal(state.paymentEvents.length, 0);
     });
 });
 
