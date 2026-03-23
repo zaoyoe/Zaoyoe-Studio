@@ -412,11 +412,33 @@ function bindAdminStudioDelegatedControls() {
             case 'payments-reload':
                 window.AdminPayments?.reload?.();
                 break;
+            case 'payments-handle-anomaly-action':
+                window.AdminPayments?.handleAnomalyAction?.(
+                    actionEl.dataset.paymentsTargetType,
+                    actionEl.dataset.paymentsTargetId,
+                    actionEl.dataset.paymentsAction
+                );
+                break;
+            case 'payments-go-to-page':
+                window.AdminPayments?.goToPage?.(
+                    actionEl.dataset.paymentsPageKey,
+                    Number(actionEl.dataset.paymentsPage || 0)
+                );
+                break;
+            case 'payments-set-exception-topic-filter':
+                window.AdminPayments?.setExceptionTopicFilter?.(actionEl.dataset.paymentsTopicKey);
+                break;
             case 'payments-preview-cleanup':
                 window.AdminPayments?.previewCleanup?.();
                 break;
             case 'payments-run-cleanup':
                 window.AdminPayments?.cleanupTestData?.();
+                break;
+            case 'site-filter-toggle-dropdown':
+                window.AdminSiteFilter?.toggleDropdown?.();
+                break;
+            case 'site-filter-select':
+                window.AdminSiteFilter?.select?.(actionEl.dataset.siteFilterValue);
                 break;
             case 'analytics-dismiss-alerts':
                 window.dismissAllAlerts?.();
