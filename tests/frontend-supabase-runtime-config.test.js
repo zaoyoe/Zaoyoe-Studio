@@ -976,3 +976,114 @@ test('shop admin pagination and inventory/product workflows no longer emit targe
     assert.equal(shopSource.includes('bindDelegatedHandlers: function'), true, 'js/admin-shop.js should bind delegated handlers');
     assert.equal(shopSource.includes('data-shop-overlay-close="dynamic-modal"'), true, 'js/admin-shop.js should render delegated dynamic modal overlays');
 });
+
+test('admin studio create form and shop import/orders/fulfillment controls route through delegated actions', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const shopSource = readRepoFile('js/admin-shop.js');
+
+    const removedInlineMarkers = [
+        'onclick="resetForm()"',
+        `onclick="toggleMobileImportView('sidebar')"`,
+        `onclick="toggleMobileImportView('main')"`,
+        `onclick="ShopAdmin.showCreateCategoryDialog()"`,
+        `onclick="ShopAdmin.renameCategoryFromMenu()"`,
+        `onclick="ShopAdmin.setCategoryColor('#6b9ece')"`,
+        `onclick="ShopAdmin.deleteCategoryFromMenu()"`,
+        `oninput="document.getElementById('importViewLineCount').textContent = '(' + (this.value.trim() ? this.value.trim().split('\\n').length : 0) + '个)'"`,
+        `onclick="ShopAdmin.doImportFromView()"`,
+        `onclick="ShopAdmin.toggleDropdown('productDropdown')"`,
+        `onclick="ShopAdmin.selectDropdown('status', 'available', '在售')"`,
+        `onkeypress="if(event.key==='Enter') ShopAdmin.searchOrders()"`,
+        `onclick="ShopAdmin.searchOrders()"`,
+        `onclick="ShopAdmin.exportOrders()"`,
+        `onchange="ShopAdmin.setDeliveryTaskStatusFilter(this.value)"`,
+        `onkeydown="ShopAdmin.handleDeliveryTaskQueryKeydown(event)"`,
+        `onclick="ShopAdmin.applyDeliveryTaskQuery()"`,
+        `onclick="ShopAdmin.loadDeliveryTasks(1)"`,
+        `onclick="ShopAdmin.saveDeliveryStrategy()"`,
+        `onchange="ShopAdmin.setDeliveryAnalyticsWindow(this.value)"`,
+        `onchange="ShopAdmin.setDeliveryDeadLetterReasonFilter(this.value)"`,
+        `onchange="ShopAdmin.setDeliveryLockStateFilter(this.value)"`,
+        `onchange="ShopAdmin.applyDeliveryConflictAuditFilters()"`,
+        `onclick="ShopAdmin.clearDeliveryConflictAuditFilters()"`,
+        `onkeydown="ShopAdmin.handleDeliveryConflictAuditFilterKeydown(event)"`
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(
+            adminStudioSource.includes(marker) || shopSource.includes(marker),
+            false,
+            `create/import/orders/fulfillment controls should not contain ${marker}`
+        );
+    }
+
+    const delegatedHtmlMarkers = [
+        'data-admin-action="gallery-reset-form"',
+        'data-shop-action="import-toggle-mobile-view"',
+        'data-shop-action="import-create-category"',
+        'data-shop-action="import-category-rename"',
+        'data-shop-action="import-category-color"',
+        'data-shop-action="import-category-delete"',
+        'data-shop-input="import-view-line-count"',
+        'data-shop-action="inventory-import-from-view"',
+        'data-shop-keydown="orders-search-enter"',
+        'data-shop-action="orders-search"',
+        'data-shop-action="orders-export"',
+        'data-shop-change="delivery-task-status-filter"',
+        'data-shop-keydown="delivery-task-query-enter"',
+        'data-shop-action="delivery-apply-task-query"',
+        'data-shop-action="delivery-reload-tasks"',
+        'data-shop-action="delivery-save-strategy"',
+        'data-shop-change="delivery-analytics-window"',
+        'data-shop-change="delivery-dead-letter-reason"',
+        'data-shop-change="delivery-lock-state"',
+        'data-shop-change="delivery-conflict-audit-reason"',
+        'data-shop-keydown="delivery-conflict-audit-filter-enter"',
+        'data-shop-action="delivery-apply-conflict-audit-filters"',
+        'data-shop-action="delivery-clear-conflict-audit-filters"'
+    ];
+
+    for (const marker of delegatedHtmlMarkers) {
+        assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+
+    const delegatedHandlerMarkers = [
+        "case 'gallery-reset-form':",
+        "case 'import-toggle-mobile-view':",
+        "case 'import-create-category':",
+        "case 'import-category-rename':",
+        "case 'import-category-color':",
+        "case 'import-category-delete':",
+        "case 'inventory-import-from-view':",
+        "case 'orders-search':",
+        "case 'orders-export':",
+        "case 'delivery-apply-task-query':",
+        "case 'delivery-reload-tasks':",
+        "case 'delivery-save-strategy':",
+        "case 'delivery-task-status-filter':",
+        "case 'delivery-analytics-window':",
+        "case 'delivery-dead-letter-reason':",
+        "case 'delivery-lock-state':",
+        "case 'delivery-conflict-audit-reason':",
+        "case 'orders-search-enter':",
+        "case 'delivery-task-query-enter':",
+        "case 'delivery-conflict-audit-filter-enter':",
+        "case 'import-view-line-count':"
+    ];
+
+    assert.equal(adminStudioScript.includes("case 'gallery-reset-form':"), true, 'admin-studio.js should delegate the reset form button');
+
+    for (const marker of delegatedHandlerMarkers.slice(1)) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+
+    const helperMarkers = [
+        'toggleMobileImportView: function (view)',
+        'updateImportViewLineCount: function ()'
+    ];
+
+    for (const marker of helperMarkers) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+});
