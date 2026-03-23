@@ -356,8 +356,8 @@
         "backHome": "Back to Home",
         "supportUs": "Support us",
         "joinGroup": "Chat Group",
-        "disclaimer": "Images and prompts shown are from public sources for learning purposes only",
-        "disclaimerCopyright": "Contact us for removal. All rights belong to original creators",
+        "disclaimer": "The images and prompts shown are AI-generated, inspired by publicly shared content on the internet",
+        "disclaimerCopyright": "The images and prompts shown are AI-generated, inspired by publicly shared content on the internet",
         "disclaimerTitle": "✦ Disclaimer"
     },
     "wallet": {

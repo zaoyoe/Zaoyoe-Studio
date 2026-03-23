@@ -13,6 +13,15 @@ const AdminDiscounts = {
         search: ''
     },
 
+    escapeHtml: function (value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    },
+
     init: function () {
         console.log('🎟️ Initializing Discounts Module...');
         this.loadDiscounts();
@@ -130,6 +139,9 @@ const AdminDiscounts = {
             const isExpired = d.expires_at && new Date(d.expires_at) < now;
             const isExhausted = d.max_uses > 0 && d.used_count >= d.max_uses;
             const isPracticallyUsed = !d.is_active || isExpired || isExhausted;
+            const escapedCode = this.escapeHtml(d.code);
+            const escapedId = this.escapeHtml(d.id);
+            const nextActiveState = (!d.is_active).toString();
 
             const typeLabel = d.discount_type === 'percent'
                 ? `<span style="color:#60a5fa;font-weight:600;">${100 - d.discount_value}折</span>`
@@ -149,9 +161,13 @@ const AdminDiscounts = {
             return `
             <tr class="${isPracticallyUsed ? 'opacity-70' : ''}">
                 <td>
-                    <span style="font-family:'SF Mono',Consolas,monospace; font-size:14px; font-weight:500; letter-spacing:0.5px; color:#e8edf4; cursor:pointer; transition:color 0.2s;" onclick="AdminDiscounts.copyCode('${d.code}')" title="点击复制">
-                        ${d.code}
-                    </span>
+                    <button type="button"
+                        data-admin-action="discounts-copy-code"
+                        data-discount-code="${escapedCode}"
+                        title="点击复制"
+                        style="font-family:'SF Mono',Consolas,monospace; font-size:14px; font-weight:500; letter-spacing:0.5px; color:#e8edf4; cursor:pointer; transition:color 0.2s; background:none; border:none; padding:0;">
+                        ${escapedCode}
+                    </button>
                 </td>
                 <td>${typeLabel}</td>
                 <td>
@@ -165,12 +181,20 @@ const AdminDiscounts = {
                 </td>
                 <td>
                     <div class="action-buttons" style="display: flex; justify-content: center; gap: 8px;">
-                        <button class="action-btn ${d.is_active ? 'warning' : 'success'}" 
-                                onclick="AdminDiscounts.toggleStatus('${d.id}', ${!d.is_active})" 
+                        <button class="action-btn ${d.is_active ? 'warning' : 'success'}"
+                                type="button"
+                                data-admin-action="discounts-toggle-status"
+                                data-discount-id="${escapedId}"
+                                data-discount-next-active="${nextActiveState}"
                                 title="${d.is_active ? '停用' : '启用'}">
                             <i class="fas ${d.is_active ? 'fa-ban' : 'fa-check'}"></i>
                         </button>
-                        <button class="action-btn danger" onclick="AdminDiscounts.deleteCode('${d.id}', '${d.code}')" title="删除">
+                        <button class="action-btn danger"
+                                type="button"
+                                data-admin-action="discounts-delete-code"
+                                data-discount-id="${escapedId}"
+                                data-discount-code="${escapedCode}"
+                                title="删除">
                             <i class="fas fa-trash-alt"></i>
                         </button>
                     </div>
@@ -198,10 +222,18 @@ const AdminDiscounts = {
         pContainer.innerHTML = `
             <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-top: 20px;">
                 <div class="pagination-control">
-                    <button class="pagination-btn" onclick="AdminDiscounts.goToPage(${this.currentPage - 1})" ${this.currentPage <= 1 ? 'disabled' : ''}>−</button>
+                    <button class="pagination-btn"
+                        type="button"
+                        data-admin-action="discounts-pagination-go"
+                        data-discount-page="${Math.max(this.currentPage - 1, 1)}"
+                        ${this.currentPage <= 1 ? 'disabled' : ''}>−</button>
                     <input type="number" class="pagination-input" value="${this.currentPage}" min="1" max="${totalPages}"
-                        onchange="AdminDiscounts.goToPage(parseInt(this.value)||1)">
-                    <button class="pagination-btn" onclick="AdminDiscounts.goToPage(${this.currentPage + 1})" ${this.currentPage >= totalPages ? 'disabled' : ''}>+</button>
+                        data-admin-change-action="discounts-pagination-go">
+                    <button class="pagination-btn"
+                        type="button"
+                        data-admin-action="discounts-pagination-go"
+                        data-discount-page="${Math.min(this.currentPage + 1, totalPages)}"
+                        ${this.currentPage >= totalPages ? 'disabled' : ''}>+</button>
                 </div>
                 <div class="pagination-total" style="margin:0;">共 ${totalPages} 页 / ${this.filteredDiscounts.length} 条</div>
             </div>
@@ -270,6 +302,7 @@ const AdminDiscounts = {
     openGenerateModal: function () {
         document.getElementById('discountGenerateForm').reset();
         document.getElementById('discountCodeInput').value = '';
+        this.selectDiscountType('percent');
         const modal = document.getElementById('discountGenerateModal');
         modal.style.display = 'flex';
         // Override CSS .modal-overlay defaults (opacity:0, visibility:hidden)
@@ -277,6 +310,69 @@ const AdminDiscounts = {
             modal.style.opacity = '1';
             modal.style.visibility = 'visible';
         });
+    },
+
+    closeGenerateModal: function () {
+        const modal = document.getElementById('discountGenerateModal');
+        if (!modal) return;
+
+        modal.style.opacity = '0';
+        modal.style.visibility = 'hidden';
+        setTimeout(() => {
+            modal.style.display = 'none';
+        }, 200);
+    },
+
+    toggleTypeDropdown: function () {
+        const dropdown = document.getElementById('discountTypeDropdown');
+        if (!dropdown) return;
+        dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+    },
+
+    selectDiscountType: function (type) {
+        const isFixed = type === 'fixed';
+        const label = document.getElementById('discountTypeLabel');
+        const valueType = document.getElementById('discountValueType');
+        const dropdown = document.getElementById('discountTypeDropdown');
+        const suffix = document.getElementById('discountValueSuffix');
+        const valueInput = document.getElementById('discountValue');
+
+        if (valueType) {
+            valueType.value = isFixed ? 'fixed' : 'percent';
+        }
+
+        if (label) {
+            label.innerHTML = isFixed
+                ? '<span style="font-size:1rem">💰</span> 固定金额立减'
+                : '<span style="font-size:1rem">📊</span> 按比例打折';
+        }
+
+        if (suffix) {
+            suffix.innerText = isFixed ? '积分' : '折';
+        }
+
+        if (valueInput) {
+            valueInput.placeholder = isFixed ? '如: 100' : '如: 80';
+        }
+
+        if (dropdown) {
+            dropdown.style.display = 'none';
+        }
+    },
+
+    formatExpiryDateInput: function (input) {
+        if (!input) return;
+        let value = String(input.value || '').replace(/[^0-9]/g, '');
+        if (value.length > 4) value = `${value.slice(0, 4)}-${value.slice(4)}`;
+        if (value.length > 7) value = `${value.slice(0, 7)}-${value.slice(7)}`;
+        input.value = value.slice(0, 10);
+    },
+
+    formatExpiryTimeInput: function (input) {
+        if (!input) return;
+        let value = String(input.value || '').replace(/[^0-9]/g, '');
+        if (value.length > 2) value = `${value.slice(0, 2)}:${value.slice(2)}`;
+        input.value = value.slice(0, 5);
     },
 
     generateRandomCode: function (length = 8) {
@@ -328,10 +424,7 @@ const AdminDiscounts = {
                 throw error;
             }
 
-            const closeModal = document.getElementById('discountGenerateModal');
-            closeModal.style.opacity = '0';
-            closeModal.style.visibility = 'hidden';
-            setTimeout(() => { closeModal.style.display = 'none'; }, 200);
+            this.closeGenerateModal();
             alert(`成功生成优惠码: ${code}`);
             this.loadDiscounts();
 
