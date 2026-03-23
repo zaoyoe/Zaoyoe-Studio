@@ -260,3 +260,61 @@ test('homepage entry points expose delegated guestbook triggers instead of inlin
     assert.equal(framerHomeSource.includes("closest('[data-home-open-guestbook=\"1\"]')"), true, 'js/framer_home.js should delegate homepage guestbook triggers');
     assert.equal(framerHomeSource.includes("closest('[data-home-trigger-upload=\"1\"]')"), true, 'js/framer_home.js should delegate homepage upload triggers');
 });
+
+test('admin studio shell tabs and dashboards route core controls through delegated actions', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+
+    const removedInlineMarkers = [
+        `onclick="switchModule('gallery')"`,
+        `onclick="switchView('create')"`,
+        `onclick="switchCommentView('guestbook')"`,
+        `onclick="switchSettingsView('pricing')"`,
+        `onclick="HomepageAdmin.switchSection('hero')"`,
+        `onclick="AdminPayments.switchTab('overview')"`,
+        `onclick="AdminPayments.toggleRangeMenu(event)"`,
+        `onclick="dismissAllAlerts()"`,
+        `onclick="switchAnalyticsTab('users')"`,
+        `onclick="toggleDateRangeDropdown()"`,
+        `onclick="document.getElementById('hp-verify-file-input').click()"`,
+        `onchange="HomepageAdmin._handleScreenshotUpload(this)"`,
+        `onchange="toggleSelectAll()"`
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(adminStudioSource.includes(marker), false, `admin-studio.html should not contain ${marker}`);
+    }
+
+    const delegatedMarkers = [
+        'data-admin-action="switch-module"',
+        'data-admin-action="switch-gallery-view"',
+        'data-admin-action="switch-comment-view"',
+        'data-admin-action="switch-settings-view"',
+        'data-admin-action="homepage-switch-section"',
+        'data-admin-action="payments-switch-tab"',
+        'data-admin-action="analytics-switch-tab"',
+        'data-admin-change-action="homepage-handle-screenshot-upload"',
+        'data-admin-change-action="comments-toggle-select-all"'
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+
+    assert.equal(adminStudioScript.includes("closest('[data-admin-action]')"), true, 'admin-studio.js should delegate click-based admin controls');
+    assert.equal(adminStudioScript.includes("closest('[data-admin-change-action]')"), true, 'admin-studio.js should delegate change-based admin controls');
+});
+
+test('shop admin pagination renderer no longer emits inline handler attributes', () => {
+    const source = readRepoFile('js/admin-shop.js');
+    const start = source.indexOf('renderPagination: function');
+    const end = source.indexOf('// Render Product Category Filter Buttons dynamically');
+    const snippet = source.slice(start, end);
+    const inlineHandlerPattern = /\bon(?:click|change|submit|mousedown|mouseup|input|keydown|mouseover|mouseout|error|load)\s*=\s*["']/i;
+
+    assert.notEqual(start, -1, 'js/admin-shop.js should define renderPagination');
+    assert.notEqual(end, -1, 'js/admin-shop.js should keep the pagination block bounded');
+    assert.equal(inlineHandlerPattern.test(snippet), false, 'renderPagination should not emit inline event handler attributes');
+    assert.equal(snippet.includes('data-shop-pagination-target="${loadFuncStr}"'), true, 'renderPagination should expose delegated pagination targets');
+    assert.equal(source.includes('bindDelegatedHandlers: function'), true, 'js/admin-shop.js should bind delegated pagination handlers');
+});
