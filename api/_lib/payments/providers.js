@@ -231,6 +231,10 @@ function buildPublicPaymentConfig(paymentChannels, rechargeOptions, runtime = nu
         publicPaymentChannels.active_provider = resolvePublicActiveProvider(publicPaymentChannels);
     }
 
+    if (publicPaymentChannels.providers?.[publicPaymentChannels.active_provider]) {
+        publicPaymentChannels.providers[publicPaymentChannels.active_provider].enabled = true;
+    }
+
     return {
         paymentChannels: publicPaymentChannels,
         rechargeOptions: publicRechargeOptions
