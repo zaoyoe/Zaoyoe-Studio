@@ -248,6 +248,15 @@ function bindAdminStudioDelegatedControls() {
             case 'switch-settings-view':
                 window.switchSettingsView?.(actionEl.dataset.settingsView);
                 break;
+            case 'settings-add-channel':
+                window.addChannel?.();
+                break;
+            case 'settings-prompt-api-key':
+                promptForApiKey();
+                break;
+            case 'settings-delete-api-key':
+                deleteApiKey();
+                break;
             case 'homepage-switch-section':
                 window.HomepageAdmin?.switchSection?.(actionEl.dataset.hpSection);
                 break;
@@ -329,6 +338,39 @@ function bindAdminStudioDelegatedControls() {
             case 'analytics-apply-custom-range':
                 window.applyCustomRange?.();
                 break;
+            case 'analytics-load-ai-prediction':
+                window.loadAIPrediction?.();
+                break;
+            case 'analytics-open-experiment-modal':
+                window.openExperimentModal?.();
+                break;
+            case 'analytics-load-experiments-list':
+                window.loadExperimentsList?.();
+                break;
+            case 'analytics-close-ab-results-chart':
+                window.closeABResultsChart?.();
+                break;
+            case 'analytics-close-experiment-modal':
+                window.closeExperimentModal?.();
+                break;
+            case 'analytics-add-variant-row':
+                window.addVariantRow?.();
+                break;
+            case 'analytics-remove-variant-row':
+                actionEl.closest('.variant-row')?.remove();
+                break;
+            case 'analytics-show-ab-results': {
+                const experimentId = decodeURIComponent(actionEl.dataset.experimentId || '');
+                const experimentName = decodeURIComponent(actionEl.dataset.experimentName || '');
+                let variants = [];
+                try {
+                    variants = JSON.parse(decodeURIComponent(actionEl.dataset.experimentVariants || '%5B%5D'));
+                } catch (err) {
+                    console.warn('Failed to parse experiment variants payload', err);
+                }
+                window.showABResults?.(experimentId, experimentName, variants);
+                break;
+            }
             case 'points-switch-view':
                 window.switchPointsView?.(actionEl.dataset.pointsViewTarget);
                 break;
@@ -433,6 +475,37 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'settings-toggle-decoration':
                 window.toggleDecoration?.();
+                break;
+            case 'settings-toggle-custom-dropdown':
+                window.toggleCustomDropdown?.(actionEl.dataset.dropdownId);
+                break;
+            case 'settings-select-dropdown-option':
+                window.selectDropdownOption?.(
+                    actionEl.dataset.dropdownId,
+                    actionEl.dataset.optionValue,
+                    actionEl.dataset.optionLabel
+                );
+                break;
+            case 'settings-save-login-security':
+                window.saveLoginSecuritySettings?.();
+                break;
+            case 'settings-refresh-locked-accounts':
+                window.refreshLockedAccounts?.();
+                break;
+            case 'settings-unlock-account':
+                window.unlockAccount?.(actionEl.dataset.userId);
+                break;
+            case 'settings-unlock-all-accounts':
+                window.unlockAllAccounts?.();
+                break;
+            case 'settings-save-ip-blacklist':
+                window.saveIpBlacklist?.();
+                break;
+            case 'settings-check-verify-quota':
+                window.checkVerifyQuota?.();
+                break;
+            case 'settings-add-api-key':
+                window.addNewApiKey?.();
                 break;
             case 'settings-select-decoration':
                 window.selectDecoration?.(actionEl.dataset.decorationTheme);
@@ -564,6 +637,20 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-decoration':
                 window.toggleDecoration?.();
                 break;
+            case 'settings-save-verify-config':
+                window.saveVerifyConfig?.();
+                break;
+            case 'affiliate-save-setting': {
+                const field = actionEl.dataset.affiliateSettingField;
+                const value = actionEl.dataset.affiliateValueSource === 'checked-bool'
+                    ? (actionEl.checked ? 'true' : 'false')
+                    : actionEl.value;
+                window.saveAffiliateSetting?.(field, value);
+                break;
+            }
+            case 'affiliate-save-poster-field':
+                window.saveAffiliatePosterField?.(actionEl.dataset.affiliatePosterField, actionEl.value);
+                break;
             case 'discounts-pagination-go': {
                 const page = parseInt(actionEl.value || '', 10);
                 if (!Number.isNaN(page)) {
@@ -578,6 +665,38 @@ function bindAdminStudioDelegatedControls() {
                 }
                 break;
             }
+            default:
+                break;
+        }
+    });
+
+    document.addEventListener('focusin', (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const actionEl = target?.closest?.('[data-admin-focus-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.adminFocusAction) {
+            case 'settings-verify-api-key-unlock':
+                actionEl.removeAttribute('readonly');
+                break;
+            default:
+                break;
+        }
+    });
+
+    document.addEventListener('focusout', (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const actionEl = target?.closest?.('[data-admin-blur-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.adminBlurAction) {
+            case 'settings-verify-api-key-lock':
+                actionEl.setAttribute('readonly', 'readonly');
+                break;
             default:
                 break;
         }
@@ -655,6 +774,12 @@ function bindAdminStudioDelegatedControls() {
         if (form.id === 'ticketReplyForm') {
             event.preventDefault();
             window.AdminTickets?.submitReply?.();
+            return;
+        }
+
+        if (form.id === 'experimentForm') {
+            event.preventDefault();
+            window.handleCreateExperiment?.(event);
         }
     });
 
@@ -1333,6 +1458,8 @@ function addNewApiKey() {
     promptForApiKey();
 }
 
+window.addNewApiKey = addNewApiKey;
+
 async function deleteApiKey() {
     if ((window.GEMINI_API_SOURCE || 'missing') !== 'stored') {
         showToast('当前没有可删除的后台存储 Gemini Key。', 'info');
@@ -1368,7 +1495,7 @@ function renderApiKeySelector() {
     if (container) {
         container.innerHTML = `
             <div class="api-key-dropdown">
-                <button class="api-key-current" type="button" onclick="promptForApiKey()">
+                <button class="api-key-current" type="button" data-admin-action="settings-prompt-api-key">
                     <i class="fas fa-shield-alt"></i>
                     <span>${isReady ? `Server Proxy · ${meta.title}` : 'AI Proxy 未配置'}</span>
                 </button>
@@ -1380,17 +1507,17 @@ function renderApiKeySelector() {
     if (settingsList) {
         settingsList.innerHTML = `
             <div class="api-key-row active" data-index="0">
-                <div class="key-info" onclick="promptForApiKey()">
+                <div class="key-info" data-admin-action="settings-prompt-api-key">
                     <span class="key-name-label">Server Proxy</span>
                     <span class="key-preview-label">${meta.preview}</span>
                 </div>
                 <div class="key-actions" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                     <span class="key-active-badge">${isReady ? meta.badge : '待配置'}</span>
-                    <button class="btn-add-config" type="button" onclick="promptForApiKey()" style="margin-top: 0; padding: 8px 12px;">
+                    <button class="btn-add-config" type="button" data-admin-action="settings-prompt-api-key" style="margin-top: 0; padding: 8px 12px;">
                         ${isReady ? '更新 Key' : '录入 Key'}
                     </button>
                     ${meta.source === 'stored' ? `
-                        <button class="btn-add-config" type="button" onclick="deleteApiKey()" style="margin-top: 0; padding: 8px 12px; border-color: rgba(248, 113, 113, 0.35); color: #fecaca;">
+                        <button class="btn-add-config" type="button" data-admin-action="settings-delete-api-key" style="margin-top: 0; padding: 8px 12px; border-color: rgba(248, 113, 113, 0.35); color: #fecaca;">
                             删除 Key
                         </button>
                     ` : ''}

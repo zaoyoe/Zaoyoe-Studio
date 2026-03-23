@@ -1227,7 +1227,7 @@
                                     </div>
                                     <div class="add-channel-row">
                                         <input type="text" id="newChannelName" placeholder="新渠道名称">
-                                        <button class="btn-add-config" onclick="addChannel()">
+                                        <button class="btn-add-config" data-admin-action="settings-add-channel">
                                             <i class="fas fa-plus"></i>
                                         </button>
                                     </div>
@@ -1264,20 +1264,27 @@
                                 <div class="config-value">
                                     <div class="config-input-wrapper">
                                         <div class="custom-dropdown" id="lockoutDurationDropdown">
-                                            <button class="dropdown-trigger"
-                                                onclick="toggleCustomDropdown('lockoutDurationDropdown')">
+                                            <button class="dropdown-trigger" type="button"
+                                                data-admin-action="settings-toggle-custom-dropdown"
+                                                data-dropdown-id="lockoutDurationDropdown">
                                                 <span class="dropdown-value" id="lockoutDurationValue">15</span>
                                                 <i class="fas fa-chevron-down"></i>
                                             </button>
                                             <div class="dropdown-menu">
                                                 <div class="dropdown-option" data-value="300000"
-                                                    onclick="selectDropdownOption('lockoutDurationDropdown', '300000', '5')">
+                                                    data-admin-action="settings-select-dropdown-option"
+                                                    data-dropdown-id="lockoutDurationDropdown" data-option-value="300000"
+                                                    data-option-label="5">
                                                     5</div>
                                                 <div class="dropdown-option selected" data-value="900000"
-                                                    onclick="selectDropdownOption('lockoutDurationDropdown', '900000', '15')">
+                                                    data-admin-action="settings-select-dropdown-option"
+                                                    data-dropdown-id="lockoutDurationDropdown" data-option-value="900000"
+                                                    data-option-label="15">
                                                     15</div>
                                                 <div class="dropdown-option" data-value="3600000"
-                                                    onclick="selectDropdownOption('lockoutDurationDropdown', '3600000', '60')">
+                                                    data-admin-action="settings-select-dropdown-option"
+                                                    data-dropdown-id="lockoutDurationDropdown" data-option-value="3600000"
+                                                    data-option-label="60">
                                                     60</div>
                                             </div>
                                         </div>
@@ -1293,20 +1300,27 @@
                                 <div class="config-value">
                                     <div class="config-input-wrapper">
                                         <div class="custom-dropdown" id="sessionTimeoutDropdown">
-                                            <button class="dropdown-trigger"
-                                                onclick="toggleCustomDropdown('sessionTimeoutDropdown')">
+                                            <button class="dropdown-trigger" type="button"
+                                                data-admin-action="settings-toggle-custom-dropdown"
+                                                data-dropdown-id="sessionTimeoutDropdown">
                                                 <span class="dropdown-value" id="sessionTimeoutValue">60</span>
                                                 <i class="fas fa-chevron-down"></i>
                                             </button>
                                             <div class="dropdown-menu">
                                                 <div class="dropdown-option" data-value="1800000"
-                                                    onclick="selectDropdownOption('sessionTimeoutDropdown', '1800000', '30')">
+                                                    data-admin-action="settings-select-dropdown-option"
+                                                    data-dropdown-id="sessionTimeoutDropdown" data-option-value="1800000"
+                                                    data-option-label="30">
                                                     30</div>
                                                 <div class="dropdown-option selected" data-value="3600000"
-                                                    onclick="selectDropdownOption('sessionTimeoutDropdown', '3600000', '60')">
+                                                    data-admin-action="settings-select-dropdown-option"
+                                                    data-dropdown-id="sessionTimeoutDropdown" data-option-value="3600000"
+                                                    data-option-label="60">
                                                     60</div>
                                                 <div class="dropdown-option" data-value="86400000"
-                                                    onclick="selectDropdownOption('sessionTimeoutDropdown', '86400000', '1440')">
+                                                    data-admin-action="settings-select-dropdown-option"
+                                                    data-dropdown-id="sessionTimeoutDropdown" data-option-value="86400000"
+                                                    data-option-label="1440">
                                                     1440</div>
                                             </div>
                                         </div>
@@ -1318,7 +1332,7 @@
                             <div class="config-actions" style="margin-top: 32px; justify-content: flex-end;">
                                 <span class="config-save-indicator" id="loginSecuritySaveIndicator"
                                     style="margin-right: 12px; opacity: 0;">✓ 已保存</span>
-                                <button class="btn-sm btn-primary" onclick="saveLoginSecuritySettings()">
+                                <button class="btn-sm btn-primary" data-admin-action="settings-save-login-security">
                                     <i class="fas fa-save"></i> 保存
                                 </button>
                             </div>
@@ -1337,10 +1351,10 @@
                                     <!-- Dynamic locked accounts will be inserted here -->
                                 </div>
                                 <div class="config-actions" style="margin-top: 16px; justify-content: space-between;">
-                                    <button class="btn-sm btn-secondary" onclick="refreshLockedAccounts()">
+                                    <button class="btn-sm btn-secondary" data-admin-action="settings-refresh-locked-accounts">
                                         <i class="fas fa-sync-alt"></i> 刷新
                                     </button>
-                                    <button class="btn-sm btn-warning" onclick="unlockAllAccounts()" id="unlockAllBtn"
+                                    <button class="btn-sm btn-warning" data-admin-action="settings-unlock-all-accounts" id="unlockAllBtn"
                                         style="display: none; align-items: center; gap: 6px;">
                                         <i class="fas fa-unlock"></i>全部解锁
                                     </button>
@@ -1361,7 +1375,7 @@
                                 <div class="config-actions" style="margin-top: 26px; justify-content: flex-end;">
                                     <span class="config-save-indicator" id="ipBlacklistSaveIndicator"
                                         style="margin-right: 12px; opacity: 0;">✓ 已保存</span>
-                                    <button class="btn-sm btn-primary" onclick="saveIpBlacklist()">
+                                    <button class="btn-sm btn-primary" data-admin-action="settings-save-ip-blacklist">
                                         <i class="fas fa-save"></i> 保存
                                     </button>
                                 </div>
@@ -1704,20 +1718,29 @@
                                 </div>
                                 <div class="config-value">
                                     <div class="custom-dropdown" id="perPageDropdown">
-                                        <button class="dropdown-trigger"
-                                            onclick="toggleCustomDropdown('perPageDropdown')">
+                                        <button class="dropdown-trigger" type="button"
+                                            data-admin-action="settings-toggle-custom-dropdown"
+                                            data-dropdown-id="perPageDropdown">
                                             <span class="dropdown-value" id="perPageValue">24</span>
                                             <i class="fas fa-chevron-down"></i>
                                         </button>
                                         <div class="dropdown-menu">
                                             <div class="dropdown-option" data-value="12"
-                                                onclick="selectDropdownOption('perPageDropdown', '12', '12')">12</div>
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="perPageDropdown" data-option-value="12"
+                                                data-option-label="12">12</div>
                                             <div class="dropdown-option selected" data-value="24"
-                                                onclick="selectDropdownOption('perPageDropdown', '24', '24')">24</div>
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="perPageDropdown" data-option-value="24"
+                                                data-option-label="24">24</div>
                                             <div class="dropdown-option" data-value="36"
-                                                onclick="selectDropdownOption('perPageDropdown', '36', '36')">36</div>
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="perPageDropdown" data-option-value="36"
+                                                data-option-label="36">36</div>
                                             <div class="dropdown-option" data-value="48"
-                                                onclick="selectDropdownOption('perPageDropdown', '48', '48')">48</div>
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="perPageDropdown" data-option-value="48"
+                                                data-option-label="48">48</div>
                                         </div>
                                     </div>
                                 </div>
@@ -1729,20 +1752,27 @@
                                 </div>
                                 <div class="config-value">
                                     <div class="custom-dropdown" id="defaultSortDropdown">
-                                        <button class="dropdown-trigger"
-                                            onclick="toggleCustomDropdown('defaultSortDropdown')">
+                                        <button class="dropdown-trigger" type="button"
+                                            data-admin-action="settings-toggle-custom-dropdown"
+                                            data-dropdown-id="defaultSortDropdown">
                                             <span class="dropdown-value" id="defaultSortValue">最新</span>
                                             <i class="fas fa-chevron-down"></i>
                                         </button>
                                         <div class="dropdown-menu">
                                             <div class="dropdown-option selected" data-value="newest"
-                                                onclick="selectDropdownOption('defaultSortDropdown', 'newest', '最新')">最新
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="defaultSortDropdown" data-option-value="newest"
+                                                data-option-label="最新">最新
                                             </div>
                                             <div class="dropdown-option" data-value="popular"
-                                                onclick="selectDropdownOption('defaultSortDropdown', 'popular', '最热')">
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="defaultSortDropdown" data-option-value="popular"
+                                                data-option-label="最热">
                                                 最热</div>
                                             <div class="dropdown-option" data-value="random"
-                                                onclick="selectDropdownOption('defaultSortDropdown', 'random', '随机')">随机
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="defaultSortDropdown" data-option-value="random"
+                                                data-option-label="随机">随机
                                             </div>
                                         </div>
                                     </div>
@@ -1761,8 +1791,7 @@
                                 <div class="config-value">
                                     <div class="input-with-addon">
                                         <input type="number" id="cfgVerifyPrice" class="config-input" value="10" min="1"
-                                            max="100" step="1"
-                                            onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
+                                            max="100" step="1" data-admin-change-action="settings-save-verify-config">
                                         <span class="input-addon">积分/次</span>
                                     </div>
                                 </div>
@@ -1775,10 +1804,10 @@
                                 </div>
                                 <input type="password" id="cfgVerifyApiKey" class="config-input"
                                     placeholder="ak_XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="new-password" readonly
-                                    onfocus="this.removeAttribute('readonly');"
-                                    onblur="this.setAttribute('readonly', 'readonly');"
+                                    data-admin-focus-action="settings-verify-api-key-unlock"
+                                    data-admin-blur-action="settings-verify-api-key-lock"
                                     style="width: 100%; text-align: left; box-sizing: border-box;"
-                                    onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
+                                    data-admin-change-action="settings-save-verify-config">
                             </div>
                             <div class="config-item-row">
                                 <div class="config-label">
@@ -1788,7 +1817,7 @@
                                 <div class="config-value">
                                     <label class="toggle-switch">
                                         <input type="checkbox" id="cfgVerifyEnabled" checked
-                                            onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
+                                            data-admin-change-action="settings-save-verify-config">
                                         <span class="toggle-slider"></span>
                                     </label>
                                 </div>
@@ -1803,10 +1832,8 @@
                                         style="font-size: 1.1em; font-weight: 600; color: var(--accent-starry, #6c5ce7); white-space: nowrap;">
                                         <i class="fas fa-spinner fa-spin" style="opacity: 0.4;"></i> 加载中...
                                     </span>
-                                    <button onclick="window.checkVerifyQuota && window.checkVerifyQuota()" title="刷新额度"
-                                        style="background: none; border: none; cursor: pointer; color: var(--text-secondary); padding: 4px 6px; border-radius: 4px; transition: all 0.2s; font-size: 0.85rem;"
-                                        onmouseover="this.style.color='var(--accent-starry)'"
-                                        onmouseout="this.style.color='var(--text-secondary)'">
+                                    <button type="button" data-admin-action="settings-check-verify-quota" title="刷新额度"
+                                        style="background: none; border: none; cursor: pointer; color: var(--text-secondary); padding: 4px 6px; border-radius: 4px; transition: all 0.2s; font-size: 0.85rem;">
                                         <i class="fas fa-sync-alt"></i>
                                     </button>
                                 </div>
@@ -1880,7 +1907,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="number" id="affiliate_setting_commission_rate_shop" step="0.01"
                                             min="0" max="1" placeholder="0.10" class="config-input"
-                                            onchange="window.saveAffiliateSetting('commission_rate_shop', this.value)">
+                                            data-admin-change-action="affiliate-save-setting"
+                                            data-affiliate-setting-field="commission_rate_shop">
                                     </div>
                                 </div>
                             </div>
@@ -1903,7 +1931,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="number" id="affiliate_setting_commission_rate_agent" step="0.01"
                                             min="0" max="1" placeholder="0.10" class="config-input"
-                                            onchange="window.saveAffiliateSetting('commission_rate_agent', this.value)">
+                                            data-admin-change-action="affiliate-save-setting"
+                                            data-affiliate-setting-field="commission_rate_agent">
                                     </div>
                                 </div>
                             </div>
@@ -1926,7 +1955,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="number" id="affiliate_setting_registration_reward_points" step="0.1"
                                             min="0" placeholder="100" class="config-input"
-                                            onchange="window.saveAffiliateSetting('registration_reward_points', this.value)">
+                                            data-admin-change-action="affiliate-save-setting"
+                                            data-affiliate-setting-field="registration_reward_points">
                                     </div>
                                 </div>
                             </div>
@@ -1951,7 +1981,9 @@
                                         <label class="toggle-switch">
                                             <input type="checkbox"
                                                 id="affiliate_setting_registration_reward_requires_purchase" checked
-                                                onchange="window.saveAffiliateSetting('registration_reward_requires_purchase', this.checked ? 'true' : 'false')">
+                                                data-admin-change-action="affiliate-save-setting"
+                                                data-affiliate-setting-field="registration_reward_requires_purchase"
+                                                data-affiliate-value-source="checked-bool">
                                             <span class="toggle-slider"></span>
                                         </label>
                                     </div>
@@ -1975,7 +2007,8 @@
                                     <div class="config-input-wrapper affiliate-textarea-wrapper">
                                         <textarea class="config-textarea" id="affiliate_setting_reward_notice" rows="4"
                                             placeholder="例如：拉新固定奖励与返佣奖励可叠加；异常账号、作弊流量、退款订单不计入活动奖励。"
-                                            onchange="window.saveAffiliateSetting('reward_notice', this.value)"></textarea>
+                                            data-admin-change-action="affiliate-save-setting"
+                                            data-affiliate-setting-field="reward_notice"></textarea>
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -1986,7 +2019,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_setting_legal_disclaimer" class="config-input"
                                             placeholder="活动最终解释权归平台所有"
-                                            onchange="window.saveAffiliateSetting('legal_disclaimer', this.value)">
+                                            data-admin-change-action="affiliate-save-setting"
+                                            data-affiliate-setting-field="legal_disclaimer">
                                     </div>
                                 </div>
                             </div>
@@ -2008,7 +2042,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_poster_chip_label" class="config-input"
                                             placeholder="推广"
-                                            onchange="window.saveAffiliatePosterField('chip_label', this.value)">
+                                            data-admin-change-action="affiliate-save-poster-field"
+                                            data-affiliate-poster-field="chip_label">
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -2019,7 +2054,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_poster_title" class="config-input"
                                             placeholder="专属邀请函"
-                                            onchange="window.saveAffiliatePosterField('title', this.value)">
+                                            data-admin-change-action="affiliate-save-poster-field"
+                                            data-affiliate-poster-field="title">
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -2030,7 +2066,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_poster_subtitle" class="config-input"
                                             placeholder="扫码注册 · 首单激活奖励"
-                                            onchange="window.saveAffiliatePosterField('subtitle', this.value)">
+                                            data-admin-change-action="affiliate-save-poster-field"
+                                            data-affiliate-poster-field="subtitle">
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -2041,7 +2078,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_poster_reward_badge_text" class="config-input"
                                             placeholder="拉新奖励 {registration_reward_text} · 商城返佣 {shop_commission}"
-                                            onchange="window.saveAffiliatePosterField('reward_badge_text', this.value)">
+                                            data-admin-change-action="affiliate-save-poster-field"
+                                            data-affiliate-poster-field="reward_badge_text">
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -2052,7 +2090,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_poster_invite_code_label" class="config-input"
                                             placeholder="邀请码"
-                                            onchange="window.saveAffiliatePosterField('invite_code_label', this.value)">
+                                            data-admin-change-action="affiliate-save-poster-field"
+                                            data-affiliate-poster-field="invite_code_label">
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -2063,7 +2102,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_poster_qr_label" class="config-input"
                                             placeholder="扫码注册领取新人福利"
-                                            onchange="window.saveAffiliatePosterField('qr_label', this.value)">
+                                            data-admin-change-action="affiliate-save-poster-field"
+                                            data-affiliate-poster-field="qr_label">
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -2074,7 +2114,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_poster_footer" class="config-input"
                                             placeholder="邀请好友注册，享受固定奖励与持续返佣"
-                                            onchange="window.saveAffiliatePosterField('footer', this.value)">
+                                            data-admin-change-action="affiliate-save-poster-field"
+                                            data-affiliate-poster-field="footer">
                                     </div>
                                 </div>
 
@@ -2142,7 +2183,7 @@
                             <div class="api-keys-list" id="settingsApiKeysList">
                                 <!-- Dynamic key items -->
                             </div>
-                            <button class="btn-add-config" onclick="addNewApiKey()" style="margin-top: 12px;">
+                            <button class="btn-add-config" data-admin-action="settings-add-api-key" style="margin-top: 12px;">
                                 <i class="fas fa-plus"></i> 添加新 Key
                             </button>
                             <p class="settings-status" id="apiKeyStatus" style="margin-top: 12px;">
@@ -8222,7 +8263,7 @@
                             <div class="chart-card glass-panel">
                                 <div class="chart-header">
                                     <h3><i class="fas fa-chart-line"></i> 趋势预测 (未来7天)</h3>
-                                    <button class="btn-sm btn-secondary" onclick="loadAIPrediction()">
+                                    <button class="btn-sm btn-secondary" data-admin-action="analytics-load-ai-prediction">
                                         <i class="fas fa-sync-alt"></i> 生成
                                     </button>
                                 </div>
@@ -8236,10 +8277,10 @@
                                 <div class="chart-header">
                                     <h3><i class="fas fa-flask"></i> A/B 实验管理</h3>
                                     <div class="header-actions">
-                                        <button class="btn-sm btn-primary" onclick="openExperimentModal()">
+                                        <button class="btn-sm btn-primary" data-admin-action="analytics-open-experiment-modal">
                                             <i class="fas fa-plus"></i> 创建
                                         </button>
-                                        <button class="btn-sm btn-secondary" onclick="loadExperimentsList()">
+                                        <button class="btn-sm btn-secondary" data-admin-action="analytics-load-experiments-list">
                                             <i class="fas fa-sync-alt"></i>
                                         </button>
                                     </div>
@@ -8254,7 +8295,7 @@
                                 <div class="ab-results-chart" id="abResultsChart" style="display: none;">
                                     <div class="ab-chart-header">
                                         <span id="abChartTitle">实验结果对比</span>
-                                        <button class="btn-icon-sm" onclick="closeABResultsChart()">
+                                        <button class="btn-icon-sm" data-admin-action="analytics-close-ab-results-chart">
                                             <i class="fas fa-times"></i>
                                         </button>
                                     </div>
@@ -8599,9 +8640,9 @@
         <div class="modal-content experiment-form">
             <div class="modal-header">
                 <h3><i class="fas fa-flask"></i> 创建 A/B 实验</h3>
-                <button class="modal-close" onclick="closeExperimentModal()">&times;</button>
+                <button class="modal-close" type="button" data-admin-action="analytics-close-experiment-modal">&times;</button>
             </div>
-            <form id="experimentForm" onsubmit="handleCreateExperiment(event)">
+            <form id="experimentForm">
                 <div class="form-group">
                     <label>实验名称</label>
                     <input type="text" id="expName" required placeholder="例：首页按钮颜色测试">
@@ -8624,7 +8665,7 @@
                             <span>%</span>
                         </div>
                     </div>
-                    <button type="button" class="btn-link" onclick="addVariantRow()">
+                    <button type="button" class="btn-link" data-admin-action="analytics-add-variant-row">
                         <i class="fas fa-plus"></i> 添加变体
                     </button>
                 </div>
@@ -8640,7 +8681,7 @@
                     <small class="form-hint">选择要追踪的转化指标</small>
                 </div>
                 <div class="form-actions">
-                    <button type="button" class="btn-secondary" onclick="closeExperimentModal()">取消</button>
+                    <button type="button" class="btn-secondary" data-admin-action="analytics-close-experiment-modal">取消</button>
                     <button type="submit" class="btn-primary">创建实验</button>
                 </div>
             </form>

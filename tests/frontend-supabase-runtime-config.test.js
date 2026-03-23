@@ -616,6 +616,111 @@ test('discount and ticket admin renderers no longer emit inline row or paginatio
     }
 });
 
+test('admin studio security, verify, affiliate, and experiment controls route through delegated actions', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminConfigSource = readRepoFile('admin-config.js');
+    const analyticsSource = readRepoFile('admin-analytics.js');
+
+    const removedInlineMarkers = [
+        `onclick="toggleCustomDropdown('lockoutDurationDropdown')"`,
+        `onclick="selectDropdownOption('lockoutDurationDropdown', '300000', '5')"`,
+        `onclick="saveLoginSecuritySettings()"`,
+        `onclick="refreshLockedAccounts()"`,
+        `onclick="unlockAllAccounts()"`,
+        `onclick="saveIpBlacklist()"`,
+        `onclick="toggleCustomDropdown('perPageDropdown')"`,
+        `onclick="selectDropdownOption('defaultSortDropdown', 'newest', '最新')"`,
+        `onchange="window.saveVerifyConfig && window.saveVerifyConfig()"`,
+        `onfocus="this.removeAttribute('readonly');"`,
+        `onblur="this.setAttribute('readonly', 'readonly');"`,
+        `onclick="window.checkVerifyQuota && window.checkVerifyQuota()"`,
+        `onchange="window.saveAffiliateSetting('commission_rate_shop', this.value)"`,
+        `onchange="window.saveAffiliatePosterField('title', this.value)"`,
+        `onclick="addNewApiKey()"`,
+        `onclick="openExperimentModal()"`,
+        `onclick="loadExperimentsList()"`,
+        `onclick="closeABResultsChart()"`,
+        `onclick="closeExperimentModal()"`,
+        `onsubmit="handleCreateExperiment(event)"`,
+        `onclick="addVariantRow()"`
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(adminStudioSource.includes(marker), false, `admin-studio.html should not contain ${marker}`);
+    }
+
+    const delegatedMarkers = [
+        'data-admin-action="settings-add-channel"',
+        'data-admin-action="settings-toggle-custom-dropdown"',
+        'data-admin-action="settings-select-dropdown-option"',
+        'data-admin-action="settings-save-login-security"',
+        'data-admin-action="settings-refresh-locked-accounts"',
+        'data-admin-action="settings-unlock-all-accounts"',
+        'data-admin-action="settings-save-ip-blacklist"',
+        'data-admin-change-action="settings-save-verify-config"',
+        'data-admin-focus-action="settings-verify-api-key-unlock"',
+        'data-admin-blur-action="settings-verify-api-key-lock"',
+        'data-admin-change-action="affiliate-save-setting"',
+        'data-admin-change-action="affiliate-save-poster-field"',
+        'data-admin-action="settings-add-api-key"',
+        'data-admin-action="analytics-load-ai-prediction"',
+        'data-admin-action="analytics-open-experiment-modal"',
+        'data-admin-action="analytics-load-experiments-list"',
+        'data-admin-action="analytics-close-ab-results-chart"',
+        'data-admin-action="analytics-close-experiment-modal"',
+        'data-admin-action="analytics-add-variant-row"'
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+
+    const adminScriptMarkers = [
+        'settings-add-channel',
+        'settings-prompt-api-key',
+        'settings-toggle-custom-dropdown',
+        'settings-save-login-security',
+        'settings-refresh-locked-accounts',
+        'settings-unlock-account',
+        'settings-save-ip-blacklist',
+        'settings-save-verify-config',
+        'affiliate-save-setting',
+        'affiliate-save-poster-field',
+        'analytics-load-ai-prediction',
+        'analytics-show-ab-results',
+        '[data-admin-focus-action]',
+        '[data-admin-blur-action]',
+        "form.id === 'experimentForm'"
+    ];
+
+    for (const marker of adminScriptMarkers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    const removedDynamicMarkers = [
+        `onclick="unlockAccount('`,
+        `onclick="showABResults('`,
+        `onclick="this.parentElement.remove()"`,
+        `onclick="promptForApiKey()"`,
+        `onclick="deleteApiKey()"`
+    ];
+
+    for (const marker of removedDynamicMarkers) {
+        assert.equal(
+            adminConfigSource.includes(marker) || analyticsSource.includes(marker) || adminStudioScript.includes(marker),
+            false,
+            `delegated admin templates should not contain ${marker}`
+        );
+    }
+
+    assert.equal(adminConfigSource.includes('data-admin-action="settings-unlock-account"'), true, 'admin-config.js should render delegated locked-account actions');
+    assert.equal(analyticsSource.includes('data-admin-action="analytics-show-ab-results"'), true, 'admin-analytics.js should render delegated experiment result buttons');
+    assert.equal(analyticsSource.includes('data-admin-action="analytics-remove-variant-row"'), true, 'admin-analytics.js should render delegated variant removal buttons');
+    assert.equal(analyticsSource.includes('window.loadAIPrediction = loadAIPrediction;'), true, 'admin-analytics.js should expose loadAIPrediction for delegated use');
+    assert.equal(analyticsSource.includes('window.loadExperimentsList = loadExperimentsList;'), true, 'admin-analytics.js should expose loadExperimentsList for delegated use');
+});
+
 test('shop admin pagination and inventory/product workflows no longer emit targeted inline handlers', () => {
     const shopSource = readRepoFile('js/admin-shop.js');
     const adminStudioSource = readRepoFile('admin-studio.html');
