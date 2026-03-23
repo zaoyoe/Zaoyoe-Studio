@@ -90,6 +90,7 @@ const ShopAdmin = {
     allProductsForImport: [], // Cache for import list (active products)
     deletedProductsForImport: [], // Cache for deleted products (recycle bin)
     isProductSelectionMode: false, // State for product multi-select mode
+    delegatedHandlersBound: false,
     editingProductSnapshot: null, // Original product row for resilient saves on existing items
     purchaseNotesSchemaAvailable: null, // null = unknown, false = remote DB not migrated yet
     richTextEditorsReady: false,
@@ -347,21 +348,71 @@ Example output format:
         container.innerHTML = `
             <div style="display: flex; align-items: center; gap: 15px;">
                 <div class="pagination-control">
-                    <button class="pagination-btn" onclick="ShopAdmin.${loadFuncStr}(${currentPage - 1})" ${currentPage <= 1 ? 'disabled' : ''} style="font-family:'Outfit',sans-serif;font-weight:300;font-size:20px;">
+                    <button class="pagination-btn" data-shop-pagination-target="${loadFuncStr}" data-shop-pagination-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''} style="font-family:'Outfit',sans-serif;font-weight:300;font-size:20px;">
                         −
                     </button>
                     
                     <input type="number" class="pagination-input" 
-                        value="${currentPage}" min="1" max="${totalPages}"
-                        onchange="let v=parseInt(this.value)||1; if(v<1)v=1; if(v>${totalPages})v=${totalPages}; ShopAdmin.${loadFuncStr}(v)">
+                        value="${currentPage}" min="1" max="${totalPages}" data-shop-pagination-target="${loadFuncStr}" data-shop-pagination-max="${totalPages}">
                     
-                    <button class="pagination-btn" onclick="ShopAdmin.${loadFuncStr}(${currentPage + 1})" ${currentPage >= totalPages ? 'disabled' : ''} style="font-family:'Outfit',sans-serif;font-weight:300;font-size:20px;">
+                    <button class="pagination-btn" data-shop-pagination-target="${loadFuncStr}" data-shop-pagination-page="${currentPage + 1}" ${currentPage >= totalPages ? 'disabled' : ''} style="font-family:'Outfit',sans-serif;font-weight:300;font-size:20px;">
                         +
                     </button>
                 </div>
                 <div class="pagination-total" style="margin:0;">共 ${totalPages} 页 / ${total} 条</div>
             </div>
         `;
+    },
+
+    invokePaginationTarget: function (targetName, pageValue) {
+        const fn = this[targetName];
+        if (typeof fn !== 'function') {
+            console.warn(`[ShopAdmin] Unknown pagination target: ${targetName}`);
+            return;
+        }
+
+        const page = Number.parseInt(pageValue, 10);
+        if (!Number.isFinite(page) || page < 1) {
+            return;
+        }
+
+        fn.call(this, page);
+    },
+
+    bindDelegatedHandlers: function () {
+        if (this.delegatedHandlersBound) {
+            return;
+        }
+
+        this.delegatedHandlersBound = true;
+
+        document.addEventListener('click', (event) => {
+            const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+            const trigger = target?.closest?.('[data-shop-pagination-target][data-shop-pagination-page]');
+            if (!trigger || trigger.disabled) {
+                return;
+            }
+
+            this.invokePaginationTarget(
+                trigger.dataset.shopPaginationTarget,
+                trigger.dataset.shopPaginationPage
+            );
+        });
+
+        document.addEventListener('change', (event) => {
+            const target = event.target instanceof HTMLInputElement ? event.target : null;
+            if (!target || !target.matches('[data-shop-pagination-target][data-shop-pagination-max]')) {
+                return;
+            }
+
+            const max = Math.max(1, Number.parseInt(target.dataset.shopPaginationMax || '1', 10) || 1);
+            let nextPage = Number.parseInt(target.value || '1', 10) || 1;
+            if (nextPage < 1) nextPage = 1;
+            if (nextPage > max) nextPage = max;
+            target.value = String(nextPage);
+
+            this.invokePaginationTarget(target.dataset.shopPaginationTarget, nextPage);
+        });
     },
 
     // Render Product Category Filter Buttons dynamically
@@ -410,6 +461,7 @@ Example output format:
         const restoredShopState = this.restoreShopUrlState();
 
         console.log('Admin Shop Init...');
+        this.bindDelegatedHandlers();
         await this.renderProductCategoryFilters();
         await this.loadProducts();
         this.ensureRichTextEditors();

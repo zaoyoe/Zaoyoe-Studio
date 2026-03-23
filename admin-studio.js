@@ -179,6 +179,7 @@ async function requireAdminStudioAccess() {
 }
 
 function initializeAdminStudioShell() {
+    bindAdminStudioDelegatedControls();
     initUploadZone();
     initForm();
     initCustomDropdown();
@@ -199,6 +200,153 @@ function initializeAdminStudioShell() {
     if (manageTab) {
         manageTab.addEventListener('click', () => loadAdminPrompts());
     }
+}
+
+function bindAdminStudioDelegatedControls() {
+    if (document.documentElement.dataset.adminStudioDelegatesBound === '1') {
+        return;
+    }
+
+    document.documentElement.dataset.adminStudioDelegatesBound = '1';
+
+    document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) {
+            return;
+        }
+
+        const actionEl = target.closest('[data-admin-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.adminAction) {
+            case 'switch-module':
+                window.switchModule?.(actionEl.dataset.moduleId);
+                break;
+            case 'close-mobile-sidebar':
+                window.closeMobileSidebar?.();
+                break;
+            case 'toggle-mobile-sidebar':
+                window.toggleMobileSidebar?.();
+                break;
+            case 'switch-gallery-view':
+                window.switchView?.(actionEl.dataset.view);
+                break;
+            case 'switch-comment-view':
+                window.switchCommentView?.(actionEl.dataset.commentView);
+                break;
+            case 'comments-export':
+                window.exportData?.(actionEl.dataset.exportFormat);
+                break;
+            case 'comments-switch-layout':
+                window.switchLayoutView?.(actionEl.dataset.view);
+                break;
+            case 'comments-batch-delete':
+                window.batchDeleteComments?.();
+                break;
+            case 'switch-settings-view':
+                window.switchSettingsView?.(actionEl.dataset.settingsView);
+                break;
+            case 'homepage-switch-section':
+                window.HomepageAdmin?.switchSection?.(actionEl.dataset.hpSection);
+                break;
+            case 'homepage-toggle-visible':
+                window.HomepageAdmin?.toggleVisible?.(actionEl.dataset.homepageSection);
+                break;
+            case 'homepage-toggle-field':
+                window.HomepageAdmin?.toggleField?.(
+                    actionEl.dataset.homepageSection,
+                    actionEl.dataset.homepageField
+                );
+                break;
+            case 'homepage-save-section':
+                window.HomepageAdmin?.saveSection?.(actionEl.dataset.homepageSection);
+                break;
+            case 'homepage-toggle-config-card':
+                window.toggleConfigCard?.(actionEl);
+                break;
+            case 'homepage-upload-screenshot':
+                document.getElementById('hp-verify-file-input')?.click();
+                break;
+            case 'payments-switch-tab':
+                window.AdminPayments?.switchTab?.(actionEl.dataset.tab);
+                break;
+            case 'payments-toggle-range-menu':
+                window.AdminPayments?.toggleRangeMenu?.(event);
+                break;
+            case 'payments-set-days':
+                window.AdminPayments?.setDays?.(Number(actionEl.dataset.days || 0), true);
+                break;
+            case 'payments-apply-custom-range':
+                window.AdminPayments?.applyCustomRange?.();
+                break;
+            case 'payments-export':
+                window.AdminPayments?.exportData?.(actionEl.dataset.exportFormat);
+                break;
+            case 'payments-reload':
+                window.AdminPayments?.reload?.();
+                break;
+            case 'payments-preview-cleanup':
+                window.AdminPayments?.previewCleanup?.();
+                break;
+            case 'payments-run-cleanup':
+                window.AdminPayments?.cleanupTestData?.();
+                break;
+            case 'analytics-dismiss-alerts':
+                window.dismissAllAlerts?.();
+                break;
+            case 'analytics-switch-tab':
+                window.switchAnalyticsTab?.(actionEl.dataset.tab);
+                break;
+            case 'analytics-toggle-range-dropdown':
+                window.toggleDateRangeDropdown?.();
+                break;
+            case 'analytics-select-preset-range':
+                window.selectPresetRange?.(Number(actionEl.dataset.range || 0));
+                break;
+            case 'analytics-toggle-inline-calendar':
+                window.toggleInlineCalendar?.(event);
+                break;
+            case 'analytics-change-inline-month':
+                window.changeInlineMonth?.(Number(actionEl.dataset.monthDelta || 0));
+                break;
+            case 'analytics-reset-inline-calendar':
+                window.resetInlineCalendar?.();
+                break;
+            case 'analytics-set-inline-today':
+                window.setInlineToday?.();
+                break;
+            case 'analytics-apply-custom-range':
+                window.applyCustomRange?.();
+                break;
+            default:
+                break;
+        }
+    });
+
+    document.addEventListener('change', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) {
+            return;
+        }
+
+        const actionEl = target.closest('[data-admin-change-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.adminChangeAction) {
+            case 'comments-toggle-select-all':
+                window.toggleSelectAll?.();
+                break;
+            case 'homepage-handle-screenshot-upload':
+                window.HomepageAdmin?._handleScreenshotUpload?.(actionEl);
+                break;
+            default:
+                break;
+        }
+    });
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
