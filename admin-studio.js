@@ -272,6 +272,15 @@ function bindAdminStudioDelegatedControls() {
             case 'payments-switch-tab':
                 window.AdminPayments?.switchTab?.(actionEl.dataset.tab);
                 break;
+            case 'payments-toggle-provider-panel':
+                window.togglePaymentProviderPanel?.(actionEl.dataset.provider);
+                break;
+            case 'payments-toggle-provider-enabled':
+                window.togglePaymentProviderEnabled?.(actionEl.dataset.provider);
+                break;
+            case 'payments-save-channel-settings':
+                window.savePaymentChannelSettings?.();
+                break;
             case 'payments-toggle-range-menu':
                 window.AdminPayments?.toggleRangeMenu?.(event);
                 break;
@@ -339,6 +348,9 @@ function bindAdminStudioDelegatedControls() {
         switch (actionEl.dataset.adminChangeAction) {
             case 'comments-toggle-select-all':
                 window.toggleSelectAll?.();
+                break;
+            case 'payments-change-active-provider':
+                window.handlePaymentChannelActiveChange?.(actionEl.value);
                 break;
             case 'homepage-handle-screenshot-upload':
                 window.HomepageAdmin?._handleScreenshotUpload?.(actionEl);
