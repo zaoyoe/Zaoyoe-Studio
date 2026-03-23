@@ -424,6 +424,39 @@ Example output format:
                 case 'pagination-go':
                     this.invokePaginationTarget(actionEl.dataset.paginationTarget, actionEl.dataset.paginationPage);
                     break;
+                case 'shop-switch-tab':
+                    this.switchTab(actionEl.dataset.shopTab);
+                    break;
+                case 'product-filter-category':
+                    this.filterCategory(actionEl.dataset.category, actionEl);
+                    break;
+                case 'product-filter-status':
+                    this.filterStatus(actionEl.dataset.status, actionEl);
+                    break;
+                case 'product-toggle-selection-mode':
+                    this.toggleProductSelectionMode();
+                    break;
+                case 'product-toggle-batch-menu':
+                    this.toggleProductBatchMenu();
+                    break;
+                case 'product-select-all':
+                    this.selectAllProducts();
+                    break;
+                case 'product-batch-delete':
+                    this.batchDeleteProducts();
+                    break;
+                case 'product-export-selected':
+                    this.exportProducts(true);
+                    break;
+                case 'product-edit':
+                    this.editProduct(actionEl.dataset.productId);
+                    break;
+                case 'product-toggle-status':
+                    this.toggleStatus(actionEl.dataset.productId, actionEl.dataset.newStatus === 'true');
+                    break;
+                case 'product-delete':
+                    this.deleteProduct(actionEl.dataset.productId, actionEl.dataset.productName || '');
+                    break;
                 case 'inventory-toggle-selection-mode':
                     this.toggleSelectionMode();
                     break;
@@ -557,6 +590,20 @@ Example output format:
                 case 'product-save-new-category':
                     this.saveNewCategory();
                     break;
+                case 'order-show-content':
+                    this.showOrderContent(actionEl.dataset.orderId, actionEl.dataset.itemsData);
+                    break;
+                case 'order-actions-stop':
+                    break;
+                case 'order-refund':
+                    this.refundOrder(actionEl.dataset.orderId);
+                    break;
+                case 'refund-close-modal':
+                    this.closeDynamicModal(actionEl.dataset.modalId || 'refundModal');
+                    break;
+                case 'refund-submit':
+                    this.submitRefund(actionEl.dataset.orderId, actionEl);
+                    break;
             default:
                 break;
             }
@@ -597,6 +644,9 @@ Example output format:
                     break;
                 case 'product-toggle-usage-instructions':
                     this.toggleUsageInstructions(actionEl.checked);
+                    break;
+                case 'product-selection-count':
+                    this.updateProductSelectionCount();
                     break;
             default:
                 break;
@@ -675,6 +725,16 @@ Example output format:
                 this.closeDynamicModal(overlay.dataset.modalId);
             }
         });
+
+        document.addEventListener('error', (event) => {
+            const image = event.target instanceof HTMLImageElement ? event.target : null;
+            const fallbackSrc = image?.dataset.fallbackSrc;
+            if (!image || !fallbackSrc || image.src === fallbackSrc) {
+                return;
+            }
+
+            image.src = fallbackSrc;
+        }, true);
     },
 
     // Render Product Category Filter Buttons dynamically
@@ -693,18 +753,21 @@ Example output format:
 
             // Rebuild: first add "全部" button
             container.innerHTML = '';
+            const currentCategory = this.currentCategory || 'all';
             const allBtn = document.createElement('button');
-            allBtn.className = 'filter-tab active';
+            allBtn.className = `filter-tab${currentCategory === 'all' ? ' active' : ''}`;
             allBtn.textContent = '全部';
-            allBtn.onclick = () => this.filterCategory('all', allBtn);
+            allBtn.dataset.shopAction = 'product-filter-category';
+            allBtn.dataset.category = 'all';
             container.appendChild(allBtn);
 
             // Add dynamic category buttons from categoryData
             (this.categoryData || []).forEach(cat => {
                 const btn = document.createElement('button');
-                btn.className = 'filter-tab';
+                btn.className = `filter-tab${currentCategory === cat.name ? ' active' : ''}`;
                 btn.textContent = cat.name;
-                btn.onclick = () => this.filterCategory(cat.name, btn);
+                btn.dataset.shopAction = 'product-filter-category';
+                btn.dataset.category = cat.name;
                 container.appendChild(btn);
             });
 
@@ -2411,7 +2474,7 @@ Example output format:
             el.style.borderBottom = 'none';
             el.style.color = 'rgba(255,255,255,0.6)';
 
-            if (el.onclick.toString().includes(tabName)) {
+            if (el.dataset.shopTab === tabName) {
                 el.classList.add('active');
                 el.style.borderBottom = '2px solid #6b9ece';
                 el.style.color = '#fff';
@@ -2542,7 +2605,7 @@ Example output format:
                         ${displayHtml}
                         <div style="position:absolute; top:12px; left:12px; display:${checkboxDisplay};" class="product-checkbox-wrapper">
                             <input type="checkbox" class="inv-checkbox product-select-checkbox" data-product-id="${p.id}" 
-                                onclick="event.stopPropagation(); ShopAdmin.updateProductSelectionCount();">
+                                data-shop-change="product-selection-count">
                         </div>
                         <div style="position:absolute; top:12px; right:12px;">${statusBadge}</div>
                     </div>
@@ -2569,15 +2632,15 @@ Example output format:
                         </div>
                         
                         <div style="display:flex; gap:8px;">
-                           <button class="action-btn" onclick="ShopAdmin.editProduct('${p.id}')" title="编辑"
+                           <button class="action-btn" data-shop-action="product-edit" data-product-id="${p.id}" title="编辑"
                                 style="width:32px; height:32px; border-radius:8px; border:none; background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.7); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s;">
                                 <i class="fas fa-edit" style="font-size:14px;"></i>
                            </button>
-                           <button class="action-btn" onclick="ShopAdmin.toggleStatus('${p.id}', ${!p.is_active})" title="${p.is_active ? '下架' : '上架'}"
+                           <button class="action-btn" data-shop-action="product-toggle-status" data-product-id="${p.id}" data-new-status="${!p.is_active}" title="${p.is_active ? '下架' : '上架'}"
                                 style="width:32px; height:32px; border-radius:8px; border:none; background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.7); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s;">
                                 <i class="fas fa-${p.is_active ? 'eye-slash' : 'eye'}" style="font-size:14px;"></i>
                            </button>
-                           <button class="action-btn" onclick="ShopAdmin.deleteProduct('${p.id}', '${p.name}')" title="删除"
+                           <button class="action-btn" data-shop-action="product-delete" data-product-id="${p.id}" data-product-name="${this.escapeForAttr(p.name)}" title="删除"
                                 style="width:32px; height:32px; border-radius:8px; border:none; background:rgba(255,80,80,0.1); color:#ff6b6b; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s;">
                                 <i class="fas fa-trash" style="font-size:14px;"></i>
                            </button>
@@ -2600,16 +2663,22 @@ Example output format:
                     btn.addEventListener('click', (e) => e.stopPropagation());
                 });
 
+                const checkbox = card.querySelector('.product-select-checkbox');
+                if (checkbox) {
+                    checkbox.addEventListener('click', (e) => e.stopPropagation());
+                    checkbox.addEventListener('change', () => this.updateProductSelectionCount());
+                }
+
                 // Card Click Selection
                 card.onclick = (e) => {
                     if (this.isProductSelectionMode) {
                         // Avoid triggering if clicking on buttons (though stopPropagation above helps)
-                        if (e.target.closest('.action-btn')) return;
+                        if (e.target.closest('.action-btn') || e.target.closest('.product-select-checkbox')) return;
 
-                        const checkbox = card.querySelector('.product-select-checkbox');
-                        if (checkbox) {
-                            checkbox.checked = !checkbox.checked;
-                            ShopAdmin.updateProductSelectionCount();
+                        const cardCheckbox = card.querySelector('.product-select-checkbox');
+                        if (cardCheckbox) {
+                            cardCheckbox.checked = !cardCheckbox.checked;
+                            this.updateProductSelectionCount();
                         }
                     }
                 };
@@ -6942,7 +7011,7 @@ Example output format:
                 // Two-line layout like user management page
                 const userDisplay = `
                     <div class="user-cell">
-                        <img src="${safeUserAvatar}" class="user-avatar-small" style="width:36px;height:36px;" onerror="this.src='https://api.dicebear.com/7.x/initials/svg?seed=U&backgroundColor=6b9ece'">
+                        <img src="${safeUserAvatar}" class="user-avatar-small" style="width:36px;height:36px;" data-fallback-src="https://api.dicebear.com/7.x/initials/svg?seed=U&backgroundColor=6b9ece">
                         <div class="user-info" style="line-height:1.3;">
                             <div class="user-name" style="color:#fff;">${safeUserName}</div>
                             <div class="user-email" style="font-size:12px;color:rgba(255,255,255,0.5);">${safeUserEmail}</div>
@@ -6986,15 +7055,15 @@ Example output format:
                 const status = this.getOrderDeliveryStatusBadge(order);
 
                 tbody.innerHTML += `
-                <tr onclick="ShopAdmin.showOrderContent('${order.id}', '${contentData}')" style="cursor: pointer;" title="点击查看订单详情">
+                <tr data-shop-action="order-show-content" data-order-id="${this.escapeForAttr(order.id)}" data-items-data="${contentData}" style="cursor: pointer;" title="点击查看订单详情">
                     <td data-label="用户" title="${safeOrderUserId}">${userDisplay}</td>
                     <td data-label="订单时间">${safeDate}</td>
                     <td data-label="商品">${this.escapeHtml(productName)}</td>
                     <td data-label="支付积分">${order.total_price || order.price_paid}</td>
                     <td data-label="发货状态">${status}</td>
-                    <td data-label="操作" onclick="event.stopPropagation()">
+                    <td data-label="操作" data-shop-action="order-actions-stop">
                         ${(order.refund_status !== 'refunded' && order.refund_status !== 'full_refund') ?
-                        `<button class="btn-icon danger" onclick="ShopAdmin.refundOrder('${order.id}')" title="退款"><i class="fas fa-undo"></i></button>`
+                        `<button class="btn-icon danger" data-shop-action="order-refund" data-order-id="${this.escapeForAttr(order.id)}" title="退款"><i class="fas fa-undo"></i></button>`
                         : '<span style="color: rgba(255,255,255,0.3); font-size: 12px;">-</span>'}
                     </td>
                 </tr>
@@ -7173,7 +7242,7 @@ Example output format:
                     filter: brightness(0.95);
                 }
             </style>
-            <div id="refundModal" onclick="if(event.target.id==='refundModal')this.remove()" 
+            <div id="refundModal" data-shop-overlay-close="dynamic-modal" data-modal-id="refundModal"
                 style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(12px);z-index:9999;display:flex;justify-content:center;align-items:center;">
                 <div style="background:rgba(20,25,40,0.9);border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 50px rgba(0,0,0,0.5);border-radius:20px;padding:30px;width:480px;animation:modalFadeIn 0.3s ease-out;">
                     <h3 style="margin:0 0 25px 0;color:#fff;font-size:18px;font-weight:600;display:flex;align-items:center;gap:10px;">
@@ -7211,8 +7280,8 @@ Example output format:
                     </div>
                     
                     <div style="display:flex;justify-content:flex-end;gap:12px;">
-                        <button onclick="document.getElementById('refundModal').remove()" class="refund-btn-cancel">取消</button>
-                        <button onclick="ShopAdmin.submitRefund('${orderId}')" class="refund-btn-confirm">确认退款</button>
+                        <button type="button" data-shop-action="refund-close-modal" data-modal-id="refundModal" class="refund-btn-cancel">取消</button>
+                        <button type="button" data-shop-action="refund-submit" data-order-id="${this.escapeForAttr(orderId)}" class="refund-btn-confirm">确认退款</button>
                     </div>
                 </div>
             </div>
@@ -7220,15 +7289,17 @@ Example output format:
         document.body.insertAdjacentHTML('beforeend', modalHtml);
     },
 
-    submitRefund: async function (orderId) {
+    submitRefund: async function (orderId, submitButton = null) {
         const targetStatus = document.querySelector('input[name="refundTargetStatus"]:checked').value;
         const remark = document.getElementById('refundRemarkInput').value.trim();
 
         // Disable button to prevent double submit
-        const btn = event.target;
-        const originalText = btn.textContent;
-        btn.disabled = true;
-        btn.textContent = '处理中...';
+        const btn = submitButton || document.querySelector('#refundModal [data-shop-action="refund-submit"]');
+        const originalText = btn?.textContent || '确认退款';
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = '处理中...';
+        }
 
         try {
             const { data, error } = await supabaseClient.rpc('fn_admin_refund_order', {
@@ -7248,14 +7319,18 @@ Example output format:
                 if (this.currentTab === 'inventory') this.loadInventoryList();
             } else {
                 alert('Refund Failed: ' + data.message);
-                btn.disabled = false;
-                btn.textContent = originalText;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                }
             }
         } catch (err) {
             console.error(err);
             alert('Error: ' + err.message);
-            btn.disabled = false;
-            btn.textContent = originalText;
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
         }
     },
 

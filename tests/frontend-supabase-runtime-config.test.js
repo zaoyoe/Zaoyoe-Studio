@@ -272,12 +272,16 @@ test('admin studio shell tabs and dashboards route core controls through delegat
         `onclick="switchSettingsView('pricing')"`,
         `onclick="HomepageAdmin.switchSection('hero')"`,
         `onclick="AdminPayments.switchTab('overview')"`,
+        `onclick="togglePaymentProviderPanel('mock')"`,
+        `onclick="event.stopPropagation(); togglePaymentProviderEnabled('mock')"`,
+        `onclick="savePaymentChannelSettings()"`,
         `onclick="AdminPayments.toggleRangeMenu(event)"`,
         `onclick="dismissAllAlerts()"`,
         `onclick="switchAnalyticsTab('users')"`,
         `onclick="toggleDateRangeDropdown()"`,
         `onclick="document.getElementById('hp-verify-file-input').click()"`,
         `onchange="HomepageAdmin._handleScreenshotUpload(this)"`,
+        `onchange="handlePaymentChannelActiveChange(this.value)"`,
         `onchange="toggleSelectAll()"`
     ];
 
@@ -292,8 +296,12 @@ test('admin studio shell tabs and dashboards route core controls through delegat
         'data-admin-action="switch-settings-view"',
         'data-admin-action="homepage-switch-section"',
         'data-admin-action="payments-switch-tab"',
+        'data-admin-action="payments-toggle-provider-panel"',
+        'data-admin-action="payments-toggle-provider-enabled"',
+        'data-admin-action="payments-save-channel-settings"',
         'data-admin-action="analytics-switch-tab"',
         'data-admin-change-action="homepage-handle-screenshot-upload"',
+        'data-admin-change-action="payments-change-active-provider"',
         'data-admin-change-action="comments-toggle-select-all"'
     ];
 
@@ -369,6 +377,14 @@ test('shop admin pagination and inventory/product workflows no longer emit targe
         `onclick="ShopAdmin.toggleSelectionMode()"`,
         `onclick="ShopAdmin.toggleBatchMenu()"`,
         `onclick="ShopAdmin.openReleaseModal()"`,
+        `onclick="ShopAdmin.switchTab('products')"`,
+        `onclick="ShopAdmin.filterCategory('all', this)"`,
+        `onclick="ShopAdmin.filterStatus('active', this)"`,
+        `onclick="ShopAdmin.toggleProductSelectionMode()"`,
+        `onclick="ShopAdmin.toggleProductBatchMenu()"`,
+        `onclick="ShopAdmin.selectAllProducts()"`,
+        `onclick="ShopAdmin.batchDeleteProducts()"`,
+        `onclick="ShopAdmin.exportProducts(true)"`,
         `onclick="document.getElementById('iconUploadFile').click()"`,
         `onchange="ShopAdmin.handleIconUpload(this)"`,
         `onclick="ShopAdmin.addTieredPricingRow()"`,
@@ -376,9 +392,16 @@ test('shop admin pagination and inventory/product workflows no longer emit targe
         `onclick="ShopAdmin.selectDeliveryType('KEY', '卡密池发放 (KEY)')"`,
         `onclick="ShopAdmin.saveProduct()"`,
         `onchange="ShopAdmin.toggleSelectAll(this)"`,
+        `onclick="ShopAdmin.editProduct('`,
+        `onclick="ShopAdmin.toggleStatus('`,
+        `onclick="ShopAdmin.deleteProduct('`,
+        `onclick="ShopAdmin.showOrderContent('`,
+        `onclick="ShopAdmin.refundOrder('`,
         `onclick="ShopAdmin.showInventoryDetail('`,
         `onclick="ShopAdmin.openFaultModal('`,
-        `onclick="ShopAdmin.deleteInventoryItem('`
+        `onclick="ShopAdmin.deleteInventoryItem('`,
+        `onclick="document.getElementById('refundModal').remove()"`,
+        `onclick="ShopAdmin.submitRefund('`
     ];
 
     for (const marker of removedShopMarkers) {
@@ -390,13 +413,28 @@ test('shop admin pagination and inventory/product workflows no longer emit targe
     }
 
     const delegatedMarkers = [
+        'data-shop-action="shop-switch-tab"',
+        'data-shop-action="product-filter-category"',
+        'data-shop-action="product-filter-status"',
+        'data-shop-action="product-toggle-selection-mode"',
+        'data-shop-action="product-toggle-batch-menu"',
+        'data-shop-action="product-select-all"',
+        'data-shop-action="product-batch-delete"',
+        'data-shop-action="product-export-selected"',
+        'data-shop-action="product-edit"',
+        'data-shop-action="product-toggle-status"',
+        'data-shop-action="product-delete"',
         'data-shop-action="inventory-toggle-selection-mode"',
         'data-shop-action="inventory-open-release-modal"',
         'data-shop-action="product-upload-icon"',
         'data-shop-action="product-add-tiered-pricing"',
         'data-shop-action="product-toggle-delivery-type-dropdown"',
+        'data-shop-change="product-selection-count"',
         'data-shop-change="product-handle-icon-upload"',
         'data-shop-change="inventory-toggle-select-all"',
+        'data-shop-action="order-show-content"',
+        'data-shop-action="order-refund"',
+        'data-shop-action="refund-submit"',
         'data-shop-action="inventory-show-detail"',
         'data-shop-action="inventory-open-fault-modal"',
         'data-shop-action="pagination-go"'

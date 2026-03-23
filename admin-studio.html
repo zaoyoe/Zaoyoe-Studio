@@ -989,7 +989,7 @@
                                             <div class="config-desc">钱包充值会根据这里的选择自动切换到模拟支付、爱发电或虎皮椒。</div>
                                         </div>
                                         <div class="config-input-wrapper">
-                                            <select class="config-input" id="paymentChannelActiveSelect" onchange="handlePaymentChannelActiveChange(this.value)">
+                                            <select class="config-input" id="paymentChannelActiveSelect" data-admin-change-action="payments-change-active-provider">
                                                 <option value="mock">模拟支付</option>
                                                 <option value="afdian">爱发电</option>
                                                 <option value="hupijiao">虎皮椒</option>
@@ -1004,7 +1004,7 @@
 
                                     <div class="payment-channel-accordions">
                                         <div class="payment-provider-accordion" id="paymentProviderAccordionMock">
-                                            <div class="payment-provider-accordion-header" onclick="togglePaymentProviderPanel('mock')">
+                                            <div class="payment-provider-accordion-header" data-admin-action="payments-toggle-provider-panel" data-provider="mock">
                                                 <div class="payment-provider-accordion-copy">
                                                     <div class="payment-provider-accordion-title-line">
                                                         <span class="payment-provider-accordion-title" id="paymentProviderHeaderNameMock">模拟支付</span>
@@ -1013,8 +1013,8 @@
                                                     <div class="payment-provider-accordion-desc" id="paymentProviderHeaderDescMock">直接到账，适合短期过渡验证。</div>
                                                 </div>
                                                 <div class="payment-provider-accordion-actions">
-                                                    <div class="status-toggle" id="paymentProviderMockToggle" onclick="event.stopPropagation(); togglePaymentProviderEnabled('mock')"></div>
-                                                    <button type="button" class="payment-provider-expand-btn" onclick="event.stopPropagation(); togglePaymentProviderPanel('mock')">
+                                                    <div class="status-toggle" id="paymentProviderMockToggle" data-admin-action="payments-toggle-provider-enabled" data-provider="mock"></div>
+                                                    <button type="button" class="payment-provider-expand-btn" data-admin-action="payments-toggle-provider-panel" data-provider="mock">
                                                         <i class="fas fa-chevron-down" id="paymentProviderChevronMock"></i>
                                                     </button>
                                                 </div>
@@ -1036,7 +1036,7 @@
                                         </div>
 
                                         <div class="payment-provider-accordion" id="paymentProviderAccordionAfdian">
-                                            <div class="payment-provider-accordion-header" onclick="togglePaymentProviderPanel('afdian')">
+                                            <div class="payment-provider-accordion-header" data-admin-action="payments-toggle-provider-panel" data-provider="afdian">
                                                 <div class="payment-provider-accordion-copy">
                                                     <div class="payment-provider-accordion-title-line">
                                                         <span class="payment-provider-accordion-title" id="paymentProviderHeaderNameAfdian">爱发电</span>
@@ -1045,8 +1045,8 @@
                                                     <div class="payment-provider-accordion-desc" id="paymentProviderHeaderDescAfdian">支付后输入订单号领取兑换码。</div>
                                                 </div>
                                                 <div class="payment-provider-accordion-actions">
-                                                    <div class="status-toggle" id="paymentProviderAfdianToggle" onclick="event.stopPropagation(); togglePaymentProviderEnabled('afdian')"></div>
-                                                    <button type="button" class="payment-provider-expand-btn" onclick="event.stopPropagation(); togglePaymentProviderPanel('afdian')">
+                                                    <div class="status-toggle" id="paymentProviderAfdianToggle" data-admin-action="payments-toggle-provider-enabled" data-provider="afdian"></div>
+                                                    <button type="button" class="payment-provider-expand-btn" data-admin-action="payments-toggle-provider-panel" data-provider="afdian">
                                                         <i class="fas fa-chevron-down" id="paymentProviderChevronAfdian"></i>
                                                     </button>
                                                 </div>
@@ -1089,7 +1089,7 @@
                                         </div>
 
                                         <div class="payment-provider-accordion" id="paymentProviderAccordionHupijiao">
-                                            <div class="payment-provider-accordion-header" onclick="togglePaymentProviderPanel('hupijiao')">
+                                            <div class="payment-provider-accordion-header" data-admin-action="payments-toggle-provider-panel" data-provider="hupijiao">
                                                 <div class="payment-provider-accordion-copy">
                                                     <div class="payment-provider-accordion-title-line">
                                                         <span class="payment-provider-accordion-title" id="paymentProviderHeaderNameHupijiao">虎皮椒</span>
@@ -1098,8 +1098,8 @@
                                                     <div class="payment-provider-accordion-desc" id="paymentProviderHeaderDescHupijiao">网关参数和密钥配置完成后即可切换上线。</div>
                                                 </div>
                                                 <div class="payment-provider-accordion-actions">
-                                                    <div class="status-toggle" id="paymentProviderHupijiaoToggle" onclick="event.stopPropagation(); togglePaymentProviderEnabled('hupijiao')"></div>
-                                                    <button type="button" class="payment-provider-expand-btn" onclick="event.stopPropagation(); togglePaymentProviderPanel('hupijiao')">
+                                                    <div class="status-toggle" id="paymentProviderHupijiaoToggle" data-admin-action="payments-toggle-provider-enabled" data-provider="hupijiao"></div>
+                                                    <button type="button" class="payment-provider-expand-btn" data-admin-action="payments-toggle-provider-panel" data-provider="hupijiao">
                                                         <i class="fas fa-chevron-down" id="paymentProviderChevronHupijiao"></i>
                                                     </button>
                                                 </div>
@@ -1176,7 +1176,7 @@
                                     </div>
 
                                     <div class="config-row payment-channel-save-row">
-                                        <button type="button" class="btn-add-config" onclick="savePaymentChannelSettings()">
+                                        <button type="button" class="btn-add-config" data-admin-action="payments-save-channel-settings">
                                             <i class="fas fa-save"></i> 保存支付通道配置
                                         </button>
                                     </div>
@@ -2988,23 +2988,23 @@
                 <!-- Shop Tabs -->
                 <div class="shop-tabs"
                     style="display: flex; justify-content: center; gap: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;">
-                    <div class="shop-tab active" onclick="ShopAdmin.switchTab('products')"
+                    <div class="shop-tab active" data-shop-action="shop-switch-tab" data-shop-tab="products"
                         style="padding: 10px 20px; cursor: pointer; color: #fff; border-bottom: 2px solid #6b9ece;">
                         商品
                     </div>
-                    <div class="shop-tab" onclick="ShopAdmin.switchTab('import')"
+                    <div class="shop-tab" data-shop-action="shop-switch-tab" data-shop-tab="import"
                         style="padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.6);">
                         导入
                     </div>
-                    <div class="shop-tab" onclick="ShopAdmin.switchTab('inventory')"
+                    <div class="shop-tab" data-shop-action="shop-switch-tab" data-shop-tab="inventory"
                         style="padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.6);">
                         库存
                     </div>
-                    <div class="shop-tab" onclick="ShopAdmin.switchTab('orders')"
+                    <div class="shop-tab" data-shop-action="shop-switch-tab" data-shop-tab="orders"
                         style="padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.6);">
                         订单
                     </div>
-                    <div class="shop-tab" onclick="ShopAdmin.switchTab('fulfillment')"
+                    <div class="shop-tab" data-shop-action="shop-switch-tab" data-shop-tab="fulfillment"
                         style="padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.6);">
                         API 履约
                     </div>
@@ -3641,7 +3641,7 @@
 
                     <div id="productCategoryFilters" class="category-filters"
                         style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; padding-bottom:5px; align-items:center;">
-                        <button class="filter-tab active" onclick="ShopAdmin.filterCategory('all', this)">全部</button>
+                        <button class="filter-tab active" data-shop-action="product-filter-category" data-category="all">全部</button>
                         <!-- Dynamic category buttons will be inserted here by JS -->
                     </div>
 
@@ -3651,12 +3651,12 @@
 
                         <!-- Status Filter Icon Buttons (moved here, before checkbox) -->
                         <button id="statusActiveBtn" class="icon-btn-square status-filter active" data-status="active"
-                            onclick="ShopAdmin.filterStatus('active', this)" title="上架中"
+                            data-shop-action="product-filter-status" title="上架中"
                             style="background:rgba(74, 222, 128, 0.2); border-color:rgba(74, 222, 128, 0.5); color:#4ade80;">
                             <i class="fas fa-eye"></i>
                         </button>
                         <button id="statusDeletedBtn" class="icon-btn-square status-filter" data-status="deleted"
-                            onclick="ShopAdmin.filterStatus('deleted', this)" title="回收站"
+                            data-shop-action="product-filter-status" title="回收站"
                             style="background:rgba(255,255,255,0.03); color:rgba(255,255,255,0.5);">
                             <i class="fas fa-trash"></i>
                         </button>
@@ -3666,14 +3666,14 @@
 
                         <!-- Toggle Selection Mode Button -->
                         <button id="toggleProductSelectionBtn" class="icon-btn-square"
-                            onclick="ShopAdmin.toggleProductSelectionMode()" title="多选模式">
+                            data-shop-action="product-toggle-selection-mode" title="多选模式">
                             <i class="fas fa-check-square"></i>
                         </button>
 
                         <!-- Batch Actions Button & Menu -->
                         <div class="batch-action-wrapper" style="position: relative;">
                             <button id="productBatchActionsBtn" class="icon-btn-square"
-                                onclick="ShopAdmin.toggleProductBatchMenu()" title="批量操作" style="display: none;">
+                                data-shop-action="product-toggle-batch-menu" title="批量操作" style="display: none;">
                                 <i class="fas fa-ellipsis-h"></i>
                             </button>
                             <!-- Product Batch Menu -->
@@ -3683,13 +3683,13 @@
                                     <i class="fas fa-check-circle" style="color: #34d399;"></i>
                                     已选 <span id="productBatchSelectedCount">0</span> 项
                                 </div>
-                                <div class="batch-menu-item" onclick="ShopAdmin.selectAllProducts()">
+                                <div class="batch-menu-item" data-shop-action="product-select-all">
                                     <i class="fas fa-check-double"></i> 全选当前页
                                 </div>
-                                <div class="batch-menu-item" onclick="ShopAdmin.batchDeleteProducts()">
+                                <div class="batch-menu-item" data-shop-action="product-batch-delete">
                                     <i class="fas fa-trash-alt"></i> 批量删除
                                 </div>
-                                <div class="batch-menu-item" onclick="ShopAdmin.exportProducts(true)">
+                                <div class="batch-menu-item" data-shop-action="product-export-selected">
                                     <i class="fas fa-file-export"></i> 导出选中
                                 </div>
                             </div>
@@ -9543,8 +9543,8 @@
     <script src="js/admin-site-filter.js"></script>
     <script src="js/admin-tickets.js"></script>
     <script src="js/admin-access.js"></script>
-    <script src="admin-studio.js?v=20260323_ADMIN_DELEGATION_2"></script>
-    <script src="js/admin-shop.js?v=20260323_SHOP_DELEGATION_2"></script>
+    <script src="admin-studio.js?v=20260323_ADMIN_DELEGATION_3"></script>
+    <script src="js/admin-shop.js?v=20260323_SHOP_DELEGATION_3"></script>
 </body>
 
 <!-- Admin Chat Script -->
