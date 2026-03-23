@@ -50,6 +50,16 @@ function fingerprintSecret(value) {
         .slice(0, 12);
 }
 
+function classifySupabaseKey(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return 'missing';
+    if (/^sb_secret_/i.test(normalized)) return 'secret';
+    if (/^sb_publishable_/i.test(normalized)) return 'publishable';
+    if (/^sb_anon_/i.test(normalized)) return 'anon';
+    if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(normalized)) return 'jwt_like';
+    return 'unknown';
+}
+
 function isProductionLikeRuntime(env = process.env) {
     const vercelEnv = String(env.VERCEL_ENV || '').trim().toLowerCase();
     const railwayEnv = String(env.RAILWAY_ENVIRONMENT_NAME || '').trim().toLowerCase();
@@ -239,6 +249,7 @@ function buildLocalEnvironmentChecks({ options = {}, env = process.env } = {}) {
     }
 
     const serviceRoleKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+    const serviceRoleKeyKind = classifySupabaseKey(serviceRoleKey);
     const adminEncryptionKey = String(env.ADMIN_CONFIG_ENCRYPTION_KEY || '').trim();
     const adminStudioAccessSecret = String(env.ADMIN_STUDIO_ACCESS_SECRET || '').trim();
     const quoteSecret = readFirstAvailableEnv(QUOTE_SECRET_ENV_NAMES);
@@ -256,10 +267,12 @@ function buildLocalEnvironmentChecks({ options = {}, env = process.env } = {}) {
     return [
         {
             label: 'SUPABASE_SERVICE_ROLE_KEY',
-            ok: Boolean(serviceRoleKey),
-            details: serviceRoleKey
-                ? `set, fingerprint=${fingerprintSecret(serviceRoleKey)}`
-                : 'missing'
+            ok: Boolean(serviceRoleKey) && !['publishable', 'anon'].includes(serviceRoleKeyKind),
+            details: !serviceRoleKey
+                ? 'missing'
+                : ['publishable', 'anon'].includes(serviceRoleKeyKind)
+                    ? `looks like a ${serviceRoleKeyKind} key; use an sb_secret_/service-role key instead`
+                    : `set, kind=${serviceRoleKeyKind}, fingerprint=${fingerprintSecret(serviceRoleKey)}`
         },
         {
             label: 'ADMIN_CONFIG_ENCRYPTION_KEY',
@@ -395,6 +408,15 @@ function buildRuntimeConfigCheckResult(runtimeConfig, expected = {}) {
             label: 'app runtime Supabase config',
             ok: false,
             details: runtimeConfig?.error || 'Runtime Supabase config is unavailable'
+        };
+    }
+
+    const runtimePublishableKeyKind = classifySupabaseKey(runtimeConfig.publishableKey);
+    if (runtimePublishableKeyKind === 'secret') {
+        return {
+            label: 'app runtime Supabase config',
+            ok: false,
+            details: 'runtime publishable key looks like a secret/service key'
         };
     }
 
@@ -693,6 +715,7 @@ module.exports = {
     buildLocalEnvironmentChecks,
     buildPlatformEnvChecklist,
     buildRuntimeConfigCheckResult,
+    classifySupabaseKey,
     fetchJson,
     fetchText,
     fingerprintSecret,

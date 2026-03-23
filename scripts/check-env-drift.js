@@ -6,6 +6,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 const DEFAULT_ENV_FILES = [
     path.resolve(__dirname, '../server/.env'),
+    path.resolve(__dirname, '../server/.env.staging'),
     path.resolve(__dirname, '../server/.env.production')
 ];
 
@@ -18,6 +19,16 @@ function fingerprintSecret(value) {
         .update(normalized)
         .digest('hex')
         .slice(0, 12);
+}
+
+function classifySupabaseKey(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return 'missing';
+    if (/^sb_secret_/i.test(normalized)) return 'secret';
+    if (/^sb_publishable_/i.test(normalized)) return 'publishable';
+    if (/^sb_anon_/i.test(normalized)) return 'anon';
+    if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(normalized)) return 'jwt_like';
+    return 'unknown';
 }
 
 function parseArgs(argv = []) {
@@ -99,6 +110,7 @@ function pickFirstAvailable(values, names = []) {
 function summarizeEnvFile(record) {
     const values = record.values || {};
     const supabaseUrl = String(values.SUPABASE_URL || '').trim();
+    const supabaseServiceRoleKey = String(values.SUPABASE_SERVICE_ROLE_KEY || '').trim();
     const projectHost = supabaseUrl
         ? supabaseUrl.replace(/^https?:\/\//i, '').replace(/\/+$/, '')
         : '';
@@ -118,8 +130,11 @@ function summarizeEnvFile(record) {
         exists: record.exists,
         projectHost,
         supabaseUrl,
+        keyKinds: {
+            supabase_service_role_key: classifySupabaseKey(supabaseServiceRoleKey)
+        },
         fingerprints: {
-            supabase_service_role_key: fingerprintSecret(values.SUPABASE_SERVICE_ROLE_KEY),
+            supabase_service_role_key: fingerprintSecret(supabaseServiceRoleKey),
             admin_config_encryption_key: fingerprintSecret(values.ADMIN_CONFIG_ENCRYPTION_KEY),
             payment_custom_recharge_quote_secret: fingerprintSecret(quoteSecret.value),
             admin_studio_access_secret: fingerprintSecret(values.ADMIN_STUDIO_ACCESS_SECRET)
@@ -259,6 +274,15 @@ function buildDriftFindings(summaries = []) {
             });
         }
 
+        if (['publishable', 'anon'].includes(summary.keyKinds?.supabase_service_role_key)) {
+            findings.push({
+                severity: 'high',
+                type: 'invalid_service_role_key_kind',
+                message: `SUPABASE_SERVICE_ROLE_KEY in ${summary.envFile} looks like a ${summary.keyKinds.supabase_service_role_key} key instead of a service-role key`,
+                envFiles: [summary.envFile]
+            });
+        }
+
         if (summary.runtime?.productionLike) {
             const proxyTrustConfigured = summary.runtime.trustAllProxies
                 || !summary.missing.trusted_proxy_ips
@@ -299,6 +323,7 @@ function formatHumanReport({ summaries = [], findings = [] }) {
         }
 
         lines.push(`  host: ${summary.projectHost || '(missing)'}`);
+        lines.push(`  service_role_kind: ${summary.keyKinds?.supabase_service_role_key || 'missing'}`);
         lines.push(`  service_role_fp: ${summary.fingerprints.supabase_service_role_key}`);
         lines.push(`  admin_encryption_fp: ${summary.fingerprints.admin_config_encryption_key}`);
         lines.push(`  quote_secret_fp: ${summary.fingerprints.payment_custom_recharge_quote_secret}`);
@@ -368,6 +393,7 @@ if (require.main === module) {
 
 module.exports = {
     buildDriftFindings,
+    classifySupabaseKey,
     fingerprintSecret,
     parseArgs,
     summarizeEnvFile

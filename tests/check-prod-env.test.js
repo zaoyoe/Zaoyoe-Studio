@@ -6,6 +6,7 @@ const {
     buildLocalEnvironmentChecks,
     buildPlatformEnvChecklist,
     buildRuntimeConfigCheckResult,
+    classifySupabaseKey,
     parseArgs,
     parseRuntimeConfigScript,
     resolveAppBaseUrl,
@@ -93,6 +94,29 @@ test('buildLocalEnvironmentChecks requires proxy trust and webhook allowlist in 
     assert.match(allowlistCheck.details, /missing AFDIAN_WEBHOOK_ALLOWED_IPS/);
 });
 
+test('classifySupabaseKey and buildLocalEnvironmentChecks reject publishable keys in the service-role slot', () => {
+    assert.equal(classifySupabaseKey('sb_secret_demo'), 'secret');
+    assert.equal(classifySupabaseKey('sb_publishable_demo'), 'publishable');
+    assert.equal(classifySupabaseKey('sb_anon_demo'), 'anon');
+
+    const checks = buildLocalEnvironmentChecks({
+        options: {
+            runtimeOnly: false,
+            allowNonProduction: true
+        },
+        env: {
+            SUPABASE_SERVICE_ROLE_KEY: 'sb_publishable_demo',
+            ADMIN_CONFIG_ENCRYPTION_KEY: 'enc-key',
+            PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote-key',
+            ADMIN_STUDIO_ACCESS_SECRET: 'studio-key'
+        }
+    });
+
+    const serviceRoleCheck = checks.find((check) => check.label === 'SUPABASE_SERVICE_ROLE_KEY');
+    assert.equal(serviceRoleCheck.ok, false);
+    assert.match(serviceRoleCheck.details, /looks like a publishable key/);
+});
+
 test('resolveAppBaseUrl prefers explicit CLI value and normalizes trailing slashes', () => {
     assert.equal(
         resolveAppBaseUrl(
@@ -146,6 +170,13 @@ test('buildRuntimeConfigCheckResult detects runtime url and key mismatches', () 
     );
     assert.equal(mismatch.ok, false);
     assert.match(mismatch.details, /does not match env SUPABASE_URL/);
+
+    const secretRuntimeKey = buildRuntimeConfigCheckResult(
+        { ok: true, url: 'https://demo.supabase.co', publishableKey: 'sb_secret_live' },
+        { supabaseUrl: 'https://demo.supabase.co', publishableKey: 'pk_live' }
+    );
+    assert.equal(secretRuntimeKey.ok, false);
+    assert.match(secretRuntimeKey.details, /looks like a secret\/service key/);
 });
 
 test('buildAuthCheckProbeResult distinguishes redeploy gaps from deployed auth-gated endpoints', () => {

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
     buildDriftFindings,
+    classifySupabaseKey,
     fingerprintSecret,
     parseArgs,
     summarizeEnvFile
@@ -24,12 +25,13 @@ test('parseArgs collects repeated env files and flags', () => {
 });
 
 test('summarizeEnvFile fingerprints key secrets and quote aliases', () => {
+    const serviceRoleKey = 'sb_secret_service_a';
     const summary = summarizeEnvFile({
         envFile: '/tmp/server.env',
         exists: true,
         values: {
             SUPABASE_URL: 'https://example.supabase.co',
-            SUPABASE_SERVICE_ROLE_KEY: 'service-a',
+            SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey,
             ADMIN_CONFIG_ENCRYPTION_KEY: 'encrypt-a',
             PAYMENT_QUOTE_SECRET: 'quote-a',
             ADMIN_STUDIO_ACCESS_SECRET: 'studio-a',
@@ -41,12 +43,46 @@ test('summarizeEnvFile fingerprints key secrets and quote aliases', () => {
     });
 
     assert.equal(summary.projectHost, 'example.supabase.co');
-    assert.equal(summary.fingerprints.supabase_service_role_key, fingerprintSecret('service-a'));
+    assert.equal(summary.keyKinds.supabase_service_role_key, 'secret');
+    assert.equal(summary.fingerprints.supabase_service_role_key, fingerprintSecret(serviceRoleKey));
     assert.equal(summary.fingerprints.payment_custom_recharge_quote_secret, fingerprintSecret('quote-a'));
     assert.equal(summary.sources.payment_custom_recharge_quote_secret, 'PAYMENT_QUOTE_SECRET');
     assert.equal(summary.runtime.productionLike, true);
     assert.equal(summary.securityNetwork.trustedProxyIps, '10.0.0.0/8');
     assert.equal(summary.securityNetwork.afdianWebhookAllowedIps, '203.0.113.0/24');
+});
+
+test('classifySupabaseKey and buildDriftFindings flag publishable keys in service-role slots', () => {
+    assert.equal(classifySupabaseKey('sb_publishable_demo'), 'publishable');
+
+    const findings = buildDriftFindings([
+        {
+            envFile: '/tmp/invalid.env',
+            exists: true,
+            projectHost: 'demo.supabase.co',
+            keyKinds: {
+                supabase_service_role_key: 'publishable'
+            },
+            fingerprints: {
+                supabase_service_role_key: 'fp-demo',
+                admin_config_encryption_key: 'enc-demo',
+                payment_custom_recharge_quote_secret: 'quote-demo',
+                admin_studio_access_secret: 'studio-demo'
+            },
+            missing: {
+                trusted_proxy_ips: false,
+                afdian_webhook_trusted_proxies: false,
+                afdian_webhook_allowed_ips: false
+            },
+            runtime: {
+                productionLike: false,
+                trustAllProxies: false
+            },
+            live: { ok: true }
+        }
+    ]);
+
+    assert.equal(findings.some((item) => item.type === 'invalid_service_role_key_kind'), true);
 });
 
 test('buildDriftFindings flags same-host service role drift and shared secret drift', () => {

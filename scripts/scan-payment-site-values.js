@@ -3,7 +3,7 @@ const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
 
 const SUPPORTED_SITES = Object.freeze(['cn', 'intl']);
-const DEFAULT_ENV_FILE = path.resolve(__dirname, '../server/.env');
+const DEFAULT_ENV_FILE = path.resolve(__dirname, '../server/.env.production');
 const DEFAULT_SAMPLE_LIMIT = 10;
 
 function parseArgs(argv = []) {
@@ -262,6 +262,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+    DEFAULT_ENV_FILE,
     SUPPORTED_SITES,
     buildUnsupportedFilter,
     formatHuman,

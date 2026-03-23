@@ -76,8 +76,14 @@
    - Railway / verify server 的：
      - `SUPABASE_URL`
      - `SUPABASE_SERVICE_ROLE_KEY`
+     - `ADMIN_CONFIG_ENCRYPTION_KEY`
      - `PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET`
+     - `ADMIN_STUDIO_ACCESS_SECRET`
+     - `APP_BASE_URL`
      - `ALLOWED_ORIGINS`
+     - `TRUSTED_PROXY_IPS`
+     - `AFDIAN_WEBHOOK_TRUSTED_PROXIES`
+     - `AFDIAN_WEBHOOK_ALLOWED_IPS`
 5. 轮换或补齐变量后，先跑：
    - `npm run check:prod-env -- --env-file server/.env.staging --validate-supabase --validate-payment-schema --check-app-runtime`
    - `npm run smoke:payment -- --env-file server/.env.staging --config-only --allow-production-like`
@@ -87,6 +93,8 @@
      - `404 Not Found` 表示线上还没 redeploy 到最新代码
    - `Platform env checklist`
      - `Vercel` 和 `Railway / verify server` 各自该补哪些变量，会逐项列出来
+   - `SUPABASE_SERVICE_ROLE_KEY`
+     - 如果脚本提示它看起来像 `publishable/anon key`，说明 env 文件把公钥塞进了高权限槽位，不能继续上线
 7. 重新部署：
    - Vercel
    - Railway（如果它依赖这个 key）
