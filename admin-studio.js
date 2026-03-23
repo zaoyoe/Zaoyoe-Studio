@@ -248,6 +248,34 @@ function bindAdminStudioDelegatedControls() {
             case 'switch-settings-view':
                 window.switchSettingsView?.(actionEl.dataset.settingsView);
                 break;
+            case 'settings-toggle-custom-dropdown':
+                window.toggleCustomDropdown?.(actionEl.dataset.dropdownId);
+                break;
+            case 'settings-select-dropdown-option':
+                window.selectDropdownOption?.(
+                    actionEl.dataset.dropdownId,
+                    actionEl.dataset.optionValue,
+                    actionEl.dataset.optionLabel
+                );
+                break;
+            case 'settings-add-api-key':
+                window.addNewApiKey?.();
+                break;
+            case 'settings-prompt-api-key':
+                window.promptForApiKey?.();
+                break;
+            case 'settings-delete-api-key':
+                window.deleteApiKey?.();
+                break;
+            case 'settings-save-seo':
+                window.saveSeoSettings?.();
+                break;
+            case 'settings-export-dataset':
+                window.exportSettingsData?.(
+                    actionEl.dataset.exportDataset,
+                    actionEl.dataset.exportFormat
+                );
+                break;
             case 'homepage-switch-section':
                 window.HomepageAdmin?.switchSection?.(actionEl.dataset.hpSection);
                 break;
@@ -1040,7 +1068,7 @@ function renderApiKeySelector() {
     if (container) {
         container.innerHTML = `
             <div class="api-key-dropdown">
-                <button class="api-key-current" type="button" onclick="promptForApiKey()">
+                <button class="api-key-current" type="button" data-admin-action="settings-prompt-api-key">
                     <i class="fas fa-shield-alt"></i>
                     <span>${isReady ? `Server Proxy · ${meta.title}` : 'AI Proxy 未配置'}</span>
                 </button>
@@ -1052,17 +1080,17 @@ function renderApiKeySelector() {
     if (settingsList) {
         settingsList.innerHTML = `
             <div class="api-key-row active" data-index="0">
-                <div class="key-info" onclick="promptForApiKey()">
+                <div class="key-info" data-admin-action="settings-prompt-api-key">
                     <span class="key-name-label">Server Proxy</span>
                     <span class="key-preview-label">${meta.preview}</span>
                 </div>
                 <div class="key-actions" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                     <span class="key-active-badge">${isReady ? meta.badge : '待配置'}</span>
-                    <button class="btn-add-config" type="button" onclick="promptForApiKey()" style="margin-top: 0; padding: 8px 12px;">
+                    <button class="btn-add-config" type="button" data-admin-action="settings-prompt-api-key" style="margin-top: 0; padding: 8px 12px;">
                         ${isReady ? '更新 Key' : '录入 Key'}
                     </button>
                     ${meta.source === 'stored' ? `
-                        <button class="btn-add-config" type="button" onclick="deleteApiKey()" style="margin-top: 0; padding: 8px 12px; border-color: rgba(248, 113, 113, 0.35); color: #fecaca;">
+                        <button class="btn-add-config" type="button" data-admin-action="settings-delete-api-key" style="margin-top: 0; padding: 8px 12px; border-color: rgba(248, 113, 113, 0.35); color: #fecaca;">
                             删除 Key
                         </button>
                     ` : ''}
@@ -1096,6 +1124,10 @@ function editApiKeyName() {
 function toggleApiKeyDropdown() {
     promptForApiKey();
 }
+
+window.addNewApiKey = addNewApiKey;
+window.promptForApiKey = promptForApiKey;
+window.deleteApiKey = deleteApiKey;
 
 // Close dropdown when clicking outside
 document.addEventListener('click', (e) => {

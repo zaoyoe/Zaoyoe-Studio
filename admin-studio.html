@@ -2119,32 +2119,38 @@
                         <div class="settings-section">
                             <h3><i class="fas fa-file-export"></i> 数据导出</h3>
                             <div class="export-buttons-grid">
-                                <button class="export-btn" onclick="exportData('users', 'json')">
+                                <button class="export-btn" data-admin-action="settings-export-dataset"
+                                    data-export-dataset="users" data-export-format="json">
                                     <i class="fas fa-users"></i>
                                     <span>导出用户数据</span>
                                     <small>JSON 格式</small>
                                 </button>
-                                <button class="export-btn" onclick="exportData('users', 'csv')">
+                                <button class="export-btn" data-admin-action="settings-export-dataset"
+                                    data-export-dataset="users" data-export-format="csv">
                                     <i class="fas fa-users"></i>
                                     <span>导出用户数据</span>
                                     <small>CSV 格式</small>
                                 </button>
-                                <button class="export-btn" onclick="exportData('comments', 'json')">
+                                <button class="export-btn" data-admin-action="settings-export-dataset"
+                                    data-export-dataset="comments" data-export-format="json">
                                     <i class="fas fa-comments"></i>
                                     <span>导出评论数据</span>
                                     <small>JSON 格式</small>
                                 </button>
-                                <button class="export-btn" onclick="exportData('comments', 'csv')">
+                                <button class="export-btn" data-admin-action="settings-export-dataset"
+                                    data-export-dataset="comments" data-export-format="csv">
                                     <i class="fas fa-comments"></i>
                                     <span>导出评论数据</span>
                                     <small>CSV 格式</small>
                                 </button>
-                                <button class="export-btn" onclick="exportData('points', 'json')">
+                                <button class="export-btn" data-admin-action="settings-export-dataset"
+                                    data-export-dataset="points" data-export-format="json">
                                     <i class="fas fa-coins"></i>
                                     <span>导出积分记录</span>
                                     <small>JSON 格式</small>
                                 </button>
-                                <button class="export-btn" onclick="exportData('points', 'csv')">
+                                <button class="export-btn" data-admin-action="settings-export-dataset"
+                                    data-export-dataset="points" data-export-format="csv">
                                     <i class="fas fa-coins"></i>
                                     <span>导出积分记录</span>
                                     <small>CSV 格式</small>
@@ -2163,7 +2169,8 @@
                             <div class="api-keys-list" id="settingsApiKeysList">
                                 <!-- Dynamic key items -->
                             </div>
-                            <button class="btn-add-config" onclick="addNewApiKey()" style="margin-top: 12px;">
+                            <button class="btn-add-config" type="button" data-admin-action="settings-add-api-key"
+                                style="margin-top: 12px;">
                                 <i class="fas fa-plus"></i> 添加新 Key
                             </button>
                             <p class="settings-status" id="apiKeyStatus" style="margin-top: 12px;">
@@ -2182,29 +2189,42 @@
                                 </div>
                                 <div class="config-value">
                                     <div class="custom-dropdown" id="refreshIntervalDropdown">
-                                        <button class="dropdown-trigger"
-                                            onclick="toggleCustomDropdown('refreshIntervalDropdown')">
+                                        <button class="dropdown-trigger" type="button"
+                                            data-admin-action="settings-toggle-custom-dropdown"
+                                            data-dropdown-id="refreshIntervalDropdown">
                                             <span class="dropdown-value" id="refreshIntervalValue">5 分钟</span>
                                             <i class="fas fa-chevron-down"></i>
                                         </button>
                                         <div class="dropdown-menu">
                                             <div class="dropdown-option" data-value="60000"
-                                                onclick="selectDropdownOption('refreshIntervalDropdown', '60000', '1 分钟')">
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="refreshIntervalDropdown" data-option-value="60000"
+                                                data-option-label="1 分钟">
                                                 1 分钟</div>
                                             <div class="dropdown-option" data-value="180000"
-                                                onclick="selectDropdownOption('refreshIntervalDropdown', '180000', '3 分钟')">
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="refreshIntervalDropdown" data-option-value="180000"
+                                                data-option-label="3 分钟">
                                                 3 分钟</div>
                                             <div class="dropdown-option selected" data-value="300000"
-                                                onclick="selectDropdownOption('refreshIntervalDropdown', '300000', '5 分钟')">
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="refreshIntervalDropdown" data-option-value="300000"
+                                                data-option-label="5 分钟">
                                                 5 分钟</div>
                                             <div class="dropdown-option" data-value="600000"
-                                                onclick="selectDropdownOption('refreshIntervalDropdown', '600000', '10 分钟')">
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="refreshIntervalDropdown" data-option-value="600000"
+                                                data-option-label="10 分钟">
                                                 10 分钟</div>
                                             <div class="dropdown-option" data-value="900000"
-                                                onclick="selectDropdownOption('refreshIntervalDropdown', '900000', '15 分钟')">
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="refreshIntervalDropdown" data-option-value="900000"
+                                                data-option-label="15 分钟">
                                                 15 分钟</div>
                                             <div class="dropdown-option" data-value="1800000"
-                                                onclick="selectDropdownOption('refreshIntervalDropdown', '1800000', '30 分钟')">
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="refreshIntervalDropdown" data-option-value="1800000"
+                                                data-option-label="30 分钟">
                                                 30 分钟</div>
                                         </div>
                                     </div>
@@ -2258,20 +2278,27 @@
                                 </div>
                                 <div class="config-value">
                                     <div class="custom-dropdown" id="aiServiceDropdown">
-                                        <button class="dropdown-trigger"
-                                            onclick="toggleCustomDropdown('aiServiceDropdown')">
+                                        <button class="dropdown-trigger" type="button"
+                                            data-admin-action="settings-toggle-custom-dropdown"
+                                            data-dropdown-id="aiServiceDropdown">
                                             <span class="dropdown-value" id="aiServiceValue">Gemini</span>
                                             <i class="fas fa-chevron-down"></i>
                                         </button>
                                         <div class="dropdown-menu">
                                             <div class="dropdown-option selected" data-value="gemini"
-                                                onclick="selectDropdownOption('aiServiceDropdown', 'gemini', 'Gemini')">
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="aiServiceDropdown" data-option-value="gemini"
+                                                data-option-label="Gemini">
                                                 Gemini</div>
                                             <div class="dropdown-option" data-value="openai"
-                                                onclick="selectDropdownOption('aiServiceDropdown', 'openai', 'OpenAI')">
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="aiServiceDropdown" data-option-value="openai"
+                                                data-option-label="OpenAI">
                                                 OpenAI</div>
                                             <div class="dropdown-option" data-value="claude"
-                                                onclick="selectDropdownOption('aiServiceDropdown', 'claude', 'Claude')">
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="aiServiceDropdown" data-option-value="claude"
+                                                data-option-label="Claude">
                                                 Claude</div>
                                         </div>
                                     </div>
@@ -2312,7 +2339,7 @@
                             <div class="config-actions" style="margin-top: 24px; justify-content: flex-end;">
                                 <span class="config-save-indicator" id="seoSaveIndicator"
                                     style="margin-right: 12px; opacity: 0;">✓ 已保存</span>
-                                <button class="btn-sm btn-primary" onclick="saveSeoSettings()">
+                                <button class="btn-sm btn-primary" data-admin-action="settings-save-seo">
                                     <i class="fas fa-save"></i> 保存
                                 </button>
                             </div>
@@ -2353,20 +2380,27 @@
                                 </div>
                                 <div class="config-value">
                                     <div class="custom-dropdown" id="cacheDurationDropdown">
-                                        <button class="dropdown-trigger"
-                                            onclick="toggleCustomDropdown('cacheDurationDropdown')">
+                                        <button class="dropdown-trigger" type="button"
+                                            data-admin-action="settings-toggle-custom-dropdown"
+                                            data-dropdown-id="cacheDurationDropdown">
                                             <span class="dropdown-value" id="cacheDurationValue">1 天</span>
                                             <i class="fas fa-chevron-down"></i>
                                         </button>
                                         <div class="dropdown-menu">
                                             <div class="dropdown-option" data-value="3600"
-                                                onclick="selectDropdownOption('cacheDurationDropdown', '3600', '1 小时')">
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="cacheDurationDropdown" data-option-value="3600"
+                                                data-option-label="1 小时">
                                                 1 小时</div>
                                             <div class="dropdown-option selected" data-value="86400"
-                                                onclick="selectDropdownOption('cacheDurationDropdown', '86400', '1 天')">
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="cacheDurationDropdown" data-option-value="86400"
+                                                data-option-label="1 天">
                                                 1 天</div>
                                             <div class="dropdown-option" data-value="604800"
-                                                onclick="selectDropdownOption('cacheDurationDropdown', '604800', '1 周')">
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="cacheDurationDropdown" data-option-value="604800"
+                                                data-option-label="1 周">
                                                 1 周</div>
                                         </div>
                                     </div>
@@ -9541,13 +9575,13 @@
     <script src="admin-comments.js"></script>
     <script src="admin-analytics.js"></script>
     <script src="js/admin-payments.js?v=20260320_ADMIN_PAYMENTS_V11"></script>
-    <script src="admin-config.js?v=20260320_ADMIN_PAYMENTS_V10"></script>
+    <script src="admin-config.js?v=20260323_ADMIN_GENERAL_SETTINGS_DELEGATION_1"></script>
     <script src="admin-homepage.js"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js"></script>
     <script src="js/admin-tickets.js"></script>
     <script src="js/admin-access.js"></script>
-    <script src="admin-studio.js?v=20260323_ADMIN_DELEGATION_1"></script>
+    <script src="admin-studio.js?v=20260323_ADMIN_DELEGATION_2"></script>
     <script src="js/admin-shop.js?v=20260323_SHOP_PAGINATION_DELEGATION_1"></script>
 </body>
 
