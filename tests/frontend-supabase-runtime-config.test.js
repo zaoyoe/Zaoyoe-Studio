@@ -555,6 +555,67 @@ test('admin studio settings, discounts, and tickets controls route through deleg
     assert.equal(ticketsSource.includes('submitReply: async function'), true, 'js/admin-tickets.js should still expose submitReply');
 });
 
+test('discount and ticket admin renderers no longer emit inline row or pagination handlers', () => {
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const discountsSource = readRepoFile('admin-discounts.js');
+    const ticketsSource = readRepoFile('js/admin-tickets.js');
+
+    const removedDiscountMarkers = [
+        `onclick="AdminDiscounts.copyCode('`,
+        `onclick="AdminDiscounts.toggleStatus('`,
+        `onclick="AdminDiscounts.deleteCode('`,
+        `onclick="AdminDiscounts.goToPage(`,
+        `onchange="AdminDiscounts.goToPage(`
+    ];
+
+    for (const marker of removedDiscountMarkers) {
+        assert.equal(discountsSource.includes(marker), false, `admin-discounts.js should not contain ${marker}`);
+    }
+
+    const removedTicketMarkers = [
+        `onclick="AdminTickets.changePage(`,
+        `onchange="AdminTickets.changePage(`
+    ];
+
+    for (const marker of removedTicketMarkers) {
+        assert.equal(ticketsSource.includes(marker), false, `js/admin-tickets.js should not contain ${marker}`);
+    }
+
+    const delegatedDiscountMarkers = [
+        'data-admin-action="discounts-copy-code"',
+        'data-admin-action="discounts-toggle-status"',
+        'data-admin-action="discounts-delete-code"',
+        'data-admin-action="discounts-pagination-go"',
+        'data-admin-change-action="discounts-pagination-go"',
+        'escapeHtml: function'
+    ];
+
+    for (const marker of delegatedDiscountMarkers) {
+        assert.equal(discountsSource.includes(marker), true, `admin-discounts.js should contain ${marker}`);
+    }
+
+    const delegatedTicketMarkers = [
+        'data-admin-action="tickets-pagination-go"',
+        'data-admin-change-action="tickets-pagination-go"'
+    ];
+
+    for (const marker of delegatedTicketMarkers) {
+        assert.equal(ticketsSource.includes(marker), true, `js/admin-tickets.js should contain ${marker}`);
+    }
+
+    const adminDelegationMarkers = [
+        'discounts-copy-code',
+        'discounts-toggle-status',
+        'discounts-delete-code',
+        'discounts-pagination-go',
+        'tickets-pagination-go'
+    ];
+
+    for (const marker of adminDelegationMarkers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should delegate ${marker}`);
+    }
+});
+
 test('shop admin pagination and inventory/product workflows no longer emit targeted inline handlers', () => {
     const shopSource = readRepoFile('js/admin-shop.js');
     const adminStudioSource = readRepoFile('admin-studio.html');

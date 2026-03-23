@@ -479,6 +479,21 @@ function bindAdminStudioDelegatedControls() {
             case 'discounts-open-generate-modal':
                 window.AdminDiscounts?.openGenerateModal?.();
                 break;
+            case 'discounts-copy-code':
+                window.AdminDiscounts?.copyCode?.(actionEl.dataset.discountCode || '');
+                break;
+            case 'discounts-toggle-status':
+                window.AdminDiscounts?.toggleStatus?.(
+                    actionEl.dataset.discountId,
+                    actionEl.dataset.discountNextActive === 'true'
+                );
+                break;
+            case 'discounts-delete-code':
+                window.AdminDiscounts?.deleteCode?.(
+                    actionEl.dataset.discountId,
+                    actionEl.dataset.discountCode || ''
+                );
+                break;
             case 'discounts-close-generate-modal':
                 window.AdminDiscounts?.closeGenerateModal?.();
                 break;
@@ -491,6 +506,13 @@ function bindAdminStudioDelegatedControls() {
             case 'discounts-submit-generate':
                 window.AdminDiscounts?.submitGenerate?.();
                 break;
+            case 'discounts-pagination-go': {
+                const page = parseInt(actionEl.dataset.discountPage || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.AdminDiscounts?.goToPage?.(page);
+                }
+                break;
+            }
             case 'tickets-filter':
                 window.AdminTickets?.filter?.(actionEl.dataset.ticketStatus, actionEl);
                 break;
@@ -500,6 +522,13 @@ function bindAdminStudioDelegatedControls() {
             case 'tickets-submit-reply':
                 window.AdminTickets?.submitReply?.();
                 break;
+            case 'tickets-pagination-go': {
+                const page = parseInt(actionEl.dataset.ticketPage || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.AdminTickets?.changePage?.(page);
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -535,6 +564,20 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-decoration':
                 window.toggleDecoration?.();
                 break;
+            case 'discounts-pagination-go': {
+                const page = parseInt(actionEl.value || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.AdminDiscounts?.goToPage?.(page);
+                }
+                break;
+            }
+            case 'tickets-pagination-go': {
+                const page = parseInt(actionEl.value || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.AdminTickets?.changePage?.(page);
+                }
+                break;
+            }
             default:
                 break;
         }

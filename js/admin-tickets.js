@@ -332,10 +332,18 @@ const AdminTickets = {
         container.innerHTML = `
             <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-top: 20px;">
                 <div class="pagination-control">
-                    <button class="pagination-btn" onclick="AdminTickets.changePage(${this.currentPage - 1})" ${this.currentPage <= 1 ? 'disabled' : ''}>−</button>
+                    <button class="pagination-btn"
+                        type="button"
+                        data-admin-action="tickets-pagination-go"
+                        data-ticket-page="${Math.max(this.currentPage - 1, 1)}"
+                        ${this.currentPage <= 1 ? 'disabled' : ''}>−</button>
                     <input type="number" class="pagination-input" value="${this.currentPage}" min="1" max="${totalPages}"
-                        onchange="AdminTickets.changePage(parseInt(this.value)||1)">
-                    <button class="pagination-btn" onclick="AdminTickets.changePage(${this.currentPage + 1})" ${this.currentPage >= totalPages ? 'disabled' : ''}>+</button>
+                        data-admin-change-action="tickets-pagination-go">
+                    <button class="pagination-btn"
+                        type="button"
+                        data-admin-action="tickets-pagination-go"
+                        data-ticket-page="${Math.min(this.currentPage + 1, totalPages)}"
+                        ${this.currentPage >= totalPages ? 'disabled' : ''}>+</button>
                 </div>
                 <div class="pagination-total" style="margin:0;">共 ${totalPages} 页 / ${this.filteredTickets.length} 条</div>
             </div>
