@@ -815,6 +815,7 @@ async function createPendingPaymentOrderForCheckoutSession({
     checkoutSession,
     user,
     providerKey,
+    providerOrderNo = '',
     site,
     packageId = '',
     packageName = '',
@@ -828,7 +829,8 @@ async function createPendingPaymentOrderForCheckoutSession({
     if (!supabase || !sessionId || !normalizedProviderKey) return null;
 
     const nowIso = new Date().toISOString();
-    const pendingOrderNo = buildPendingProviderOrderNo(normalizedProviderKey, sessionKey || sessionId);
+    const pendingOrderNo = sanitizeText(providerOrderNo, '', 160)
+        || buildPendingProviderOrderNo(normalizedProviderKey, sessionKey || sessionId);
     const providerMetadata = mergeObjects(checkoutSession?.provider_metadata, {
         checkout_session_id: sessionId,
         checkout_session_key: sessionKey || null,
@@ -1917,8 +1919,9 @@ async function createPaymentRequest({
             config: paymentChannels
         });
 
-        const checkoutContext = adapter.createCheckoutContext({
+        const checkoutContext = await adapter.createCheckoutContext({
             runtimeContext,
+            checkoutSession,
             paymentChannels,
             site,
             isCustomRecharge,
@@ -1951,7 +1954,11 @@ async function createPaymentRequest({
                 ...checkoutSession.provider_metadata,
                 display_name: checkoutContext.displayName || adapter.label || '当前支付通道',
                 action: checkoutContext.action || 'redirect',
-                summary: checkoutContext.summary || {}
+                provider_order_no: checkoutContext.providerOrderNo || null,
+                summary: checkoutContext.summary || {},
+                ...(checkoutContext.providerMetadata && typeof checkoutContext.providerMetadata === 'object'
+                    ? checkoutContext.providerMetadata
+                    : {})
             },
             error_message: null
         });
@@ -1964,6 +1971,7 @@ async function createPaymentRequest({
                     checkoutSession: updatedSession || checkoutSession,
                     user,
                     providerKey,
+                    providerOrderNo: checkoutContext.providerOrderNo || '',
                     site,
                     packageId,
                     packageName,

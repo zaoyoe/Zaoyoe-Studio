@@ -21,10 +21,16 @@ const {
     verifyCustomRechargeQuoteToken
 } = require('../api/_lib/payments/orders');
 const {
+    getHupijiaoGatewayOrderId,
+    normalizeHupijiaoPaymentStatus,
+    parseHupijiaoAttach
+} = require('../api/_lib/payments/hupijiao');
+const {
     deductPointsForService,
     finalizeAfdianCustomPayment,
     getUserBalance,
-    processAfdianPayment
+    processAfdianPayment,
+    rechargePointsForPayment
 } = require('../api/_lib/payments/rpc');
 const {
     loadShopDeliveryStrategyConfig,
@@ -58,6 +64,7 @@ let shopDeliverySweepRunning = false;
 let cachedShopDeliveryStrategy = null;
 let cachedShopDeliveryStrategyAt = 0;
 const afdianProvider = getPaymentProviderAdapter('afdian');
+const hupijiaoProvider = getPaymentProviderAdapter('hupijiao');
 
 // Initialize Supabase
 const supabase = createClient(
@@ -81,6 +88,7 @@ app.use(cors({
     credentials: true
 }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 function getLocalHealthPayload() {
     return {
@@ -198,6 +206,13 @@ function resolveRequestClientIp(req, options = {}) {
 
 function getAfdianWebhookTrustedProxies() {
     return process.env.AFDIAN_WEBHOOK_TRUSTED_PROXIES
+        || process.env.TRUSTED_PROXY_IPS
+        || process.env.TRUSTED_PROXY_CIDRS
+        || '';
+}
+
+function getHupijiaoWebhookTrustedProxies() {
+    return process.env.HUPIJIAO_WEBHOOK_TRUSTED_PROXIES
         || process.env.TRUSTED_PROXY_IPS
         || process.env.TRUSTED_PROXY_CIDRS
         || '';
@@ -568,6 +583,138 @@ async function recordPaymentQueryAttempt(payload = {}) {
             console.warn('[Payments] Failed to record payment query attempt:', error.message);
         }
     }
+}
+
+function mergePaymentObjects(baseValue, patchValue) {
+    const base = baseValue && typeof baseValue === 'object' && !Array.isArray(baseValue) ? baseValue : {};
+    const patch = patchValue && typeof patchValue === 'object' && !Array.isArray(patchValue) ? patchValue : {};
+    return {
+        ...base,
+        ...patch
+    };
+}
+
+async function loadPaymentOrderSnapshotByProviderOrderNo(provider, providerOrderNo) {
+    const normalizedProvider = String(provider || '').trim().toLowerCase();
+    const normalizedOrderNo = String(providerOrderNo || '').trim();
+    if (!normalizedProvider || !normalizedOrderNo) {
+        return null;
+    }
+
+    const { data, error } = await supabase
+        .from('payment_orders')
+        .select('id, user_id, provider, provider_order_no, checkout_session_id, site, package_id, package_name, expected_amount, paid_amount, points_amount, status, sign_verified, amount_verified, provider_metadata, raw_payload, created_at, paid_at, claimed_at, verified_at, last_error')
+        .eq('provider', normalizedProvider)
+        .eq('provider_order_no', normalizedOrderNo)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (error) {
+        throw new Error(error.message || 'Failed to inspect payment order snapshot');
+    }
+
+    return data || null;
+}
+
+function deriveHupijiaoPointBreakdown(paymentOrder = null, attachData = {}) {
+    const requestPayload = paymentOrder?.raw_payload?.request && typeof paymentOrder.raw_payload.request === 'object'
+        ? paymentOrder.raw_payload.request
+        : {};
+    const storedGrantedPoints = Math.max(
+        0,
+        Math.round(Number(paymentOrder?.points_amount ?? attachData.granted_points ?? 0) || 0)
+    );
+    let paidPoints = Number(requestPayload.points_amount ?? attachData.paid_points);
+    let bonusPoints = Number(requestPayload.bonus_points ?? attachData.bonus_points);
+
+    if (!Number.isFinite(paidPoints) || paidPoints < 0) {
+        paidPoints = storedGrantedPoints;
+    } else {
+        paidPoints = Math.round(paidPoints);
+    }
+
+    if (!Number.isFinite(bonusPoints) || bonusPoints < 0) {
+        bonusPoints = Math.max(0, storedGrantedPoints - paidPoints);
+    } else {
+        bonusPoints = Math.round(bonusPoints);
+    }
+
+    if (paidPoints + bonusPoints !== storedGrantedPoints && storedGrantedPoints > 0) {
+        if (paidPoints > storedGrantedPoints) {
+            paidPoints = storedGrantedPoints;
+            bonusPoints = 0;
+        } else {
+            bonusPoints = Math.max(0, storedGrantedPoints - paidPoints);
+        }
+    }
+
+    return {
+        paidPoints,
+        bonusPoints,
+        grantedPoints: Math.max(storedGrantedPoints, paidPoints + bonusPoints)
+    };
+}
+
+async function ensureHupijiaoRecoveredPaymentOrder({
+    providerOrderNo,
+    attachData = {},
+    payload = {},
+    amount,
+    signatureValid,
+    currentSite
+}) {
+    let paymentOrder = await loadPaymentOrderSnapshotByProviderOrderNo('hupijiao', providerOrderNo);
+    if (paymentOrder) {
+        return paymentOrder;
+    }
+
+    const recoveredSite = sanitizeSite(attachData.site || currentSite || 'cn');
+    const recoveredPoints = Math.max(0, Math.round(Number(attachData.granted_points || 0) || 0));
+    const recoveredExpectedAmount = Number.isFinite(Number(attachData.expected_amount))
+        ? roundPaymentCurrencyAmount(attachData.expected_amount)
+        : roundPaymentCurrencyAmount(amount);
+    const nowIso = new Date().toISOString();
+    const insertPayload = {
+        provider: 'hupijiao',
+        provider_order_no: providerOrderNo,
+        user_id: String(attachData.user_id || '').trim() || null,
+        checkout_session_id: String(attachData.checkout_session_id || '').trim() || null,
+        site: recoveredSite,
+        package_id: String(attachData.package_id || '').trim() || null,
+        package_name: String(attachData.package_name || '').trim() || '充值订单',
+        expected_amount: recoveredExpectedAmount > 0 ? recoveredExpectedAmount : null,
+        paid_amount: roundPaymentCurrencyAmount(amount),
+        points_amount: recoveredPoints,
+        status: 'pending_review',
+        sign_verified: signatureValid === true,
+        amount_verified: false,
+        raw_payload: {
+            source: 'hupijiao_webhook_recovery',
+            attach: attachData,
+            webhook: payload
+        },
+        provider_metadata: {
+            recovered_from: 'hupijiao_attach',
+            checkout_session_key: String(attachData.checkout_session_key || '').trim() || null,
+            charge_type: String(attachData.charge_type || '').trim() || null,
+            custom_quote_id: String(attachData.custom_quote_id || '').trim() || null
+        },
+        created_at: nowIso,
+        updated_at: nowIso
+    };
+
+    const { data, error } = await supabase
+        .from('payment_orders')
+        .insert(insertPayload)
+        .select('id, user_id, provider, provider_order_no, checkout_session_id, site, package_id, package_name, expected_amount, paid_amount, points_amount, status, sign_verified, amount_verified, provider_metadata, raw_payload, created_at, paid_at, claimed_at, verified_at, last_error')
+        .single();
+
+    if (error) {
+        throw new Error(error.message || 'Failed to recover Hupijiao payment order');
+    }
+
+    return data || null;
 }
 
 async function resolveAfdianPackage({ planId, amount }) {
@@ -2534,6 +2681,257 @@ app.post('/api/cancel', async (req, res) => {
         message: '新版 Google One API 不支持取消已提交任务，请等待任务结束。',
         code: 'cancel_not_supported'
     });
+});
+
+// POST /api/payments/hupijiao/webhook
+app.post('/api/payments/hupijiao/webhook', async (req, res) => {
+    console.log('[Hupijiao] Webhook received');
+
+    const webhookTrustedProxies = getHupijiaoWebhookTrustedProxies();
+    const webhookAllowedIps = String(process.env.HUPIJIAO_WEBHOOK_ALLOWED_IPS || '').trim();
+    const webhookContext = buildRequestNetworkContext(req, {
+        trustedProxies: webhookTrustedProxies,
+        allowedIps: webhookAllowedIps
+    });
+    const webhookClientIp = webhookContext.resolved_client_ip;
+    if (webhookAllowedIps && (!webhookClientIp || !isIpAllowed(webhookClientIp, webhookAllowedIps))) {
+        console.warn('[Hupijiao] Webhook blocked due to IP allowlist mismatch:', JSON.stringify(webhookContext));
+        return res.status(403).end('forbidden');
+    }
+
+    const webhookRateLimit = applyRequestRateLimit(req, res, {
+        keyPrefix: 'hupijiao-webhook',
+        limit: Math.max(1, Number(process.env.HUPIJIAO_WEBHOOK_RATE_LIMIT_MAX || 180)),
+        windowMs: Math.max(10_000, Number(process.env.HUPIJIAO_WEBHOOK_RATE_LIMIT_WINDOW_MS || 60_000)),
+        trustedProxies: webhookTrustedProxies
+    });
+    if (!webhookRateLimit.rateLimit.allowed) {
+        return res.status(429).end('rate limited');
+    }
+
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const orderNo = String(payload.trade_order_id || '').trim();
+    const transactionId = String(payload.transaction_id || '').trim();
+    const statusRaw = String(payload.status || '').trim().toUpperCase();
+    const eventKey = hupijiaoProvider.buildEventKey({
+        providerOrderNo: orderNo,
+        transactionId,
+        status: statusRaw,
+        payload
+    });
+
+    try {
+        const eventInsert = await recordPaymentEvent({
+            provider: 'hupijiao',
+            provider_order_no: orderNo || null,
+            event_key: eventKey,
+            event_type: 'webhook',
+            signature_valid: false,
+            payload,
+            processing_result: 'received'
+        });
+
+        if (eventInsert.duplicate) {
+            console.log('[Hupijiao] Duplicate webhook ignored:', eventKey);
+            return res.end('success');
+        }
+
+        if (!orderNo) {
+            await finalizePaymentEvent(eventKey, {
+                processing_result: 'invalid_order_no',
+                error_message: 'missing trade_order_id',
+                response_status: 400
+            });
+            return res.status(400).end('missing trade_order_id');
+        }
+
+        const runtimeContext = await hupijiaoProvider.resolveRuntimeContext({
+            supabase,
+            env: process.env
+        });
+        const signatureCheck = hupijiaoProvider.verifyWebhook({
+            payload,
+            runtimeContext
+        });
+        if (signatureCheck.supported === false && signatureCheck.reason === 'missing_secret') {
+            await finalizePaymentEvent(eventKey, {
+                processing_result: 'missing_hupijiao_secret',
+                error_message: 'HUPIJIAO_SECRET_KEY is not configured',
+                response_status: 503
+            });
+            return res.status(503).end('payment webhook not configured');
+        }
+
+        const signatureValid = signatureCheck.valid === true;
+        const paymentState = normalizeHupijiaoPaymentStatus(statusRaw);
+        const attachData = parseHupijiaoAttach(payload.attach);
+        const currentSite = getCurrentSite(req, attachData.site);
+        const amount = roundPaymentCurrencyAmount(payload.total_fee || 0);
+        let paymentOrder = await loadPaymentOrderSnapshotByProviderOrderNo('hupijiao', orderNo);
+        if (!paymentOrder && signatureValid) {
+            paymentOrder = await ensureHupijiaoRecoveredPaymentOrder({
+                providerOrderNo: orderNo,
+                attachData,
+                payload,
+                amount,
+                signatureValid,
+                currentSite
+            });
+        }
+        const expectedAmount = roundPaymentCurrencyAmount(
+            paymentOrder?.expected_amount ?? attachData.expected_amount ?? amount
+        );
+        const amountValid = expectedAmount > 0
+            ? paymentAmountsMatch(expectedAmount, amount)
+            : false;
+        const gatewayOpenOrderId = getHupijiaoGatewayOrderId(payload);
+        let processingResult = paymentState === 'paid' ? 'pending_review' : `ignored_${paymentState}`;
+        let errorMessage = null;
+        let responseStatus = 200;
+
+        if (!signatureValid) {
+            processingResult = 'signature_mismatch';
+            errorMessage = 'signature_mismatch';
+            responseStatus = 401;
+        } else if (paymentState !== 'paid') {
+            processingResult = `ignored_${paymentState}`;
+        } else if (!paymentOrder?.user_id) {
+            processingResult = 'pending_review';
+            errorMessage = 'missing_payment_owner';
+        } else if (!amountValid) {
+            processingResult = 'amount_mismatch';
+            errorMessage = `amount_mismatch_expected_${expectedAmount}`;
+        } else {
+            const pointBreakdown = deriveHupijiaoPointBreakdown(paymentOrder, attachData);
+            const currentOrderStatus = String(paymentOrder.status || '').trim().toLowerCase();
+            if (!['paid', 'redeemed'].includes(currentOrderStatus)) {
+                const { error: rechargeError } = await rechargePointsForPayment({
+                    supabase,
+                    userId: paymentOrder.user_id,
+                    paidPoints: pointBreakdown.paidPoints,
+                    bonusPoints: pointBreakdown.bonusPoints,
+                    reason: attachData.charge_type === 'custom'
+                        ? 'custom_recharge'
+                        : `虎皮椒充值: ${String(paymentOrder.package_name || '充值订单').trim() || '充值订单'}`,
+                    referenceId: `hupijiao_${orderNo}`,
+                    site: paymentOrder.site || currentSite
+                });
+
+                if (rechargeError) {
+                    throw new Error(rechargeError.message || 'Failed to credit Hupijiao payment points');
+                }
+            }
+
+            processingResult = 'processed_paid';
+        }
+
+        if (paymentOrder?.id) {
+            const nowIso = new Date().toISOString();
+            const existingMetadata = paymentOrder.provider_metadata && typeof paymentOrder.provider_metadata === 'object'
+                ? paymentOrder.provider_metadata
+                : {};
+            const existingRawPayload = paymentOrder.raw_payload && typeof paymentOrder.raw_payload === 'object'
+                ? paymentOrder.raw_payload
+                : {};
+            const nextStatus = processingResult === 'processed_paid'
+                ? 'redeemed'
+                : (paymentState === 'paid' && signatureValid && !amountValid
+                    ? 'amount_mismatch'
+                    : (paymentState === 'paid' && signatureValid ? 'pending_review' : paymentOrder.status));
+
+            const orderPatch = {
+                status: nextStatus,
+                sign_verified: signatureValid,
+                amount_verified: paymentState === 'paid' ? amountValid : paymentOrder.amount_verified === true,
+                paid_amount: paymentState === 'paid'
+                    ? amount
+                    : (paymentOrder.paid_amount ?? amount),
+                expected_amount: expectedAmount > 0
+                    ? expectedAmount
+                    : paymentOrder.expected_amount,
+                paid_at: paymentState === 'paid' && signatureValid
+                    ? (paymentOrder.paid_at || nowIso)
+                    : paymentOrder.paid_at,
+                verified_at: signatureValid
+                    ? (paymentOrder.verified_at || nowIso)
+                    : paymentOrder.verified_at,
+                claimed_at: processingResult === 'processed_paid'
+                    ? (paymentOrder.claimed_at || nowIso)
+                    : paymentOrder.claimed_at,
+                last_error: errorMessage,
+                raw_payload: mergePaymentObjects(existingRawPayload, {
+                    hupijiao_webhook: payload,
+                    attach: attachData
+                }),
+                provider_metadata: mergePaymentObjects(existingMetadata, {
+                    provider_order_no: orderNo,
+                    transaction_id: transactionId || null,
+                    gateway_open_order_id: gatewayOpenOrderId || null,
+                    checkout_session_id: paymentOrder.checkout_session_id || attachData.checkout_session_id || null,
+                    checkout_session_key: existingMetadata.checkout_session_key || attachData.checkout_session_key || null,
+                    payment_status: paymentState,
+                    payment_status_raw: statusRaw || null,
+                    webhook_received_at: nowIso
+                })
+            };
+
+            const { error: orderUpdateError } = await supabase
+                .from('payment_orders')
+                .update(orderPatch)
+                .eq('id', paymentOrder.id);
+
+            if (orderUpdateError) {
+                throw new Error(orderUpdateError.message || 'Failed to update Hupijiao payment order');
+            }
+
+            if (processingResult === 'processed_paid') {
+                try {
+                    await reconcileCheckoutSessionForPaymentOrder({
+                        supabase,
+                        providerKey: 'hupijiao',
+                        paymentOrderId: paymentOrder.id,
+                        providerOrderNo: orderNo,
+                        userId: paymentOrder.user_id,
+                        site: paymentOrder.site || currentSite,
+                        packageId: paymentOrder.package_id,
+                        packageName: paymentOrder.package_name,
+                        expectedAmount,
+                        paidAmount: amount,
+                        pointsAmount: paymentOrder.points_amount,
+                        orderStatus: 'redeemed',
+                        linkedBy: 'hupijiao_webhook',
+                        allowHeuristic: true,
+                        lookbackMinutes: 1440
+                    });
+                } catch (linkError) {
+                    console.warn('[Hupijiao] Failed to link checkout session from webhook:', linkError.message);
+                }
+            }
+        }
+
+        await finalizePaymentEvent(eventKey, {
+            payment_order_id: paymentOrder?.id || null,
+            signature_valid: signatureValid,
+            amount_valid: paymentState === 'paid' ? amountValid : null,
+            processing_result: processingResult,
+            error_message: errorMessage,
+            response_status: responseStatus
+        });
+
+        if (!signatureValid) {
+            return res.status(401).end('invalid signature');
+        }
+
+        return res.end('success');
+    } catch (error) {
+        console.error('[Hupijiao] Webhook error:', error);
+        await finalizePaymentEvent(eventKey, {
+            processing_result: 'webhook_exception',
+            error_message: error.message,
+            response_status: 500
+        });
+        return res.status(500).end('error');
+    }
 });
 
 // POST /api/afdian/webhook

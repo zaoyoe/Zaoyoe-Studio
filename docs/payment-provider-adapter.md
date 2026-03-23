@@ -111,21 +111,18 @@
 ### hupijiao
 
 当前状态：
-- 配置项和 secret 已预留到统一 adapter
-- 官方 API 的签名 / 下单 / 查单 / 退款 helper 已在共享目录预埋，后续联调直接复用
-- 因尚未实现真实下单、验签、回调、查单、自动入账，所以当前默认禁止从 `/api/payments/create` 拉起真实支付
-- 这样可以避免商业环境里出现“入口可点，但最终无法统一落单”的半成品链路
+- 配置项和 secret 已接入统一 adapter
+- `/api/payments/create` 已能通过官方 API 创建虎皮椒支付，并把真实 `trade_order_id` 写回 `payment_checkout_sessions` / 预创建的 `payment_orders`
+- Railway 服务端已新增 `/api/payments/hupijiao/webhook`，会验签、记录 `payment_events`、更新 `payment_orders`、自动为已绑定账号入账，并回填 `payment_checkout_sessions.payment_order_id`
+- `hupijiao.queryOrder` 已接入官方查询接口，后续只需要再暴露后台/补单入口即可
+- 退款 helper 仍停留在共享层，后台退款流和运营 UI 还没真正接上
 
-## 后续接虎皮椒时要补的点
+上线前仍建议完成的收口：
 
-1. 在 `provider-adapters.js` 里补真正的 `hupijiao.createCheckoutContext`
-2. 支付创建时把返回的商户单号 / session_no 写回 `payment_checkout_sessions`
-3. 补 `hupijiao.verifyWebhook`
-4. 补 `hupijiao.queryOrder`
-5. 补 webhook 落 `payment_events`
-6. 补成功订单写入 / 更新 `payment_orders`
-7. 回调时把 `payment_checkout_sessions.payment_order_id` 回填
-8. 补自动积分入账
+1. 用真实商户号完成一次正式联调，确认 `notify_url` / `return_url` 域名配置无误
+2. 决定是否启用 `HUPIJIAO_WEBHOOK_TRUSTED_PROXIES` / `HUPIJIAO_WEBHOOK_ALLOWED_IPS` 做来源链路收口
+3. 把虎皮椒查单/补单能力接进后台支付对账页面，而不是只停留在 adapter 层
+4. 把退款链路从 helper 推进到后台实际操作流
 
 ## 约束
 
