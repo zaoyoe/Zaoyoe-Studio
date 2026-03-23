@@ -231,7 +231,7 @@
                                                 type: 'email',
                                                 placeholder: t('auth.emailPlaceholder', '邮箱地址'),
                                                 placeholderKey: 'auth.emailPlaceholder',
-                                                inputAttributes: 'autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-auth-form="loginForm" required'
+                                                inputAttributes: 'autocomplete="username email" autocapitalize="off" autocorrect="off" spellcheck="false" data-auth-form="loginForm" required'
                                             })}
                                         </div>
 
@@ -242,7 +242,7 @@
                                                 type: 'password',
                                                 placeholder: t('auth.passwordPlaceholder', '密码'),
                                                 placeholderKey: 'auth.passwordPlaceholder',
-                                                inputAttributes: 'autocomplete="new-password" data-auth-form="loginForm" required'
+                                                inputAttributes: 'autocomplete="current-password" data-auth-form="loginForm" required'
                                             })}
                                         </div>
                                     </form>
@@ -250,7 +250,7 @@
                                     <div class="auth-sheet-inline-row auth-sheet-inline-row--spread">
                                         <label class="auth-sheet-check">
                                             <input type="checkbox" id="rememberMe">
-                                            <span data-i18n="auth.rememberMe">记住密码</span>
+                                            <span data-i18n="auth.rememberMe">记住邮箱</span>
                                         </label>
                                         <button type="button" class="auth-sheet-link" data-auth-reset data-i18n="auth.forgotPassword">忘记密码？</button>
                                     </div>
@@ -954,6 +954,10 @@
         const privacyConsent = overlay.querySelector('#privacyConsent');
         if (rememberMe) rememberMe.checked = false;
         if (privacyConsent) privacyConsent.checked = false;
+
+        if (typeof window.restoreRememberedLoginState === 'function') {
+            window.restoreRememberedLoginState();
+        }
 
         overlay.querySelectorAll('[data-auth-submit]').forEach((button) => {
             if (button.dataset.originalHtml) {

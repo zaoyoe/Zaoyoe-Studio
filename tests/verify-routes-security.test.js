@@ -1085,6 +1085,80 @@ test('afdian webhook marks process_rpc_failed when fn_process_afdian_payment err
     });
 });
 
+test('afdian webhook rejects requests outside the configured source IP allowlist', async () => {
+    const state = {
+        paymentEvents: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const response = await withEnv({
+            AFDIAN_WEBHOOK_ALLOWED_IPS: '203.0.113.0/24'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/webhook',
+            headers: {
+                'x-forwarded-for': '198.51.100.22'
+            },
+            body: {
+                ec: 200,
+                sign: 'ignored',
+                data: {
+                    type: 'order',
+                    order: {
+                        out_trade_no: 'AFD-IP-BLOCKED',
+                        status: 2,
+                        total_amount: '5.00'
+                    }
+                }
+            }
+        }));
+        const payload = response.json();
+
+        assert.equal(response.status, 403);
+        assert.deepEqual(payload, { ec: 403, em: 'forbidden' });
+        assert.equal(state.paymentEvents.length, 0);
+    });
+});
+
+test('afdian query endpoint returns 429 when a single client exceeds the rate limit window', async () => {
+    await withTestServer({}, async ({ app }) => {
+        const firstResponse = await withEnv({
+            AFDIAN_QUERY_RATE_LIMIT_MAX: '1',
+            AFDIAN_QUERY_RATE_LIMIT_WINDOW_MS: '60000'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/query',
+            headers: {
+                'x-forwarded-for': '203.0.113.40'
+            },
+            body: {
+                order_no: 'ORDER-1'
+            }
+        }));
+
+        const secondResponse = await withEnv({
+            AFDIAN_QUERY_RATE_LIMIT_MAX: '1',
+            AFDIAN_QUERY_RATE_LIMIT_WINDOW_MS: '60000'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/query',
+            headers: {
+                'x-forwarded-for': '203.0.113.40'
+            },
+            body: {
+                order_no: 'ORDER-1'
+            }
+        }));
+        const secondPayload = secondResponse.json();
+
+        assert.equal(firstResponse.status, 401);
+        assert.equal(secondResponse.status, 429);
+        assert.equal(secondPayload.success, false);
+        assert.equal(secondPayload.code, 'rate_limited');
+        assert.equal(secondPayload.retry_after_seconds > 0, true);
+    });
+});
+
 test('verify success polling deducts points only once per job id', async () => {
     const state = {
         tokens: {

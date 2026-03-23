@@ -30,6 +30,12 @@ const {
     loadShopDeliveryStrategyConfig,
     normalizeShopDeliveryStrategyConfig
 } = require('../api/_lib/payments/shop-delivery-strategy');
+const {
+    applyRateLimitHeaders,
+    isIpAllowed,
+    resolveClientIp,
+    takeRateLimitToken
+} = require('../api/_lib/request-security');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -179,6 +185,41 @@ async function getVerifyConfig() {
 
 function getCurrentSite(req, explicitSite) {
     return explicitSite || (req.headers.origin?.includes('zaoyoe.xyz') ? 'intl' : 'cn');
+}
+
+function resolveRequestClientIp(req, options = {}) {
+    return resolveClientIp(req, {
+        env: process.env,
+        trustedProxies: options.trustedProxies
+    });
+}
+
+function getAfdianWebhookTrustedProxies() {
+    return process.env.AFDIAN_WEBHOOK_TRUSTED_PROXIES
+        || process.env.TRUSTED_PROXY_IPS
+        || process.env.TRUSTED_PROXY_CIDRS
+        || '';
+}
+
+function applyRequestRateLimit(req, res, {
+    keyPrefix,
+    limit,
+    windowMs,
+    trustedProxies = ''
+}) {
+    const clientIp = resolveRequestClientIp(req, { trustedProxies });
+    const rateLimit = takeRateLimitToken({
+        key: `${keyPrefix}:${clientIp || 'unknown'}`,
+        limit,
+        windowMs
+    });
+
+    applyRateLimitHeaders(res, rateLimit);
+
+    return {
+        clientIp,
+        rateLimit
+    };
 }
 
 function getApiErrorDetail(payload) {
@@ -2355,6 +2396,29 @@ app.post('/api/cancel', async (req, res) => {
 app.post('/api/afdian/webhook', async (req, res) => {
     console.log('[Afdian] Webhook received');
 
+    const webhookTrustedProxies = getAfdianWebhookTrustedProxies();
+    const webhookClientIp = resolveRequestClientIp(req, {
+        trustedProxies: webhookTrustedProxies
+    });
+    const webhookAllowedIps = String(process.env.AFDIAN_WEBHOOK_ALLOWED_IPS || '').trim();
+    if (webhookAllowedIps && (!webhookClientIp || !isIpAllowed(webhookClientIp, webhookAllowedIps))) {
+        console.warn('[Afdian] Webhook blocked due to IP allowlist mismatch:', webhookClientIp || 'unknown');
+        return res.status(403).json({ ec: 403, em: 'forbidden' });
+    }
+
+    const webhookRateLimit = applyRequestRateLimit(req, res, {
+        keyPrefix: 'afdian-webhook',
+        limit: Math.max(1, Number(process.env.AFDIAN_WEBHOOK_RATE_LIMIT_MAX || 180)),
+        windowMs: Math.max(10_000, Number(process.env.AFDIAN_WEBHOOK_RATE_LIMIT_WINDOW_MS || 60_000)),
+        trustedProxies: webhookTrustedProxies
+    });
+    if (!webhookRateLimit.rateLimit.allowed) {
+        return res.status(429).json({
+            ec: 429,
+            em: 'rate limited'
+        });
+    }
+
     const payload = req.body || {};
     const data = payload.data || {};
     const order = data.order || {};
@@ -2572,6 +2636,22 @@ async function handleAfdianQueryRequest(req, res) {
             }
         });
         return res.status(statusCode).json(payload);
+    }
+
+    const queryRateLimit = applyRequestRateLimit(req, res, {
+        keyPrefix: 'afdian-query',
+        limit: Math.max(1, Number(process.env.AFDIAN_QUERY_RATE_LIMIT_MAX || 25)),
+        windowMs: Math.max(10_000, Number(process.env.AFDIAN_QUERY_RATE_LIMIT_WINDOW_MS || 60_000))
+    });
+    if (!queryRateLimit.rateLimit.allowed) {
+        return sendQueryResponse(429, {
+            success: false,
+            code: 'rate_limited',
+            message: '查询过于频繁，请稍后再试',
+            retry_after_seconds: queryRateLimit.rateLimit.retryAfterSeconds
+        }, {
+            outcomeCode: 'rate_limited'
+        });
     }
 
     if (!orderNo) {
