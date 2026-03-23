@@ -92,53 +92,7 @@
     </div>
 
     <script src="/js/i18n.js"></script>
-    <script>
-        document.getElementById('langToggleTest')?.addEventListener('click', () => {
-            window.i18n?.toggleLanguage();
-        });
-
-        // Run tests after i18n loads
-        setTimeout(() => {
-            // Test 1: Check i18n loading
-            const test1 = document.getElementById('test1');
-            if (window.i18n) {
-                test1.innerHTML = `<div class="status">✅ i18n loaded successfully<br>Current language: <strong>${window.i18n.getCurrentLanguage()}</strong></div>`;
-            } else {
-                test1.innerHTML = `<div style="background:rgba(255,0,0,0.1);border-left:3px solid #f00;padding:10px;">❌ i18n not loaded</div>`;
-            }
-
-            // Test 2: Listen for language changes
-            window.addEventListener('languageChanged', (e) => {
-                const test2 = document.getElementById('test2');
-                test2.innerHTML = `✅ Language changed to: <strong>${e.detail.lang}</strong>`;
-
-                // Update button states
-                const langZh = document.getElementById('langZhTest');
-                const langEn = document.getElementById('langEnTest');
-                if (e.detail.lang === 'zh') {
-                    langZh.classList.add('active');
-                    langEn.classList.remove('active');
-                } else {
-                    langZh.classList.remove('active');
-                    langEn.classList.add('active');
-                }
-
-                // Test 3: Check translations
-                const test3 = document.getElementById('test3');
-                test3.innerHTML = `<div class="status">✅ Translations applied</div>`;
-
-                // Test 4: Check localStorage
-                const test4 = document.getElementById('test4');
-                const stored = localStorage.getItem('zaoyoe_language');
-                test4.innerHTML = `<div class="status">✅ Stored language: <strong>${stored}</strong></div>`;
-            });
-
-            // Test 4: Check initial persistence
-            const test4 = document.getElementById('test4');
-            const stored = localStorage.getItem('zaoyoe_language');
-            test4.innerHTML = `<div class="status">Stored language: <strong>${stored || 'none'}</strong></div>`;
-        }, 500);
-    </script>
+    <script src="./js/test-lang-toggle-page.js"></script>
 </body>
 
 </html>

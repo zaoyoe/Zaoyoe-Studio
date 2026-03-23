@@ -40,22 +40,6 @@ const CHAT_WIDGET_PAGES = [
     'privacy.html'
 ];
 
-const CSP_HASHED_INLINE_SCRIPT_PAGES = [
-    'icons_preview_v2.html',
-    'icons_preview_v3.html',
-    'icons_preview_v4.html',
-    'icons_preview_v5.html',
-    'icons_preview_v6.html',
-    'icons_preview_v7.html',
-    'icons_preview_v8.html',
-    'preview-hero-effects.html',
-    'profile_mobile_tab_preview.html',
-    'index_old.html',
-    'test-lang-toggle.html',
-    'test-realtime-simple.html',
-    'tools/migrate-prompts-bilingual.html'
-];
-
 function readVercelConfig() {
     return JSON.parse(readRepoFile('vercel.json'));
 }
@@ -140,6 +124,10 @@ function collectRepositorySourceFiles(rootDir = REPO_ROOT) {
     }
 
     return files.sort();
+}
+
+function collectRepositoryHtmlFiles(rootDir = REPO_ROOT) {
+    return collectRepositorySourceFiles(rootDir).filter((relativePath) => /\.(html)(\.bak)?$/i.test(relativePath));
 }
 
 test('active frontend runtime files no longer hardcode the production Supabase host or publishable key', () => {
@@ -240,31 +228,35 @@ test('runtime entry pages no longer embed inline script blocks', () => {
     assert.deepEqual(runtimeInlineHashes, [], 'Runtime pages should not retain inline script blocks');
 });
 
-test('vercel CSP hashes only legacy utility inline scripts while blocking runtime inline scripts and inline event attributes', () => {
+test('repository HTML pages no longer embed inline script blocks outside the test suite', () => {
+    const htmlFiles = collectRepositoryHtmlFiles();
+    const violations = htmlFiles.filter((relativePath) => collectInlineScriptHashes([relativePath]).length > 0);
+
+    assert.deepEqual(violations, [], `Repository HTML pages should not contain inline script blocks:\n${violations.join('\n')}`);
+});
+
+test('vercel CSP blocks inline scripts and inline event attributes without hash exceptions', () => {
     const cspValue = getGlobalCspHeaderValue();
     const directives = parseCspDirectives(cspValue);
     const scriptSrc = directives.get('script-src') || [];
     const scriptSrcElem = directives.get('script-src-elem') || [];
     const scriptSrcAttr = directives.get('script-src-attr') || [];
-    const runtimeInlineHashes = collectInlineScriptHashes(RUNTIME_PAGES);
-    const expectedHashes = collectInlineScriptHashes(CSP_HASHED_INLINE_SCRIPT_PAGES);
 
     assert.notEqual(scriptSrc.length, 0, 'Missing script-src directive');
     assert.notEqual(scriptSrcElem.length, 0, 'Missing script-src-elem directive');
-    assert.deepEqual(runtimeInlineHashes, [], 'Runtime pages should not require inline script hashes anymore');
     assert.deepEqual(scriptSrcAttr, ["'none'"], 'script-src-attr should explicitly block inline event handlers');
     assert.equal(scriptSrc.includes("'unsafe-inline'"), false, 'script-src should no longer broadly allow unsafe-inline');
     assert.equal(scriptSrcElem.includes("'unsafe-inline'"), false, 'script-src-elem should no longer broadly allow unsafe-inline');
-
-    const missingFromScriptSrc = expectedHashes.filter((hash) => !scriptSrc.includes(hash));
-    const missingFromScriptSrcElem = expectedHashes.filter((hash) => !scriptSrcElem.includes(hash));
-    const unexpectedInScriptSrc = scriptSrc.filter((value) => value.startsWith("'sha256-") && !expectedHashes.includes(value));
-    const unexpectedInScriptSrcElem = scriptSrcElem.filter((value) => value.startsWith("'sha256-") && !expectedHashes.includes(value));
-
-    assert.deepEqual(missingFromScriptSrc, [], `script-src is missing inline script hashes:\n${missingFromScriptSrc.join('\n')}`);
-    assert.deepEqual(missingFromScriptSrcElem, [], `script-src-elem is missing inline script hashes:\n${missingFromScriptSrcElem.join('\n')}`);
-    assert.deepEqual(unexpectedInScriptSrc, [], `script-src contains stale inline script hashes:\n${unexpectedInScriptSrc.join('\n')}`);
-    assert.deepEqual(unexpectedInScriptSrcElem, [], `script-src-elem contains stale inline script hashes:\n${unexpectedInScriptSrcElem.join('\n')}`);
+    assert.deepEqual(
+        scriptSrc.filter((value) => value.startsWith("'sha256-")),
+        [],
+        'script-src should not carry inline script hashes once HTML inline scripts are gone'
+    );
+    assert.deepEqual(
+        scriptSrcElem.filter((value) => value.startsWith("'sha256-")),
+        [],
+        'script-src-elem should not carry inline script hashes once HTML inline scripts are gone'
+    );
 });
 
 test('shared profile modal template no longer uses inline event handlers', () => {
@@ -369,7 +361,8 @@ test('shared theme preload replaces duplicated inline theme bootstraps on public
         'shop.html',
         'reset-password.html',
         'prompts.html',
-        'admin-studio.html'
+        'admin-studio.html',
+        'admin-studio.html.bak'
     ];
 
     for (const relativePath of files) {
@@ -492,16 +485,28 @@ test('non-production utility and preview pages no longer ship inline handler att
 
     const migrateSource = readRepoFile('tools/migrate-prompts-bilingual.html');
     const previewSource = readRepoFile('preview-hero-effects.html');
+    const profilePreviewSource = readRepoFile('profile_mobile_tab_preview.html');
     const langSource = readRepoFile('test-lang-toggle.html');
     const realtimeSource = readRepoFile('test-realtime-simple.html');
+    const previewBootstrapSource = readRepoFile('js/preview-icons-page.js');
+    const previewHeroScript = readRepoFile('js/preview-hero-effects-page.js');
+    const langScript = readRepoFile('js/test-lang-toggle-page.js');
+    const realtimeScript = readRepoFile('js/test-realtime-simple-page.js');
+    const migrateScript = readRepoFile('js/tools-migrate-prompts-bilingual-page.js');
 
-    assert.equal(migrateSource.includes("document.getElementById('loadBtn')?.addEventListener('click'"), true, 'tools/migrate-prompts-bilingual.html should bind load via addEventListener');
-    assert.equal(migrateSource.includes("document.getElementById('startBtn')?.addEventListener('click'"), true, 'tools/migrate-prompts-bilingual.html should bind start via addEventListener');
-    assert.equal(migrateSource.includes("document.getElementById('stopBtn')?.addEventListener('click'"), true, 'tools/migrate-prompts-bilingual.html should bind stop via addEventListener');
+    assert.equal(migrateSource.includes('../js/tools-migrate-prompts-bilingual-page.js'), true, 'tools/migrate-prompts-bilingual.html should load the shared migration bootstrap');
+    assert.equal(migrateScript.includes("document.getElementById('loadBtn')?.addEventListener('click'"), true, 'js/tools-migrate-prompts-bilingual-page.js should bind load via addEventListener');
+    assert.equal(migrateScript.includes("document.getElementById('startBtn')?.addEventListener('click'"), true, 'js/tools-migrate-prompts-bilingual-page.js should bind start via addEventListener');
+    assert.equal(migrateScript.includes("document.getElementById('stopBtn')?.addEventListener('click'"), true, 'js/tools-migrate-prompts-bilingual-page.js should bind stop via addEventListener');
     assert.equal(previewSource.includes('data-demo-id="grid"'), true, 'preview-hero-effects.html should expose delegated demo buttons');
-    assert.equal(previewSource.includes('function bindDemoNavigation()'), true, 'preview-hero-effects.html should bind demo navigation centrally');
-    assert.equal(langSource.includes("document.getElementById('langToggleTest')?.addEventListener('click'"), true, 'test-lang-toggle.html should bind the language toggle');
-    assert.equal(realtimeSource.includes("document.getElementById('testConnectionBtn')?.addEventListener('click'"), true, 'test-realtime-simple.html should bind the realtime test button');
+    assert.equal(previewSource.includes('./js/preview-hero-effects-page.js'), true, 'preview-hero-effects.html should load the shared hero preview bootstrap');
+    assert.equal(previewHeroScript.includes('function bindDemoNavigation()'), true, 'js/preview-hero-effects-page.js should bind demo navigation centrally');
+    assert.equal(profilePreviewSource.includes('./js/profile-mobile-tab-preview.js'), true, 'profile_mobile_tab_preview.html should load the shared profile preview bootstrap');
+    assert.equal(langSource.includes('./js/test-lang-toggle-page.js'), true, 'test-lang-toggle.html should load the language toggle bootstrap');
+    assert.equal(langScript.includes("document.getElementById('langToggleTest')?.addEventListener('click'"), true, 'js/test-lang-toggle-page.js should bind the language toggle');
+    assert.equal(realtimeSource.includes('./js/test-realtime-simple-page.js'), true, 'test-realtime-simple.html should load the realtime bootstrap');
+    assert.equal(realtimeSource.includes('./js/runtime-supabase-config.js'), true, 'test-realtime-simple.html should load the shared runtime Supabase config helper');
+    assert.equal(realtimeScript.includes("document.getElementById('testConnectionBtn')?.addEventListener('click'"), true, 'js/test-realtime-simple-page.js should bind the realtime test button');
 
     const previewFiles = [
         'icons_preview_v2.html',
@@ -516,8 +521,68 @@ test('non-production utility and preview pages no longer ship inline handler att
     for (const relativePath of previewFiles) {
         const source = readRepoFile(relativePath);
         assert.equal(source.includes('data-preview-trigger-all="1"'), true, `${relativePath} should expose a delegated preview trigger`);
-        assert.equal(source.includes('function bindPreviewInteractions()'), true, `${relativePath} should bind preview interactions centrally`);
+        assert.equal(source.includes('./js/preview-icons-page.js'), true, `${relativePath} should load the shared preview interactions bootstrap`);
     }
+
+    assert.equal(previewBootstrapSource.includes('function bindPreviewInteractions()'), true, 'js/preview-icons-page.js should bind preview interactions centrally');
+});
+
+test('archived legacy pages externalize their bootstraps instead of embedding inline scripts', () => {
+    const archivedIndexSource = readRepoFile('index_old.html');
+    const archivedAdminSource = readRepoFile('admin-studio.html.bak');
+    const archivedIndexScript = readRepoFile('js/index-old-page.js');
+    const archivedRuntimeScript = readRepoFile('js/index-old-runtime-bootstrap.js');
+    const archivedEmailScript = readRepoFile('js/index-old-emailjs-init.js');
+    const archivedAdminBootstrap = readRepoFile('js/admin-studio-backup-bootstrap.js');
+
+    const removedIndexMarkers = [
+        'emailjs.init("vawaxLVEzJMAVbut0");',
+        'const runtimeConfig = window.__PUBLIC_RUNTIME_CONFIG__ || {};',
+        "document.addEventListener('DOMContentLoaded', function () {",
+        'document.addEventListener(\'DOMContentLoaded\', () => {',
+        '(function bindArchivedIndexHandlers() {'
+    ];
+
+    for (const marker of removedIndexMarkers) {
+        assert.equal(archivedIndexSource.includes(marker), false, `index_old.html should not contain ${marker}`);
+    }
+
+    const indexBootstrapMarkers = [
+        './js/index-old-emailjs-init.js',
+        './js/runtime-supabase-config.js',
+        './js/index-old-runtime-bootstrap.js',
+        './js/index-old-page.js'
+    ];
+
+    for (const marker of indexBootstrapMarkers) {
+        assert.equal(archivedIndexSource.includes(marker), true, `index_old.html should contain ${marker}`);
+    }
+
+    assert.equal(archivedEmailScript.includes("window.emailjs.init('vawaxLVEzJMAVbut0')"), true, 'js/index-old-emailjs-init.js should initialize EmailJS');
+    assert.equal(archivedRuntimeScript.includes('window.supabaseClient = supabase.createClient'), true, 'js/index-old-runtime-bootstrap.js should initialize the archived Supabase client');
+    assert.equal(archivedIndexScript.includes('function bindArchivedIndexHandlers()'), true, 'js/index-old-page.js should bind archived page actions centrally');
+
+    const removedAdminMarkers = [
+        "const savedTheme = localStorage.getItem('theme');",
+        'const runtimeConfig = window.__PUBLIC_RUNTIME_CONFIG__ || {};',
+        'window.supabaseClient = supabase.createClient'
+    ];
+
+    for (const marker of removedAdminMarkers) {
+        assert.equal(archivedAdminSource.includes(marker), false, `admin-studio.html.bak should not contain ${marker}`);
+    }
+
+    const adminBootstrapMarkers = [
+        'js/theme-preload.js',
+        'js/runtime-supabase-config.js',
+        'js/admin-studio-backup-bootstrap.js'
+    ];
+
+    for (const marker of adminBootstrapMarkers) {
+        assert.equal(archivedAdminSource.includes(marker), true, `admin-studio.html.bak should contain ${marker}`);
+    }
+
+    assert.equal(archivedAdminBootstrap.includes('window.supabaseClient = supabase.createClient'), true, 'js/admin-studio-backup-bootstrap.js should initialize the backup admin Supabase client');
 });
 
 test('repository source files no longer ship inline handler attributes outside the test suite', () => {

@@ -19,16 +19,7 @@
     <link rel="stylesheet" href="admin-studio.css?v=3">
 
     <!-- Prevent flash of wrong theme -->
-    <script>
-        (function () {
-            const savedTheme = localStorage.getItem('theme');
-            if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                document.documentElement.setAttribute('data-theme', 'dark');
-            } else {
-                document.documentElement.removeAttribute('data-theme');
-            }
-        })();
-    </script>
+    <script src="js/theme-preload.js"></script>
 </head>
 
 <body>
@@ -410,16 +401,8 @@
         <!-- Scripts -->
         <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
         <script src="/api/runtime/supabase-config"></script>
-        <script>
-            // Initialize Supabase client
-            const runtimeConfig = window.__PUBLIC_RUNTIME_CONFIG__ || {};
-            const SUPABASE_URL = runtimeConfig.supabaseUrl || '<your-supabase-url>';
-            const SUPABASE_KEY = runtimeConfig.supabasePublishableKey || '<your-supabase-publishable-key>';
-            if (!runtimeConfig.supabaseUrl || !runtimeConfig.supabasePublishableKey) {
-                console.warn('Supabase runtime config is missing for admin-studio.html.bak. Load /api/runtime/supabase-config or replace the placeholder values before using this backup page.');
-            }
-            window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        </script>
+        <script src="js/runtime-supabase-config.js"></script>
+        <script src="js/admin-studio-backup-bootstrap.js"></script>
         <script src="admin-studio.js"></script>
 </body>
 

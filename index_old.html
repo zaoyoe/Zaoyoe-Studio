@@ -20,40 +20,12 @@
     <link rel="stylesheet" href="css/auth-sheet.css?v=20260314_AUTH_SHEET_DRAG_HANDLE_31">
     <link rel="stylesheet" href="avatar-fix.css?v=20260314_AVATAR_UNIFIED_1">
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
-    <script type="text/javascript">
-        (function () {
-            // Replace with your Public Key
-            emailjs.init("vawaxLVEzJMAVbut0");
-        })();
-    </script>
+    <script src="./js/index-old-emailjs-init.js"></script>
     <!-- Supabase Client (CDN for browser) -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="/api/runtime/supabase-config"></script>
-    <script>
-        const runtimeConfig = window.__PUBLIC_RUNTIME_CONFIG__ || {};
-        const SUPABASE_URL = runtimeConfig.supabaseUrl || '<your-supabase-url>';
-        const SUPABASE_KEY = runtimeConfig.supabasePublishableKey || '<your-supabase-publishable-key>';
-        const chatSessionId = (() => {
-            let sid = localStorage.getItem('chat_session_id');
-            if (!sid) {
-                const randomId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-                    ? crypto.randomUUID().replace(/-/g, '').slice(0, 12)
-                    : Math.random().toString(36).slice(2, 14);
-                sid = `guest_${randomId}`;
-                localStorage.setItem('chat_session_id', sid);
-            }
-            return sid;
-        })();
-        if (!runtimeConfig.supabaseUrl || !runtimeConfig.supabasePublishableKey) {
-            console.warn('Supabase runtime config is missing for index_old.html. Load /api/runtime/supabase-config or replace the placeholder values before using this legacy page.');
-        }
-        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-            global: {
-                headers: { 'x-session-id': chatSessionId }
-            }
-        });
-        console.log('Supabase browser client initialized');
-    </script>
+    <script src="./js/runtime-supabase-config.js"></script>
+    <script src="./js/index-old-runtime-bootstrap.js"></script>
 
 
     <!-- Supabase Auth -->
@@ -178,12 +150,6 @@
             pointer-events: none !important;
         }
     </style>
-    <script>
-        // Page load animation trigger
-        document.addEventListener('DOMContentLoaded', function () {
-            console.log('🚀 Page loaded');
-        });
-    </script>
 </head>
 
 <body class="shop-page">
@@ -693,112 +659,7 @@
             <!-- Chat Widget -->
             <link rel="stylesheet" href="css/chat-widget.css?v=20260313_CHAT_GUESTBOOK_MATERIAL_6">
             <script src="js/components/ChatWidget.js?v=20260313_CHAT_GUESTBOOK_MATERIAL_6"></script>
-            <script>
-                document.addEventListener('DOMContentLoaded', () => {
-                    // Initialize Chat Widget after DOM is ready
-                    // Assuming supabaseClient is available globally from inject-auth.js or similar
-                    // If not, we might need to wait for it.
-                    // inject-auth.js usually exposes window.supabaseClient
-
-                    // Simple wait mechanism in case auth script is slow
-                    const initChat = () => {
-                        if (window.supabaseClient) {
-                            new ChatWidget();
-                        } else {
-                            setTimeout(initChat, 500);
-                        }
-                    };
-                    initChat();
-                });
-            </script>
-            <script>
-                (function bindArchivedIndexHandlers() {
-                    document.querySelectorAll('[data-old-stop-overlay="1"]').forEach((element) => {
-                        ['click', 'mousedown', 'mouseup'].forEach((eventName) => {
-                            element.addEventListener(eventName, (event) => {
-                                event.stopPropagation();
-                            });
-                        });
-                    });
-
-                    document.querySelectorAll('[data-old-overlay-close="1"]').forEach((overlay) => {
-                        ['mousedown', 'mouseup'].forEach((eventName) => {
-                            overlay.addEventListener(eventName, (event) => {
-                                window.closeModal?.(event);
-                            });
-                        });
-                    });
-
-                    document.addEventListener('click', (event) => {
-                        const actionEl = event.target.closest('[data-old-action]');
-                        if (!actionEl) {
-                            return;
-                        }
-
-                        switch (actionEl.dataset.oldAction) {
-                            case 'close-modal':
-                                window.closeModal?.(event);
-                                break;
-                            case 'guestbook-upload-image':
-                                document.getElementById('imageUpload')?.click();
-                                break;
-                            case 'shop-copy-content':
-                                window.ShopClient?.copyContent?.();
-                                break;
-                            case 'shop-close-success':
-                                document.getElementById('shopSuccessModal')?.classList.remove('active');
-                                break;
-                            case 'copy-text':
-                                event.stopPropagation();
-                                window.copyText?.(actionEl.dataset.copyText || '');
-                                break;
-                            case 'close-profile-modal':
-                                document.getElementById('profileModal')?.classList.remove('active');
-                                break;
-                            case 'switch-profile-tab':
-                                window.switchProfileTab?.(actionEl.dataset.profileTab);
-                                break;
-                            case 'trigger-avatar-upload':
-                                window.triggerAvatarUpload?.();
-                                break;
-                            case 'toggle-nickname-edit':
-                                window.toggleNicknameEdit?.(actionEl.dataset.editing === 'true');
-                                break;
-                            case 'save-nickname':
-                                window.saveNickname?.();
-                                break;
-                            case 'expand-security-card':
-                                window.expandSecurityCard?.(event, actionEl.dataset.securityCard);
-                                break;
-                            case 'change-password':
-                                window.changePassword?.(actionEl.dataset.mode || undefined);
-                                break;
-                            case 'send-phone-code':
-                                window.sendPhoneVerificationCode?.(actionEl.dataset.mode || undefined);
-                                break;
-                            case 'bind-phone':
-                                window.bindPhone?.(actionEl.dataset.mode || undefined);
-                                break;
-                            case 'delete-account':
-                                window.deleteAccount?.();
-                                break;
-                            default:
-                                break;
-                        }
-                    });
-
-                    document.addEventListener('change', (event) => {
-                        const actionEl = event.target.closest('[data-old-change]');
-                        if (!actionEl) {
-                            return;
-                        }
-
-                        if (actionEl.dataset.oldChange === 'avatar-upload') {
-                            window.handleAvatarUpload?.(event);
-                        }
-                    });
-                })();
-            </script>
+            <script src="./js/index-old-page.js"></script>
 
             <!-- System Announcement Loader -->
             <script src="announcement-loader.js?v=8"></script>

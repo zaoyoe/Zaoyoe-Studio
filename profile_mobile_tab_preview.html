@@ -382,16 +382,6 @@
     </div>
   </div>
 
-  <script>
-    const moreBtn = document.getElementById("moreBtn");
-    const moreBlock = document.getElementById("moreBlock");
-    let expanded = false;
-
-    moreBtn.addEventListener("click", () => {
-      expanded = !expanded;
-      moreBlock.classList.toggle("show", expanded);
-      moreBtn.textContent = expanded ? "收起更多资料" : "展开更多资料";
-    });
-  </script>
+  <script src="./js/profile-mobile-tab-preview.js"></script>
 </body>
 </html>

@@ -485,45 +485,7 @@
         </div>
     </div>
 
-    <script>
-        function animateIcon(element) {
-            element.classList.remove('active');
-            void element.offsetWidth;
-            element.classList.add('active');
-            setTimeout(() => {
-                element.classList.remove('active');
-            }, 1000);
-        }
-
-        function triggerAll() {
-            const icons = document.querySelectorAll('.icon-wrapper');
-            icons.forEach((icon, index) => {
-                setTimeout(() => animateIcon(icon), index * 100);
-            });
-        }
-
-        function bindPreviewInteractions() {
-            if (document.body.dataset.previewInteractionsBound === '1') {
-                return;
-            }
-
-            document.body.dataset.previewInteractionsBound = '1';
-            document.addEventListener('click', (event) => {
-                const trigger = event.target.closest('[data-preview-trigger-all="1"]');
-                if (trigger) {
-                    triggerAll();
-                    return;
-                }
-
-                const icon = event.target.closest('.icon-wrapper');
-                if (icon) {
-                    animateIcon(icon);
-                }
-            });
-        }
-
-        bindPreviewInteractions();
-    </script>
+    <script src="./js/preview-icons-page.js"></script>
 </body>
 
 </html>

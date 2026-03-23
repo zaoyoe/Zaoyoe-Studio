@@ -261,7 +261,7 @@
     </style>
 </head>
 
-<body>
+<body data-preview-stagger="140">
 
     <h1 data-preview-trigger-all="1">Prompts Icon - Internal Dynamics (Set 7)</h1>
     <p class="subtitle">Focusing on separate moving parts within the icon itself</p>
@@ -375,45 +375,7 @@
         </div>
     </div>
 
-    <script>
-        function animateIcon(element) {
-            element.classList.remove('active');
-            void element.offsetWidth;
-            element.classList.add('active');
-            setTimeout(() => {
-                element.classList.remove('active');
-            }, 1000);
-        }
-
-        function triggerAll() {
-            const icons = document.querySelectorAll('.icon-wrapper');
-            icons.forEach((icon, index) => {
-                setTimeout(() => animateIcon(icon), index * 140);
-            });
-        }
-
-        function bindPreviewInteractions() {
-            if (document.body.dataset.previewInteractionsBound === '1') {
-                return;
-            }
-
-            document.body.dataset.previewInteractionsBound = '1';
-            document.addEventListener('click', (event) => {
-                const trigger = event.target.closest('[data-preview-trigger-all="1"]');
-                if (trigger) {
-                    triggerAll();
-                    return;
-                }
-
-                const icon = event.target.closest('.icon-wrapper');
-                if (icon) {
-                    animateIcon(icon);
-                }
-            });
-        }
-
-        bindPreviewInteractions();
-    </script>
+    <script src="./js/preview-icons-page.js"></script>
 </body>
 
 </html>
