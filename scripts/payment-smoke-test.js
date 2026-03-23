@@ -262,12 +262,12 @@ function buildPaymentCreatePayload(options = {}) {
     return payload;
 }
 
-async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
+async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_TIMEOUT_MS, fetchImpl = globalThis.fetch) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-        return await fetch(url, {
+        return await fetchImpl(url, {
             ...init,
             signal: controller.signal
         });
@@ -276,8 +276,8 @@ async function fetchWithTimeout(url, init = {}, timeoutMs = DEFAULT_TIMEOUT_MS) 
     }
 }
 
-async function fetchJson(baseUrl, pathname, init = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
-    const response = await fetchWithTimeout(`${normalizeBaseUrl(baseUrl)}${pathname}`, init, timeoutMs);
+async function fetchJson(baseUrl, pathname, init = {}, timeoutMs = DEFAULT_TIMEOUT_MS, fetchImpl = globalThis.fetch) {
+    const response = await fetchWithTimeout(`${normalizeBaseUrl(baseUrl)}${pathname}`, init, timeoutMs, fetchImpl);
     const text = await response.text();
     let payload = null;
 
@@ -594,6 +594,45 @@ function validatePaymentCreatePayload(response, provider = DEFAULT_PROVIDER) {
     return payload;
 }
 
+function validateAuthCheckPayload(response = {}) {
+    if (!response.ok) {
+        const detail = extractResponseErrorDetail(response);
+        throw new Error(
+            detail
+                ? `Payment auth-check failed (${response.status} ${response.statusText}): ${detail}`
+                : `Payment auth-check failed (${response.status} ${response.statusText})`
+        );
+    }
+    if (!response.payload || response.payload.success !== true) {
+        throw new Error(extractResponseErrorDetail(response) || 'Payment auth-check payload is invalid');
+    }
+
+    return response.payload;
+}
+
+async function runOptionalAuthCheck(baseUrl, accessToken, timeoutMs = DEFAULT_TIMEOUT_MS, fetchImpl = globalThis.fetch) {
+    const response = await fetchJson(baseUrl, '/api/payments/auth-check', {
+        method: 'GET',
+        headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`
+        }
+    }, timeoutMs, fetchImpl);
+
+    if (response.status === 404) {
+        return {
+            available: false,
+            reason: 'endpoint_not_deployed'
+        };
+    }
+
+    const payload = validateAuthCheckPayload(response);
+    return {
+        available: true,
+        payload
+    };
+}
+
 function formatHumanReport(report = {}) {
     const lines = ['Payment Smoke Test', ''];
     lines.push(`base_url: ${report.baseUrl || '(missing)'}`);
@@ -612,6 +651,9 @@ function formatHumanReport(report = {}) {
         lines.push('mode: config_only');
     } else {
         lines.push(`auth_mode: ${report.authMode || 'unknown'}`);
+        if (report.authCheckStatus) {
+            lines.push(`auth_check: ${report.authCheckStatus}`);
+        }
         lines.push(`create_status: ${report.createStatus || 'unknown'}`);
         if (report.checkoutSessionId) {
             lines.push(`checkout_session_id: ${report.checkoutSessionId}`);
@@ -661,6 +703,7 @@ async function runPaymentSmokeTest(options = {}) {
     }
 
     const { accessToken, authMode } = await resolveAccessToken(options, options.envValues || {});
+    const authCheck = await runOptionalAuthCheck(options.baseUrl, accessToken, options.timeoutMs);
     const createPayload = buildPaymentCreatePayload(options);
     const createResponse = await fetchJson(options.baseUrl, '/api/payments/create', {
         method: 'POST',
@@ -674,6 +717,10 @@ async function runPaymentSmokeTest(options = {}) {
     const paymentPayload = validatePaymentCreatePayload(createResponse, options.provider);
 
     report.authMode = authMode;
+    report.authCheckStatus = authCheck.available
+        ? (authCheck.payload?.auth?.session_mode || 'ok')
+        : authCheck.reason;
+    report.authCheck = authCheck.available ? authCheck.payload : null;
     report.createStatus = String(paymentPayload.status || paymentPayload.checkout_session_status || 'ok');
     report.checkoutSessionId = paymentPayload.checkout_session_id || '';
     report.orderNo = paymentPayload.order_no || createPayload.order_no || '';
@@ -713,7 +760,9 @@ module.exports = {
     readEnvFile,
     resolveAccessToken,
     resolveOptions,
+    runOptionalAuthCheck,
     runPaymentSmokeTest,
+    validateAuthCheckPayload,
     validateConfigPayload,
     validatePaymentCreatePayload
 };

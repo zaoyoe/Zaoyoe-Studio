@@ -11,6 +11,8 @@ const {
     parseRuntimeSupabaseConfig,
     resolveAccessToken,
     resolveOptions,
+    runOptionalAuthCheck,
+    validateAuthCheckPayload,
     validateConfigPayload,
     validatePaymentCreatePayload
 } = require('../scripts/payment-smoke-test');
@@ -186,6 +188,21 @@ test('validatePaymentCreatePayload surfaces API-provided auth failures', () => {
     );
 });
 
+test('validateAuthCheckPayload surfaces API-provided auth failures', () => {
+    assert.throws(
+        () => validateAuthCheckPayload({
+            ok: false,
+            status: 401,
+            statusText: 'Unauthorized',
+            payload: {
+                success: false,
+                message: 'Auth session missing!'
+            }
+        }),
+        /Auth session missing!/
+    );
+});
+
 test('extractResponseErrorDetail prefers structured API errors over raw text', () => {
     assert.equal(
         extractResponseErrorDetail({
@@ -211,6 +228,27 @@ test('buildOtpVerificationAttempts includes both email OTP and token-hash fallba
             'email_token_hash'
         ]
     );
+});
+
+test('runOptionalAuthCheck tolerates older deployments where the endpoint is not deployed yet', async () => {
+    const result = await runOptionalAuthCheck(
+        'https://www.zaoyoe.com',
+        'token',
+        5000,
+        async () => ({
+            ok: false,
+            status: 404,
+            statusText: 'Not Found',
+            async text() {
+                return '{"success":false,"message":"Not found"}';
+            }
+        })
+    );
+
+    assert.deepEqual(result, {
+        available: false,
+        reason: 'endpoint_not_deployed'
+    });
 });
 
 test('resolveAccessToken falls back to admin magic-link bootstrap when password auth fails', async () => {
