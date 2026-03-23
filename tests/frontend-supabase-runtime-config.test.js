@@ -845,6 +845,47 @@ test('admin comments runtime renderers route list items, filters, and block menu
     }
 });
 
+test('wallet modal runtime renderers route wallet shell, lists, filters, and order dialogs through delegated actions', () => {
+    const walletModalSource = readRepoFile('js/components/WalletModal.js');
+    const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|keyup|mouseover|mouseout|error|load)\s*=\s*["']/i;
+
+    assert.equal(
+        inlineHandlerPattern.test(walletModalSource),
+        false,
+        'js/components/WalletModal.js should not emit inline event handler attributes'
+    );
+
+    const delegatedMarkers = [
+        'bindDelegatedHandlers(overlay = this.modalEl)',
+        'handleOpenOrderDetailAction(actionEl)',
+        "'wallet-action': 'switch-view'",
+        "'wallet-enter-action': 'redeem-code'",
+        "'wallet-enter-action': 'custom-recharge'",
+        "'wallet-enter-action': 'query-afdian-code'",
+        "'wallet-input-action': 'order-search'",
+        "'wallet-keydown-action': 'order-search'",
+        "'wallet-action': 'select-order-time-filter'",
+        "'wallet-action': 'select-order-filter'",
+        "'wallet-action': 'toggle-affiliate-member-details'",
+        "'wallet-action': 'buy-package'",
+        "'wallet-action': 'daily-checkin-v2'",
+        "'wallet-action': 'makeup-checkin'",
+        "'wallet-action': 'toggle-history-item-details'",
+        "'wallet-action': 'copy-value'",
+        "'wallet-action': 'open-order-detail'",
+        "case 'open-order-detail':",
+        "case 'copy-value':",
+        "case 'buy-package':",
+        'js-wallet-copy-content',
+        'wallet-copy-card',
+        'bindOverlayCloseButtons(detailOverlay);'
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(walletModalSource.includes(marker), true, `js/components/WalletModal.js should contain ${marker}`);
+    }
+});
+
 test('admin studio settings, discounts, and tickets controls route through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
