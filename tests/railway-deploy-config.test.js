@@ -12,6 +12,15 @@ test('repo root railway.toml deploys the verify server from the repository root'
     assert.match(source, /healthcheckPath = "\/healthz"/);
 });
 
+test('repo root nixpacks.toml forces a Node install for the verify server', () => {
+    const nixpacksConfigPath = path.resolve(__dirname, '../nixpacks.toml');
+    const source = fs.readFileSync(nixpacksConfigPath, 'utf8');
+
+    assert.match(source, /providers = \["node"\]/);
+    assert.match(source, /cmds = \["npm ci"\]/);
+    assert.match(source, /cmd = "node server\/index\.js"/);
+});
+
 test('verify server entrypoint still depends on repo-root shared modules', () => {
     const serverEntryPath = path.resolve(__dirname, '../server/index.js');
     const source = fs.readFileSync(serverEntryPath, 'utf8');
