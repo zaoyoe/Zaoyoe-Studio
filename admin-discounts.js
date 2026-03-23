@@ -270,6 +270,7 @@ const AdminDiscounts = {
     openGenerateModal: function () {
         document.getElementById('discountGenerateForm').reset();
         document.getElementById('discountCodeInput').value = '';
+        this.selectDiscountType('percent');
         const modal = document.getElementById('discountGenerateModal');
         modal.style.display = 'flex';
         // Override CSS .modal-overlay defaults (opacity:0, visibility:hidden)
@@ -277,6 +278,69 @@ const AdminDiscounts = {
             modal.style.opacity = '1';
             modal.style.visibility = 'visible';
         });
+    },
+
+    closeGenerateModal: function () {
+        const modal = document.getElementById('discountGenerateModal');
+        if (!modal) return;
+
+        modal.style.opacity = '0';
+        modal.style.visibility = 'hidden';
+        setTimeout(() => {
+            modal.style.display = 'none';
+        }, 200);
+    },
+
+    toggleTypeDropdown: function () {
+        const dropdown = document.getElementById('discountTypeDropdown');
+        if (!dropdown) return;
+        dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+    },
+
+    selectDiscountType: function (type) {
+        const isFixed = type === 'fixed';
+        const label = document.getElementById('discountTypeLabel');
+        const valueType = document.getElementById('discountValueType');
+        const dropdown = document.getElementById('discountTypeDropdown');
+        const suffix = document.getElementById('discountValueSuffix');
+        const valueInput = document.getElementById('discountValue');
+
+        if (valueType) {
+            valueType.value = isFixed ? 'fixed' : 'percent';
+        }
+
+        if (label) {
+            label.innerHTML = isFixed
+                ? '<span style="font-size:1rem">💰</span> 固定金额立减'
+                : '<span style="font-size:1rem">📊</span> 按比例打折';
+        }
+
+        if (suffix) {
+            suffix.innerText = isFixed ? '积分' : '折';
+        }
+
+        if (valueInput) {
+            valueInput.placeholder = isFixed ? '如: 100' : '如: 80';
+        }
+
+        if (dropdown) {
+            dropdown.style.display = 'none';
+        }
+    },
+
+    formatExpiryDateInput: function (input) {
+        if (!input) return;
+        let value = String(input.value || '').replace(/[^0-9]/g, '');
+        if (value.length > 4) value = `${value.slice(0, 4)}-${value.slice(4)}`;
+        if (value.length > 7) value = `${value.slice(0, 7)}-${value.slice(7)}`;
+        input.value = value.slice(0, 10);
+    },
+
+    formatExpiryTimeInput: function (input) {
+        if (!input) return;
+        let value = String(input.value || '').replace(/[^0-9]/g, '');
+        if (value.length > 2) value = `${value.slice(0, 2)}:${value.slice(2)}`;
+        input.value = value.slice(0, 5);
     },
 
     generateRandomCode: function (length = 8) {
@@ -328,10 +392,7 @@ const AdminDiscounts = {
                 throw error;
             }
 
-            const closeModal = document.getElementById('discountGenerateModal');
-            closeModal.style.opacity = '0';
-            closeModal.style.visibility = 'hidden';
-            setTimeout(() => { closeModal.style.display = 'none'; }, 200);
+            this.closeGenerateModal();
             alert(`成功生成优惠码: ${code}`);
             this.loadDiscounts();
 

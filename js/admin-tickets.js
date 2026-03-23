@@ -360,6 +360,14 @@ const AdminTickets = {
         modal.querySelector('.modal-title').textContent = newStatus === 'RESOLVED' ? '解决工单' : '拒绝工单';
     },
 
+    closeReplyModal: function () {
+        const modal = document.getElementById('ticketReplyModal');
+        if (!modal) return;
+        modal.style.display = 'none';
+        modal.style.visibility = 'hidden';
+        modal.style.opacity = '0';
+    },
+
     getAdminAuthHeaders: async function () {
         if (window.AdminAI?.getAuthHeaders) {
             return window.AdminAI.getAuthHeaders();
@@ -407,10 +415,7 @@ const AdminTickets = {
             }
 
             // Close modal
-            const modal = document.getElementById('ticketReplyModal');
-            modal.style.display = 'none';
-            modal.style.visibility = 'hidden';
-            modal.style.opacity = '0';
+            this.closeReplyModal();
 
             alert("已完成工单处理" + (doRefund ? " 并退还积分" : ""));
 

@@ -462,6 +462,99 @@ test('admin studio points and users controls route through delegated actions', (
     assert.equal(adminStudioScript.includes("form.id === 'generateCodesForm'"), true, 'admin-studio.js should delegate points generate form submission');
 });
 
+test('admin studio settings, discounts, and tickets controls route through delegated actions', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const discountsSource = readRepoFile('admin-discounts.js');
+    const ticketsSource = readRepoFile('js/admin-tickets.js');
+
+    const removedInlineMarkers = [
+        `onchange="toggleDecoration()"`,
+        `onclick="selectDecoration('none')"`,
+        `onclick="togglePageTarget('all')"`,
+        `onclick="insertFormat('b')"`,
+        `onclick="toggleAlignPicker()"`,
+        `onclick="applyTextAlign('left')"`,
+        `onclick="insertLink()"`,
+        `onclick="toggleEmojiPicker()"`,
+        `onclick="selectEmoji('🎉')"`,
+        `onclick="toggleDropdown('colorDropdown')"`,
+        `onclick="selectColor('#ffffff')"`,
+        `onclick="selectFontSize('2', 'small')"`,
+        `onclick="saveAnnouncement()"`,
+        `onclick="saveSensitiveWords()"`,
+        `oninput="AdminDiscounts.search()"`,
+        `onclick="AdminDiscounts.filter('all', this)"`,
+        `onclick="AdminDiscounts.openGenerateModal()"`,
+        `onclick="AdminTickets.filter('all', this)"`,
+        `onclick="AdminTickets.submitReply()"`,
+        `onfocus="this.style.borderColor='rgba(91, 155, 213, 0.5)'`,
+        `onmouseover="this.style.background='rgba(255,255,255,0.08)'"`
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(adminStudioSource.includes(marker), false, `admin-studio.html should not contain ${marker}`);
+    }
+
+    const delegatedMarkers = [
+        'data-admin-change-action="settings-toggle-decoration"',
+        'data-admin-action="settings-select-decoration"',
+        'data-admin-action="settings-toggle-page-target"',
+        'data-admin-action="settings-insert-format"',
+        'data-admin-action="settings-toggle-align-picker"',
+        'data-admin-action="settings-apply-text-align"',
+        'data-admin-action="settings-insert-link"',
+        'data-admin-action="settings-toggle-emoji-picker"',
+        'data-admin-action="settings-select-emoji"',
+        'data-admin-action="settings-toggle-toolbar-dropdown"',
+        'data-admin-action="settings-select-color"',
+        'data-admin-action="settings-select-font-size"',
+        'data-admin-action="settings-save-announcement"',
+        'data-admin-action="settings-save-sensitive-words"',
+        'data-admin-input-action="discounts-search"',
+        'data-admin-action="discounts-filter"',
+        'data-admin-action="discounts-open-generate-modal"',
+        'data-admin-overlay-close="discount-generate-modal"',
+        'data-admin-action="discounts-toggle-type-dropdown"',
+        'data-admin-action="discounts-select-type"',
+        'data-admin-input-action="discounts-format-expiry-date"',
+        'data-admin-input-action="discounts-format-expiry-time"',
+        'data-admin-action="discounts-close-generate-modal"',
+        'data-admin-action="discounts-submit-generate"',
+        'data-admin-input-action="tickets-search"',
+        'data-admin-action="tickets-filter"',
+        'data-admin-overlay-close="ticket-reply-modal"',
+        'data-admin-action="tickets-close-reply-modal"',
+        'data-admin-action="tickets-submit-reply"'
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+
+    assert.equal(adminStudioScript.includes('settings-select-decoration'), true, 'admin-studio.js should delegate settings decoration controls');
+    assert.equal(adminStudioScript.includes('discounts-open-generate-modal'), true, 'admin-studio.js should delegate discount modal controls');
+    assert.equal(adminStudioScript.includes('tickets-submit-reply'), true, 'admin-studio.js should delegate ticket reply submission');
+    assert.equal(adminStudioScript.includes('[data-admin-input-action]'), true, 'admin-studio.js should delegate input-based admin controls');
+    assert.equal(adminStudioScript.includes('[data-admin-overlay-close]'), true, 'admin-studio.js should delegate overlay dismissal');
+    assert.equal(adminStudioScript.includes("form.id === 'discountGenerateForm'"), true, 'admin-studio.js should delegate discount generate form submission');
+    assert.equal(adminStudioScript.includes("form.id === 'ticketReplyForm'"), true, 'admin-studio.js should delegate ticket reply form submission');
+
+    const discountHelpers = [
+        'closeGenerateModal: function',
+        'toggleTypeDropdown: function',
+        'selectDiscountType: function',
+        'formatExpiryDateInput: function',
+        'formatExpiryTimeInput: function'
+    ];
+    for (const marker of discountHelpers) {
+        assert.equal(discountsSource.includes(marker), true, `admin-discounts.js should contain ${marker}`);
+    }
+
+    assert.equal(ticketsSource.includes('closeReplyModal: function'), true, 'js/admin-tickets.js should expose closeReplyModal');
+    assert.equal(ticketsSource.includes('submitReply: async function'), true, 'js/admin-tickets.js should still expose submitReply');
+});
+
 test('shop admin pagination and inventory/product workflows no longer emit targeted inline handlers', () => {
     const shopSource = readRepoFile('js/admin-shop.js');
     const adminStudioSource = readRepoFile('admin-studio.html');

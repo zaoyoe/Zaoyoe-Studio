@@ -1426,48 +1426,48 @@
                                     <div class="editor-section-label">
                                         动态装饰
                                         <label class="decoration-toggle">
-                                            <input type="checkbox" id="decorationEnabled" onchange="toggleDecoration()">
+                                            <input type="checkbox" id="decorationEnabled" data-admin-change-action="settings-toggle-decoration">
                                             <span class="toggle-slider-mini"></span>
                                         </label>
                                     </div>
                                     <div class="decoration-theme-selector" id="decorationSelector">
                                         <button type="button" class="decoration-btn active" data-decoration="none"
-                                            onclick="selectDecoration('none')" title="无装饰">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="none" title="无装饰">
                                             <span class="deco-icon">✕</span>
                                             <span class="deco-label">无</span>
                                         </button>
                                         <button type="button" class="decoration-btn" data-decoration="snow"
-                                            onclick="selectDecoration('snow')" title="飘雪效果">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="snow" title="飘雪效果">
                                             <span class="deco-icon">❄️</span>
                                             <span class="deco-label">飘雪</span>
                                         </button>
                                         <button type="button" class="decoration-btn" data-decoration="sakura"
-                                            onclick="selectDecoration('sakura')" title="樱花飘落">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="sakura" title="樱花飘落">
                                             <span class="deco-icon">🌸</span>
                                             <span class="deco-label">樱花</span>
                                         </button>
                                         <button type="button" class="decoration-btn" data-decoration="fireworks"
-                                            onclick="selectDecoration('fireworks')" title="烟花庆典">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="fireworks" title="烟花庆典">
                                             <span class="deco-icon">🎆</span>
                                             <span class="deco-label">烟花</span>
                                         </button>
                                         <button type="button" class="decoration-btn" data-decoration="hearts"
-                                            onclick="selectDecoration('hearts')" title="漂浮爱心">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="hearts" title="漂浮爱心">
                                             <span class="deco-icon">❤️</span>
                                             <span class="deco-label">爱心</span>
                                         </button>
                                         <button type="button" class="decoration-btn" data-decoration="leaves"
-                                            onclick="selectDecoration('leaves')" title="秋日落叶">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="leaves" title="秋日落叶">
                                             <span class="deco-icon">🍂</span>
                                             <span class="deco-label">落叶</span>
                                         </button>
                                         <button type="button" class="decoration-btn" data-decoration="rain"
-                                            onclick="selectDecoration('rain')" title="雨天效果">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="rain" title="雨天效果">
                                             <span class="deco-icon">🌧️</span>
                                             <span class="deco-label">雨天</span>
                                         </button>
                                         <button type="button" class="decoration-btn" data-decoration="sunlight"
-                                            onclick="selectDecoration('sunlight')" title="阳光灿烂">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="sunlight" title="阳光灿烂">
                                             <span class="deco-icon">☀️</span>
                                             <span class="deco-label">阳光</span>
                                         </button>
@@ -1479,32 +1479,32 @@
                                     <div class="editor-section-label">显示页面</div>
                                     <div class="page-target-selector" id="pageTargetSelector">
                                         <button type="button" class="page-btn active" data-page="all"
-                                            onclick="togglePageTarget('all')" title="所有页面">
+                                            data-admin-action="settings-toggle-page-target" data-target-page="all" title="所有页面">
                                             <span class="page-icon"><i class="fas fa-globe-americas"></i></span>
                                             <span class="page-label">全部</span>
                                         </button>
                                         <button type="button" class="page-btn" data-page="prompts"
-                                            onclick="togglePageTarget('prompts')" title="灵感图库">
+                                            data-admin-action="settings-toggle-page-target" data-target-page="prompts" title="灵感图库">
                                             <span class="page-icon"><i class="fas fa-images"></i></span>
                                             <span class="page-label">图库</span>
                                         </button>
                                         <button type="button" class="page-btn" data-page="index"
-                                            onclick="togglePageTarget('index')" title="主页">
+                                            data-admin-action="settings-toggle-page-target" data-target-page="index" title="主页">
                                             <span class="page-icon"><i class="fas fa-home"></i></span>
                                             <span class="page-label">主页</span>
                                         </button>
                                         <button type="button" class="page-btn" data-page="shop"
-                                            onclick="togglePageTarget('shop')" title="资源商城">
+                                            data-admin-action="settings-toggle-page-target" data-target-page="shop" title="资源商城">
                                             <span class="page-icon"><i class="fas fa-shopping-cart"></i></span>
                                             <span class="page-label">商城</span>
                                         </button>
                                         <button type="button" class="page-btn" data-page="verify"
-                                            onclick="togglePageTarget('verify')" title="Gemini验证">
+                                            data-admin-action="settings-toggle-page-target" data-target-page="verify" title="Gemini验证">
                                             <span class="page-icon"><i class="fas fa-check-circle"></i></span>
                                             <span class="page-label">验证</span>
                                         </button>
                                         <button type="button" class="page-btn" data-page="guestbook"
-                                            onclick="togglePageTarget('guestbook')" title="留言板">
+                                            data-admin-action="settings-toggle-page-target" data-target-page="guestbook" title="留言板">
                                             <span class="page-icon"><i class="fas fa-comment-dots"></i></span>
                                             <span class="page-label">留言</span>
                                         </button>
@@ -1515,104 +1515,86 @@
                                 <div class="editor-section">
                                     <div class="editor-section-label">公告内容</div>
                                     <div class="announcement-toolbar" id="announcementToolbar">
-                                        <button type="button" class="toolbar-btn" onclick="insertFormat('b')"
+                                        <button type="button" class="toolbar-btn" data-admin-action="settings-insert-format" data-format-tag="b"
                                             title="加粗"><i class="fas fa-bold"></i></button>
-                                        <button type="button" class="toolbar-btn" onclick="insertFormat('i')"
+                                        <button type="button" class="toolbar-btn" data-admin-action="settings-insert-format" data-format-tag="i"
                                             title="斜体"><i class="fas fa-italic"></i></button>
-                                        <button type="button" class="toolbar-btn" onclick="insertFormat('u')"
+                                        <button type="button" class="toolbar-btn" data-admin-action="settings-insert-format" data-format-tag="u"
                                             title="下划线"><i class="fas fa-underline"></i></button>
                                         <div class="align-picker-container">
                                             <button type="button" class="toolbar-btn" id="alignPickerBtn"
-                                                onclick="toggleAlignPicker()" title="对齐"><i
+                                                data-admin-action="settings-toggle-align-picker" title="对齐"><i
                                                     class="fas fa-align-center"></i></button>
                                             <div class="align-picker" id="alignPicker">
                                                 <button type="button" class="align-item"
-                                                    onclick="applyTextAlign('left')" title="左对齐">
+                                                    data-admin-action="settings-apply-text-align" data-text-align="left" title="左对齐">
                                                     <i class="fas fa-align-left"></i>
                                                 </button>
                                                 <button type="button" class="align-item"
-                                                    onclick="applyTextAlign('center')" title="居中">
+                                                    data-admin-action="settings-apply-text-align" data-text-align="center" title="居中">
                                                     <i class="fas fa-align-center"></i>
                                                 </button>
                                                 <button type="button" class="align-item"
-                                                    onclick="applyTextAlign('right')" title="右对齐">
+                                                    data-admin-action="settings-apply-text-align" data-text-align="right" title="右对齐">
                                                     <i class="fas fa-align-right"></i>
                                                 </button>
                                             </div>
                                         </div>
                                         <div class="toolbar-divider"></div>
-                                        <button type="button" class="toolbar-btn" onclick="insertLink()" title="链接"><i
+                                        <button type="button" class="toolbar-btn" data-admin-action="settings-insert-link" title="链接"><i
                                                 class="fas fa-link"></i></button>
                                         <div class="emoji-picker-container">
                                             <button type="button" class="toolbar-btn" id="emojiPickerBtn"
-                                                onclick="toggleEmojiPicker()" title="表情"><i
+                                                data-admin-action="settings-toggle-emoji-picker" title="表情"><i
                                                     class="fas fa-smile"></i></button>
                                             <div class="emoji-picker" id="emojiPicker">
                                                 <div class="emoji-picker-header">表情</div>
                                                 <div class="emoji-grid">
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('🎉')">🎉</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('📢')">📢</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('⚠️')">⚠️</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('✨')">✨</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('🔥')">🔥</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('💡')">💡</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('🎁')">🎁</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('❤️')">❤️</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('👍')">👍</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('🚀')">🚀</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('🌟')">🌟</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('💯')">💯</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="🎉">🎉</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="📢">📢</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="⚠️">⚠️</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="✨">✨</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="🔥">🔥</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="💡">💡</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="🎁">🎁</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="❤️">❤️</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="👍">👍</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="🚀">🚀</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="🌟">🌟</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="💯">💯</button>
                                                 </div>
                                             </div>
                                         </div>
                                         <!-- Color Picker -->
                                         <div class="toolbar-dropdown" id="colorDropdown">
                                             <button type="button" class="toolbar-btn"
-                                                onclick="toggleDropdown('colorDropdown')" title="文字颜色">
+                                                data-admin-action="settings-toggle-toolbar-dropdown" data-dropdown-id="colorDropdown" title="文字颜色">
                                                 <span class="color-swatch preview" id="colorPreview"
                                                     style="background:#6b9ece"></span>
                                             </button>
                                             <div class="dropdown-menu">
                                                 <button type="button" class="dropdown-item"
-                                                    data-color-option="#ffffff"
-                                                    onclick="selectColor('#ffffff')">
+                                                    data-color-option="#ffffff" data-admin-action="settings-select-color" data-color-value="#ffffff">
                                                     <span class="color-swatch" style="background:#ffffff"></span> 白色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
-                                                    data-color-option="#ffeb3b"
-                                                    onclick="selectColor('#ffeb3b')">
+                                                    data-color-option="#ffeb3b" data-admin-action="settings-select-color" data-color-value="#ffeb3b">
                                                     <span class="color-swatch" style="background:#ffeb3b"></span> 黄色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
-                                                    data-color-option="#ff9800"
-                                                    onclick="selectColor('#ff9800')">
+                                                    data-color-option="#ff9800" data-admin-action="settings-select-color" data-color-value="#ff9800">
                                                     <span class="color-swatch" style="background:#ff9800"></span> 橙色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
-                                                    data-color-option="#4caf50"
-                                                    onclick="selectColor('#4caf50')">
+                                                    data-color-option="#4caf50" data-admin-action="settings-select-color" data-color-value="#4caf50">
                                                     <span class="color-swatch" style="background:#4caf50"></span> 绿色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
-                                                    data-color-option="#e57373"
-                                                    onclick="selectColor('#e57373')">
+                                                    data-color-option="#e57373" data-admin-action="settings-select-color" data-color-value="#e57373">
                                                     <span class="color-swatch" style="background:#e57373"></span> 红色
                                                 </button>
                                                 <button type="button" class="dropdown-item selected"
-                                                    data-color-option="#6b9ece"
-                                                    onclick="selectColor('#6b9ece')">
+                                                    data-color-option="#6b9ece" data-admin-action="settings-select-color" data-color-value="#6b9ece">
                                                     <span class="color-swatch" style="background:#6b9ece"></span> 蓝色
                                                 </button>
                                             </div>
@@ -1620,23 +1602,20 @@
                                         <!-- Font Size -->
                                         <div class="toolbar-dropdown" id="sizeDropdown">
                                             <button type="button" class="toolbar-btn"
-                                                onclick="toggleDropdown('sizeDropdown')" title="字号">
+                                                data-admin-action="settings-toggle-toolbar-dropdown" data-dropdown-id="sizeDropdown" title="字号">
                                                 <span class="size-indicator medium" id="sizePreview">A</span>
                                             </button>
                                             <div class="dropdown-menu">
                                                 <button type="button" class="dropdown-item"
-                                                    data-size-option="2"
-                                                    onclick="selectFontSize('2', 'small')">
+                                                    data-size-option="2" data-admin-action="settings-select-font-size" data-font-size-value="2" data-font-size-class="small">
                                                     <span class="size-indicator small">A</span> 小
                                                 </button>
                                                 <button type="button" class="dropdown-item selected"
-                                                    data-size-option="3"
-                                                    onclick="selectFontSize('3', 'medium')">
+                                                    data-size-option="3" data-admin-action="settings-select-font-size" data-font-size-value="3" data-font-size-class="medium">
                                                     <span class="size-indicator medium">A</span> 中
                                                 </button>
                                                 <button type="button" class="dropdown-item"
-                                                    data-size-option="5"
-                                                    onclick="selectFontSize('5', 'large')">
+                                                    data-size-option="5" data-admin-action="settings-select-font-size" data-font-size-value="5" data-font-size-class="large">
                                                     <span class="size-indicator large">A</span> 大
                                                 </button>
                                             </div>
@@ -1648,7 +1627,7 @@
 
                                 <!-- Save Button -->
                                 <div class="editor-actions">
-                                    <button class="btn-primary" onclick="saveAnnouncement()">
+                                    <button class="btn-primary" data-admin-action="settings-save-announcement">
                                         <i class="fas fa-paper-plane"></i> 发布公告
                                     </button>
                                     <div class="announcement-toggle-inline">
@@ -1691,7 +1670,7 @@
                                 <textarea class="config-textarea" id="cfgSensitiveWords" rows="8"
                                     placeholder="敏感词1&#10;敏感词2&#10;..."></textarea>
                                 <div class="config-actions" style="margin-top: 26px; justify-content: flex-end;">
-                                    <button class="btn-sm btn-primary" onclick="saveSensitiveWords()">
+                                    <button class="btn-sm btn-primary" data-admin-action="settings-save-sensitive-words">
                                         <i class="fas fa-save"></i> 保存
                                     </button>
                                 </div>
@@ -8290,6 +8269,26 @@
 
             <!-- ========== DISCOUNTS MODULE ========== -->
             <div id="module-discounts" class="module-container" style="display: none;">
+                <style>
+                    .discount-type-option:hover {
+                        background: rgba(91, 155, 213, 0.15);
+                    }
+
+                    #ticketAdminReply.ticket-reply-textarea:focus {
+                        border-color: rgba(91, 155, 213, 0.5);
+                        box-shadow: 0 0 0 3px rgba(91, 155, 213, 0.1);
+                    }
+
+                    .ticket-reply-cancel-btn:hover {
+                        background: rgba(255, 255, 255, 0.08);
+                        color: rgba(255, 255, 255, 0.8);
+                    }
+
+                    .ticket-reply-submit-btn:hover {
+                        transform: translateY(-1px);
+                        box-shadow: 0 6px 20px rgba(91, 155, 213, 0.35);
+                    }
+                </style>
                 <!-- Toolbar -->
                 <div class="admin-toolbar" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                     <div class="toolbar-left"
@@ -8297,18 +8296,18 @@
                         <div class="search-bar">
                             <i class="fas fa-search"></i>
                             <input type="text" id="discountSearchInput" placeholder="搜索优惠码或创建者..."
-                                oninput="AdminDiscounts.search()">
+                                data-admin-input-action="discounts-search">
                         </div>
                         <div class="filter-dropdowns" style="display:flex; gap:8px;">
                             <button class="filter-btn active" data-status="all"
-                                onclick="AdminDiscounts.filter('all', this)">全部</button>
+                                data-admin-action="discounts-filter" data-discount-status="all">全部</button>
                             <button class="filter-btn" data-status="active"
-                                onclick="AdminDiscounts.filter('active', this)">生效中</button>
+                                data-admin-action="discounts-filter" data-discount-status="active">生效中</button>
                             <button class="filter-btn" data-status="used"
-                                onclick="AdminDiscounts.filter('used', this)">已核销/失效</button>
+                                data-admin-action="discounts-filter" data-discount-status="used">已核销/失效</button>
                         </div>
                     </div>
-                    <button class="btn-primary" onclick="AdminDiscounts.openGenerateModal()"
+                    <button class="btn-primary" data-admin-action="discounts-open-generate-modal"
                         style="background: linear-gradient(135deg, #4a8ec7, #5b9bd5); border: none; color: white; border-radius: 10px; padding: 10px 20px; font-size: 0.9rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; box-shadow: 0 4px 15px rgba(91, 155, 213, 0.3); transition: all 0.3s ease; flex-shrink: 0;">
                         <i class="fas fa-plus"></i> 生成优惠券
                     </button>
@@ -8352,8 +8351,7 @@
                 <div class="pagination" id="discountsPagination"></div>
 
                 <!-- Generate Discount Modal -->
-                <div id="discountGenerateModal" class="modal-overlay"
-                    onclick="if(event.target===this){this.style.opacity='0';this.style.visibility='hidden';setTimeout(()=>{this.style.display='none'},200)}"
+                <div id="discountGenerateModal" class="modal-overlay" data-admin-overlay-close="discount-generate-modal"
                     style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.55); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); z-index:9999; align-items:center; justify-content:center;">
                     <div
                         style="background: rgba(18, 22, 36, 0.97); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 36px; width: 90%; max-width: 520px; box-shadow: 0 24px 80px rgba(0,0,0,0.6); animation: modalSlideIn 0.3s ease;">
@@ -8370,7 +8368,7 @@
                             </div>
                         </div>
 
-                        <form id="discountGenerateForm" onsubmit="return false;">
+                        <form id="discountGenerateForm">
                             <!-- Code Input -->
                             <div style="margin-bottom:20px;">
                                 <label
@@ -8388,7 +8386,7 @@
                                         style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px;">优惠类型</label>
                                     <input type="hidden" id="discountValueType" value="percent">
                                     <div id="discountTypeTrigger"
-                                        onclick="(function(e){e.stopPropagation();var dd=document.getElementById('discountTypeDropdown');dd.style.display=dd.style.display==='block'?'none':'block'})(event)"
+                                        data-admin-action="discounts-toggle-type-dropdown"
                                         style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.9rem; cursor:pointer; box-sizing:border-box; display:flex; align-items:center; justify-content:space-between; user-select:none; transition:border-color 0.2s;">
                                         <span id="discountTypeLabel" style="display:flex; align-items:center; gap:8px;">
                                             <span style="font-size:1rem;">📊</span> 按比例打折
@@ -8398,10 +8396,8 @@
                                     </div>
                                     <div id="discountTypeDropdown"
                                         style="display:none; position:absolute; top:calc(100% + 6px); left:0; right:0; background:rgba(22,28,44,0.98); border:1px solid rgba(255,255,255,0.1); border-radius:12px; overflow:hidden; z-index:100; box-shadow:0 12px 40px rgba(0,0,0,0.5);">
-                                        <div onclick="document.getElementById('discountValueType').value='percent';document.getElementById('discountTypeLabel').innerHTML='<span style=\'font-size:1rem\'>📊</span> 按比例打折';document.getElementById('discountTypeDropdown').style.display='none';document.getElementById('discountValueSuffix').innerText='折';document.getElementById('discountValue').placeholder='如: 80';"
-                                            style="padding:12px 16px; color:#e8edf4; font-size:0.9rem; cursor:pointer; display:flex; align-items:center; gap:10px; transition:background 0.15s;"
-                                            onmouseenter="this.style.background='rgba(91,155,213,0.15)'"
-                                            onmouseleave="this.style.background='transparent'">
+                                        <div class="discount-type-option" data-admin-action="discounts-select-type" data-discount-type="percent"
+                                            style="padding:12px 16px; color:#e8edf4; font-size:0.9rem; cursor:pointer; display:flex; align-items:center; gap:10px; transition:background 0.15s;">
                                             <span style="font-size:1.1rem;">📊</span>
                                             <div>
                                                 <div style="font-weight:500;">按比例打折</div>
@@ -8412,10 +8408,8 @@
                                         </div>
                                         <div style="height:1px; background:rgba(255,255,255,0.06); margin:0 12px;">
                                         </div>
-                                        <div onclick="document.getElementById('discountValueType').value='fixed';document.getElementById('discountTypeLabel').innerHTML='<span style=\'font-size:1rem\'>💰</span> 固定金额立减';document.getElementById('discountTypeDropdown').style.display='none';document.getElementById('discountValueSuffix').innerText='积分';document.getElementById('discountValue').placeholder='如: 100';"
-                                            style="padding:12px 16px; color:#e8edf4; font-size:0.9rem; cursor:pointer; display:flex; align-items:center; gap:10px; transition:background 0.15s;"
-                                            onmouseenter="this.style.background='rgba(91,155,213,0.15)'"
-                                            onmouseleave="this.style.background='transparent'">
+                                        <div class="discount-type-option" data-admin-action="discounts-select-type" data-discount-type="fixed"
+                                            style="padding:12px 16px; color:#e8edf4; font-size:0.9rem; cursor:pointer; display:flex; align-items:center; gap:10px; transition:background 0.15s;">
                                             <span style="font-size:1.1rem;">💰</span>
                                             <div>
                                                 <div style="font-weight:500;">固定金额立减</div>
@@ -8450,18 +8444,17 @@
                                     <label
                                         style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px;">过期时间
                                         <span style="color:rgba(255,255,255,0.2);">(可选)</span></label>
-                                    <div style="display:flex; gap:8px;">
-                                        <div style="flex:1; position:relative;">
-                                            <input type="text" id="discountExpiryDate" placeholder="2026-12-31"
-                                                maxlength="10"
-                                                oninput="(function(t){let v=t.value.replace(/[^0-9]/g,'');if(v.length>4)v=v.slice(0,4)+'-'+v.slice(4);if(v.length>7)v=v.slice(0,7)+'-'+v.slice(7);t.value=v.slice(0,10);})(this)"
-                                                style="width:100%; padding:12px 12px 12px 36px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.85rem; outline:none; box-sizing:border-box; font-family:'SF Mono',Consolas,monospace;">
+                                        <div style="display:flex; gap:8px;">
+                                            <div style="flex:1; position:relative;">
+                                                <input type="text" id="discountExpiryDate" placeholder="2026-12-31"
+                                                    maxlength="10" data-admin-input-action="discounts-format-expiry-date"
+                                                    style="width:100%; padding:12px 12px 12px 36px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.85rem; outline:none; box-sizing:border-box; font-family:'SF Mono',Consolas,monospace;">
                                             <i class="fas fa-calendar-alt"
                                                 style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.25); font-size:0.8rem;"></i>
                                         </div>
                                         <div style="width:90px; position:relative;">
                                             <input type="text" id="discountExpiryTime" placeholder="23:59" maxlength="5"
-                                                oninput="(function(t){let v=t.value.replace(/[^0-9]/g,'');if(v.length>2)v=v.slice(0,2)+':'+v.slice(2);t.value=v.slice(0,5);})(this)"
+                                                data-admin-input-action="discounts-format-expiry-time"
                                                 style="width:100%; padding:12px 12px 12px 34px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.85rem; outline:none; box-sizing:border-box; font-family:'SF Mono',Consolas,monospace;">
                                             <i class="fas fa-clock"
                                                 style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.25); font-size:0.8rem;"></i>
@@ -8472,10 +8465,9 @@
 
                             <!-- Action Buttons -->
                             <div style="display:flex; justify-content:flex-end; gap:12px;">
-                                <button type="button"
-                                    onclick="var m=document.getElementById('discountGenerateModal');m.style.opacity='0';m.style.visibility='hidden';setTimeout(function(){m.style.display='none'},200)"
+                                <button type="button" data-admin-action="discounts-close-generate-modal"
                                     style="padding:11px 24px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:rgba(255,255,255,0.5); font-size:0.9rem; font-weight:500; cursor:pointer; transition:all 0.2s;">取消</button>
-                                <button type="button" onclick="AdminDiscounts.submitGenerate()"
+                                <button type="button" data-admin-action="discounts-submit-generate"
                                     style="padding:11px 28px; background:linear-gradient(135deg, #4a8ec7, #5b9bd5); border:none; border-radius:12px; color:white; font-size:0.9rem; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(91,155,213,0.25); transition:all 0.3s; display:flex; align-items:center; gap:8px;">
                                     <i class="fas fa-magic"></i> 立即生成
                                 </button>
@@ -8502,17 +8494,17 @@
                         <div class="search-bar">
                             <i class="fas fa-search"></i>
                             <input type="text" id="ticketSearchInput" placeholder="搜索订单号或描述..."
-                                oninput="AdminTickets.search()">
+                                data-admin-input-action="tickets-search">
                         </div>
                         <div class="filter-dropdowns" style="display:flex; gap:8px;">
                             <button class="filter-btn active" data-status="all"
-                                onclick="AdminTickets.filter('all', this)">全部</button>
+                                data-admin-action="tickets-filter" data-ticket-status="all">全部</button>
                             <button class="filter-btn" data-status="pending"
-                                onclick="AdminTickets.filter('pending', this)">待处理</button>
+                                data-admin-action="tickets-filter" data-ticket-status="pending">待处理</button>
                             <button class="filter-btn" data-status="resolved"
-                                onclick="AdminTickets.filter('resolved', this)">已解决</button>
+                                data-admin-action="tickets-filter" data-ticket-status="resolved">已解决</button>
                             <button class="filter-btn" data-status="rejected"
-                                onclick="AdminTickets.filter('rejected', this)">已拒绝</button>
+                                data-admin-action="tickets-filter" data-ticket-status="rejected">已拒绝</button>
                         </div>
                     </div>
                 </div>
@@ -8540,8 +8532,7 @@
                 <div class="pagination" id="ticketsPagination"></div>
 
                 <!-- Ticket Reply Modal -->
-                <div id="ticketReplyModal"
-                    onclick="if(event.target===this){this.style.display='none';this.style.visibility='hidden';this.style.opacity='0';}"
+                <div id="ticketReplyModal" data-admin-overlay-close="ticket-reply-modal"
                     style="display: none; z-index: 10000; justify-content:center; align-items:center; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.55); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);">
                     <div
                         style="background: rgba(18, 22, 36, 0.97); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 0; width: 90%; max-width: 480px; box-shadow: 0 24px 80px rgba(0,0,0,0.6); animation: modalSlideIn 0.3s ease; overflow: hidden;">
@@ -8560,14 +8551,12 @@
                             </div>
                         </div>
                         <!-- Body -->
-                        <form id="ticketReplyForm" onsubmit="return false;" style="padding: 24px 28px 28px;">
+                        <form id="ticketReplyForm" style="padding: 24px 28px 28px;">
                             <div style="margin-bottom:20px;">
                                 <label
                                     style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px; letter-spacing:0.3px;">管理员回复</label>
-                                <textarea id="ticketAdminReply" placeholder="请输入处理结果或回复..."
-                                    style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.9rem; outline:none; transition:border-color 0.2s, box-shadow 0.2s; box-sizing:border-box; min-height:100px; resize:vertical; font-family:inherit; line-height:1.6;"
-                                    onfocus="this.style.borderColor='rgba(91,155,213,0.5)';this.style.boxShadow='0 0 0 3px rgba(91,155,213,0.1)';"
-                                    onblur="this.style.borderColor='rgba(255,255,255,0.08)';this.style.boxShadow='none';"></textarea>
+                                <textarea id="ticketAdminReply" class="ticket-reply-textarea" placeholder="请输入处理结果或回复..."
+                                    style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.9rem; outline:none; transition:border-color 0.2s, box-shadow 0.2s; box-sizing:border-box; min-height:100px; resize:vertical; font-family:inherit; line-height:1.6;"></textarea>
                             </div>
                             <div
                                 style="margin-bottom:24px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:14px 16px;">
@@ -8586,15 +8575,10 @@
                             <input type="hidden" id="replyNewStatus">
 
                             <div style="display:flex; justify-content:flex-end; gap:12px;">
-                                <button type="button"
-                                    onclick="var m=document.getElementById('ticketReplyModal');m.style.display='none';m.style.visibility='hidden';m.style.opacity='0';"
-                                    style="padding:11px 24px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:rgba(255,255,255,0.5); font-size:0.9rem; font-weight:500; cursor:pointer; transition:all 0.2s;"
-                                    onmouseover="this.style.background='rgba(255,255,255,0.08)';this.style.color='rgba(255,255,255,0.8)';"
-                                    onmouseout="this.style.background='rgba(255,255,255,0.04)';this.style.color='rgba(255,255,255,0.5)';">取消</button>
-                                <button type="button" class="btn-primary" onclick="AdminTickets.submitReply()"
-                                    style="padding:11px 28px; background:linear-gradient(135deg, #4a8ec7, #5b9bd5); border:none; border-radius:12px; color:white; font-size:0.9rem; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(91,155,213,0.25); transition:all 0.3s; display:flex; align-items:center; gap:8px;"
-                                    onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 20px rgba(91,155,213,0.35)';"
-                                    onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 15px rgba(91,155,213,0.25)';">
+                                <button type="button" class="ticket-reply-cancel-btn" data-admin-action="tickets-close-reply-modal"
+                                    style="padding:11px 24px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:rgba(255,255,255,0.5); font-size:0.9rem; font-weight:500; cursor:pointer; transition:all 0.2s;">取消</button>
+                                <button type="button" class="btn-primary ticket-reply-submit-btn" data-admin-action="tickets-submit-reply"
+                                    style="padding:11px 28px; background:linear-gradient(135deg, #4a8ec7, #5b9bd5); border:none; border-radius:12px; color:white; font-size:0.9rem; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(91,155,213,0.25); transition:all 0.3s; display:flex; align-items:center; gap:8px;">
                                     <i class="fas fa-check-circle"></i> 确认处理
                                 </button>
                             </div>
