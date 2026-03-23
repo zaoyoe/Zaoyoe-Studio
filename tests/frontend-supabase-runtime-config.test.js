@@ -352,6 +352,77 @@ test('admin studio shell tabs and dashboards route core controls through delegat
     assert.equal(adminStudioScript.includes("closest('[data-admin-change-action]')"), true, 'admin-studio.js should delegate change-based admin controls');
 });
 
+test('admin general settings and export controls route through delegated bindings with real handler glue', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminConfigSource = readRepoFile('admin-config.js');
+
+    const removedInlineMarkers = [
+        'onclick="addNewApiKey()"',
+        `onclick="exportData('users', 'json')"`,
+        `onclick="exportData('comments', 'csv')"`,
+        `onclick="toggleCustomDropdown('refreshIntervalDropdown')"`,
+        `onclick="selectDropdownOption('aiServiceDropdown', 'openai', 'OpenAI')"`,
+        'onclick="saveSeoSettings()"',
+        `onclick="toggleCustomDropdown('cacheDurationDropdown')"`
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(adminStudioSource.includes(marker), false, `admin-studio.html should not contain ${marker}`);
+    }
+
+    const delegatedMarkers = [
+        'data-admin-action="settings-add-api-key"',
+        'data-admin-action="settings-export-dataset"',
+        'data-admin-action="settings-toggle-custom-dropdown"',
+        'data-admin-action="settings-select-dropdown-option"',
+        'data-admin-action="settings-save-seo"'
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+
+    const delegatedHandlerMarkers = [
+        "case 'settings-add-api-key':",
+        "case 'settings-export-dataset':",
+        "case 'settings-toggle-custom-dropdown':",
+        "case 'settings-select-dropdown-option':",
+        "case 'settings-save-seo':",
+        "case 'settings-prompt-api-key':",
+        "case 'settings-delete-api-key':"
+    ];
+
+    for (const marker of delegatedHandlerMarkers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    const runtimeTemplateMarkers = [
+        'data-admin-action="settings-prompt-api-key"',
+        'data-admin-action="settings-delete-api-key"'
+    ];
+
+    for (const marker of runtimeTemplateMarkers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should render ${marker}`);
+    }
+
+    const configGlueMarkers = [
+        'function renderGeneralSettingsConfig()',
+        'function saveSeoSettings()',
+        'async function exportSettingsData(dataset, format = \'json\')',
+        'fetchUsersExportRows',
+        'fetchCommentsExportRows',
+        'fetchPointsExportRows',
+        'setupGeneralSettingsEventListeners()',
+        'window.saveSeoSettings = saveSeoSettings;',
+        'window.exportSettingsData = exportSettingsData;'
+    ];
+
+    for (const marker of configGlueMarkers) {
+        assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should contain ${marker}`);
+    }
+});
+
 test('shop admin pagination renderer no longer emits inline handler attributes', () => {
     const source = readRepoFile('js/admin-shop.js');
     const start = source.indexOf('renderPagination: function');

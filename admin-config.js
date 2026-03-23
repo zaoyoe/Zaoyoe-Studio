@@ -116,6 +116,98 @@ function getDefaultPaymentChannelsConfig() {
     };
 }
 
+function getDefaultAnalyticsPreferencesConfig() {
+    return {
+        refresh_interval_ms: 300000
+    };
+}
+
+function normalizeAnalyticsPreferencesConfig(raw) {
+    const defaults = getDefaultAnalyticsPreferencesConfig();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const refreshInterval = parseInt(source.refresh_interval_ms, 10);
+
+    return {
+        refresh_interval_ms: Number.isFinite(refreshInterval) && refreshInterval > 0
+            ? refreshInterval
+            : defaults.refresh_interval_ms
+    };
+}
+
+function getDefaultIntegrationsConfig() {
+    return {
+        google_login_enabled: true,
+        wechat_login_enabled: false,
+        supabase_realtime_enabled: true,
+        ai_service: 'gemini'
+    };
+}
+
+function normalizeIntegrationsConfig(raw) {
+    const defaults = getDefaultIntegrationsConfig();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const aiService = ['gemini', 'openai', 'claude'].includes(source.ai_service)
+        ? source.ai_service
+        : defaults.ai_service;
+
+    return {
+        google_login_enabled: source.google_login_enabled !== false,
+        wechat_login_enabled: source.wechat_login_enabled === true,
+        supabase_realtime_enabled: source.supabase_realtime_enabled !== false,
+        ai_service: aiService
+    };
+}
+
+function getDefaultSeoConfig() {
+    return {
+        site_title: '我的提示词画廊',
+        site_description: '精选AI生成图片提示词，一键复制使用...',
+        site_keywords: 'AI图片, 提示词, Midjourney, Stable Diffusion'
+    };
+}
+
+function normalizeSeoConfig(raw) {
+    const defaults = getDefaultSeoConfig();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+
+    return {
+        site_title: typeof source.site_title === 'string' && source.site_title.trim()
+            ? source.site_title.trim()
+            : defaults.site_title,
+        site_description: typeof source.site_description === 'string' && source.site_description.trim()
+            ? source.site_description.trim()
+            : defaults.site_description,
+        site_keywords: typeof source.site_keywords === 'string' && source.site_keywords.trim()
+            ? source.site_keywords.trim()
+            : defaults.site_keywords
+    };
+}
+
+function getDefaultPerformanceConfig() {
+    return {
+        lazy_load_enabled: true,
+        image_quality: 85,
+        cache_duration_seconds: 86400
+    };
+}
+
+function normalizePerformanceConfig(raw) {
+    const defaults = getDefaultPerformanceConfig();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const imageQuality = parseInt(source.image_quality, 10);
+    const cacheDuration = parseInt(source.cache_duration_seconds, 10);
+
+    return {
+        lazy_load_enabled: source.lazy_load_enabled !== false,
+        image_quality: Number.isFinite(imageQuality)
+            ? Math.min(100, Math.max(60, imageQuality))
+            : defaults.image_quality,
+        cache_duration_seconds: Number.isFinite(cacheDuration) && cacheDuration > 0
+            ? cacheDuration
+            : defaults.cache_duration_seconds
+    };
+}
+
 function getDefaultAffiliateProgramConfig() {
     return {
         commission_rate_shop: 0.10,
@@ -357,6 +449,7 @@ async function loadAllSystemConfig() {
         renderPaymentChannelsConfig();
         renderChannelsConfig();
         renderRewardsConfig();
+        renderGeneralSettingsConfig();
         renderSecurityConfig();
         renderNotificationsConfig();
         renderModerationConfig();
@@ -1149,6 +1242,8 @@ function setupConfigEventListeners() {
         }
     });
 
+    setupGeneralSettingsEventListeners();
+
     // Setup security event listeners
     setupSecurityEventListeners();
 
@@ -1157,6 +1252,53 @@ function setupConfigEventListeners() {
 
     // Setup moderation event listeners
     setupModerationEventListeners();
+}
+
+function setupGeneralSettingsEventListeners() {
+    const bindToggle = (elementId, configKey, field) => {
+        const element = document.getElementById(elementId);
+        if (!element || element.dataset.configBound === '1') {
+            return;
+        }
+
+        element.dataset.configBound = '1';
+        element.addEventListener('change', async (event) => {
+            const config = configKey === 'integrations'
+                ? normalizeIntegrationsConfig(systemConfigCache[configKey])
+                : normalizePerformanceConfig(systemConfigCache[configKey]);
+
+            config[field] = event.target.checked;
+            await saveConfig(configKey, config);
+        });
+    };
+
+    bindToggle('cfgGoogleLogin', 'integrations', 'google_login_enabled');
+    bindToggle('cfgWechatLogin', 'integrations', 'wechat_login_enabled');
+    bindToggle('cfgSupabaseRealtime', 'integrations', 'supabase_realtime_enabled');
+    bindToggle('cfgLazyLoad', 'performance', 'lazy_load_enabled');
+
+    const imageQualityInput = document.getElementById('cfgImageQuality');
+    if (imageQualityInput && imageQualityInput.dataset.configBound !== '1') {
+        imageQualityInput.dataset.configBound = '1';
+
+        imageQualityInput.addEventListener('input', (event) => {
+            const output = document.getElementById('cfgImageQualityValue');
+            if (output) output.textContent = `${event.target.value}%`;
+        });
+
+        imageQualityInput.addEventListener('change', (event) => {
+            const normalizedValue = Math.min(100, Math.max(60, parseInt(event.target.value, 10) || 85));
+            event.target.value = normalizedValue;
+            const output = document.getElementById('cfgImageQualityValue');
+            if (output) output.textContent = `${normalizedValue}%`;
+
+            debouncedSave('performance.image_quality', async () => {
+                const config = normalizePerformanceConfig(systemConfigCache['performance']);
+                config.image_quality = normalizedValue;
+                await saveConfig('performance', config);
+            }, 150);
+        });
+    }
 }
 
 // Toggle card collapse
@@ -2543,6 +2685,96 @@ function renderVerifyConfig() {
     checkVerifyQuota();
 }
 
+const REFRESH_INTERVAL_LABELS = {
+    60000: '1 分钟',
+    180000: '3 分钟',
+    300000: '5 分钟',
+    600000: '10 分钟',
+    900000: '15 分钟',
+    1800000: '30 分钟'
+};
+
+const AI_SERVICE_LABELS = {
+    gemini: 'Gemini',
+    openai: 'OpenAI',
+    claude: 'Claude'
+};
+
+const CACHE_DURATION_LABELS = {
+    3600: '1 小时',
+    86400: '1 天',
+    604800: '1 周'
+};
+
+function applyCustomDropdownValue(dropdownId, value, label) {
+    const dropdown = document.getElementById(dropdownId);
+    if (!dropdown) return;
+
+    const valueEl = dropdown.querySelector('.dropdown-value');
+    if (valueEl) valueEl.textContent = label;
+
+    dropdown.querySelectorAll('.dropdown-option').forEach((option) => {
+        option.classList.toggle('selected', String(option.dataset.value) === String(value));
+    });
+}
+
+function renderGeneralSettingsConfig() {
+    const analyticsConfig = normalizeAnalyticsPreferencesConfig(systemConfigCache['analytics_preferences']);
+    const integrationsConfig = normalizeIntegrationsConfig(systemConfigCache['integrations']);
+    const seoConfig = normalizeSeoConfig(systemConfigCache['seo']);
+    const performanceConfig = normalizePerformanceConfig(systemConfigCache['performance']);
+
+    systemConfigCache['analytics_preferences'] = analyticsConfig;
+    systemConfigCache['integrations'] = integrationsConfig;
+    systemConfigCache['seo'] = seoConfig;
+    systemConfigCache['performance'] = performanceConfig;
+
+    applyCustomDropdownValue(
+        'refreshIntervalDropdown',
+        analyticsConfig.refresh_interval_ms,
+        REFRESH_INTERVAL_LABELS[analyticsConfig.refresh_interval_ms] || REFRESH_INTERVAL_LABELS[300000]
+    );
+
+    const googleLoginToggle = document.getElementById('cfgGoogleLogin');
+    if (googleLoginToggle) googleLoginToggle.checked = integrationsConfig.google_login_enabled;
+
+    const wechatLoginToggle = document.getElementById('cfgWechatLogin');
+    if (wechatLoginToggle) wechatLoginToggle.checked = integrationsConfig.wechat_login_enabled;
+
+    const realtimeToggle = document.getElementById('cfgSupabaseRealtime');
+    if (realtimeToggle) realtimeToggle.checked = integrationsConfig.supabase_realtime_enabled;
+
+    applyCustomDropdownValue(
+        'aiServiceDropdown',
+        integrationsConfig.ai_service,
+        AI_SERVICE_LABELS[integrationsConfig.ai_service] || AI_SERVICE_LABELS.gemini
+    );
+
+    const siteTitleInput = document.getElementById('cfgSiteTitle');
+    if (siteTitleInput) siteTitleInput.value = seoConfig.site_title;
+
+    const siteDescriptionInput = document.getElementById('cfgSiteDescription');
+    if (siteDescriptionInput) siteDescriptionInput.value = seoConfig.site_description;
+
+    const siteKeywordsInput = document.getElementById('cfgSiteKeywords');
+    if (siteKeywordsInput) siteKeywordsInput.value = seoConfig.site_keywords;
+
+    const lazyLoadToggle = document.getElementById('cfgLazyLoad');
+    if (lazyLoadToggle) lazyLoadToggle.checked = performanceConfig.lazy_load_enabled;
+
+    const imageQualityInput = document.getElementById('cfgImageQuality');
+    if (imageQualityInput) imageQualityInput.value = performanceConfig.image_quality;
+
+    const imageQualityValue = document.getElementById('cfgImageQualityValue');
+    if (imageQualityValue) imageQualityValue.textContent = `${performanceConfig.image_quality}%`;
+
+    applyCustomDropdownValue(
+        'cacheDurationDropdown',
+        performanceConfig.cache_duration_seconds,
+        CACHE_DURATION_LABELS[performanceConfig.cache_duration_seconds] || CACHE_DURATION_LABELS[86400]
+    );
+}
+
 async function saveVerifyConfig() {
     const priceInput = document.getElementById('cfgVerifyPrice');
     const enabledToggle = document.getElementById('cfgVerifyEnabled');
@@ -2580,6 +2812,295 @@ async function saveVerifyConfig() {
 
 // Expose globally for HTML onclick handlers
 window.saveVerifyConfig = saveVerifyConfig;
+
+function showStandaloneSaveIndicator(elementId, text = '✓ 已保存') {
+    const indicator = document.getElementById(elementId);
+    if (!indicator) return;
+
+    indicator.textContent = text;
+    indicator.style.opacity = '1';
+    clearTimeout(showStandaloneSaveIndicator._timeouts?.[elementId]);
+    showStandaloneSaveIndicator._timeouts = showStandaloneSaveIndicator._timeouts || {};
+    showStandaloneSaveIndicator._timeouts[elementId] = setTimeout(() => {
+        indicator.style.opacity = '0';
+    }, 1500);
+}
+
+async function saveSeoSettings() {
+    const defaults = getDefaultSeoConfig();
+    const config = {
+        site_title: document.getElementById('cfgSiteTitle')?.value.trim() || defaults.site_title,
+        site_description: document.getElementById('cfgSiteDescription')?.value.trim() || defaults.site_description,
+        site_keywords: document.getElementById('cfgSiteKeywords')?.value.trim() || defaults.site_keywords
+    };
+
+    if (await saveConfig('seo', config)) {
+        renderGeneralSettingsConfig();
+        showStandaloneSaveIndicator('seoSaveIndicator');
+    }
+}
+
+function downloadExportBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+function escapeCsvCell(value) {
+    const normalized = value == null
+        ? ''
+        : (typeof value === 'string'
+            ? value
+            : JSON.stringify(value));
+    return `"${String(normalized).replace(/"/g, '""')}"`;
+}
+
+function convertRowsToCsv(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+        return '';
+    }
+
+    const headers = [...rows.reduce((keys, row) => {
+        Object.keys(row || {}).forEach((key) => keys.add(key));
+        return keys;
+    }, new Set())];
+
+    const lines = [
+        headers.join(','),
+        ...rows.map((row) => headers.map((key) => escapeCsvCell(row?.[key])).join(','))
+    ];
+
+    return lines.join('\n');
+}
+
+async function fetchAllSupabaseRows(buildQuery, pageSize = 1000) {
+    const rows = [];
+    let from = 0;
+
+    while (true) {
+        const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+        if (error) throw error;
+
+        rows.push(...(data || []));
+
+        if (!data || data.length < pageSize) {
+            break;
+        }
+
+        from += pageSize;
+    }
+
+    return rows;
+}
+
+async function fetchUsersExportRows() {
+    let profiles = [];
+    const { data: rpcData, error: rpcError } = await window.supabaseClient.rpc('get_admin_users');
+
+    if (!rpcError && Array.isArray(rpcData)) {
+        profiles = rpcData;
+    } else {
+        const { data: profileData, error: profileError } = await window.supabaseClient
+            .from('profiles')
+            .select('id, username, email, avatar_url, created_at, updated_at');
+
+        if (profileError) throw profileError;
+        profiles = profileData || [];
+    }
+
+    let balanceQuery = window.supabaseClient
+        .from('points_balance')
+        .select('user_id, total_balance');
+    balanceQuery = window.AdminSiteFilter?.applySiteFilter?.(balanceQuery) || balanceQuery;
+
+    const [{ data: pointsData, error: pointsError }, { data: rolesData, error: rolesError }] = await Promise.all([
+        balanceQuery,
+        window.supabaseClient.from('admin_roles').select('user_id, role_name, expires_at')
+    ]);
+
+    if (pointsError) throw pointsError;
+    if (rolesError) throw rolesError;
+
+    const siteFilter = window.AdminSiteFilter?.getSiteParam?.();
+    if (siteFilter) {
+        const [loginResult, commentResult, messageResult] = await Promise.all([
+            window.supabaseClient.from('user_login_history').select('user_id').eq('site', siteFilter),
+            window.supabaseClient.from('prompt_comments').select('user_id').eq('site', siteFilter).not('user_id', 'is', null),
+            window.supabaseClient.from('guestbook_messages').select('user_id').eq('site', siteFilter).not('user_id', 'is', null)
+        ]);
+
+        const activeUserIds = new Set();
+        (loginResult.data || []).forEach((row) => activeUserIds.add(row.user_id));
+        (commentResult.data || []).forEach((row) => activeUserIds.add(row.user_id));
+        (messageResult.data || []).forEach((row) => activeUserIds.add(row.user_id));
+        (pointsData || []).forEach((row) => activeUserIds.add(row.user_id));
+
+        profiles = profiles.filter((profile) => activeUserIds.has(profile.out_id || profile.id));
+    }
+
+    const pointsMap = new Map((pointsData || []).map((row) => [row.user_id, row.total_balance || 0]));
+    const rolesMap = new Map(
+        (rolesData || [])
+            .filter((row) => !row.expires_at || new Date(row.expires_at) > new Date())
+            .map((row) => [row.user_id, row.role_name || 'admin'])
+    );
+
+    return profiles.map((profile) => {
+        const id = profile.out_id || profile.id;
+        const email = profile.out_email || profile.email || '';
+        const username = profile.out_username || profile.username || '';
+        const avatarUrl = profile.out_avatar_url || profile.avatar_url || '';
+        const lastActiveAt = profile.out_last_active_at || profile.out_last_sign_in_at || profile.last_sign_in_at || '';
+        const createdAt = profile.out_created_at || profile.created_at || '';
+
+        return {
+            id,
+            username,
+            email,
+            avatar_url: avatarUrl,
+            current_points: pointsMap.get(id) || 0,
+            admin_role: rolesMap.get(id) || '',
+            last_active_at: lastActiveAt,
+            created_at: createdAt
+        };
+    });
+}
+
+async function fetchCommentsExportRows() {
+    const [guestbookRows, galleryRows] = await Promise.all([
+        fetchAllSupabaseRows(() => {
+            let query = window.supabaseClient
+                .from('guestbook_messages')
+                .select(`
+                    id,
+                    content,
+                    user_id,
+                    created_at,
+                    image_url,
+                    like_count,
+                    site,
+                    profiles:user_id (username, avatar_url, email)
+                `)
+                .order('created_at', { ascending: false });
+            query = window.AdminSiteFilter?.applySiteFilter?.(query) || query;
+            return query;
+        }),
+        fetchAllSupabaseRows(() => {
+            let query = window.supabaseClient
+                .from('prompt_comments')
+                .select(`
+                    id,
+                    content,
+                    user_id,
+                    created_at,
+                    image_url,
+                    parent_id,
+                    prompt_id,
+                    is_pinned,
+                    is_featured,
+                    site,
+                    profiles:user_id (username, avatar_url, email),
+                    prompts:prompt_id (title),
+                    comment_likes (count)
+                `)
+                .order('created_at', { ascending: false });
+            query = window.AdminSiteFilter?.applySiteFilter?.(query) || query;
+            return query;
+        })
+    ]);
+
+    return [
+        ...(guestbookRows || []).map((row) => ({
+            id: row.id,
+            type: 'guestbook',
+            site: row.site || '',
+            author: row.profiles?.username || '未知用户',
+            email: row.profiles?.email || '',
+            content: row.content || '',
+            likes: row.like_count || 0,
+            user_id: row.user_id || '',
+            prompt_title: '',
+            parent_id: '',
+            image_url: row.image_url || '',
+            created_at: row.created_at
+        })),
+        ...(galleryRows || []).map((row) => ({
+            id: row.id,
+            type: 'gallery',
+            site: row.site || '',
+            author: row.profiles?.username || '未知用户',
+            email: row.profiles?.email || '',
+            content: row.content || '',
+            likes: row.comment_likes?.[0]?.count || 0,
+            user_id: row.user_id || '',
+            prompt_title: row.prompts?.title || '',
+            parent_id: row.parent_id || '',
+            image_url: row.image_url || '',
+            is_pinned: row.is_pinned === true,
+            is_featured: row.is_featured === true,
+            created_at: row.created_at
+        }))
+    ].sort((left, right) => String(right.created_at || '').localeCompare(String(left.created_at || '')));
+}
+
+async function fetchPointsExportRows() {
+    return fetchAllSupabaseRows(() => {
+        let query = window.supabaseClient
+            .from('points_ledger')
+            .select('*')
+            .order('created_at', { ascending: false });
+        query = window.AdminSiteFilter?.applySiteFilter?.(query) || query;
+        return query;
+    });
+}
+
+async function exportSettingsData(dataset, format = 'json') {
+    const normalizedDataset = String(dataset || '').trim();
+    const normalizedFormat = String(format || 'json').trim().toLowerCase();
+
+    const loaders = {
+        users: fetchUsersExportRows,
+        comments: fetchCommentsExportRows,
+        points: fetchPointsExportRows
+    };
+
+    const loadRows = loaders[normalizedDataset];
+    if (!loadRows) {
+        throw new Error(`不支持的导出类型: ${normalizedDataset}`);
+    }
+
+    try {
+        const rows = await loadRows();
+        if (!Array.isArray(rows) || rows.length === 0) {
+            window.showToast?.('暂无可导出的数据', 'info');
+            return;
+        }
+
+        const timestamp = new Date().toISOString().slice(0, 10);
+        if (normalizedFormat === 'csv') {
+            const csv = convertRowsToCsv(rows);
+            downloadExportBlob(
+                new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }),
+                `${normalizedDataset}_export_${timestamp}.csv`
+            );
+        } else {
+            downloadExportBlob(
+                new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' }),
+                `${normalizedDataset}_export_${timestamp}.json`
+            );
+        }
+
+        window.showToast?.(`已导出 ${rows.length} 条${normalizedDataset === 'users' ? '用户' : (normalizedDataset === 'comments' ? '评论' : '积分')}数据`, 'success');
+    } catch (err) {
+        console.error('Export settings data failed:', err);
+        window.showToast?.(`导出失败: ${err.message}`, 'error');
+    }
+}
 
 const VERIFY_SERVER_URL = window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app';
 
@@ -2686,6 +3207,18 @@ window.selectDropdownOption = function (dropdownId, value, displayText) {
         const config = systemConfigCache['gallery'] || {};
         config.default_sort = value;
         saveConfig('gallery', config);
+    } else if (dropdownId === 'refreshIntervalDropdown') {
+        const config = normalizeAnalyticsPreferencesConfig(systemConfigCache['analytics_preferences']);
+        config.refresh_interval_ms = parseInt(value, 10) || getDefaultAnalyticsPreferencesConfig().refresh_interval_ms;
+        saveConfig('analytics_preferences', config);
+    } else if (dropdownId === 'aiServiceDropdown') {
+        const config = normalizeIntegrationsConfig(systemConfigCache['integrations']);
+        config.ai_service = value;
+        saveConfig('integrations', config);
+    } else if (dropdownId === 'cacheDurationDropdown') {
+        const config = normalizePerformanceConfig(systemConfigCache['performance']);
+        config.cache_duration_seconds = parseInt(value, 10) || getDefaultPerformanceConfig().cache_duration_seconds;
+        saveConfig('performance', config);
     }
 };
 
@@ -2940,6 +3473,8 @@ window.addChannel = addChannel;
 window.saveIpBlacklist = saveIpBlacklist;
 window.saveAnnouncement = saveAnnouncement;
 window.saveSensitiveWords = saveSensitiveWords;
+window.saveSeoSettings = saveSeoSettings;
+window.exportSettingsData = exportSettingsData;
 window.toggleDecoration = toggleDecoration;
 window.selectDecoration = selectDecoration;
 window.togglePageTarget = togglePageTarget;

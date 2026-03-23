@@ -248,14 +248,36 @@ function bindAdminStudioDelegatedControls() {
             case 'switch-settings-view':
                 window.switchSettingsView?.(actionEl.dataset.settingsView);
                 break;
+            case 'settings-toggle-custom-dropdown':
+                window.toggleCustomDropdown?.(actionEl.dataset.dropdownId);
+                break;
+            case 'settings-select-dropdown-option':
+                window.selectDropdownOption?.(
+                    actionEl.dataset.dropdownId,
+                    actionEl.dataset.optionValue,
+                    actionEl.dataset.optionLabel
+                );
+                break;
+            case 'settings-add-api-key':
+                window.addNewApiKey?.();
+                break;
             case 'settings-add-channel':
                 window.addChannel?.();
                 break;
             case 'settings-prompt-api-key':
-                promptForApiKey();
+                window.promptForApiKey?.();
                 break;
             case 'settings-delete-api-key':
-                deleteApiKey();
+                window.deleteApiKey?.();
+                break;
+            case 'settings-save-seo':
+                window.saveSeoSettings?.();
+                break;
+            case 'settings-export-dataset':
+                window.exportSettingsData?.(
+                    actionEl.dataset.exportDataset,
+                    actionEl.dataset.exportFormat
+                );
                 break;
             case 'homepage-switch-section':
                 window.HomepageAdmin?.switchSection?.(actionEl.dataset.hpSection);
@@ -1551,6 +1573,10 @@ function editApiKeyName() {
 function toggleApiKeyDropdown() {
     promptForApiKey();
 }
+
+window.addNewApiKey = addNewApiKey;
+window.promptForApiKey = promptForApiKey;
+window.deleteApiKey = deleteApiKey;
 
 // Close dropdown when clicking outside
 document.addEventListener('click', (e) => {
