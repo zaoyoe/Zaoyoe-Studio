@@ -1,7 +1,23 @@
 const crypto = require('crypto');
 const path = require('path');
+const vm = require('vm');
 const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
+const {
+    getFirstEnvValue
+} = require('../api/_lib/public-runtime-config');
+
+const PUBLIC_SUPABASE_URL_ENV_NAMES = Object.freeze([
+    'SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'PUBLIC_SUPABASE_URL'
+]);
+const PUBLIC_SUPABASE_KEY_ENV_NAMES = Object.freeze([
+    'SUPABASE_PUBLISHABLE_KEY',
+    'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY'
+]);
 
 function readEnv(name) {
     return String(process.env[name] || '').trim();
@@ -53,12 +69,112 @@ function printCheck(label, ok, details) {
     console.log(`${status} ${label}: ${details}`);
 }
 
+function normalizeBaseUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    return candidate.replace(/\/+$/, '');
+}
+
+function resolveAppBaseUrl(options = {}, env = process.env) {
+    return normalizeBaseUrl(
+        options.baseUrl
+        || env.APP_BASE_URL
+        || env.PAYMENT_SMOKE_BASE_URL
+        || ''
+    );
+}
+
+function parseRuntimeConfigScript(script = '') {
+    let loggedError = '';
+    const context = {
+        globalThis: {},
+        console: {
+            error(...args) {
+                loggedError = args
+                    .map((value) => String(value || '').trim())
+                    .filter(Boolean)
+                    .join(' ')
+                    .trim();
+            }
+        }
+    };
+    context.global = context.globalThis;
+
+    try {
+        vm.runInNewContext(String(script || ''), context, { timeout: 1000 });
+    } catch (error) {
+        return {
+            ok: false,
+            error: error.message || 'Failed to evaluate runtime config script'
+        };
+    }
+
+    const config = context.globalThis.__ZAOYOE_SUPABASE_CONFIG__;
+    const url = String(config?.url || '').trim().replace(/\/+$/, '');
+    const publishableKey = String(config?.publishableKey || '').trim();
+    if (!url || !publishableKey) {
+        return {
+            ok: false,
+            error: loggedError || 'Runtime Supabase config is unavailable'
+        };
+    }
+
+    return {
+        ok: true,
+        url,
+        publishableKey
+    };
+}
+
+async function fetchText(url, timeoutMs = 10000, fetchImpl = globalThis.fetch) {
+    if (typeof fetchImpl !== 'function') {
+        throw new Error('fetch is unavailable in this runtime');
+    }
+
+    const response = await fetchImpl(url, {
+        method: 'GET',
+        headers: {
+            Accept: 'application/json, application/javascript, text/plain'
+        },
+        signal: AbortSignal.timeout(timeoutMs)
+    });
+    const text = await response.text();
+    return {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        text
+    };
+}
+
+async function fetchJson(url, timeoutMs = 10000, fetchImpl = globalThis.fetch) {
+    const response = await fetchText(url, timeoutMs, fetchImpl);
+    let payload = null;
+    if (response.text) {
+        try {
+            payload = JSON.parse(response.text);
+        } catch (_) {
+            payload = null;
+        }
+    }
+
+    return {
+        ...response,
+        payload
+    };
+}
+
 function parseArgs(argv = []) {
     const options = {
         allowNonProduction: false,
         envFile: '',
+        baseUrl: '',
+        checkAppRuntime: false,
         validateSupabase: false,
-        validatePaymentSchema: false
+        validatePaymentSchema: false,
+        timeoutMs: 10000
     };
 
     for (let index = 0; index < argv.length; index += 1) {
@@ -80,8 +196,25 @@ function parseArgs(argv = []) {
             continue;
         }
 
+        if (value === '--check-app-runtime') {
+            options.checkAppRuntime = true;
+            continue;
+        }
+
         if (value === '--env-file') {
             options.envFile = path.resolve(process.cwd(), String(argv[index + 1] || '').trim());
+            index += 1;
+            continue;
+        }
+
+        if (value === '--base-url') {
+            options.baseUrl = String(argv[index + 1] || '').trim();
+            index += 1;
+            continue;
+        }
+
+        if (value === '--timeout-ms') {
+            options.timeoutMs = Number(argv[index + 1]);
             index += 1;
         }
     }
@@ -150,6 +283,123 @@ async function runSupabaseValidation({ validatePaymentSchema = false } = {}) {
             details: result.error
                 ? `status=${result.status} ${result.statusText || ''} ${result.error.message || ''}`.trim()
                 : `status=${result.status} ${result.statusText || 'OK'} count=${Number(result.count || 0)}`
+        });
+    }
+
+    return checks;
+}
+
+function buildRuntimeConfigCheckResult(runtimeConfig, expected = {}) {
+    if (!runtimeConfig?.ok) {
+        return {
+            label: 'app runtime Supabase config',
+            ok: false,
+            details: runtimeConfig?.error || 'Runtime Supabase config is unavailable'
+        };
+    }
+
+    const expectedUrl = String(expected.supabaseUrl || '').trim().replace(/\/+$/, '');
+    if (expectedUrl && runtimeConfig.url !== expectedUrl) {
+        return {
+            label: 'app runtime Supabase config',
+            ok: false,
+            details: `remote url=${runtimeConfig.url} does not match env SUPABASE_URL=${expectedUrl}`
+        };
+    }
+
+    const expectedPublishableKey = String(expected.publishableKey || '').trim();
+    if (expectedPublishableKey && runtimeConfig.publishableKey !== expectedPublishableKey) {
+        return {
+            label: 'app runtime Supabase config',
+            ok: false,
+            details: `publishable key fingerprint mismatch remote=${fingerprintSecret(runtimeConfig.publishableKey)} env=${fingerprintSecret(expectedPublishableKey)}`
+        };
+    }
+
+    return {
+        label: 'app runtime Supabase config',
+        ok: true,
+        details: `url=${runtimeConfig.url} publishable_key_fp=${fingerprintSecret(runtimeConfig.publishableKey)}`
+    };
+}
+
+async function runAppRuntimeValidation({
+    baseUrl = '',
+    env = process.env,
+    timeoutMs = 10000,
+    fetchImpl = globalThis.fetch
+} = {}) {
+    const resolvedBaseUrl = resolveAppBaseUrl({ baseUrl }, env);
+    if (!resolvedBaseUrl) {
+        return [{
+            label: 'app runtime base url',
+            ok: false,
+            details: 'missing APP_BASE_URL / PAYMENT_SMOKE_BASE_URL (or pass --base-url)'
+        }];
+    }
+
+    const checks = [{
+        label: 'app runtime base url',
+        ok: true,
+        details: resolvedBaseUrl
+    }];
+
+    try {
+        const runtimeResponse = await fetchText(
+            `${resolvedBaseUrl}/api/runtime/supabase-config`,
+            timeoutMs,
+            fetchImpl
+        );
+        const runtimeConfig = parseRuntimeConfigScript(runtimeResponse.text);
+
+        if (!runtimeResponse.ok) {
+            checks.push({
+                label: 'app runtime Supabase config',
+                ok: false,
+                details: `status=${runtimeResponse.status} ${runtimeResponse.statusText || ''} ${(runtimeConfig.error || runtimeResponse.text || '').trim()}`.trim()
+            });
+        } else {
+            checks.push(buildRuntimeConfigCheckResult(runtimeConfig, {
+                supabaseUrl: getFirstEnvValue(PUBLIC_SUPABASE_URL_ENV_NAMES, env),
+                publishableKey: getFirstEnvValue(PUBLIC_SUPABASE_KEY_ENV_NAMES, env)
+            }));
+        }
+    } catch (error) {
+        checks.push({
+            label: 'app runtime Supabase config',
+            ok: false,
+            details: error.message || 'fetch failed'
+        });
+    }
+
+    try {
+        const paymentConfigResponse = await fetchJson(
+            `${resolvedBaseUrl}/api/payments/config`,
+            timeoutMs,
+            fetchImpl
+        );
+
+        if (!paymentConfigResponse.ok || paymentConfigResponse.payload?.success !== true) {
+            checks.push({
+                label: 'app payment config endpoint',
+                ok: false,
+                details: `status=${paymentConfigResponse.status} ${paymentConfigResponse.statusText || ''} ${String(paymentConfigResponse.payload?.message || paymentConfigResponse.text || '').trim()}`.trim()
+            });
+        } else {
+            const mockRuntime = paymentConfigResponse.payload?.runtime?.mock_payment || null;
+            checks.push({
+                label: 'app payment config endpoint',
+                ok: true,
+                details: mockRuntime
+                    ? `status=${paymentConfigResponse.status} mock_allowed=${mockRuntime.allowed ? 'yes' : 'no'}${mockRuntime.reason ? ` reason=${mockRuntime.reason}` : ''}`
+                    : `status=${paymentConfigResponse.status}`
+            });
+        }
+    } catch (error) {
+        checks.push({
+            label: 'app payment config endpoint',
+            ok: false,
+            details: error.message || 'fetch failed'
         });
     }
 
@@ -226,6 +476,14 @@ async function main() {
         }));
     }
 
+    if (options.checkAppRuntime || resolveAppBaseUrl(options, process.env)) {
+        checks.push(...await runAppRuntimeValidation({
+            baseUrl: options.baseUrl,
+            env: process.env,
+            timeoutMs: Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 10000
+        }));
+    }
+
     console.log('Production Environment Check');
     console.log('Compare ADMIN_CONFIG_ENCRYPTION_KEY, PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET, and ADMIN_STUDIO_ACCESS_SECRET fingerprints across Vercel and Railway; they should match.');
     if (options.envFile) {
@@ -249,6 +507,8 @@ async function main() {
     console.log(`- PAYMENT_ALLOW_REMOTE_MOCK_UNTIL=${readEnv('PAYMENT_ALLOW_REMOTE_MOCK_UNTIL') || '(empty)'}`);
     console.log(`- PAYMENT_MOCK_ALLOW_REMOTE=${readEnv('PAYMENT_MOCK_ALLOW_REMOTE') || '(empty)'}`);
     console.log(`- PAYMENT_MOCK_ALLOW_REMOTE_UNTIL=${readEnv('PAYMENT_MOCK_ALLOW_REMOTE_UNTIL') || '(empty)'}`);
+    console.log(`- APP_BASE_URL=${readEnv('APP_BASE_URL') || '(empty)'}`);
+    console.log(`- PAYMENT_SMOKE_BASE_URL=${readEnv('PAYMENT_SMOKE_BASE_URL') || '(empty)'}`);
 
     const failedChecks = checks.filter((check) => !check.ok);
     if (failedChecks.length) {
@@ -262,7 +522,24 @@ async function main() {
     console.log('Result: PASS');
 }
 
-main().catch((error) => {
-    console.error(error.message || error);
-    process.exitCode = 1;
-});
+if (require.main === module) {
+    main().catch((error) => {
+        console.error(error.message || error);
+        process.exitCode = 1;
+    });
+}
+
+module.exports = {
+    buildRuntimeConfigCheckResult,
+    fetchJson,
+    fetchText,
+    fingerprintSecret,
+    isProductionLikeRuntime,
+    loadEnvFile,
+    normalizeBaseUrl,
+    parseArgs,
+    parseRuntimeConfigScript,
+    resolveAppBaseUrl,
+    runAppRuntimeValidation,
+    runSupabaseValidation
+};

@@ -65,10 +65,22 @@
 2. 进入 `Settings -> API Keys`。
 3. 重新生成 / 轮换 `secret/service role key`。
 4. 把新的 key 更新到：
-   - Vercel 的 `SUPABASE_SERVICE_ROLE_KEY`
-   - Railway / verify server 的 `SUPABASE_SERVICE_ROLE_KEY`（如果该服务也在使用）
-5. 如果你打算一并轮换后台加密种子，再同步更新：
-   - `ADMIN_CONFIG_ENCRYPTION_KEY`
+   - Vercel 的：
+     - `SUPABASE_URL`
+     - `SUPABASE_PUBLISHABLE_KEY`
+     - `SUPABASE_SERVICE_ROLE_KEY`
+     - `ADMIN_CONFIG_ENCRYPTION_KEY`
+     - `PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET`
+     - `ADMIN_STUDIO_ACCESS_SECRET`
+     - `ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL`（如果仍需远程模拟支付）
+   - Railway / verify server 的：
+     - `SUPABASE_URL`
+     - `SUPABASE_SERVICE_ROLE_KEY`
+     - `PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET`
+     - `ALLOWED_ORIGINS`
+5. 轮换或补齐变量后，先跑：
+   - `npm run check:prod-env -- --env-file server/.env.staging --validate-supabase --validate-payment-schema --check-app-runtime`
+   - `npm run smoke:payment -- --env-file server/.env.staging --config-only --allow-production-like`
 6. 重新部署：
    - Vercel
    - Railway（如果它依赖这个 key）

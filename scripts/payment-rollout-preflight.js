@@ -48,7 +48,7 @@ function main() {
     console.log(`env file: ${options.envFile}`);
     console.log('');
 
-    const checkArgs = [...sharedArgs, '--validate-supabase', '--validate-payment-schema'];
+    const checkArgs = [...sharedArgs, '--validate-supabase', '--validate-payment-schema', '--check-app-runtime'];
     if (options.allowNonProduction) {
         checkArgs.push('--allow-non-production');
     }
