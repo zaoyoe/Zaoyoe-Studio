@@ -431,6 +431,75 @@ function bindAdminStudioDelegatedControls() {
             case 'users-switch-tab':
                 window.switchUserTab?.(actionEl.dataset.userTab);
                 break;
+            case 'settings-toggle-decoration':
+                window.toggleDecoration?.();
+                break;
+            case 'settings-select-decoration':
+                window.selectDecoration?.(actionEl.dataset.decorationTheme);
+                break;
+            case 'settings-toggle-page-target':
+                window.togglePageTarget?.(actionEl.dataset.targetPage);
+                break;
+            case 'settings-insert-format':
+                window.insertFormat?.(actionEl.dataset.formatTag);
+                break;
+            case 'settings-toggle-align-picker':
+                window.toggleAlignPicker?.();
+                break;
+            case 'settings-apply-text-align':
+                window.applyTextAlign?.(actionEl.dataset.textAlign);
+                break;
+            case 'settings-insert-link':
+                window.insertLink?.();
+                break;
+            case 'settings-toggle-emoji-picker':
+                window.toggleEmojiPicker?.();
+                break;
+            case 'settings-select-emoji':
+                window.selectEmoji?.(actionEl.dataset.emojiValue);
+                break;
+            case 'settings-toggle-toolbar-dropdown':
+                window.toggleDropdown?.(actionEl.dataset.dropdownId);
+                break;
+            case 'settings-select-color':
+                window.selectColor?.(actionEl.dataset.colorValue);
+                break;
+            case 'settings-select-font-size':
+                window.selectFontSize?.(actionEl.dataset.fontSizeValue, actionEl.dataset.fontSizeClass);
+                break;
+            case 'settings-save-announcement':
+                window.saveAnnouncement?.();
+                break;
+            case 'settings-save-sensitive-words':
+                window.saveSensitiveWords?.();
+                break;
+            case 'discounts-filter':
+                window.AdminDiscounts?.filter?.(actionEl.dataset.discountStatus, actionEl);
+                break;
+            case 'discounts-open-generate-modal':
+                window.AdminDiscounts?.openGenerateModal?.();
+                break;
+            case 'discounts-close-generate-modal':
+                window.AdminDiscounts?.closeGenerateModal?.();
+                break;
+            case 'discounts-toggle-type-dropdown':
+                window.AdminDiscounts?.toggleTypeDropdown?.();
+                break;
+            case 'discounts-select-type':
+                window.AdminDiscounts?.selectDiscountType?.(actionEl.dataset.discountType);
+                break;
+            case 'discounts-submit-generate':
+                window.AdminDiscounts?.submitGenerate?.();
+                break;
+            case 'tickets-filter':
+                window.AdminTickets?.filter?.(actionEl.dataset.ticketStatus, actionEl);
+                break;
+            case 'tickets-close-reply-modal':
+                window.AdminTickets?.closeReplyModal?.();
+                break;
+            case 'tickets-submit-reply':
+                window.AdminTickets?.submitReply?.();
+                break;
             default:
                 break;
         }
@@ -462,6 +531,38 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'users-toggle-test-accounts':
                 window.toggleUserTestAccountVisibility?.(actionEl.checked);
+                break;
+            case 'settings-toggle-decoration':
+                window.toggleDecoration?.();
+                break;
+            default:
+                break;
+        }
+    });
+
+    document.addEventListener('input', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) {
+            return;
+        }
+
+        const actionEl = target.closest('[data-admin-input-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.adminInputAction) {
+            case 'discounts-search':
+                window.AdminDiscounts?.search?.();
+                break;
+            case 'discounts-format-expiry-date':
+                window.AdminDiscounts?.formatExpiryDateInput?.(actionEl);
+                break;
+            case 'discounts-format-expiry-time':
+                window.AdminDiscounts?.formatExpiryTimeInput?.(actionEl);
+                break;
+            case 'tickets-search':
+                window.AdminTickets?.search?.();
                 break;
             default:
                 break;
@@ -499,6 +600,36 @@ function bindAdminStudioDelegatedControls() {
 
         if (form.id === 'generateCodesForm') {
             window.generateCodes?.(event);
+            return;
+        }
+
+        if (form.id === 'discountGenerateForm') {
+            event.preventDefault();
+            window.AdminDiscounts?.submitGenerate?.();
+            return;
+        }
+
+        if (form.id === 'ticketReplyForm') {
+            event.preventDefault();
+            window.AdminTickets?.submitReply?.();
+        }
+    });
+
+    document.addEventListener('click', (event) => {
+        const overlay = event.target instanceof HTMLElement && event.target.matches('[data-admin-overlay-close]');
+        if (!overlay || event.target !== overlay) {
+            return;
+        }
+
+        switch (overlay.dataset.adminOverlayClose) {
+            case 'discount-generate-modal':
+                window.AdminDiscounts?.closeGenerateModal?.();
+                break;
+            case 'ticket-reply-modal':
+                window.AdminTickets?.closeReplyModal?.();
+                break;
+            default:
+                break;
         }
     });
 }
