@@ -98,7 +98,7 @@ class AdminChat {
             <div class="chat-container" id="chatMainContainer">
                 <div class="chat-sidebar" id="chatSidebar">
                     <div class="chat-sidebar-header">
-                        <button class="mobile-menu-btn chat-menu-btn" onclick="toggleMobileSidebar()">
+                        <button class="mobile-menu-btn chat-menu-btn" type="button" data-admin-action="toggle-mobile-sidebar">
                             <i class="fas fa-bars"></i>
                         </button>
                         <span class="chat-sidebar-title">${this.t('chat.sidebarTitle', '客服消息')}</span>

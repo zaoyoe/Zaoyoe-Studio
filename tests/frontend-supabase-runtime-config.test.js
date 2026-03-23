@@ -1288,3 +1288,58 @@ test('analytics calendar and config poster/editor templates route through delega
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
 });
+
+test('payments runtime controls, site filter, and admin chat menu route through delegated actions', () => {
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminPaymentsSource = readRepoFile('js/admin-payments.js');
+    const siteFilterSource = readRepoFile('js/admin-site-filter.js');
+    const adminChatSource = readRepoFile('js/admin-chat.js');
+
+    const removedInlineMarkers = [
+        `onclick="AdminPayments.handleAnomalyAction('`,
+        `onclick="AdminPayments.goToPage('`,
+        `onclick="AdminPayments.setExceptionTopicFilter('`,
+        `onclick="AdminSiteFilter.toggleDropdown()"`,
+        `onclick="AdminSiteFilter.select('`,
+        `onclick="toggleMobileSidebar()"`
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(
+            adminPaymentsSource.includes(marker) || siteFilterSource.includes(marker) || adminChatSource.includes(marker),
+            false,
+            `payments/site-filter/chat templates should not contain ${marker}`
+        );
+    }
+
+    const runtimeMarkers = [
+        'data-admin-action="payments-handle-anomaly-action"',
+        'data-admin-action="payments-go-to-page"',
+        'data-admin-action="payments-set-exception-topic-filter"',
+        'data-admin-action="site-filter-toggle-dropdown"',
+        'data-admin-action="site-filter-select"',
+        'data-admin-action="toggle-mobile-sidebar"'
+    ];
+
+    for (const marker of runtimeMarkers.slice(0, 3)) {
+        assert.equal(adminPaymentsSource.includes(marker), true, `js/admin-payments.js should contain ${marker}`);
+    }
+
+    for (const marker of runtimeMarkers.slice(3, 5)) {
+        assert.equal(siteFilterSource.includes(marker), true, `js/admin-site-filter.js should contain ${marker}`);
+    }
+
+    assert.equal(adminChatSource.includes(runtimeMarkers[5]), true, 'js/admin-chat.js should contain data-admin-action="toggle-mobile-sidebar"');
+
+    const adminScriptMarkers = [
+        "case 'payments-handle-anomaly-action':",
+        "case 'payments-go-to-page':",
+        "case 'payments-set-exception-topic-filter':",
+        "case 'site-filter-toggle-dropdown':",
+        "case 'site-filter-select':"
+    ];
+
+    for (const marker of adminScriptMarkers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+});

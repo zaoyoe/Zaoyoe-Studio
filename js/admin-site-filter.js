@@ -53,16 +53,17 @@
 
         container.innerHTML = `
             <div class="admin-site-selector" id="adminSiteSelector">
-                <button class="site-selector-btn" onclick="AdminSiteFilter.toggleDropdown()">
+                <button class="site-selector-btn" type="button" data-admin-action="site-filter-toggle-dropdown">
                     <span class="site-selector-label">${SITE_LABELS[currentFilter]}</span>
                     <i class="fas fa-chevron-down"></i>
                 </button>
                 <div class="site-selector-menu" id="siteSelectorMenu">
                     ${Object.entries(SITE_LABELS).map(([key, label]) => `
-                        <div class="site-selector-option ${key === currentFilter ? 'active' : ''}" 
-                             onclick="AdminSiteFilter.select('${key}')">
+                        <button type="button" class="site-selector-option ${key === currentFilter ? 'active' : ''}" 
+                             data-admin-action="site-filter-select"
+                             data-site-filter-value="${key}">
                             ${label}
-                        </div>
+                        </button>
                     `).join('')}
                 </div>
             </div>

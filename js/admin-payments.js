@@ -501,7 +501,10 @@
                     <button
                         type="button"
                         class="payments-anomaly-action-btn ${escapeHtml(action)}"
-                        onclick="AdminPayments.handleAnomalyAction('${escapeHtml(item.type)}','${escapeHtml(item.id)}','${escapeHtml(action)}')"
+                        data-admin-action="payments-handle-anomaly-action"
+                        data-payments-target-type="${escapeHtml(item.type)}"
+                        data-payments-target-id="${escapeHtml(item.id)}"
+                        data-payments-action="${escapeHtml(action)}"
                         ${loading ? 'disabled' : ''}
                     >
                         ${escapeHtml(getAnomalyActionLabel(action))}
@@ -570,11 +573,11 @@
 
         return `
             <div class="payments-pagination admin-pagination">
-                <button class="payments-pagination-btn page-btn" type="button" onclick="AdminPayments.goToPage('${escapeHtml(pageKey)}', ${currentPage - 1})" ${currentPage <= 1 ? 'disabled' : ''} aria-label="上一页">
+                <button class="payments-pagination-btn page-btn" type="button" data-admin-action="payments-go-to-page" data-payments-page-key="${escapeHtml(pageKey)}" data-payments-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''} aria-label="上一页">
                     <i class="fas fa-chevron-left"></i>
                 </button>
                 <div class="payments-pagination-info page-info">第 ${escapeHtml(formatNumber(currentPage))} / ${escapeHtml(formatNumber(totalPages))} 页 · 共 ${escapeHtml(formatNumber(totalItems))} 条</div>
-                <button class="payments-pagination-btn page-btn" type="button" onclick="AdminPayments.goToPage('${escapeHtml(pageKey)}', ${currentPage + 1})" ${currentPage >= totalPages ? 'disabled' : ''} aria-label="下一页">
+                <button class="payments-pagination-btn page-btn" type="button" data-admin-action="payments-go-to-page" data-payments-page-key="${escapeHtml(pageKey)}" data-payments-page="${currentPage + 1}" ${currentPage >= totalPages ? 'disabled' : ''} aria-label="下一页">
                     <i class="fas fa-chevron-right"></i>
                 </button>
             </div>
@@ -1296,7 +1299,7 @@
                     <div class="payments-provider-meta">当前范围内共 ${escapeHtml(formatNumber(totalTopicCount))} 项专题异常，点击下方专题查看聚合详情。</div>
                 </div>
                 <div class="payments-provider-badges">
-                    <button type="button" class="payments-anomaly-action-btn ${activeFilter === 'all' ? 'mark_handled' : ''}" onclick="AdminPayments.setExceptionTopicFilter('all')">查看全部</button>
+                    <button type="button" class="payments-anomaly-action-btn ${activeFilter === 'all' ? 'mark_handled' : ''}" data-admin-action="payments-set-exception-topic-filter" data-payments-topic-key="all">查看全部</button>
                 </div>
             </div>
             ${topics.map((topic) => `
@@ -1307,7 +1310,7 @@
                     </div>
                     <div class="payments-provider-badges">
                         <span class="payments-mini-badge ${escapeHtml(topic.severity === 'critical' ? 'danger' : (topic.severity === 'warning' ? 'warning' : 'info'))}">${escapeHtml(formatNumber(topic.count || 0))} 项</span>
-                        <button type="button" class="payments-anomaly-action-btn ${activeFilter === String(topic.key || '').trim().toLowerCase() ? 'mark_handled' : ''}" onclick="AdminPayments.setExceptionTopicFilter('${escapeHtml(topic.key)}')">查看</button>
+                        <button type="button" class="payments-anomaly-action-btn ${activeFilter === String(topic.key || '').trim().toLowerCase() ? 'mark_handled' : ''}" data-admin-action="payments-set-exception-topic-filter" data-payments-topic-key="${escapeHtml(topic.key)}">查看</button>
                     </div>
                 </div>
             `).join('')}
