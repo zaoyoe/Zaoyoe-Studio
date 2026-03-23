@@ -388,10 +388,12 @@ if (require.main === module) {
 
 module.exports = {
     FALLBACK_FAIL_CLOSED_ALLOWLIST,
+    DEFAULT_VERIFY_SERVER_URL,
     chooseAdminEmail,
     formatHumanReport,
     normalizeBaseUrl,
     parseArgs,
     resolveAdminEmail,
+    runInspection,
     summarizeSamples
 };

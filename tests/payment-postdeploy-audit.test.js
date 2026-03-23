@@ -57,6 +57,9 @@ test('buildFindings highlights remote mock risk and leftover smoke artifacts', (
             }
         },
         network: {
+            trusted_proxy_ips: '',
+            afdian_webhook_trusted_proxies: '',
+            afdian_webhook_allowed_ips: '',
             webhook_allowlist_placeholder: true
         }
     });
@@ -65,6 +68,8 @@ test('buildFindings highlights remote mock risk and leftover smoke artifacts', (
         findings.map((finding) => finding.key),
         [
             'remote_mock_payment_still_enabled',
+            'proxy_trust_chain_missing',
+            'afdian_webhook_allowlist_missing',
             'smoke_payment_artifacts_present',
             'smoke_users_still_present',
             'afdian_webhook_allowlist_placeholder'
