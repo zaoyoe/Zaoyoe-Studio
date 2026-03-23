@@ -94,6 +94,10 @@
    - 管理员后台
    - 钱包充值
    - 爱发电订单查询
+9. 验证通过后，再跑一次只读收尾审计：
+   - `npm run audit:payment-closeout -- --env-file server/.env.staging`
+   - 如果结果提示 `remote_mock_payment_still_enabled`，说明生产态远程 mock 仍开放，测试完成后应尽快关闭。
+   - 如果结果提示 `smoke_payment_artifacts_present` 或 `smoke_users_still_present`，说明专用 smoke 测试痕迹还在，建议去 `支付对账 -> 异常运维 -> 测试数据清理` 做清理。
 
 ## 6. 模拟支付收尾
 
