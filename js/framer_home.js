@@ -131,6 +131,81 @@ window.closeActiveMobileMenu = function () {
   );
 };
 
+function openHomepageGuestbookModal(trigger) {
+  if (typeof window.openGuestbookModal !== 'function') {
+    return false;
+  }
+
+  window.openGuestbookModal();
+
+  if (trigger?.dataset?.closeMobileMenu === '1') {
+    window.closeActiveMobileMenu?.();
+  }
+
+  return true;
+}
+
+function bindHomepageStaticDelegates() {
+  if (document.documentElement.dataset.homepageStaticDelegatesBound === '1') {
+    return;
+  }
+
+  document.documentElement.dataset.homepageStaticDelegatesBound = '1';
+
+  document.addEventListener('click', (event) => {
+    const eventTarget = event.target instanceof Element ? event.target : event.target?.parentElement;
+    if (!eventTarget) {
+      return;
+    }
+
+    const guestbookTrigger = eventTarget.closest('[data-home-open-guestbook="1"]');
+    if (guestbookTrigger) {
+      if (openHomepageGuestbookModal(guestbookTrigger)) {
+        event.preventDefault();
+      }
+      return;
+    }
+
+    const uploadTrigger = eventTarget.closest('[data-home-trigger-upload="1"]');
+    if (uploadTrigger) {
+      const imageUpload = document.getElementById('imageUpload');
+      if (imageUpload) {
+        event.preventDefault();
+        imageUpload.click();
+      }
+    }
+  });
+}
+
+function bindHoverLiftTargets(root) {
+  root?.querySelectorAll('[data-home-hover-lift="1"]').forEach((element) => {
+    if (element.dataset.homeHoverLiftBound === '1') {
+      return;
+    }
+
+    element.dataset.homeHoverLiftBound = '1';
+
+    const applyHoverState = (isHovered) => {
+      element.style.transform = isHovered ? 'translateY(-2px)' : 'translateY(0)';
+      element.style.boxShadow = isHovered ? '0 8px 32px rgba(255,255,255,0.08)' : 'none';
+    };
+
+    element.addEventListener('mouseenter', () => applyHoverState(true));
+    element.addEventListener('mouseleave', () => applyHoverState(false));
+  });
+}
+
+function bindImageFallbacks(root, selector, onError) {
+  root?.querySelectorAll(selector).forEach((image) => {
+    if (image.dataset.homeFallbackBound === '1') {
+      return;
+    }
+
+    image.dataset.homeFallbackBound = '1';
+    image.addEventListener('error', () => onError(image), { once: true });
+  });
+}
+
 const FramerHome = {
   // Cached data
   cachedData: null,
@@ -160,6 +235,8 @@ const FramerHome = {
 
     // Render all sections (single render, no double-paint)
     this.renderAll();
+
+    bindHomepageStaticDelegates();
 
     // Initialize navigation dropdowns
     this.initNavDropdowns();
@@ -1169,7 +1246,7 @@ const FramerHome = {
                     <img src="${this.getOptimizedImageUrl(prompt.images[0])}" 
                          alt="${prompt.title}" 
                          loading="lazy"
-                         onerror="if(!this.dataset.fallback){this.dataset.fallback='1';this.src='${prompt.images[0]}';}" />
+                         data-home-fallback-src="${encodeURIComponent(prompt.images[0])}" />
                     <div class="masonry-card-tags">
                       ${displayTags.map(tag => `<span class="masonry-tag">${tag}</span>`).join('')}
                     </div>
@@ -1208,7 +1285,7 @@ const FramerHome = {
 
         return `
           <div class="prompts-gradient-mask">
-            <div class="mask-labels-container" onclick="window.location.href='/prompts.html'">
+            <a href="/prompts.html" class="mask-labels-container">
               <div class="mask-labels-row">
                 ${row1.map(tag => `<span class="mask-tag">${tag}</span>`).join('')}
               </div>
@@ -1219,12 +1296,22 @@ const FramerHome = {
               <div class="mask-labels-row">
                 ${row2.map(tag => `<span class="mask-tag">${tag}</span>`).join('')}
               </div>
-            </div>
+            </a>
           </div>
         `;
       })()}
       </div>
     `;
+
+    bindImageFallbacks(section, 'img[data-home-fallback-src]', (image) => {
+      const fallbackSrc = image.dataset.homeFallbackSrc;
+      if (!fallbackSrc || image.dataset.homeFallbackApplied === '1') {
+        return;
+      }
+
+      image.dataset.homeFallbackApplied = '1';
+      image.src = decodeURIComponent(fallbackSrc);
+    });
 
     // Initialize parallax after render
     this.initMasonryParallax();
@@ -1262,7 +1349,7 @@ const FramerHome = {
             <a href="/shop.html" class="shop-carousel-card">
               <div class="shop-card-image">
                 ${product.icon_url && (product.icon_url.startsWith('http') || product.icon_url.startsWith('/') || product.icon_url.startsWith('data:'))
-        ? `<img src="${product.icon_url}" alt="${this.getLocalizedField(product, 'name')}" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<i class=\\'fas fa-box-open\\' style=\\'font-size:48px;color:var(--text-secondary,#888)\\'></i>'">`
+        ? `<img src="${product.icon_url}" alt="${this.getLocalizedField(product, 'name')}" loading="lazy" data-home-replace-parent-icon="1">`
         : (product.icon_url && product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url}" style="font-size: 48px; color: var(--accent-blue);"></i>` : `<i class="fas fa-box-open" style="font-size: 48px; color: var(--text-secondary, #888);"></i>`)}
               </div>
               <div class="shop-card-info">
@@ -1274,6 +1361,17 @@ const FramerHome = {
         </div>
       </div>
     `;
+
+    bindImageFallbacks(section, 'img[data-home-replace-parent-icon="1"]', (image) => {
+      if (image.dataset.homeFallbackApplied === '1') {
+        return;
+      }
+
+      image.dataset.homeFallbackApplied = '1';
+      if (image.parentElement) {
+        image.parentElement.innerHTML = '<i class="fas fa-box-open" style="font-size:48px;color:var(--text-secondary,#888)"></i>';
+      }
+    });
   },
 
   /**
@@ -1392,7 +1490,7 @@ const FramerHome = {
         ${messages.map(msg => `
           <div class="glass-card fade-in-up" style="display: flex; gap: 16px; width: 100%; max-width: 600px;">
             <img src="${msg.profiles?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(msg.profiles?.username || 'U')}&backgroundColor=6b9ece`}" 
-                 onerror="this.onerror=null;this.src='https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(msg.profiles?.username || 'U')}&backgroundColor=6b9ece'"
+                 data-home-avatar-fallback="${encodeURIComponent(`https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(msg.profiles?.username || 'U')}&backgroundColor=6b9ece`)}"
                  style="width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--border-subtle); object-fit: cover;">
             <div style="flex: 1;">
               <div style="font-weight: 600; margin-bottom: 4px;">${msg.profiles?.username || '匿名用户'}</div>
@@ -1403,22 +1501,32 @@ const FramerHome = {
       </div>
       
       <div style="text-align: center; margin-top: 48px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
-        <button onclick="if(typeof window.openGuestbookModal==='function') window.openGuestbookModal();" 
+        <a href="/guestbook.html"
+          data-home-open-guestbook="1"
+          data-home-hover-lift="1"
           class="btn btn-secondary"
-          style="transition: all 0.3s cubic-bezier(0.4,0,0.2,1);"
-          onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 32px rgba(255,255,255,0.08)';"
-          onmouseleave="this.style.transform='translateY(0)';this.style.boxShadow='none';">
+          style="transition: all 0.3s cubic-bezier(0.4,0,0.2,1);">
           <i class="fas fa-pen-fancy"></i>
           ${window.i18n?.t('home.guestbook.writeMessage') || '写留言'}
-        </button>
+        </a>
         <a href="/guestbook.html" class="btn btn-secondary"
-          style="transition: all 0.3s cubic-bezier(0.4,0,0.2,1);"
-          onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 32px rgba(255,255,255,0.08)';"
-          onmouseleave="this.style.transform='translateY(0)';this.style.boxShadow='none';">
+          data-home-hover-lift="1"
+          style="transition: all 0.3s cubic-bezier(0.4,0,0.2,1);">
           ${window.i18n?.t('home.guestbook.viewAll') || '查看全部留言'}
         </a>
       </div>
     `;
+
+    bindImageFallbacks(section, 'img[data-home-avatar-fallback]', (image) => {
+      const fallbackSrc = image.dataset.homeAvatarFallback;
+      if (!fallbackSrc || image.dataset.homeFallbackApplied === '1') {
+        return;
+      }
+
+      image.dataset.homeFallbackApplied = '1';
+      image.src = decodeURIComponent(fallbackSrc);
+    });
+    bindHoverLiftTargets(section);
   },
 
   /**

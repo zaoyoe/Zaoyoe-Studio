@@ -3,7 +3,9 @@ const assert = require('node:assert/strict');
 
 const {
     issueCustomRechargeQuote,
+    issuePaymentIntentClaimToken,
     verifyCustomRechargeQuoteToken,
+    verifyPaymentIntentClaimToken,
     __testUtils: paymentTestUtils
 } = require('../api/_lib/payments/orders');
 const {
@@ -124,6 +126,77 @@ test('misconfigured quote secret fails closed during verification', () => {
     });
 
     assert.equal(verified, null);
+});
+
+test('payment intent claim signs and verifies with an independent secret', () => {
+    const env = {
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role-secret',
+        PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote-secret'
+    };
+
+    const claim = issuePaymentIntentClaimToken({
+        userId: 'user-1',
+        site: 'intl',
+        providerKey: 'afdian',
+        checkoutSessionId: 'checkout-session-1',
+        packageId: 'pkg-1',
+        packageName: 'Intl Package',
+        expectedAmount: 20,
+        pointsAmount: 200,
+        chargeType: 'package',
+        env
+    });
+
+    const verified = verifyPaymentIntentClaimToken(claim.token, {
+        env,
+        userId: 'user-1',
+        site: 'intl',
+        providerKey: 'afdian'
+    });
+
+    assert.ok(verified);
+    assert.equal(verified.intentId, claim.intentId);
+    assert.equal(verified.checkoutSessionId, 'checkout-session-1');
+    assert.equal(verified.expectedAmount, 20);
+    assert.equal(verified.pointsAmount, 200);
+});
+
+test('payment intent claim verification rejects mismatched user, site, or provider', () => {
+    const env = {
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role-secret',
+        PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote-secret'
+    };
+
+    const claim = issuePaymentIntentClaimToken({
+        userId: 'user-1',
+        site: 'cn',
+        providerKey: 'afdian',
+        checkoutSessionId: 'checkout-session-2',
+        packageId: 'pkg-2',
+        packageName: 'CN Package',
+        expectedAmount: 9.9,
+        pointsAmount: 100,
+        chargeType: 'package',
+        env
+    });
+
+    assert.equal(verifyPaymentIntentClaimToken(claim.token, {
+        env,
+        userId: 'user-2',
+        providerKey: 'afdian'
+    }), null);
+    assert.equal(verifyPaymentIntentClaimToken(claim.token, {
+        env,
+        userId: 'user-1',
+        site: 'intl',
+        providerKey: 'afdian'
+    }), null);
+    assert.equal(verifyPaymentIntentClaimToken(claim.token, {
+        env,
+        userId: 'user-1',
+        site: 'cn',
+        providerKey: 'hupijiao'
+    }), null);
 });
 
 test('mock payment can be explicitly allowed in production-like runtimes', () => {

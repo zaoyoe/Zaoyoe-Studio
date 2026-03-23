@@ -2128,12 +2128,16 @@ function showModalAnnouncement(color, size, content, ackKey, decoration) {
                 <div class="announcement-text">${content}</div>
             </div>
             <div class="announcement-footer">
-                <button class="announcement-ack-btn" onclick="closeAnnouncement(true)">
+                <button class="announcement-ack-btn" type="button">
                     已读
                 </button>
             </div>
         </div>
     `;
+
+    overlay.querySelector('.announcement-ack-btn')?.addEventListener('click', () => {
+        closeAnnouncement(true);
+    });
 
     // Close on overlay click (temporary close)
     overlay.addEventListener('click', (e) => {
@@ -2275,8 +2279,13 @@ function showToastAnnouncement(color, size, content, ackKey, decoration) {
             <span class="toast-title">站内公告</span>
         </div>
         <div class="toast-body">${content}</div>
-        <button class="announcement-ack-btn-sm" onclick="event.stopPropagation(); closeAnnouncement(true)">已读</button>
+        <button class="announcement-ack-btn-sm" type="button">已读</button>
     `;
+
+    toast.querySelector('.announcement-ack-btn-sm')?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        closeAnnouncement(true);
+    });
 
     // Prevent clicks inside toast from closing
     toast.addEventListener('click', (e) => {
@@ -2392,6 +2401,7 @@ async function loadPromptsFromSupabase() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    initializePromptStaticControls();
     syncPromptNavOffset();
 
     // Try to load from Supabase first
@@ -3481,15 +3491,31 @@ function renderCurrentPage() {
         card.style.setProperty('--breathe-delay', `${breatheDelay}s`);
 
         card.innerHTML = `
-            <button class="card-fav-btn ${isSaved ? 'saved' : ''}" onclick="toggleFavorite(${item.id}, this, event)">
+            <button class="card-fav-btn ${isSaved ? 'saved' : ''}" type="button">
                 <i class="fas fa-heart"></i>
             </button>
-            <img src="${getOptimizedImageUrl(item.images[0])}" class="card-image" loading="lazy" alt="${getLocalizedField(item, 'title')}" onload="this.classList.add('loaded')" onerror="if(!this.dataset.fallback){this.dataset.fallback='1';this.src='${item.images[0]}';this.classList.add('loaded');}">
+            <img src="${getOptimizedImageUrl(item.images[0])}" class="card-image" loading="lazy" alt="${getLocalizedField(item, 'title')}">
             <div class="card-overlay">
                 <div class="card-title">${getLocalizedField(item, 'title')}</div>
                 ${indicators}
             </div>
         `;
+
+        const favoriteButton = card.querySelector('.card-fav-btn');
+        favoriteButton?.addEventListener('click', (event) => {
+            toggleFavorite(item.id, favoriteButton, event);
+        });
+
+        const cardImage = card.querySelector('.card-image');
+        cardImage?.addEventListener('load', () => {
+            cardImage.classList.add('loaded');
+        });
+        cardImage?.addEventListener('error', () => {
+            if (cardImage.dataset.fallback === '1') return;
+            cardImage.dataset.fallback = '1';
+            cardImage.src = item.images[0];
+            cardImage.classList.add('loaded');
+        });
 
         // Add hover carousel for cards with multiple images
         if (hasMultiple) {
@@ -4690,6 +4716,28 @@ function handlePromptModalTopButton() {
     }
 
     closePromptModal();
+}
+
+function initializePromptStaticControls() {
+    if (window.__promptStaticControlsBound) return;
+
+    document.getElementById('announcementCloseBtn')?.addEventListener('click', () => {
+        closeAnnouncement(true);
+    });
+    document.getElementById('promptModalTopBtn')?.addEventListener('click', () => {
+        handlePromptModalTopButton();
+    });
+    document.getElementById('modalImgNavLeft')?.addEventListener('click', () => {
+        navigateModalImage('prev');
+    });
+    document.getElementById('modalImgNavRight')?.addEventListener('click', () => {
+        navigateModalImage('next');
+    });
+    document.getElementById('commentTriggerBtn')?.addEventListener('click', () => {
+        toggleCommentMode();
+    });
+
+    window.__promptStaticControlsBound = true;
 }
 
 function forceSafariSafeAreaJiggle() {
@@ -6821,10 +6869,13 @@ function openImageLightbox(imageUrl) {
         lightbox.id = 'imageLightbox';
         lightbox.className = 'image-lightbox';
         lightbox.innerHTML = `
-            <button class="lightbox-close" onclick="closeImageLightbox()">×</button>
+            <button class="lightbox-close" type="button">×</button>
             <img src="" alt="Full size" />
         `;
         document.body.appendChild(lightbox);
+        lightbox.querySelector('.lightbox-close')?.addEventListener('click', () => {
+            closeImageLightbox();
+        });
     }
 
     // Set image and show
@@ -7419,7 +7470,7 @@ function renderComment(comment, overrideAvatar = null, replyToProfile = null, ha
     div.dataset.commentId = comment.id;
     div.innerHTML = `
         ${isReply ? '<div class="thread-line"></div>' : ''}
-        <img src="${avatarUrl}" class="comment-avatar" alt="${name}" onerror="this.onerror=null;this.src='${fallbackUrl}';">
+        <img src="${avatarUrl}" class="comment-avatar" alt="${name}">
         <div class="comment-body">
             ${replyingToHtml}
             <div class="comment-header">
@@ -7436,7 +7487,7 @@ function renderComment(comment, overrideAvatar = null, replyToProfile = null, ha
                 </button>
                 <button class="comment-action-btn reply-btn">${window.i18n?.t('gallery.reply') || 'Reply'}</button>
                 ${comment.image_url ? `
-                    <button class="comment-action-btn view-image-btn" onclick="openImageLightbox('${comment.image_url}')">
+                    <button class="comment-action-btn view-image-btn" type="button">
                         <i class="far fa-image"></i> ${window.i18n?.t('gallery.viewImage') || 'View Image'}
                     </button>
                 ` : ''}
@@ -7447,9 +7498,17 @@ function renderComment(comment, overrideAvatar = null, replyToProfile = null, ha
     // Add event listeners
     const likeBtn = div.querySelector('.like-btn');
     const replyBtn = div.querySelector('.reply-btn');
+    const viewImageBtn = div.querySelector('.view-image-btn');
+    const avatarImage = div.querySelector('.comment-avatar');
 
     likeBtn.addEventListener('click', () => handleLikeComment(comment.id, likeBtn));
     replyBtn.addEventListener('click', () => handleReplyComment(comment.id, name));
+    viewImageBtn?.addEventListener('click', () => openImageLightbox(comment.image_url));
+    avatarImage?.addEventListener('error', () => {
+        if (avatarImage.dataset.fallbackApplied === '1') return;
+        avatarImage.dataset.fallbackApplied = '1';
+        avatarImage.src = fallbackUrl;
+    });
 
     list.appendChild(div);
 }
@@ -7996,6 +8055,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup comment input listeners including iOS scroll stabiliser
     const commentInput = document.getElementById('commentInput');
     if (commentInput) {
+        commentInput.addEventListener('keydown', handleCommentKeydown);
+        commentInput.addEventListener('input', () => autoExpandTextarea(commentInput));
+
         if (isPromptCommentComposerEnabled()) {
             const commentInputArea = commentInput.closest('.comment-input-area');
             const uploadBtn = document.getElementById('commentUploadBtn');
@@ -8021,15 +8083,19 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (uploadBtn) {
-                uploadBtn.onclick = (e) => launchComposer(e, { openFilePicker: true });
+                uploadBtn.addEventListener('click', (e) => launchComposer(e, { openFilePicker: true }));
             }
 
             if (sendBtn) {
-                sendBtn.onclick = (e) => launchComposer(e);
+                sendBtn.addEventListener('click', (e) => launchComposer(e));
             }
             window.i18n?.ready?.().then(() => refreshCommentLanguageUI());
             return;
         }
+
+        document.getElementById('sendCommentBtn')?.addEventListener('click', () => {
+            void submitComment();
+        });
 
         // ── V18 Fix: Prevent iOS Safari from natively scrolling the page when tapping
         // the comment input. Without e.preventDefault() here, Safari fires a layout
