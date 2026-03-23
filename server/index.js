@@ -283,6 +283,34 @@ function buildNetworkDiagnosticFindings({ appContext, webhookContext }) {
         });
     }
 
+    if (
+        appContext.forwarded_ips.length
+        && appContext.trusted_proxies.length
+        && !appContext.trust_all_proxies
+        && !appContext.direct_peer_trusted
+        && appContext.socket_ip
+    ) {
+        findings.push({
+            severity: 'high',
+            code: 'proxy_trust_chain_mismatch',
+            message: `Configured TRUSTED_PROXY_IPS do not match the current Railway peer ${appContext.socket_ip}; update the proxy allowlist to include the latest ingress IPs.`
+        });
+    }
+
+    if (
+        webhookContext.forwarded_ips.length
+        && webhookContext.trusted_proxies.length
+        && !webhookContext.trust_all_proxies
+        && !webhookContext.direct_peer_trusted
+        && webhookContext.socket_ip
+    ) {
+        findings.push({
+            severity: 'high',
+            code: 'afdian_webhook_proxy_trust_mismatch',
+            message: `Configured AFDIAN_WEBHOOK_TRUSTED_PROXIES do not match the current Railway peer ${webhookContext.socket_ip}; webhook source IPs cannot be resolved until this is updated.`
+        });
+    }
+
     if (!webhookContext.allowlist_configured) {
         findings.push({
             severity: 'high',
