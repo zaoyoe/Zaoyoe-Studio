@@ -4,6 +4,11 @@ const {
     sendJson
 } = require('../_lib/admin');
 const {
+    applyRateLimitHeaders,
+    resolveClientIp,
+    takeRateLimitToken
+} = require('../_lib/request-security');
+const {
     createPaymentRequest
 } = require('../_lib/payments/orders');
 
@@ -13,6 +18,21 @@ module.exports = async function handler(req, res) {
         return sendJson(res, 405, {
             success: false,
             message: 'Method not allowed'
+        });
+    }
+
+    const rateLimit = takeRateLimitToken({
+        key: `payments-create:${resolveClientIp(req, { env: process.env }) || 'unknown'}`,
+        limit: Math.max(1, Number(process.env.PAYMENTS_CREATE_RATE_LIMIT_MAX || 12)),
+        windowMs: Math.max(10_000, Number(process.env.PAYMENTS_CREATE_RATE_LIMIT_WINDOW_MS || 60_000))
+    });
+    applyRateLimitHeaders(res, rateLimit);
+    if (!rateLimit.allowed) {
+        return sendJson(res, 429, {
+            success: false,
+            code: 'rate_limited',
+            message: 'Too many payment creation requests',
+            retry_after_seconds: rateLimit.retryAfterSeconds
         });
     }
 

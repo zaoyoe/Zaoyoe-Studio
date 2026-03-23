@@ -30,6 +30,14 @@ const {
     loadShopDeliveryStrategyConfig,
     normalizeShopDeliveryStrategyConfig
 } = require('../api/_lib/payments/shop-delivery-strategy');
+const {
+    applyRateLimitHeaders,
+    explainClientIpResolution,
+    isIpAllowed,
+    resolveClientIp,
+    splitIpRules,
+    takeRateLimitToken
+} = require('../api/_lib/request-security');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -179,6 +187,127 @@ async function getVerifyConfig() {
 
 function getCurrentSite(req, explicitSite) {
     return explicitSite || (req.headers.origin?.includes('zaoyoe.xyz') ? 'intl' : 'cn');
+}
+
+function resolveRequestClientIp(req, options = {}) {
+    return resolveClientIp(req, {
+        env: process.env,
+        trustedProxies: options.trustedProxies
+    });
+}
+
+function getAfdianWebhookTrustedProxies() {
+    return process.env.AFDIAN_WEBHOOK_TRUSTED_PROXIES
+        || process.env.TRUSTED_PROXY_IPS
+        || process.env.TRUSTED_PROXY_CIDRS
+        || '';
+}
+
+function applyRequestRateLimit(req, res, {
+    keyPrefix,
+    limit,
+    windowMs,
+    trustedProxies = ''
+}) {
+    const clientIp = resolveRequestClientIp(req, { trustedProxies });
+    const rateLimit = takeRateLimitToken({
+        key: `${keyPrefix}:${clientIp || 'unknown'}`,
+        limit,
+        windowMs
+    });
+
+    applyRateLimitHeaders(res, rateLimit);
+
+    return {
+        clientIp,
+        rateLimit
+    };
+}
+
+function getForwardingHeaderSnapshot(req) {
+    const headers = req?.headers || {};
+    const snapshot = {};
+
+    for (const headerName of [
+        'cf-connecting-ip',
+        'x-real-ip',
+        'true-client-ip',
+        'x-forwarded-for',
+        'forwarded'
+    ]) {
+        const value = String(headers[headerName] || '').trim();
+        if (value) {
+            snapshot[headerName] = value;
+        }
+    }
+
+    return snapshot;
+}
+
+function buildRequestNetworkContext(req, {
+    trustedProxies = '',
+    allowedIps = ''
+} = {}) {
+    const diagnostic = explainClientIpResolution(req, {
+        env: process.env,
+        trustedProxies
+    });
+    const normalizedAllowedIps = splitIpRules(allowedIps);
+
+    return {
+        host: getRequestHostName(req) || null,
+        forwarding_headers: getForwardingHeaderSnapshot(req),
+        socket_ip: diagnostic.socketIp || null,
+        forwarded_ips: diagnostic.forwardedIps,
+        resolved_client_ip: diagnostic.resolvedClientIp || null,
+        trusted_proxies: diagnostic.trustedProxies,
+        trust_all_proxies: diagnostic.trustAllProxies,
+        direct_peer_trusted: diagnostic.directPeerTrusted,
+        direct_peer_trust_reason: diagnostic.directPeerTrustReason,
+        used_forwarded_chain: diagnostic.usedForwardedChain,
+        allowlist_rules: normalizedAllowedIps,
+        allowlist_configured: normalizedAllowedIps.length > 0,
+        would_pass_allowlist: !normalizedAllowedIps.length
+            || Boolean(diagnostic.resolvedClientIp && isIpAllowed(diagnostic.resolvedClientIp, normalizedAllowedIps))
+    };
+}
+
+function buildNetworkDiagnosticFindings({ appContext, webhookContext }) {
+    const findings = [];
+
+    if (!appContext.trust_all_proxies && !appContext.trusted_proxies.length && !webhookContext.trusted_proxies.length) {
+        findings.push({
+            severity: 'high',
+            code: 'proxy_trust_chain_missing',
+            message: 'Missing TRUSTED_PROXY_IPS / AFDIAN_WEBHOOK_TRUSTED_PROXIES; Railway ingress proxy headers cannot be verified yet.'
+        });
+    }
+
+    if (!webhookContext.allowlist_configured) {
+        findings.push({
+            severity: 'high',
+            code: 'afdian_webhook_allowlist_missing',
+            message: 'Missing AFDIAN_WEBHOOK_ALLOWED_IPS; webhook source IP filtering is not fully enabled.'
+        });
+    }
+
+    if (!appContext.forwarded_ips.length) {
+        findings.push({
+            severity: 'info',
+            code: 'forwarded_headers_absent',
+            message: 'No forwarded client IP headers were observed on this request.'
+        });
+    }
+
+    if (webhookContext.allowlist_configured && !webhookContext.would_pass_allowlist) {
+        findings.push({
+            severity: 'info',
+            code: 'current_request_not_in_webhook_allowlist',
+            message: 'This admin/browser request does not match AFDIAN_WEBHOOK_ALLOWED_IPS. Use Railway webhook logs to validate the real Afdian source IPs.'
+        });
+    }
+
+    return findings;
 }
 
 function getApiErrorDetail(payload) {
@@ -2330,6 +2459,34 @@ app.get('/api/queue', async (req, res) => {
 });
 
 // =============================================
+// GET /api/admin/network/request-context — Inspect proxy/IP resolution
+// =============================================
+app.get('/api/admin/network/request-context', async (req, res) => {
+    const adminUser = await requireAdminOrInternalAccess(req, res);
+    if (!adminUser) return;
+
+    const appContext = buildRequestNetworkContext(req, {
+        trustedProxies: process.env.TRUSTED_PROXY_IPS || process.env.TRUSTED_PROXY_CIDRS || ''
+    });
+    const webhookContext = buildRequestNetworkContext(req, {
+        trustedProxies: getAfdianWebhookTrustedProxies(),
+        allowedIps: String(process.env.AFDIAN_WEBHOOK_ALLOWED_IPS || '').trim()
+    });
+
+    return res.json({
+        success: true,
+        request_context: {
+            app_proxy: appContext,
+            afdian_webhook: webhookContext
+        },
+        findings: buildNetworkDiagnosticFindings({
+            appContext,
+            webhookContext
+        })
+    });
+});
+
+// =============================================
 // POST /api/redeem — Legacy endpoint kept for compatibility
 // =============================================
 app.post('/api/redeem', async (req, res) => {
@@ -2354,6 +2511,31 @@ app.post('/api/cancel', async (req, res) => {
 // POST /api/afdian/webhook
 app.post('/api/afdian/webhook', async (req, res) => {
     console.log('[Afdian] Webhook received');
+
+    const webhookTrustedProxies = getAfdianWebhookTrustedProxies();
+    const webhookAllowedIps = String(process.env.AFDIAN_WEBHOOK_ALLOWED_IPS || '').trim();
+    const webhookContext = buildRequestNetworkContext(req, {
+        trustedProxies: webhookTrustedProxies,
+        allowedIps: webhookAllowedIps
+    });
+    const webhookClientIp = webhookContext.resolved_client_ip;
+    if (webhookAllowedIps && (!webhookClientIp || !isIpAllowed(webhookClientIp, webhookAllowedIps))) {
+        console.warn('[Afdian] Webhook blocked due to IP allowlist mismatch:', JSON.stringify(webhookContext));
+        return res.status(403).json({ ec: 403, em: 'forbidden' });
+    }
+
+    const webhookRateLimit = applyRequestRateLimit(req, res, {
+        keyPrefix: 'afdian-webhook',
+        limit: Math.max(1, Number(process.env.AFDIAN_WEBHOOK_RATE_LIMIT_MAX || 180)),
+        windowMs: Math.max(10_000, Number(process.env.AFDIAN_WEBHOOK_RATE_LIMIT_WINDOW_MS || 60_000)),
+        trustedProxies: webhookTrustedProxies
+    });
+    if (!webhookRateLimit.rateLimit.allowed) {
+        return res.status(429).json({
+            ec: 429,
+            em: 'rate limited'
+        });
+    }
 
     const payload = req.body || {};
     const data = payload.data || {};
@@ -2572,6 +2754,22 @@ async function handleAfdianQueryRequest(req, res) {
             }
         });
         return res.status(statusCode).json(payload);
+    }
+
+    const queryRateLimit = applyRequestRateLimit(req, res, {
+        keyPrefix: 'afdian-query',
+        limit: Math.max(1, Number(process.env.AFDIAN_QUERY_RATE_LIMIT_MAX || 25)),
+        windowMs: Math.max(10_000, Number(process.env.AFDIAN_QUERY_RATE_LIMIT_WINDOW_MS || 60_000))
+    });
+    if (!queryRateLimit.rateLimit.allowed) {
+        return sendQueryResponse(429, {
+            success: false,
+            code: 'rate_limited',
+            message: '查询过于频繁，请稍后再试',
+            retry_after_seconds: queryRateLimit.rateLimit.retryAfterSeconds
+        }, {
+            outcomeCode: 'rate_limited'
+        });
     }
 
     if (!orderNo) {

@@ -3,8 +3,10 @@ const assert = require('node:assert/strict');
 
 const {
     buildAuthCheckProbeResult,
+    buildLocalEnvironmentChecks,
     buildPlatformEnvChecklist,
     buildRuntimeConfigCheckResult,
+    classifySupabaseKey,
     parseArgs,
     parseRuntimeConfigScript,
     resolveAppBaseUrl,
@@ -28,6 +30,7 @@ test('check-prod-env parseArgs collects app runtime flags', () => {
         '--validate-supabase',
         '--validate-payment-schema',
         '--check-app-runtime',
+        '--runtime-only',
         '--base-url', 'https://www.zaoyoe.com',
         '--timeout-ms', '4321',
         '--allow-non-production'
@@ -37,9 +40,81 @@ test('check-prod-env parseArgs collects app runtime flags', () => {
     assert.equal(options.validateSupabase, true);
     assert.equal(options.validatePaymentSchema, true);
     assert.equal(options.checkAppRuntime, true);
+    assert.equal(options.runtimeOnly, true);
     assert.equal(options.baseUrl, 'https://www.zaoyoe.com');
     assert.equal(options.timeoutMs, 4321);
     assert.equal(options.allowNonProduction, true);
+});
+
+test('buildLocalEnvironmentChecks skips local secret failures in runtime-only mode', () => {
+    assert.deepEqual(
+        buildLocalEnvironmentChecks({
+            options: {
+                runtimeOnly: true
+            },
+            env: {}
+        }),
+        []
+    );
+
+    const checks = buildLocalEnvironmentChecks({
+        options: {
+            runtimeOnly: false,
+            allowNonProduction: true
+        },
+        env: {}
+    });
+    assert.equal(checks.length, 7);
+    assert.equal(checks[0].label, 'SUPABASE_SERVICE_ROLE_KEY');
+    assert.equal(checks[0].ok, false);
+    assert.equal(checks[5].label, 'trusted proxy chain');
+    assert.equal(checks[6].label, 'Afdian webhook IP allowlist');
+});
+
+test('buildLocalEnvironmentChecks requires proxy trust and webhook allowlist in production-like envs', () => {
+    const checks = buildLocalEnvironmentChecks({
+        options: {
+            runtimeOnly: false,
+            allowNonProduction: false
+        },
+        env: {
+            SUPABASE_SERVICE_ROLE_KEY: 'service-role',
+            ADMIN_CONFIG_ENCRYPTION_KEY: 'enc-key',
+            PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote-key',
+            ADMIN_STUDIO_ACCESS_SECRET: 'studio-key',
+            DEPLOYMENT_TIER: 'production'
+        }
+    });
+
+    const proxyCheck = checks.find((check) => check.label === 'trusted proxy chain');
+    const allowlistCheck = checks.find((check) => check.label === 'Afdian webhook IP allowlist');
+    assert.equal(proxyCheck.ok, false);
+    assert.match(proxyCheck.details, /missing TRUSTED_PROXY_IPS/);
+    assert.equal(allowlistCheck.ok, false);
+    assert.match(allowlistCheck.details, /missing AFDIAN_WEBHOOK_ALLOWED_IPS/);
+});
+
+test('classifySupabaseKey and buildLocalEnvironmentChecks reject publishable keys in the service-role slot', () => {
+    assert.equal(classifySupabaseKey('sb_secret_demo'), 'secret');
+    assert.equal(classifySupabaseKey('sb_publishable_demo'), 'publishable');
+    assert.equal(classifySupabaseKey('sb_anon_demo'), 'anon');
+
+    const checks = buildLocalEnvironmentChecks({
+        options: {
+            runtimeOnly: false,
+            allowNonProduction: true
+        },
+        env: {
+            SUPABASE_SERVICE_ROLE_KEY: 'sb_publishable_demo',
+            ADMIN_CONFIG_ENCRYPTION_KEY: 'enc-key',
+            PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote-key',
+            ADMIN_STUDIO_ACCESS_SECRET: 'studio-key'
+        }
+    });
+
+    const serviceRoleCheck = checks.find((check) => check.label === 'SUPABASE_SERVICE_ROLE_KEY');
+    assert.equal(serviceRoleCheck.ok, false);
+    assert.match(serviceRoleCheck.details, /looks like a publishable key/);
 });
 
 test('resolveAppBaseUrl prefers explicit CLI value and normalizes trailing slashes', () => {
@@ -95,6 +170,13 @@ test('buildRuntimeConfigCheckResult detects runtime url and key mismatches', () 
     );
     assert.equal(mismatch.ok, false);
     assert.match(mismatch.details, /does not match env SUPABASE_URL/);
+
+    const secretRuntimeKey = buildRuntimeConfigCheckResult(
+        { ok: true, url: 'https://demo.supabase.co', publishableKey: 'sb_secret_live' },
+        { supabaseUrl: 'https://demo.supabase.co', publishableKey: 'pk_live' }
+    );
+    assert.equal(secretRuntimeKey.ok, false);
+    assert.match(secretRuntimeKey.details, /looks like a secret\/service key/);
 });
 
 test('buildAuthCheckProbeResult distinguishes redeploy gaps from deployed auth-gated endpoints', () => {
@@ -132,7 +214,11 @@ test('buildPlatformEnvChecklist renders the expected Vercel and Railway variable
         ADMIN_STUDIO_ACCESS_SECRET: 'studio_demo',
         DEPLOYMENT_TIER: 'production',
         APP_BASE_URL: 'https://www.zaoyoe.com',
-        PAYMENT_SMOKE_BASE_URL: 'https://preview.zaoyoe.com'
+        PAYMENT_SMOKE_BASE_URL: 'https://preview.zaoyoe.com',
+        TRUSTED_PROXY_IPS: '10.0.0.0/8',
+        TRUST_ALL_PROXIES: 'false',
+        AFDIAN_WEBHOOK_TRUSTED_PROXIES: '100.64.0.0/10',
+        AFDIAN_WEBHOOK_ALLOWED_IPS: '203.0.113.0/24'
     });
 
     assert.equal(checklist.vercel[0].name, 'SUPABASE_URL');
@@ -148,9 +234,16 @@ test('buildPlatformEnvChecklist renders the expected Vercel and Railway variable
             'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
             'ADMIN_STUDIO_ACCESS_SECRET',
             'DEPLOYMENT_TIER',
-            'APP_BASE_URL'
+            'APP_BASE_URL',
+            'TRUSTED_PROXY_IPS',
+            'AFDIAN_WEBHOOK_TRUSTED_PROXIES',
+            'AFDIAN_WEBHOOK_ALLOWED_IPS'
         ]
     );
+    assert.equal(checklist.vercel.at(-2).name, 'TRUSTED_PROXY_IPS');
+    assert.equal(checklist.vercel.at(-2).value, '10.0.0.0/8');
+    assert.equal(checklist.vercel.at(-1).name, 'TRUST_ALL_PROXIES');
+    assert.equal(checklist.vercel.at(-1).value, 'false');
 });
 
 test('runAppRuntimeValidation checks runtime config and payment config endpoint health', async () => {

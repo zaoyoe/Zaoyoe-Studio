@@ -35,7 +35,7 @@ function createMockResponse() {
     };
 }
 
-async function withAuthCheckHandler(mockAdminModule, callback) {
+async function withAuthCheckHandler(mockAdminModule, callback, mockRequestSecurityModule = null) {
     const handlerPath = path.resolve(__dirname, '../api/payments/auth-check.js');
     const originalLoad = Module._load;
 
@@ -43,6 +43,10 @@ async function withAuthCheckHandler(mockAdminModule, callback) {
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../_lib/admin') {
             return mockAdminModule;
+        }
+
+        if (request === '../_lib/request-security' && mockRequestSecurityModule) {
+            return mockRequestSecurityModule;
         }
 
         return originalLoad.call(this, request, parent, isMain);
@@ -89,6 +93,53 @@ test('payment auth-check returns session details for authenticated users', async
         assert.equal(payload.user.id, 'user-1');
         assert.equal(payload.user.email, 'member@example.com');
         assert.equal(payload.auth.session_mode, 'request_client');
+    });
+});
+
+test('payment auth-check rejects rate-limited requests before checking auth', async () => {
+    let authCalled = false;
+
+    await withAuthCheckHandler({
+        async requireAuthenticatedUser() {
+            authCalled = true;
+            throw new Error('should not run');
+        },
+        sendJson(res, status, payload) {
+            res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify(payload));
+        }
+    }, async (handler) => {
+        const req = {
+            method: 'GET',
+            headers: {
+                'x-forwarded-for': '203.0.113.15'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 429);
+        assert.equal(payload.success, false);
+        assert.equal(payload.code, 'rate_limited');
+        assert.equal(authCalled, false);
+    }, {
+        resolveClientIp() {
+            return '203.0.113.15';
+        },
+        takeRateLimitToken() {
+            return {
+                allowed: false,
+                limit: 60,
+                remaining: 0,
+                resetAt: Date.now() + 30_000,
+                retryAfterSeconds: 30
+            };
+        },
+        applyRateLimitHeaders(res) {
+            res.setHeader('Retry-After', '30');
+        }
     });
 });
 
