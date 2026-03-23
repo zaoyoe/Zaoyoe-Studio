@@ -808,6 +808,43 @@ test('admin points runtime renderers route batch tables and modals through deleg
     }
 });
 
+test('admin comments runtime renderers route list items, filters, and block menus through delegated actions', () => {
+    const adminCommentsSource = readRepoFile('admin-comments.js');
+    const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|blur|error)\s*=\s*["']/i;
+
+    assert.equal(
+        inlineHandlerPattern.test(adminCommentsSource),
+        false,
+        'admin-comments.js should not emit inline event handler attributes'
+    );
+
+    const delegatedMarkers = [
+        'data-comments-action="remove-filter"',
+        'data-comments-action="toggle-selection"',
+        'data-comments-change="selection"',
+        'data-comments-action="copy-comment-id"',
+        'data-comments-action="toggle-pin"',
+        'data-comments-action="toggle-block-dropdown"',
+        'data-comments-action="view-comment-context"',
+        'data-comments-action="delete-comment"',
+        'data-comments-action="block-user"',
+        'data-comments-action="unblock-user"',
+        'data-comments-action="check-user-status"',
+        'function renderBlockDropdownMenu(userId',
+        'function bindAdminCommentsRuntimeDelegates()',
+        "document.documentElement.dataset.adminCommentsRuntimeDelegatesBound === '1'",
+        "case 'remove-filter':",
+        "case 'toggle-pin':",
+        "case 'toggle-block-dropdown':",
+        "case 'block-user':",
+        "case 'selection':"
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(adminCommentsSource.includes(marker), true, `admin-comments.js should contain ${marker}`);
+    }
+});
+
 test('admin studio settings, discounts, and tickets controls route through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');

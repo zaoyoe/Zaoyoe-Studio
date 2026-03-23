@@ -501,14 +501,12 @@ function renderFilterTags() {
 function createTagHtml(type, label, value, idValue) {
     // idValue is optional, defaults to value
     const removeId = idValue || type;
-    // Escape value for onclick to prevent syntax errors with quotes
-    const safeRemoveId = String(removeId).replace(/'/g, "\\'");
 
     return `
         <div class="filter-tag">
             <span class="filter-tag-label">${label}:</span>
             <span class="filter-tag-value">${value}</span>
-            <span class="filter-tag-close" onclick="removeFilter('${type}', '${safeRemoveId}')">
+            <span class="filter-tag-close" data-comments-action="remove-filter" data-filter-type="${escapeHtml(type)}" data-filter-id="${encodeURIComponent(String(removeId))}">
                 <i class="fas fa-times"></i>
             </span>
         </div>
@@ -758,13 +756,13 @@ function renderCommentList(comments) {
         // We put it in content for Grid, and List view will handle flow via CSS
 
         return `
-            <div class="comment-admin-item" data-id="${comment.id}" data-type="${comment.type}" onclick="toggleCommentSelection(event, 'cb-${comment.id}')">
+            <div class="comment-admin-item" data-id="${comment.id}" data-type="${comment.type}" data-comments-action="toggle-selection" data-checkbox-id="cb-${comment.id}">
                 
                 <!-- 1. Checkbox Wrapper -->
                 <div class="item-checkbox-wrapper">
                     <input type="checkbox" class="comment-checkbox" id="cb-${comment.id}" 
                         data-id="${comment.id}" data-type="${comment.type}"
-                        onclick="event.stopPropagation(); updateSelection()">
+                        data-comments-change="selection">
                 </div>
 
                 <!-- 2. Header: Avatar + Meta (Name, Time) -->
@@ -786,14 +784,18 @@ function renderCommentList(comments) {
                 <!-- 4. Actions Container (delete on top, view below) -->
                 <div class="item-actions">
                     <div class="action-info-wrapper">
-                         <button class="action-info" onclick="event.stopPropagation(); copyCommentId('${comment.id}', '${comment.parent_id}')" title="复制 ID">
+                         <button class="action-info" type="button" data-comments-action="copy-comment-id" data-comment-id="${encodeURIComponent(comment.id)}" data-parent-id="${encodeURIComponent(comment.parent_id || '')}" title="复制 ID">
                             <i class="fas fa-info-circle"></i>
                         </button>
                     </div>
                     
                     ${comment.type === 'gallery' && window.hasPermission && window.hasPermission('content.moderate') ? `
                     <button class="action-btn ${comment.is_pinned ? 'active' : ''}" 
-                        onclick="event.stopPropagation(); togglePin('${comment.id}', ${comment.is_pinned}, '${comment.context}')" 
+                        type="button"
+                        data-comments-action="toggle-pin"
+                        data-comment-id="${encodeURIComponent(comment.id)}"
+                        data-comment-pinned="${comment.is_pinned ? '1' : '0'}"
+                        data-prompt-id="${encodeURIComponent(comment.context || '')}"
                         title="${comment.is_pinned ? '取消置顶' : '置顶评论'}">
                         <i class="fas fa-thumbtack" style="${comment.is_pinned ? 'color: #9b5de5;' : ''}"></i>
                     </button>
@@ -801,19 +803,19 @@ function renderCommentList(comments) {
 
                     ${window.hasPermission && window.hasPermission('users.manage') ? `
                     <div class="action-block-wrapper" style="position: relative;">
-                        <button class="action-btn action-block" onclick="event.stopPropagation(); toggleBlockDropdown('${comment.user_id}', this)" title="用户管理">
+                        <button class="action-btn action-block" type="button" data-comments-action="toggle-block-dropdown" data-user-id="${encodeURIComponent(comment.user_id || '')}" title="用户管理">
                             <i class="fas fa-ban"></i>
                         </button>
                     </div>
                     ` : ''}
 
                     ${comment.context ?
-                `<button class="action-view" onclick="event.stopPropagation(); viewCommentContext('${comment.context}', '${comment.id}')" title="查看上下文">
+                `<button class="action-view" type="button" data-comments-action="view-comment-context" data-prompt-id="${encodeURIComponent(comment.context)}" data-comment-id="${encodeURIComponent(comment.id)}" title="查看上下文">
                         <i class="fas fa-external-link-alt"></i>
                     </button>` : ''}
                     
                     ${window.hasPermission && window.hasPermission('content.moderate') ? `
-                    <button class="action-delete" onclick="event.stopPropagation(); deleteComment('${comment.id}', '${comment.type}')" title="删除">
+                    <button class="action-delete" type="button" data-comments-action="delete-comment" data-comment-id="${encodeURIComponent(comment.id)}" data-comment-type="${encodeURIComponent(comment.type)}" title="删除">
                         <i class="fas fa-trash"></i>
                     </button>
                     ` : ''}
@@ -1244,6 +1246,122 @@ window.switchLayoutView = switchLayoutView;
 window.toggleCommentSelection = toggleCommentSelection;
 window.copyCommentId = window.copyCommentId;
 
+function bindAdminCommentsRuntimeDelegates() {
+    if (document.documentElement.dataset.adminCommentsRuntimeDelegatesBound === '1') {
+        return;
+    }
+
+    document.documentElement.dataset.adminCommentsRuntimeDelegatesBound = '1';
+
+    document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) {
+            return;
+        }
+
+        const actionEl = target.closest('[data-comments-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.commentsAction) {
+            case 'remove-filter':
+                window.removeFilter?.(
+                    actionEl.dataset.filterType || '',
+                    decodeURIComponent(actionEl.dataset.filterId || '')
+                );
+                break;
+            case 'toggle-selection':
+                toggleCommentSelection(event, actionEl.dataset.checkboxId || '');
+                break;
+            case 'copy-comment-id':
+                event.stopPropagation();
+                window.copyCommentId?.(
+                    decodeURIComponent(actionEl.dataset.commentId || ''),
+                    decodeURIComponent(actionEl.dataset.parentId || '')
+                );
+                break;
+            case 'toggle-pin':
+                event.stopPropagation();
+                window.togglePin?.(
+                    decodeURIComponent(actionEl.dataset.commentId || ''),
+                    actionEl.dataset.commentPinned === '1',
+                    decodeURIComponent(actionEl.dataset.promptId || '')
+                );
+                break;
+            case 'toggle-block-dropdown':
+                event.stopPropagation();
+                window.toggleBlockDropdown?.(
+                    decodeURIComponent(actionEl.dataset.userId || ''),
+                    actionEl
+                );
+                break;
+            case 'view-comment-context':
+                event.stopPropagation();
+                window.viewCommentContext?.(
+                    decodeURIComponent(actionEl.dataset.promptId || ''),
+                    decodeURIComponent(actionEl.dataset.commentId || '')
+                );
+                break;
+            case 'delete-comment':
+                event.stopPropagation();
+                window.deleteComment?.(
+                    decodeURIComponent(actionEl.dataset.commentId || ''),
+                    decodeURIComponent(actionEl.dataset.commentType || '')
+                );
+                break;
+            case 'block-user': {
+                event.stopPropagation();
+                const rawDays = actionEl.dataset.blockDays;
+                const days = rawDays === 'permanent' ? null : Number(rawDays || 0);
+                window.blockUser?.(
+                    decodeURIComponent(actionEl.dataset.userId || ''),
+                    actionEl.dataset.userScope || '',
+                    Number.isFinite(days) ? days : null
+                );
+                activeBlockDropdown?.remove();
+                activeBlockDropdown = null;
+                break;
+            }
+            case 'unblock-user':
+                event.stopPropagation();
+                window.unblockUser?.(
+                    decodeURIComponent(actionEl.dataset.userId || ''),
+                    actionEl.dataset.userScope || ''
+                );
+                activeBlockDropdown?.remove();
+                activeBlockDropdown = null;
+                break;
+            case 'check-user-status':
+                event.stopPropagation();
+                window.checkUserStatus?.(decodeURIComponent(actionEl.dataset.userId || ''));
+                activeBlockDropdown?.remove();
+                activeBlockDropdown = null;
+                break;
+        }
+    });
+
+    document.addEventListener('change', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) {
+            return;
+        }
+
+        const actionEl = target.closest('[data-comments-change]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.commentsChange) {
+            case 'selection':
+                updateSelection();
+                break;
+        }
+    });
+}
+
+bindAdminCommentsRuntimeDelegates();
+
 /**
  * Toggle Pin Status (Single pin per card)
  */
@@ -1303,67 +1421,10 @@ window.toggleBlockDropdown = function (userId, btnElement) {
     const dropdown = document.createElement('div');
     dropdown.className = 'block-dropdown-menu';
     dropdown.dataset.triggerId = userId;
-
-    let html = `<div class="block-menu-header">封禁管理</div>`;
-
-    // Guestbook Actions
-    if (isGuestbookBlocked) {
-        html += `<button class="block-menu-btn" onclick="unblockUser('${userId}', 'guestbook')">🚫 解封留言板</button>`;
-    } else {
-        html += `<button class="block-menu-btn" onclick="blockUser('${userId}', 'guestbook', null)">永久封禁留言板</button>`;
-    }
-
-    // Gallery Actions
-    if (isGalleryBlocked) {
-        html += `<button class="block-menu-btn" onclick="unblockUser('${userId}', 'gallery')">🚫 解封画廊</button>`;
-    } else {
-        html += `<button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', null)">永久封禁画廊</button>`;
-        html += `
-            <div class="block-menu-divider"></div>
-            <div class="block-menu-header">临时封禁 (画廊)</div>
-            <button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', 3)">封禁 3 天</button>
-            <button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', 7)">封禁 7 天</button>
-            <button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', 30)">封禁 30 天</button>
-        `;
-    }
-
-    html += `
-        <div class="block-menu-divider"></div>
-        <button class="block-menu-btn" onclick="checkUserStatus('${userId}')">查看状态详情</button>
-    `;
-
-    dropdown.innerHTML = html;
-
-    // Helper to attach listeners (relying on CSS classes for styles)
-    const attachListeners = () => {
-        const buttons = dropdown.querySelectorAll('button');
-        buttons.forEach(btn => {
-            const originalClick = btn.getAttribute('onclick');
-            if (originalClick) {
-                btn.removeAttribute('onclick');
-                btn.onclick = (e) => {
-                    e.stopPropagation();
-                    if (originalClick.includes('unblockUser')) {
-                        const args = originalClick.match(/'([^']*)'/g).map(s => s.replace(/'/g, ''));
-                        window.unblockUser(args[0], args[1]);
-                    } else if (originalClick.includes('checkUserStatus')) {
-                        const args = originalClick.match(/'([^']*)'/g).map(s => s.replace(/'/g, ''));
-                        window.checkUserStatus(args[0]);
-                    } else {
-                        const parts = originalClick.split('(')[1].split(')')[0].split(',');
-                        const uid = parts[0].trim().replace(/'/g, '');
-                        const scope = parts[1].trim().replace(/'/g, '');
-                        const days = parts[2].trim() === 'null' ? null : parseInt(parts[2].trim());
-                        window.blockUser(uid, scope, days);
-                    }
-                    dropdown.remove();
-                    activeBlockDropdown = null;
-                };
-            }
-        });
-    };
-
-    attachListeners();
+    dropdown.innerHTML = renderBlockDropdownMenu(userId, {
+        isGuestbookBlocked,
+        isGalleryBlocked
+    });
 
     btnElement.parentNode.appendChild(dropdown);
     activeBlockDropdown = dropdown;
@@ -1414,40 +1475,46 @@ window.toggleBlockDropdown = function (userId, btnElement) {
                 const isGalleryBlocked = updatedScopes.includes('gallery') || updatedScopes.includes('all');
 
                 if (isGuestbookBlocked || isGalleryBlocked) {
-                    // Re-render content
-                    let newHtml = `<div class="block-menu-header">封禁管理</div>`;
-
-                    if (isGuestbookBlocked) {
-                        newHtml += `<button class="block-menu-btn" onclick="unblockUser('${userId}', 'guestbook')">🚫 解封留言板</button>`;
-                    } else {
-                        newHtml += `<button class="block-menu-btn" onclick="blockUser('${userId}', 'guestbook', null)">永久封禁留言板</button>`;
-                    }
-
-                    if (isGalleryBlocked) {
-                        newHtml += `<button class="block-menu-btn" onclick="unblockUser('${userId}', 'gallery')">🚫 解封画廊</button>`;
-                    } else {
-                        newHtml += `<button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', null)">永久封禁画廊</button>`;
-                        newHtml += `
-                            <div class="block-menu-divider"></div>
-                            <div class="block-menu-header">临时封禁 (画廊)</div>
-                            <button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', 3)">封禁 3 天</button>
-                            <button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', 7)">封禁 7 天</button>
-                            <button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', 30)">封禁 30 天</button>
-                        `;
-                    }
-
-                    newHtml += `
-                        <div class="block-menu-divider"></div>
-                        <button class="block-menu-btn" onclick="checkUserStatus('${userId}')">查看状态详情</button>
-                    `;
-
-                    dropdown.innerHTML = newHtml;
-                    attachListeners();
+                    dropdown.innerHTML = renderBlockDropdownMenu(userId, {
+                        isGuestbookBlocked,
+                        isGalleryBlocked
+                    });
                 }
             }
         })
         .catch(console.error);
 };
+
+function renderBlockDropdownMenu(userId, { isGuestbookBlocked = false, isGalleryBlocked = false } = {}) {
+    const encodedUserId = encodeURIComponent(userId || '');
+    let html = `<div class="block-menu-header">封禁管理</div>`;
+
+    if (isGuestbookBlocked) {
+        html += `<button class="block-menu-btn" type="button" data-comments-action="unblock-user" data-user-id="${encodedUserId}" data-user-scope="guestbook">🚫 解封留言板</button>`;
+    } else {
+        html += `<button class="block-menu-btn" type="button" data-comments-action="block-user" data-user-id="${encodedUserId}" data-user-scope="guestbook" data-block-days="permanent">永久封禁留言板</button>`;
+    }
+
+    if (isGalleryBlocked) {
+        html += `<button class="block-menu-btn" type="button" data-comments-action="unblock-user" data-user-id="${encodedUserId}" data-user-scope="gallery">🚫 解封画廊</button>`;
+    } else {
+        html += `<button class="block-menu-btn" type="button" data-comments-action="block-user" data-user-id="${encodedUserId}" data-user-scope="gallery" data-block-days="permanent">永久封禁画廊</button>`;
+        html += `
+            <div class="block-menu-divider"></div>
+            <div class="block-menu-header">临时封禁 (画廊)</div>
+            <button class="block-menu-btn" type="button" data-comments-action="block-user" data-user-id="${encodedUserId}" data-user-scope="gallery" data-block-days="3">封禁 3 天</button>
+            <button class="block-menu-btn" type="button" data-comments-action="block-user" data-user-id="${encodedUserId}" data-user-scope="gallery" data-block-days="7">封禁 7 天</button>
+            <button class="block-menu-btn" type="button" data-comments-action="block-user" data-user-id="${encodedUserId}" data-user-scope="gallery" data-block-days="30">封禁 30 天</button>
+        `;
+    }
+
+    html += `
+        <div class="block-menu-divider"></div>
+        <button class="block-menu-btn" type="button" data-comments-action="check-user-status" data-user-id="${encodedUserId}">查看状态详情</button>
+    `;
+
+    return html;
+}
 
 window.blockUser = async function (userId, scope, days) {
     const durationStr = days ? `${days}天` : '永久';
