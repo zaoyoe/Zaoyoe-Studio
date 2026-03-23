@@ -40,6 +40,22 @@ const CHAT_WIDGET_PAGES = [
     'privacy.html'
 ];
 
+const CSP_HASHED_INLINE_SCRIPT_PAGES = [
+    'icons_preview_v2.html',
+    'icons_preview_v3.html',
+    'icons_preview_v4.html',
+    'icons_preview_v5.html',
+    'icons_preview_v6.html',
+    'icons_preview_v7.html',
+    'icons_preview_v8.html',
+    'preview-hero-effects.html',
+    'profile_mobile_tab_preview.html',
+    'index_old.html',
+    'test-lang-toggle.html',
+    'test-realtime-simple.html',
+    'tools/migrate-prompts-bilingual.html'
+];
+
 function readVercelConfig() {
     return JSON.parse(readRepoFile('vercel.json'));
 }
@@ -219,16 +235,23 @@ test('vercel CSP does not allow unsafe-eval in frontend script execution', () =>
     assert.equal(cspValue.includes("'unsafe-eval'"), false);
 });
 
-test('vercel CSP restricts inline script elements to hashed runtime pages while blocking inline event attributes', () => {
+test('runtime entry pages no longer embed inline script blocks', () => {
+    const runtimeInlineHashes = collectInlineScriptHashes(RUNTIME_PAGES);
+    assert.deepEqual(runtimeInlineHashes, [], 'Runtime pages should not retain inline script blocks');
+});
+
+test('vercel CSP hashes only legacy utility inline scripts while blocking runtime inline scripts and inline event attributes', () => {
     const cspValue = getGlobalCspHeaderValue();
     const directives = parseCspDirectives(cspValue);
     const scriptSrc = directives.get('script-src') || [];
     const scriptSrcElem = directives.get('script-src-elem') || [];
     const scriptSrcAttr = directives.get('script-src-attr') || [];
-    const expectedHashes = collectInlineScriptHashes(RUNTIME_PAGES);
+    const runtimeInlineHashes = collectInlineScriptHashes(RUNTIME_PAGES);
+    const expectedHashes = collectInlineScriptHashes(CSP_HASHED_INLINE_SCRIPT_PAGES);
 
     assert.notEqual(scriptSrc.length, 0, 'Missing script-src directive');
     assert.notEqual(scriptSrcElem.length, 0, 'Missing script-src-elem directive');
+    assert.deepEqual(runtimeInlineHashes, [], 'Runtime pages should not require inline script hashes anymore');
     assert.deepEqual(scriptSrcAttr, ["'none'"], 'script-src-attr should explicitly block inline event handlers');
     assert.equal(scriptSrc.includes("'unsafe-inline'"), false, 'script-src should no longer broadly allow unsafe-inline');
     assert.equal(scriptSrcElem.includes("'unsafe-inline'"), false, 'script-src-elem should no longer broadly allow unsafe-inline');
@@ -375,6 +398,71 @@ test('auth and verify runtime pages externalize page bootstraps instead of embed
 
     assert.equal(guestbookSource.includes('./js/guestbook-optional-enhancements.js'), true, 'guestbook.html should load the guestbook optional enhancements bootstrap file');
     assert.equal(guestbookSource.includes('scheduleOptionalGuestbookEnhancements'), false, 'guestbook.html should not inline optional guestbook enhancement boot logic');
+});
+
+test('home, prompts, and admin studio pages externalize their remaining runtime bootstraps', () => {
+    const indexSource = readRepoFile('index.html');
+    const promptsSource = readRepoFile('prompts.html');
+    const adminStudioSource = readRepoFile('admin-studio.html');
+
+    const indexRemovedMarkers = [
+        "if ('scrollRestoration' in history)",
+        'const checkAuth = setInterval(() => {',
+        "window._prefetchGuestbook = () => handleHover('guestbook');",
+        'const guestbookModalKeyboardState = {'
+    ];
+
+    for (const marker of indexRemovedMarkers) {
+        assert.equal(indexSource.includes(marker), false, `index.html should not contain ${marker}`);
+    }
+
+    const indexBootstrapMarkers = [
+        './js/index-scroll-bootstrap.js',
+        './js/index-home-bootstrap.js',
+        './js/homepage-guestbook-modal.js'
+    ];
+
+    for (const marker of indexBootstrapMarkers) {
+        assert.equal(indexSource.includes(marker), true, `index.html should contain ${marker}`);
+    }
+
+    const promptsRemovedMarkers = [
+        'window.__forcePromptThemeColorBlack = ensureThemeColorBlack;',
+        'window.__PROMPTS_FORCE_SCROLL_TOP__ = Boolean(shouldLockToTop);',
+        "dayjs.extend(dayjs_plugin_relativeTime);",
+        "document.body.classList.add('loaded');"
+    ];
+
+    for (const marker of promptsRemovedMarkers) {
+        assert.equal(promptsSource.includes(marker), false, `prompts.html should not contain ${marker}`);
+    }
+
+    const promptsBootstrapMarkers = [
+        './js/prompts-head-bootstrap.js',
+        './js/prompts-runtime-bootstrap.js'
+    ];
+
+    for (const marker of promptsBootstrapMarkers) {
+        assert.equal(promptsSource.includes(marker), true, `prompts.html should contain ${marker}`);
+    }
+
+    const adminRemovedMarkers = [
+        'window.supabaseClient = supabase.createClient',
+        'function toggleMobileSidebar()',
+        'function syncAdminStudioModuleUrl(moduleName)',
+        "document.addEventListener('click', function (e) {",
+        "const dropdown = document.getElementById('discountTypeDropdown');"
+    ];
+
+    for (const marker of adminRemovedMarkers) {
+        assert.equal(adminStudioSource.includes(marker), false, `admin-studio.html should not contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioSource.includes('js/admin-studio-bootstrap.js?v=20260324_ADMIN_STUDIO_BOOTSTRAP_1'),
+        true,
+        'admin-studio.html should load the shared admin studio bootstrap file'
+    );
 });
 
 test('non-production utility and preview pages no longer ship inline handler attributes', () => {
