@@ -212,3 +212,39 @@ test('critical auth pages consume delegated profile modal and form bindings', ()
         'reset-password.html should bind submission via addEventListener'
     );
 });
+
+test('prompts, guestbook, and shop entry pages no longer ship inline handler attributes', () => {
+    const inlineHandlerPattern = /\bon(?:click|change|submit|mousedown|mouseup|input|keydown|mouseover|mouseout|error|load)\s*=\s*["']/i;
+    const files = [
+        'prompts.html',
+        'guestbook.html',
+        'shop.html'
+    ];
+
+    for (const relativePath of files) {
+        const source = readRepoFile(relativePath);
+        assert.equal(
+            inlineHandlerPattern.test(source),
+            false,
+            `${relativePath} should not contain inline event handler attributes`
+        );
+    }
+});
+
+test('gallery and shop renderers no longer generate inline handler attributes in client scripts', () => {
+    const inlineHandlerPattern = /\bon(?:click|change|submit|mousedown|mouseup|input|keydown|mouseover|mouseout|error|load)\s*=\s*["']/i;
+    const files = [
+        'prompts-poetry.js',
+        'guestbook.js',
+        'js/shop-client.js'
+    ];
+
+    for (const relativePath of files) {
+        const source = readRepoFile(relativePath);
+        assert.equal(
+            inlineHandlerPattern.test(source),
+            false,
+            `${relativePath} should not generate inline event handler attributes`
+        );
+    }
+});
