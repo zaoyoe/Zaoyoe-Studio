@@ -137,8 +137,7 @@
     </div>
 
     <!-- ✨ 智能通知胶囊 (v5.2 - Fixed Refresh) -->
-    <div id="smart-capsule" class="capsule-wrapper" role="status" aria-live="polite"
-        onclick="CapsuleManager.applyUpdates()">
+    <div id="smart-capsule" class="capsule-wrapper" role="status" aria-live="polite">
         <div class="capsule-content">
             <span class="capsule-icon">🔔</span>
             <span id="capsule-text" class="capsule-text" data-i18n="guestbook.newUpdates">有新动态</span>
@@ -214,9 +213,8 @@
     </main>
 
     <!-- Comment Modal -->
-    <div class="modal-overlay" id="commentModal" onclick="closeCommentModal(event)" aria-hidden="true">
-        <div class="modal-content guestbook-content guestbook-composer-sheet comment-modal-content comment-composer-sheet"
-            onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="commentModal" aria-hidden="true">
+        <div class="modal-content guestbook-content guestbook-composer-sheet comment-modal-content comment-composer-sheet">
             <div class="guestbook-composer-handle" aria-hidden="true"></div>
             <div class="guestbook-composer-header comment-composer-header">
                 <div class="guestbook-composer-copy">
@@ -277,7 +275,7 @@
 
     <!-- 留言板 UI -->
     <script src="smooth-scroll.js" defer></script>
-    <script src="guestbook.js?v=20260317_COMMENT_COMPOSER_MATCH_1" defer></script>
+    <script src="guestbook.js?v=20260323_GUESTBOOK_EVENT_BINDINGS_1" defer></script>
     <script src="guestbook-hover-effect.js" defer></script>
     <script src="js/i18n.js?v=1" defer></script>
     <script src="js/ios-scroll-lock.js?v=20260314_SCROLL_LOCK_AUTH_SHEET_7" defer></script>

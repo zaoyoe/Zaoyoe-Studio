@@ -33,9 +33,11 @@ const ShopClient = {
     backgroundPrefetchScheduled: false,
     backgroundPrefetchHandle: null,
     lastSkeletonCount: 6,
+    staticUiBindingsBound: false,
 
     init: async function () {
         console.log('🛍️ Shop Client Initialized');
+        this.bindStaticUiHandlers();
 
         // Read URL parameters
         const urlParams = new URLSearchParams(window.location.search);
@@ -139,6 +141,141 @@ const ShopClient = {
             this.loadCategoryFilters();
             this.loadProducts();
         });
+    },
+
+    bindStaticUiHandlers: function () {
+        if (this.staticUiBindingsBound) return;
+
+        const filtersContainer = document.getElementById('shopCategoryFilters');
+        filtersContainer?.addEventListener('click', (event) => {
+            const target = event.target instanceof Element
+                ? event.target.closest('.filter-tab[data-shop-category]')
+                : null;
+            if (!target) return;
+
+            event.preventDefault?.();
+            this.filterCategory(target.dataset.shopCategory || 'all', target);
+        });
+
+        const shopGrid = document.getElementById('userShopGrid');
+        shopGrid?.addEventListener('click', (event) => {
+            const target = event.target instanceof Element
+                ? event.target.closest('.shop-buy-btn[data-shop-action="buy-product"]')
+                : null;
+            if (!target || target.disabled) return;
+
+            event.preventDefault?.();
+            void this.buyProduct(
+                target.dataset.productId || '',
+                decodeURIComponent(target.dataset.productName || ''),
+                decodeURIComponent(target.dataset.productNameEn || ''),
+                Number(target.dataset.unitPrice || 0),
+                target.dataset.qtyRules || '',
+                target.dataset.showPurchaseNotes === 'true',
+                target.dataset.purchaseNotes || ''
+            );
+        });
+
+        const purchaseModal = document.getElementById('shopPurchaseModal');
+        purchaseModal?.addEventListener('click', (event) => {
+            if (event.target === purchaseModal) {
+                this.closePurchaseModal();
+                return;
+            }
+
+            const closeTrigger = event.target instanceof Element
+                ? event.target.closest('#shopPurchaseModalCloseBtn')
+                : null;
+            if (closeTrigger) {
+                event.preventDefault?.();
+                this.closePurchaseModal();
+                return;
+            }
+
+            const quantityTrigger = event.target instanceof Element
+                ? event.target.closest('[data-shop-qty-delta]')
+                : null;
+            if (quantityTrigger) {
+                event.preventDefault?.();
+                this.adjustQuantity(Number(quantityTrigger.dataset.shopQtyDelta || 0));
+                return;
+            }
+
+            if (event.target instanceof Element && event.target.closest('#applyDiscountBtn')) {
+                event.preventDefault?.();
+                void this.applyDiscount();
+                return;
+            }
+
+            if (event.target instanceof Element && event.target.closest('#confirmPurchaseBtn')) {
+                event.preventDefault?.();
+                void this.confirmPurchase();
+            }
+        });
+
+        document.getElementById('shopPurchaseModalCloseBtn')?.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                this.closePurchaseModal();
+            }
+        });
+
+        document.getElementById('purchaseQuantity')?.addEventListener('input', (event) => {
+            if (event.target instanceof HTMLInputElement) {
+                this.onQuantityInput(event.target);
+            }
+        });
+
+        document.getElementById('purchaseDiscountCode')?.addEventListener('input', (event) => {
+            if (!(event.target instanceof HTMLInputElement)) return;
+            event.target.value = event.target.value.toUpperCase();
+        });
+
+        const successModal = document.getElementById('shopSuccessModal');
+        successModal?.addEventListener('click', (event) => {
+            if (event.target === successModal) {
+                this.closeSuccessModal();
+                return;
+            }
+
+            if (event.target instanceof Element && event.target.closest('#copyContentBtn')) {
+                event.preventDefault?.();
+                this.copyContent();
+                return;
+            }
+
+            if (event.target instanceof Element && event.target.closest('#exportContentBtn')) {
+                event.preventDefault?.();
+                this.exportContent();
+                return;
+            }
+
+            if (event.target instanceof Element && event.target.closest('#expandContentBtn')) {
+                event.preventDefault?.();
+                this.toggleExpandContent();
+                return;
+            }
+
+            const copyCard = event.target instanceof Element
+                ? event.target.closest('.content-card[data-shop-copy-content]')
+                : null;
+            if (copyCard) {
+                event.preventDefault?.();
+                void this.copySuccessCardContent(copyCard.dataset.shopCopyContent || '');
+            }
+        });
+
+        document.getElementById('ordersList')?.addEventListener('click', (event) => {
+            const target = event.target instanceof Element
+                ? event.target.closest('[data-shop-order-id][data-shop-order-content]')
+                : null;
+            if (!target) return;
+
+            event.preventDefault?.();
+            this.viewOrderContent(target.dataset.shopOrderId || '', target.dataset.shopOrderContent || '');
+        });
+
+        this.staticUiBindingsBound = true;
     },
 
     currentCategory: 'all',
@@ -458,25 +595,34 @@ const ShopClient = {
             container.innerHTML = '';
 
             const allBtn = document.createElement('button');
+            allBtn.type = 'button';
             allBtn.className = this.currentCategory === 'all' ? 'filter-tab active' : 'filter-tab';
             allBtn.textContent = window.i18n?.t('shop.allCategories') || '全部';
             allBtn.setAttribute('data-i18n', 'shop.allCategories');
-            allBtn.onclick = () => this.filterCategory('all', allBtn);
+            allBtn.dataset.shopCategory = 'all';
             container.appendChild(allBtn);
 
             // Add dynamic category buttons
             categories.forEach(cat => {
                 const btn = document.createElement('button');
+                btn.type = 'button';
                 btn.className = this.currentCategory === cat.name ? 'filter-tab active' : 'filter-tab';
                 btn.textContent = cat.name;
-                btn.onclick = () => this.filterCategory(cat.name, btn);
+                btn.dataset.shopCategory = cat.name;
                 container.appendChild(btn);
             });
 
         } catch (e) {
             console.error('Failed to load category filters:', e);
             // On error, show a simple "全部" button
-            container.innerHTML = `<button class="filter-tab active" data-i18n="shop.allCategories" onclick="ShopClient.filterCategory('all', this)">${window.i18n?.t('shop.allCategories') || '全部'}</button>`;
+            container.innerHTML = '';
+            const fallbackBtn = document.createElement('button');
+            fallbackBtn.type = 'button';
+            fallbackBtn.className = 'filter-tab active';
+            fallbackBtn.textContent = window.i18n?.t('shop.allCategories') || '全部';
+            fallbackBtn.setAttribute('data-i18n', 'shop.allCategories');
+            fallbackBtn.dataset.shopCategory = 'all';
+            container.appendChild(fallbackBtn);
         }
     },
 
@@ -601,14 +747,23 @@ const ShopClient = {
                         
                         <div style="margin-top:auto; padding-top:20px; display:flex; justify-content:space-between; align-items:center;">
                             <div class="shop-card-price">${originalPriceHtml}${window.SiteConfig?.formatPrice(currentPrice) || currentPrice} <span data-i18n="shop.points">${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span></div>
-                            <button onclick="ShopClient.buyProduct('${p.id}', '${p.name}', '${p.name_en || ''}', ${currentPrice}, '${qtyRulesStr}', ${p.show_purchase_notes ? 'true' : 'false'}, '${encodeURIComponent(p.purchase_notes || '')}')"
-                                ${noStock ? 'disabled' : ''}
-                                class="shop-buy-btn ${buyBtnClass}">
+                            <button type="button" ${noStock ? 'disabled' : ''} class="shop-buy-btn ${buyBtnClass}">
                                 ${buyBtnText}
                             </button>
                         </div>
                     </div>
                 `;
+                const buyButton = el.querySelector('.shop-buy-btn');
+                if (buyButton) {
+                    buyButton.dataset.shopAction = 'buy-product';
+                    buyButton.dataset.productId = String(p.id || '');
+                    buyButton.dataset.productName = encodeURIComponent(p.name || '');
+                    buyButton.dataset.productNameEn = encodeURIComponent(p.name_en || '');
+                    buyButton.dataset.unitPrice = String(currentPrice);
+                    buyButton.dataset.qtyRules = qtyRulesStr;
+                    buyButton.dataset.showPurchaseNotes = p.show_purchase_notes ? 'true' : 'false';
+                    buyButton.dataset.purchaseNotes = encodeURIComponent(p.purchase_notes || '');
+                }
                 container.appendChild(el);
             });
 
@@ -1453,6 +1608,46 @@ const ShopClient = {
         }
     },
 
+    closeSuccessModal: function () {
+        const modal = document.getElementById('shopSuccessModal');
+        if (!modal) return;
+
+        this.clearSuccessUsageWheelIsolation();
+        modal.classList.remove('active', 'has-usage-instructions');
+
+        if (window.iOSScrollLock) {
+            window.iOSScrollLock.unlock();
+        }
+    },
+
+    showShopSuccessToast: function (message) {
+        if (window.WalletModal?.showToast) {
+            window.WalletModal.showToast(message, 'success');
+            return;
+        }
+
+        const toast = document.getElementById('shopSuccessToast');
+        if (!toast) return;
+
+        toast.textContent = message;
+        toast.style.opacity = '1';
+        setTimeout(() => {
+            toast.style.opacity = '0';
+        }, 1500);
+    },
+
+    copySuccessCardContent: async function (encodedText) {
+        const text = decodeURIComponent(encodedText || '');
+        if (!text) return;
+
+        try {
+            await navigator.clipboard.writeText(text);
+            this.showShopSuccessToast(window.i18n?.t('common.copied') || '已复制');
+        } catch (error) {
+            console.error('Failed to copy shop success content:', error);
+        }
+    },
+
     bindSuccessUsageWheelIsolation: function () {
         this.clearSuccessUsageWheelIsolation();
 
@@ -1523,11 +1718,11 @@ const ShopClient = {
                 : 'display: flex; flex-direction: column; gap: 8px; width: 100%;';
 
             const createCardMsg = (text, hidden = false) => {
-                const escaped = this.escapeHtml(text).replace(/`/g, '\\`');
+                const encodedText = encodeURIComponent(text);
                 const hiddenStyle = hidden ? 'display: none;' : '';
                 const hiddenAttr = hidden ? 'data-expandable-item="1"' : '';
                 return `
-                <div class="content-card" ${hiddenAttr} style="margin-bottom: 0 !important; cursor: pointer; transition: all 0.2s; padding: 10px 6px !important; display: flex; align-items: center; justify-content: center; border-radius: 10px !important; ${hiddenStyle}" onclick="navigator.clipboard.writeText(\`${escaped}\`).then(() => { if(window.WalletModal && window.WalletModal.showToast){ window.WalletModal.showToast(window.i18n?.t('common.copied') || '已复制', 'success'); } else { const t = document.getElementById('shopSuccessToast'); if(t){ t.textContent='已复制'; t.style.opacity=1; setTimeout(()=>t.style.opacity=0, 1500); } } })" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}" onmouseover="this.style.borderColor='rgba(107, 158, 206, 0.5)'; this.style.background='rgba(255, 255, 255, 0.08)';" onmouseout="this.style.borderColor='rgba(255, 255, 255, 0.1)'; this.style.background='rgba(255, 255, 255, 0.05)';">
+                <div class="content-card" ${hiddenAttr} data-shop-copy-content="${encodedText}" style="margin-bottom: 0 !important; padding: 10px 6px !important; display: flex; align-items: center; justify-content: center; border-radius: 10px !important; ${hiddenStyle}" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">
                     <div class="item-content-box" style="padding: 0 !important; width: 100%; background: transparent !important; border-radius: 0 !important;">
                         <div class="item-text" style="text-align: center; font-size: 13px; letter-spacing: 0.5px; line-height: 1.3;">${this.escapeHtml(text)}</div>
                     </div>
@@ -1551,7 +1746,7 @@ const ShopClient = {
 
                 const expandBtn = `
                 <div style="margin-top:12px;text-align:center;">
-                    <span id="expandContentBtn" data-hidden-count="${hiddenCount}" onclick="ShopClient.toggleExpandContent()"
+                    <span id="expandContentBtn" data-hidden-count="${hiddenCount}"
                         style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;
                                font-size:12px;color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.1);
                                padding:8px 16px;border-radius:20px;transition:all 0.2s;">
@@ -1797,7 +1992,7 @@ const ShopClient = {
                             ${date} · <span style="color:#fbbf24;">-${order.price_paid} ${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span>
                         </div>
                     </div>
-                    <button onclick="event.stopPropagation(); ShopClient.viewOrderContent('${order.id}', '${encodeURIComponent(order.content_delivered || '')}')"
+                    <button type="button" data-shop-order-id="${order.id}" data-shop-order-content="${encodeURIComponent(order.content_delivered || '')}"
                         style="padding:6px 12px; border-radius:12px; background:rgba(255,255,255,0.1); border:none; color:#fff; cursor:pointer;">
                         ${window.i18n?.t('shop.view') || '查看'}
                     </button>
