@@ -81,10 +81,16 @@
 5. 轮换或补齐变量后，先跑：
    - `npm run check:prod-env -- --env-file server/.env.staging --validate-supabase --validate-payment-schema --check-app-runtime`
    - `npm run smoke:payment -- --env-file server/.env.staging --config-only --allow-production-like`
-6. 重新部署：
+6. `check:prod-env` 现在会额外输出两块关键信息：
+   - `app payment auth-check endpoint`
+     - `401 Unauthorized` 表示新版本已部署，JWT 探针接口在线
+     - `404 Not Found` 表示线上还没 redeploy 到最新代码
+   - `Platform env checklist`
+     - `Vercel` 和 `Railway / verify server` 各自该补哪些变量，会逐项列出来
+7. 重新部署：
    - Vercel
    - Railway（如果它依赖这个 key）
-7. 部署后重新验证：
+8. 部署后重新验证：
    - 管理员后台
    - 钱包充值
    - 爱发电订单查询

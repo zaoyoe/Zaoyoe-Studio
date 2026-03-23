@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+    buildAuthCheckProbeResult,
+    buildPlatformEnvChecklist,
     buildRuntimeConfigCheckResult,
     parseArgs,
     parseRuntimeConfigScript,
@@ -95,6 +97,62 @@ test('buildRuntimeConfigCheckResult detects runtime url and key mismatches', () 
     assert.match(mismatch.details, /does not match env SUPABASE_URL/);
 });
 
+test('buildAuthCheckProbeResult distinguishes redeploy gaps from deployed auth-gated endpoints', () => {
+    assert.deepEqual(
+        buildAuthCheckProbeResult({
+            status: 404,
+            statusText: 'Not Found',
+            payload: { success: false, message: 'Not found' },
+            text: '{"success":false,"message":"Not found"}'
+        }),
+        {
+            label: 'app payment auth-check endpoint',
+            ok: false,
+            details: 'status=404 Not Found redeploy required before JWT auth probing can run'
+        }
+    );
+
+    const deployed = buildAuthCheckProbeResult({
+        status: 401,
+        statusText: 'Unauthorized',
+        payload: { success: false, message: 'Auth session missing!' },
+        text: '{"success":false,"message":"Auth session missing!"}'
+    });
+    assert.equal(deployed.ok, true);
+    assert.match(deployed.details, /endpoint deployed and auth-gated/);
+});
+
+test('buildPlatformEnvChecklist renders the expected Vercel and Railway variables', () => {
+    const checklist = buildPlatformEnvChecklist({
+        SUPABASE_URL: 'https://demo.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: 'pk_demo',
+        SUPABASE_SERVICE_ROLE_KEY: 'sr_demo',
+        ADMIN_CONFIG_ENCRYPTION_KEY: 'enc_demo',
+        PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote_demo',
+        ADMIN_STUDIO_ACCESS_SECRET: 'studio_demo',
+        DEPLOYMENT_TIER: 'production',
+        APP_BASE_URL: 'https://www.zaoyoe.com',
+        PAYMENT_SMOKE_BASE_URL: 'https://preview.zaoyoe.com'
+    });
+
+    assert.equal(checklist.vercel[0].name, 'SUPABASE_URL');
+    assert.equal(checklist.vercel[0].value, 'https://demo.supabase.co');
+    assert.equal(checklist.vercel[1].name, 'SUPABASE_PUBLISHABLE_KEY');
+    assert.match(checklist.vercel[1].value, /^set, fingerprint=/);
+    assert.deepEqual(
+        checklist.railway.map((item) => item.name),
+        [
+            'SUPABASE_URL',
+            'SUPABASE_SERVICE_ROLE_KEY',
+            'ADMIN_CONFIG_ENCRYPTION_KEY',
+            'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
+            'ADMIN_STUDIO_ACCESS_SECRET',
+            'DEPLOYMENT_TIER',
+            'APP_BASE_URL'
+        ]
+    );
+});
+
 test('runAppRuntimeValidation checks runtime config and payment config endpoint health', async () => {
     const calls = [];
     const checks = await runAppRuntimeValidation({
@@ -116,6 +174,17 @@ test('runAppRuntimeValidation checks runtime config and payment config endpoint 
                 });
             }
 
+            if (String(url).endsWith('/api/payments/auth-check')) {
+                return createFetchResponse({
+                    status: 401,
+                    statusText: 'Unauthorized',
+                    body: JSON.stringify({
+                        success: false,
+                        message: 'Auth session missing!'
+                    })
+                });
+            }
+
             return createFetchResponse({
                 status: 200,
                 body: JSON.stringify({
@@ -133,13 +202,16 @@ test('runAppRuntimeValidation checks runtime config and payment config endpoint 
 
     assert.deepEqual(calls, [
         'https://www.zaoyoe.com/api/runtime/supabase-config',
-        'https://www.zaoyoe.com/api/payments/config'
+        'https://www.zaoyoe.com/api/payments/config',
+        'https://www.zaoyoe.com/api/payments/auth-check'
     ]);
     assert.equal(checks[0].label, 'app runtime base url');
     assert.equal(checks[1].label, 'app runtime Supabase config');
     assert.equal(checks[1].ok, true);
     assert.equal(checks[2].label, 'app payment config endpoint');
     assert.equal(checks[2].ok, true);
+    assert.equal(checks[3].label, 'app payment auth-check endpoint');
+    assert.equal(checks[3].ok, true);
 });
 
 test('runAppRuntimeValidation reports remote runtime loader failures clearly', async () => {
@@ -162,6 +234,17 @@ test('runAppRuntimeValidation reports remote runtime loader failures clearly', a
                 });
             }
 
+            if (String(url).endsWith('/api/payments/auth-check')) {
+                return createFetchResponse({
+                    status: 404,
+                    statusText: 'Not Found',
+                    body: JSON.stringify({
+                        success: false,
+                        message: 'Not found'
+                    })
+                });
+            }
+
             return createFetchResponse({
                 status: 500,
                 statusText: 'Internal Server Error',
@@ -177,4 +260,6 @@ test('runAppRuntimeValidation reports remote runtime loader failures clearly', a
     assert.match(checks[1].details, /Missing required environment variable: SUPABASE_PUBLISHABLE_KEY/);
     assert.equal(checks[2].ok, false);
     assert.match(checks[2].details, /broken payment config/);
+    assert.equal(checks[3].ok, false);
+    assert.match(checks[3].details, /redeploy required/);
 });

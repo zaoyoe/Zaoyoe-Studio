@@ -18,6 +18,11 @@ const PUBLIC_SUPABASE_KEY_ENV_NAMES = Object.freeze([
     'SUPABASE_ANON_KEY',
     'NEXT_PUBLIC_SUPABASE_ANON_KEY'
 ]);
+const QUOTE_SECRET_ENV_NAMES = Object.freeze([
+    'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
+    'PAYMENT_CUSTOM_QUOTE_SECRET',
+    'PAYMENT_QUOTE_SECRET'
+]);
 
 function readEnv(name) {
     return String(process.env[name] || '').trim();
@@ -323,6 +328,82 @@ function buildRuntimeConfigCheckResult(runtimeConfig, expected = {}) {
     };
 }
 
+function buildAuthCheckProbeResult(response = {}) {
+    const detail = String(response.payload?.message || response.text || '').trim();
+
+    if (response.status === 404) {
+        return {
+            label: 'app payment auth-check endpoint',
+            ok: false,
+            details: 'status=404 Not Found redeploy required before JWT auth probing can run'
+        };
+    }
+
+    if (response.status === 401) {
+        return {
+            label: 'app payment auth-check endpoint',
+            ok: true,
+            details: `status=401 ${response.statusText || 'Unauthorized'} endpoint deployed and auth-gated`
+        };
+    }
+
+    if (response.ok && response.payload?.success === true) {
+        return {
+            label: 'app payment auth-check endpoint',
+            ok: true,
+            details: `status=${response.status} ${response.statusText || 'OK'} endpoint deployed`
+        };
+    }
+
+    return {
+        label: 'app payment auth-check endpoint',
+        ok: false,
+        details: `status=${response.status} ${response.statusText || ''} ${detail || 'unexpected response'}`.trim()
+    };
+}
+
+function renderChecklistValue(value, { sensitive = false } = {}) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '(missing)';
+    if (sensitive) return `set, fingerprint=${fingerprintSecret(normalized)}`;
+    return normalized;
+}
+
+function buildPlatformEnvChecklist(env = process.env) {
+    const supabaseUrl = getFirstEnvValue(PUBLIC_SUPABASE_URL_ENV_NAMES, env);
+    const publishableKey = getFirstEnvValue(PUBLIC_SUPABASE_KEY_ENV_NAMES, env);
+    const serviceRoleKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+    const adminEncryptionKey = String(env.ADMIN_CONFIG_ENCRYPTION_KEY || '').trim();
+    const adminStudioAccessSecret = String(env.ADMIN_STUDIO_ACCESS_SECRET || '').trim();
+    const quoteSecret = getFirstEnvValue(QUOTE_SECRET_ENV_NAMES, env);
+    const appBaseUrl = resolveAppBaseUrl({}, env);
+    const smokeBaseUrl = normalizeBaseUrl(String(env.PAYMENT_SMOKE_BASE_URL || '').trim());
+    const deploymentTier = String(env.DEPLOYMENT_TIER || env.APP_ENV || '').trim();
+
+    return {
+        vercel: [
+            { name: 'SUPABASE_URL', value: renderChecklistValue(supabaseUrl) },
+            { name: 'SUPABASE_PUBLISHABLE_KEY', value: renderChecklistValue(publishableKey, { sensitive: true }) },
+            { name: 'SUPABASE_SERVICE_ROLE_KEY', value: renderChecklistValue(serviceRoleKey, { sensitive: true }) },
+            { name: 'ADMIN_CONFIG_ENCRYPTION_KEY', value: renderChecklistValue(adminEncryptionKey, { sensitive: true }) },
+            { name: 'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET', value: renderChecklistValue(quoteSecret, { sensitive: true }) },
+            { name: 'ADMIN_STUDIO_ACCESS_SECRET', value: renderChecklistValue(adminStudioAccessSecret, { sensitive: true }) },
+            { name: 'DEPLOYMENT_TIER', value: renderChecklistValue(deploymentTier) },
+            { name: 'APP_BASE_URL', value: renderChecklistValue(appBaseUrl) },
+            { name: 'PAYMENT_SMOKE_BASE_URL', value: renderChecklistValue(smokeBaseUrl || appBaseUrl) }
+        ],
+        railway: [
+            { name: 'SUPABASE_URL', value: renderChecklistValue(supabaseUrl) },
+            { name: 'SUPABASE_SERVICE_ROLE_KEY', value: renderChecklistValue(serviceRoleKey, { sensitive: true }) },
+            { name: 'ADMIN_CONFIG_ENCRYPTION_KEY', value: renderChecklistValue(adminEncryptionKey, { sensitive: true }) },
+            { name: 'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET', value: renderChecklistValue(quoteSecret, { sensitive: true }) },
+            { name: 'ADMIN_STUDIO_ACCESS_SECRET', value: renderChecklistValue(adminStudioAccessSecret, { sensitive: true }) },
+            { name: 'DEPLOYMENT_TIER', value: renderChecklistValue(deploymentTier) },
+            { name: 'APP_BASE_URL', value: renderChecklistValue(appBaseUrl) }
+        ]
+    };
+}
+
 async function runAppRuntimeValidation({
     baseUrl = '',
     env = process.env,
@@ -403,6 +484,21 @@ async function runAppRuntimeValidation({
         });
     }
 
+    try {
+        const authCheckResponse = await fetchJson(
+            `${resolvedBaseUrl}/api/payments/auth-check`,
+            timeoutMs,
+            fetchImpl
+        );
+        checks.push(buildAuthCheckProbeResult(authCheckResponse));
+    } catch (error) {
+        checks.push({
+            label: 'app payment auth-check endpoint',
+            ok: false,
+            details: error.message || 'fetch failed'
+        });
+    }
+
     return checks;
 }
 
@@ -413,11 +509,7 @@ async function main() {
     const serviceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY');
     const adminEncryptionKey = readEnv('ADMIN_CONFIG_ENCRYPTION_KEY');
     const adminStudioAccessSecret = readEnv('ADMIN_STUDIO_ACCESS_SECRET');
-    const quoteSecret = readFirstAvailableEnv([
-        'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
-        'PAYMENT_CUSTOM_QUOTE_SECRET',
-        'PAYMENT_QUOTE_SECRET'
-    ]);
+    const quoteSecret = readFirstAvailableEnv(QUOTE_SECRET_ENV_NAMES);
     const runtime = isProductionLikeRuntime(process.env);
 
     const checks = [
@@ -510,6 +602,18 @@ async function main() {
     console.log(`- APP_BASE_URL=${readEnv('APP_BASE_URL') || '(empty)'}`);
     console.log(`- PAYMENT_SMOKE_BASE_URL=${readEnv('PAYMENT_SMOKE_BASE_URL') || '(empty)'}`);
 
+    console.log('');
+    console.log('Platform env checklist:');
+    const checklist = buildPlatformEnvChecklist(process.env);
+    console.log('- Vercel');
+    checklist.vercel.forEach((item) => {
+        console.log(`  - ${item.name}=${item.value}`);
+    });
+    console.log('- Railway / verify server');
+    checklist.railway.forEach((item) => {
+        console.log(`  - ${item.name}=${item.value}`);
+    });
+
     const failedChecks = checks.filter((check) => !check.ok);
     if (failedChecks.length) {
         console.log('');
@@ -530,6 +634,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+    buildAuthCheckProbeResult,
+    buildPlatformEnvChecklist,
     buildRuntimeConfigCheckResult,
     fetchJson,
     fetchText,

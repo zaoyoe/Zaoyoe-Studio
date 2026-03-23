@@ -41,7 +41,7 @@ Deprecated scripts that must not be executed anymore:
    - SQL editor: [/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql)
    - CLI / service-role env: `npm run scan:payment-sites -- --env-file server/.env.production --fail-on-anomaly`
    - Combined preflight: `npm run preflight:payment-rollout -- --env-file server/.env.production`
-     - If `APP_BASE_URL` or `PAYMENT_SMOKE_BASE_URL` is present, preflight now also probes `/api/runtime/supabase-config` and `/api/payments/config` so Vercel runtime drift shows up before rollout.
+     - If `APP_BASE_URL` or `PAYMENT_SMOKE_BASE_URL` is present, preflight now also probes `/api/runtime/supabase-config`, `/api/payments/config`, and `/api/payments/auth-check` so Vercel runtime drift and missing redeploys show up before rollout.
 6. If the repository is only linked to the production project, do not treat that linked project as staging by default. Confirm the target project ref first.
 7. Keep real `.env.local` / `server/.env.production` files out of Git. Use the committed `*.example` templates instead.
 8. For deployed app smoke tests, prefer a staging or preview base URL. The smoke runner refuses production-like hosts unless you explicitly pass `--allow-production-like`.
