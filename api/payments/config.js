@@ -4,6 +4,7 @@ const {
     sendJson
 } = require('../_lib/admin');
 const {
+    buildPublicPaymentConfig,
     loadStoredPaymentConfigs
 } = require('../_lib/payments/providers');
 const {
@@ -36,11 +37,12 @@ module.exports = async function handler(req, res) {
                 env: process.env
             })
         };
+        const publicConfig = buildPublicPaymentConfig(paymentChannels, rechargeOptions, runtime);
 
         return sendJson(res, 200, {
             success: true,
-            config: paymentChannels,
-            recharge_options: rechargeOptions,
+            config: publicConfig.paymentChannels,
+            recharge_options: publicConfig.rechargeOptions,
             runtime
         });
     } catch (error) {

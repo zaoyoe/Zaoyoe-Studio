@@ -173,6 +173,70 @@ function normalizePaymentChannelsConfig(raw, legacyRechargeOptions = null, optio
     return config;
 }
 
+function getMockRuntimeState(runtime = {}) {
+    if (runtime && typeof runtime === 'object' && runtime.mock_payment && typeof runtime.mock_payment === 'object') {
+        return runtime.mock_payment;
+    }
+    return runtime && typeof runtime === 'object' ? runtime : {};
+}
+
+function resolvePublicActiveProvider(paymentChannels = {}) {
+    const providers = paymentChannels?.providers || {};
+    const afdianCheckoutUrl = String(providers.afdian?.checkout_url || '').trim();
+    if (afdianCheckoutUrl) {
+        return 'afdian';
+    }
+
+    const hupijiaoReady = Boolean(
+        String(providers.hupijiao?.checkout_url || '').trim()
+        || String(providers.hupijiao?.gateway_url || '').trim()
+        || String(providers.hupijiao?.merchant_id || '').trim()
+    );
+    if (hupijiaoReady) {
+        return 'hupijiao';
+    }
+
+    if (providers.afdian) return 'afdian';
+    if (providers.hupijiao) return 'hupijiao';
+    return 'afdian';
+}
+
+function buildPublicPaymentConfig(paymentChannels, rechargeOptions, runtime = null, options = {}) {
+    const normalizedPaymentChannels = normalizePaymentChannelsConfig(
+        paymentChannels,
+        rechargeOptions,
+        options
+    );
+    const normalizedRechargeOptions = normalizeRechargeOptionsConfig(rechargeOptions);
+    const mockRuntime = getMockRuntimeState(runtime);
+
+    if (mockRuntime.allowed === true) {
+        return {
+            paymentChannels: normalizedPaymentChannels,
+            rechargeOptions: normalizedRechargeOptions
+        };
+    }
+
+    const publicPaymentChannels = JSON.parse(JSON.stringify(normalizedPaymentChannels));
+    const publicRechargeOptions = {
+        ...normalizedRechargeOptions,
+        mock_payment_enabled: false
+    };
+
+    if (publicPaymentChannels.providers?.mock) {
+        publicPaymentChannels.providers.mock.enabled = false;
+    }
+
+    if (publicPaymentChannels.active_provider === 'mock') {
+        publicPaymentChannels.active_provider = resolvePublicActiveProvider(publicPaymentChannels);
+    }
+
+    return {
+        paymentChannels: publicPaymentChannels,
+        rechargeOptions: publicRechargeOptions
+    };
+}
+
 async function loadStoredPaymentConfigs(supabase, options = {}) {
     const { data, error } = await supabase
         .from('system_config')
@@ -257,6 +321,7 @@ async function buildPaymentSecretStatus(supabase, env = process.env) {
 }
 
 module.exports = {
+    buildPublicPaymentConfig,
     DEFAULT_AFDIAN_CHECKOUT_URL,
     DEFAULT_SITE_ORIGIN,
     PROVIDER_KEYS,
