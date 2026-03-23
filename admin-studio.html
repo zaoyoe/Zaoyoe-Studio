@@ -214,52 +214,52 @@
 
             <!-- Navigation -->
             <nav class="sidebar-nav">
-                <div class="sidebar-item active" data-module="gallery" onclick="switchModule('gallery')">
+                <div class="sidebar-item active" data-module="gallery" data-admin-action="switch-module" data-module-id="gallery">
                     <i class="fas fa-palette"></i>
                     <span>Gallery</span>
                 </div>
-                <div class="sidebar-item" data-module="comments" onclick="switchModule('comments')">
+                <div class="sidebar-item" data-module="comments" data-admin-action="switch-module" data-module-id="comments">
                     <i class="fas fa-comments"></i>
                     <span>评论管理</span>
                 </div>
                 <!-- Chat Admin Link -->
-                <div class="sidebar-item" data-module="chat" onclick="switchModule('chat')">
+                <div class="sidebar-item" data-module="chat" data-admin-action="switch-module" data-module-id="chat">
                     <i class="fas fa-comment-dots"></i>
                     <span>客服消息</span>
                 </div>
                 <div class="sidebar-divider"></div>
-                <div class="sidebar-item" data-module="shop" onclick="switchModule('shop')">
+                <div class="sidebar-item" data-module="shop" data-admin-action="switch-module" data-module-id="shop">
                     <i class="fas fa-store"></i>
                     <span>商城系统</span>
                 </div>
                 <!-- Marketing (Phase 2) -->
-                <div class="sidebar-item" data-module="discounts" onclick="switchModule('discounts')">
+                <div class="sidebar-item" data-module="discounts" data-admin-action="switch-module" data-module-id="discounts">
                     <i class="fas fa-ticket-alt"></i>
                     <span>优惠券码</span>
                 </div>
-                <div class="sidebar-item" data-module="homepage" onclick="switchModule('homepage')">
+                <div class="sidebar-item" data-module="homepage" data-admin-action="switch-module" data-module-id="homepage">
                     <i class="fas fa-home"></i>
                     <span>主页内容</span>
                 </div>
-                <div class="sidebar-item" data-module="users" onclick="switchModule('users')">
+                <div class="sidebar-item" data-module="users" data-admin-action="switch-module" data-module-id="users">
                     <i class="fas fa-users-cog"></i>
                     <span>用户管理</span>
                 </div>
                 <div class="sidebar-divider"></div>
-                <div class="sidebar-item" data-module="points" onclick="switchModule('points')">
+                <div class="sidebar-item" data-module="points" data-admin-action="switch-module" data-module-id="points">
                     <i class="fas fa-coins"></i>
                     <span>积分管理</span>
                 </div>
                 <!-- Phase 4 Tickets -->
-                <div class="sidebar-item" data-module="tickets" onclick="switchModule('tickets')">
+                <div class="sidebar-item" data-module="tickets" data-admin-action="switch-module" data-module-id="tickets">
                     <i class="fas fa-headset"></i>
                     <span>售后工单</span>
                 </div>
-                <div class="sidebar-item" data-module="analytics" onclick="switchModule('analytics')">
+                <div class="sidebar-item" data-module="analytics" data-admin-action="switch-module" data-module-id="analytics">
                     <i class="fas fa-chart-line"></i>
                     <span>数据分析</span>
                 </div>
-                <div class="sidebar-item" data-module="payments" onclick="switchModule('payments')">
+                <div class="sidebar-item" data-module="payments" data-admin-action="switch-module" data-module-id="payments">
                     <i class="fas fa-credit-card"></i>
                     <span>支付对账</span>
                 </div>
@@ -267,7 +267,7 @@
 
             <!-- Footer (Settings) -->
             <div class="sidebar-footer">
-                <div class="sidebar-item" data-module="settings" onclick="switchModule('settings')">
+                <div class="sidebar-item" data-module="settings" data-admin-action="switch-module" data-module-id="settings">
                     <i class="fas fa-cog"></i>
                     <span>设置</span>
                 </div>
@@ -275,7 +275,7 @@
         </aside>
 
         <!-- Sidebar Overlay (for closing on mobile) -->
-        <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeMobileSidebar()"></div>
+        <div class="sidebar-overlay" id="sidebarOverlay" data-admin-action="close-mobile-sidebar"></div>
 
         <!-- Main Content Area -->
         <div class="admin-main-content">
@@ -287,7 +287,7 @@
                 <!-- Left Column (balances right for centering) -->
                 <div class="header-left">
                     <!-- Mobile Menu Toggle (visible only on mobile) -->
-                    <button class="mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileSidebar()">
+                    <button class="mobile-menu-btn" id="mobileMenuBtn" data-admin-action="toggle-mobile-sidebar">
                         <i class="fas fa-bars"></i>
                     </button>
                 </div>
@@ -383,8 +383,8 @@
             <div id="module-gallery" class="module-container active">
                 <!-- Tab Navigation -->
                 <nav class="admin-tabs">
-                    <button class="admin-tab active" data-view="create" onclick="switchView('create')">Create</button>
-                    <button class="admin-tab" data-view="manage" onclick="switchView('manage')">Manage</button>
+                    <button class="admin-tab active" data-view="create" data-admin-action="switch-gallery-view">Create</button>
+                    <button class="admin-tab" data-view="manage" data-admin-action="switch-gallery-view">Manage</button>
                     <div class="admin-tab-indicator"></div>
                 </nav>
 
@@ -681,9 +681,9 @@
                     <!-- Comment Tabs -->
                     <nav class="admin-tabs">
                         <button class="admin-tab active" data-comment-view="guestbook"
-                            onclick="switchCommentView('guestbook')">留言板</button>
+                            data-admin-action="switch-comment-view">留言板</button>
                         <button class="admin-tab" data-comment-view="gallery"
-                            onclick="switchCommentView('gallery')">画廊评论</button>
+                            data-admin-action="switch-comment-view">画廊评论</button>
                         <div class="admin-tab-indicator"></div>
                     </nav>
 
@@ -764,10 +764,10 @@
                                         <i class="fas fa-chevron-down filter-arrow"></i>
                                     </button>
                                     <div class="filter-popup glass-popup export-popup">
-                                        <div class="filter-option" onclick="exportData('csv')">
+                                        <div class="filter-option" data-admin-action="comments-export" data-export-format="csv">
                                             <i class="fas fa-file-csv"></i> 导出 CSV
                                         </div>
-                                        <div class="filter-option" onclick="exportData('json')">
+                                        <div class="filter-option" data-admin-action="comments-export" data-export-format="json">
                                             <i class="fas fa-file-code"></i> 导出 JSON
                                         </div>
                                     </div>
@@ -779,11 +779,11 @@
                         <div class="toolbar-right">
                             <!-- View Toggle -->
                             <div class="view-toggle">
-                                <button class="view-btn active" data-view="grid" onclick="switchLayoutView('grid')"
+                                <button class="view-btn active" data-view="grid" data-admin-action="comments-switch-layout"
                                     title="网格视图">
                                     <i class="fas fa-th-large"></i>
                                 </button>
-                                <button class="view-btn" data-view="list" onclick="switchLayoutView('list')"
+                                <button class="view-btn" data-view="list" data-admin-action="comments-switch-layout"
                                     title="列表视图">
                                     <i class="fas fa-list"></i>
                                 </button>
@@ -792,11 +792,11 @@
                             <div class="divider-vertical"></div>
 
                             <label class="select-checkbox-compact">
-                                <input type="checkbox" id="selectAllComments" onchange="toggleSelectAll()">
+                                <input type="checkbox" id="selectAllComments" data-admin-change-action="comments-toggle-select-all">
                                 <span id="selectionCount">0</span>
                             </label>
                             <button class="batch-delete-pill" id="batchDeleteBtn" disabled
-                                onclick="batchDeleteComments()">
+                                data-admin-action="comments-batch-delete">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </div>
@@ -818,26 +818,26 @@
                 <!-- Tabs -->
                 <nav class="admin-tabs" id="settingsTabsNav">
                     <button class="admin-tab active" data-settings-view="pricing"
-                        onclick="switchSettingsView('pricing')">
+                        data-admin-action="switch-settings-view">
                         💰 定价配置
                     </button>
-                    <button class="admin-tab" data-settings-view="security" onclick="switchSettingsView('security')">
+                    <button class="admin-tab" data-settings-view="security" data-admin-action="switch-settings-view">
                         🔒 安全设置
                     </button>
                     <button class="admin-tab" data-settings-view="notifications"
-                        onclick="switchSettingsView('notifications')">
+                        data-admin-action="switch-settings-view">
                         📧 系统公告
                     </button>
-                    <button class="admin-tab" data-settings-view="content" onclick="switchSettingsView('content')">
+                    <button class="admin-tab" data-settings-view="content" data-admin-action="switch-settings-view">
                         📚 内容设置
                     </button>
-                    <button class="admin-tab" data-settings-view="affiliate" onclick="switchSettingsView('affiliate')">
+                    <button class="admin-tab" data-settings-view="affiliate" data-admin-action="switch-settings-view">
                         🌟 推广返现
                     </button>
-                    <button class="admin-tab" data-settings-view="export" onclick="switchSettingsView('export')">
+                    <button class="admin-tab" data-settings-view="export" data-admin-action="switch-settings-view">
                         📦 导出
                     </button>
-                    <button class="admin-tab" data-settings-view="general" onclick="switchSettingsView('general')">
+                    <button class="admin-tab" data-settings-view="general" data-admin-action="switch-settings-view">
                         ⚙️ 其它设置
                     </button>
                     <div class="admin-tab-indicator"></div>
@@ -4538,20 +4538,20 @@
                             <div class="inv-search-box" style="margin-left: 10px;">
                                 <i class="fas fa-search"></i>
                                 <input type="text" id="invSearchInput" placeholder="搜索内容/批次..."
-                                    onkeypress="if(event.key==='Enter') ShopAdmin.loadInventoryList()">
+                                    data-shop-keydown="inventory-search-enter">
                             </div>
                             <!-- Hidden Date State -->
                             <input type="hidden" id="invFilterDateType" value="all">
 
                             <!-- Manage Buttons -->
                             <button id="toggleSelectionBtn" class="icon-btn-square"
-                                onclick="ShopAdmin.toggleSelectionMode()" title="管理模式">
+                                data-shop-action="inventory-toggle-selection-mode" title="管理模式">
                                 <i class="fas fa-check-square"></i>
                             </button>
 
                             <div class="batch-action-wrapper" style="position: relative;">
                                 <button id="batchActionsBtn" class="icon-btn-square"
-                                    onclick="ShopAdmin.toggleBatchMenu()" title="批量操作" style="display: none;">
+                                    data-shop-action="inventory-toggle-batch-menu" title="批量操作" style="display: none;">
                                     <i class="fas fa-ellipsis-h"></i>
                                 </button>
                                 <!-- Batch Menu -->
@@ -4560,13 +4560,13 @@
                                         <i class="fas fa-check-circle" style="color: #34d399;"></i>
                                         已选 <span id="batchSelectedCount">0</span> 项
                                     </div>
-                                    <div class="batch-menu-item" onclick="ShopAdmin.selectAllRows()">
+                                    <div class="batch-menu-item" data-shop-action="inventory-select-all-rows">
                                         <i class="fas fa-check-double"></i> 全选当前页
                                     </div>
-                                    <div class="batch-menu-item" onclick="ShopAdmin.batchDelete()">
+                                    <div class="batch-menu-item" data-shop-action="inventory-batch-delete">
                                         <i class="fas fa-trash-alt"></i> 批量删除
                                     </div>
-                                    <div class="batch-menu-item" onclick="ShopAdmin.exportInventory(true)">
+                                    <div class="batch-menu-item" data-shop-action="inventory-export-selected">
                                         <i class="fas fa-file-export"></i> 导出选中
                                     </div>
                                 </div>
@@ -4576,11 +4576,11 @@
 
                             <!-- Action Buttons -->
                             <div style="display: flex; gap: 8px; flex-shrink: 0;">
-                                <button onclick="ShopAdmin.exportInventory()" class="btn btn-secondary"
+                                <button data-shop-action="inventory-export-all" class="btn btn-secondary"
                                     style="padding: 10px 18px; font-size: 13px; white-space: nowrap;">
                                     <i class="fas fa-file-excel"></i> 导出
                                 </button>
-                                <button onclick="ShopAdmin.openReleaseModal()" class="btn btn-primary"
+                                <button data-shop-action="inventory-open-release-modal" class="btn btn-primary"
                                     style="padding: 10px 18px; font-size: 13px; background: #3d5a80; border-color: #3d5a80; white-space: nowrap;">
                                     <i class="fas fa-rocket"></i> 释放
                                 </button>
@@ -4595,7 +4595,7 @@
                                     <tr>
                                         <th style="width: 50px; display:none;" class="inv-checkbox-col"><input
                                                 type="checkbox" id="selectAllInv"
-                                                onchange="ShopAdmin.toggleSelectAll(this)"></th>
+                                                data-shop-change="inventory-toggle-select-all"></th>
                                         <th>商品</th>
                                         <th>账号内容</th>
                                         <th>状态</th>
@@ -4628,7 +4628,7 @@
 
                                     <!-- Custom Dropdown Trigger (Subtab) -->
                                     <div id="custom-inv-dropdown" class="custom-dropdown"
-                                        onclick="document.getElementById('custom-inv-menu').classList.toggle('show');"
+                                        data-shop-action="inventory-toggle-category-menu"
                                         style="padding: 4px 10px; font-size: 11px;">
                                         <span id="inv-dropdown-label">全部</span>
                                         <i class="fas fa-chevron-down" style="font-size: 9px; opacity: 0.6;"></i>
@@ -4638,14 +4638,14 @@
                                     <div id="custom-inv-menu" class="custom-dropdown-menu"
                                         style="left: 0; right: auto; transform-origin: top left;">
                                         <div class="dropdown-item active"
-                                            onclick="ShopAdmin.selectInvCategory('all', '全部', this)">全部</div>
+                                            data-shop-action="inventory-select-category" data-category="all" data-category-label="全部">全部</div>
                                         <div class="dropdown-item"
-                                            onclick="ShopAdmin.selectInvCategory('gemini', 'Gemini', this)">Gemini</div>
+                                            data-shop-action="inventory-select-category" data-category="gemini" data-category-label="Gemini">Gemini</div>
                                         <div class="dropdown-item"
-                                            onclick="ShopAdmin.selectInvCategory('chatgpt', 'ChatGPT', this)">ChatGPT
+                                            data-shop-action="inventory-select-category" data-category="chatgpt" data-category-label="ChatGPT">ChatGPT
                                         </div>
                                         <div class="dropdown-item"
-                                            onclick="ShopAdmin.selectInvCategory('gmail', 'Gmail', this)">Gmail</div>
+                                            data-shop-action="inventory-select-category" data-category="gmail" data-category-label="Gmail">Gmail</div>
                                     </div>
                                 </div>
                                 <!-- Buttons removed, logic simplified -->
@@ -4677,7 +4677,7 @@
                                 <div class="import-status">
                                     <div style="color: rgba(255,255,255,0.5);">检测到 <span id="lineCount"
                                             style="color: #fff; font-weight: bold;">0</span> 条数据</div>
-                                    <button class="btn btn-primary" onclick="ShopAdmin.importInventory(this)">
+                                    <button class="btn btn-primary" data-shop-action="inventory-import-submit">
                                         <i class="fas fa-check"></i> 确认导入
                                     </button>
                                 </div>
@@ -4710,8 +4710,8 @@
                             </div>
                         </div>
                         <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                            <button onclick="ShopAdmin.closeReleaseModal()" class="btn btn-secondary">取消</button>
-                            <button onclick="ShopAdmin.releaseReserve()" class="btn btn-primary"><i
+                            <button data-shop-action="inventory-release-modal-close" class="btn btn-secondary">取消</button>
+                            <button data-shop-action="inventory-release-modal-submit" class="btn btn-primary"><i
                                     class="fas fa-check"></i> 确认释放</button>
                         </div>
                     </div>
@@ -4749,11 +4749,11 @@
                                     id="importLineCount" style="color: #888;">(0行)</span></label>
                             <textarea id="importContentInput" placeholder="每行一个账号，格式：邮箱----密码----恢复邮箱"
                                 style="width: 100%; height: 200px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; color: #fff; margin-top: 5px; resize: vertical; font-family: monospace; box-sizing: border-box;"
-                                oninput="document.getElementById('importLineCount').textContent = '(' + (this.value.trim() ? this.value.trim().split('\\n').length : 0) + '行)'"></textarea>
+                                data-shop-input="inventory-import-line-count"></textarea>
                         </div>
                         <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                            <button onclick="ShopAdmin.closeImportModal()" class="btn btn-secondary">取消</button>
-                            <button onclick="ShopAdmin.doImport()" class="btn btn-primary"><i class="fas fa-upload"></i>
+                            <button data-shop-action="inventory-close-import-modal" class="btn btn-secondary">取消</button>
+                            <button data-shop-action="inventory-do-import" class="btn btn-primary"><i class="fas fa-upload"></i>
                                 导入</button>
                         </div>
                     </div>
@@ -7140,24 +7140,24 @@
                 <!-- Homepage Tabs -->
                 <nav class="admin-tabs" id="homepageTabsNav">
                     <button class="admin-tab active" data-hp-section="hero"
-                        onclick="HomepageAdmin.switchSection('hero')">
+                        data-admin-action="homepage-switch-section">
                         Hero
                     </button>
                     <button class="admin-tab" data-hp-section="prompts"
-                        onclick="HomepageAdmin.switchSection('prompts')">
+                        data-admin-action="homepage-switch-section">
                         提示词
                     </button>
-                    <button class="admin-tab" data-hp-section="shop" onclick="HomepageAdmin.switchSection('shop')">
+                    <button class="admin-tab" data-hp-section="shop" data-admin-action="homepage-switch-section">
                         商城
                     </button>
-                    <button class="admin-tab" data-hp-section="verify" onclick="HomepageAdmin.switchSection('verify')">
+                    <button class="admin-tab" data-hp-section="verify" data-admin-action="homepage-switch-section">
                         验证
                     </button>
                     <button class="admin-tab" data-hp-section="guestbook"
-                        onclick="HomepageAdmin.switchSection('guestbook')">
+                        data-admin-action="homepage-switch-section">
                         留言板
                     </button>
-                    <button class="admin-tab" data-hp-section="ticker" onclick="HomepageAdmin.switchSection('ticker')">
+                    <button class="admin-tab" data-hp-section="ticker" data-admin-action="homepage-switch-section">
                         跑马灯
                     </button>
                     <div class="admin-tab-indicator"></div>
@@ -7179,7 +7179,7 @@
                                 <div class="hp-ctrl-item">
                                     <label>显示区块</label>
                                     <div class="status-toggle" id="hp-hero-visible"
-                                        onclick="HomepageAdmin.toggleVisible('hero')"></div>
+                                        data-admin-action="homepage-toggle-visible" data-homepage-section="hero"></div>
                                 </div>
                                 <div class="hp-ctrl-item">
                                     <label>排序</label>
@@ -7188,7 +7188,7 @@
                             </div>
 
                             <div class="config-card">
-                                <div class="config-card-header" onclick="toggleConfigCard(this)">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
                                     <div class="config-card-title"><i class="fas fa-edit"></i><span>内容配置</span></div>
                                 </div>
                                 <div class="config-card-body">
@@ -7205,14 +7205,14 @@
                             <div class="hp-auto-bar">
                                 <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span></div>
                                 <div class="status-toggle" id="hp-hero-auto"
-                                    onclick="HomepageAdmin.toggleField('hero', 'enable_auto')"></div>
+                                    data-admin-action="homepage-toggle-field" data-homepage-section="hero" data-homepage-field="enable_auto"></div>
                             </div>
 
                             <div class="hp-save-bar">
                                 <span id="hp-hero-updated"
                                     style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
                                 <div style="display: flex; align-items: center; gap: 12px;">
-                                    <button class="btn-sm btn-primary" onclick="HomepageAdmin.saveSection('hero')"><i
+                                    <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="hero"><i
                                             class="fas fa-save"></i> 保存修改</button>
                                 </div>
                             </div>
@@ -7225,14 +7225,14 @@
                             <div class="hp-control-bar">
                                 <div class="hp-ctrl-item"><label>显示区块</label>
                                     <div class="status-toggle" id="hp-prompts-visible"
-                                        onclick="HomepageAdmin.toggleVisible('prompts')"></div>
+                                        data-admin-action="homepage-toggle-visible" data-homepage-section="prompts"></div>
                                 </div>
                                 <div class="hp-ctrl-item"><label>排序</label><input type="number" class="config-input"
                                         id="hp-prompts-order" min="0" max="99"></div>
                             </div>
 
                             <div class="config-card">
-                                <div class="config-card-header" onclick="toggleConfigCard(this)">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
                                     <div class="config-card-title"><i class="fas fa-edit"></i><span>内容配置</span></div>
                                 </div>
                                 <div class="config-card-body">
@@ -7259,7 +7259,7 @@
                                 <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span><span
                                         class="hp-auto-hint">— 自动从数据库拉取最热门的提示词</span></div>
                                 <div class="status-toggle" id="hp-prompts-auto"
-                                    onclick="HomepageAdmin.toggleField('prompts', 'enable_auto')"></div>
+                                    data-admin-action="homepage-toggle-field" data-homepage-section="prompts" data-homepage-field="enable_auto"></div>
                             </div>
 
                             <div class="hp-save-bar">
@@ -7267,7 +7267,7 @@
                                     style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
                                 <div style="display: flex; align-items: center; gap: 12px;">
 
-                                    <button class="btn-sm btn-primary" onclick="HomepageAdmin.saveSection('prompts')"><i
+                                    <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="prompts"><i
                                             class="fas fa-save"></i> 保存修改</button>
                                 </div>
                             </div>
@@ -7280,14 +7280,14 @@
                             <div class="hp-control-bar">
                                 <div class="hp-ctrl-item"><label>显示区块</label>
                                     <div class="status-toggle" id="hp-shop-visible"
-                                        onclick="HomepageAdmin.toggleVisible('shop')"></div>
+                                        data-admin-action="homepage-toggle-visible" data-homepage-section="shop"></div>
                                 </div>
                                 <div class="hp-ctrl-item"><label>排序</label><input type="number" class="config-input"
                                         id="hp-shop-order" min="0" max="99"></div>
                             </div>
 
                             <div class="config-card">
-                                <div class="config-card-header" onclick="toggleConfigCard(this)">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
                                     <div class="config-card-title"><i class="fas fa-edit"></i><span>内容配置</span></div>
                                 </div>
                                 <div class="config-card-body">
@@ -7321,7 +7321,7 @@
                                 <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span><span
                                         class="hp-auto-hint">— 自动从商城拉取热门商品</span></div>
                                 <div class="status-toggle" id="hp-shop-auto"
-                                    onclick="HomepageAdmin.toggleField('shop', 'enable_auto')"></div>
+                                    data-admin-action="homepage-toggle-field" data-homepage-section="shop" data-homepage-field="enable_auto"></div>
                             </div>
 
                             <div class="hp-save-bar">
@@ -7329,7 +7329,7 @@
                                     style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
                                 <div style="display: flex; align-items: center; gap: 12px;">
 
-                                    <button class="btn-sm btn-primary" onclick="HomepageAdmin.saveSection('shop')"><i
+                                    <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="shop"><i
                                             class="fas fa-save"></i> 保存修改</button>
                                 </div>
                             </div>
@@ -7342,14 +7342,14 @@
                             <div class="hp-control-bar">
                                 <div class="hp-ctrl-item"><label>显示区块</label>
                                     <div class="status-toggle" id="hp-verify-visible"
-                                        onclick="HomepageAdmin.toggleVisible('verify')"></div>
+                                        data-admin-action="homepage-toggle-visible" data-homepage-section="verify"></div>
                                 </div>
                                 <div class="hp-ctrl-item"><label>排序</label><input type="number" class="config-input"
                                         id="hp-verify-order" min="0" max="99"></div>
                             </div>
 
                             <div class="config-card">
-                                <div class="config-card-header" onclick="toggleConfigCard(this)">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
                                     <div class="config-card-title"><i class="fas fa-edit"></i><span>内容配置</span></div>
                                 </div>
                                 <div class="config-card-body">
@@ -7363,7 +7363,7 @@
                                             <label>预览截图</label>
                                             <input type="hidden" id="hp-verify-screenshot" value="">
                                             <div class="hp-upload-zone" id="hp-verify-upload-zone"
-                                                onclick="document.getElementById('hp-verify-file-input').click()"
+                                                data-admin-action="homepage-upload-screenshot"
                                                 title="点击上传图片">
                                                 <img id="hp-verify-preview-img" src="" alt="预览截图"
                                                     style="display:none; max-width:100%; max-height:200px; border-radius:8px; object-fit:contain;">
@@ -7379,7 +7379,7 @@
                                             </div>
                                             <input type="file" id="hp-verify-file-input" accept="image/*"
                                                 style="display:none"
-                                                onchange="HomepageAdmin._handleScreenshotUpload(this)">
+                                                data-admin-change-action="homepage-handle-screenshot-upload">
                                         </div>
                                         <div class="hp-field"><label>特色标签 <span
                                                     style="font-size:0.75rem;color:rgba(255,255,255,0.3)">逗号分隔</span></label><input
@@ -7392,7 +7392,7 @@
                             <div class="hp-auto-bar">
                                 <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span></div>
                                 <div class="status-toggle" id="hp-verify-auto"
-                                    onclick="HomepageAdmin.toggleField('verify', 'enable_auto')"></div>
+                                    data-admin-action="homepage-toggle-field" data-homepage-section="verify" data-homepage-field="enable_auto"></div>
                             </div>
 
                             <div class="hp-save-bar">
@@ -7400,7 +7400,7 @@
                                     style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
                                 <div style="display: flex; align-items: center; gap: 12px;">
 
-                                    <button class="btn-sm btn-primary" onclick="HomepageAdmin.saveSection('verify')"><i
+                                    <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="verify"><i
                                             class="fas fa-save"></i> 保存修改</button>
                                 </div>
                             </div>
@@ -7413,14 +7413,14 @@
                             <div class="hp-control-bar">
                                 <div class="hp-ctrl-item"><label>显示区块</label>
                                     <div class="status-toggle" id="hp-guestbook-visible"
-                                        onclick="HomepageAdmin.toggleVisible('guestbook')"></div>
+                                        data-admin-action="homepage-toggle-visible" data-homepage-section="guestbook"></div>
                                 </div>
                                 <div class="hp-ctrl-item"><label>排序</label><input type="number" class="config-input"
                                         id="hp-guestbook-order" min="0" max="99"></div>
                             </div>
 
                             <div class="config-card">
-                                <div class="config-card-header" onclick="toggleConfigCard(this)">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
                                     <div class="config-card-title"><i class="fas fa-edit"></i><span>内容配置</span></div>
                                 </div>
                                 <div class="config-card-body">
@@ -7441,7 +7441,7 @@
                                 <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span><span
                                         class="hp-auto-hint">— 自动从留言板拉取最新留言</span></div>
                                 <div class="status-toggle" id="hp-guestbook-auto"
-                                    onclick="HomepageAdmin.toggleField('guestbook', 'enable_auto')"></div>
+                                    data-admin-action="homepage-toggle-field" data-homepage-section="guestbook" data-homepage-field="enable_auto"></div>
                             </div>
 
                             <div class="hp-save-bar">
@@ -7450,7 +7450,7 @@
                                 <div style="display: flex; align-items: center; gap: 12px;">
 
                                     <button class="btn-sm btn-primary"
-                                        onclick="HomepageAdmin.saveSection('guestbook')"><i class="fas fa-save"></i>
+                                        data-admin-action="homepage-save-section" data-homepage-section="guestbook"><i class="fas fa-save"></i>
                                         保存修改</button>
                                 </div>
                             </div>
@@ -7463,14 +7463,14 @@
                             <div class="hp-control-bar">
                                 <div class="hp-ctrl-item"><label>显示区块</label>
                                     <div class="status-toggle" id="hp-ticker-visible"
-                                        onclick="HomepageAdmin.toggleVisible('ticker')"></div>
+                                        data-admin-action="homepage-toggle-visible" data-homepage-section="ticker"></div>
                                 </div>
                                 <div class="hp-ctrl-item"><label>排序</label><input type="number" class="config-input"
                                         id="hp-ticker-order" min="0" max="99"></div>
                             </div>
 
                             <div class="config-card">
-                                <div class="config-card-header" onclick="toggleConfigCard(this)">
+                                <div class="config-card-header" data-admin-action="homepage-toggle-config-card">
                                     <div class="config-card-title"><i class="fas fa-sliders-h"></i><span>跑马灯配置</span>
                                     </div>
                                 </div>
@@ -7495,12 +7495,12 @@
                                     <div class="hp-toggle-group" style="margin-top: 16px;">
                                         <div class="hp-toggle-item">
                                             <div class="status-toggle" id="hp-ticker-prompts"
-                                                onclick="HomepageAdmin.toggleField('ticker', 'enable_prompts')"></div>
+                                                data-admin-action="homepage-toggle-field" data-homepage-section="ticker" data-homepage-field="enable_prompts"></div>
                                             <span>包含提示词</span>
                                         </div>
                                         <div class="hp-toggle-item">
                                             <div class="status-toggle" id="hp-ticker-products"
-                                                onclick="HomepageAdmin.toggleField('ticker', 'enable_products')"></div>
+                                                data-admin-action="homepage-toggle-field" data-homepage-section="ticker" data-homepage-field="enable_products"></div>
                                             <span>包含商品</span>
                                         </div>
                                     </div>
@@ -7510,7 +7510,7 @@
                             <div class="hp-auto-bar">
                                 <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span></div>
                                 <div class="status-toggle" id="hp-ticker-auto"
-                                    onclick="HomepageAdmin.toggleField('ticker', 'enable_auto')"></div>
+                                    data-admin-action="homepage-toggle-field" data-homepage-section="ticker" data-homepage-field="enable_auto"></div>
                             </div>
 
                             <div class="hp-save-bar">
@@ -7518,7 +7518,7 @@
                                     style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
                                 <div style="display: flex; align-items: center; gap: 12px;">
 
-                                    <button class="btn-sm btn-primary" onclick="HomepageAdmin.saveSection('ticker')"><i
+                                    <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="ticker"><i
                                             class="fas fa-save"></i> 保存修改</button>
                                 </div>
                             </div>
@@ -7534,26 +7534,26 @@
             <div id="module-payments" class="module-container">
                 <div class="payments-dashboard">
                     <nav class="admin-tabs payments-tabs" id="paymentsTabsNav">
-                        <button class="admin-tab active" data-tab="overview" onclick="AdminPayments.switchTab('overview')">支付总览</button>
-                        <button class="admin-tab" data-tab="finance" onclick="AdminPayments.switchTab('finance')">全站收支</button>
-                        <button class="admin-tab" data-tab="ops" onclick="AdminPayments.switchTab('ops')">异常运维</button>
+                        <button class="admin-tab active" data-tab="overview" data-admin-action="payments-switch-tab">支付总览</button>
+                        <button class="admin-tab" data-tab="finance" data-admin-action="payments-switch-tab">全站收支</button>
+                        <button class="admin-tab" data-tab="ops" data-admin-action="payments-switch-tab">异常运维</button>
                         <div class="admin-tab-indicator"></div>
                     </nav>
 
                     <div class="analytics-toolbar payments-toolbar-shell">
                         <div class="toolbar-left">
                             <div class="date-range-dropdown" id="paymentsRangeDropdown">
-                                <button class="date-range-trigger" type="button" onclick="AdminPayments.toggleRangeMenu(event)">
+                                <button class="date-range-trigger" type="button" data-admin-action="payments-toggle-range-menu">
                                     <i class="fas fa-calendar-alt"></i>
                                     <span id="paymentsRangeLabel">最近 30 天</span>
                                     <i class="fas fa-chevron-down dropdown-arrow"></i>
                                 </button>
                                 <div class="date-range-menu payments-date-menu" id="paymentsRangeMenu">
                                     <div class="date-range-presets">
-                                        <button class="preset-btn payments-range-btn" data-days="7" type="button" onclick="AdminPayments.setDays(7, true)">最近 7 天</button>
-                                        <button class="preset-btn payments-range-btn active" data-days="30" type="button" onclick="AdminPayments.setDays(30, true)">最近 30 天</button>
-                                        <button class="preset-btn payments-range-btn" data-days="90" type="button" onclick="AdminPayments.setDays(90, true)">最近 90 天</button>
-                                        <button class="preset-btn payments-range-btn" data-days="365" type="button" onclick="AdminPayments.setDays(365, true)">最近 1 年</button>
+                                        <button class="preset-btn payments-range-btn" data-days="7" type="button" data-admin-action="payments-set-days">最近 7 天</button>
+                                        <button class="preset-btn payments-range-btn active" data-days="30" type="button" data-admin-action="payments-set-days">最近 30 天</button>
+                                        <button class="preset-btn payments-range-btn" data-days="90" type="button" data-admin-action="payments-set-days">最近 90 天</button>
+                                        <button class="preset-btn payments-range-btn" data-days="365" type="button" data-admin-action="payments-set-days">最近 1 年</button>
                                     </div>
                                     <div class="payments-range-meta" id="paymentsRangeMeta">
                                         <i class="fas fa-calendar-day"></i>
@@ -7567,7 +7567,7 @@
                                             <span class="date-separator">至</span>
                                             <input type="date" class="custom-date-input" id="paymentsCustomEndDate">
                                         </div>
-                                        <button class="custom-range-apply" type="button" onclick="AdminPayments.applyCustomRange()">确定</button>
+                                        <button class="custom-range-apply" type="button" data-admin-action="payments-apply-custom-range">确定</button>
                                     </div>
                                 </div>
                             </div>
@@ -7589,13 +7589,13 @@
                             </div>
                         </div>
                         <div class="toolbar-right">
-                            <button type="button" class="toolbar-icon-btn" onclick="AdminPayments.exportData('excel')" title="导出 Excel">
+                            <button type="button" class="toolbar-icon-btn" data-admin-action="payments-export" data-export-format="excel" title="导出 Excel">
                                 <i class="fas fa-file-excel"></i>
                             </button>
-                            <button type="button" class="toolbar-icon-btn" onclick="AdminPayments.exportData('csv')" title="导出 CSV">
+                            <button type="button" class="toolbar-icon-btn" data-admin-action="payments-export" data-export-format="csv" title="导出 CSV">
                                 <i class="fas fa-file-csv"></i>
                             </button>
-                            <button type="button" class="toolbar-icon-btn" id="paymentsRefreshBtn" onclick="AdminPayments.reload()" title="刷新支付数据">
+                            <button type="button" class="toolbar-icon-btn" id="paymentsRefreshBtn" data-admin-action="payments-reload" title="刷新支付数据">
                                 <i class="fas fa-sync-alt"></i>
                             </button>
                             <div class="auto-refresh-toggle" title="自动刷新（5 分钟）">
@@ -7721,10 +7721,10 @@
                                     <span>专门清理 AUTO_CDX_* 与 codex.*@example.com</span>
                                 </div>
                                 <div class="payments-cleanup-actions">
-                                    <button type="button" class="btn-sm btn-secondary" id="paymentsCleanupPreviewBtn" onclick="AdminPayments.previewCleanup()">
+                                    <button type="button" class="btn-sm btn-secondary" id="paymentsCleanupPreviewBtn" data-admin-action="payments-preview-cleanup">
                                         <i class="fas fa-magnifying-glass"></i> 重新扫描
                                     </button>
-                                    <button type="button" class="btn-sm btn-warning" id="paymentsCleanupBtn" onclick="AdminPayments.cleanupTestData()">
+                                    <button type="button" class="btn-sm btn-warning" id="paymentsCleanupBtn" data-admin-action="payments-run-cleanup">
                                         <i class="fas fa-broom"></i> 清理测试数据
                                     </button>
                                 </div>
@@ -7882,7 +7882,7 @@
                         <div class="alerts-header">
                             <i class="fas fa-exclamation-triangle"></i>
                             <span>异常告警</span>
-                            <button class="btn-icon-sm" onclick="dismissAllAlerts()">
+                            <button class="btn-icon-sm" data-admin-action="analytics-dismiss-alerts">
                                 <i class="fas fa-times"></i> 忽略
                             </button>
                         </div>
@@ -7892,9 +7892,9 @@
                     <!-- Analytics Tabs (centered, standalone) -->
                     <nav class="admin-tabs" id="analyticsTabsNav">
                         <button class="admin-tab active" data-tab="users"
-                            onclick="switchAnalyticsTab('users')">用户表现</button>
-                        <button class="admin-tab" data-tab="points" onclick="switchAnalyticsTab('points')">积分生态</button>
-                        <button class="admin-tab" data-tab="ai" onclick="switchAnalyticsTab('ai')">AI 洞察</button>
+                            data-admin-action="analytics-switch-tab">用户表现</button>
+                        <button class="admin-tab" data-tab="points" data-admin-action="analytics-switch-tab">积分生态</button>
+                        <button class="admin-tab" data-tab="ai" data-admin-action="analytics-switch-tab">AI 洞察</button>
                         <div class="admin-tab-indicator"></div>
                     </nav>
 
@@ -7904,7 +7904,7 @@
                         <div class="toolbar-left">
                             <!-- Unified Date Range Dropdown -->
                             <div class="date-range-dropdown" id="dateRangeDropdown">
-                                <button class="date-range-trigger" onclick="toggleDateRangeDropdown()">
+                                <button class="date-range-trigger" data-admin-action="analytics-toggle-range-dropdown">
                                     <i class="fas fa-calendar-alt"></i>
                                     <span id="dateRangeLabel">最近 7 天</span>
                                     <i class="fas fa-chevron-down dropdown-arrow"></i>
@@ -7912,13 +7912,13 @@
                                 <div class="date-range-menu" id="dateRangeMenu">
                                     <div class="date-range-presets">
                                         <button class="preset-btn active" data-range="7"
-                                            onclick="selectPresetRange(7)">最近 7
+                                            data-admin-action="analytics-select-preset-range">最近 7
                                             天</button>
-                                        <button class="preset-btn" data-range="30" onclick="selectPresetRange(30)">最近 30
+                                        <button class="preset-btn" data-range="30" data-admin-action="analytics-select-preset-range">最近 30
                                             天</button>
-                                        <button class="preset-btn" data-range="90" onclick="selectPresetRange(90)">最近 90
+                                        <button class="preset-btn" data-range="90" data-admin-action="analytics-select-preset-range">最近 90
                                             天</button>
-                                        <button class="preset-btn" data-range="365" onclick="selectPresetRange(365)">最近
+                                        <button class="preset-btn" data-range="365" data-admin-action="analytics-select-preset-range">最近
                                             1 年</button>
                                     </div>
                                     <div class="date-range-divider"></div>
@@ -7926,13 +7926,13 @@
                                         <div class="custom-range-label">自定义范围</div>
                                         <div class="custom-range-inputs">
                                             <div class="custom-date-picker" id="customStartPicker"
-                                                onclick="toggleInlineCalendar(event)">
+                                                data-admin-action="analytics-toggle-inline-calendar">
                                                 <span class="custom-date-value" id="customStartDisplay">选择开始日期</span>
                                                 <i class="fas fa-calendar"></i>
                                             </div>
                                             <span class="date-separator">至</span>
                                             <div class="custom-date-picker" id="customEndPicker"
-                                                onclick="toggleInlineCalendar(event)">
+                                                data-admin-action="analytics-toggle-inline-calendar">
                                                 <span class="custom-date-value" id="customEndDisplay">选择结束日期</span>
                                                 <i class="fas fa-calendar"></i>
                                             </div>
@@ -7940,10 +7940,10 @@
                                         <!-- Custom Calendar -->
                                         <div class="inline-calendar" id="inlineCalendar">
                                             <div class="calendar-header">
-                                                <button type="button" class="cal-nav" onclick="changeInlineMonth(-1)"><i
+                                                <button type="button" class="cal-nav" data-admin-action="analytics-change-inline-month" data-month-delta="-1"><i
                                                         class="fas fa-chevron-left"></i></button>
                                                 <span class="cal-title" id="calendarTitle">一月 2026</span>
-                                                <button type="button" class="cal-nav" onclick="changeInlineMonth(1)"><i
+                                                <button type="button" class="cal-nav" data-admin-action="analytics-change-inline-month" data-month-delta="1"><i
                                                         class="fas fa-chevron-right"></i></button>
                                             </div>
                                             <div class="calendar-hint" id="calendarHint">选择开始日期</div>
@@ -7953,12 +7953,12 @@
                                             <div class="calendar-days" id="calendarDays"></div>
                                             <div class="calendar-footer">
                                                 <button type="button" class="cal-btn-reset"
-                                                    onclick="resetInlineCalendar()">清除</button>
+                                                    data-admin-action="analytics-reset-inline-calendar">清除</button>
                                                 <button type="button" class="cal-btn-today"
-                                                    onclick="setInlineToday()">今天</button>
+                                                    data-admin-action="analytics-set-inline-today">今天</button>
                                             </div>
                                         </div>
-                                        <button class="custom-range-apply" onclick="applyCustomRange()">确定</button>
+                                        <button class="custom-range-apply" data-admin-action="analytics-apply-custom-range">确定</button>
                                     </div>
                                 </div>
                             </div>
@@ -8666,7 +8666,7 @@
 
 
     <!-- Product Edit Modal (Redesigned) -->
-    <div id="productModal" class="modal-overlay" onclick="if(event.target===this) this.style.display='none'"
+    <div id="productModal" class="modal-overlay" data-shop-overlay-close="product-modal"
         style="display: none; z-index: 9999; justify-content:center; align-items:center; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); transition: all 0.3s;">
 
         <style>
@@ -9099,11 +9099,10 @@
 
             <!-- Right Column: Form -->
             <div class="modal-form-content" autocomplete="off">
-                <form autocomplete="off" onsubmit="return false;">
+                <form autocomplete="off" id="productModalForm">
                     <div class="form-header">
                         <div class="form-title" id="productModalTitle">新建商品</div>
-                        <button class="form-close-btn"
-                            onclick="document.getElementById('productModal').style.display='none'">✕</button>
+                        <button class="form-close-btn" type="button" data-shop-action="product-close-modal">✕</button>
                     </div>
                     <div id="productSiteHint"
                         style="padding:4px 16px 8px; font-size:12px; color:rgba(255,255,255,0.5); display:none;"></div>
@@ -9112,7 +9111,7 @@
                         <div class="modern-form-group" style="flex:2">
                             <label class="modern-label" id="prodNameLabel">商品名称</label>
                             <input type="text" id="prodName" class="modern-input" placeholder="输入商品名称"
-                                oninput="ShopAdmin.updatePreview()">
+                                data-shop-input="product-update-preview">
                         </div>
                         <div class="modern-form-group" style="flex:1">
                             <label class="modern-label">所属分类</label>
@@ -9120,7 +9119,7 @@
                             <input type="hidden" id="prodCategory" value="">
                             <!-- Custom dropdown -->
                             <div class="custom-category-dropdown" id="prodCategoryDropdown">
-                                <div class="custom-category-selected" onclick="ShopAdmin.toggleCategoryDropdown()">
+                                <div class="custom-category-selected" data-shop-action="product-toggle-category-dropdown">
                                     <span class="category-color-dot"></span>
                                     <span class="category-name">选择分类</span>
                                     <svg class="dropdown-arrow" width="12" height="12" viewBox="0 0 12 12">
@@ -9241,7 +9240,7 @@
                         <div class="modern-form-group">
                             <label class="modern-label" id="prodPriceLabel">价格 (积分)</label>
                             <input type="number" id="prodPrice" class="modern-input" placeholder="0"
-                                oninput="ShopAdmin.updatePreview()">
+                                data-shop-input="product-update-preview">
                         </div>
                         <div class="modern-form-group">
                             <label class="modern-label">排序权重</label>
@@ -9251,19 +9250,19 @@
 
                     <div class="modern-form-group">
                         <label class="modern-label">商品图标</label>
-                        <div class="upload-box" onclick="document.getElementById('iconUploadFile').click()">
+                        <div class="upload-box" data-shop-action="product-upload-icon">
                             <div class="upload-icon-large"><i class="fas fa-cloud-upload-alt"></i></div>
                             <div class="upload-text">点击上传图片 (支持 JPG, PNG, WebP)</div>
                         </div>
                         <input type="file" id="iconUploadFile" hidden accept="image/*"
-                            onchange="ShopAdmin.handleIconUpload(this)">
+                            data-shop-change="product-handle-icon-upload">
                         <input type="hidden" id="prodIcon">
                     </div>
 
                     <div class="modern-form-group">
                         <label class="modern-label" id="prodDescLabel">商品描述</label>
                         <textarea id="prodDesc" class="modern-input" placeholder="商品简介..."
-                            oninput="ShopAdmin.updatePreview()"></textarea>
+                            data-shop-input="product-update-preview"></textarea>
                     </div>
 
                     <!-- Marketing Config (Phase 2) -->
@@ -9279,10 +9278,8 @@
                             </div>
 
                             <!-- Add Rule Button -->
-                            <button type="button" onclick="ShopAdmin.addTieredPricingRow()"
-                                style="background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.2); border-radius: 8px; color: #6b9ece; padding: 10px 15px; width: 100%; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s;"
-                                onmouseover="this.style.background='rgba(107, 158, 206, 0.1)'; this.style.borderColor='#6b9ece'"
-                                onmouseout="this.style.background='rgba(255,255,255,0.05)'; this.style.borderColor='rgba(255,255,255,0.2)'">
+                            <button type="button" data-shop-action="product-add-tiered-pricing"
+                                style="background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.2); border-radius: 8px; color: #6b9ece; padding: 10px 15px; width: 100%; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s;">
                                 <i class="fas fa-plus"></i> 添加阶梯价
                             </button>
 
@@ -9312,7 +9309,7 @@
                             <input type="hidden" id="prodDeliveryType" value="KEY">
                             <!-- Custom dropdown -->
                             <div class="custom-category-dropdown" id="prodDeliveryTypeDropdown">
-                                <div class="custom-category-selected" onclick="ShopAdmin.toggleDeliveryTypeDropdown()">
+                                <div class="custom-category-selected" data-shop-action="product-toggle-delivery-type-dropdown">
                                     <span class="category-name" id="prodDeliveryTypeName">卡密池发放 (KEY)</span>
                                     <svg class="dropdown-arrow" width="12" height="12" viewBox="0 0 12 12">
                                         <path fill="currentColor"
@@ -9321,11 +9318,11 @@
                                 </div>
                                 <div class="custom-category-options" id="prodDeliveryTypeOptions">
                                     <div class="custom-category-option"
-                                        onclick="ShopAdmin.selectDeliveryType('KEY', '卡密池发放 (KEY)')">
+                                        data-shop-action="product-select-delivery-type" data-delivery-type="KEY" data-delivery-label="卡密池发放 (KEY)">
                                         <span class="category-name">卡密池发放 (KEY)</span>
                                     </div>
                                     <div class="custom-category-option"
-                                        onclick="ShopAdmin.selectDeliveryType('API', '外部接口履约 (API Webhook)')">
+                                        data-shop-action="product-select-delivery-type" data-delivery-type="API" data-delivery-label="外部接口履约 (API Webhook)">
                                         <span class="category-name">外部接口履约 (API Webhook)</span>
                                     </div>
                                 </div>
@@ -9359,7 +9356,7 @@
                             <label class="toggle-switch"
                                 style="position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;">
                                 <input type="checkbox" id="prodShowPurchaseNotes"
-                                    onchange="ShopAdmin.togglePurchaseNotes(this.checked)"
+                                    data-shop-change="product-toggle-purchase-notes"
                                     style="opacity:0;width:0;height:0;">
                                 <span class="toggle-slider" style="
                                     position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
@@ -9392,7 +9389,7 @@
                             <label class="toggle-switch"
                                 style="position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;">
                                 <input type="checkbox" id="prodShowUsageInstructions"
-                                    onchange="ShopAdmin.toggleUsageInstructions(this.checked)"
+                                    data-shop-change="product-toggle-usage-instructions"
                                     style="opacity:0;width:0;height:0;">
                                 <span class="toggle-slider" style="
                                     position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
@@ -9440,9 +9437,8 @@
                     <input type="hidden" id="editProductId">
 
                     <div class="action-bar">
-                        <button class="btn-cancel"
-                            onclick="document.getElementById('productModal').style.display='none'">取消</button>
-                        <button class="btn-save" onclick="ShopAdmin.saveProduct()">保存商品</button>
+                        <button class="btn-cancel" type="button" data-shop-action="product-close-modal">取消</button>
+                        <button class="btn-save" type="submit">保存商品</button>
                     </div>
                 </form>
             </div>
@@ -9547,8 +9543,8 @@
     <script src="js/admin-site-filter.js"></script>
     <script src="js/admin-tickets.js"></script>
     <script src="js/admin-access.js"></script>
-    <script src="admin-studio.js"></script>
-    <script src="js/admin-shop.js?v=CLICK_DYNAMIC_V18"></script>
+    <script src="admin-studio.js?v=20260323_ADMIN_DELEGATION_2"></script>
+    <script src="js/admin-shop.js?v=20260323_SHOP_DELEGATION_2"></script>
 </body>
 
 <!-- Admin Chat Script -->
