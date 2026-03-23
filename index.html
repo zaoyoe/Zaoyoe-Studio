@@ -58,7 +58,7 @@
     <script src="./prompts-data.js?v=20260205"></script>
 
     <!-- Framer Home Styles -->
-    <link rel="stylesheet" href="./css/framer_home.css?v=20260317_HERO_HITAREA_FIX_1">
+    <link rel="stylesheet" href="./css/framer_home.css?v=20260323_HOME_INLINE_HANDLER_CLEANUP_1">
     <!-- Core Styles (for modals, profile, etc) -->
     <link rel="stylesheet" href="style.css?v=20260317_GUESTBOOK_MODAL_SUBMIT_FIX_1">
     <link rel="stylesheet" href="css/auth-sheet.css?v=20260316_AUTH_SHEET_CHAT_MATCH_36">
@@ -138,8 +138,7 @@
                 <a href="/prompts.html" class="nav-trigger" data-dropdown="prompts" data-i18n="nav.prompts">提示词</a>
                 <a href="/shop.html" class="nav-trigger" data-dropdown="shop" data-i18n="nav.shop">商城</a>
                 <a href="/verify.html" data-i18n="nav.verify">验证</a>
-                <a href="/guestbook.html" data-i18n="nav.guestbook"
-                    onclick="if(typeof window.openGuestbookModal==='function'){event.preventDefault();window.openGuestbookModal();}">留言板</a>
+                <a href="/guestbook.html" data-i18n="nav.guestbook" data-home-open-guestbook="1">留言板</a>
                 <a href="javascript:void(0)" class="nav-trigger" data-dropdown="support" data-i18n="nav.support">支持</a>
             </div>
 
@@ -184,8 +183,8 @@
             </div>
 
             <div class="mobile-menu-item">
-                <a href="#guestbook" class="mobile-menu-link" data-i18n="nav.guestbook"
-                    onclick="if(typeof window.openGuestbookModal==='function'){event.preventDefault();window.openGuestbookModal();window.closeActiveMobileMenu?.();}">留言板</a>
+                <a href="/guestbook.html" class="mobile-menu-link" data-i18n="nav.guestbook"
+                    data-home-open-guestbook="1" data-close-mobile-menu="1">留言板</a>
             </div>
 
             <div class="mobile-menu-item">
@@ -292,7 +291,7 @@
     <script src="./supabase-guestbook-functions.js?v=20260317_HOMEPAGE_GUESTBOOK_SUBMIT_FIX_1" defer></script>
 
     <!--  Framer Home Engine -->
-    <script src="./js/framer_home.js?v=20260317_HERO_HITAREA_FIX_1"></script>
+    <script src="./js/framer_home.js?v=20260323_HOME_INLINE_HANDLER_CLEANUP_1"></script>
 
 
     <!-- Points Service (required by WalletModal) -->
@@ -319,8 +318,7 @@
 
     <!-- Guestbook Modal -->
     <div class="modal-overlay" id="guestbookModal">
-        <div class="modal-content guestbook-content guestbook-composer-sheet"
-            onclick="event.stopPropagation()">
+        <div class="modal-content guestbook-content guestbook-composer-sheet">
             <div class="guestbook-composer-handle" aria-hidden="true"></div>
             <div class="guestbook-composer-header">
                 <div class="guestbook-composer-copy">
@@ -333,7 +331,7 @@
                     <div class="guestbook-composer-empty-placeholder" aria-hidden="true" data-i18n="guestbook.placeholder">畅所欲言...</div>
                     <textarea id="guestMessage" rows="6"></textarea>
                     <button type="button" class="guestbook-composer-upload guestbook-composer-upload-inline" id="guestbookComposerUploadBtn"
-                        onclick="document.getElementById('imageUpload').click()" title="上传图片" aria-label="上传图片">
+                        data-home-trigger-upload="1" title="上传图片" aria-label="上传图片">
                         <i class="fas fa-image"></i>
                     </button>
                 </div>
