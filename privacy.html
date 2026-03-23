@@ -201,25 +201,7 @@
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="/api/runtime/supabase-config"></script>
     <script src="./js/runtime-supabase-config.js"></script>
-    <script>
-        const { url: SUPABASE_URL, publishableKey: SUPABASE_KEY } = window.requireZaoyoeSupabaseConfig();
-        const chatSessionId = (() => {
-            let sid = localStorage.getItem('chat_session_id');
-            if (!sid) {
-                const randomId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-                    ? crypto.randomUUID().replace(/-/g, '').slice(0, 12)
-                    : Math.random().toString(36).slice(2, 14);
-                sid = `guest_${randomId}`;
-                localStorage.setItem('chat_session_id', sid);
-            }
-            return sid;
-        })();
-        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-            global: {
-                headers: { 'x-session-id': chatSessionId }
-            }
-        });
-    </script>
+    <script src="./supabase-client.js"></script>
 
     <!-- Chat Widget -->
     <link rel="stylesheet" href="css/chat-widget.css?v=20260317_CHAT_BUBBLE_AVATAR_FIX_13">

@@ -235,9 +235,13 @@ test('vercel CSP restricts inline script elements to hashed runtime pages while 
 
     const missingFromScriptSrc = expectedHashes.filter((hash) => !scriptSrc.includes(hash));
     const missingFromScriptSrcElem = expectedHashes.filter((hash) => !scriptSrcElem.includes(hash));
+    const unexpectedInScriptSrc = scriptSrc.filter((value) => value.startsWith("'sha256-") && !expectedHashes.includes(value));
+    const unexpectedInScriptSrcElem = scriptSrcElem.filter((value) => value.startsWith("'sha256-") && !expectedHashes.includes(value));
 
     assert.deepEqual(missingFromScriptSrc, [], `script-src is missing inline script hashes:\n${missingFromScriptSrc.join('\n')}`);
     assert.deepEqual(missingFromScriptSrcElem, [], `script-src-elem is missing inline script hashes:\n${missingFromScriptSrcElem.join('\n')}`);
+    assert.deepEqual(unexpectedInScriptSrc, [], `script-src contains stale inline script hashes:\n${unexpectedInScriptSrc.join('\n')}`);
+    assert.deepEqual(unexpectedInScriptSrcElem, [], `script-src-elem contains stale inline script hashes:\n${unexpectedInScriptSrcElem.join('\n')}`);
 });
 
 test('shared profile modal template no longer uses inline event handlers', () => {
@@ -310,7 +314,10 @@ test('debug realtime page binds diagnostics controls without inline handlers', (
     const removedInlineMarkers = [
         'onclick="checkRealtimeStatus()"',
         'onclick="testRealtimeConnection()"',
-        'onclick="clearLogs()"'
+        'onclick="clearLogs()"',
+        'function bindDebugActions()',
+        "button.dataset.debugActionBound = '1'",
+        "switch (button.dataset.debugAction)"
     ];
 
     for (const marker of removedInlineMarkers) {
@@ -321,14 +328,20 @@ test('debug realtime page binds diagnostics controls without inline handlers', (
         'data-debug-action="refresh-status"',
         'data-debug-action="test-connection"',
         'data-debug-action="clear-logs"',
-        'function bindDebugActions()',
-        "button.dataset.debugActionBound = '1'",
-        "switch (button.dataset.debugAction)"
+        './js/debug-realtime-page.js'
     ];
 
     for (const marker of delegatedMarkers) {
         assert.equal(source.includes(marker), true, `debug-realtime.html should contain ${marker}`);
     }
+});
+
+test('privacy page reuses the shared Supabase bootstrap instead of inlining a duplicate client init', () => {
+    const source = readRepoFile('privacy.html');
+
+    assert.equal(source.includes('./supabase-client.js'), true, 'privacy.html should load the shared supabase-client.js bootstrap');
+    assert.equal(source.includes('window.supabaseClient = supabase.createClient'), false, 'privacy.html should not inline a duplicate Supabase client bootstrap');
+    assert.equal(source.includes("localStorage.getItem('chat_session_id')"), false, 'privacy.html should not duplicate chat session initialization');
 });
 
 test('non-production utility and preview pages no longer ship inline handler attributes', () => {
