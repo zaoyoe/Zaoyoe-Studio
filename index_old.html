@@ -28,9 +28,11 @@
     </script>
     <!-- Supabase Client (CDN for browser) -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/api/runtime/supabase-config"></script>
     <script>
-        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+        const runtimeConfig = window.__PUBLIC_RUNTIME_CONFIG__ || {};
+        const SUPABASE_URL = runtimeConfig.supabaseUrl || '<your-supabase-url>';
+        const SUPABASE_KEY = runtimeConfig.supabasePublishableKey || '<your-supabase-publishable-key>';
         const chatSessionId = (() => {
             let sid = localStorage.getItem('chat_session_id');
             if (!sid) {
@@ -42,6 +44,9 @@
             }
             return sid;
         })();
+        if (!runtimeConfig.supabaseUrl || !runtimeConfig.supabasePublishableKey) {
+            console.warn('Supabase runtime config is missing for index_old.html. Load /api/runtime/supabase-config or replace the placeholder values before using this legacy page.');
+        }
         window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
             global: {
                 headers: { 'x-session-id': chatSessionId }

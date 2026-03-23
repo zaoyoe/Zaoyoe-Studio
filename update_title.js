@@ -1,7 +1,32 @@
 const { createClient } = require('@supabase/supabase-js');
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env.local'), override: false });
 
-const supabaseUrl = 'https://kbclpfztfjgqikzsydfy.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtiY2xwZnp0ZmpncWlrenN5ZGZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzE0NzkwNDcsImV4cCI6MjA0NzA1NTA0N30.Fs-lZrEwh0vSdjdE3F_K1o4-wjVi1WTNdlY0cMWMCmA';
+function readFirstEnv(names = []) {
+    for (const name of names) {
+        const value = String(process.env[name] || '').trim();
+        if (value) return value;
+    }
+    return '';
+}
+
+const supabaseUrl = readFirstEnv([
+    'SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'PUBLIC_SUPABASE_URL'
+]);
+const supabaseKey = readFirstEnv([
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_SERVICE_KEY',
+    'SUPABASE_PUBLISHABLE_KEY',
+    'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY'
+]);
+
+if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Missing SUPABASE_URL or Supabase key in environment');
+}
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 

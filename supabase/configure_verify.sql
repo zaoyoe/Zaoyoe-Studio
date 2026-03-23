@@ -1,5 +1,5 @@
 -- Run this in Supabase SQL Editor to configure the Google One verify service
--- Go to: https://supabase.com/dashboard/project/mmkugdibsaeoevliebzk/sql/new
+-- Go to: https://supabase.com/dashboard/project/<your-project-ref>/sql/new
 
 INSERT INTO system_config (config_key, config_value)
 VALUES (

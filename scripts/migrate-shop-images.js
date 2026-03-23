@@ -12,6 +12,14 @@ const path = require('path');
 // 加载环境变量
 require('dotenv').config({ path: path.join(__dirname, '../.env.local') });
 
+function readFirstEnv(names = [], fallback = '') {
+    for (const name of names) {
+        const value = String(process.env[name] || '').trim();
+        if (value) return value;
+    }
+    return fallback;
+}
+
 // R2 配置
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
@@ -19,14 +27,25 @@ const R2_ENDPOINT = process.env.R2_ENDPOINT;
 const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || 'zaoyoeimages';
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || 'https://cdn.zaoyoe.com';
 
-// Supabase 配置 (anon key 是公开的)
-const SUPABASE_URL = 'https://auth.zaoyoe.com';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ta3VnZGlic2Flb2V2bGllYnprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzAyNjU5NTIsImV4cCI6MjA0NTg0MTk1Mn0.P2cU_WekPHK-hSU7cwnCEpXVfYSeZgL4jfs4w2t8uFQ';
+// Supabase 配置
+const SUPABASE_URL = readFirstEnv([
+    'SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'PUBLIC_SUPABASE_URL'
+]);
+const SUPABASE_KEY = readFirstEnv([
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_SERVICE_KEY',
+    'SUPABASE_PUBLISHABLE_KEY',
+    'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY'
+]);
 
 // 验证 R2 环境变量
-if (!R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_ENDPOINT) {
+if (!R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_ENDPOINT || !SUPABASE_URL || !SUPABASE_KEY) {
     console.error('❌ 缺少 R2 环境变量');
-    console.error('请确保 .env.local 包含: R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT');
+    console.error('请确保 .env.local 包含: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY(或 publishable key), R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT');
     process.exit(1);
 }
 

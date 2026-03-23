@@ -1,4 +1,28 @@
 const crypto = require('crypto');
+const path = require('path');
+const vm = require('vm');
+const dotenv = require('dotenv');
+const { createClient } = require('@supabase/supabase-js');
+const {
+    getFirstEnvValue
+} = require('../api/_lib/public-runtime-config');
+
+const PUBLIC_SUPABASE_URL_ENV_NAMES = Object.freeze([
+    'SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'PUBLIC_SUPABASE_URL'
+]);
+const PUBLIC_SUPABASE_KEY_ENV_NAMES = Object.freeze([
+    'SUPABASE_PUBLISHABLE_KEY',
+    'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY'
+]);
+const QUOTE_SECRET_ENV_NAMES = Object.freeze([
+    'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
+    'PAYMENT_CUSTOM_QUOTE_SECRET',
+    'PAYMENT_QUOTE_SECRET'
+]);
 
 function readEnv(name) {
     return String(process.env[name] || '').trim();
@@ -50,18 +74,442 @@ function printCheck(label, ok, details) {
     console.log(`${status} ${label}: ${details}`);
 }
 
-function main() {
-    const args = new Set(process.argv.slice(2));
-    const allowNonProduction = args.has('--allow-non-production');
+function normalizeBaseUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    return candidate.replace(/\/+$/, '');
+}
+
+function resolveAppBaseUrl(options = {}, env = process.env) {
+    return normalizeBaseUrl(
+        options.baseUrl
+        || env.APP_BASE_URL
+        || env.PAYMENT_SMOKE_BASE_URL
+        || ''
+    );
+}
+
+function parseRuntimeConfigScript(script = '') {
+    let loggedError = '';
+    const context = {
+        globalThis: {},
+        console: {
+            error(...args) {
+                loggedError = args
+                    .map((value) => String(value || '').trim())
+                    .filter(Boolean)
+                    .join(' ')
+                    .trim();
+            }
+        }
+    };
+    context.global = context.globalThis;
+
+    try {
+        vm.runInNewContext(String(script || ''), context, { timeout: 1000 });
+    } catch (error) {
+        return {
+            ok: false,
+            error: error.message || 'Failed to evaluate runtime config script'
+        };
+    }
+
+    const config = context.globalThis.__ZAOYOE_SUPABASE_CONFIG__;
+    const url = String(config?.url || '').trim().replace(/\/+$/, '');
+    const publishableKey = String(config?.publishableKey || '').trim();
+    if (!url || !publishableKey) {
+        return {
+            ok: false,
+            error: loggedError || 'Runtime Supabase config is unavailable'
+        };
+    }
+
+    return {
+        ok: true,
+        url,
+        publishableKey
+    };
+}
+
+async function fetchText(url, timeoutMs = 10000, fetchImpl = globalThis.fetch) {
+    if (typeof fetchImpl !== 'function') {
+        throw new Error('fetch is unavailable in this runtime');
+    }
+
+    const response = await fetchImpl(url, {
+        method: 'GET',
+        headers: {
+            Accept: 'application/json, application/javascript, text/plain'
+        },
+        signal: AbortSignal.timeout(timeoutMs)
+    });
+    const text = await response.text();
+    return {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        text
+    };
+}
+
+async function fetchJson(url, timeoutMs = 10000, fetchImpl = globalThis.fetch) {
+    const response = await fetchText(url, timeoutMs, fetchImpl);
+    let payload = null;
+    if (response.text) {
+        try {
+            payload = JSON.parse(response.text);
+        } catch (_) {
+            payload = null;
+        }
+    }
+
+    return {
+        ...response,
+        payload
+    };
+}
+
+function parseArgs(argv = []) {
+    const options = {
+        allowNonProduction: false,
+        envFile: '',
+        baseUrl: '',
+        checkAppRuntime: false,
+        validateSupabase: false,
+        validatePaymentSchema: false,
+        timeoutMs: 10000
+    };
+
+    for (let index = 0; index < argv.length; index += 1) {
+        const value = String(argv[index] || '').trim();
+        if (!value) continue;
+
+        if (value === '--allow-non-production') {
+            options.allowNonProduction = true;
+            continue;
+        }
+
+        if (value === '--validate-supabase') {
+            options.validateSupabase = true;
+            continue;
+        }
+
+        if (value === '--validate-payment-schema') {
+            options.validatePaymentSchema = true;
+            continue;
+        }
+
+        if (value === '--check-app-runtime') {
+            options.checkAppRuntime = true;
+            continue;
+        }
+
+        if (value === '--env-file') {
+            options.envFile = path.resolve(process.cwd(), String(argv[index + 1] || '').trim());
+            index += 1;
+            continue;
+        }
+
+        if (value === '--base-url') {
+            options.baseUrl = String(argv[index + 1] || '').trim();
+            index += 1;
+            continue;
+        }
+
+        if (value === '--timeout-ms') {
+            options.timeoutMs = Number(argv[index + 1]);
+            index += 1;
+        }
+    }
+
+    return options;
+}
+
+function loadEnvFile(envFile) {
+    if (!envFile) return;
+    dotenv.config({
+        path: envFile,
+        override: true
+    });
+}
+
+function getSupabaseClient() {
+    const url = readEnv('SUPABASE_URL');
+    const serviceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY');
+    if (!url || !serviceRoleKey) return null;
+
+    return createClient(url, serviceRoleKey, {
+        auth: {
+            persistSession: false,
+            autoRefreshToken: false
+        }
+    });
+}
+
+async function runSupabaseValidation({ validatePaymentSchema = false } = {}) {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+        return [{
+            label: 'Supabase live access',
+            ok: false,
+            details: 'missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY'
+        }];
+    }
+
+    const checks = [];
+    const systemConfigResult = await supabase
+        .from('system_config')
+        .select('config_key', { count: 'exact', head: true })
+        .limit(1);
+
+    checks.push({
+        label: 'Supabase live access',
+        ok: !systemConfigResult.error && systemConfigResult.status >= 200 && systemConfigResult.status < 300,
+        details: systemConfigResult.error
+            ? `status=${systemConfigResult.status} ${systemConfigResult.statusText || ''} ${systemConfigResult.error.message || ''}`.trim()
+            : `status=${systemConfigResult.status} ${systemConfigResult.statusText || 'OK'}`
+    });
+
+    if (!validatePaymentSchema) {
+        return checks;
+    }
+
+    for (const table of ['payment_orders', 'payment_checkout_sessions']) {
+        const result = await supabase
+            .from(table)
+            .select('id', { count: 'exact', head: true })
+            .limit(1);
+
+        checks.push({
+            label: `${table} schema access`,
+            ok: !result.error && result.status >= 200 && result.status < 300,
+            details: result.error
+                ? `status=${result.status} ${result.statusText || ''} ${result.error.message || ''}`.trim()
+                : `status=${result.status} ${result.statusText || 'OK'} count=${Number(result.count || 0)}`
+        });
+    }
+
+    return checks;
+}
+
+function buildRuntimeConfigCheckResult(runtimeConfig, expected = {}) {
+    if (!runtimeConfig?.ok) {
+        return {
+            label: 'app runtime Supabase config',
+            ok: false,
+            details: runtimeConfig?.error || 'Runtime Supabase config is unavailable'
+        };
+    }
+
+    const expectedUrl = String(expected.supabaseUrl || '').trim().replace(/\/+$/, '');
+    if (expectedUrl && runtimeConfig.url !== expectedUrl) {
+        return {
+            label: 'app runtime Supabase config',
+            ok: false,
+            details: `remote url=${runtimeConfig.url} does not match env SUPABASE_URL=${expectedUrl}`
+        };
+    }
+
+    const expectedPublishableKey = String(expected.publishableKey || '').trim();
+    if (expectedPublishableKey && runtimeConfig.publishableKey !== expectedPublishableKey) {
+        return {
+            label: 'app runtime Supabase config',
+            ok: false,
+            details: `publishable key fingerprint mismatch remote=${fingerprintSecret(runtimeConfig.publishableKey)} env=${fingerprintSecret(expectedPublishableKey)}`
+        };
+    }
+
+    return {
+        label: 'app runtime Supabase config',
+        ok: true,
+        details: `url=${runtimeConfig.url} publishable_key_fp=${fingerprintSecret(runtimeConfig.publishableKey)}`
+    };
+}
+
+function buildAuthCheckProbeResult(response = {}) {
+    const detail = String(response.payload?.message || response.text || '').trim();
+
+    if (response.status === 404) {
+        return {
+            label: 'app payment auth-check endpoint',
+            ok: false,
+            details: 'status=404 Not Found redeploy required before JWT auth probing can run'
+        };
+    }
+
+    if (response.status === 401) {
+        return {
+            label: 'app payment auth-check endpoint',
+            ok: true,
+            details: `status=401 ${response.statusText || 'Unauthorized'} endpoint deployed and auth-gated`
+        };
+    }
+
+    if (response.ok && response.payload?.success === true) {
+        return {
+            label: 'app payment auth-check endpoint',
+            ok: true,
+            details: `status=${response.status} ${response.statusText || 'OK'} endpoint deployed`
+        };
+    }
+
+    return {
+        label: 'app payment auth-check endpoint',
+        ok: false,
+        details: `status=${response.status} ${response.statusText || ''} ${detail || 'unexpected response'}`.trim()
+    };
+}
+
+function renderChecklistValue(value, { sensitive = false } = {}) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '(missing)';
+    if (sensitive) return `set, fingerprint=${fingerprintSecret(normalized)}`;
+    return normalized;
+}
+
+function buildPlatformEnvChecklist(env = process.env) {
+    const supabaseUrl = getFirstEnvValue(PUBLIC_SUPABASE_URL_ENV_NAMES, env);
+    const publishableKey = getFirstEnvValue(PUBLIC_SUPABASE_KEY_ENV_NAMES, env);
+    const serviceRoleKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+    const adminEncryptionKey = String(env.ADMIN_CONFIG_ENCRYPTION_KEY || '').trim();
+    const adminStudioAccessSecret = String(env.ADMIN_STUDIO_ACCESS_SECRET || '').trim();
+    const quoteSecret = getFirstEnvValue(QUOTE_SECRET_ENV_NAMES, env);
+    const appBaseUrl = resolveAppBaseUrl({}, env);
+    const smokeBaseUrl = normalizeBaseUrl(String(env.PAYMENT_SMOKE_BASE_URL || '').trim());
+    const deploymentTier = String(env.DEPLOYMENT_TIER || env.APP_ENV || '').trim();
+
+    return {
+        vercel: [
+            { name: 'SUPABASE_URL', value: renderChecklistValue(supabaseUrl) },
+            { name: 'SUPABASE_PUBLISHABLE_KEY', value: renderChecklistValue(publishableKey, { sensitive: true }) },
+            { name: 'SUPABASE_SERVICE_ROLE_KEY', value: renderChecklistValue(serviceRoleKey, { sensitive: true }) },
+            { name: 'ADMIN_CONFIG_ENCRYPTION_KEY', value: renderChecklistValue(adminEncryptionKey, { sensitive: true }) },
+            { name: 'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET', value: renderChecklistValue(quoteSecret, { sensitive: true }) },
+            { name: 'ADMIN_STUDIO_ACCESS_SECRET', value: renderChecklistValue(adminStudioAccessSecret, { sensitive: true }) },
+            { name: 'DEPLOYMENT_TIER', value: renderChecklistValue(deploymentTier) },
+            { name: 'APP_BASE_URL', value: renderChecklistValue(appBaseUrl) },
+            { name: 'PAYMENT_SMOKE_BASE_URL', value: renderChecklistValue(smokeBaseUrl || appBaseUrl) }
+        ],
+        railway: [
+            { name: 'SUPABASE_URL', value: renderChecklistValue(supabaseUrl) },
+            { name: 'SUPABASE_SERVICE_ROLE_KEY', value: renderChecklistValue(serviceRoleKey, { sensitive: true }) },
+            { name: 'ADMIN_CONFIG_ENCRYPTION_KEY', value: renderChecklistValue(adminEncryptionKey, { sensitive: true }) },
+            { name: 'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET', value: renderChecklistValue(quoteSecret, { sensitive: true }) },
+            { name: 'ADMIN_STUDIO_ACCESS_SECRET', value: renderChecklistValue(adminStudioAccessSecret, { sensitive: true }) },
+            { name: 'DEPLOYMENT_TIER', value: renderChecklistValue(deploymentTier) },
+            { name: 'APP_BASE_URL', value: renderChecklistValue(appBaseUrl) }
+        ]
+    };
+}
+
+async function runAppRuntimeValidation({
+    baseUrl = '',
+    env = process.env,
+    timeoutMs = 10000,
+    fetchImpl = globalThis.fetch
+} = {}) {
+    const resolvedBaseUrl = resolveAppBaseUrl({ baseUrl }, env);
+    if (!resolvedBaseUrl) {
+        return [{
+            label: 'app runtime base url',
+            ok: false,
+            details: 'missing APP_BASE_URL / PAYMENT_SMOKE_BASE_URL (or pass --base-url)'
+        }];
+    }
+
+    const checks = [{
+        label: 'app runtime base url',
+        ok: true,
+        details: resolvedBaseUrl
+    }];
+
+    try {
+        const runtimeResponse = await fetchText(
+            `${resolvedBaseUrl}/api/runtime/supabase-config`,
+            timeoutMs,
+            fetchImpl
+        );
+        const runtimeConfig = parseRuntimeConfigScript(runtimeResponse.text);
+
+        if (!runtimeResponse.ok) {
+            checks.push({
+                label: 'app runtime Supabase config',
+                ok: false,
+                details: `status=${runtimeResponse.status} ${runtimeResponse.statusText || ''} ${(runtimeConfig.error || runtimeResponse.text || '').trim()}`.trim()
+            });
+        } else {
+            checks.push(buildRuntimeConfigCheckResult(runtimeConfig, {
+                supabaseUrl: getFirstEnvValue(PUBLIC_SUPABASE_URL_ENV_NAMES, env),
+                publishableKey: getFirstEnvValue(PUBLIC_SUPABASE_KEY_ENV_NAMES, env)
+            }));
+        }
+    } catch (error) {
+        checks.push({
+            label: 'app runtime Supabase config',
+            ok: false,
+            details: error.message || 'fetch failed'
+        });
+    }
+
+    try {
+        const paymentConfigResponse = await fetchJson(
+            `${resolvedBaseUrl}/api/payments/config`,
+            timeoutMs,
+            fetchImpl
+        );
+
+        if (!paymentConfigResponse.ok || paymentConfigResponse.payload?.success !== true) {
+            checks.push({
+                label: 'app payment config endpoint',
+                ok: false,
+                details: `status=${paymentConfigResponse.status} ${paymentConfigResponse.statusText || ''} ${String(paymentConfigResponse.payload?.message || paymentConfigResponse.text || '').trim()}`.trim()
+            });
+        } else {
+            const mockRuntime = paymentConfigResponse.payload?.runtime?.mock_payment || null;
+            checks.push({
+                label: 'app payment config endpoint',
+                ok: true,
+                details: mockRuntime
+                    ? `status=${paymentConfigResponse.status} mock_allowed=${mockRuntime.allowed ? 'yes' : 'no'}${mockRuntime.reason ? ` reason=${mockRuntime.reason}` : ''}`
+                    : `status=${paymentConfigResponse.status}`
+            });
+        }
+    } catch (error) {
+        checks.push({
+            label: 'app payment config endpoint',
+            ok: false,
+            details: error.message || 'fetch failed'
+        });
+    }
+
+    try {
+        const authCheckResponse = await fetchJson(
+            `${resolvedBaseUrl}/api/payments/auth-check`,
+            timeoutMs,
+            fetchImpl
+        );
+        checks.push(buildAuthCheckProbeResult(authCheckResponse));
+    } catch (error) {
+        checks.push({
+            label: 'app payment auth-check endpoint',
+            ok: false,
+            details: error.message || 'fetch failed'
+        });
+    }
+
+    return checks;
+}
+
+async function main() {
+    const options = parseArgs(process.argv.slice(2));
+    loadEnvFile(options.envFile);
 
     const serviceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY');
     const adminEncryptionKey = readEnv('ADMIN_CONFIG_ENCRYPTION_KEY');
     const adminStudioAccessSecret = readEnv('ADMIN_STUDIO_ACCESS_SECRET');
-    const quoteSecret = readFirstAvailableEnv([
-        'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET',
-        'PAYMENT_CUSTOM_QUOTE_SECRET',
-        'PAYMENT_QUOTE_SECRET'
-    ]);
+    const quoteSecret = readFirstAvailableEnv(QUOTE_SECRET_ENV_NAMES);
     const runtime = isProductionLikeRuntime(process.env);
 
     const checks = [
@@ -105,17 +553,34 @@ function main() {
         },
         {
             label: 'production-like runtime',
-            ok: runtime.productionLike || allowNonProduction,
+            ok: runtime.productionLike || options.allowNonProduction,
             details: runtime.productionLike
                 ? `enabled via ${runtime.source}`
-                : allowNonProduction
+                : options.allowNonProduction
                     ? 'not production-like, but allowed by --allow-non-production'
                     : 'missing production marker (set DEPLOYMENT_TIER=production if VERCEL_ENV / RAILWAY_ENVIRONMENT_NAME are unavailable)'
         }
     ];
 
+    if (options.validateSupabase || options.validatePaymentSchema) {
+        checks.push(...await runSupabaseValidation({
+            validatePaymentSchema: options.validatePaymentSchema
+        }));
+    }
+
+    if (options.checkAppRuntime || resolveAppBaseUrl(options, process.env)) {
+        checks.push(...await runAppRuntimeValidation({
+            baseUrl: options.baseUrl,
+            env: process.env,
+            timeoutMs: Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 10000
+        }));
+    }
+
     console.log('Production Environment Check');
     console.log('Compare ADMIN_CONFIG_ENCRYPTION_KEY, PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET, and ADMIN_STUDIO_ACCESS_SECRET fingerprints across Vercel and Railway; they should match.');
+    if (options.envFile) {
+        console.log(`Loaded env file: ${options.envFile}`);
+    }
     console.log('');
 
     checks.forEach((check) => {
@@ -134,6 +599,20 @@ function main() {
     console.log(`- PAYMENT_ALLOW_REMOTE_MOCK_UNTIL=${readEnv('PAYMENT_ALLOW_REMOTE_MOCK_UNTIL') || '(empty)'}`);
     console.log(`- PAYMENT_MOCK_ALLOW_REMOTE=${readEnv('PAYMENT_MOCK_ALLOW_REMOTE') || '(empty)'}`);
     console.log(`- PAYMENT_MOCK_ALLOW_REMOTE_UNTIL=${readEnv('PAYMENT_MOCK_ALLOW_REMOTE_UNTIL') || '(empty)'}`);
+    console.log(`- APP_BASE_URL=${readEnv('APP_BASE_URL') || '(empty)'}`);
+    console.log(`- PAYMENT_SMOKE_BASE_URL=${readEnv('PAYMENT_SMOKE_BASE_URL') || '(empty)'}`);
+
+    console.log('');
+    console.log('Platform env checklist:');
+    const checklist = buildPlatformEnvChecklist(process.env);
+    console.log('- Vercel');
+    checklist.vercel.forEach((item) => {
+        console.log(`  - ${item.name}=${item.value}`);
+    });
+    console.log('- Railway / verify server');
+    checklist.railway.forEach((item) => {
+        console.log(`  - ${item.name}=${item.value}`);
+    });
 
     const failedChecks = checks.filter((check) => !check.ok);
     if (failedChecks.length) {
@@ -147,4 +626,26 @@ function main() {
     console.log('Result: PASS');
 }
 
-main();
+if (require.main === module) {
+    main().catch((error) => {
+        console.error(error.message || error);
+        process.exitCode = 1;
+    });
+}
+
+module.exports = {
+    buildAuthCheckProbeResult,
+    buildPlatformEnvChecklist,
+    buildRuntimeConfigCheckResult,
+    fetchJson,
+    fetchText,
+    fingerprintSecret,
+    isProductionLikeRuntime,
+    loadEnvFile,
+    normalizeBaseUrl,
+    parseArgs,
+    parseRuntimeConfigScript,
+    resolveAppBaseUrl,
+    runAppRuntimeValidation,
+    runSupabaseValidation
+};

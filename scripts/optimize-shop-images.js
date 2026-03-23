@@ -7,22 +7,50 @@
  * Usage: node scripts/optimize-shop-images.js
  */
 
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env.local'), override: false });
+
 const sharp = require('sharp');
 const { createClient } = require('@supabase/supabase-js');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const https = require('https');
 const http = require('http');
 
-// Configuration
-const SUPABASE_URL = 'https://auth.zaoyoe.com';
-const SUPABASE_ANON_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+function readFirstEnv(names = [], fallback = '') {
+    for (const name of names) {
+        const value = String(process.env[name] || '').trim();
+        if (value) return value;
+    }
+    return fallback;
+}
 
-// R2 Configuration (hardcoded for Node v24 compatibility)
-const R2_ENDPOINT = 'https://cd39b0e86720cb61b47d9d23da7bb0b6.r2.cloudflarestorage.com';
-const R2_ACCESS_KEY = '9ab75a0b5d14dcb9b63dd0da8b5d177a';
-const R2_SECRET_KEY = '403a94052676fb998160bc696feb746d85e313dbe8401f6616d58cf4e9d0afae';
-const R2_BUCKET = 'zaoyoeimages';
-const R2_PUBLIC_URL = 'https://cdn.zaoyoe.com';
+function requireEnv(label, names = []) {
+    const value = readFirstEnv(names);
+    if (!value) {
+        throw new Error(`Missing required environment variable for ${label}: ${names.join(' / ')}`);
+    }
+    return value;
+}
+
+// Configuration
+const SUPABASE_URL = requireEnv('Supabase URL', [
+    'SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'PUBLIC_SUPABASE_URL'
+]);
+const SUPABASE_ANON_KEY = requireEnv('Supabase publishable key', [
+    'SUPABASE_PUBLISHABLE_KEY',
+    'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY'
+]);
+
+// R2 Configuration
+const R2_ENDPOINT = requireEnv('R2 endpoint', ['R2_ENDPOINT']);
+const R2_ACCESS_KEY = requireEnv('R2 access key', ['R2_ACCESS_KEY_ID', 'R2_ACCESS_KEY']);
+const R2_SECRET_KEY = requireEnv('R2 secret key', ['R2_SECRET_ACCESS_KEY', 'R2_SECRET_KEY']);
+const R2_BUCKET = requireEnv('R2 bucket', ['R2_BUCKET_NAME']);
+const R2_PUBLIC_URL = readFirstEnv(['R2_PUBLIC_URL'], 'https://cdn.zaoyoe.com');
 
 // Image settings - higher quality for shop images
 const MAX_WIDTH = 600;

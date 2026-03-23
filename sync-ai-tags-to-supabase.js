@@ -6,13 +6,29 @@
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env.local'), override: false });
+
+function readFirstEnv(names = []) {
+    for (const name of names) {
+        const value = String(process.env[name] || '').trim();
+        if (value) return value;
+    }
+    return '';
+}
 
 // Supabase configuration
-const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY; // Need service key for updates
+const SUPABASE_URL = readFirstEnv([
+    'SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'PUBLIC_SUPABASE_URL'
+]);
+const SUPABASE_SERVICE_KEY = readFirstEnv([
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'SUPABASE_SERVICE_KEY'
+]); // Need service key for updates
 
-if (!SUPABASE_SERVICE_KEY) {
-    console.error('❌ Please set SUPABASE_SERVICE_KEY environment variable');
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+    console.error('❌ Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables');
     console.log('   You can find it in Supabase Dashboard > Settings > API > service_role key');
     process.exit(1);
 }

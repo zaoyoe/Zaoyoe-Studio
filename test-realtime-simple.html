@@ -61,12 +61,18 @@
 
     <!-- Supabase CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/api/runtime/supabase-config"></script>
 
     <script>
-        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+        const runtimeConfig = window.__PUBLIC_RUNTIME_CONFIG__ || {};
+        const SUPABASE_URL = runtimeConfig.supabaseUrl || '<your-supabase-url>';
+        const SUPABASE_KEY = runtimeConfig.supabasePublishableKey || '<your-supabase-publishable-key>';
 
         let client, channel;
+
+        function hasConfiguredSupabase() {
+            return Boolean(runtimeConfig.supabaseUrl && runtimeConfig.supabasePublishableKey);
+        }
 
         function log(msg, isError = false) {
             const logDiv = document.getElementById('log');
@@ -82,6 +88,11 @@
 
         async function testConnection() {
             try {
+                if (!hasConfiguredSupabase()) {
+                    showStatus('缺少 Supabase runtime config，请先加载 /api/runtime/supabase-config 或手动替换占位值', false);
+                    log('❌ 缺少 Supabase runtime config');
+                    return;
+                }
                 log('初始化 Supabase Client...');
                 client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
                 log('✅ Client 创建成功');
