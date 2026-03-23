@@ -764,6 +764,50 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
     }
 });
 
+test('admin points runtime renderers route batch tables and modals through delegated actions', () => {
+    const adminPointsSource = readRepoFile('admin-points.js');
+    const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|blur|error)\s*=\s*["']/i;
+
+    assert.equal(
+        inlineHandlerPattern.test(adminPointsSource),
+        false,
+        'admin-points.js should not emit inline event handler attributes'
+    );
+
+    const delegatedMarkers = [
+        'data-points-action="batch-row-stop"',
+        'data-points-change="toggle-selection"',
+        'data-points-action="view-batch-codes"',
+        'data-points-action="open-batch-edit"',
+        'data-points-action="export-batch-codes"',
+        'data-points-action="copy-code-item"',
+        'data-points-action="go-batch-page"',
+        'data-points-overlay-close="delete-options"',
+        'data-points-action="close-delete-options"',
+        'data-points-action="execute-delete-option"',
+        'data-points-overlay-close="codes"',
+        'data-points-action="close-codes-modal"',
+        'data-points-action="navigate-user"',
+        'data-points-action="set-code-expiry"',
+        'data-points-action="disable-code"',
+        'data-points-action="revoke-code"',
+        'data-points-action="enable-code"',
+        'data-points-overlay-close="batch-edit"',
+        'data-points-action="close-batch-edit"',
+        'data-points-submit="save-batch-edit"',
+        'data-points-action="navigate-batch"',
+        'function bindAdminPointsRuntimeDelegates()',
+        "document.documentElement.dataset.adminPointsRuntimeDelegatesBound === '1'",
+        "case 'execute-delete-option':",
+        "case 'navigate-user':",
+        "case 'save-batch-edit':"
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(adminPointsSource.includes(marker), true, `admin-points.js should contain ${marker}`);
+    }
+});
+
 test('admin studio settings, discounts, and tickets controls route through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');

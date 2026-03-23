@@ -225,16 +225,16 @@ function renderBatches() {
         });
         const isSelected = selectedBatchIds.has(batch.id);
         const checkboxCell = batchSelectMode ? `
-            <td class="checkbox-col" onclick="event.stopPropagation()">
+            <td class="checkbox-col" data-points-action="batch-row-stop">
                 <label class="custom-checkbox">
-                    <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleBatchSelection('${batch.id}')">
+                    <input type="checkbox" ${isSelected ? 'checked' : ''} data-points-change="toggle-selection" data-batch-id="${encodeURIComponent(batch.id)}">
                     <span class="checkmark"></span>
                 </label>
             </td>
         ` : '';
 
         return `
-            <tr data-batch-id="${batch.id}" class="${isSelected ? 'selected' : ''}" onclick="viewBatchCodes('${batch.id}')" style="cursor:pointer;">
+            <tr data-batch-id="${batch.id}" class="${isSelected ? 'selected' : ''}" data-points-action="view-batch-codes" style="cursor:pointer;">
                 ${checkboxCell}
                 <td><strong>${batch.name}</strong></td>
                 <td>${pkg?.name || '-'}</td>
@@ -247,11 +247,11 @@ function renderBatches() {
                     </div>
                 </td>
                 <td>${createdAt}</td>
-                <td class="actions-cell" onclick="event.stopPropagation()">
-                    <button class="btn-icon" onclick="openBatchEditModal('${batch.id}')" title="编辑批次">
+                <td class="actions-cell" data-points-action="batch-row-stop">
+                    <button class="btn-icon" type="button" data-points-action="open-batch-edit" data-batch-id="${encodeURIComponent(batch.id)}" title="编辑批次">
                         <i class="fas fa-edit"></i>
                     </button>
-                    <button class="btn-icon" onclick="exportBatchCodes('${batch.id}')" title="导出Excel">
+                    <button class="btn-icon" type="button" data-points-action="export-batch-codes" data-batch-id="${encodeURIComponent(batch.id)}" title="导出Excel">
                         <i class="fas fa-download"></i>
                     </button>
                 </td>
@@ -471,7 +471,7 @@ function displayGeneratedCodes() {
     const codesList = document.getElementById('codesListDisplay');
 
     codesList.innerHTML = generatedCodes.map(code =>
-        `<div class="code-item" onclick="copySingleCode(this, '${code}')" title="点击复制"><code>${code}</code></div>`
+        `<div class="code-item" data-points-action="copy-code-item" data-code="${encodeURIComponent(code)}" title="点击复制"><code>${code}</code></div>`
     ).join('');
 
     // Update display logic for 2-column layout
@@ -488,6 +488,132 @@ function copySingleCode(element, code) {
         setTimeout(() => element.classList.remove('copied'), 1500);
     });
 }
+
+function bindAdminPointsRuntimeDelegates() {
+    if (document.documentElement.dataset.adminPointsRuntimeDelegatesBound === '1') {
+        return;
+    }
+
+    document.documentElement.dataset.adminPointsRuntimeDelegatesBound = '1';
+
+    document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) {
+            return;
+        }
+
+        if (target.matches('[data-points-overlay-close="delete-options"]')) {
+            closeDeleteOptionsModal();
+            return;
+        }
+
+        if (target.matches('[data-points-overlay-close="codes"]')) {
+            closeCodesModal();
+            return;
+        }
+
+        if (target.matches('[data-points-overlay-close="batch-edit"]')) {
+            closeBatchEditModal();
+            return;
+        }
+
+        const actionEl = target.closest('[data-points-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.pointsAction) {
+            case 'batch-row-stop':
+                event.stopPropagation();
+                break;
+            case 'view-batch-codes':
+                viewBatchCodes(actionEl.dataset.batchId || actionEl.getAttribute('data-batch-id') || '');
+                break;
+            case 'open-batch-edit':
+                event.stopPropagation();
+                openBatchEditModal(decodeURIComponent(actionEl.dataset.batchId || ''));
+                break;
+            case 'export-batch-codes':
+                event.stopPropagation();
+                exportBatchCodes(decodeURIComponent(actionEl.dataset.batchId || ''));
+                break;
+            case 'copy-code-item':
+                copySingleCode(actionEl, decodeURIComponent(actionEl.dataset.code || ''));
+                break;
+            case 'go-batch-page':
+                goToBatchPage(Number(actionEl.dataset.page || 0));
+                break;
+            case 'close-delete-options':
+                closeDeleteOptionsModal();
+                break;
+            case 'execute-delete-option':
+                executeDeleteWithOption(decodeURIComponent(actionEl.dataset.batchIds || ''));
+                break;
+            case 'close-codes-modal':
+                closeCodesModal();
+                break;
+            case 'navigate-user':
+                navigateToUser(decodeURIComponent(actionEl.dataset.userId || ''));
+                break;
+            case 'set-code-expiry':
+                setCodeExpiry(
+                    decodeURIComponent(actionEl.dataset.code || ''),
+                    decodeURIComponent(actionEl.dataset.codeExpiry || '')
+                );
+                break;
+            case 'disable-code':
+                disableCode(decodeURIComponent(actionEl.dataset.code || ''));
+                break;
+            case 'revoke-code':
+                revokeCode(decodeURIComponent(actionEl.dataset.code || ''));
+                break;
+            case 'enable-code':
+                enableCode(decodeURIComponent(actionEl.dataset.code || ''));
+                break;
+            case 'close-batch-edit':
+                closeBatchEditModal();
+                break;
+            case 'navigate-batch':
+                event.preventDefault();
+                navigateToBatch(decodeURIComponent(actionEl.dataset.batchId || ''));
+                break;
+        }
+    });
+
+    document.addEventListener('change', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) {
+            return;
+        }
+
+        const actionEl = target.closest('[data-points-change]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.pointsChange) {
+            case 'toggle-selection':
+                toggleBatchSelection(decodeURIComponent(actionEl.dataset.batchId || ''));
+                break;
+        }
+    });
+
+    document.addEventListener('submit', (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const form = target?.closest('[data-points-submit]');
+        if (!form) {
+            return;
+        }
+
+        switch (form.dataset.pointsSubmit) {
+            case 'save-batch-edit':
+                saveBatchEdit(event, decodeURIComponent(form.dataset.batchId || ''));
+                break;
+        }
+    });
+}
+
+bindAdminPointsRuntimeDelegates();
 
 // Search Filter Listener
 let codeSearchDebounceTimer = null;
@@ -871,11 +997,11 @@ function updatePaginationUI() {
     }
 
     paginationContainer.innerHTML = `
-        <button class="pagination-btn" onclick="goToBatchPage(${batchCurrentPage - 1})" ${batchCurrentPage === 1 ? 'disabled' : ''}>
+        <button class="pagination-btn" type="button" data-points-action="go-batch-page" data-page="${batchCurrentPage - 1}" ${batchCurrentPage === 1 ? 'disabled' : ''}>
             <i class="fas fa-chevron-left"></i>
         </button>
         <span class="pagination-info">${batchCurrentPage} / ${totalPages}</span>
-        <button class="pagination-btn" onclick="goToBatchPage(${batchCurrentPage + 1})" ${batchCurrentPage >= totalPages ? 'disabled' : ''}>
+        <button class="pagination-btn" type="button" data-points-action="go-batch-page" data-page="${batchCurrentPage + 1}" ${batchCurrentPage >= totalPages ? 'disabled' : ''}>
             <i class="fas fa-chevron-right"></i>
         </button>
         <span class="pagination-total">(共 ${filteredBatches.length} 条)</span>
@@ -1043,11 +1169,11 @@ function showDeleteOptionsModal(batchIds, usedCount, totalCount) {
     const batchCount = batchIds.length;
 
     const modalHtml = `
-        <div class="codes-modal-overlay delete-options-modal-overlay" onclick="closeDeleteOptionsModal(event)">
-            <div class="codes-modal delete-options-modal" onclick="event.stopPropagation()" style="max-width: 520px; height: auto;">
+        <div class="codes-modal-overlay delete-options-modal-overlay" data-points-overlay-close="delete-options">
+            <div class="codes-modal delete-options-modal" style="max-width: 520px; height: auto;">
                 <div class="codes-modal-header">
                     <h3>⚠️ 删除批次确认</h3>
-                    <button class="modal-close-btn" onclick="closeDeleteOptionsModal()">✕</button>
+                    <button class="modal-close-btn" type="button" data-points-action="close-delete-options">✕</button>
                 </div>
                 <div class="codes-modal-body" style="padding: 24px;">
                     <div class="delete-summary">
@@ -1084,8 +1210,8 @@ function showDeleteOptionsModal(batchIds, usedCount, totalCount) {
                     </div>
                     
                     <div class="delete-actions">
-                        <button class="btn-secondary" onclick="closeDeleteOptionsModal()">取消</button>
-                        <button class="btn-danger" onclick="executeDeleteWithOption('${batchIds.join(',')}')">
+                        <button class="btn-secondary" type="button" data-points-action="close-delete-options">取消</button>
+                        <button class="btn-danger" type="button" data-points-action="execute-delete-option" data-batch-ids="${encodeURIComponent(batchIds.join(','))}">
                             <i class="fas fa-trash"></i> 确认删除
                         </button>
                     </div>
@@ -1256,12 +1382,12 @@ async function viewBatchCodes(batchId) {
     // Show loading modal immediately
     document.querySelector('.codes-modal-overlay')?.remove();
     const loadingHtml = `
-        <div class="codes-modal-overlay" onclick="closeCodesModal(event)">
-            <div class="codes-modal" onclick="event.stopPropagation()">
+        <div class="codes-modal-overlay" data-points-overlay-close="codes">
+            <div class="codes-modal">
                 <div class="codes-modal-header">
                     <h3>📦 ${batch.name}</h3>
                     <span class="codes-count">加载中...</span>
-                    <button class="modal-close-btn" onclick="closeCodesModal()">✕</button>
+                    <button class="modal-close-btn" type="button" data-points-action="close-codes-modal">✕</button>
                 </div>
                 <div class="codes-modal-body loading-state">
                     <div class="loading-text">⏳ 加载兑换码...</div>
@@ -1327,7 +1453,7 @@ async function viewBatchCodes(batchId) {
                 const usedAt = c.used_at ? new Date(c.used_at).toLocaleString('zh-CN') : '';
                 // Make user clickable to navigate to user management
                 detailHtml = `<div class="code-detail">
-                    <span class="detail-user user-link" onclick="navigateToUser('${c.used_by}')" title="查看用户详情">👤 ${userName}</span>
+                    <span class="detail-user user-link" data-points-action="navigate-user" data-user-id="${encodeURIComponent(c.used_by)}" title="查看用户详情">👤 ${userName}</span>
                     <span class="detail-time">${usedAt}</span>
                 </div>`;
             } else if (c.status === 'revoked') {
@@ -1337,7 +1463,7 @@ async function viewBatchCodes(batchId) {
                 const usedAt = c.used_at ? new Date(c.used_at).toLocaleString('zh-CN') : '';
                 const revokerName = c.revoked_by ? (revokerMap[c.revoked_by] || '管理员') : '系统';
                 detailHtml = `<div class="code-detail revoked-detail">
-                    ${userName ? `<span class="detail-user strikethrough user-link" onclick="navigateToUser('${c.used_by}')" title="查看用户详情">👤 ${userName} (${usedAt})</span>` : ''}
+                    ${userName ? `<span class="detail-user strikethrough user-link" data-points-action="navigate-user" data-user-id="${encodeURIComponent(c.used_by)}" title="查看用户详情">👤 ${userName} (${usedAt})</span>` : ''}
                     <span class="detail-reason">📝 撤销: ${reason}</span>
                     <span class="detail-revoker">🛡️ 操作者: ${revokerName}</span>
                     <span class="detail-time">🕐 ${revokedAt}</span>
@@ -1355,21 +1481,21 @@ async function viewBatchCodes(batchId) {
                     ? new Date(c.expires_at).toLocaleDateString('zh-CN')
                     : '无';
                 actionHtml += `
-                    <button class="btn-icon btn-expiry" onclick="setCodeExpiry('${c.code}', '${c.expires_at || ''}')" title="设置有效期">
+                    <button class="btn-icon btn-expiry" type="button" data-points-action="set-code-expiry" data-code="${encodeURIComponent(c.code)}" data-code-expiry="${encodeURIComponent(c.expires_at || '')}" title="设置有效期">
                         <i class="fas fa-calendar-alt"></i>
                     </button>`;
                 actionHtml += `
-                    <button class="btn-revoke" onclick="disableCode('${c.code}')" title="禁用">
+                    <button class="btn-revoke" type="button" data-points-action="disable-code" data-code="${encodeURIComponent(c.code)}" title="禁用">
                         <i class="fas fa-ban"></i>
                     </button>`;
             } else if (c.status === 'used') {
                 actionHtml = `
-                    <button class="btn-revoke" onclick="revokeCode('${c.code}')" title="撤销">
+                    <button class="btn-revoke" type="button" data-points-action="revoke-code" data-code="${encodeURIComponent(c.code)}" title="撤销">
                         <i class="fas fa-undo"></i> 撤销
                     </button>`;
             } else if (c.status === 'disabled') {
                 actionHtml = `
-                    <button class="btn-enable" onclick="enableCode('${c.code}')" title="启用">
+                    <button class="btn-enable" type="button" data-points-action="enable-code" data-code="${encodeURIComponent(c.code)}" title="启用">
                         <i class="fas fa-check"></i> 启用
                     </button>`;
             }
@@ -1739,13 +1865,13 @@ function openBatchEditModal(batchId) {
     document.querySelector('.edit-modal-overlay')?.remove();
 
     const modalHtml = `
-        <div class="edit-modal-overlay" onclick="closeBatchEditModal(event)">
-            <div class="edit-modal" onclick="event.stopPropagation()">
+        <div class="edit-modal-overlay" data-points-overlay-close="batch-edit">
+            <div class="edit-modal">
                 <div class="edit-modal-header">
                     <h3>✏️ 编辑批次</h3>
-                    <button class="edit-modal-close" onclick="closeBatchEditModal()">✕</button>
+                    <button class="edit-modal-close" type="button" data-points-action="close-batch-edit">✕</button>
                 </div>
-                <form id="batchEditForm" class="edit-modal-form" onsubmit="saveBatchEdit(event, '${batchId}')">
+                <form id="batchEditForm" class="edit-modal-form" data-points-submit="save-batch-edit" data-batch-id="${encodeURIComponent(batchId)}">
                     <div class="edit-field">
                         <label>批次名称</label>
                         <input type="text" id="editBatchName" value="${batch.name}" required maxlength="100">
@@ -2086,7 +2212,7 @@ function renderLookupResult(data, type) {
                 <div class="lookup-detail">
                     <span class="label">所属批次:</span>
                     <span class="value">
-                        <a href="javascript:void(0)" class="batch-link" onclick="navigateToBatch('${data.batch_id}')">
+                        <a href="#" class="batch-link" data-points-action="navigate-batch" data-batch-id="${encodeURIComponent(data.batch_id)}">
                             📦 ${data.batch_name || '未命名批次'}
                         </a>
                     </span>
