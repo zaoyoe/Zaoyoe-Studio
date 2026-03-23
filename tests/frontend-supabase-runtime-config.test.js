@@ -1193,3 +1193,98 @@ test('analytics export controls and delivery runtime templates route through del
 
     assert.equal(shopSource.includes('buildDeliveryDataAttributes: function (attributes = {})'), true, 'js/admin-shop.js should build delivery data attributes for delegated runtime templates');
 });
+
+test('analytics calendar and config poster/editor templates route through delegated actions', () => {
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const analyticsSource = readRepoFile('admin-analytics.js');
+    const adminConfigSource = readRepoFile('admin-config.js');
+
+    const removedInlineMarkers = [
+        `onclick="viewPromptContext('`,
+        `onclick="selectInlineDate(`,
+        `onclick="selectRangeDate(`,
+        `onclick="changeMonth('start', -1); event.stopPropagation();"`,
+        `onclick="resetDateRange(); event.stopPropagation();"`,
+        `onclick="applyAndClose(); event.stopPropagation();"`,
+        `onclick="deleteChannel(`,
+        `onclick="window.selectAffiliatePosterTemplate('`,
+        `onchange="window.handleAffiliatePosterUpload('`,
+        `onclick="window.resetAffiliatePosterBackground('`,
+        `onclick="AdminRichTextEditor.selectColor('`,
+        `onclick="AdminRichTextEditor.selectFontSize('`,
+        `onclick="AdminRichTextEditor.selectEmoji('`,
+        `onclick="AdminRichTextEditor.insertFormat('`,
+        `onclick="AdminRichTextEditor.toggleAlignPicker('`,
+        `onclick="AdminRichTextEditor.applyTextAlign('`,
+        `onclick="AdminRichTextEditor.insertLink('`,
+        `onclick="AdminRichTextEditor.toggleEmojiPicker('`,
+        `onclick="AdminRichTextEditor.toggleDropdown('`
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(
+            analyticsSource.includes(marker) || adminConfigSource.includes(marker),
+            false,
+            `analytics/config templates should not contain ${marker}`
+        );
+    }
+
+    const analyticsMarkers = [
+        'data-admin-action="analytics-view-context"',
+        'data-admin-action="analytics-inline-select-date"',
+        'data-admin-action="analytics-range-select-date"',
+        'data-admin-action="analytics-range-change-month"',
+        'data-admin-action="analytics-range-reset"',
+        'data-admin-action="analytics-range-apply"'
+    ];
+
+    for (const marker of analyticsMarkers) {
+        assert.equal(analyticsSource.includes(marker), true, `admin-analytics.js should contain ${marker}`);
+    }
+
+    const configMarkers = [
+        'data-admin-action="settings-delete-channel"',
+        'data-admin-action="settings-select-affiliate-poster-template"',
+        'data-admin-change-action="settings-affiliate-poster-upload"',
+        'data-admin-action="settings-reset-affiliate-poster-background"',
+        'data-admin-action="settings-rich-text-format"',
+        'data-admin-action="settings-rich-text-toggle-align-picker"',
+        'data-admin-action="settings-rich-text-apply-align"',
+        'data-admin-action="settings-rich-text-insert-link"',
+        'data-admin-action="settings-rich-text-toggle-emoji-picker"',
+        'data-admin-action="settings-rich-text-select-emoji"',
+        'data-admin-action="settings-rich-text-toggle-dropdown"',
+        'data-admin-action="settings-rich-text-select-color"',
+        'data-admin-action="settings-rich-text-select-font-size"'
+    ];
+
+    for (const marker of configMarkers) {
+        assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should contain ${marker}`);
+    }
+
+    const adminScriptMarkers = [
+        "case 'settings-delete-channel':",
+        "case 'settings-select-affiliate-poster-template':",
+        "case 'settings-reset-affiliate-poster-background':",
+        "case 'settings-rich-text-format':",
+        "case 'settings-rich-text-toggle-align-picker':",
+        "case 'settings-rich-text-apply-align':",
+        "case 'settings-rich-text-insert-link':",
+        "case 'settings-rich-text-toggle-emoji-picker':",
+        "case 'settings-rich-text-select-emoji':",
+        "case 'settings-rich-text-toggle-dropdown':",
+        "case 'settings-rich-text-select-color':",
+        "case 'settings-rich-text-select-font-size':",
+        "case 'analytics-view-context':",
+        "case 'analytics-inline-select-date':",
+        "case 'analytics-range-select-date':",
+        "case 'analytics-range-change-month':",
+        "case 'analytics-range-reset':",
+        "case 'analytics-range-apply':",
+        "case 'settings-affiliate-poster-upload':"
+    ];
+
+    for (const marker of adminScriptMarkers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+});

@@ -270,11 +270,70 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-add-channel':
                 window.addChannel?.();
                 break;
+            case 'settings-delete-channel': {
+                const index = parseInt(actionEl.dataset.channelIndex || '', 10);
+                if (!Number.isNaN(index)) {
+                    window.deleteChannel?.(index);
+                }
+                break;
+            }
             case 'settings-prompt-api-key':
                 window.promptForApiKey?.();
                 break;
             case 'settings-delete-api-key':
                 window.deleteApiKey?.();
+                break;
+            case 'settings-select-affiliate-poster-template':
+                window.selectAffiliatePosterTemplate?.(actionEl.dataset.posterTemplateId);
+                break;
+            case 'settings-reset-affiliate-poster-background':
+                window.resetAffiliatePosterBackground?.(actionEl.dataset.posterTemplateId);
+                break;
+            case 'settings-rich-text-format':
+                window.AdminRichTextEditor?.insertFormat?.(
+                    actionEl.dataset.richTextKey,
+                    actionEl.dataset.richTextFormat
+                );
+                break;
+            case 'settings-rich-text-toggle-align-picker':
+                window.AdminRichTextEditor?.toggleAlignPicker?.(actionEl.dataset.richTextKey);
+                break;
+            case 'settings-rich-text-apply-align':
+                window.AdminRichTextEditor?.applyTextAlign?.(
+                    actionEl.dataset.richTextKey,
+                    actionEl.dataset.richTextAlign
+                );
+                break;
+            case 'settings-rich-text-insert-link':
+                window.AdminRichTextEditor?.insertLink?.(actionEl.dataset.richTextKey);
+                break;
+            case 'settings-rich-text-toggle-emoji-picker':
+                window.AdminRichTextEditor?.toggleEmojiPicker?.(actionEl.dataset.richTextKey);
+                break;
+            case 'settings-rich-text-select-emoji':
+                window.AdminRichTextEditor?.selectEmoji?.(
+                    actionEl.dataset.richTextKey,
+                    actionEl.dataset.richTextEmoji
+                );
+                break;
+            case 'settings-rich-text-toggle-dropdown':
+                window.AdminRichTextEditor?.toggleDropdown?.(
+                    actionEl.dataset.richTextKey,
+                    actionEl.dataset.richTextDropdown
+                );
+                break;
+            case 'settings-rich-text-select-color':
+                window.AdminRichTextEditor?.selectColor?.(
+                    actionEl.dataset.richTextKey,
+                    actionEl.dataset.richTextColor
+                );
+                break;
+            case 'settings-rich-text-select-font-size':
+                window.AdminRichTextEditor?.selectFontSize?.(
+                    actionEl.dataset.richTextKey,
+                    actionEl.dataset.richTextSize,
+                    actionEl.dataset.richTextSizeClass
+                );
                 break;
             case 'settings-toggle-custom-recharge-entry':
                 window.toggleCustomRechargeEntryStatus?.();
@@ -374,6 +433,15 @@ function bindAdminStudioDelegatedControls() {
             case 'analytics-toggle-inline-calendar':
                 window.toggleInlineCalendar?.(event);
                 break;
+            case 'analytics-inline-select-date':
+                event.stopPropagation();
+                window.selectInlineDate?.(
+                    Number(actionEl.dataset.analyticsYear || 0),
+                    Number(actionEl.dataset.analyticsMonth || 0),
+                    Number(actionEl.dataset.analyticsDay || 0),
+                    event
+                );
+                break;
             case 'analytics-change-inline-month':
                 window.changeInlineMonth?.(Number(actionEl.dataset.monthDelta || 0));
                 break;
@@ -391,6 +459,32 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'analytics-refresh-data':
                 window.refreshAllAnalytics?.();
+                break;
+            case 'analytics-view-context':
+                window.viewPromptContext?.(actionEl.dataset.promptId);
+                break;
+            case 'analytics-range-select-date':
+                event.stopPropagation();
+                window.selectRangeDate?.(
+                    Number(actionEl.dataset.analyticsYear || 0),
+                    Number(actionEl.dataset.analyticsMonth || 0),
+                    Number(actionEl.dataset.analyticsDay || 0)
+                );
+                break;
+            case 'analytics-range-change-month':
+                event.stopPropagation();
+                window.changeMonth?.(
+                    actionEl.dataset.calendarType || 'start',
+                    Number(actionEl.dataset.monthDelta || 0)
+                );
+                break;
+            case 'analytics-range-reset':
+                event.stopPropagation();
+                window.resetDateRange?.();
+                break;
+            case 'analytics-range-apply':
+                event.stopPropagation();
+                window.applyAndClose?.();
                 break;
             case 'analytics-load-ai-prediction':
                 window.loadAIPrediction?.();
@@ -740,6 +834,9 @@ function bindAdminStudioDelegatedControls() {
             }
             case 'affiliate-save-poster-field':
                 window.saveAffiliatePosterField?.(actionEl.dataset.affiliatePosterField, actionEl.value);
+                break;
+            case 'settings-affiliate-poster-upload':
+                window.handleAffiliatePosterUpload?.(actionEl.dataset.posterTemplateId, actionEl);
                 break;
             case 'discounts-pagination-go': {
                 const page = parseInt(actionEl.value || '', 10);

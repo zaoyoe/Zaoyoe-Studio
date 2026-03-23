@@ -744,7 +744,7 @@ function renderChannelsConfig() {
     container.innerHTML = channels.map((ch, index) => `
         <div class="channel-tag ${ch.is_default ? 'default' : ''}" data-index="${index}">
             <span>${ch.name}</span>
-            <button class="remove-tag" onclick="deleteChannel(${index})">✕</button>
+            <button class="remove-tag" type="button" data-admin-action="settings-delete-channel" data-channel-index="${index}">✕</button>
         </div>
     `).join('');
 }
@@ -841,14 +841,14 @@ function renderAffiliatePosterTemplates(config = normalizeAffiliatePosterConfig(
                         ${template.custom_background_url ? '已上传自定义底图' : '使用内置背景'}
                     </div>
                     <div class="affiliate-poster-actions">
-                        <button type="button" class="poster-action-btn primary" onclick="window.selectAffiliatePosterTemplate('${template.id}')">
+                        <button type="button" class="poster-action-btn primary" data-admin-action="settings-select-affiliate-poster-template" data-poster-template-id="${template.id}">
                             ${isActive ? '当前模板' : '设为默认'}
                         </button>
                         <label class="poster-action-btn upload">
                             上传底图
-                            <input type="file" accept="image/*" onchange="window.handleAffiliatePosterUpload('${template.id}', this)">
+                            <input type="file" accept="image/*" data-admin-change-action="settings-affiliate-poster-upload" data-poster-template-id="${template.id}">
                         </label>
-                        <button type="button" class="poster-action-btn" ${template.custom_background_url ? '' : 'disabled'} onclick="window.resetAffiliatePosterBackground('${template.id}')">
+                        <button type="button" class="poster-action-btn" ${template.custom_background_url ? '' : 'disabled'} data-admin-action="settings-reset-affiliate-poster-background" data-poster-template-id="${template.id}">
                             恢复默认
                         </button>
                     </div>
@@ -2267,7 +2267,9 @@ const AdminRichTextEditor = (() => {
         const colorItems = defaultColors.map(({ value, label }) => `
             <button type="button" class="dropdown-item${value === '#6b9ece' ? ' selected' : ''}"
                 data-color-option="${value}"
-                onclick="AdminRichTextEditor.selectColor('${config.key}', '${value}')">
+                data-admin-action="settings-rich-text-select-color"
+                data-rich-text-key="${config.key}"
+                data-rich-text-color="${value}">
                 <span class="color-swatch" style="background:${value}"></span> ${label}
             </button>
         `).join('');
@@ -2275,58 +2277,78 @@ const AdminRichTextEditor = (() => {
         const sizeItems = defaultSizes.map(({ value, label, className }) => `
             <button type="button" class="dropdown-item${value === '3' ? ' selected' : ''}"
                 data-size-option="${value}"
-                onclick="AdminRichTextEditor.selectFontSize('${config.key}', '${value}', '${className}')">
+                data-admin-action="settings-rich-text-select-font-size"
+                data-rich-text-key="${config.key}"
+                data-rich-text-size="${value}"
+                data-rich-text-size-class="${className}">
                 <span class="size-indicator ${className}">A</span> ${label}
             </button>
         `).join('');
 
         const emojiItems = defaultEmojis.map(emoji => `
             <button type="button" class="emoji-item"
-                onclick="AdminRichTextEditor.selectEmoji('${config.key}', '${emoji}')">${emoji}</button>
+                data-admin-action="settings-rich-text-select-emoji"
+                data-rich-text-key="${config.key}"
+                data-rich-text-emoji="${emoji}">${emoji}</button>
         `).join('');
 
         return `
             <div class="announcement-toolbar" id="${config.toolbarRootId}">
                 <button type="button" class="toolbar-btn"
-                    onclick="AdminRichTextEditor.insertFormat('${config.key}', 'b')" title="加粗">
+                    data-admin-action="settings-rich-text-format"
+                    data-rich-text-key="${config.key}"
+                    data-rich-text-format="b" title="加粗">
                     <i class="fas fa-bold"></i>
                 </button>
                 <button type="button" class="toolbar-btn"
-                    onclick="AdminRichTextEditor.insertFormat('${config.key}', 'i')" title="斜体">
+                    data-admin-action="settings-rich-text-format"
+                    data-rich-text-key="${config.key}"
+                    data-rich-text-format="i" title="斜体">
                     <i class="fas fa-italic"></i>
                 </button>
                 <button type="button" class="toolbar-btn"
-                    onclick="AdminRichTextEditor.insertFormat('${config.key}', 'u')" title="下划线">
+                    data-admin-action="settings-rich-text-format"
+                    data-rich-text-key="${config.key}"
+                    data-rich-text-format="u" title="下划线">
                     <i class="fas fa-underline"></i>
                 </button>
                 <div class="align-picker-container">
                     <button type="button" class="toolbar-btn" id="${config.alignButtonId}"
-                        onclick="AdminRichTextEditor.toggleAlignPicker('${config.key}')" title="对齐">
+                        data-admin-action="settings-rich-text-toggle-align-picker"
+                        data-rich-text-key="${config.key}" title="对齐">
                         <i class="fas fa-align-center"></i>
                     </button>
                     <div class="align-picker" id="${config.alignPickerId}">
                         <button type="button" class="align-item"
-                            onclick="AdminRichTextEditor.applyTextAlign('${config.key}', 'left')" title="左对齐">
+                            data-admin-action="settings-rich-text-apply-align"
+                            data-rich-text-key="${config.key}"
+                            data-rich-text-align="left" title="左对齐">
                             <i class="fas fa-align-left"></i>
                         </button>
                         <button type="button" class="align-item"
-                            onclick="AdminRichTextEditor.applyTextAlign('${config.key}', 'center')" title="居中">
+                            data-admin-action="settings-rich-text-apply-align"
+                            data-rich-text-key="${config.key}"
+                            data-rich-text-align="center" title="居中">
                             <i class="fas fa-align-center"></i>
                         </button>
                         <button type="button" class="align-item"
-                            onclick="AdminRichTextEditor.applyTextAlign('${config.key}', 'right')" title="右对齐">
+                            data-admin-action="settings-rich-text-apply-align"
+                            data-rich-text-key="${config.key}"
+                            data-rich-text-align="right" title="右对齐">
                             <i class="fas fa-align-right"></i>
                         </button>
                     </div>
                 </div>
                 <div class="toolbar-divider"></div>
                 <button type="button" class="toolbar-btn"
-                    onclick="AdminRichTextEditor.insertLink('${config.key}')" title="链接">
+                    data-admin-action="settings-rich-text-insert-link"
+                    data-rich-text-key="${config.key}" title="链接">
                     <i class="fas fa-link"></i>
                 </button>
                 <div class="emoji-picker-container">
                     <button type="button" class="toolbar-btn" id="${config.emojiButtonId}"
-                        onclick="AdminRichTextEditor.toggleEmojiPicker('${config.key}')" title="表情">
+                        data-admin-action="settings-rich-text-toggle-emoji-picker"
+                        data-rich-text-key="${config.key}" title="表情">
                         <i class="fas fa-smile"></i>
                     </button>
                     <div class="emoji-picker" id="${config.emojiPickerId}">
@@ -2338,7 +2360,9 @@ const AdminRichTextEditor = (() => {
                 </div>
                 <div class="toolbar-dropdown" id="${config.colorDropdownId}">
                     <button type="button" class="toolbar-btn"
-                        onclick="AdminRichTextEditor.toggleDropdown('${config.key}', 'color')" title="文字颜色">
+                        data-admin-action="settings-rich-text-toggle-dropdown"
+                        data-rich-text-key="${config.key}"
+                        data-rich-text-dropdown="color" title="文字颜色">
                         <span class="color-swatch preview" id="${config.colorPreviewId}"
                             style="background:#6b9ece"></span>
                     </button>
@@ -2348,7 +2372,9 @@ const AdminRichTextEditor = (() => {
                 </div>
                 <div class="toolbar-dropdown" id="${config.sizeDropdownId}">
                     <button type="button" class="toolbar-btn"
-                        onclick="AdminRichTextEditor.toggleDropdown('${config.key}', 'size')" title="字号">
+                        data-admin-action="settings-rich-text-toggle-dropdown"
+                        data-rich-text-key="${config.key}"
+                        data-rich-text-dropdown="size" title="字号">
                         <span class="size-indicator medium" id="${config.sizePreviewId}">A</span>
                     </button>
                     <div class="dropdown-menu">

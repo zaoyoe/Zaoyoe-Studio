@@ -620,7 +620,7 @@ async function loadTopContent() {
                     <span class="unlock"><i class="fas fa-unlock"></i> ${item.unlock_count}</span>
                     <span class="comment"><i class="fas fa-comment"></i> ${item.comment_count}</span>
                 </span>
-                <button class="btn-view-context" onclick="viewPromptContext('${item.prompt_id}')" title="查看上下文">
+                <button class="btn-view-context" type="button" data-admin-action="analytics-view-context" data-prompt-id="${item.prompt_id}" title="查看上下文">
                     <i class="fas fa-external-link-alt"></i>
                 </button>
             </div>
@@ -2485,7 +2485,7 @@ function renderInlineCalendar() {
     // Previous month padding
     for (let i = startDayOfWeek - 1; i >= 0; i--) {
         const day = prevMonthLastDay - i;
-        html += `<div class="cal-day other-month" onclick="selectInlineDate(${year}, ${month - 1}, ${day}, event)">${day}</div>`;
+        html += `<div class="cal-day other-month" data-admin-action="analytics-inline-select-date" data-analytics-year="${year}" data-analytics-month="${month - 1}" data-analytics-day="${day}">${day}</div>`;
     }
 
     // Current month days
@@ -2519,14 +2519,14 @@ function renderInlineCalendar() {
             }
         }
 
-        html += `<div class="${classes.join(' ')}" onclick="selectInlineDate(${year}, ${month}, ${day}, event)">${day}</div>`;
+        html += `<div class="${classes.join(' ')}" data-admin-action="analytics-inline-select-date" data-analytics-year="${year}" data-analytics-month="${month}" data-analytics-day="${day}">${day}</div>`;
     }
 
     // Next month padding
     const totalCells = startDayOfWeek + daysInMonth;
     const remainingCells = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
     for (let i = 1; i <= remainingCells; i++) {
-        html += `<div class="cal-day other-month" onclick="selectInlineDate(${year}, ${month + 1}, ${i}, event)">${i}</div>`;
+        html += `<div class="cal-day other-month" data-admin-action="analytics-inline-select-date" data-analytics-year="${year}" data-analytics-month="${month + 1}" data-analytics-day="${i}">${i}</div>`;
     }
 
     const container = document.getElementById('calendarDays');
@@ -2792,7 +2792,7 @@ function renderCalendar(type) {
         if (isEnd) classes += ' range-end';
         if (inRange) classes += ' in-range';
 
-        daysHtml += `<div class="${classes}" onclick="selectRangeDate(${state.year}, ${state.month}, ${day}); event.stopPropagation();">${day}</div>`;
+        daysHtml += `<div class="${classes}" data-admin-action="analytics-range-select-date" data-analytics-year="${state.year}" data-analytics-month="${state.month}" data-analytics-day="${day}">${day}</div>`;
     }
 
     // Next month days
@@ -2809,9 +2809,9 @@ function renderCalendar(type) {
 
     calendar.innerHTML = `
         <div class="calendar-header">
-            <button type="button" onclick="changeMonth('start', -1); event.stopPropagation();"><i class="fas fa-chevron-left"></i></button>
+            <button type="button" data-admin-action="analytics-range-change-month" data-calendar-type="start" data-month-delta="-1"><i class="fas fa-chevron-left"></i></button>
             <span class="month-year">${months[state.month]} ${state.year}</span>
-            <button type="button" onclick="changeMonth('start', 1); event.stopPropagation();"><i class="fas fa-chevron-right"></i></button>
+            <button type="button" data-admin-action="analytics-range-change-month" data-calendar-type="start" data-month-delta="1"><i class="fas fa-chevron-right"></i></button>
         </div>
         <div class="calendar-hint">${selectionHint}</div>
         <div class="calendar-weekdays">
@@ -2821,8 +2821,8 @@ function renderCalendar(type) {
             ${daysHtml}
         </div>
         <div class="calendar-footer">
-            <button type="button" onclick="resetDateRange(); event.stopPropagation();">重置</button>
-            <button type="button" onclick="applyAndClose(); event.stopPropagation();">确定</button>
+            <button type="button" data-admin-action="analytics-range-reset">重置</button>
+            <button type="button" data-admin-action="analytics-range-apply">确定</button>
         </div>
     `;
 }
