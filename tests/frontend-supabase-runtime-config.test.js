@@ -168,3 +168,47 @@ test('vercel CSP restricts inline script elements to hashed runtime pages while 
     assert.deepEqual(missingFromScriptSrc, [], `script-src is missing inline script hashes:\n${missingFromScriptSrc.join('\n')}`);
     assert.deepEqual(missingFromScriptSrcElem, [], `script-src-elem is missing inline script hashes:\n${missingFromScriptSrcElem.join('\n')}`);
 });
+
+test('shared profile modal template no longer uses inline event handlers', () => {
+    const source = readRepoFile('js/profile-modal-template.js');
+    const inlineEventAttributes = [
+        'onclick=',
+        'onchange=',
+        'onmousedown=',
+        'onmouseup=',
+        'onsubmit='
+    ];
+
+    for (const attribute of inlineEventAttributes) {
+        assert.equal(
+            source.includes(attribute),
+            false,
+            `js/profile-modal-template.js should not contain ${attribute}`
+        );
+    }
+
+    assert.equal(source.includes('data-profile-action='), true, 'Profile modal template should expose delegated profile actions');
+    assert.equal(source.includes('data-modal-dismiss-managed="1"'), true, 'Profile modal template should use managed modal dismissal');
+});
+
+test('critical auth pages consume delegated profile modal and form bindings', () => {
+    const verifySource = readRepoFile('verify.html');
+    const indexSource = readRepoFile('index.html');
+    const resetPasswordSource = readRepoFile('reset-password.html');
+
+    assert.equal(verifySource.includes('profile-modal-template.js'), true, 'verify.html should load the shared profile modal template');
+    assert.equal(indexSource.includes('profile-modal-template.js'), true, 'index.html should load the shared profile modal template');
+    assert.equal(verifySource.includes('id="profileModal"'), false, 'verify.html should not embed a duplicated profile modal');
+    assert.equal(indexSource.includes('id="profileModal"'), false, 'index.html should not embed a duplicated profile modal');
+    assert.equal(verifySource.includes('onmousedown="closeModal(event)"'), false, 'verify.html should not inline modal close handlers');
+    assert.equal(verifySource.includes('onmouseup="closeModal(event)"'), false, 'verify.html should not inline modal close handlers');
+    assert.equal(verifySource.includes('onclick="closeModal(event)"'), false, 'verify.html should not inline modal close handlers');
+    assert.equal(verifySource.includes('data-modal-dismiss-managed="1"'), true, 'verify.html should use managed modal dismissal for comingSoonModal');
+
+    assert.equal(resetPasswordSource.includes('onsubmit="handleNewPasswordSubmit(event)"'), false, 'reset-password.html should not inline form submission');
+    assert.equal(
+        resetPasswordSource.includes("addEventListener('submit', handleNewPasswordSubmit)"),
+        true,
+        'reset-password.html should bind submission via addEventListener'
+    );
+});
