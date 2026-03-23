@@ -487,14 +487,52 @@ function renderPackagesConfig() {
 
     tbody.innerHTML = packages.map((pkg, index) => `
         <tr data-index="${index}">
-            <td><input type="text" value="${pkg.name}" onchange="updatePackage(${index}, 'name', this.value)"></td>
-            <td><input type="number" value="${pkg.points}" onchange="updatePackage(${index}, 'points', parseInt(this.value))"></td>
-            <td><input type="number" value="${pkg.bonus || 0}" placeholder="0" onchange="updatePackage(${index}, 'bonus', parseInt(this.value) || 0)"></td>
-            <td><input type="number" value="${pkg.price || ''}" step="0.1" onchange="updatePackage(${index}, 'price', parseFloat(this.value))"></td>
             <td>
-                <div class="status-toggle ${pkg.enabled ? 'active' : ''}" onclick="togglePackageStatus(${index})"></div>
+                <input
+                    type="text"
+                    value="${escapeConfigHtml(pkg.name)}"
+                    data-admin-change-action="settings-update-package-field"
+                    data-package-index="${index}"
+                    data-package-field="name"
+                    data-package-value-type="string">
             </td>
-            <td><button class="btn-delete" onclick="deletePackage(${index})"><i class="fas fa-trash"></i></button></td>
+            <td>
+                <input
+                    type="number"
+                    value="${escapeConfigHtml(pkg.points)}"
+                    data-admin-change-action="settings-update-package-field"
+                    data-package-index="${index}"
+                    data-package-field="points"
+                    data-package-value-type="int">
+            </td>
+            <td>
+                <input
+                    type="number"
+                    value="${escapeConfigHtml(pkg.bonus || 0)}"
+                    placeholder="0"
+                    data-admin-change-action="settings-update-package-field"
+                    data-package-index="${index}"
+                    data-package-field="bonus"
+                    data-package-value-type="int">
+            </td>
+            <td>
+                <input
+                    type="number"
+                    value="${pkg.price == null ? '' : escapeConfigHtml(pkg.price)}"
+                    step="0.1"
+                    data-admin-change-action="settings-update-package-field"
+                    data-package-index="${index}"
+                    data-package-field="price"
+                    data-package-value-type="float">
+            </td>
+            <td>
+                <div class="status-toggle ${pkg.enabled ? 'active' : ''}" data-admin-action="settings-toggle-package-status" data-package-index="${index}"></div>
+            </td>
+            <td>
+                <button class="btn-delete" type="button" data-admin-action="settings-delete-package" data-package-index="${index}">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
         </tr>
     `).join('');
 
@@ -506,6 +544,30 @@ function renderPackagesConfig() {
     const mockPaymentToggle = document.getElementById('mockPaymentStatusToggle');
     if (mockPaymentToggle) {
         mockPaymentToggle.classList.toggle('active', rechargeOptions.mock_payment_enabled);
+    }
+}
+
+function normalizePackageFieldValue(field, value, fallback) {
+    switch (field) {
+        case 'name':
+            return String(value ?? '').trim();
+        case 'points':
+        case 'bonus': {
+            const parsed = parseInt(value ?? '', 10);
+            return Math.max(0, Number.isFinite(parsed) ? parsed : (Number.isFinite(fallback) ? fallback : 0));
+        }
+        case 'price': {
+            const trimmed = String(value ?? '').trim();
+            if (!trimmed) {
+                return null;
+            }
+
+            const parsed = Number(trimmed);
+            const normalized = Number.isFinite(parsed) ? parsed : fallback;
+            return Number.isFinite(normalized) ? Math.max(0, Math.round(normalized * 100) / 100) : null;
+        }
+        default:
+            return value;
     }
 }
 
@@ -1316,7 +1378,7 @@ function toggleConfigCard(headerEl) {
 async function updatePackage(index, field, value) {
     const packages = systemConfigCache['packages'] || [];
     if (packages[index]) {
-        packages[index][field] = value;
+        packages[index][field] = normalizePackageFieldValue(field, value, packages[index][field]);
         await saveConfig('packages', packages);
     }
 }

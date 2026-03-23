@@ -261,6 +261,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-add-api-key':
                 window.addNewApiKey?.();
                 break;
+            case 'settings-add-package-row':
+                window.addPackageRow?.();
+                break;
             case 'settings-add-channel':
                 window.addChannel?.();
                 break;
@@ -270,6 +273,26 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-delete-api-key':
                 window.deleteApiKey?.();
                 break;
+            case 'settings-toggle-custom-recharge-entry':
+                window.toggleCustomRechargeEntryStatus?.();
+                break;
+            case 'settings-toggle-mock-payment':
+                window.toggleMockPaymentStatus?.();
+                break;
+            case 'settings-toggle-package-status': {
+                const index = parseInt(actionEl.dataset.packageIndex || '', 10);
+                if (!Number.isNaN(index)) {
+                    window.togglePackageStatus?.(index);
+                }
+                break;
+            }
+            case 'settings-delete-package': {
+                const index = parseInt(actionEl.dataset.packageIndex || '', 10);
+                if (!Number.isNaN(index)) {
+                    window.deletePackage?.(index);
+                }
+                break;
+            }
             case 'settings-save-seo':
                 window.saveSeoSettings?.();
                 break;
@@ -656,6 +679,42 @@ function bindAdminStudioDelegatedControls() {
             case 'users-toggle-test-accounts':
                 window.toggleUserTestAccountVisibility?.(actionEl.checked);
                 break;
+            case 'settings-update-package-field': {
+                const index = parseInt(actionEl.dataset.packageIndex || '', 10);
+                if (Number.isNaN(index)) {
+                    break;
+                }
+
+                let value = actionEl.value;
+                switch (actionEl.dataset.packageValueType) {
+                    case 'int': {
+                        const parsed = parseInt(actionEl.value || '', 10);
+                        value = Number.isFinite(parsed) ? parsed : 0;
+                        actionEl.value = String(value);
+                        break;
+                    }
+                    case 'float': {
+                        const trimmed = String(actionEl.value || '').trim();
+                        if (!trimmed) {
+                            value = null;
+                            actionEl.value = '';
+                            break;
+                        }
+
+                        const parsed = parseFloat(trimmed);
+                        value = Number.isFinite(parsed) ? parsed : null;
+                        actionEl.value = value == null ? '' : String(value);
+                        break;
+                    }
+                    default:
+                        value = String(actionEl.value || '').trim();
+                        actionEl.value = value;
+                        break;
+                }
+
+                window.updatePackage?.(index, actionEl.dataset.packageField, value);
+                break;
+            }
             case 'settings-toggle-decoration':
                 window.toggleDecoration?.();
                 break;

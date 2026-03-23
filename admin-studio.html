@@ -871,7 +871,7 @@
                                             <!-- Dynamic rows -->
                                         </tbody>
                                     </table>
-                                    <button class="btn-add-config" onclick="addPackageRow()">
+                                    <button class="btn-add-config" type="button" data-admin-action="settings-add-package-row">
                                         <i class="fas fa-plus"></i> 添加礼包
                                     </button>
                                     <div class="config-row">
@@ -879,14 +879,14 @@
                                             <div class="config-label">自定义充值入口</div>
                                             <div class="config-desc">开启后，“我的钱包 > 充值”会显示一个自定义充值入口，用户可自行输入要充值的积分数量。</div>
                                         </div>
-                                        <div class="status-toggle" id="customRechargeStatusToggle" onclick="toggleCustomRechargeEntryStatus()"></div>
+                                        <div class="status-toggle" id="customRechargeStatusToggle" data-admin-action="settings-toggle-custom-recharge-entry"></div>
                                     </div>
                                     <div class="config-row">
                                         <div class="config-info">
                                             <div class="config-label">模拟支付（临时）</div>
                                             <div class="config-desc">开启后，礼包充值和自定义充值都会暂时跳过真实支付，直接到账积分。仅建议在虎皮椒等正式支付接入前短期使用。</div>
                                         </div>
-                                        <div class="status-toggle" id="mockPaymentStatusToggle" onclick="toggleMockPaymentStatus()"></div>
+                                        <div class="status-toggle" id="mockPaymentStatusToggle" data-admin-action="settings-toggle-mock-payment"></div>
                                     </div>
                                 </div>
                             </div>
@@ -9596,13 +9596,13 @@
     <script src="admin-comments.js"></script>
     <script src="admin-analytics.js"></script>
     <script src="js/admin-payments.js?v=20260320_ADMIN_PAYMENTS_V11"></script>
-    <script src="admin-config.js?v=20260323_ADMIN_GENERAL_SETTINGS_DELEGATION_1"></script>
+    <script src="admin-config.js?v=20260323_ADMIN_GENERAL_SETTINGS_DELEGATION_2"></script>
     <script src="admin-homepage.js"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js"></script>
     <script src="js/admin-tickets.js"></script>
     <script src="js/admin-access.js"></script>
-    <script src="admin-studio.js?v=20260323_ADMIN_DELEGATION_4"></script>
+    <script src="admin-studio.js?v=20260323_ADMIN_DELEGATION_5"></script>
     <script src="js/admin-shop.js?v=20260323_SHOP_DELEGATION_3"></script>
 </body>
 

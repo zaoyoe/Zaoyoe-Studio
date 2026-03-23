@@ -423,6 +423,68 @@ test('admin general settings and export controls route through delegated binding
     }
 });
 
+test('admin pricing package controls no longer emit inline handlers in static or dynamic settings markup', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminConfigSource = readRepoFile('admin-config.js');
+
+    const removedInlineMarkers = [
+        'onclick="addPackageRow()"',
+        'onclick="toggleCustomRechargeEntryStatus()"',
+        'onclick="toggleMockPaymentStatus()"',
+        `onchange="updatePackage(`,
+        `onclick="togglePackageStatus(`,
+        `onclick="deletePackage(`
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(
+            adminStudioSource.includes(marker) || adminConfigSource.includes(marker),
+            false,
+            `pricing controls should not contain ${marker}`
+        );
+    }
+
+    const delegatedHtmlMarkers = [
+        'data-admin-action="settings-add-package-row"',
+        'data-admin-action="settings-toggle-custom-recharge-entry"',
+        'data-admin-action="settings-toggle-mock-payment"'
+    ];
+
+    for (const marker of delegatedHtmlMarkers) {
+        assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+
+    const delegatedRuntimeMarkers = [
+        'data-admin-change-action="settings-update-package-field"',
+        'data-admin-action="settings-toggle-package-status"',
+        'data-admin-action="settings-delete-package"'
+    ];
+
+    for (const marker of delegatedRuntimeMarkers) {
+        assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should render ${marker}`);
+    }
+
+    const delegatedHandlerMarkers = [
+        "case 'settings-add-package-row':",
+        "case 'settings-toggle-custom-recharge-entry':",
+        "case 'settings-toggle-mock-payment':",
+        "case 'settings-toggle-package-status':",
+        "case 'settings-delete-package':",
+        "case 'settings-update-package-field':"
+    ];
+
+    for (const marker of delegatedHandlerMarkers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminConfigSource.includes('function normalizePackageFieldValue(field, value, fallback)'),
+        true,
+        'admin-config.js should normalize delegated package field updates'
+    );
+});
+
 test('shop admin pagination renderer no longer emits inline handler attributes', () => {
     const source = readRepoFile('js/admin-shop.js');
     const start = source.indexOf('renderPagination: function');
