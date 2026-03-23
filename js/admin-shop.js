@@ -403,6 +403,39 @@ Example output format:
         counter.textContent = `(${lineCount}行)`;
     },
 
+    updateImportViewLineCount: function () {
+        const textarea = document.getElementById('importViewContentInput');
+        const counter = document.getElementById('importViewLineCount');
+        if (!textarea || !counter) {
+            return;
+        }
+
+        const lineCount = textarea.value.trim() ? textarea.value.trim().split('\n').length : 0;
+        counter.textContent = `(${lineCount}个)`;
+    },
+
+    toggleMobileImportView: function (view) {
+        const layout = document.querySelector('.import-layout');
+        const sidebarBtn = document.getElementById('mobileImportSidebarBtn');
+        const mainBtn = document.getElementById('mobileImportMainBtn');
+
+        if (!layout || !sidebarBtn || !mainBtn) {
+            return;
+        }
+
+        if (view === 'sidebar') {
+            layout.classList.remove('show-main');
+            layout.classList.add('show-sidebar');
+            sidebarBtn.classList.add('active');
+            mainBtn.classList.remove('active');
+        } else {
+            layout.classList.remove('show-sidebar');
+            layout.classList.add('show-main');
+            mainBtn.classList.add('active');
+            sidebarBtn.classList.remove('active');
+        }
+    },
+
     bindDelegatedHandlers: function () {
         if (this.delegatedHandlersBound) {
             return;
@@ -421,6 +454,21 @@ Example output format:
             }
 
             switch (actionEl.dataset.shopAction) {
+                case 'import-toggle-mobile-view':
+                    this.toggleMobileImportView(actionEl.dataset.importMobileView);
+                    break;
+                case 'import-create-category':
+                    this.showCreateCategoryDialog();
+                    break;
+                case 'import-category-rename':
+                    this.renameCategoryFromMenu();
+                    break;
+                case 'import-category-color':
+                    this.setCategoryColor(actionEl.dataset.categoryColor);
+                    break;
+                case 'import-category-delete':
+                    this.deleteCategoryFromMenu();
+                    break;
                 case 'pagination-go':
                     this.invokePaginationTarget(actionEl.dataset.paginationTarget, actionEl.dataset.paginationPage);
                     break;
@@ -490,6 +538,9 @@ Example output format:
                     break;
                 case 'inventory-import-submit':
                     this.importInventory(actionEl);
+                    break;
+                case 'inventory-import-from-view':
+                    this.doImportFromView();
                     break;
                 case 'inventory-release-modal-close':
                     this.closeReleaseModal();
@@ -604,6 +655,30 @@ Example output format:
                 case 'refund-submit':
                     this.submitRefund(actionEl.dataset.orderId, actionEl);
                     break;
+                case 'orders-search':
+                    this.searchOrders(1);
+                    break;
+                case 'orders-export':
+                    this.exportOrders();
+                    break;
+                case 'delivery-apply-task-query':
+                    this.applyDeliveryTaskQuery();
+                    break;
+                case 'delivery-reload-tasks': {
+                    const pageMode = actionEl.dataset.deliveryPageMode || 'first';
+                    const page = pageMode === 'current' ? (this.deliveryTaskPage || 1) : 1;
+                    this.loadDeliveryTasks(page);
+                    break;
+                }
+                case 'delivery-save-strategy':
+                    this.saveDeliveryStrategy();
+                    break;
+                case 'delivery-apply-conflict-audit-filters':
+                    this.applyDeliveryConflictAuditFilters();
+                    break;
+                case 'delivery-clear-conflict-audit-filters':
+                    this.clearDeliveryConflictAuditFilters();
+                    break;
             default:
                 break;
             }
@@ -635,6 +710,21 @@ Example output format:
                     break;
                 case 'inventory-selection-count':
                     this.updateSelectionCount();
+                    break;
+                case 'delivery-task-status-filter':
+                    this.setDeliveryTaskStatusFilter(actionEl.value);
+                    break;
+                case 'delivery-analytics-window':
+                    this.setDeliveryAnalyticsWindow(actionEl.value);
+                    break;
+                case 'delivery-dead-letter-reason':
+                    this.setDeliveryDeadLetterReasonFilter(actionEl.value);
+                    break;
+                case 'delivery-lock-state':
+                    this.setDeliveryLockStateFilter(actionEl.value);
+                    break;
+                case 'delivery-conflict-audit-reason':
+                    this.applyDeliveryConflictAuditFilters();
                     break;
                 case 'product-handle-icon-upload':
                     this.handleIconUpload(actionEl);
@@ -671,6 +761,9 @@ Example output format:
                 case 'inventory-import-line-count':
                     this.updateLegacyImportLineCount();
                     break;
+                case 'import-view-line-count':
+                    this.updateImportViewLineCount();
+                    break;
             default:
                 break;
             }
@@ -693,6 +786,18 @@ Example output format:
                         event.preventDefault();
                         this.loadInventoryList();
                     }
+                    break;
+                case 'orders-search-enter':
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        this.searchOrders(1);
+                    }
+                    break;
+                case 'delivery-task-query-enter':
+                    this.handleDeliveryTaskQueryKeydown(event);
+                    break;
+                case 'delivery-conflict-audit-filter-enter':
+                    this.handleDeliveryConflictAuditFilterKeydown(event);
                     break;
                 case 'product-save-new-category':
                     if (event.key === 'Enter') {
@@ -7549,7 +7654,6 @@ Example output format:
                     item.className = 'custom-dropdown-item';
                     item.dataset.value = p.id;
                     item.textContent = p.name;
-                    item.onclick = () => this.selectDropdown('product', p.id, p.name);
                     menu.appendChild(item);
                 });
             }

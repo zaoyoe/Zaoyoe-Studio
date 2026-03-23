@@ -233,6 +233,9 @@ function bindAdminStudioDelegatedControls() {
             case 'switch-gallery-view':
                 window.switchView?.(actionEl.dataset.view);
                 break;
+            case 'gallery-reset-form':
+                window.resetForm?.();
+                break;
             case 'switch-comment-view':
                 window.switchCommentView?.(actionEl.dataset.commentView);
                 break;
