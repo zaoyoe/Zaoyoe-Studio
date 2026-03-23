@@ -196,6 +196,7 @@ async function fetchPaymentConfig(baseUrl = '', timeoutMs = 10000, fetchImpl = g
 function buildFindings(summary = {}) {
     const findings = [];
     const mockAllowed = summary.runtime?.mock_payment?.allowed === true;
+    const network = summary.network || {};
     const artifactCounts = summary.artifacts?.counts || {};
     const artifactTotal = [
         artifactCounts.payment_orders,
@@ -210,6 +211,22 @@ function buildFindings(summary = {}) {
             severity: 'high',
             key: 'remote_mock_payment_still_enabled',
             message: `Production-like runtime still allows remote mock payments${summary.runtime?.mock_payment?.reason ? ` (${summary.runtime.mock_payment.reason})` : ''}`
+        });
+    }
+
+    if (!network.trusted_proxy_ips && !network.afdian_webhook_trusted_proxies) {
+        findings.push({
+            severity: 'high',
+            key: 'proxy_trust_chain_missing',
+            message: 'TRUSTED_PROXY_IPS / AFDIAN_WEBHOOK_TRUSTED_PROXIES are missing from the audited env file'
+        });
+    }
+
+    if (!network.afdian_webhook_allowed_ips) {
+        findings.push({
+            severity: 'high',
+            key: 'afdian_webhook_allowlist_missing',
+            message: 'AFDIAN_WEBHOOK_ALLOWED_IPS is missing from the audited env file'
         });
     }
 
