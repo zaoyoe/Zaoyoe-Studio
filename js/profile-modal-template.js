@@ -3,14 +3,14 @@
 
     function buildProfileModalHTML() {
         return `
-    <div class="modal-overlay" id="profileModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
-        <div class="modal-content profile-modal" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="profileModal" data-modal-dismiss-managed="1">
+        <div class="modal-content profile-modal">
             <div class="profile-mobile-topbar">
                 <div class="profile-mobile-topbar-shell">
                     <div class="profile-mobile-tabs">
-                        <div class="tab-item active" data-profile-tab="profile" onclick="switchProfileTab('profile')"
+                        <div class="tab-item active" data-profile-tab="profile" data-profile-action="switch-tab"
                             data-i18n="profile.profileTab">资料</div>
-                        <div class="tab-item" data-profile-tab="security" onclick="switchProfileTab('security')"
+                        <div class="tab-item" data-profile-tab="security" data-profile-action="switch-tab"
                             data-i18n="profile.securityTab">安全</div>
                         <span class="profile-mobile-tab-indicator" aria-hidden="true"></span>
                     </div>
@@ -21,11 +21,11 @@
                     <div class="profile-flip-inner">
                         <div id="view-profile" class="profile-view profile-front">
                             <input type="file" id="avatarUpload" accept="image/*" style="display: none;"
-                                onchange="handleAvatarUpload(event)">
+                                data-profile-change="avatar-upload">
 
                             <div class="profile-mobile-sheet">
                                 <section class="profile-mobile-hero-card">
-                                    <button type="button" class="profile-mobile-hero-avatar" onclick="triggerAvatarUpload()"
+                                    <button type="button" class="profile-mobile-hero-avatar" data-profile-action="trigger-avatar-upload"
                                         aria-label="更换头像" data-i18n-title="profile.changeAvatar">
                                         <img id="profileModalAvatarMobile" src="" alt="Avatar">
                                         <span id="profileModalAvatarMobileFallback"
@@ -41,7 +41,7 @@
                                         </div>
                                         <div class="profile-mobile-hero-actions">
                                             <button type="button" class="profile-mobile-hero-edit-btn"
-                                                onclick="openProfileEditor(event)" data-i18n="profile.editShort">编辑</button>
+                                                data-profile-action="open-editor" data-i18n="profile.editShort">编辑</button>
                                         </div>
                                     </div>
                                     <div id="profileMobileInlineEditor" class="profile-mobile-inline-editor">
@@ -49,9 +49,9 @@
                                             placeholder="输入新昵称" data-i18n-placeholder="profile.enterNewNickname">
                                         <div class="profile-mobile-inline-actions">
                                             <button type="button" class="profile-mobile-editor-btn profile-mobile-editor-btn--ghost"
-                                                onclick="toggleNicknameEdit(false)" data-i18n="common.cancel">取消</button>
+                                                data-profile-action="toggle-nickname-edit" data-profile-toggle-visible="false" data-i18n="common.cancel">取消</button>
                                             <button type="button" class="profile-mobile-editor-btn profile-mobile-editor-btn--primary"
-                                                onclick="saveNickname()" data-i18n="common.save">保存</button>
+                                                data-profile-action="save-nickname" data-i18n="common.save">保存</button>
                                         </div>
                                     </div>
                                 </section>
@@ -81,29 +81,29 @@
                                         <div class="profile-mobile-section-title" data-i18n="profile.quickAccess">快捷入口</div>
                                     </div>
                                     <div class="profile-mobile-quick-grid">
-                                        <button type="button" class="profile-mobile-quick-card"
-                                            onclick="openProfileWalletView('balance', event)">
+                                        <button type="button" class="profile-mobile-quick-card" data-profile-action="open-wallet-view"
+                                            data-wallet-view="balance">
                                             <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
                                             <span class="profile-mobile-quick-icon"><i class="fas fa-wallet"></i></span>
                                             <span class="profile-mobile-quick-title" data-i18n="profile.pointsWallet">积分钱包</span>
                                             <span class="profile-mobile-quick-desc" data-i18n="profile.pointsWalletDesc">余额、充值与兑换</span>
                                         </button>
-                                        <button type="button" class="profile-mobile-quick-card"
-                                            onclick="openProfileWalletView('orders', event)">
+                                        <button type="button" class="profile-mobile-quick-card" data-profile-action="open-wallet-view"
+                                            data-wallet-view="orders">
                                             <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
                                             <span class="profile-mobile-quick-icon"><i class="fas fa-receipt"></i></span>
                                             <span class="profile-mobile-quick-title" data-i18n="wallet.transactionRecords">交易记录</span>
                                             <span class="profile-mobile-quick-desc" data-i18n="profile.transactionRecordsDesc">订单与提示词解锁</span>
                                         </button>
-                                        <button type="button" class="profile-mobile-quick-card"
-                                            onclick="openProfileWalletView('affiliate', event)">
+                                        <button type="button" class="profile-mobile-quick-card" data-profile-action="open-wallet-view"
+                                            data-wallet-view="affiliate">
                                             <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
                                             <span class="profile-mobile-quick-icon"><i class="fas fa-bullhorn"></i></span>
                                             <span class="profile-mobile-quick-title" data-i18n="profile.affiliateCenter">推广中心</span>
                                             <span class="profile-mobile-quick-desc" data-i18n="profile.affiliateCenterDesc">邀请人数与佣金</span>
                                         </button>
-                                        <button type="button" class="profile-mobile-quick-card"
-                                            onclick="openProfileWalletView('checkin', event)">
+                                        <button type="button" class="profile-mobile-quick-card" data-profile-action="open-wallet-view"
+                                            data-wallet-view="checkin">
                                             <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
                                             <span class="profile-mobile-quick-icon"><i class="fas fa-calendar-check"></i></span>
                                             <span class="profile-mobile-quick-title" data-i18n="wallet.dailyCheckin">每日签到</span>
@@ -118,15 +118,13 @@
                             <div class="profile-security-desktop-layout">
                                 <aside class="profile-security-desktop-sidebar">
                                     <button type="button" class="profile-security-desktop-item active"
-                                        data-security-panel="change-password"
-                                        onclick="switchProfileSecurityPanel('change-password', event)">
+                                        data-security-panel="change-password" data-profile-action="switch-security-panel">
                                         <span class="profile-security-desktop-item-icon"><i class="fas fa-key"></i></span>
                                         <span class="profile-security-desktop-item-title"
                                             data-i18n="security.changePassword">修改密码</span>
                                     </button>
                                     <button type="button" class="profile-security-desktop-item"
-                                        data-security-panel="bind-phone"
-                                        onclick="switchProfileSecurityPanel('bind-phone', event)">
+                                        data-security-panel="bind-phone" data-profile-action="switch-security-panel">
                                         <span class="profile-security-desktop-item-icon"><i
                                                 class="fas fa-mobile-alt"></i></span>
                                         <span class="profile-security-desktop-item-title"
@@ -134,8 +132,7 @@
                                     </button>
                                     <button type="button"
                                         class="profile-security-desktop-item profile-security-desktop-item--danger"
-                                        data-security-panel="delete-account"
-                                        onclick="switchProfileSecurityPanel('delete-account', event)">
+                                        data-security-panel="delete-account" data-profile-action="switch-security-panel">
                                         <span class="profile-security-desktop-item-icon"><i
                                                 class="fas fa-exclamation-triangle"></i></span>
                                         <span class="profile-security-desktop-item-title"
@@ -160,7 +157,7 @@
                                                 autocomplete="new-password"
                                                 data-i18n-placeholder="security.newPassword">
                                         </div>
-                                        <button class="profile-security-desktop-primary-btn" onclick="changePassword()"
+                                        <button type="button" class="profile-security-desktop-primary-btn" data-profile-action="change-password"
                                             data-i18n="security.updatePassword">更新密码</button>
                                     </div>
 
@@ -179,10 +176,10 @@
                                                 class="security-input glass-input" placeholder="输入6位验证码"
                                                 data-i18n-placeholder="security.enterVerifyCode">
                                             <button class="profile-security-desktop-code-btn"
-                                                id="desktop_sendPhoneCodeBtn" onclick="sendPhoneVerificationCode()"
+                                                id="desktop_sendPhoneCodeBtn" type="button" data-profile-action="send-phone-code"
                                                 data-i18n="security.getVerifyCode">获取验证码</button>
                                         </div>
-                                        <button class="profile-security-desktop-primary-btn" onclick="bindPhone()"
+                                        <button type="button" class="profile-security-desktop-primary-btn" data-profile-action="bind-phone"
                                             data-i18n="security.bindPhone">绑定手机号</button>
                                     </div>
 
@@ -192,8 +189,7 @@
                                             data-i18n="security.deleteAccount">注销账号</h3>
                                         <p class="profile-security-desktop-desc profile-security-desktop-desc--danger"
                                             data-i18n="security.deleteWarning">⚠️ 此操作不可恢复，您的所有数据将被永久删除。</p>
-                                        <button class="profile-security-desktop-danger-btn"
-                                            onclick="deleteAccount()">
+                                        <button type="button" class="profile-security-desktop-danger-btn" data-profile-action="delete-account">
                                             <i class="fas fa-trash-alt"></i>
                                             <span data-i18n="security.confirmDelete">确认注销</span>
                                         </button>
@@ -214,7 +210,7 @@
                                             placeholder="新密码 (至少6位)" autocomplete="new-password"
                                             data-i18n-placeholder="security.newPassword">
                                     </div>
-                                    <button class="security-mobile-primary-btn" onclick="changePassword()"
+                                    <button type="button" class="security-mobile-primary-btn" data-profile-action="change-password"
                                         data-i18n="security.updatePassword">更新密码</button>
                                 </div>
 
@@ -231,10 +227,10 @@
                                             placeholder="输入6位验证码" style="flex: 1;"
                                             data-i18n-placeholder="security.enterVerifyCode">
                                         <button class="security-mobile-code-btn" id="mobile_sendPhoneCodeBtn"
-                                            onclick="sendPhoneVerificationCode()"
+                                            type="button" data-profile-action="send-phone-code"
                                             data-i18n="security.getVerifyCode">获取验证码</button>
                                     </div>
-                                    <button class="security-mobile-primary-btn" onclick="bindPhone()"
+                                    <button type="button" class="security-mobile-primary-btn" data-profile-action="bind-phone"
                                         data-i18n="security.bindPhone">绑定手机号</button>
                                 </div>
 
@@ -243,7 +239,7 @@
                                     <p class="mobile-section-desc" data-i18n="security.deleteWarning">⚠️
                                         此操作不可恢复，您的所有数据将被永久删除。
                                     </p>
-                                    <button class="security-mobile-danger-btn" onclick="deleteAccount()">
+                                    <button type="button" class="security-mobile-danger-btn" data-profile-action="delete-account">
                                         <i class="fas fa-trash-alt"></i>
                                         <span data-i18n="security.confirmDelete">确认注销</span>
                                     </button>

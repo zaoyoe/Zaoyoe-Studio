@@ -309,7 +309,7 @@
             <i class="fas fa-bullhorn"></i>
             <span id="announcementText"></span>
         </div>
-        <button class="announcement-close" onclick="closeAnnouncement(true)">
+        <button id="announcementCloseBtn" class="announcement-close" type="button">
             <i class="fas fa-times"></i>
         </button>
     </div>
@@ -484,17 +484,17 @@
     <!-- Detail Modal -->
     <div id="promptModal" class="poetry-modal">
         <div class="modal-inner">
-            <button id="promptModalTopBtn" class="close-modal-btn" onclick="handlePromptModalTopButton()" aria-label="Close">
+            <button id="promptModalTopBtn" class="close-modal-btn" type="button" aria-label="Close">
                 <i class="fas fa-times"></i>
             </button>
             <div class="modal-image-col">
                 <img id="modalImg" src="" alt="Prompt Visual">
 
                 <!-- Image Navigation -->
-                <button id="modalImgNavLeft" class="modal-img-nav left" onclick="navigateModalImage('prev')">
+                <button id="modalImgNavLeft" class="modal-img-nav left" type="button">
                     <i class="fas fa-chevron-left"></i>
                 </button>
-                <button id="modalImgNavRight" class="modal-img-nav right" onclick="navigateModalImage('next')">
+                <button id="modalImgNavRight" class="modal-img-nav right" type="button">
                     <i class="fas fa-chevron-right"></i>
                 </button>
                 <div id="modalImgCounter" class="modal-img-counter">1 / 1</div>
@@ -532,7 +532,7 @@
                             </button>
                         </div>
                         <div class="action-right">
-                            <button id="commentTriggerBtn" class="comment-trigger-btn" onclick="toggleCommentMode()">
+                            <button id="commentTriggerBtn" class="comment-trigger-btn" type="button">
                                 <i class="fas fa-comment-dots"></i>
                                 <span id="commentCountBadge" class="comment-count">0</span>
                             </button>
@@ -581,8 +581,7 @@
                             </svg>
                         </div>
                         <textarea id="commentInput" placeholder=""
-                            data-i18n-placeholder="gallery.addComment" rows="1" onkeydown="handleCommentKeydown(event)"
-                            oninput="autoExpandTextarea(this)"></textarea>
+                            data-i18n-placeholder="gallery.addComment" rows="1"></textarea>
 
                         <!-- Hidden file input -->
                         <input type="file" id="commentImageUpload" accept="image/*" style="display: none;">
@@ -597,7 +596,7 @@
 
                         <!-- 发送按钮 -->
                         <!-- 发送按钮 (小飞机图标) -->
-                        <button id="sendCommentBtn" class="send-comment-btn" onclick="submitComment()" title="Send"
+                        <button id="sendCommentBtn" class="send-comment-btn" type="button" title="Send"
                             data-i18n-title="gallery.send">
                             <i class="fas fa-paper-plane"></i>
                         </button>
@@ -635,12 +634,12 @@
     <script src="./js/section-visibility.js"></script>
     <script src="prompts-data.js?v=20260302_G_AUTH"></script>
     <script src="starry-sky.js?v=20260302_G_AUTH"></script>
-    <script src="prompts-poetry.js?v=20260313_PROMPT_MODAL_TRANSFORM_V108"></script>
+    <script src="prompts-poetry.js?v=20260323_PROMPT_EVENT_BINDINGS_1"></script>
     <script src="js/services/PointsService.js?v=20260321_PAYMENT_CREATE_UNIFIED_1"></script>
     <script src="js/components/WalletModal.js?v=20260321_PAYMENT_CREATE_UNIFIED_1"></script>
-    <script src="js/profile-modal-template.js?v=20260317_PROFILE_MODAL_SUBPAGES_1" defer></script>
+    <script src="js/profile-modal-template.js?v=20260323_PROFILE_MODAL_DELEGATION_1" defer></script>
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="supabase-auth-functions.js?v=20260315_PROFILE_MODAL_REWRITE_15" defer></script>
+    <script src="supabase-auth-functions.js?v=20260323_PROFILE_MODAL_DELEGATION_1" defer></script>
     <script src="security-cards.js?v=20260317_PROFILE_MODAL_SUBPAGES_1" defer></script>
     <script src="js/i18n.js?v=1" defer></script>
     <script src="js/ios-scroll-lock.js?v=20260314_SCROLL_LOCK_AUTH_SHEET_7" defer></script>

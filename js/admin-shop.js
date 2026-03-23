@@ -366,9 +366,14 @@ Example output format:
 
     invokePaginationTarget: function (targetName, pageValue) {
         const handler = this[targetName];
+        if (typeof handler !== 'function') {
+            console.warn(`[ShopAdmin] Unknown pagination target: ${targetName}`);
+            return;
+        }
+
         const page = Number.parseInt(pageValue, 10);
 
-        if (typeof handler !== 'function' || !Number.isFinite(page) || page < 1) {
+        if (!Number.isFinite(page) || page < 1) {
             return;
         }
 
@@ -390,19 +395,30 @@ Example output format:
     updateLegacyImportLineCount: function () {
         const textarea = document.getElementById('importContentInput');
         const counter = document.getElementById('importLineCount');
-        if (!textarea || !counter) return;
+        if (!textarea || !counter) {
+            return;
+        }
+
         const lineCount = textarea.value.trim() ? textarea.value.trim().split('\n').length : 0;
         counter.textContent = `(${lineCount}行)`;
     },
 
     bindDelegatedHandlers: function () {
-        if (this.delegatedHandlersBound) return;
+        if (this.delegatedHandlersBound) {
+            return;
+        }
         this.delegatedHandlersBound = true;
 
         document.addEventListener('click', (event) => {
             const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-            const actionEl = target?.closest?.('[data-shop-action]');
-            if (!actionEl) return;
+            if (!target) {
+                return;
+            }
+
+            const actionEl = target.closest('[data-shop-action]');
+            if (!actionEl) {
+                return;
+            }
 
             switch (actionEl.dataset.shopAction) {
                 case 'pagination-go':
@@ -541,15 +557,21 @@ Example output format:
                 case 'product-save-new-category':
                     this.saveNewCategory();
                     break;
-                default:
-                    break;
+            default:
+                break;
             }
         });
 
         document.addEventListener('change', (event) => {
             const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-            const actionEl = target?.closest?.('[data-shop-change]');
-            if (!actionEl) return;
+            if (!target) {
+                return;
+            }
+
+            const actionEl = target.closest('[data-shop-change]');
+            if (!actionEl) {
+                return;
+            }
 
             switch (actionEl.dataset.shopChange) {
                 case 'pagination-go': {
@@ -576,15 +598,21 @@ Example output format:
                 case 'product-toggle-usage-instructions':
                     this.toggleUsageInstructions(actionEl.checked);
                     break;
-                default:
-                    break;
+            default:
+                break;
             }
         });
 
         document.addEventListener('input', (event) => {
             const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-            const actionEl = target?.closest?.('[data-shop-input]');
-            if (!actionEl) return;
+            if (!target) {
+                return;
+            }
+
+            const actionEl = target.closest('[data-shop-input]');
+            if (!actionEl) {
+                return;
+            }
 
             switch (actionEl.dataset.shopInput) {
                 case 'product-update-preview':
@@ -593,15 +621,21 @@ Example output format:
                 case 'inventory-import-line-count':
                     this.updateLegacyImportLineCount();
                     break;
-                default:
-                    break;
+            default:
+                break;
             }
         });
 
         document.addEventListener('keydown', (event) => {
             const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-            const actionEl = target?.closest?.('[data-shop-keydown]');
-            if (!actionEl) return;
+            if (!target) {
+                return;
+            }
+
+            const actionEl = target.closest('[data-shop-keydown]');
+            if (!actionEl) {
+                return;
+            }
 
             switch (actionEl.dataset.shopKeydown) {
                 case 'inventory-search-enter':

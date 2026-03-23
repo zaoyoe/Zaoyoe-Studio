@@ -211,8 +211,14 @@ function bindAdminStudioDelegatedControls() {
 
     document.addEventListener('click', (event) => {
         const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-        const actionEl = target?.closest?.('[data-admin-action]');
-        if (!actionEl) return;
+        if (!target) {
+            return;
+        }
+
+        const actionEl = target.closest('[data-admin-action]');
+        if (!actionEl) {
+            return;
+        }
 
         switch (actionEl.dataset.adminAction) {
             case 'switch-module':
@@ -249,7 +255,10 @@ function bindAdminStudioDelegatedControls() {
                 window.HomepageAdmin?.toggleVisible?.(actionEl.dataset.homepageSection);
                 break;
             case 'homepage-toggle-field':
-                window.HomepageAdmin?.toggleField?.(actionEl.dataset.homepageSection, actionEl.dataset.homepageField);
+                window.HomepageAdmin?.toggleField?.(
+                    actionEl.dataset.homepageSection,
+                    actionEl.dataset.homepageField
+                );
                 break;
             case 'homepage-save-section':
                 window.HomepageAdmin?.saveSection?.(actionEl.dataset.homepageSection);
@@ -318,8 +327,14 @@ function bindAdminStudioDelegatedControls() {
 
     document.addEventListener('change', (event) => {
         const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-        const actionEl = target?.closest?.('[data-admin-change-action]');
-        if (!actionEl) return;
+        if (!target) {
+            return;
+        }
+
+        const actionEl = target.closest('[data-admin-change-action]');
+        if (!actionEl) {
+            return;
+        }
 
         switch (actionEl.dataset.adminChangeAction) {
             case 'comments-toggle-select-all':

@@ -6,6 +6,9 @@ const Module = require('node:module');
 const {
     buildHupijiaoHash
 } = require('../api/_lib/payments/hupijiao');
+const {
+    issuePaymentIntentClaimToken
+} = require('../api/_lib/payments/orders');
 
 function createQueryBuilder(executor) {
     const state = {
@@ -489,6 +492,17 @@ function createSupabaseStub(state = {}) {
 
                     return {
                         data: query.single || query.maybeSingle ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'afdian_orders' && query.mode === 'update') {
+                    const matched = applyCommonFilters(afdianOrders, query);
+                    matched.forEach((row) => {
+                        Object.assign(row, query.payload || {});
+                    });
+                    return {
+                        data: query.single || query.maybeSingle ? (matched[0] || null) : matched,
                         error: null
                     };
                 }
@@ -1611,6 +1625,218 @@ test('hupijiao webhook fails closed in production-like runtimes when the source 
         assert.equal(response.status, 503);
         assert.equal(response.text, 'webhook source allowlist not configured');
         assert.equal(state.paymentEvents.length, 0);
+    });
+});
+
+test('afdian query does not return redeem codes for unowned orders even when a code already exists', async () => {
+    const nowIso = new Date().toISOString();
+    const state = {
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        },
+        paymentOrders: [
+            {
+                id: 'payment-order-final',
+                provider: 'afdian',
+                provider_order_no: 'AFD-CODE-LEAK-1',
+                checkout_session_id: null,
+                user_id: null,
+                site: 'intl',
+                package_id: 'pkg-intl-1',
+                package_name: 'Intl Package',
+                expected_amount: 20,
+                paid_amount: 20,
+                points_amount: 200,
+                status: 'paid',
+                sign_verified: true,
+                amount_verified: true,
+                provider_metadata: {},
+                created_at: nowIso,
+                paid_at: nowIso
+            }
+        ],
+        afdianOrders: [
+            {
+                id: 'afdian-order-1',
+                out_trade_no: 'AFD-CODE-LEAK-1',
+                total_amount: 20,
+                points: 200,
+                redeem_code: 'SECRET-CODE-LEAK',
+                is_redeemed: false,
+                created_at: nowIso,
+                payment_status: 'paid',
+                sign_verified: true,
+                amount_verified: true,
+                site: 'intl',
+                site_user_id: null,
+                claimed_at: null,
+                payment_order_id: 'payment-order-final',
+                plan_id: 'sku-intl-20',
+                raw_payload: {},
+                paid_at: nowIso
+            }
+        ]
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const response = await dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/query',
+            headers: {
+                Authorization: 'Bearer member-token',
+                Host: 'www.zaoyoe.com',
+                Origin: 'https://www.zaoyoe.com'
+            },
+            body: {
+                order_no: 'AFD-CODE-LEAK-1'
+            }
+        });
+        const payload = response.json();
+
+        assert.equal(response.status, 200);
+        assert.equal(payload.success, false);
+        assert.equal(payload.status, 'paid');
+        assert.match(payload.message, /尚未安全匹配到当前账号的支付意图/);
+        assert.equal(payload.code, undefined);
+        assert.deepEqual(payload.consumed_payment_claim_ids, []);
+        assert.equal(state.afdianOrders[0].site_user_id, null);
+    });
+});
+
+test('afdian query can safely claim an unowned order with a valid payment claim token', async () => {
+    const now = Date.now();
+    const sourceCreatedAt = new Date(now - 60 * 1000).toISOString();
+    const nowIso = new Date(now).toISOString();
+    const claimEnv = {
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role-secret',
+        PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote-secret'
+    };
+    const claim = issuePaymentIntentClaimToken({
+        userId: 'user-1',
+        site: 'intl',
+        providerKey: 'afdian',
+        checkoutSessionId: 'checkout-afd-intl-claim',
+        packageId: 'pkg-intl-1',
+        packageName: 'Intl Package',
+        expectedAmount: 20,
+        pointsAmount: 200,
+        chargeType: 'package',
+        env: claimEnv
+    });
+
+    const state = {
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        },
+        paymentCheckoutSessions: [
+            {
+                id: 'checkout-afd-intl-claim',
+                user_id: 'user-1',
+                provider: 'afdian',
+                site: 'intl',
+                package_id: 'pkg-intl-1',
+                package_name: 'Intl Package',
+                expected_amount: 20,
+                requested_points: 200,
+                granted_points: 200,
+                status: 'redirect_ready',
+                payment_order_id: null,
+                created_at: sourceCreatedAt,
+                provider_metadata: {}
+            }
+        ],
+        paymentOrders: [
+            {
+                id: 'payment-order-pending',
+                provider: 'afdian',
+                provider_order_no: 'PENDING_AFDIAN_INTL_CLAIM_1',
+                checkout_session_id: 'checkout-afd-intl-claim',
+                user_id: 'user-1',
+                site: 'intl',
+                package_id: 'pkg-intl-1',
+                package_name: 'Intl Package',
+                expected_amount: 20,
+                points_amount: 200,
+                status: 'pending',
+                provider_metadata: {
+                    provider_order_pending: true,
+                    provider_order_resolved: false
+                },
+                created_at: sourceCreatedAt
+            },
+            {
+                id: 'payment-order-final',
+                provider: 'afdian',
+                provider_order_no: 'AFD-CLAIM-1',
+                checkout_session_id: null,
+                user_id: null,
+                site: 'intl',
+                package_id: 'pkg-intl-1',
+                package_name: 'Intl Package',
+                expected_amount: 20,
+                paid_amount: 20,
+                points_amount: 200,
+                status: 'paid',
+                sign_verified: true,
+                amount_verified: true,
+                provider_metadata: {},
+                created_at: nowIso,
+                paid_at: nowIso
+            }
+        ],
+        afdianOrders: [
+            {
+                id: 'afdian-order-1',
+                out_trade_no: 'AFD-CLAIM-1',
+                total_amount: 20,
+                points: 200,
+                redeem_code: 'SAFE-CLAIM-CODE',
+                is_redeemed: false,
+                created_at: nowIso,
+                payment_status: 'paid',
+                sign_verified: true,
+                amount_verified: true,
+                site: 'intl',
+                site_user_id: null,
+                claimed_at: null,
+                payment_order_id: 'payment-order-final',
+                plan_id: 'sku-intl-20',
+                raw_payload: {},
+                paid_at: nowIso
+            }
+        ]
+    };
+
+    await withEnv(claimEnv, async () => {
+        await withTestServer(state, async ({ app }) => {
+            const response = await dispatchRoute(app, {
+                method: 'POST',
+                url: '/api/afdian/query',
+                headers: {
+                    Authorization: 'Bearer member-token',
+                    Host: 'www.zaoyoe.com',
+                    Origin: 'https://www.zaoyoe.com'
+                },
+                body: {
+                    order_no: 'AFD-CLAIM-1',
+                    claim_tokens: [claim.token]
+                }
+            });
+            const payload = response.json();
+            const finalPaymentOrder = state.paymentOrders.find((item) => item.id === 'payment-order-final');
+            const sourcePaymentOrder = state.paymentOrders.find((item) => item.id === 'payment-order-pending');
+
+            assert.equal(response.status, 200);
+            assert.equal(payload.success, true);
+            assert.equal(payload.code, 'SAFE-CLAIM-CODE');
+            assert.deepEqual(payload.consumed_payment_claim_ids, [claim.intentId]);
+            assert.equal(finalPaymentOrder.user_id, 'user-1');
+            assert.equal(finalPaymentOrder.checkout_session_id, 'checkout-afd-intl-claim');
+            assert.equal(finalPaymentOrder.provider_metadata.claim_token_intent_id, claim.intentId);
+            assert.equal(sourcePaymentOrder.checkout_session_id, null);
+            assert.equal(state.afdianOrders[0].site_user_id, 'user-1');
+            assert.equal(state.afdianOrders[0].payment_order_id, 'payment-order-final');
+        });
     });
 });
 

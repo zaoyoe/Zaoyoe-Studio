@@ -269,6 +269,16 @@
             margin-bottom: 12px;
         }
 
+        .content-card[data-shop-copy-content] {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .content-card[data-shop-copy-content]:hover {
+            border-color: rgba(107, 158, 206, 0.5);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
         .content-card .item-name {
             display: flex;
             align-items: center;
@@ -1678,11 +1688,11 @@
         </div>
 
         <!-- Purchase Confirmation Modal (Quantity) -->
-        <div class="modal-overlay" id="shopPurchaseModal" onclick="ShopClient.closePurchaseModal()">
-            <div class="modal-content premium-modal" onclick="event.stopPropagation()">
+        <div class="modal-overlay" id="shopPurchaseModal">
+            <div class="modal-content premium-modal">
                 <!-- Close Button -->
                 <div class="mac-controls">
-                    <div class="mac-dot red" onclick="ShopClient.closePurchaseModal()">
+                    <div id="shopPurchaseModalCloseBtn" class="mac-dot red" role="button" tabindex="0" aria-label="Close purchase modal">
                         <i class="fas fa-times"></i>
                     </div>
                 </div>
@@ -1697,10 +1707,9 @@
                 <!-- Quantity Selector -->
                 <div class="shop-quantity-wrapper shop-purchase-stage shop-purchase-stage-quantity">
                     <div class="shop-quantity-control">
-                        <button class="shop-qty-btn" onclick="ShopClient.adjustQuantity(-1)">−</button>
-                        <input type="number" id="purchaseQuantity" value="1" min="1" max="99" class="shop-qty-input"
-                            oninput="ShopClient.onQuantityInput(this)">
-                        <button class="shop-qty-btn" onclick="ShopClient.adjustQuantity(1)">+</button>
+                        <button class="shop-qty-btn" type="button" data-shop-qty-delta="-1">−</button>
+                        <input type="number" id="purchaseQuantity" value="1" min="1" max="99" class="shop-qty-input">
+                        <button class="shop-qty-btn" type="button" data-shop-qty-delta="1">+</button>
                     </div>
                 </div>
 
@@ -1711,9 +1720,8 @@
                     <div style="display: flex; gap: 8px;">
                         <input type="text" id="purchaseDiscountCode" placeholder="输入优惠码"
                             data-i18n-placeholder="shop.enterDiscountCode"
-                            style="flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: #fff; outline: none; transition: border-color 0.2s;"
-                            oninput="this.value = this.value.toUpperCase()">
-                        <button id="applyDiscountBtn" onclick="ShopClient.applyDiscount()" data-i18n="shop.verify"
+                            style="flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: #fff; outline: none; transition: border-color 0.2s;">
+                        <button id="applyDiscountBtn" type="button" data-i18n="shop.verify"
                             style="padding: 0 16px; border-radius: 8px; background: rgba(107, 158, 206, 0.2); color: #6b9ece; border: 1px solid rgba(107, 158, 206, 0.3); cursor: pointer; font-weight: 500; transition: all 0.2s; white-space: nowrap;">验证</button>
                     </div>
                     <div id="discountMessage" style="font-size: 12px; margin-top: 6px; display: none;"></div>
@@ -1752,7 +1760,7 @@
                 </div>
 
                 <!-- Actions -->
-                <button id="confirmPurchaseBtn" onclick="ShopClient.confirmPurchase()" class="shop-btn shop-btn-primary shop-purchase-stage shop-purchase-stage-action"
+                <button id="confirmPurchaseBtn" type="button" class="shop-btn shop-btn-primary shop-purchase-stage shop-purchase-stage-action"
                     style="width: 100%;">
                     <i class="fas fa-shopping-cart"></i> <span data-i18n="shop.confirmRedeem">确认兑换</span>
                 </button>
@@ -1760,9 +1768,8 @@
         </div>
 
         <!-- Success Modal (Re-used structure) -->
-        <div class="modal-overlay" id="shopSuccessModal" style="z-index: 99999;"
-            onclick="if(event.target === this) { document.getElementById('shopSuccessModal').classList.remove('active'); if(window.iOSScrollLock) window.iOSScrollLock.unlock(); }">
-            <div class="modal-content premium-modal shop-success-modal" onclick="event.stopPropagation()">
+        <div class="modal-overlay" id="shopSuccessModal" style="z-index: 99999;">
+            <div class="modal-content premium-modal shop-success-modal">
                 <div class="shop-success-stage shop-success-stage-icon"
                     style="width: 60px; height: 60px; background: rgba(56, 158, 13, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
                     <i class="fas fa-check" style="font-size: 30px; color: #389e0d;"></i>
@@ -1815,11 +1822,11 @@
                 </div>
 
                 <div class="shop-success-actions shop-success-stage shop-success-stage-actions">
-                    <button id="copyContentBtn" onclick="ShopClient.copyContent()" class="shop-btn shop-btn-primary"
+                    <button id="copyContentBtn" type="button" class="shop-btn shop-btn-primary"
                         style="flex: 1;">
                         <i class="fas fa-copy"></i> <span data-i18n="common.copy">复制</span>
                     </button>
-                    <button id="exportContentBtn" onclick="ShopClient.exportContent()"
+                    <button id="exportContentBtn" type="button"
                         class="shop-btn shop-btn-secondary" style="flex: 1;">
                         <i class="fas fa-download"></i> <span data-i18n="common.export">导出</span>
                     </button>
@@ -1843,9 +1850,9 @@
     <script src="./js/section-visibility.js"></script>
 
     <!-- Supabase Auth & UI -->
-    <script src="./js/profile-modal-template.js?v=20260317_PROFILE_MODAL_SUBPAGES_1" defer></script>
+    <script src="./js/profile-modal-template.js?v=20260323_PROFILE_MODAL_DELEGATION_1" defer></script>
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="./supabase-auth-functions.js?v=20260315_PROFILE_MODAL_REWRITE_15" defer></script>
+    <script src="./supabase-auth-functions.js?v=20260323_PROFILE_MODAL_DELEGATION_1" defer></script>
     <script src="./security-cards.js?v=20260317_PROFILE_MODAL_SUBPAGES_1" defer></script>
     <script src="js/i18n.js?v=1" defer></script>
     <script src="js/ios-scroll-lock.js?v=20260314_SCROLL_LOCK_AUTH_SHEET_7" defer></script>
@@ -1858,7 +1865,7 @@
     <script src="js/components/WalletModal.js?v=20260321_PAYMENT_CREATE_UNIFIED_1" defer></script>
 
     <!-- Shop Logic -->
-    <script src="js/shop-client.js?v=20260317_SHOP_RTE_V13" defer></script>
+    <script src="js/shop-client.js?v=20260323_SHOP_EVENT_BINDINGS_1" defer></script>
 
     <!-- Background Animations -->
     <script src="starry-sky.js"></script>

@@ -8,6 +8,7 @@ function initGuestbookPage() {
     const commentInput = document.getElementById('commentContent');
     const commentEditor = document.getElementById('commentComposerEditor');
     const commentCancelBtn = document.getElementById('commentComposerCancelBtn');
+    const commentModal = document.getElementById('commentModal');
 
     // CRITICAL FIX: Clean up any modal state on page load
     document.body.classList.remove('modal-active');
@@ -36,6 +37,28 @@ function initGuestbookPage() {
                 }
             }, 300);
         });
+    }
+
+    if (!window.__guestbookMediaErrorHandlerBound) {
+        document.addEventListener('error', (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLImageElement)) return;
+
+            const avatarFallback = target.dataset.avatarFallback;
+            if (avatarFallback) {
+                if (target.dataset.avatarFallbackApplied === '1') return;
+                target.dataset.avatarFallbackApplied = '1';
+                target.src = avatarFallback;
+                return;
+            }
+
+            if (target.dataset.hideOnError === '1') {
+                target.style.display = 'none';
+                target.parentElement?.style.setProperty('display', 'none');
+            }
+        }, true);
+
+        window.__guestbookMediaErrorHandlerBound = true;
     }
 
     // 🔧 FIX: Declare these variables early to avoid ReferenceError
@@ -520,8 +543,8 @@ function initGuestbookPage() {
                                 <div class="comment-content">${mentionPrefix}${escapeHtml(comment.content)}</div>
                             </div>
                             <div class="comment-like-wrapper">
-                                <button class="comment-like-btn ${comment.isLiked ? 'active' : ''}" 
-                                        onclick="handleLike('Comment', '${comment.id}', this)">
+                                <button class="comment-like-btn ${comment.isLiked ? 'active' : ''}" type="button"
+                                        data-comment-id="${comment.id}">
                                     <i class="${comment.isLiked ? 'fas' : 'far'} fa-heart"></i>
                                     <span class="like-count">${comment.likes || 0}</span>
                                 </button>
@@ -555,7 +578,7 @@ function initGuestbookPage() {
 
         const imageHtml = hasValidImage
             ? `<div class="message-image">
-            <img src="${msg.image}" alt="用户上传图片" loading="lazy" decoding="async" onclick="openImageModal(this.src)" onerror="this.style.display='none'; this.parentElement.style.display='none';">
+            <img src="${msg.image}" alt="用户上传图片" loading="lazy" decoding="async" data-guestbook-open-image="1" data-hide-on-error="1">
            </div>`
             : '';
 
@@ -578,7 +601,7 @@ function initGuestbookPage() {
                     <div class="message-header">
                         <div class="author-info">
                             ${msg.avatarUrl
-                ? `<img src="${msg.avatarUrl}" alt="${escapeHtml(msg.name)}" class="author-avatar" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(msg.name)}&background=random'">`
+                ? `<img src="${msg.avatarUrl}" alt="${escapeHtml(msg.name)}" class="author-avatar" loading="lazy" decoding="async" data-avatar-fallback="https://ui-avatars.com/api/?name=${encodeURIComponent(msg.name)}&background=random" data-avatar-fallback-applied="0">`
                 : '<i class="fas fa-user-circle author-avatar-placeholder"></i>'}
                             <span class="author-name">${escapeHtml(msg.name)}</span>
                         </div>
@@ -593,14 +616,14 @@ function initGuestbookPage() {
                     
                     <!-- 4. Actions Bar (Like & Comment) - Refactored for perfect symmetry -->
                     <div class="message-actions-bar">
-                        <button class="action-btn like-btn ${msg.isLiked ? 'active' : ''}" 
-                                onclick="handleLike('Message', '${msg.id}', this)">
+                        <button class="action-btn like-btn ${msg.isLiked ? 'active' : ''}" type="button"
+                                data-message-id="${msg.id}" data-message-action="like">
                             <i class="${msg.isLiked ? 'fas' : 'far'} fa-heart"></i>
                             <span class="like-count">${msg.likes || 0}</span>
                         </button>
                         
-                        <button class="action-btn comment-btn" 
-                                onclick="window.openCommentModal('${msg.id}')">
+                        <button class="action-btn comment-btn" type="button"
+                                data-message-id="${msg.id}" data-message-action="comment">
                             <i class="far fa-comment"></i>
                             <span>${commentCount || 0}</span>
                         </button>
@@ -995,6 +1018,34 @@ function initGuestbookPage() {
 
         // Event delegation for clickable comments
         document.addEventListener('click', function (e) {
+            const commentLikeBtn = e.target.closest('.comment-like-btn[data-comment-id]');
+            if (commentLikeBtn) {
+                handleLike('Comment', commentLikeBtn.dataset.commentId, commentLikeBtn);
+                return;
+            }
+
+            const messageActionBtn = e.target.closest('.action-btn[data-message-id][data-message-action]');
+            if (messageActionBtn) {
+                const messageId = messageActionBtn.dataset.messageId;
+                if (!messageId) return;
+
+                if (messageActionBtn.dataset.messageAction === 'like') {
+                    handleLike('Message', messageId, messageActionBtn);
+                    return;
+                }
+
+                if (messageActionBtn.dataset.messageAction === 'comment') {
+                    window.openCommentModal(messageId);
+                    return;
+                }
+            }
+
+            const messageImage = e.target.closest('.message-image img[data-guestbook-open-image="1"]');
+            if (messageImage instanceof HTMLImageElement) {
+                openImageModal(messageImage.currentSrc || messageImage.src);
+                return;
+            }
+
             const clickableComment = e.target.closest('.comment-item--clickable');
             if (!clickableComment) return;
 
@@ -1035,6 +1086,11 @@ function initGuestbookPage() {
     });
     commentCancelBtn?.addEventListener('click', () => {
         window.closeCommentModal();
+    });
+    commentModal?.addEventListener('click', (event) => {
+        if (event.target === commentModal) {
+            window.closeCommentModal(event);
+        }
     });
     syncCommentComposerEmptyState();
     syncCommentModalHitTargets(false);
@@ -1393,7 +1449,6 @@ window.closeCommentModal = function (event) {
 
     const shouldClose = !event ||
         event.target === modal ||
-        event.currentTarget === modal ||
         event.target?.closest?.('#commentComposerCancelBtn');
 
     if (!shouldClose) {
@@ -1484,13 +1539,16 @@ function openImageModal(src) {
         modal.className = 'image-modal';
         modal.innerHTML = `
             <div class="image-modal-content">
-                <button class="image-modal-close" onclick="closeImageModal()">
+                <button class="image-modal-close" type="button">
                     <i class="fas fa-times"></i>
                 </button>
                 <img src="" alt="查看大图">
             </div>
         `;
         document.body.appendChild(modal);
+        modal.querySelector('.image-modal-close')?.addEventListener('click', () => {
+            closeImageModal();
+        });
 
         // Close on background click
         modal.addEventListener('click', (e) => {

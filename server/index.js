@@ -18,7 +18,8 @@ const {
     reconcileCheckoutSessionForPaymentOrder,
     resolvePendingPaymentOrderFromCheckoutContext,
     sanitizeSite,
-    verifyCustomRechargeQuoteToken
+    verifyCustomRechargeQuoteToken,
+    verifyPaymentIntentClaimToken
 } = require('../api/_lib/payments/orders');
 const {
     getHupijiaoGatewayOrderId,
@@ -646,6 +647,50 @@ async function loadPaymentOrderSnapshotByProviderOrderNo(provider, providerOrder
     return data || null;
 }
 
+async function loadPaymentOrderSnapshotByCheckoutSessionId(provider, checkoutSessionId) {
+    const normalizedProvider = String(provider || '').trim().toLowerCase();
+    const normalizedCheckoutSessionId = String(checkoutSessionId || '').trim();
+    if (!normalizedProvider || !normalizedCheckoutSessionId) {
+        return null;
+    }
+
+    const { data, error } = await supabase
+        .from('payment_orders')
+        .select('id, user_id, provider, provider_order_no, checkout_session_id, site, package_id, package_name, expected_amount, paid_amount, points_amount, status, sign_verified, amount_verified, provider_metadata, raw_payload, created_at, paid_at, claimed_at, verified_at, last_error')
+        .eq('provider', normalizedProvider)
+        .eq('checkout_session_id', normalizedCheckoutSessionId)
+        .order('created_at', { ascending: false })
+        .limit(6);
+
+    if (error) {
+        throw new Error(error.message || 'Failed to inspect payment order snapshot by checkout session');
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+    if (!rows.length) {
+        return null;
+    }
+
+    const scoredRows = rows
+        .map((row) => {
+            const metadata = row?.provider_metadata && typeof row.provider_metadata === 'object'
+                ? row.provider_metadata
+                : {};
+            let score = 0;
+            if (metadata.provider_order_pending === true) score += 120;
+            if (String(row.provider_order_no || '').toUpperCase().startsWith('PENDING_')) score += 100;
+            if (String(row.status || '').trim().toLowerCase() === 'pending') score += 60;
+            if (String(row.status || '').trim().toLowerCase() === 'pending_review') score += 30;
+            return { row, score };
+        })
+        .sort((left, right) => {
+            if (right.score !== left.score) return right.score - left.score;
+            return Date.parse(String(right.row.created_at || '')) - Date.parse(String(left.row.created_at || ''));
+        });
+
+    return scoredRows[0]?.row || null;
+}
+
 function deriveHupijiaoPointBreakdown(paymentOrder = null, attachData = {}) {
     const requestPayload = paymentOrder?.raw_payload?.request && typeof paymentOrder.raw_payload.request === 'object'
         ? paymentOrder.raw_payload.request
@@ -784,6 +829,19 @@ function normalizeQuoteTokens(input) {
         .slice(0, 12))];
 }
 
+function normalizeClaimTokens(input) {
+    const values = Array.isArray(input)
+        ? input
+        : typeof input === 'string'
+            ? input.split(',')
+            : [];
+
+    return [...new Set(values
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .slice(0, 12))];
+}
+
 async function loadAfdianQuerySnapshot(orderNo) {
     const normalizedOrderNo = String(orderNo || '').trim();
     if (!normalizedOrderNo) {
@@ -815,7 +873,7 @@ async function loadAfdianQuerySnapshot(orderNo) {
     if (afdianOrder.payment_order_id) {
         ({ data: paymentOrder, error: paymentOrderError } = await supabase
             .from('payment_orders')
-            .select('id, user_id, site, checkout_session_id, package_id, package_name, expected_amount, paid_amount, points_amount, status, sign_verified, amount_verified, provider_metadata, created_at, paid_at, last_error')
+            .select('id, user_id, provider, provider_order_no, site, checkout_session_id, package_id, package_name, expected_amount, paid_amount, points_amount, status, sign_verified, amount_verified, provider_metadata, created_at, paid_at, claimed_at, raw_payload, last_error')
             .eq('id', afdianOrder.payment_order_id)
             .maybeSingle());
     }
@@ -823,7 +881,7 @@ async function loadAfdianQuerySnapshot(orderNo) {
     if (!paymentOrder && !paymentOrderError) {
         ({ data: paymentOrder, error: paymentOrderError } = await supabase
             .from('payment_orders')
-            .select('id, user_id, site, checkout_session_id, package_id, package_name, expected_amount, paid_amount, points_amount, status, sign_verified, amount_verified, provider_metadata, created_at, paid_at, last_error')
+            .select('id, user_id, provider, provider_order_no, site, checkout_session_id, package_id, package_name, expected_amount, paid_amount, points_amount, status, sign_verified, amount_verified, provider_metadata, created_at, paid_at, claimed_at, raw_payload, last_error')
             .eq('provider', 'afdian')
             .eq('provider_order_no', normalizedOrderNo)
             .order('created_at', { ascending: false })
@@ -979,13 +1037,15 @@ function extractAfdianQueryRequest(req) {
         const body = req.body && typeof req.body === 'object' ? req.body : {};
         return {
             orderNo: String(body.order_no || '').trim(),
-            quoteTokens: normalizeQuoteTokens(body.quote_tokens || body.quote_token || [])
+            quoteTokens: normalizeQuoteTokens(body.quote_tokens || body.quote_token || []),
+            claimTokens: normalizeClaimTokens(body.claim_tokens || body.claim_token || [])
         };
     }
 
     return {
         orderNo: String(req.query.order_no || '').trim(),
-        quoteTokens: normalizeQuoteTokens(req.query.quote_tokens || req.query.quote_token || [])
+        quoteTokens: normalizeQuoteTokens(req.query.quote_tokens || req.query.quote_token || []),
+        claimTokens: normalizeClaimTokens(req.query.claim_tokens || req.query.claim_token || [])
     };
 }
 
@@ -1143,6 +1203,311 @@ async function findMatchingCustomRechargeQuote({
     }
 
     return null;
+}
+
+async function resolveAfdianPaymentIntentClaim({
+    user,
+    claimTokens = [],
+    linkedPaymentOrder = null,
+    afdianOrder = null
+}) {
+    const normalizedUserId = String(user?.id || '').trim();
+    const normalizedClaimTokens = normalizeClaimTokens(claimTokens);
+    if (!normalizedUserId || !normalizedClaimTokens.length) {
+        return null;
+    }
+
+    const targetAmount = roundPaymentCurrencyAmount(
+        afdianOrder?.total_amount
+            ?? linkedPaymentOrder?.paid_amount
+            ?? linkedPaymentOrder?.expected_amount
+            ?? 0
+    );
+    if (!(targetAmount > 0)) {
+        return null;
+    }
+
+    const linkedPackageId = String(linkedPaymentOrder?.package_id || '').trim() || null;
+    const linkedPointsAmount = Math.max(
+        0,
+        Math.round(Number(linkedPaymentOrder?.points_amount ?? afdianOrder?.points ?? 0) || 0)
+    );
+    const orderSite = sanitizeSite(linkedPaymentOrder?.site || afdianOrder?.site || '');
+    const orderCreatedAtTs = Date.parse(String(
+        afdianOrder?.paid_at
+        || afdianOrder?.created_at
+        || linkedPaymentOrder?.paid_at
+        || linkedPaymentOrder?.created_at
+        || ''
+    ));
+    const candidates = [];
+
+    for (const token of normalizedClaimTokens) {
+        const claim = verifyPaymentIntentClaimToken(token, {
+            env: process.env,
+            userId: normalizedUserId,
+            providerKey: 'afdian'
+        });
+        if (!claim?.intentId || !claim.checkoutSessionId) {
+            continue;
+        }
+
+        if (!paymentAmountsMatch(claim.expectedAmount, targetAmount)) {
+            continue;
+        }
+
+        const sourceOrder = await loadPaymentOrderSnapshotByCheckoutSessionId('afdian', claim.checkoutSessionId);
+        if (!sourceOrder?.id) {
+            continue;
+        }
+
+        if (String(sourceOrder.user_id || '').trim() !== normalizedUserId) {
+            continue;
+        }
+
+        const sourceSite = sanitizeSite(sourceOrder.site || claim.site || orderSite || '');
+        if (!sourceSite || sourceSite !== sanitizeSite(claim.site)) {
+            continue;
+        }
+
+        const sourceExpectedAmount = roundPaymentCurrencyAmount(
+            sourceOrder.expected_amount ?? sourceOrder.paid_amount ?? claim.expectedAmount ?? 0
+        );
+        if (!(sourceExpectedAmount > 0) || !paymentAmountsMatch(sourceExpectedAmount, targetAmount)) {
+            continue;
+        }
+
+        const sourcePointsAmount = Math.max(
+            0,
+            Math.round(Number(sourceOrder.points_amount ?? claim.pointsAmount ?? 0) || 0)
+        );
+        if (sourcePointsAmount <= 0 || sourcePointsAmount !== claim.pointsAmount) {
+            continue;
+        }
+
+        let score = 0;
+        if (sourceOrder.checkout_session_id === claim.checkoutSessionId) score += 260;
+        if (orderSite && sourceSite === orderSite) score += 80;
+        if (linkedPackageId && String(sourceOrder.package_id || '').trim() === linkedPackageId) score += 70;
+        if (linkedPointsAmount > 0 && sourcePointsAmount === linkedPointsAmount) score += 50;
+        if (String(sourceOrder.provider_order_no || '').toUpperCase().startsWith('PENDING_')) score += 30;
+        if (String(sourceOrder.status || '').trim().toLowerCase() === 'pending') score += 20;
+
+        const sourceCreatedAtTs = Date.parse(String(sourceOrder.created_at || ''));
+        const timeDistanceMs = Number.isFinite(orderCreatedAtTs) && Number.isFinite(sourceCreatedAtTs)
+            ? Math.abs(orderCreatedAtTs - sourceCreatedAtTs)
+            : Number.MAX_SAFE_INTEGER;
+        if (Number.isFinite(timeDistanceMs) && timeDistanceMs !== Number.MAX_SAFE_INTEGER) {
+            if (timeDistanceMs <= 5 * 60 * 1000) score += 40;
+            else if (timeDistanceMs <= 30 * 60 * 1000) score += 20;
+            else if (timeDistanceMs <= 2 * 60 * 60 * 1000) score += 10;
+        }
+
+        candidates.push({
+            claim,
+            sourceOrder,
+            site: sourceSite,
+            score,
+            timeDistanceMs
+        });
+    }
+
+    if (!candidates.length) {
+        return null;
+    }
+
+    candidates.sort((left, right) => {
+        if (right.score !== left.score) return right.score - left.score;
+        if (left.timeDistanceMs !== right.timeDistanceMs) return left.timeDistanceMs - right.timeDistanceMs;
+        return Date.parse(String(right.sourceOrder.created_at || '')) - Date.parse(String(left.sourceOrder.created_at || ''));
+    });
+
+    const [bestCandidate, secondCandidate] = candidates;
+    if (!secondCandidate) {
+        return {
+            ...bestCandidate.claim,
+            sourceOrder: bestCandidate.sourceOrder,
+            site: bestCandidate.site
+        };
+    }
+
+    if (bestCandidate.sourceOrder.id === secondCandidate.sourceOrder.id) {
+        return {
+            ...bestCandidate.claim,
+            sourceOrder: bestCandidate.sourceOrder,
+            site: bestCandidate.site
+        };
+    }
+
+    if (bestCandidate.score - secondCandidate.score >= 80) {
+        return {
+            ...bestCandidate.claim,
+            sourceOrder: bestCandidate.sourceOrder,
+            site: bestCandidate.site
+        };
+    }
+
+    return null;
+}
+
+async function applyAfdianPaymentIntentClaim({
+    orderNo,
+    user,
+    linkedPaymentOrder = null,
+    afdianOrder = null,
+    claimResolution = null
+}) {
+    if (!claimResolution?.sourceOrder?.id || !claimResolution?.intentId) {
+        return null;
+    }
+
+    const sourceOrder = claimResolution.sourceOrder;
+    const targetPaymentOrder = linkedPaymentOrder
+        || await loadPaymentOrderSnapshotByProviderOrderNo('afdian', orderNo);
+    if (!targetPaymentOrder?.id && !afdianOrder?.id) {
+        return null;
+    }
+
+    const claimSite = sanitizeSite(claimResolution.site || sourceOrder.site || afdianOrder?.site || '');
+    const targetCheckoutSessionId = String(
+        targetPaymentOrder?.checkout_session_id
+        || claimResolution.checkoutSessionId
+        || sourceOrder.checkout_session_id
+        || ''
+    ).trim() || null;
+
+    if (targetPaymentOrder?.checkout_session_id
+        && claimResolution.checkoutSessionId
+        && targetPaymentOrder.checkout_session_id !== claimResolution.checkoutSessionId) {
+        return null;
+    }
+
+    const nowIso = new Date().toISOString();
+    const expectedAmount = roundPaymentCurrencyAmount(
+        targetPaymentOrder?.expected_amount
+            ?? sourceOrder.expected_amount
+            ?? claimResolution.expectedAmount
+            ?? afdianOrder?.total_amount
+            ?? 0
+    );
+    const paidAmount = roundPaymentCurrencyAmount(
+        targetPaymentOrder?.paid_amount
+            ?? afdianOrder?.total_amount
+            ?? sourceOrder.paid_amount
+            ?? sourceOrder.expected_amount
+            ?? claimResolution.expectedAmount
+            ?? 0
+    );
+    const pointsAmount = Math.max(
+        0,
+        Math.round(Number(
+            targetPaymentOrder?.points_amount
+            ?? sourceOrder.points_amount
+            ?? claimResolution.pointsAmount
+            ?? afdianOrder?.points
+            ?? 0
+        ) || 0)
+    );
+
+    if (targetPaymentOrder?.id) {
+        const targetProviderMetadata = mergePaymentObjects(targetPaymentOrder.provider_metadata, {
+            claim_token_bound: true,
+            claim_token_intent_id: claimResolution.intentId,
+            claim_token_bound_at: nowIso,
+            claim_token_bound_user_id: String(user?.id || '').trim() || null,
+            claim_token_bound_site: claimSite || null,
+            claim_token_source_payment_order_id: sourceOrder.id,
+            claim_token_checkout_session_id: claimResolution.checkoutSessionId || null
+        });
+
+        const { error: targetUpdateError } = await supabase
+            .from('payment_orders')
+            .update({
+                user_id: String(user?.id || '').trim() || null,
+                site: claimSite || targetPaymentOrder.site || null,
+                checkout_session_id: targetCheckoutSessionId,
+                package_id: String(sourceOrder.package_id || targetPaymentOrder.package_id || claimResolution.packageId || '').trim() || null,
+                package_name: String(sourceOrder.package_name || targetPaymentOrder.package_name || claimResolution.packageName || '充值订单').trim(),
+                expected_amount: expectedAmount > 0 ? expectedAmount : null,
+                paid_amount: paidAmount > 0 ? paidAmount : null,
+                points_amount: pointsAmount,
+                claimed_at: targetPaymentOrder.claimed_at || nowIso,
+                provider_metadata: targetProviderMetadata
+            })
+            .eq('id', targetPaymentOrder.id);
+
+        if (targetUpdateError) {
+            throw new Error(targetUpdateError.message || 'Failed to bind claimed afdian payment order');
+        }
+    }
+
+    if (targetPaymentOrder?.id && sourceOrder.id !== targetPaymentOrder.id && sourceOrder.checkout_session_id) {
+        const sourceProviderMetadata = mergePaymentObjects(sourceOrder.provider_metadata, {
+            checkout_session_detached_by: 'afdian_query_claim_token',
+            checkout_session_detached_at: nowIso,
+            checkout_session_reassigned_to_payment_order_id: targetPaymentOrder?.id || null,
+            claim_token_consumed_intent_id: claimResolution.intentId
+        });
+
+        const { error: sourceUpdateError } = await supabase
+            .from('payment_orders')
+            .update({
+                checkout_session_id: null,
+                provider_metadata: sourceProviderMetadata
+            })
+            .eq('id', sourceOrder.id);
+
+        if (sourceUpdateError) {
+            throw new Error(sourceUpdateError.message || 'Failed to detach claimed checkout session');
+        }
+    }
+
+    if (afdianOrder?.id) {
+        const { error: afdianOrderUpdateError } = await supabase
+            .from('afdian_orders')
+            .update({
+                site: claimSite || afdianOrder.site || null,
+                site_user_id: String(user?.id || '').trim() || null,
+                claimed_at: afdianOrder.claimed_at || nowIso,
+                payment_order_id: targetPaymentOrder?.id || afdianOrder.payment_order_id || null
+            })
+            .eq('id', afdianOrder.id);
+
+        if (afdianOrderUpdateError) {
+            throw new Error(afdianOrderUpdateError.message || 'Failed to bind afdian order ownership');
+        }
+    }
+
+    if (targetPaymentOrder?.id) {
+        try {
+            await reconcileCheckoutSessionForPaymentOrder({
+                supabase,
+                providerKey: 'afdian',
+                paymentOrderId: targetPaymentOrder.id,
+                providerOrderNo: orderNo,
+                userId: String(user?.id || '').trim() || null,
+                site: claimSite || targetPaymentOrder.site || sourceOrder.site || null,
+                packageId: String(sourceOrder.package_id || targetPaymentOrder.package_id || claimResolution.packageId || '').trim() || null,
+                packageName: String(sourceOrder.package_name || targetPaymentOrder.package_name || claimResolution.packageName || '充值订单').trim(),
+                expectedAmount,
+                paidAmount,
+                pointsAmount,
+                orderStatus: String(targetPaymentOrder.status || afdianOrder?.payment_status || 'paid').trim() || 'paid',
+                linkedBy: 'afdian_query_claim_token',
+                allowHeuristic: true,
+                lookbackMinutes: 1440
+            });
+        } catch (claimLinkError) {
+            console.warn('[Afdian] Failed to reconcile checkout session for claim token:', claimLinkError.message);
+        }
+    }
+
+    return {
+        intentId: claimResolution.intentId,
+        paymentOrderId: targetPaymentOrder?.id || null,
+        checkoutSessionId: targetCheckoutSessionId,
+        site: claimSite || null
+    };
 }
 
 async function tryFinalizeCustomRechargeFromQuote({
@@ -3271,7 +3636,7 @@ app.post('/api/afdian/webhook', async (req, res) => {
 });
 
 async function handleAfdianQueryRequest(req, res) {
-    const { orderNo, quoteTokens } = extractAfdianQueryRequest(req);
+    const { orderNo, quoteTokens, claimTokens } = extractAfdianQueryRequest(req);
     const currentSite = getCurrentSite(req);
 
     async function sendQueryResponse(statusCode, payload, audit = {}) {
@@ -3289,7 +3654,8 @@ async function handleAfdianQueryRequest(req, res) {
             metadata: {
                 payment_status: audit.paymentStatus || null,
                 source: 'afdian_query_api',
-                quote_token_count: quoteTokens.length
+                quote_token_count: quoteTokens.length,
+                claim_token_count: claimTokens.length
             }
         });
         return res.status(statusCode).json(payload);
@@ -3333,6 +3699,7 @@ async function handleAfdianQueryRequest(req, res) {
             });
         }
 
+        let consumedPaymentClaimIds = [];
         let ownership = deriveAfdianOwnershipState({
             userId: user.id,
             afdianOrder,
@@ -3351,39 +3718,30 @@ async function handleAfdianQueryRequest(req, res) {
             afdianOrder,
             paymentOrder: linkedPaymentOrder
         });
+        const initialStatus = String(orderInfo?.payment_status || 'pending_review');
+        let claimResolution = null;
 
-        if (linkedPaymentOrder?.id && ownership.state === 'owned') {
+        if (ownership.state === 'unowned' && initialStatus !== 'rejected') {
             try {
-                await reconcileCheckoutSessionForPaymentOrder({
-                    supabase,
-                    providerKey: 'afdian',
-                    paymentOrderId: linkedPaymentOrder.id,
-                    providerOrderNo: orderNo,
-                    userId: user.id,
-                    site: linkedPaymentOrder.site,
-                    packageId: linkedPaymentOrder.package_id,
-                    packageName: linkedPaymentOrder.package_name,
-                    expectedAmount: linkedPaymentOrder.expected_amount,
-                    paidAmount: linkedPaymentOrder.paid_amount,
-                    pointsAmount: linkedPaymentOrder.points_amount,
-                    orderStatus: linkedPaymentOrder.status,
-                    linkedBy: 'afdian_query_owned',
-                    allowHeuristic: true,
-                    lookbackMinutes: 1440
+                claimResolution = await resolveAfdianPaymentIntentClaim({
+                    user,
+                    claimTokens,
+                    linkedPaymentOrder,
+                    afdianOrder
                 });
-            } catch (linkError) {
-                console.warn('[Afdian] Failed to link checkout session for owned order query:', linkError.message);
+            } catch (claimResolutionError) {
+                console.warn('[Afdian] Failed to resolve payment intent claim:', claimResolutionError.message);
             }
         }
 
         if (!orderInfo.code) {
-            const currentStatus = String(orderInfo.payment_status || 'pending_review');
+            const currentStatus = String(orderInfo?.payment_status || 'pending_review');
             if (ownership.state === 'unowned' && currentStatus !== 'rejected') {
                 try {
                     const finalizedCustomRecharge = await tryFinalizeCustomRechargeFromQuote({
                         orderNo,
                         user,
-                        site: linkedPaymentOrder?.site || afdianOrder?.site || currentSite,
+                        site: claimResolution?.site || linkedPaymentOrder?.site || afdianOrder?.site || currentSite,
                         linkedPaymentOrder,
                         orderInfo,
                         quoteTokens
@@ -3430,26 +3788,89 @@ async function handleAfdianQueryRequest(req, res) {
                     paymentOrder: linkedPaymentOrder
                 });
             }
+        }
 
-            const effectiveStatus = String(orderInfo?.payment_status || currentStatus || 'pending_review');
-
-            if (ownership.state !== 'owned') {
-                const pendingOwnershipMessage = effectiveStatus === 'rejected'
-                    ? '订单验签失败，已拦截，请联系客服'
-                    : '订单已记录，但尚未安全匹配到当前账号的支付意图，请确认使用本账号创建支付并稍后重试；如仍未到账请联系客服。';
-                return sendQueryResponse(200, {
-                    success: false,
-                    message: pendingOwnershipMessage,
-                    status: effectiveStatus
-                }, {
-                    userId: user.id,
-                    paymentOrderId: linkedPaymentOrder?.id || afdianOrder?.payment_order_id || null,
-                    checkoutSessionId: linkedPaymentOrder?.checkout_session_id || null,
-                    paymentStatus: effectiveStatus,
-                    outcomeCode: effectiveStatus === 'rejected' ? 'rejected' : 'ownership_pending'
+        if (ownership.state === 'unowned'
+            && String(orderInfo?.payment_status || initialStatus || 'pending_review') !== 'rejected'
+            && claimResolution) {
+            try {
+                const appliedClaim = await applyAfdianPaymentIntentClaim({
+                    orderNo,
+                    user,
+                    linkedPaymentOrder,
+                    afdianOrder,
+                    claimResolution
                 });
+                if (appliedClaim?.intentId) {
+                    consumedPaymentClaimIds = [appliedClaim.intentId];
+                    ({ afdianOrder, paymentOrder: linkedPaymentOrder } = await loadAfdianQuerySnapshot(orderNo));
+                    ownership = deriveAfdianOwnershipState({
+                        userId: user.id,
+                        afdianOrder,
+                        paymentOrder: linkedPaymentOrder
+                    });
+                    if (ownership.state === 'denied') {
+                        return sendQueryResponse(403, { success: false, message: '该订单已归属其他账号，无法查询' }, {
+                            userId: user.id,
+                            paymentOrderId: linkedPaymentOrder?.id || afdianOrder?.payment_order_id || null,
+                            checkoutSessionId: linkedPaymentOrder?.checkout_session_id || null,
+                            outcomeCode: 'access_denied'
+                        });
+                    }
+                    orderInfo = buildAfdianQueryOrderInfo({
+                        afdianOrder,
+                        paymentOrder: linkedPaymentOrder
+                    });
+                }
+            } catch (claimApplyError) {
+                console.warn('[Afdian] Failed to apply payment intent claim:', claimApplyError.message);
             }
+        }
 
+        if (linkedPaymentOrder?.id && ownership.state === 'owned') {
+            try {
+                await reconcileCheckoutSessionForPaymentOrder({
+                    supabase,
+                    providerKey: 'afdian',
+                    paymentOrderId: linkedPaymentOrder.id,
+                    providerOrderNo: orderNo,
+                    userId: user.id,
+                    site: linkedPaymentOrder.site,
+                    packageId: linkedPaymentOrder.package_id,
+                    packageName: linkedPaymentOrder.package_name,
+                    expectedAmount: linkedPaymentOrder.expected_amount,
+                    paidAmount: linkedPaymentOrder.paid_amount,
+                    pointsAmount: linkedPaymentOrder.points_amount,
+                    orderStatus: linkedPaymentOrder.status,
+                    linkedBy: consumedPaymentClaimIds.length > 0 ? 'afdian_query_claimed' : 'afdian_query_owned',
+                    allowHeuristic: true,
+                    lookbackMinutes: 1440
+                });
+            } catch (linkError) {
+                console.warn('[Afdian] Failed to link checkout session for owned order query:', linkError.message);
+            }
+        }
+
+        const effectiveStatus = String(orderInfo?.payment_status || initialStatus || 'pending_review');
+        if (ownership.state !== 'owned') {
+            const pendingOwnershipMessage = effectiveStatus === 'rejected'
+                ? '订单验签失败，已拦截，请联系客服'
+                : '订单已记录，但尚未安全匹配到当前账号的支付意图，请确认使用本账号创建支付并稍后重试；如仍未到账请联系客服。';
+            return sendQueryResponse(200, {
+                success: false,
+                message: pendingOwnershipMessage,
+                status: effectiveStatus,
+                consumed_payment_claim_ids: consumedPaymentClaimIds
+            }, {
+                userId: user.id,
+                paymentOrderId: linkedPaymentOrder?.id || afdianOrder?.payment_order_id || null,
+                checkoutSessionId: linkedPaymentOrder?.checkout_session_id || null,
+                paymentStatus: effectiveStatus,
+                outcomeCode: effectiveStatus === 'rejected' ? 'rejected' : 'ownership_pending'
+            });
+        }
+
+        if (!orderInfo.code) {
             const message = effectiveStatus === 'rejected'
                 ? '订单验签失败，已拦截，请联系客服'
                 : effectiveStatus === 'amount_mismatch'
@@ -3458,7 +3879,8 @@ async function handleAfdianQueryRequest(req, res) {
             return sendQueryResponse(200, {
                 success: false,
                 message,
-                status: effectiveStatus
+                status: effectiveStatus,
+                consumed_payment_claim_ids: consumedPaymentClaimIds
             }, {
                 userId: user.id,
                 paymentOrderId: linkedPaymentOrder?.id || null,
@@ -3478,7 +3900,8 @@ async function handleAfdianQueryRequest(req, res) {
             points: orderInfo.points,
             is_redeemed: orderInfo.is_redeemed,
             created_at: orderInfo.created_at,
-            payment_status: orderInfo.payment_status
+            payment_status: orderInfo.payment_status,
+            consumed_payment_claim_ids: consumedPaymentClaimIds
         }, {
             userId: user.id,
             paymentOrderId: linkedPaymentOrder?.id || null,
