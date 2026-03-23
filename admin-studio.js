@@ -386,6 +386,12 @@ function bindAdminStudioDelegatedControls() {
             case 'analytics-apply-custom-range':
                 window.applyCustomRange?.();
                 break;
+            case 'analytics-export-data':
+                window.exportAnalyticsData?.(actionEl.dataset.analyticsExportFormat);
+                break;
+            case 'analytics-refresh-data':
+                window.refreshAllAnalytics?.();
+                break;
             case 'analytics-load-ai-prediction':
                 window.loadAIPrediction?.();
                 break;

@@ -7994,14 +7994,14 @@
                             </div>
                         </div>
                         <div class="toolbar-right">
-                            <button class="toolbar-icon-btn" onclick="exportAnalyticsData('excel')"
+                            <button class="toolbar-icon-btn" type="button" data-admin-action="analytics-export-data" data-analytics-export-format="excel"
                                 title="导出 Excel (多工作表)">
                                 <i class="fas fa-file-excel"></i>
                             </button>
-                            <button class="toolbar-icon-btn" onclick="exportAnalyticsData('csv')" title="导出 CSV (单文件)">
+                            <button class="toolbar-icon-btn" type="button" data-admin-action="analytics-export-data" data-analytics-export-format="csv" title="导出 CSV (单文件)">
                                 <i class="fas fa-file-csv"></i>
                             </button>
-                            <button class="toolbar-icon-btn" onclick="refreshAllAnalytics()" title="刷新数据">
+                            <button class="toolbar-icon-btn" type="button" data-admin-action="analytics-refresh-data" title="刷新数据">
                                 <i class="fas fa-sync-alt"></i>
                             </button>
                             <div class="auto-refresh-toggle" title="自动刷新 (5分钟)">
@@ -9571,8 +9571,8 @@
     <script src="js/admin-site-filter.js"></script>
     <script src="js/admin-tickets.js"></script>
     <script src="js/admin-access.js"></script>
-    <script src="admin-studio.js?v=20260323_ADMIN_DELEGATION_6"></script>
-    <script src="js/admin-shop.js?v=20260323_SHOP_DELEGATION_4"></script>
+    <script src="admin-studio.js?v=20260323_ADMIN_DELEGATION_7"></script>
+    <script src="js/admin-shop.js?v=20260323_SHOP_DELEGATION_5"></script>
 </body>
 
 <!-- Admin Chat Script -->

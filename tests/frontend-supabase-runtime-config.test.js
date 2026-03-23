@@ -318,6 +318,9 @@ test('admin studio shell tabs and dashboards route core controls through delegat
         `onclick="dismissAllAlerts()"`,
         `onclick="switchAnalyticsTab('users')"`,
         `onclick="toggleDateRangeDropdown()"`,
+        `onclick="exportAnalyticsData('excel')"`,
+        `onclick="exportAnalyticsData('csv')"`,
+        `onclick="refreshAllAnalytics()"`,
         `onclick="document.getElementById('hp-verify-file-input').click()"`,
         `onchange="HomepageAdmin._handleScreenshotUpload(this)"`,
         `onchange="handlePaymentChannelActiveChange(this.value)"`,
@@ -339,6 +342,8 @@ test('admin studio shell tabs and dashboards route core controls through delegat
         'data-admin-action="payments-toggle-provider-enabled"',
         'data-admin-action="payments-save-channel-settings"',
         'data-admin-action="analytics-switch-tab"',
+        'data-admin-action="analytics-export-data"',
+        'data-admin-action="analytics-refresh-data"',
         'data-admin-change-action="homepage-handle-screenshot-upload"',
         'data-admin-change-action="payments-change-active-provider"',
         'data-admin-change-action="comments-toggle-select-all"'
@@ -913,6 +918,7 @@ test('shop admin pagination and inventory/product workflows no longer emit targe
         `onclick="document.getElementById('iconUploadFile').click()"`,
         `onchange="ShopAdmin.handleIconUpload(this)"`,
         `onclick="ShopAdmin.addTieredPricingRow()"`,
+        `onclick="this.parentElement.remove()"`,
         `onclick="ShopAdmin.toggleDeliveryTypeDropdown()"`,
         `onclick="ShopAdmin.selectDeliveryType('KEY', '卡密池发放 (KEY)')"`,
         `onclick="ShopAdmin.saveProduct()"`,
@@ -953,6 +959,7 @@ test('shop admin pagination and inventory/product workflows no longer emit targe
         'data-shop-action="inventory-open-release-modal"',
         'data-shop-action="product-upload-icon"',
         'data-shop-action="product-add-tiered-pricing"',
+        'data-shop-action="product-remove-tiered-pricing-row"',
         'data-shop-action="product-toggle-delivery-type-dropdown"',
         'data-shop-change="product-selection-count"',
         'data-shop-change="product-handle-icon-upload"',
@@ -1086,4 +1093,103 @@ test('admin studio create form and shop import/orders/fulfillment controls route
     for (const marker of helperMarkers) {
         assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
     }
+});
+
+test('analytics export controls and delivery runtime templates route through delegated actions', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const shopSource = readRepoFile('js/admin-shop.js');
+
+    const removedInlineMarkers = [
+        `onclick="exportAnalyticsData('excel')"`,
+        `onclick="exportAnalyticsData('csv')"`,
+        `onclick="refreshAllAnalytics()"`,
+        `onclick="ShopAdmin.jumpToDeliveryConflictAuditForTask('`,
+        `onclick="ShopAdmin.copyDeliveryRestoreLink()"`,
+        `onclick="ShopAdmin.clearAllDeliveryFilterBreadcrumbs()"`,
+        `onclick="ShopAdmin.performDeliveryTaskAction('`,
+        `onclick="ShopAdmin.toggleDeliveryConflictAuditSelection('`,
+        `onclick="ShopAdmin.applyDeliveryHotspotFilter('`,
+        `onclick="ShopAdmin.toggleDeliveryConflictBucketFilter('`,
+        `onclick="ShopAdmin.toggleDeliveryConflictDeadLetterBucketFocus('`,
+        'const onclickAttr = onClick ?',
+        'const onClickAttr = onRemove ?'
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(
+            adminStudioSource.includes(marker) || shopSource.includes(marker),
+            false,
+            `analytics/delivery templates should not contain ${marker}`
+        );
+    }
+
+    const delegatedHtmlMarkers = [
+        'data-admin-action="analytics-export-data"',
+        'data-admin-action="analytics-refresh-data"'
+    ];
+
+    for (const marker of delegatedHtmlMarkers) {
+        assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+
+    const delegatedShopActionMarkers = [
+        'delivery-copy-restore-link',
+        'delivery-clear-all-filter-breadcrumbs',
+        'delivery-task-action',
+        'delivery-jump-audit',
+        'delivery-conflict-audit-select',
+        'delivery-conflict-audit-reason-quick-filter',
+        'delivery-conflict-audit-target-quick-filter',
+        'delivery-conflict-audit-channel-quick-filter',
+        'delivery-toggle-conflict-dead-letter-focus',
+        'delivery-hotspot-filter',
+        'delivery-hotspot-metric-drilldown',
+        'delivery-hotspot-reason-drilldown',
+        'delivery-conflict-bucket-toggle',
+        'delivery-conflict-bucket-dead-letter-focus'
+    ];
+
+    for (const marker of delegatedShopActionMarkers) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+
+    const delegatedHandlerMarkers = [
+        "case 'analytics-export-data':",
+        "case 'analytics-refresh-data':",
+        "case 'delivery-copy-restore-link':",
+        "case 'delivery-clear-all-filter-breadcrumbs':",
+        "case 'delivery-task-action':",
+        "case 'delivery-jump-audit':",
+        "case 'delivery-conflict-audit-select':",
+        "case 'delivery-conflict-audit-reason-quick-filter':",
+        "case 'delivery-conflict-audit-target-quick-filter':",
+        "case 'delivery-conflict-audit-channel-quick-filter':",
+        "case 'delivery-toggle-conflict-dead-letter-focus':",
+        "case 'delivery-hotspot-filter':",
+        "case 'delivery-hotspot-metric-drilldown':",
+        "case 'delivery-hotspot-reason-drilldown':",
+        "case 'delivery-conflict-bucket-toggle':",
+        "case 'delivery-conflict-bucket-dead-letter-focus':",
+        "case 'delivery-clear-task-query':",
+        "case 'delivery-clear-conflict-bucket':",
+        "case 'delivery-clear-conflict-audit-selection':",
+        "case 'delivery-clear-conflict-dead-letter-focus':",
+        "case 'delivery-clear-task-status-filter':",
+        "case 'delivery-clear-dead-letter-reason-filter':",
+        "case 'delivery-clear-lock-state-filter':",
+        "case 'delivery-clear-conflict-audit-reason-filter':",
+        "case 'delivery-clear-conflict-audit-target-filter':",
+        "case 'delivery-clear-conflict-audit-channel-filter':"
+    ];
+
+    for (const marker of delegatedHandlerMarkers.slice(0, 2)) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    for (const marker of delegatedHandlerMarkers.slice(2)) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+
+    assert.equal(shopSource.includes('buildDeliveryDataAttributes: function (attributes = {})'), true, 'js/admin-shop.js should build delivery data attributes for delegated runtime templates');
 });
