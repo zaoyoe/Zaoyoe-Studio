@@ -275,12 +275,12 @@
 
 
     <!-- Guestbook Modal -->
-    <div class="modal-overlay" id="guestbookModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
+    <div class="modal-overlay" id="guestbookModal" data-old-overlay-close="1">
         <div class="modal-content guestbook-content premium-modal" style="position: relative;"
-            onclick="event.stopPropagation()">
+            data-old-stop-overlay="1">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
-                <div class="mac-dot red" onclick="closeModal(event)">
+                <div class="mac-dot red" data-old-action="close-modal">
                     <i class="fas fa-times"></i>
                 </div>
                 <div class="mac-dot yellow"></div>
@@ -297,8 +297,7 @@
                     <!-- Integrated Upload Icon -->
                     <div class="upload-icon-wrapper">
                         <input type="file" id="imageUpload" accept="image/*" style="display: none;">
-                        <button type="button" class="upload-icon-btn"
-                            onclick="document.getElementById('imageUpload').click()" title="上传图片"
+                        <button type="button" class="upload-icon-btn" data-old-action="guestbook-upload-image" title="上传图片"
                             data-i18n-title="guestbook.uploadImage">
                             <i class="fas fa-camera"></i>
                         </button>
@@ -332,7 +331,7 @@
     <!-- Shop Success Modal (Content Display) -->
     <div class="modal-overlay" id="shopSuccessModal" style="z-index: 3000;">
         <div class="modal-content premium-modal" style="position: relative; max-width: 400px; text-align: center;"
-            onclick="event.stopPropagation()">
+            data-old-stop-overlay="1">
 
             <div style="font-size: 48px; color: #4ade80; margin-bottom: 10px;">
                 <i class="fas fa-check-circle"></i>
@@ -350,12 +349,11 @@
                 </div>
             </div>
 
-            <button class="btn btn-primary" id="copyContentBtn" onclick="ShopClient.copyContent()"
+            <button class="btn btn-primary" id="copyContentBtn" type="button" data-old-action="shop-copy-content"
                 style="width: 100%; margin-bottom: 10px;">
                 <i class="fas fa-copy"></i> 一键复制
             </button>
-            <button class="btn btn-secondary"
-                onclick="document.getElementById('shopSuccessModal').classList.remove('active')"
+            <button class="btn btn-secondary" type="button" data-old-action="shop-close-success"
                 style="width: 100%; background: transparent; border: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.5);">
                 关闭
             </button>
@@ -363,11 +361,11 @@
     </div>
 
     <!-- Contact Modal -->
-    <div class="modal-overlay" id="contactModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
-        <div class="modal-content premium-modal" style="position: relative;">
+    <div class="modal-overlay" id="contactModal" data-old-overlay-close="1">
+        <div class="modal-content premium-modal" style="position: relative;" data-old-stop-overlay="1">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
-                <div class="mac-dot red" onclick="closeModal(event)">
+                <div class="mac-dot red" data-old-action="close-modal">
                     <i class="fas fa-times"></i>
                 </div>
             </div>
@@ -378,7 +376,7 @@
             <div class="modal-grid">
                 <!-- Email Card -->
                 <!-- Email Card -->
-                <div class="modal-link-card" onclick="copyText('zaoyoe@gmail.com'); event.stopPropagation();"
+                <div class="modal-link-card" data-old-action="copy-text" data-copy-text="zaoyoe@gmail.com"
                     style="cursor: pointer;">
                     <i class="fa-solid fa-envelope"></i>
                     <div class="contact-popup email-popup">
@@ -410,11 +408,11 @@
 
 
     <!-- Profile Modal -->
-    <div class="modal-overlay" id="profileModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
-        <div class="modal-content profile-modal" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="profileModal" data-old-overlay-close="1">
+        <div class="modal-content profile-modal" data-old-stop-overlay="1">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
-                <div class="mac-dot red" onclick="document.getElementById('profileModal').classList.remove('active')"><i
+                <div class="mac-dot red" data-old-action="close-profile-modal"><i
                         class="fas fa-times"></i></div>
                 <div class="mac-dot yellow"></div>
                 <div class="mac-dot green"></div>
@@ -422,9 +420,9 @@
 
             <!-- Tab Navigation -->
             <div class="profile-tabs">
-                <div class="tab-item active" onclick="switchProfileTab('profile')" data-i18n="profile.profileTab">资料
+                <div class="tab-item active" data-old-action="switch-profile-tab" data-profile-tab="profile" data-i18n="profile.profileTab">资料
                 </div>
-                <div class="tab-item" onclick="switchProfileTab('security')" data-i18n="profile.securityTab">安全</div>
+                <div class="tab-item" data-old-action="switch-profile-tab" data-profile-tab="security" data-i18n="profile.securityTab">安全</div>
             </div>
 
             <!-- Flip Container -->
@@ -435,7 +433,7 @@
                         <div class="modal-title" data-i18n="profile.title">个人资料</div>
 
                         <!-- Avatar Section -->
-                        <div class="profile-avatar-section" onclick="triggerAvatarUpload()">
+                        <div class="profile-avatar-section" data-old-action="trigger-avatar-upload">
                             <img id="profileModalAvatar" src="" alt="Avatar">
                             <div class="avatar-upload-hint">
                                 <i class="fas fa-camera"></i>
@@ -448,16 +446,16 @@
                             <!-- Display Mode -->
                             <div id="nicknameDisplay" class="nickname-display">
                                 <span id="profileModalNickname">Loading...</span>
-                                <i class="fas fa-pen edit-icon" onclick="toggleNicknameEdit(true)"></i>
+                                <i class="fas fa-pen edit-icon" data-old-action="toggle-nickname-edit" data-editing="true"></i>
                             </div>
 
                             <!-- Edit Mode -->
                             <div id="nicknameEdit" class="nickname-edit" style="display: none;">
                                 <input type="text" id="nicknameInput" placeholder="输入新昵称">
                                 <div class="edit-actions">
-                                    <button class="cancel-btn" onclick="toggleNicknameEdit(false)"
+                                    <button class="cancel-btn" type="button" data-old-action="toggle-nickname-edit" data-editing="false"
                                         data-i18n="common.cancel">取消</button>
-                                    <button class="save-btn" onclick="saveNickname()"
+                                    <button class="save-btn" type="button" data-old-action="save-nickname"
                                         data-i18n="common.save">保存</button>
                                 </div>
                             </div>
@@ -470,8 +468,7 @@
                         </div>
 
                         <!-- Hidden File Input (Moved here) -->
-                        <input type="file" id="avatarUpload" accept="image/*" style="display: none;"
-                            onchange="handleAvatarUpload(event)">
+                        <input type="file" id="avatarUpload" accept="image/*" style="display: none;" data-old-change="avatar-upload">
 
                         <!-- Member Since Badge -->
                         <div class="member-since-badge">
@@ -489,8 +486,7 @@
                             <div class="security-menu">
                                 <!-- 1. Change Password Card -->
 
-                                <div class="security-card active"
-                                    onclick="expandSecurityCard(event, 'change-password')">
+                                <div class="security-card active" data-old-action="expand-security-card" data-security-card="change-password">
                                     <div class="security-card-icon">
                                         <i class="fas fa-key"></i>
                                     </div>
@@ -501,7 +497,7 @@
                                 </div>
 
                                 <!-- 2. Bind Phone Card -->
-                                <div class="security-card" onclick="expandSecurityCard(event, 'bind-phone')">
+                                <div class="security-card" data-old-action="expand-security-card" data-security-card="bind-phone">
                                     <div class="security-card-icon">
                                         <i class="fas fa-mobile-alt"></i>
                                     </div>
@@ -512,8 +508,7 @@
                                 </div>
 
                                 <!-- 3. Delete Account Card -->
-                                <div class="security-card danger-card"
-                                    onclick="expandSecurityCard(event, 'delete-account')">
+                                <div class="security-card danger-card" data-old-action="expand-security-card" data-security-card="delete-account">
                                     <div class="security-card-icon danger">
                                         <i class="fas fa-exclamation-triangle"></i>
                                     </div>
@@ -576,7 +571,7 @@
                                     <input type="password" id="newPasswordInput" placeholder="新密码 (至少6位)"
                                         class="security-input" autocomplete="new-password"
                                         data-i18n-placeholder="security.newPassword">
-                                    <button class="gradient-btn" onclick="changePassword()"
+                                    <button class="gradient-btn" type="button" data-old-action="change-password"
                                         data-i18n="security.updatePassword">更新密码</button>
                                 </div>
 
@@ -589,13 +584,12 @@
                                         <input type="tel" id="phoneNumberInput" placeholder="输入手机号"
                                             class="security-input" maxlength="11"
                                             data-i18n-placeholder="security.enterPhone">
-                                        <button type="button" class="verify-code-btn" id="sendPhoneCodeBtn"
-                                            onclick="sendPhoneVerificationCode()"
+                                        <button type="button" class="verify-code-btn" id="sendPhoneCodeBtn" data-old-action="send-phone-code"
                                             data-i18n="security.getVerifyCode">获取验证码</button>
                                     </div>
                                     <input type="text" id="phoneCodeInput" placeholder="输入6位验证码" class="security-input"
                                         maxlength="6" data-i18n-placeholder="security.enterVerifyCode">
-                                    <button class="gradient-btn" onclick="bindPhone()"
+                                    <button class="gradient-btn" type="button" data-old-action="bind-phone"
                                         data-i18n="security.bindPhone">绑定手机号</button>
                                 </div>
 
@@ -605,7 +599,7 @@
                                     <p class="detail-desc" data-i18n="security.deleteWarning">⚠️ 此操作不可恢复，您的所有数据将被永久删除。
                                     </p>
                                     <div class="danger-zone">
-                                        <button class="danger-btn" onclick="deleteAccount()">
+                                        <button class="danger-btn" type="button" data-old-action="delete-account">
                                             <i class="fas fa-trash-alt"></i>
                                             <span data-i18n="security.confirmDelete">确认注销</span>
                                         </button>
@@ -631,7 +625,7 @@
                                         placeholder="新密码 (至少6位)" autocomplete="new-password"
                                         data-i18n-placeholder="security.newPassword">
                                 </div>
-                                <button class="gradient-btn" onclick="changePassword('mobile')"
+                                <button class="gradient-btn" type="button" data-old-action="change-password" data-mode="mobile"
                                     data-i18n="security.updatePassword">更新密码</button>
                             </div>
 
@@ -647,11 +641,10 @@
                                     <input type="text" id="mobile_phoneCodeInput" class="security-input"
                                         placeholder="输入6位验证码" style="flex: 1;"
                                         data-i18n-placeholder="security.enterVerifyCode">
-                                    <button class="code-btn" id="mobile_sendPhoneCodeBtn"
-                                        onclick="sendPhoneVerificationCode('mobile')"
+                                    <button class="code-btn" id="mobile_sendPhoneCodeBtn" type="button" data-old-action="send-phone-code" data-mode="mobile"
                                         data-i18n="security.getVerifyCode">获取验证码</button>
                                 </div>
-                                <button class="gradient-btn" onclick="bindPhone('mobile')"
+                                <button class="gradient-btn" type="button" data-old-action="bind-phone" data-mode="mobile"
                                     data-i18n="security.bindPhone">绑定手机号</button>
                             </div>
 
@@ -660,7 +653,7 @@
                                 <h3 class="mobile-section-title danger" data-i18n="security.deleteAccount">注销账号</h3>
                                 <p class="mobile-section-desc" data-i18n="security.deleteWarning">⚠️
                                     此操作不可恢复，您的所有数据将被永久删除。</p>
-                                <button class="danger-btn" onclick="deleteAccount()">
+                                <button class="danger-btn" type="button" data-old-action="delete-account">
                                     <i class="fas fa-trash-alt"></i>
                                     <span data-i18n="security.confirmDelete">确认注销</span>
                                 </button>
@@ -673,12 +666,12 @@
             </div>
         </div>
 
-        <div class="modal-overlay" id="comingSoonModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
+        <div class="modal-overlay" id="comingSoonModal" data-old-overlay-close="1">
             <div class="modal-content premium-modal"
-                style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px;">
+                style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px;" data-old-stop-overlay="1">
                 <!-- Mac Window Controls -->
                 <div class="mac-controls" style="position: absolute; top: 20px; left: 20px;">
-                    <div class="mac-dot red" onclick="closeModal(event)">
+                    <div class="mac-dot red" data-old-action="close-modal">
                         <i class="fas fa-times"></i>
                     </div>
                 </div>
@@ -717,6 +710,94 @@
                     };
                     initChat();
                 });
+            </script>
+            <script>
+                (function bindArchivedIndexHandlers() {
+                    document.querySelectorAll('[data-old-stop-overlay="1"]').forEach((element) => {
+                        ['click', 'mousedown', 'mouseup'].forEach((eventName) => {
+                            element.addEventListener(eventName, (event) => {
+                                event.stopPropagation();
+                            });
+                        });
+                    });
+
+                    document.querySelectorAll('[data-old-overlay-close="1"]').forEach((overlay) => {
+                        ['mousedown', 'mouseup'].forEach((eventName) => {
+                            overlay.addEventListener(eventName, (event) => {
+                                window.closeModal?.(event);
+                            });
+                        });
+                    });
+
+                    document.addEventListener('click', (event) => {
+                        const actionEl = event.target.closest('[data-old-action]');
+                        if (!actionEl) {
+                            return;
+                        }
+
+                        switch (actionEl.dataset.oldAction) {
+                            case 'close-modal':
+                                window.closeModal?.(event);
+                                break;
+                            case 'guestbook-upload-image':
+                                document.getElementById('imageUpload')?.click();
+                                break;
+                            case 'shop-copy-content':
+                                window.ShopClient?.copyContent?.();
+                                break;
+                            case 'shop-close-success':
+                                document.getElementById('shopSuccessModal')?.classList.remove('active');
+                                break;
+                            case 'copy-text':
+                                event.stopPropagation();
+                                window.copyText?.(actionEl.dataset.copyText || '');
+                                break;
+                            case 'close-profile-modal':
+                                document.getElementById('profileModal')?.classList.remove('active');
+                                break;
+                            case 'switch-profile-tab':
+                                window.switchProfileTab?.(actionEl.dataset.profileTab);
+                                break;
+                            case 'trigger-avatar-upload':
+                                window.triggerAvatarUpload?.();
+                                break;
+                            case 'toggle-nickname-edit':
+                                window.toggleNicknameEdit?.(actionEl.dataset.editing === 'true');
+                                break;
+                            case 'save-nickname':
+                                window.saveNickname?.();
+                                break;
+                            case 'expand-security-card':
+                                window.expandSecurityCard?.(event, actionEl.dataset.securityCard);
+                                break;
+                            case 'change-password':
+                                window.changePassword?.(actionEl.dataset.mode || undefined);
+                                break;
+                            case 'send-phone-code':
+                                window.sendPhoneVerificationCode?.(actionEl.dataset.mode || undefined);
+                                break;
+                            case 'bind-phone':
+                                window.bindPhone?.(actionEl.dataset.mode || undefined);
+                                break;
+                            case 'delete-account':
+                                window.deleteAccount?.();
+                                break;
+                            default:
+                                break;
+                        }
+                    });
+
+                    document.addEventListener('change', (event) => {
+                        const actionEl = event.target.closest('[data-old-change]');
+                        if (!actionEl) {
+                            return;
+                        }
+
+                        if (actionEl.dataset.oldChange === 'avatar-upload') {
+                            window.handleAvatarUpload?.(event);
+                        }
+                    });
+                })();
             </script>
 
             <!-- System Announcement Loader -->

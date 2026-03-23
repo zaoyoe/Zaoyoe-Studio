@@ -94,6 +94,38 @@ function readRepoFile(relativePath) {
     return fs.readFileSync(path.join(REPO_ROOT, relativePath), 'utf8');
 }
 
+function collectRepositorySourceFiles(rootDir = REPO_ROOT) {
+    const files = [];
+    const stack = ['.'];
+
+    while (stack.length > 0) {
+        const relativeDir = stack.pop();
+        const absoluteDir = path.join(rootDir, relativeDir);
+        const entries = fs.readdirSync(absoluteDir, { withFileTypes: true });
+
+        for (const entry of entries) {
+            const relativePath = path.join(relativeDir, entry.name);
+            const normalizedPath = relativePath.replace(/\\/g, '/').replace(/^\.\//, '');
+
+            if (entry.isDirectory()) {
+                if (['.git', 'node_modules', 'coverage', 'docs', 'tests'].includes(entry.name)) {
+                    continue;
+                }
+                stack.push(relativePath);
+                continue;
+            }
+
+            if (!/\.(html|js)(\.bak)?$/i.test(entry.name)) {
+                continue;
+            }
+
+            files.push(normalizedPath);
+        }
+    }
+
+    return files.sort();
+}
+
 test('active frontend runtime files no longer hardcode the production Supabase host or publishable key', () => {
     const violations = [];
 
@@ -352,6 +384,20 @@ test('non-production utility and preview pages no longer ship inline handler att
         assert.equal(source.includes('data-preview-trigger-all="1"'), true, `${relativePath} should expose a delegated preview trigger`);
         assert.equal(source.includes('function bindPreviewInteractions()'), true, `${relativePath} should bind preview interactions centrally`);
     }
+});
+
+test('repository source files no longer ship inline handler attributes outside the test suite', () => {
+    const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|keyup|mouseover|mouseout|error|load|mousedown|mouseup|blur|focus)\s*=\s*["']/i;
+    const violations = [];
+
+    for (const relativePath of collectRepositorySourceFiles()) {
+        const source = readRepoFile(relativePath);
+        if (inlineHandlerPattern.test(source)) {
+            violations.push(relativePath);
+        }
+    }
+
+    assert.deepEqual(violations, [], `Repository sources should not contain inline handler attributes:\n${violations.join('\n')}`);
 });
 
 test('gallery and shop renderers no longer generate inline handler attributes in client scripts', () => {

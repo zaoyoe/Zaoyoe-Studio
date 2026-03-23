@@ -42,6 +42,7 @@ window.addEventListener('storage', (e) => {
 // INITIALIZATION
 // ========================================
 document.addEventListener('DOMContentLoaded', () => {
+    bindBackupDelegatedHandlers();
     initUploadZone();
     initForm();
     initCustomDropdown();
@@ -130,15 +131,65 @@ function renderAdminCard(prompt) {
                 <div class="admin-card-meta">${tags}</div>
             </div>
             <div class="admin-card-actions">
-                <button class="admin-action-btn" onclick="editPrompt(${prompt.id})">
+                <button class="admin-action-btn" type="button" data-backup-action="edit-prompt" data-prompt-id="${prompt.id}">
                     <i class="fas fa-edit"></i> Edit
                 </button>
-                <button class="admin-action-btn delete" onclick="deletePrompt(${prompt.id})">
+                <button class="admin-action-btn delete" type="button" data-backup-action="delete-prompt" data-prompt-id="${prompt.id}">
                     <i class="fas fa-trash"></i> Delete
                 </button>
             </div>
         </div>
     `;
+}
+
+function bindBackupDelegatedHandlers() {
+    if (document.documentElement.dataset.adminStudioBakDelegatesBound === '1') {
+        return;
+    }
+
+    document.documentElement.dataset.adminStudioBakDelegatesBound = '1';
+
+    document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) {
+            return;
+        }
+
+        const actionEl = target.closest('[data-backup-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.backupAction) {
+            case 'edit-prompt':
+                editPrompt(parseInt(actionEl.dataset.promptId || '', 10));
+                break;
+            case 'delete-prompt':
+                deletePrompt(parseInt(actionEl.dataset.promptId || '', 10));
+                break;
+            case 'api-key-prompt':
+                promptForApiKey();
+                break;
+            case 'api-key-toggle-dropdown':
+                toggleApiKeyDropdown();
+                break;
+            case 'api-key-switch':
+                switchApiKey(parseInt(actionEl.dataset.keyIndex || '', 10));
+                break;
+            case 'api-key-delete':
+                event.stopPropagation();
+                deleteApiKey(parseInt(actionEl.dataset.keyIndex || '', 10));
+                break;
+            case 'api-key-add':
+                addNewApiKey();
+                break;
+            case 'remove-preview':
+                removeFile(parseInt(actionEl.dataset.previewIndex || '', 10));
+                break;
+            default:
+                break;
+        }
+    });
 }
 
 // ========================================
@@ -453,7 +504,7 @@ function renderApiKeySelector() {
 
     if (keys.length === 0) {
         container.innerHTML = `
-            <button class="api-key-btn add" onclick="promptForApiKey()">
+            <button class="api-key-btn add" type="button" data-backup-action="api-key-prompt">
                 <i class="fas fa-plus"></i> 添加 API Key
             </button>
         `;
@@ -465,7 +516,7 @@ function renderApiKeySelector() {
 
     container.innerHTML = `
         <div class="api-key-dropdown">
-            <button class="api-key-current" onclick="toggleApiKeyDropdown()">
+            <button class="api-key-current" type="button" data-backup-action="api-key-toggle-dropdown">
                 <i class="fas fa-key"></i>
                 <span>${activeKeyName}</span>
                 <i class="fas fa-chevron-down"></i>
@@ -477,13 +528,13 @@ function renderApiKeySelector() {
         const keyValue = typeof k === 'object' ? k.key : k;
         const keyPreview = keyValue ? keyValue.slice(-6) : '???';
         return `
-                    <div class="api-key-item ${i === activeIndex ? 'active' : ''}" onclick="switchApiKey(${i})">
+                    <div class="api-key-item ${i === activeIndex ? 'active' : ''}" data-backup-action="api-key-switch" data-key-index="${i}">
                         <span class="key-name">${keyName}</span>
                         <span class="key-preview">...${keyPreview}</span>
-                        ${keys.length > 1 ? `<button class="key-delete" onclick="event.stopPropagation(); deleteApiKey(${i})"><i class="fas fa-times"></i></button>` : ''}
+                        ${keys.length > 1 ? `<button class="key-delete" type="button" data-backup-action="api-key-delete" data-key-index="${i}"><i class="fas fa-times"></i></button>` : ''}
                     </div>
                 `}).join('')}
-                <div class="api-key-item add" onclick="addNewApiKey()">
+                <div class="api-key-item add" data-backup-action="api-key-add">
                     <i class="fas fa-plus"></i> 添加新 Key
                 </div>
             </div>
@@ -800,7 +851,7 @@ function renderPreviews() {
     grid.innerHTML = uploadedFiles.map((item, index) => `
         <div class="preview-item" data-index="${index}">
             <img src="${item.dataUrl}" alt="Preview ${index + 1}">
-            <button class="remove-btn" onclick="removeFile(${index})">
+            <button class="remove-btn" type="button" data-backup-action="remove-preview" data-preview-index="${index}">
                 <i class="fas fa-times"></i>
             </button>
         </div>
