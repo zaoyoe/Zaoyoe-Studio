@@ -921,6 +921,32 @@ test('verify widget runtime renderers route wallet/login/form/history actions th
     }
 });
 
+test('homepage admin runtime renderers route retry and section visibility controls through bound listeners', () => {
+    const homepageAdminSource = readRepoFile('admin-homepage.js');
+    const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|keyup|mouseover|mouseout|error|load)\s*=\s*["']/i;
+
+    assert.equal(
+        inlineHandlerPattern.test(homepageAdminSource),
+        false,
+        'admin-homepage.js should not emit inline event handler attributes'
+    );
+
+    const delegatedMarkers = [
+        'data-homepage-retry="1"',
+        'js-homepage-retry-btn',
+        'data-homepage-visibility="${visSection}"',
+        'data-homepage-visibility="footer"',
+        'function bindSectionVisibilityToggle(input, section)',
+        "input.dataset.homepageVisibilityBound === '1'",
+        "input.addEventListener('change', () => {",
+        "loading.querySelector('[data-homepage-retry=\"1\"]')?.addEventListener('click'"
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(homepageAdminSource.includes(marker), true, `admin-homepage.js should contain ${marker}`);
+    }
+});
+
 test('admin studio settings, discounts, and tickets controls route through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');

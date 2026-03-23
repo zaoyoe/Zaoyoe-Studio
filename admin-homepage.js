@@ -58,10 +58,13 @@ const HomepageAdmin = (() => {
                 loading.innerHTML = `
                     <i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 12px; color: #f59e0b;"></i>
                     <div>加载失败: ${err.message}</div>
-                    <button class="btn-sm btn-primary" style="margin-top: 16px;" onclick="HomepageAdmin.init()">
+                    <button class="btn-sm btn-primary js-homepage-retry-btn" data-homepage-retry="1" style="margin-top: 16px;">
                         <i class="fas fa-redo"></i> 重试
                     </button>
                 `;
+                loading.querySelector('[data-homepage-retry="1"]')?.addEventListener('click', () => {
+                    init();
+                });
             }
         }
     }
@@ -565,7 +568,7 @@ const HomepageAdmin = (() => {
                     <div class="sv-toggle-right">
                         <label class="sv-toggle-switch">
                             <input type="checkbox" ${isVisible ? 'checked' : ''}
-                                   onchange="HomepageAdmin.toggleSectionVisibility('${visSection}', this.checked)">
+                                   data-homepage-visibility="${visSection}">
                             <span class="sv-toggle-slider"></span>
                         </label>
                     </div>
@@ -574,6 +577,8 @@ const HomepageAdmin = (() => {
                     ⚠️ 该分栏在 ${siteLabel} 已关闭 — 用户将无法在首页、导航栏和独立页面中看到此部分。
                 </div>
             `;
+
+            bindSectionVisibilityToggle(container.querySelector(`[data-homepage-visibility="${visSection}"]`), visSection);
 
             // Insert at very top of module-content
             moduleContent.insertBefore(container, moduleContent.firstChild);
@@ -609,7 +614,7 @@ const HomepageAdmin = (() => {
                 <div class="sv-toggle-right">
                     <label class="sv-toggle-switch">
                         <input type="checkbox" ${isVisible ? 'checked' : ''}
-                               onchange="HomepageAdmin.toggleSectionVisibility('footer', this.checked)">
+                               data-homepage-visibility="footer">
                         <span class="sv-toggle-slider"></span>
                     </label>
                 </div>
@@ -619,7 +624,17 @@ const HomepageAdmin = (() => {
             </div>
         `;
 
+        bindSectionVisibilityToggle(card.querySelector('[data-homepage-visibility="footer"]'), 'footer');
         moduleContent.appendChild(card);
+    }
+
+    function bindSectionVisibilityToggle(input, section) {
+        if (!input || input.dataset.homepageVisibilityBound === '1') return;
+
+        input.dataset.homepageVisibilityBound = '1';
+        input.addEventListener('change', () => {
+            toggleSectionVisibility(section, input.checked);
+        });
     }
 
     function toggleSectionVisibility(section, checked) {
