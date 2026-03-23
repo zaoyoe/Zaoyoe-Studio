@@ -8,6 +8,11 @@ const {
 const {
     FALLBACK_FAIL_CLOSED_ALLOWLIST
 } = require('./_lib/afdian-network-guards');
+const {
+    isIpAllowed,
+    normalizeIp,
+    splitIpRules
+} = require('../api/_lib/request-security');
 
 const DEFAULT_ENV_FILE = path.resolve(__dirname, '../server/.env.production');
 const DEFAULT_BASE_URL = 'https://www.zaoyoe.com';
@@ -249,6 +254,14 @@ function summarizeSamples(samples = []) {
         .map((sample) => String(sample?.appProxy?.socket_ip || '').trim())
         .filter(Boolean))]
         .sort();
+    const configuredTrustedProxyRules = [...new Set(samples
+        .flatMap((sample) => [
+            ...(Array.isArray(sample?.appProxy?.trusted_proxies) ? sample.appProxy.trusted_proxies : []),
+            ...(Array.isArray(sample?.afdianWebhook?.trusted_proxies) ? sample.afdianWebhook.trusted_proxies : [])
+        ])
+        .map((rule) => String(rule || '').trim())
+        .filter(Boolean))]
+        .sort();
     const forwardedIps = [...new Set(samples
         .flatMap((sample) => {
             const headerValue = String(sample?.appProxy?.forwarding_headers?.['x-forwarded-for'] || '').trim();
@@ -265,17 +278,27 @@ function summarizeSamples(samples = []) {
         .map((finding) => String(finding?.code || '').trim())
         .filter(Boolean))]
         .sort();
+    const proxyRecommendationRules = [...configuredTrustedProxyRules];
+    socketIps.forEach((ip) => {
+        const normalizedIp = normalizeIp(ip);
+        if (!normalizedIp) return;
+        const alreadyCovered = proxyRecommendationRules.some((rule) => isIpAllowed(normalizedIp, rule));
+        if (!alreadyCovered) {
+            proxyRecommendationRules.push(`${normalizedIp}/32`);
+        }
+    });
 
-    const proxyRuleList = socketIps.map((ip) => `${ip}/32`);
+    const normalizedProxyRecommendationRules = [...new Set(splitIpRules(proxyRecommendationRules))].sort();
 
     return {
         sampleCount: samples.length,
         socketIps,
+        configuredTrustedProxyRules,
         forwardedIps,
         resolvedClientIps,
         findings,
-        recommendedTrustedProxyIps: proxyRuleList.join(','),
-        recommendedWebhookTrustedProxies: proxyRuleList.join(','),
+        recommendedTrustedProxyIps: normalizedProxyRecommendationRules.join(','),
+        recommendedWebhookTrustedProxies: normalizedProxyRecommendationRules.join(','),
         recommendedWebhookAllowlist: FALLBACK_FAIL_CLOSED_ALLOWLIST,
         requiresRealWebhookObservation: true
     };
@@ -290,6 +313,7 @@ function formatHumanReport(result = {}) {
     lines.push(`samples: ${Number(result.summary?.sampleCount || 0)}`);
     lines.push('');
     lines.push(`socket_ips: ${(result.summary?.socketIps || []).join(', ') || '(none)'}`);
+    lines.push(`configured_trusted_proxies: ${(result.summary?.configuredTrustedProxyRules || []).join(', ') || '(none)'}`);
     lines.push(`forwarded_client_ips: ${(result.summary?.forwardedIps || []).join(', ') || '(none)'}`);
     lines.push(`resolved_client_ips_before_trust: ${(result.summary?.resolvedClientIps || []).join(', ') || '(none)'}`);
     lines.push(`findings: ${(result.summary?.findings || []).join(', ') || '(none)'}`);

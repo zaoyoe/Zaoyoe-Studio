@@ -806,6 +806,42 @@ test('network request-context endpoint returns proxy diagnostics for admins', as
     });
 });
 
+test('network request-context endpoint flags mismatched trusted proxy rules', async () => {
+    await withTestServer({
+        tokens: {
+            'admin-token': { id: 'admin-1', email: 'admin@example.com' }
+        },
+        permissions: {
+            'admin-1': { is_admin: true, is_super_admin: false }
+        }
+    }, async ({ app }) => {
+        const response = await withEnv({
+            TRUST_ALL_PROXIES: 'false',
+            TRUSTED_PROXY_IPS: '100.64.0.5/32',
+            AFDIAN_WEBHOOK_TRUSTED_PROXIES: '100.64.0.5/32',
+            AFDIAN_WEBHOOK_ALLOWED_IPS: '203.0.113.254/32'
+        }, async () => dispatchRoute(app, {
+            url: '/api/admin/network/request-context',
+            headers: {
+                Authorization: 'Bearer admin-token',
+                Host: 'zaoyoe-verify-server-production.up.railway.app',
+                'x-forwarded-for': '198.51.100.23',
+                'x-real-ip': '198.51.100.23'
+            },
+            remoteAddress: '100.64.0.4'
+        }));
+        const payload = response.json();
+        const findingCodes = payload.findings.map((finding) => finding.code);
+
+        assert.equal(response.status, 200);
+        assert.equal(payload.request_context.app_proxy.direct_peer_trusted, false);
+        assert.equal(payload.request_context.app_proxy.used_forwarded_chain, false);
+        assert.equal(payload.request_context.app_proxy.resolved_client_ip, '100.64.0.4');
+        assert.equal(findingCodes.includes('proxy_trust_chain_mismatch'), true);
+        assert.equal(findingCodes.includes('afdian_webhook_proxy_trust_mismatch'), true);
+    });
+});
+
 test('verify status endpoint rejects task ids not owned by the authenticated user', async () => {
     await withTestServer({
         tokens: {

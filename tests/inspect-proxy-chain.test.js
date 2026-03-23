@@ -50,10 +50,14 @@ test('summarizeSamples recommends /32 proxy rules and a fail-closed webhook plac
         {
             appProxy: {
                 socket_ip: '100.64.0.4',
+                trusted_proxies: ['100.64.0.5/32'],
                 forwarding_headers: {
                     'x-forwarded-for': '82.26.25.182'
                 },
                 resolved_client_ip: '100.64.0.4'
+            },
+            afdianWebhook: {
+                trusted_proxies: ['100.64.0.6/32']
             },
             findings: [{ code: 'proxy_trust_chain_missing' }]
         },
@@ -70,8 +74,9 @@ test('summarizeSamples recommends /32 proxy rules and a fail-closed webhook plac
     ]);
 
     assert.deepEqual(summary.socketIps, ['100.64.0.3', '100.64.0.4']);
-    assert.equal(summary.recommendedTrustedProxyIps, '100.64.0.3/32,100.64.0.4/32');
-    assert.equal(summary.recommendedWebhookTrustedProxies, '100.64.0.3/32,100.64.0.4/32');
+    assert.deepEqual(summary.configuredTrustedProxyRules, ['100.64.0.5/32', '100.64.0.6/32']);
+    assert.equal(summary.recommendedTrustedProxyIps, '100.64.0.3/32,100.64.0.4/32,100.64.0.5/32,100.64.0.6/32');
+    assert.equal(summary.recommendedWebhookTrustedProxies, '100.64.0.3/32,100.64.0.4/32,100.64.0.5/32,100.64.0.6/32');
     assert.equal(summary.recommendedWebhookAllowlist, FALLBACK_FAIL_CLOSED_ALLOWLIST);
     assert.equal(summary.requiresRealWebhookObservation, true);
 });
@@ -85,16 +90,18 @@ test('formatHumanReport explains the temporary fail-closed webhook strategy', ()
         summary: {
             sampleCount: 5,
             socketIps: ['100.64.0.3', '100.64.0.4'],
+            configuredTrustedProxyRules: ['100.64.0.5/32', '100.64.0.6/32'],
             forwardedIps: ['82.26.25.182'],
             resolvedClientIps: ['100.64.0.3', '100.64.0.4'],
-            findings: ['proxy_trust_chain_missing', 'afdian_webhook_allowlist_missing'],
-            recommendedTrustedProxyIps: '100.64.0.3/32,100.64.0.4/32',
-            recommendedWebhookTrustedProxies: '100.64.0.3/32,100.64.0.4/32',
+            findings: ['proxy_trust_chain_mismatch', 'afdian_webhook_allowlist_missing'],
+            recommendedTrustedProxyIps: '100.64.0.3/32,100.64.0.4/32,100.64.0.5/32,100.64.0.6/32',
+            recommendedWebhookTrustedProxies: '100.64.0.3/32,100.64.0.4/32,100.64.0.5/32,100.64.0.6/32',
             recommendedWebhookAllowlist: FALLBACK_FAIL_CLOSED_ALLOWLIST
         }
     });
 
-    assert.match(report, /TRUSTED_PROXY_IPS=100\.64\.0\.3\/32,100\.64\.0\.4\/32/);
+    assert.match(report, /configured_trusted_proxies: 100\.64\.0\.5\/32, 100\.64\.0\.6\/32/);
+    assert.match(report, /TRUSTED_PROXY_IPS=100\.64\.0\.3\/32,100\.64\.0\.4\/32,100\.64\.0\.5\/32,100\.64\.0\.6\/32/);
     assert.match(report, /AFDIAN_WEBHOOK_ALLOWED_IPS=203\.0\.113\.254\/32/);
     assert.match(report, /fail-closed placeholder/);
 });
