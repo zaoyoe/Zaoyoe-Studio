@@ -236,6 +236,13 @@ function bindAdminStudioDelegatedControls() {
             case 'gallery-reset-form':
                 window.resetForm?.();
                 break;
+            case 'ai-remove-preview': {
+                const index = parseInt(actionEl.dataset.previewIndex || '', 10);
+                if (!Number.isNaN(index)) {
+                    removeFile(index);
+                }
+                break;
+            }
             case 'switch-comment-view':
                 window.switchCommentView?.(actionEl.dataset.commentView);
                 break;
@@ -2199,7 +2206,7 @@ function renderPreviews() {
     grid.innerHTML = uploadedFiles.map((item, index) => `
         <div class="preview-item" data-index="${index}">
             <img src="${item.dataUrl}" alt="Preview ${index + 1}">
-            <button class="remove-btn" onclick="removeFile(${index})">
+            <button class="remove-btn" type="button" data-admin-action="ai-remove-preview" data-preview-index="${index}">
                 <i class="fas fa-times"></i>
             </button>
         </div>

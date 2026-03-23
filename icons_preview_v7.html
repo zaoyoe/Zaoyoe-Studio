@@ -65,7 +65,8 @@
             transition: 0.3s;
         }
 
-        .icon-wrapper:hover {
+        .icon-wrapper:hover,
+        .icon-wrapper.active {
             background: rgba(255, 255, 255, 0.03);
         }
 
@@ -76,7 +77,8 @@
             font-weight: 500;
         }
 
-        .icon-wrapper:hover .icon-label {
+        .icon-wrapper:hover .icon-label,
+        .icon-wrapper.active .icon-label {
             color: #fff;
         }
 
@@ -85,7 +87,8 @@
         }
 
         /* --- Concept A: Galactic Sparkle (Orbiting) --- */
-        .icon-wrapper:hover .c-galactic .star-main {
+        .icon-wrapper:hover .c-galactic .star-main,
+        .icon-wrapper.active .c-galactic .star-main {
             transform: scale(1.1) rotate(180deg);
         }
 
@@ -133,7 +136,8 @@
             opacity: 0.6;
         }
 
-        .icon-wrapper:hover .c-neural .node-center {
+        .icon-wrapper:hover .c-neural .node-center,
+        .icon-wrapper.active .c-neural .node-center {
             fill: #fff;
             filter: drop-shadow(0 0 10px #F472B6);
         }
@@ -175,7 +179,8 @@
             opacity: 0;
         }
 
-        .icon-wrapper:hover .c-magic .particle {
+        .icon-wrapper:hover .c-magic .particle,
+        .icon-wrapper.active .c-magic .particle {
             animation: particleRise 1.5s ease-out infinite;
         }
 
@@ -225,15 +230,18 @@
             animation: coreBreathe 3s ease-in-out infinite;
         }
 
-        .icon-wrapper:hover .c-prism .face-1 {
+        .icon-wrapper:hover .c-prism .face-1,
+        .icon-wrapper.active .c-prism .face-1 {
             transform: translate(-5px, -5px);
         }
 
-        .icon-wrapper:hover .c-prism .face-2 {
+        .icon-wrapper:hover .c-prism .face-2,
+        .icon-wrapper.active .c-prism .face-2 {
             transform: translate(5px, 5px);
         }
 
-        .icon-wrapper:hover .c-prism .face-3 {
+        .icon-wrapper:hover .c-prism .face-3,
+        .icon-wrapper.active .c-prism .face-3 {
             transform: translate(-5px, 5px);
         }
 
@@ -255,7 +263,7 @@
 
 <body>
 
-    <h1 onclick="triggerAll()">Prompts Icon - Internal Dynamics (Set 7)</h1>
+    <h1 data-preview-trigger-all="1">Prompts Icon - Internal Dynamics (Set 7)</h1>
     <p class="subtitle">Focusing on separate moving parts within the icon itself</p>
 
     <div class="set-container">
@@ -367,6 +375,45 @@
         </div>
     </div>
 
+    <script>
+        function animateIcon(element) {
+            element.classList.remove('active');
+            void element.offsetWidth;
+            element.classList.add('active');
+            setTimeout(() => {
+                element.classList.remove('active');
+            }, 1000);
+        }
+
+        function triggerAll() {
+            const icons = document.querySelectorAll('.icon-wrapper');
+            icons.forEach((icon, index) => {
+                setTimeout(() => animateIcon(icon), index * 140);
+            });
+        }
+
+        function bindPreviewInteractions() {
+            if (document.body.dataset.previewInteractionsBound === '1') {
+                return;
+            }
+
+            document.body.dataset.previewInteractionsBound = '1';
+            document.addEventListener('click', (event) => {
+                const trigger = event.target.closest('[data-preview-trigger-all="1"]');
+                if (trigger) {
+                    triggerAll();
+                    return;
+                }
+
+                const icon = event.target.closest('.icon-wrapper');
+                if (icon) {
+                    animateIcon(icon);
+                }
+            });
+        }
+
+        bindPreviewInteractions();
+    </script>
 </body>
 
 </html>

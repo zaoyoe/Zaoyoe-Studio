@@ -30,16 +30,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
     <!-- Prevent flash of wrong theme -->
-    <script>
-        (function () {
-            const savedTheme = localStorage.getItem('theme');
-            if (savedTheme !== 'light') {
-                document.documentElement.setAttribute('data-theme', 'dark');
-            } else {
-                document.documentElement.setAttribute('data-theme', 'light');
-            }
-        })();
-    </script>
+    <script src="./js/theme-preload.js"></script>
 
     <style>
         body.admin-access-pending,
@@ -9566,7 +9557,7 @@
     <script src="admin-analytics.js?v=20260323_ANALYTICS_DELEGATION_2"></script>
     <script src="js/admin-payments.js?v=20260323_ADMIN_PAYMENTS_V12"></script>
     <script src="admin-config.js?v=20260323_ADMIN_GENERAL_SETTINGS_DELEGATION_3"></script>
-    <script src="admin-homepage.js"></script>
+    <script src="admin-homepage.js?v=20260323_HOMEPAGE_DELEGATION_1"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
     <script src="js/admin-tickets.js"></script>

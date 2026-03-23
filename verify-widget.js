@@ -251,6 +251,49 @@
             .replace(/'/g, '&#39;');
     }
 
+    function bindDelegatedUi(container) {
+        if (!container || container.dataset.verifyDelegatesBound === '1') {
+            return;
+        }
+
+        container.dataset.verifyDelegatesBound = '1';
+        container.addEventListener('click', (event) => {
+            const actionEl = event.target.closest('[data-verify-action]');
+            if (!actionEl || !container.contains(actionEl)) {
+                return;
+            }
+
+            switch (actionEl.dataset.verifyAction) {
+                case 'wallet-open':
+                    window.WalletModal?.open?.();
+                    break;
+                case 'login-gate':
+                    openLoginGate();
+                    break;
+                case 'toggle-password':
+                    togglePasswordVisibility();
+                    break;
+                case 'reset-form':
+                    resetForm();
+                    break;
+                case 'submit':
+                    submit();
+                    break;
+                case 'export-history':
+                    exportHistory();
+                    break;
+                case 'refresh-history':
+                    loadHistory();
+                    break;
+                case 'copy-history-id':
+                    copyId(actionEl);
+                    break;
+                default:
+                    break;
+            }
+        });
+    }
+
     function clampProgress(value) {
         const num = Number(value);
         if (!Number.isFinite(num)) return 0;
@@ -683,7 +726,7 @@
                         <div class="verify-api-quota" id="verifyApiQuota" title="${t('verify.apiQuotaTitle', 'API 剩余额度')}">
                             <i class="fas fa-gem"></i> --
                         </div>
-                        <div class="verify-balance" id="verifyBalance" style="display: ${balanceDisplay}; cursor: pointer;" onclick="WalletModal.open()" title="${t('verify.walletTitle', '我的钱包')}">
+                        <div class="verify-balance" id="verifyBalance" data-verify-action="wallet-open" style="display: ${balanceDisplay}; cursor: pointer;" title="${t('verify.walletTitle', '我的钱包')}">
                             <i class="fas fa-coins"></i>
                             <span id="verifyBalanceValue">0</span>
                         </div>
@@ -698,7 +741,7 @@
                 <div id="verifyContent">
                     <div class="verify-login-prompt" id="verifyLoginPrompt" style="display: ${loginDisplay};">
                         <p>${t('verify.loginPrompt', '登录后即可使用验证服务')}</p>
-                        <button class="verify-login-btn" onclick="window.toggleLoginModal && window.toggleLoginModal()">
+                        <button class="verify-login-btn" data-verify-action="login-gate">
                             <i class="fas fa-sign-in-alt"></i>
                             ${t('verify.loginBtn', '登录 / 注册')}
                         </button>
@@ -733,7 +776,7 @@
                                             class="verify-password-toggle"
                                             id="verifyPasswordToggle"
                                             type="button"
-                                            onclick="VerifyWidget.togglePasswordVisibility()"
+                                            data-verify-action="toggle-password"
                                             aria-label="${t('verify.showPassword', '显示密码')}"
                                             title="${t('verify.showPassword', '显示密码')}"
                                         >
@@ -767,11 +810,11 @@
                                 </div>
 
                                 <div class="verify-form-actions">
-                                    <button class="verify-reset-btn" id="verifyResetBtn" onclick="VerifyWidget.resetForm()">
+                                    <button class="verify-reset-btn" id="verifyResetBtn" data-verify-action="reset-form">
                                         <i class="fas fa-rotate-left"></i>
                                         ${t('verify.resetForm', '清空')}
                                     </button>
-                                    <button class="verify-submit-btn" id="verifySubmitBtn" onclick="VerifyWidget.submit()">
+                                    <button class="verify-submit-btn" id="verifySubmitBtn" data-verify-action="submit">
                                         <i class="fas fa-paper-plane"></i>
                                         ${t('verify.startVerify', '提交账号')}
                                     </button>
@@ -808,10 +851,10 @@
                                             ${t('verify.history', '任务历史')}
                                         </div>
                                         <div class="verify-history-actions">
-                                            <button class="verify-history-export" onclick="VerifyWidget.exportHistory()" title="${t('verify.exportCsv', '导出 CSV')}">
+                                            <button class="verify-history-export" data-verify-action="export-history" title="${t('verify.exportCsv', '导出 CSV')}">
                                                 <i class="fas fa-file-export"></i>
                                             </button>
-                                            <button class="verify-history-refresh" onclick="VerifyWidget.loadHistory()" title="${t('verify.refreshHistory', '刷新')}">
+                                            <button class="verify-history-refresh" data-verify-action="refresh-history" title="${t('verify.refreshHistory', '刷新')}">
                                                 <i class="fas fa-sync-alt"></i>
                                             </button>
                                         </div>
@@ -915,6 +958,7 @@
             </div>
         `;
 
+        bindDelegatedUi(container);
         setupInputListener();
         updatePreviewModeUI();
         updatePriceDisplay();
@@ -1812,7 +1856,7 @@
                     <div class="verify-history-item ${getHistoryStatusCss(item.status)}">
                         <div class="verify-history-item-time">${time}</div>
                         <div class="verify-history-item-main">
-                            <div class="verify-history-item-id" title="${t('verify.clickToCopy', '点击复制')}: ${escapeHtml(email)}" data-copy="${escapeHtml(email)}" onclick="VerifyWidget.copyId(this)">${escapeHtml(shortEmail)}</div>
+                            <div class="verify-history-item-id" title="${t('verify.clickToCopy', '点击复制')}: ${escapeHtml(email)}" data-copy="${escapeHtml(email)}" data-verify-action="copy-history-id">${escapeHtml(shortEmail)}</div>
                             <div class="verify-history-item-message">${detailHtml}</div>
                         </div>
                         <div class="verify-history-item-status">${getHistoryStatusText(item.status)}</div>

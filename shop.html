@@ -37,16 +37,7 @@
     <!-- Unified Navigation CSS -->
     <link rel="stylesheet" href="css/framer_home.css?v=NAV_UNIFIED_V9">
     <!-- Prevent flash of wrong theme -->
-    <script>
-        (function () {
-            const savedTheme = localStorage.getItem('theme');
-            if (savedTheme !== 'light') {
-                document.documentElement.setAttribute('data-theme', 'dark');
-            } else {
-                document.documentElement.setAttribute('data-theme', 'light');
-            }
-        })();
-    </script>
+    <script src="./js/theme-preload.js"></script>
     <style>
         /* Theme Variables (Copied from Prompts Poetry) */
         :root {

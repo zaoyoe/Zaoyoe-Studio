@@ -168,7 +168,7 @@
 
 <body>
 
-    <h1 onclick="triggerAll()">Lively Floating Objects (Set 6)</h1>
+    <h1 data-preview-trigger-all="1">Lively Floating Objects (Set 6)</h1>
     <p class="subtitle">No backgrounds — just pure, dynamic, interactive objects</p>
 
     <!-- Set 6A: Vivid 3D Objects -->
@@ -176,7 +176,7 @@
         <h2>Set A: Vivid 3D Objects (高彩 3D - 灵动Q弹)</h2>
         <div class="icons-row">
             <!-- Prompts: Magic Wand -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="80" height="80" viewBox="0 0 80 80" fill="none" class="float-anim"
                     style="animation-delay: 0s;">
                     <defs>
@@ -202,7 +202,7 @@
             </div>
 
             <!-- Shop: Floating Bag -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="80" height="80" viewBox="0 0 80 80" fill="none" class="float-anim"
                     style="animation-delay: 0.5s;">
                     <defs>
@@ -224,7 +224,7 @@
             </div>
 
             <!-- Verify: Robot Head -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="80" height="80" viewBox="0 0 80 80" fill="none" class="float-anim"
                     style="animation-delay: 1s;">
                     <defs>
@@ -250,7 +250,7 @@
             </div>
 
             <!-- Guestbook: Flying Note -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="80" height="80" viewBox="0 0 80 80" fill="none" class="float-anim"
                     style="animation-delay: 1.5s;">
                     <defs>
@@ -276,7 +276,7 @@
         <h2>Set B: Energetic Pop (波普能量 - 旋转冲击)</h2>
         <div class="icons-row">
             <!-- Prompts -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="80" height="80" viewBox="0 0 80 80" fill="none" class="float-anim">
                     <circle cx="40" cy="40" r="30" fill="#FCE7F3" stroke="#DB2777" stroke-width="3" />
                     <path d="M40 25 L45 35 L55 38 L45 42 L42 52 L38 42 L28 38 L38 35 Z" fill="#F472B6" stroke="#BE185D"
@@ -287,7 +287,7 @@
             </div>
 
             <!-- Shop -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="80" height="80" viewBox="0 0 80 80" fill="none" class="float-anim"
                     style="animation-delay: 0.3s;">
                     <rect x="20" y="30" width="40" height="35" rx="4" fill="#DCFCE7" stroke="#16A34A"
@@ -299,7 +299,7 @@
             </div>
 
             <!-- Verify -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="80" height="80" viewBox="0 0 80 80" fill="none" class="float-anim"
                     style="animation-delay: 0.6s;">
                     <path d="M40 70 L20 20 L60 20 Z" fill="#E0E7FF" stroke="#4338CA" stroke-width="3"
@@ -310,7 +310,7 @@
             </div>
 
             <!-- Guestbook -->
-            <div class="icon-wrapper" onclick="animateIcon(this)">
+            <div class="icon-wrapper">
                 <svg width="80" height="80" viewBox="0 0 80 80" fill="none" class="float-anim"
                     style="animation-delay: 0.9s;">
                     <path d="M15 20 H65 V50 H25 L15 60 V20 Z" fill="#FEF3C7" stroke="#D97706" stroke-width="3" />
@@ -340,6 +340,28 @@
                 setTimeout(() => animateIcon(icon), index * 200);
             });
         }
+
+        function bindPreviewInteractions() {
+            if (document.body.dataset.previewInteractionsBound === '1') {
+                return;
+            }
+
+            document.body.dataset.previewInteractionsBound = '1';
+            document.addEventListener('click', (event) => {
+                const trigger = event.target.closest('[data-preview-trigger-all="1"]');
+                if (trigger) {
+                    triggerAll();
+                    return;
+                }
+
+                const icon = event.target.closest('.icon-wrapper');
+                if (icon) {
+                    animateIcon(icon);
+                }
+            });
+        }
+
+        bindPreviewInteractions();
     </script>
 </body>
 

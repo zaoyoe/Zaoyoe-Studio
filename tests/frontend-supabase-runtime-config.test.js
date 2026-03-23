@@ -94,6 +94,38 @@ function readRepoFile(relativePath) {
     return fs.readFileSync(path.join(REPO_ROOT, relativePath), 'utf8');
 }
 
+function collectRepositorySourceFiles(rootDir = REPO_ROOT) {
+    const files = [];
+    const stack = ['.'];
+
+    while (stack.length > 0) {
+        const relativeDir = stack.pop();
+        const absoluteDir = path.join(rootDir, relativeDir);
+        const entries = fs.readdirSync(absoluteDir, { withFileTypes: true });
+
+        for (const entry of entries) {
+            const relativePath = path.join(relativeDir, entry.name);
+            const normalizedPath = relativePath.replace(/\\/g, '/').replace(/^\.\//, '');
+
+            if (entry.isDirectory()) {
+                if (['.git', 'node_modules', 'coverage', 'docs', 'tests'].includes(entry.name)) {
+                    continue;
+                }
+                stack.push(relativePath);
+                continue;
+            }
+
+            if (!/\.(html|js)(\.bak)?$/i.test(entry.name)) {
+                continue;
+            }
+
+            files.push(normalizedPath);
+        }
+    }
+
+    return files.sort();
+}
+
 test('active frontend runtime files no longer hardcode the production Supabase host or publishable key', () => {
     const violations = [];
 
@@ -187,7 +219,7 @@ test('vercel CSP does not allow unsafe-eval in frontend script execution', () =>
     assert.equal(cspValue.includes("'unsafe-eval'"), false);
 });
 
-test('vercel CSP restricts inline script elements to hashed runtime pages while isolating legacy event attributes', () => {
+test('vercel CSP restricts inline script elements to hashed runtime pages while blocking inline event attributes', () => {
     const cspValue = getGlobalCspHeaderValue();
     const directives = parseCspDirectives(cspValue);
     const scriptSrc = directives.get('script-src') || [];
@@ -197,15 +229,19 @@ test('vercel CSP restricts inline script elements to hashed runtime pages while 
 
     assert.notEqual(scriptSrc.length, 0, 'Missing script-src directive');
     assert.notEqual(scriptSrcElem.length, 0, 'Missing script-src-elem directive');
-    assert.deepEqual(scriptSrcAttr, ["'unsafe-inline'"], 'script-src-attr should stay isolated to legacy inline handlers');
+    assert.deepEqual(scriptSrcAttr, ["'none'"], 'script-src-attr should explicitly block inline event handlers');
     assert.equal(scriptSrc.includes("'unsafe-inline'"), false, 'script-src should no longer broadly allow unsafe-inline');
     assert.equal(scriptSrcElem.includes("'unsafe-inline'"), false, 'script-src-elem should no longer broadly allow unsafe-inline');
 
     const missingFromScriptSrc = expectedHashes.filter((hash) => !scriptSrc.includes(hash));
     const missingFromScriptSrcElem = expectedHashes.filter((hash) => !scriptSrcElem.includes(hash));
+    const unexpectedInScriptSrc = scriptSrc.filter((value) => value.startsWith("'sha256-") && !expectedHashes.includes(value));
+    const unexpectedInScriptSrcElem = scriptSrcElem.filter((value) => value.startsWith("'sha256-") && !expectedHashes.includes(value));
 
     assert.deepEqual(missingFromScriptSrc, [], `script-src is missing inline script hashes:\n${missingFromScriptSrc.join('\n')}`);
     assert.deepEqual(missingFromScriptSrcElem, [], `script-src-elem is missing inline script hashes:\n${missingFromScriptSrcElem.join('\n')}`);
+    assert.deepEqual(unexpectedInScriptSrc, [], `script-src contains stale inline script hashes:\n${unexpectedInScriptSrc.join('\n')}`);
+    assert.deepEqual(unexpectedInScriptSrcElem, [], `script-src-elem contains stale inline script hashes:\n${unexpectedInScriptSrcElem.join('\n')}`);
 });
 
 test('shared profile modal template no longer uses inline event handlers', () => {
@@ -245,20 +281,17 @@ test('critical auth pages consume delegated profile modal and form bindings', ()
     assert.equal(verifySource.includes('data-modal-dismiss-managed="1"'), true, 'verify.html should use managed modal dismissal for comingSoonModal');
 
     assert.equal(resetPasswordSource.includes('onsubmit="handleNewPasswordSubmit(event)"'), false, 'reset-password.html should not inline form submission');
-    assert.equal(
-        resetPasswordSource.includes("addEventListener('submit', handleNewPasswordSubmit)"),
-        true,
-        'reset-password.html should bind submission via addEventListener'
-    );
+    assert.equal(resetPasswordSource.includes('./js/reset-password-page.js'), true, 'reset-password.html should load the reset password bootstrap file');
 });
 
-test('prompts, guestbook, and shop entry pages no longer ship inline handler attributes', () => {
+test('public and debug entry pages no longer ship inline handler attributes', () => {
     const inlineHandlerPattern = /\bon(?:click|change|submit|mousedown|mouseup|input|keydown|mouseover|mouseout|error|load)\s*=\s*["']/i;
     const files = [
         'index.html',
         'prompts.html',
         'guestbook.html',
-        'shop.html'
+        'shop.html',
+        'debug-realtime.html'
     ];
 
     for (const relativePath of files) {
@@ -269,6 +302,148 @@ test('prompts, guestbook, and shop entry pages no longer ship inline handler att
             `${relativePath} should not contain inline event handler attributes`
         );
     }
+});
+
+test('debug realtime page binds diagnostics controls without inline handlers', () => {
+    const source = readRepoFile('debug-realtime.html');
+
+    const removedInlineMarkers = [
+        'onclick="checkRealtimeStatus()"',
+        'onclick="testRealtimeConnection()"',
+        'onclick="clearLogs()"',
+        'function bindDebugActions()',
+        "button.dataset.debugActionBound = '1'",
+        "switch (button.dataset.debugAction)"
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(source.includes(marker), false, `debug-realtime.html should not contain ${marker}`);
+    }
+
+    const delegatedMarkers = [
+        'data-debug-action="refresh-status"',
+        'data-debug-action="test-connection"',
+        'data-debug-action="clear-logs"',
+        './js/debug-realtime-page.js'
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(source.includes(marker), true, `debug-realtime.html should contain ${marker}`);
+    }
+});
+
+test('privacy page reuses the shared Supabase bootstrap instead of inlining a duplicate client init', () => {
+    const source = readRepoFile('privacy.html');
+
+    assert.equal(source.includes('./supabase-client.js'), true, 'privacy.html should load the shared supabase-client.js bootstrap');
+    assert.equal(source.includes('window.supabaseClient = supabase.createClient'), false, 'privacy.html should not inline a duplicate Supabase client bootstrap');
+    assert.equal(source.includes("localStorage.getItem('chat_session_id')"), false, 'privacy.html should not duplicate chat session initialization');
+});
+
+test('shared theme preload replaces duplicated inline theme bootstraps on public and admin pages', () => {
+    const files = [
+        'guestbook.html',
+        'shop.html',
+        'reset-password.html',
+        'prompts.html',
+        'admin-studio.html'
+    ];
+
+    for (const relativePath of files) {
+        const source = readRepoFile(relativePath);
+        assert.equal(source.includes('./js/theme-preload.js') || source.includes('js/theme-preload.js'), true, `${relativePath} should load js/theme-preload.js`);
+        assert.equal(source.includes("const savedTheme = localStorage.getItem('theme');"), false, `${relativePath} should not inline a duplicated savedTheme bootstrap`);
+    }
+});
+
+test('auth and verify runtime pages externalize page bootstraps instead of embedding large inline scripts', () => {
+    const authCallbackSource = readRepoFile('auth-callback.html');
+    const resetPasswordSource = readRepoFile('reset-password.html');
+    const verifySource = readRepoFile('verify.html');
+    const guestbookSource = readRepoFile('guestbook.html');
+
+    assert.equal(authCallbackSource.includes('./js/auth-callback-page.js'), true, 'auth-callback.html should load the shared auth callback bootstrap file');
+    assert.equal(authCallbackSource.includes('exchangeCodeForSession(code)'), false, 'auth-callback.html should not inline OAuth session exchange logic');
+
+    assert.equal(resetPasswordSource.includes('./js/reset-password-page.js'), true, 'reset-password.html should load the reset password bootstrap file');
+    assert.equal(resetPasswordSource.includes('window.supabaseClient = supabase.createClient'), false, 'reset-password.html should not inline Supabase client bootstrap');
+    assert.equal(resetPasswordSource.includes('handleNewPasswordSubmit(event)'), false, 'reset-password.html should not inline the reset password submission handler');
+
+    assert.equal(verifySource.includes('./js/verify-page.js'), true, 'verify.html should load the verify page bootstrap file');
+    assert.equal(verifySource.includes('window.VERIFY_SERVER_URL ='), false, 'verify.html should not inline verify server globals');
+    assert.equal(verifySource.includes('verify-prerender-style'), false, 'verify.html should not inline prerender style injection logic');
+
+    assert.equal(guestbookSource.includes('./js/guestbook-optional-enhancements.js'), true, 'guestbook.html should load the guestbook optional enhancements bootstrap file');
+    assert.equal(guestbookSource.includes('scheduleOptionalGuestbookEnhancements'), false, 'guestbook.html should not inline optional guestbook enhancement boot logic');
+});
+
+test('non-production utility and preview pages no longer ship inline handler attributes', () => {
+    const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|keyup|mouseover|mouseout|error|load|mousedown|mouseup|blur|focus)\s*=\s*["']/i;
+    const files = [
+        'tools/migrate-prompts-bilingual.html',
+        'preview-hero-effects.html',
+        'test-lang-toggle.html',
+        'test-realtime-simple.html',
+        'icons_preview_v2.html',
+        'icons_preview_v3.html',
+        'icons_preview_v4.html',
+        'icons_preview_v5.html',
+        'icons_preview_v6.html',
+        'icons_preview_v7.html',
+        'icons_preview_v8.html'
+    ];
+
+    for (const relativePath of files) {
+        const source = readRepoFile(relativePath);
+        assert.equal(
+            inlineHandlerPattern.test(source),
+            false,
+            `${relativePath} should not contain inline event handler attributes`
+        );
+    }
+
+    const migrateSource = readRepoFile('tools/migrate-prompts-bilingual.html');
+    const previewSource = readRepoFile('preview-hero-effects.html');
+    const langSource = readRepoFile('test-lang-toggle.html');
+    const realtimeSource = readRepoFile('test-realtime-simple.html');
+
+    assert.equal(migrateSource.includes("document.getElementById('loadBtn')?.addEventListener('click'"), true, 'tools/migrate-prompts-bilingual.html should bind load via addEventListener');
+    assert.equal(migrateSource.includes("document.getElementById('startBtn')?.addEventListener('click'"), true, 'tools/migrate-prompts-bilingual.html should bind start via addEventListener');
+    assert.equal(migrateSource.includes("document.getElementById('stopBtn')?.addEventListener('click'"), true, 'tools/migrate-prompts-bilingual.html should bind stop via addEventListener');
+    assert.equal(previewSource.includes('data-demo-id="grid"'), true, 'preview-hero-effects.html should expose delegated demo buttons');
+    assert.equal(previewSource.includes('function bindDemoNavigation()'), true, 'preview-hero-effects.html should bind demo navigation centrally');
+    assert.equal(langSource.includes("document.getElementById('langToggleTest')?.addEventListener('click'"), true, 'test-lang-toggle.html should bind the language toggle');
+    assert.equal(realtimeSource.includes("document.getElementById('testConnectionBtn')?.addEventListener('click'"), true, 'test-realtime-simple.html should bind the realtime test button');
+
+    const previewFiles = [
+        'icons_preview_v2.html',
+        'icons_preview_v3.html',
+        'icons_preview_v4.html',
+        'icons_preview_v5.html',
+        'icons_preview_v6.html',
+        'icons_preview_v7.html',
+        'icons_preview_v8.html'
+    ];
+
+    for (const relativePath of previewFiles) {
+        const source = readRepoFile(relativePath);
+        assert.equal(source.includes('data-preview-trigger-all="1"'), true, `${relativePath} should expose a delegated preview trigger`);
+        assert.equal(source.includes('function bindPreviewInteractions()'), true, `${relativePath} should bind preview interactions centrally`);
+    }
+});
+
+test('repository source files no longer ship inline handler attributes outside the test suite', () => {
+    const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|keyup|mouseover|mouseout|error|load|mousedown|mouseup|blur|focus)\s*=\s*["']/i;
+    const violations = [];
+
+    for (const relativePath of collectRepositorySourceFiles()) {
+        const source = readRepoFile(relativePath);
+        if (inlineHandlerPattern.test(source)) {
+            violations.push(relativePath);
+        }
+    }
+
+    assert.deepEqual(violations, [], `Repository sources should not contain inline handler attributes:\n${violations.join('\n')}`);
 });
 
 test('gallery and shop renderers no longer generate inline handler attributes in client scripts', () => {
@@ -883,6 +1058,67 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
 
     for (const marker of delegatedMarkers) {
         assert.equal(walletModalSource.includes(marker), true, `js/components/WalletModal.js should contain ${marker}`);
+    }
+});
+
+test('verify widget runtime renderers route wallet/login/form/history actions through delegated bindings', () => {
+    const verifyWidgetSource = readRepoFile('verify-widget.js');
+    const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|keyup|mouseover|mouseout|error|load)\s*=\s*["']/i;
+
+    assert.equal(
+        inlineHandlerPattern.test(verifyWidgetSource),
+        false,
+        'verify-widget.js should not emit inline event handler attributes'
+    );
+
+    const delegatedMarkers = [
+        'function bindDelegatedUi(container)',
+        "container.dataset.verifyDelegatesBound === '1'",
+        "data-verify-action=\"wallet-open\"",
+        "data-verify-action=\"login-gate\"",
+        "data-verify-action=\"toggle-password\"",
+        "data-verify-action=\"reset-form\"",
+        "data-verify-action=\"submit\"",
+        "data-verify-action=\"export-history\"",
+        "data-verify-action=\"refresh-history\"",
+        "data-verify-action=\"copy-history-id\"",
+        "case 'wallet-open':",
+        "case 'login-gate':",
+        "case 'toggle-password':",
+        "case 'reset-form':",
+        "case 'submit':",
+        "case 'copy-history-id':",
+        'bindDelegatedUi(container);'
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(verifyWidgetSource.includes(marker), true, `verify-widget.js should contain ${marker}`);
+    }
+});
+
+test('homepage admin runtime renderers route retry and section visibility controls through bound listeners', () => {
+    const homepageAdminSource = readRepoFile('admin-homepage.js');
+    const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|keyup|mouseover|mouseout|error|load)\s*=\s*["']/i;
+
+    assert.equal(
+        inlineHandlerPattern.test(homepageAdminSource),
+        false,
+        'admin-homepage.js should not emit inline event handler attributes'
+    );
+
+    const delegatedMarkers = [
+        'data-homepage-retry="1"',
+        'js-homepage-retry-btn',
+        'data-homepage-visibility="${visSection}"',
+        'data-homepage-visibility="footer"',
+        'function bindSectionVisibilityToggle(input, section)',
+        "input.dataset.homepageVisibilityBound === '1'",
+        "input.addEventListener('change', () => {",
+        "loading.querySelector('[data-homepage-retry=\"1\"]')?.addEventListener('click'"
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(homepageAdminSource.includes(marker), true, `admin-homepage.js should contain ${marker}`);
     }
 });
 
@@ -1589,4 +1825,53 @@ test('payments runtime controls, site filter, and admin chat menu route through 
     for (const marker of adminScriptMarkers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
+});
+
+test('final frontend runtime remnants route through delegated or bound listeners instead of inline attributes', () => {
+    const notificationSource = readRepoFile('notification-client.js');
+    const announcementSource = readRepoFile('announcement-loader.js');
+    const guestbookSource = readRepoFile('supabase-guestbook-functions.js');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const shopSource = readRepoFile('js/admin-shop.js');
+
+    const removedInlineMarkers = [
+        'onclick="clearAllNotifications(event)"',
+        `onclick="this.parentElement.remove(); localStorage.setItem('`,
+        `onclick="toggleLike('message', '`,
+        'onclick="removeFile(',
+        `onclick="filter('gemini', this)"`,
+        `onclick="filter(this.value)"`
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(
+            notificationSource.includes(marker)
+                || announcementSource.includes(marker)
+                || guestbookSource.includes(marker)
+                || adminStudioScript.includes(marker)
+                || shopSource.includes(marker),
+            false,
+            `final runtime remnants should not contain ${marker}`
+        );
+    }
+
+    const delegatedMarkers = [
+        'data-notif-action="clear-all"',
+        'function handleDrawerClick(e)',
+        'data-announcement-action="acknowledge"',
+        "querySelector('[data-announcement-action=\"acknowledge\"]')?.addEventListener('click'",
+        'data-guestbook-action="toggle-like"',
+        `querySelectorAll('[data-guestbook-action="toggle-like"]')`,
+        'data-admin-action="ai-remove-preview"',
+        "case 'ai-remove-preview':"
+    ];
+
+    assert.equal(notificationSource.includes(delegatedMarkers[0]), true, 'notification-client.js should render a delegated clear-all control');
+    assert.equal(notificationSource.includes(delegatedMarkers[1]), true, 'notification-client.js should handle delegated drawer actions');
+    assert.equal(announcementSource.includes(delegatedMarkers[2]), true, 'announcement-loader.js should render a bound acknowledge action');
+    assert.equal(announcementSource.includes(delegatedMarkers[3]), true, 'announcement-loader.js should bind the acknowledge button');
+    assert.equal(guestbookSource.includes(delegatedMarkers[4]), true, 'supabase-guestbook-functions.js should render delegated like actions');
+    assert.equal(guestbookSource.includes(delegatedMarkers[5]), true, 'supabase-guestbook-functions.js should bind fallback like actions');
+    assert.equal(adminStudioScript.includes(delegatedMarkers[6]), true, 'admin-studio.js should render delegated preview removal controls');
+    assert.equal(adminStudioScript.includes(delegatedMarkers[7]), true, 'admin-studio.js should handle delegated preview removal controls');
 });

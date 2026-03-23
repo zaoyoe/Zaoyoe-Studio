@@ -58,8 +58,8 @@
 
     <!-- Tab Navigation -->
     <nav class="admin-tabs">
-        <button class="admin-tab active" data-view="create" onclick="switchView('create')">Create</button>
-        <button class="admin-tab" data-view="manage" onclick="switchView('manage')">Manage</button>
+        <button class="admin-tab active" data-view="create" data-admin-action="switch-gallery-view">Create</button>
+        <button class="admin-tab" data-view="manage" data-admin-action="switch-gallery-view">Manage</button>
     </nav>
 
     <!-- Main Content -->
@@ -229,7 +229,7 @@
 
                     <!-- Submit Button -->
                     <div class="form-actions">
-                        <button type="button" class="btn-secondary" onclick="resetForm()">
+                        <button type="button" class="btn-secondary" data-admin-action="gallery-reset-form">
                             <i class="fas fa-undo"></i>
                             Reset
                         </button>

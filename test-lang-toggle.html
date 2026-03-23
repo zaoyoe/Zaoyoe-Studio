@@ -71,7 +71,7 @@
 
     <div class="test-section">
         <h2>Test 2: Toggle Button</h2>
-        <button id="langToggleTest" onclick="window.i18n?.toggleLanguage()" class="lang-toggle-simple">
+        <button id="langToggleTest" type="button" class="lang-toggle-simple">
             <span id="langZhTest" class="lang-text active">中</span>
             <span class="lang-separator">|</span>
             <span id="langEnTest" class="lang-text">EN</span>
@@ -93,6 +93,10 @@
 
     <script src="/js/i18n.js"></script>
     <script>
+        document.getElementById('langToggleTest')?.addEventListener('click', () => {
+            window.i18n?.toggleLanguage();
+        });
+
         // Run tests after i18n loads
         setTimeout(() => {
             // Test 1: Check i18n loading

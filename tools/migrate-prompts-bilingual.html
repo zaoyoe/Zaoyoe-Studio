@@ -230,7 +230,7 @@
                 <input type="password" id="geminiKey" placeholder="your-gemini-api-key">
             </div>
             <div class="config-row">
-                <button class="btn" id="loadBtn" onclick="loadPrompts()">加载提示词</button>
+                <button class="btn" id="loadBtn" type="button">加载提示词</button>
             </div>
         </div>
 
@@ -251,8 +251,8 @@
                     <div class="stat-label">已完成</div>
                 </div>
             </div>
-            <button class="btn" id="startBtn" onclick="startMigration()">🚀 开始迁移</button>
-            <button class="btn btn-secondary" onclick="stopMigration()" style="margin-left: 0.5rem;">停止</button>
+            <button class="btn" id="startBtn" type="button">🚀 开始迁移</button>
+            <button class="btn btn-secondary" id="stopBtn" type="button" style="margin-left: 0.5rem;">停止</button>
         </div>
 
         <!-- Progress Card -->
@@ -447,6 +447,18 @@ IMPORTANT: Return ONLY valid JSON.`;
             input.addEventListener('change', () => {
                 localStorage.setItem(input.id, input.value);
             });
+        });
+
+        document.getElementById('loadBtn')?.addEventListener('click', () => {
+            void loadPrompts();
+        });
+
+        document.getElementById('startBtn')?.addEventListener('click', () => {
+            void startMigration();
+        });
+
+        document.getElementById('stopBtn')?.addEventListener('click', () => {
+            stopMigration();
         });
     </script>
 </body>

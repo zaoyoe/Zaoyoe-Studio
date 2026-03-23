@@ -556,7 +556,7 @@
         drawer.innerHTML = `
             <div class="notif-drawer-header">
                 <span class="notif-drawer-title" data-i18n="nav.notification">通知中心</span>
-                <div class="notif-clear-all" onclick="clearAllNotifications(event)">
+                <div class="notif-clear-all" data-notif-action="clear-all" role="button" tabindex="0">
                     <i class="fas fa-times icon-x"></i>
                     <span class="text-clear" data-i18n="nav.clearAll">全部清除</span>
                 </div>
@@ -566,10 +566,26 @@
             </div>
         `;
         document.body.appendChild(drawer);
+        drawer.addEventListener('click', handleDrawerClick);
 
         // Attach Event Delegation
         const list = document.getElementById('notifDrawerList');
         if (list) list.addEventListener('click', handleDrawerListClick);
+    }
+
+    function handleDrawerClick(e) {
+        const actionEl = e.target.closest('[data-notif-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.notifAction) {
+            case 'clear-all':
+                window.clearAllNotifications?.(e);
+                break;
+            default:
+                break;
+        }
     }
 
     // Unified Event Delegate

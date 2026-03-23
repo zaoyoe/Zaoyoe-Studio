@@ -56,7 +56,7 @@
 <body>
     <h1>🧪 Realtime 快速测试</h1>
     <div id="status"></div>
-    <button onclick="testConnection()">开始测试</button>
+    <button id="testConnectionBtn" type="button">开始测试</button>
     <div class="log" id="log"></div>
 
     <!-- Supabase CDN -->
@@ -135,6 +135,9 @@
 
         // Auto-test on load
         window.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('testConnectionBtn')?.addEventListener('click', () => {
+                void testConnection();
+            });
             log('页面已加载，点击按钮开始测试');
         });
     </script>

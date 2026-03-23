@@ -828,8 +828,11 @@
             ${decorationHTML}
             <i class="fas fa-bullhorn" style="position:relative;z-index:10;"></i>
             <span class="announcement-text">${content}</span>
-            <button class="announcement-close" onclick="this.parentElement.remove(); localStorage.setItem('${ackKey}', 'true');">已读</button>
+            <button class="announcement-close" data-announcement-action="acknowledge">已读</button>
         `;
+        banner.querySelector('[data-announcement-action="acknowledge"]')?.addEventListener('click', () => {
+            dismissAnnouncement(banner, ackKey, true);
+        });
         document.body.appendChild(banner);
         currentAnnouncementElement = banner;
 
