@@ -4,12 +4,15 @@
   "description": "AI Prompt Gallery",
   "scripts": {
     "audit:env-drift": "node scripts/check-env-drift.js",
+    "audit:payment-closeout": "node scripts/payment-postdeploy-audit.js",
+    "cleanup:payment-fixtures": "node scripts/payment-cleanup-fixtures.js",
     "check:prod-env": "node scripts/check-prod-env.js",
     "optimize-images": "node scripts/optimize-images.js",
     "preflight:payment-rollout": "node scripts/payment-rollout-preflight.js",
     "rollout:payment": "node scripts/payment-rollout-apply.js",
     "scan:payment-sites": "node scripts/scan-payment-site-values.js",
     "smoke:payment": "node scripts/payment-smoke-test.js",
+    "sync:payment-channel": "node scripts/payment-channel-config-sync.js",
     "verify:payment-rollout": "node scripts/payment-rollout-verify.js",
     "upload-to-r2": "node scripts/upload-to-r2.js",
     "test:security": "node --test --test-force-exit tests/*.test.js"

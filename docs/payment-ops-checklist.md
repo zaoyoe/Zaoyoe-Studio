@@ -94,6 +94,14 @@
    - 管理员后台
    - 钱包充值
    - 爱发电订单查询
+9. 验证通过后，再跑一次只读收尾审计：
+   - `npm run audit:payment-closeout -- --env-file server/.env.staging`
+   - 如果结果提示 `remote_mock_payment_still_enabled`，说明生产态远程 mock 仍开放，测试完成后应尽快关闭。
+   - 如果结果提示 `smoke_payment_artifacts_present` 或 `smoke_users_still_present`，说明专用 smoke 测试痕迹还在，建议去 `支付对账 -> 异常运维 -> 测试数据清理` 做清理。
+10. 如果后台尚未部署到带有新 cleanup 规则的版本，或需要命令行收尾，可改用：
+   - 预览：`npm run cleanup:payment-fixtures -- --env-file server/.env.staging`
+   - 真删：`npm run cleanup:payment-fixtures -- --env-file server/.env.staging --execute`
+   - 默认只会清理 `AUTO_CDX_*` / `SMOKE_*` 订单，以及 `codex.*@example.com` / `smoke-payment-*@zaoyoe.invalid` 测试账号。
 
 ## 6. 模拟支付收尾
 
@@ -102,6 +110,36 @@
    - 关闭 `模拟支付`
    - 保留历史订单对账
    - 不再允许新用户走模拟直充
+
+### 临时开启 mock 的正确顺序
+
+1. 在绑定 [https://www.zaoyoe.com](https://www.zaoyoe.com) 的 `Vercel Production` 环境添加：
+   - `ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL=2026-03-28T23:59:59+08:00`
+2. 完成一次 `Redeploy`。
+3. 先预览存储层切换计划：
+   - `npm run sync:payment-channel -- --env-file server/.env.staging --provider mock`
+4. 预览输出里必须看到：
+   - `target_provider: mock`
+   - `runtime.mock_allowed: yes`
+5. 再真正切换：
+   - `npm run sync:payment-channel -- --env-file server/.env.staging --provider mock --execute`
+6. 验证 [https://www.zaoyoe.com/api/payments/config](https://www.zaoyoe.com/api/payments/config)：
+   - `config.active_provider = "mock"`
+   - `config.providers.mock.enabled = true`
+   - `recharge_options.mock_payment_enabled = true`
+   - `runtime.mock_payment.allowed = true`
+
+### 测试结束后恢复真实支付
+
+1. 删除 `ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL`。
+2. 再次 `Redeploy`。
+3. 切回真实通道：
+   - `npm run sync:payment-channel -- --env-file server/.env.staging --provider afdian --execute`
+4. 复核 [https://www.zaoyoe.com/api/payments/config](https://www.zaoyoe.com/api/payments/config)：
+   - `config.active_provider = "afdian"`
+   - `config.providers.mock.enabled = false`
+   - `recharge_options.mock_payment_enabled = false`
+   - `runtime.mock_payment.allowed = false`
 
 ## 7. 后续接入虎皮椒时的最低要求
 

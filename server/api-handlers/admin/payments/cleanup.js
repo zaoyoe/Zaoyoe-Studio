@@ -5,8 +5,11 @@ const {
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
 
-const TEST_ORDER_PREFIX = 'AUTO_CDX_';
-const TEST_EMAIL_PATTERN = /^codex\..+@example\.com$/i;
+const TEST_ORDER_PREFIXES = ['AUTO_CDX_', 'SMOKE_'];
+const TEST_EMAIL_PATTERNS = [
+    /^codex\..+@example\.com$/i,
+    /^smoke-payment-.+@zaoyoe\.invalid$/i
+];
 
 function isMissingRelationError(error) {
     const message = String(error?.message || '').toLowerCase();
@@ -14,6 +17,12 @@ function isMissingRelationError(error) {
         || message.includes('does not exist')
         || message.includes('failed to count')
         || message.includes('could not find the table');
+}
+
+function matchesTestUserEmail(value) {
+    const email = String(value || '').trim();
+    if (!email) return false;
+    return TEST_EMAIL_PATTERNS.some((pattern) => pattern.test(email));
 }
 
 async function listTestUsers(supabaseAdmin) {
@@ -33,7 +42,7 @@ async function listTestUsers(supabaseAdmin) {
 
         const users = data?.users || [];
         matchedUsers.push(
-            ...users.filter((user) => TEST_EMAIL_PATTERN.test(String(user.email || '').trim()))
+            ...users.filter((user) => matchesTestUserEmail(user.email))
         );
 
         if (users.length < perPage) break;
@@ -46,7 +55,7 @@ async function listTestUsers(supabaseAdmin) {
 async function countLike(supabase, table, column, pattern) {
     const { count, error } = await supabase
         .from(table)
-        .select('id', { count: 'exact', head: true })
+        .select('*', { count: 'exact', head: true })
         .like(column, pattern);
 
     if (error) {
@@ -70,12 +79,24 @@ async function countLikeOptional(supabase, table, column, pattern) {
     }
 }
 
+async function countLikePatterns(supabase, table, column, prefixes, { optional = false } = {}) {
+    const executor = optional ? countLikeOptional : countLike;
+    const counts = await Promise.all(
+        (Array.isArray(prefixes) ? prefixes : [])
+            .map((prefix) => String(prefix || '').trim())
+            .filter(Boolean)
+            .map((prefix) => executor(supabase, table, column, `${prefix}%`))
+    );
+
+    return counts.reduce((sum, value) => sum + Number(value || 0), 0);
+}
+
 async function countIn(supabase, table, column, ids) {
     if (!Array.isArray(ids) || !ids.length) return 0;
 
     const { count, error } = await supabase
         .from(table)
-        .select('id', { count: 'exact', head: true })
+        .select('*', { count: 'exact', head: true })
         .in(column, ids);
 
     if (error) {
@@ -106,7 +127,7 @@ async function safeDeleteIn(supabase, table, column, values) {
         .from(table)
         .delete()
         .in(column, values)
-        .select('id');
+        .select('*');
 
     if (error) {
         const wrapped = new Error(error.message || `Failed to delete ${table}`);
@@ -134,7 +155,7 @@ async function safeDeleteLike(supabase, table, column, pattern) {
         .from(table)
         .delete()
         .like(column, pattern)
-        .select('id');
+        .select('*');
 
     if (error) {
         const wrapped = new Error(error.message || `Failed to delete ${table}`);
@@ -157,6 +178,71 @@ async function safeDeleteLikeOptional(supabase, table, column, pattern) {
     }
 }
 
+async function safeDeleteLikePatternsOptional(supabase, table, column, prefixes) {
+    const deletedCounts = await Promise.all(
+        (Array.isArray(prefixes) ? prefixes : [])
+            .map((prefix) => String(prefix || '').trim())
+            .filter(Boolean)
+            .map((prefix) => safeDeleteLikeOptional(supabase, table, column, `${prefix}%`))
+    );
+
+    return deletedCounts.reduce((sum, value) => sum + Number(value || 0), 0);
+}
+
+function compareDescendingByCreatedAt(left, right) {
+    const leftValue = Date.parse(left?.created_at || 0) || 0;
+    const rightValue = Date.parse(right?.created_at || 0) || 0;
+    return rightValue - leftValue;
+}
+
+async function selectLikePatterns(supabase, table, column, prefixes, options = {}) {
+    const {
+        select = '*',
+        limit = 10,
+        orderColumn = 'created_at',
+        ascending = false,
+        optional = false
+    } = options || {};
+    const safeLimit = Math.max(1, Number.parseInt(limit, 10) || 10);
+    const queries = (Array.isArray(prefixes) ? prefixes : [])
+        .map((prefix) => String(prefix || '').trim())
+        .filter(Boolean)
+        .map(async (prefix) => {
+            const { data, error } = await supabase
+                .from(table)
+                .select(select)
+                .like(column, `${prefix}%`)
+                .order(orderColumn, { ascending })
+                .limit(safeLimit);
+
+            if (error) {
+                if (optional && isMissingRelationError(error)) {
+                    return [];
+                }
+                const wrapped = new Error(error.message || `Failed to fetch ${table}`);
+                wrapped.code = error.code;
+                wrapped.details = error.details;
+                throw wrapped;
+            }
+
+            return Array.isArray(data) ? data : [];
+        });
+
+    const rows = (await Promise.all(queries)).flat().sort(compareDescendingByCreatedAt);
+    const uniqueRows = [];
+    const seen = new Set();
+
+    for (const row of rows) {
+        const dedupeKey = String(row?.id || row?.[column] || JSON.stringify(row));
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        uniqueRows.push(row);
+        if (uniqueRows.length >= safeLimit) break;
+    }
+
+    return uniqueRows;
+}
+
 async function buildCleanupPreview(supabaseAdmin) {
     const testUsers = await listTestUsers(supabaseAdmin);
     const testUserIds = testUsers.map((user) => user.id);
@@ -173,9 +259,9 @@ async function buildCleanupPreview(supabaseAdmin) {
         userEvents
     ] = await Promise.all([
         countInOptional(supabaseAdmin, 'payment_checkout_sessions', 'user_id', testUserIds),
-        countLike(supabaseAdmin, 'payment_orders', 'provider_order_no', `${TEST_ORDER_PREFIX}%`),
-        countLike(supabaseAdmin, 'payment_events', 'provider_order_no', `${TEST_ORDER_PREFIX}%`),
-        countLike(supabaseAdmin, 'afdian_orders', 'out_trade_no', `${TEST_ORDER_PREFIX}%`),
+        countLikePatterns(supabaseAdmin, 'payment_orders', 'provider_order_no', TEST_ORDER_PREFIXES),
+        countLikePatterns(supabaseAdmin, 'payment_events', 'provider_order_no', TEST_ORDER_PREFIXES),
+        countLikePatterns(supabaseAdmin, 'afdian_orders', 'out_trade_no', TEST_ORDER_PREFIXES),
         countInOptional(supabaseAdmin, 'profiles', 'id', testUserIds),
         countInOptional(supabaseAdmin, 'points_balance', 'user_id', testUserIds),
         countInOptional(supabaseAdmin, 'points_ledger', 'user_id', testUserIds),
@@ -184,8 +270,10 @@ async function buildCleanupPreview(supabaseAdmin) {
     ]);
 
     return {
-        order_prefix: TEST_ORDER_PREFIX,
-        user_email_pattern: TEST_EMAIL_PATTERN.toString(),
+        order_prefix: TEST_ORDER_PREFIXES[0],
+        user_email_pattern: TEST_EMAIL_PATTERNS[0].toString(),
+        order_prefixes: [...TEST_ORDER_PREFIXES],
+        user_email_patterns: TEST_EMAIL_PATTERNS.map((pattern) => pattern.toString()),
         counts: {
             payment_checkout_sessions: paymentCheckoutSessions,
             payment_orders: paymentOrders,
@@ -209,7 +297,7 @@ async function buildCleanupPreview(supabaseAdmin) {
     };
 }
 
-module.exports = async function handler(req, res) {
+async function handler(req, res) {
     if (!['GET', 'POST'].includes(req.method)) {
         res.setHeader('Allow', 'GET, POST');
         return sendJson(res, 405, { success: false, message: 'Method not allowed' });
@@ -220,18 +308,18 @@ module.exports = async function handler(req, res) {
         const supabaseAdmin = getSupabaseAdmin();
         const preview = await buildCleanupPreview(supabaseAdmin);
 
-        const { data: sampleOrders, error: sampleOrdersError } = await supabaseAdmin
-            .from('payment_orders')
-            .select('id, provider_order_no, status, paid_amount, created_at')
-            .like('provider_order_no', `${TEST_ORDER_PREFIX}%`)
-            .order('created_at', { ascending: false })
-            .limit(10);
-
-        if (sampleOrdersError) {
-            throw new Error(sampleOrdersError.message || 'Failed to load cleanup samples');
-        }
-
-        preview.samples.orders = sampleOrders || [];
+        preview.samples.orders = await selectLikePatterns(
+            supabaseAdmin,
+            'payment_orders',
+            'provider_order_no',
+            TEST_ORDER_PREFIXES,
+            {
+                select: 'id, provider_order_no, status, paid_amount, created_at',
+                limit: 10,
+                orderColumn: 'created_at',
+                ascending: false
+            }
+        );
 
         if (req.method === 'GET') {
             return sendJson(res, 200, {
@@ -246,6 +334,7 @@ module.exports = async function handler(req, res) {
             afdian_orders: 0,
             payment_orders: 0,
             points_ledger_user: 0,
+            points_ledger_reference: 0,
             points_ledger_created_by: 0,
             points_balance: 0,
             user_checkins: 0,
@@ -260,9 +349,15 @@ module.exports = async function handler(req, res) {
         const warnings = [];
 
         deleted.payment_checkout_sessions = await safeDeleteInOptional(supabaseAdmin, 'payment_checkout_sessions', 'user_id', preview.test_user_ids);
-        deleted.payment_events = await safeDeleteLikeOptional(supabaseAdmin, 'payment_events', 'provider_order_no', `${TEST_ORDER_PREFIX}%`);
-        deleted.afdian_orders = await safeDeleteLikeOptional(supabaseAdmin, 'afdian_orders', 'out_trade_no', `${TEST_ORDER_PREFIX}%`);
-        deleted.payment_orders = await safeDeleteLikeOptional(supabaseAdmin, 'payment_orders', 'provider_order_no', `${TEST_ORDER_PREFIX}%`);
+        deleted.payment_events = await safeDeleteLikePatternsOptional(supabaseAdmin, 'payment_events', 'provider_order_no', TEST_ORDER_PREFIXES);
+        deleted.afdian_orders = await safeDeleteLikePatternsOptional(supabaseAdmin, 'afdian_orders', 'out_trade_no', TEST_ORDER_PREFIXES);
+        deleted.payment_orders = await safeDeleteLikePatternsOptional(supabaseAdmin, 'payment_orders', 'provider_order_no', TEST_ORDER_PREFIXES);
+        deleted.points_ledger_reference = await safeDeleteLikePatternsOptional(
+            supabaseAdmin,
+            'points_ledger',
+            'reference_id',
+            TEST_ORDER_PREFIXES.map((prefix) => `mock_${prefix}`)
+        );
 
         if (preview.test_user_ids.length) {
             deleted.points_ledger_user = await safeDeleteInOptional(supabaseAdmin, 'points_ledger', 'user_id', preview.test_user_ids);
@@ -316,4 +411,16 @@ module.exports = async function handler(req, res) {
             message: error.message || 'Failed to clean test data'
         });
     }
+}
+
+module.exports = handler;
+module.exports._private = {
+    TEST_ORDER_PREFIXES,
+    TEST_EMAIL_PATTERNS,
+    buildCleanupPreview,
+    countLikePatterns,
+    listTestUsers,
+    matchesTestUserEmail,
+    safeDeleteLikePatternsOptional,
+    selectLikePatterns
 };
