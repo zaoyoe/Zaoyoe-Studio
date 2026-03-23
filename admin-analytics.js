@@ -1996,7 +1996,11 @@ async function loadExperimentsList() {
                         <span class="variant-badge">${v.name} (${v.weight}%)</span>
                     `).join('')}
                 </div>
-                <button class="btn-sm btn-secondary view-results-btn" onclick="showABResults('${exp.id}', '${exp.name}', ${JSON.stringify(exp.variants || []).replace(/"/g, '&quot;')})">
+                <button class="btn-sm btn-secondary view-results-btn"
+                    data-admin-action="analytics-show-ab-results"
+                    data-experiment-id="${encodeURIComponent(String(exp.id || ''))}"
+                    data-experiment-name="${encodeURIComponent(String(exp.name || ''))}"
+                    data-experiment-variants="${encodeURIComponent(JSON.stringify(exp.variants || []))}">
                     <i class="fas fa-chart-bar"></i> 查看结果
                 </button>
             </div>
@@ -2059,7 +2063,7 @@ function addVariantRow() {
         <input type="text" placeholder="Variant ${String.fromCharCode(65 + count)}" class="variant-name">
         <input type="number" placeholder="0" value="0" class="variant-weight" min="0" max="100">
         <span>%</span>
-        <button type="button" class="btn-icon-sm" onclick="this.parentElement.remove()">
+        <button type="button" class="btn-icon-sm" data-admin-action="analytics-remove-variant-row">
             <i class="fas fa-times"></i>
         </button>
     `;
@@ -2128,6 +2132,8 @@ async function handleCreateExperiment(event) {
 }
 
 // Expose to window
+window.loadAIPrediction = loadAIPrediction;
+window.loadExperimentsList = loadExperimentsList;
 window.openExperimentModal = openExperimentModal;
 window.closeExperimentModal = closeExperimentModal;
 window.addVariantRow = addVariantRow;

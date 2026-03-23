@@ -261,6 +261,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-add-api-key':
                 window.addNewApiKey?.();
                 break;
+            case 'settings-add-channel':
+                window.addChannel?.();
+                break;
             case 'settings-prompt-api-key':
                 window.promptForApiKey?.();
                 break;
@@ -299,6 +302,15 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'payments-switch-tab':
                 window.AdminPayments?.switchTab?.(actionEl.dataset.tab);
+                break;
+            case 'payments-toggle-provider-panel':
+                window.togglePaymentProviderPanel?.(actionEl.dataset.provider);
+                break;
+            case 'payments-toggle-provider-enabled':
+                window.togglePaymentProviderEnabled?.(actionEl.dataset.provider);
+                break;
+            case 'payments-save-channel-settings':
+                window.savePaymentChannelSettings?.();
                 break;
             case 'payments-toggle-range-menu':
                 window.AdminPayments?.toggleRangeMenu?.(event);
@@ -348,6 +360,270 @@ function bindAdminStudioDelegatedControls() {
             case 'analytics-apply-custom-range':
                 window.applyCustomRange?.();
                 break;
+            case 'analytics-load-ai-prediction':
+                window.loadAIPrediction?.();
+                break;
+            case 'analytics-open-experiment-modal':
+                window.openExperimentModal?.();
+                break;
+            case 'analytics-load-experiments-list':
+                window.loadExperimentsList?.();
+                break;
+            case 'analytics-close-ab-results-chart':
+                window.closeABResultsChart?.();
+                break;
+            case 'analytics-close-experiment-modal':
+                window.closeExperimentModal?.();
+                break;
+            case 'analytics-add-variant-row':
+                window.addVariantRow?.();
+                break;
+            case 'analytics-remove-variant-row':
+                actionEl.closest('.variant-row')?.remove();
+                break;
+            case 'analytics-show-ab-results': {
+                const experimentId = decodeURIComponent(actionEl.dataset.experimentId || '');
+                const experimentName = decodeURIComponent(actionEl.dataset.experimentName || '');
+                let variants = [];
+                try {
+                    variants = JSON.parse(decodeURIComponent(actionEl.dataset.experimentVariants || '%5B%5D'));
+                } catch (err) {
+                    console.warn('Failed to parse experiment variants payload', err);
+                }
+                window.showABResults?.(experimentId, experimentName, variants);
+                break;
+            }
+            case 'points-switch-view':
+                window.switchPointsView?.(actionEl.dataset.pointsViewTarget);
+                break;
+            case 'points-toggle-date-filter':
+                window.toggleBatchDateFilter?.();
+                break;
+            case 'points-filter-date':
+                window.filterBatchByDate?.(actionEl.dataset.batchDate);
+                break;
+            case 'points-toggle-channel-filter':
+                window.toggleBatchChannelFilter?.();
+                break;
+            case 'points-filter-channel':
+                window.filterBatchByChannel?.(actionEl.dataset.batchChannel);
+                break;
+            case 'points-toggle-package-filter':
+                window.toggleBatchPackageFilter?.();
+                break;
+            case 'points-filter-package':
+                window.filterBatchByPackage?.(actionEl.dataset.batchPackage);
+                break;
+            case 'points-toggle-export-menu':
+                window.toggleBatchExportMenu?.();
+                break;
+            case 'points-export-batch-list':
+                window.exportBatchList?.();
+                break;
+            case 'points-export-selected-batches':
+                window.exportSelectedBatches?.();
+                break;
+            case 'points-toggle-select-mode':
+                window.toggleBatchSelectMode?.();
+                break;
+            case 'points-toggle-actions-menu':
+                window.togglePointsBatchActionsMenu?.();
+                break;
+            case 'points-batch-invalidate':
+                window.batchInvalidateCodes?.();
+                break;
+            case 'points-batch-delete':
+                window.batchDeleteBatches?.();
+                break;
+            case 'points-sort-batches':
+                window.sortBatches?.(actionEl.dataset.sortField);
+                break;
+            case 'points-copy-all-codes':
+                window.copyAllCodes?.();
+                break;
+            case 'points-download-codes-csv':
+                window.downloadCodesCSV?.();
+                break;
+            case 'points-lookup-code':
+                window.lookupCode?.();
+                break;
+            case 'users-toggle-status-filter':
+                window.toggleUserStatusFilter?.();
+                break;
+            case 'users-filter-status':
+                window.filterUserByStatus?.(actionEl.dataset.userStatus);
+                break;
+            case 'users-toggle-level-filter':
+                window.toggleUserLevelFilter?.();
+                break;
+            case 'users-filter-level':
+                window.filterUserByLevel?.(actionEl.dataset.userLevel);
+                break;
+            case 'users-toggle-role-filter':
+                window.toggleUserRoleFilter?.();
+                break;
+            case 'users-filter-role':
+                window.filterUserByRole?.(actionEl.dataset.userRole);
+                break;
+            case 'users-toggle-select-mode':
+                window.toggleUserSelectMode?.();
+                break;
+            case 'users-toggle-batch-menu':
+                window.toggleUserBatchMenu?.();
+                break;
+            case 'users-select-all-page':
+                window.selectAllUsersOnPage?.();
+                break;
+            case 'users-batch-send-notification':
+                window.batchSendNotification?.();
+                break;
+            case 'users-batch-adjust-points':
+                window.batchAdjustPoints?.();
+                break;
+            case 'users-batch-add-tags':
+                window.batchAddTags?.();
+                break;
+            case 'users-batch-export':
+                window.batchExportUsers?.();
+                break;
+            case 'users-batch-ban':
+                window.batchBanUsers?.();
+                break;
+            case 'users-close-modal':
+                window.closeUserModal?.();
+                break;
+            case 'users-switch-tab':
+                window.switchUserTab?.(actionEl.dataset.userTab);
+                break;
+            case 'settings-toggle-decoration':
+                window.toggleDecoration?.();
+                break;
+            case 'settings-toggle-custom-dropdown':
+                window.toggleCustomDropdown?.(actionEl.dataset.dropdownId);
+                break;
+            case 'settings-select-dropdown-option':
+                window.selectDropdownOption?.(
+                    actionEl.dataset.dropdownId,
+                    actionEl.dataset.optionValue,
+                    actionEl.dataset.optionLabel
+                );
+                break;
+            case 'settings-save-login-security':
+                window.saveLoginSecuritySettings?.();
+                break;
+            case 'settings-refresh-locked-accounts':
+                window.refreshLockedAccounts?.();
+                break;
+            case 'settings-unlock-account':
+                window.unlockAccount?.(actionEl.dataset.userId);
+                break;
+            case 'settings-unlock-all-accounts':
+                window.unlockAllAccounts?.();
+                break;
+            case 'settings-save-ip-blacklist':
+                window.saveIpBlacklist?.();
+                break;
+            case 'settings-check-verify-quota':
+                window.checkVerifyQuota?.();
+                break;
+            case 'settings-add-api-key':
+                window.addNewApiKey?.();
+                break;
+            case 'settings-select-decoration':
+                window.selectDecoration?.(actionEl.dataset.decorationTheme);
+                break;
+            case 'settings-toggle-page-target':
+                window.togglePageTarget?.(actionEl.dataset.targetPage);
+                break;
+            case 'settings-insert-format':
+                window.insertFormat?.(actionEl.dataset.formatTag);
+                break;
+            case 'settings-toggle-align-picker':
+                window.toggleAlignPicker?.();
+                break;
+            case 'settings-apply-text-align':
+                window.applyTextAlign?.(actionEl.dataset.textAlign);
+                break;
+            case 'settings-insert-link':
+                window.insertLink?.();
+                break;
+            case 'settings-toggle-emoji-picker':
+                window.toggleEmojiPicker?.();
+                break;
+            case 'settings-select-emoji':
+                window.selectEmoji?.(actionEl.dataset.emojiValue);
+                break;
+            case 'settings-toggle-toolbar-dropdown':
+                window.toggleDropdown?.(actionEl.dataset.dropdownId);
+                break;
+            case 'settings-select-color':
+                window.selectColor?.(actionEl.dataset.colorValue);
+                break;
+            case 'settings-select-font-size':
+                window.selectFontSize?.(actionEl.dataset.fontSizeValue, actionEl.dataset.fontSizeClass);
+                break;
+            case 'settings-save-announcement':
+                window.saveAnnouncement?.();
+                break;
+            case 'settings-save-sensitive-words':
+                window.saveSensitiveWords?.();
+                break;
+            case 'discounts-filter':
+                window.AdminDiscounts?.filter?.(actionEl.dataset.discountStatus, actionEl);
+                break;
+            case 'discounts-open-generate-modal':
+                window.AdminDiscounts?.openGenerateModal?.();
+                break;
+            case 'discounts-copy-code':
+                window.AdminDiscounts?.copyCode?.(actionEl.dataset.discountCode || '');
+                break;
+            case 'discounts-toggle-status':
+                window.AdminDiscounts?.toggleStatus?.(
+                    actionEl.dataset.discountId,
+                    actionEl.dataset.discountNextActive === 'true'
+                );
+                break;
+            case 'discounts-delete-code':
+                window.AdminDiscounts?.deleteCode?.(
+                    actionEl.dataset.discountId,
+                    actionEl.dataset.discountCode || ''
+                );
+                break;
+            case 'discounts-close-generate-modal':
+                window.AdminDiscounts?.closeGenerateModal?.();
+                break;
+            case 'discounts-toggle-type-dropdown':
+                window.AdminDiscounts?.toggleTypeDropdown?.();
+                break;
+            case 'discounts-select-type':
+                window.AdminDiscounts?.selectDiscountType?.(actionEl.dataset.discountType);
+                break;
+            case 'discounts-submit-generate':
+                window.AdminDiscounts?.submitGenerate?.();
+                break;
+            case 'discounts-pagination-go': {
+                const page = parseInt(actionEl.dataset.discountPage || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.AdminDiscounts?.goToPage?.(page);
+                }
+                break;
+            }
+            case 'tickets-filter':
+                window.AdminTickets?.filter?.(actionEl.dataset.ticketStatus, actionEl);
+                break;
+            case 'tickets-close-reply-modal':
+                window.AdminTickets?.closeReplyModal?.();
+                break;
+            case 'tickets-submit-reply':
+                window.AdminTickets?.submitReply?.();
+                break;
+            case 'tickets-pagination-go': {
+                const page = parseInt(actionEl.dataset.ticketPage || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.AdminTickets?.changePage?.(page);
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -368,8 +644,179 @@ function bindAdminStudioDelegatedControls() {
             case 'comments-toggle-select-all':
                 window.toggleSelectAll?.();
                 break;
+            case 'payments-change-active-provider':
+                window.handlePaymentChannelActiveChange?.(actionEl.value);
+                break;
+            case 'points-toggle-select-all-batches':
+                window.toggleSelectAllBatches?.();
+                break;
             case 'homepage-handle-screenshot-upload':
                 window.HomepageAdmin?._handleScreenshotUpload?.(actionEl);
+                break;
+            case 'users-toggle-test-accounts':
+                window.toggleUserTestAccountVisibility?.(actionEl.checked);
+                break;
+            case 'settings-toggle-decoration':
+                window.toggleDecoration?.();
+                break;
+            case 'settings-save-verify-config':
+                window.saveVerifyConfig?.();
+                break;
+            case 'affiliate-save-setting': {
+                const field = actionEl.dataset.affiliateSettingField;
+                const value = actionEl.dataset.affiliateValueSource === 'checked-bool'
+                    ? (actionEl.checked ? 'true' : 'false')
+                    : actionEl.value;
+                window.saveAffiliateSetting?.(field, value);
+                break;
+            }
+            case 'affiliate-save-poster-field':
+                window.saveAffiliatePosterField?.(actionEl.dataset.affiliatePosterField, actionEl.value);
+                break;
+            case 'discounts-pagination-go': {
+                const page = parseInt(actionEl.value || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.AdminDiscounts?.goToPage?.(page);
+                }
+                break;
+            }
+            case 'tickets-pagination-go': {
+                const page = parseInt(actionEl.value || '', 10);
+                if (!Number.isNaN(page)) {
+                    window.AdminTickets?.changePage?.(page);
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    });
+
+    document.addEventListener('focusin', (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const actionEl = target?.closest?.('[data-admin-focus-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.adminFocusAction) {
+            case 'settings-verify-api-key-unlock':
+                actionEl.removeAttribute('readonly');
+                break;
+            default:
+                break;
+        }
+    });
+
+    document.addEventListener('focusout', (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const actionEl = target?.closest?.('[data-admin-blur-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.adminBlurAction) {
+            case 'settings-verify-api-key-lock':
+                actionEl.setAttribute('readonly', 'readonly');
+                break;
+            default:
+                break;
+        }
+    });
+
+    document.addEventListener('input', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) {
+            return;
+        }
+
+        const actionEl = target.closest('[data-admin-input-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.adminInputAction) {
+            case 'discounts-search':
+                window.AdminDiscounts?.search?.();
+                break;
+            case 'discounts-format-expiry-date':
+                window.AdminDiscounts?.formatExpiryDateInput?.(actionEl);
+                break;
+            case 'discounts-format-expiry-time':
+                window.AdminDiscounts?.formatExpiryTimeInput?.(actionEl);
+                break;
+            case 'tickets-search':
+                window.AdminTickets?.search?.();
+                break;
+            default:
+                break;
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) {
+            return;
+        }
+
+        const actionEl = target.closest('[data-admin-keydown-action]');
+        if (!actionEl) {
+            return;
+        }
+
+        switch (actionEl.dataset.adminKeydownAction) {
+            case 'points-search-enter':
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    window.searchCodeInBatches?.();
+                }
+                break;
+            default:
+                break;
+        }
+    });
+
+    document.addEventListener('submit', (event) => {
+        const form = event.target instanceof HTMLFormElement ? event.target : null;
+        if (!form) {
+            return;
+        }
+
+        if (form.id === 'generateCodesForm') {
+            window.generateCodes?.(event);
+            return;
+        }
+
+        if (form.id === 'discountGenerateForm') {
+            event.preventDefault();
+            window.AdminDiscounts?.submitGenerate?.();
+            return;
+        }
+
+        if (form.id === 'ticketReplyForm') {
+            event.preventDefault();
+            window.AdminTickets?.submitReply?.();
+            return;
+        }
+
+        if (form.id === 'experimentForm') {
+            event.preventDefault();
+            window.handleCreateExperiment?.(event);
+        }
+    });
+
+    document.addEventListener('click', (event) => {
+        const overlay = event.target instanceof HTMLElement && event.target.matches('[data-admin-overlay-close]');
+        if (!overlay || event.target !== overlay) {
+            return;
+        }
+
+        switch (overlay.dataset.adminOverlayClose) {
+            case 'discount-generate-modal':
+                window.AdminDiscounts?.closeGenerateModal?.();
+                break;
+            case 'ticket-reply-modal':
+                window.AdminTickets?.closeReplyModal?.();
                 break;
             default:
                 break;
@@ -1032,6 +1479,8 @@ function switchApiKey() {
 function addNewApiKey() {
     promptForApiKey();
 }
+
+window.addNewApiKey = addNewApiKey;
 
 async function deleteApiKey() {
     if ((window.GEMINI_API_SOURCE || 'missing') !== 'stored') {

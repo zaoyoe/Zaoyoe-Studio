@@ -1791,7 +1791,10 @@ async function refreshLockedAccounts() {
                                 <span class="expires"><i class="fas fa-clock"></i> ${remainingMins} 分钟后解锁</span>
                             </div>
                         </div>
-                        <button class="btn-unlock" onclick="unlockAccount('${account.id}')">
+                        <button class="btn-unlock"
+                            type="button"
+                            data-admin-action="settings-unlock-account"
+                            data-user-id="${escapeHtml(account.id)}">
                             <i class="fas fa-unlock"></i> 解锁
                         </button>
                     </div>

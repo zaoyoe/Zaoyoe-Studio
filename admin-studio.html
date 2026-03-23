@@ -989,7 +989,7 @@
                                             <div class="config-desc">钱包充值会根据这里的选择自动切换到模拟支付、爱发电或虎皮椒。</div>
                                         </div>
                                         <div class="config-input-wrapper">
-                                            <select class="config-input" id="paymentChannelActiveSelect" onchange="handlePaymentChannelActiveChange(this.value)">
+                                            <select class="config-input" id="paymentChannelActiveSelect" data-admin-change-action="payments-change-active-provider">
                                                 <option value="mock">模拟支付</option>
                                                 <option value="afdian">爱发电</option>
                                                 <option value="hupijiao">虎皮椒</option>
@@ -1004,7 +1004,7 @@
 
                                     <div class="payment-channel-accordions">
                                         <div class="payment-provider-accordion" id="paymentProviderAccordionMock">
-                                            <div class="payment-provider-accordion-header" onclick="togglePaymentProviderPanel('mock')">
+                                            <div class="payment-provider-accordion-header" data-admin-action="payments-toggle-provider-panel" data-provider="mock">
                                                 <div class="payment-provider-accordion-copy">
                                                     <div class="payment-provider-accordion-title-line">
                                                         <span class="payment-provider-accordion-title" id="paymentProviderHeaderNameMock">模拟支付</span>
@@ -1013,8 +1013,8 @@
                                                     <div class="payment-provider-accordion-desc" id="paymentProviderHeaderDescMock">直接到账，适合短期过渡验证。</div>
                                                 </div>
                                                 <div class="payment-provider-accordion-actions">
-                                                    <div class="status-toggle" id="paymentProviderMockToggle" onclick="event.stopPropagation(); togglePaymentProviderEnabled('mock')"></div>
-                                                    <button type="button" class="payment-provider-expand-btn" onclick="event.stopPropagation(); togglePaymentProviderPanel('mock')">
+                                                    <div class="status-toggle" id="paymentProviderMockToggle" data-admin-action="payments-toggle-provider-enabled" data-provider="mock"></div>
+                                                    <button type="button" class="payment-provider-expand-btn" data-admin-action="payments-toggle-provider-panel" data-provider="mock">
                                                         <i class="fas fa-chevron-down" id="paymentProviderChevronMock"></i>
                                                     </button>
                                                 </div>
@@ -1036,7 +1036,7 @@
                                         </div>
 
                                         <div class="payment-provider-accordion" id="paymentProviderAccordionAfdian">
-                                            <div class="payment-provider-accordion-header" onclick="togglePaymentProviderPanel('afdian')">
+                                            <div class="payment-provider-accordion-header" data-admin-action="payments-toggle-provider-panel" data-provider="afdian">
                                                 <div class="payment-provider-accordion-copy">
                                                     <div class="payment-provider-accordion-title-line">
                                                         <span class="payment-provider-accordion-title" id="paymentProviderHeaderNameAfdian">爱发电</span>
@@ -1045,8 +1045,8 @@
                                                     <div class="payment-provider-accordion-desc" id="paymentProviderHeaderDescAfdian">支付后输入订单号领取兑换码。</div>
                                                 </div>
                                                 <div class="payment-provider-accordion-actions">
-                                                    <div class="status-toggle" id="paymentProviderAfdianToggle" onclick="event.stopPropagation(); togglePaymentProviderEnabled('afdian')"></div>
-                                                    <button type="button" class="payment-provider-expand-btn" onclick="event.stopPropagation(); togglePaymentProviderPanel('afdian')">
+                                                    <div class="status-toggle" id="paymentProviderAfdianToggle" data-admin-action="payments-toggle-provider-enabled" data-provider="afdian"></div>
+                                                    <button type="button" class="payment-provider-expand-btn" data-admin-action="payments-toggle-provider-panel" data-provider="afdian">
                                                         <i class="fas fa-chevron-down" id="paymentProviderChevronAfdian"></i>
                                                     </button>
                                                 </div>
@@ -1089,7 +1089,7 @@
                                         </div>
 
                                         <div class="payment-provider-accordion" id="paymentProviderAccordionHupijiao">
-                                            <div class="payment-provider-accordion-header" onclick="togglePaymentProviderPanel('hupijiao')">
+                                            <div class="payment-provider-accordion-header" data-admin-action="payments-toggle-provider-panel" data-provider="hupijiao">
                                                 <div class="payment-provider-accordion-copy">
                                                     <div class="payment-provider-accordion-title-line">
                                                         <span class="payment-provider-accordion-title" id="paymentProviderHeaderNameHupijiao">虎皮椒</span>
@@ -1098,8 +1098,8 @@
                                                     <div class="payment-provider-accordion-desc" id="paymentProviderHeaderDescHupijiao">网关参数和密钥配置完成后即可切换上线。</div>
                                                 </div>
                                                 <div class="payment-provider-accordion-actions">
-                                                    <div class="status-toggle" id="paymentProviderHupijiaoToggle" onclick="event.stopPropagation(); togglePaymentProviderEnabled('hupijiao')"></div>
-                                                    <button type="button" class="payment-provider-expand-btn" onclick="event.stopPropagation(); togglePaymentProviderPanel('hupijiao')">
+                                                    <div class="status-toggle" id="paymentProviderHupijiaoToggle" data-admin-action="payments-toggle-provider-enabled" data-provider="hupijiao"></div>
+                                                    <button type="button" class="payment-provider-expand-btn" data-admin-action="payments-toggle-provider-panel" data-provider="hupijiao">
                                                         <i class="fas fa-chevron-down" id="paymentProviderChevronHupijiao"></i>
                                                     </button>
                                                 </div>
@@ -1176,7 +1176,7 @@
                                     </div>
 
                                     <div class="config-row payment-channel-save-row">
-                                        <button type="button" class="btn-add-config" onclick="savePaymentChannelSettings()">
+                                        <button type="button" class="btn-add-config" data-admin-action="payments-save-channel-settings">
                                             <i class="fas fa-save"></i> 保存支付通道配置
                                         </button>
                                     </div>
@@ -1227,7 +1227,7 @@
                                     </div>
                                     <div class="add-channel-row">
                                         <input type="text" id="newChannelName" placeholder="新渠道名称">
-                                        <button class="btn-add-config" onclick="addChannel()">
+                                        <button class="btn-add-config" data-admin-action="settings-add-channel">
                                             <i class="fas fa-plus"></i>
                                         </button>
                                     </div>
@@ -1264,20 +1264,27 @@
                                 <div class="config-value">
                                     <div class="config-input-wrapper">
                                         <div class="custom-dropdown" id="lockoutDurationDropdown">
-                                            <button class="dropdown-trigger"
-                                                onclick="toggleCustomDropdown('lockoutDurationDropdown')">
+                                            <button class="dropdown-trigger" type="button"
+                                                data-admin-action="settings-toggle-custom-dropdown"
+                                                data-dropdown-id="lockoutDurationDropdown">
                                                 <span class="dropdown-value" id="lockoutDurationValue">15</span>
                                                 <i class="fas fa-chevron-down"></i>
                                             </button>
                                             <div class="dropdown-menu">
                                                 <div class="dropdown-option" data-value="300000"
-                                                    onclick="selectDropdownOption('lockoutDurationDropdown', '300000', '5')">
+                                                    data-admin-action="settings-select-dropdown-option"
+                                                    data-dropdown-id="lockoutDurationDropdown" data-option-value="300000"
+                                                    data-option-label="5">
                                                     5</div>
                                                 <div class="dropdown-option selected" data-value="900000"
-                                                    onclick="selectDropdownOption('lockoutDurationDropdown', '900000', '15')">
+                                                    data-admin-action="settings-select-dropdown-option"
+                                                    data-dropdown-id="lockoutDurationDropdown" data-option-value="900000"
+                                                    data-option-label="15">
                                                     15</div>
                                                 <div class="dropdown-option" data-value="3600000"
-                                                    onclick="selectDropdownOption('lockoutDurationDropdown', '3600000', '60')">
+                                                    data-admin-action="settings-select-dropdown-option"
+                                                    data-dropdown-id="lockoutDurationDropdown" data-option-value="3600000"
+                                                    data-option-label="60">
                                                     60</div>
                                             </div>
                                         </div>
@@ -1293,20 +1300,27 @@
                                 <div class="config-value">
                                     <div class="config-input-wrapper">
                                         <div class="custom-dropdown" id="sessionTimeoutDropdown">
-                                            <button class="dropdown-trigger"
-                                                onclick="toggleCustomDropdown('sessionTimeoutDropdown')">
+                                            <button class="dropdown-trigger" type="button"
+                                                data-admin-action="settings-toggle-custom-dropdown"
+                                                data-dropdown-id="sessionTimeoutDropdown">
                                                 <span class="dropdown-value" id="sessionTimeoutValue">60</span>
                                                 <i class="fas fa-chevron-down"></i>
                                             </button>
                                             <div class="dropdown-menu">
                                                 <div class="dropdown-option" data-value="1800000"
-                                                    onclick="selectDropdownOption('sessionTimeoutDropdown', '1800000', '30')">
+                                                    data-admin-action="settings-select-dropdown-option"
+                                                    data-dropdown-id="sessionTimeoutDropdown" data-option-value="1800000"
+                                                    data-option-label="30">
                                                     30</div>
                                                 <div class="dropdown-option selected" data-value="3600000"
-                                                    onclick="selectDropdownOption('sessionTimeoutDropdown', '3600000', '60')">
+                                                    data-admin-action="settings-select-dropdown-option"
+                                                    data-dropdown-id="sessionTimeoutDropdown" data-option-value="3600000"
+                                                    data-option-label="60">
                                                     60</div>
                                                 <div class="dropdown-option" data-value="86400000"
-                                                    onclick="selectDropdownOption('sessionTimeoutDropdown', '86400000', '1440')">
+                                                    data-admin-action="settings-select-dropdown-option"
+                                                    data-dropdown-id="sessionTimeoutDropdown" data-option-value="86400000"
+                                                    data-option-label="1440">
                                                     1440</div>
                                             </div>
                                         </div>
@@ -1318,7 +1332,7 @@
                             <div class="config-actions" style="margin-top: 32px; justify-content: flex-end;">
                                 <span class="config-save-indicator" id="loginSecuritySaveIndicator"
                                     style="margin-right: 12px; opacity: 0;">✓ 已保存</span>
-                                <button class="btn-sm btn-primary" onclick="saveLoginSecuritySettings()">
+                                <button class="btn-sm btn-primary" data-admin-action="settings-save-login-security">
                                     <i class="fas fa-save"></i> 保存
                                 </button>
                             </div>
@@ -1337,10 +1351,10 @@
                                     <!-- Dynamic locked accounts will be inserted here -->
                                 </div>
                                 <div class="config-actions" style="margin-top: 16px; justify-content: space-between;">
-                                    <button class="btn-sm btn-secondary" onclick="refreshLockedAccounts()">
+                                    <button class="btn-sm btn-secondary" data-admin-action="settings-refresh-locked-accounts">
                                         <i class="fas fa-sync-alt"></i> 刷新
                                     </button>
-                                    <button class="btn-sm btn-warning" onclick="unlockAllAccounts()" id="unlockAllBtn"
+                                    <button class="btn-sm btn-warning" data-admin-action="settings-unlock-all-accounts" id="unlockAllBtn"
                                         style="display: none; align-items: center; gap: 6px;">
                                         <i class="fas fa-unlock"></i>全部解锁
                                     </button>
@@ -1361,7 +1375,7 @@
                                 <div class="config-actions" style="margin-top: 26px; justify-content: flex-end;">
                                     <span class="config-save-indicator" id="ipBlacklistSaveIndicator"
                                         style="margin-right: 12px; opacity: 0;">✓ 已保存</span>
-                                    <button class="btn-sm btn-primary" onclick="saveIpBlacklist()">
+                                    <button class="btn-sm btn-primary" data-admin-action="settings-save-ip-blacklist">
                                         <i class="fas fa-save"></i> 保存
                                     </button>
                                 </div>
@@ -1426,48 +1440,48 @@
                                     <div class="editor-section-label">
                                         动态装饰
                                         <label class="decoration-toggle">
-                                            <input type="checkbox" id="decorationEnabled" onchange="toggleDecoration()">
+                                            <input type="checkbox" id="decorationEnabled" data-admin-change-action="settings-toggle-decoration">
                                             <span class="toggle-slider-mini"></span>
                                         </label>
                                     </div>
                                     <div class="decoration-theme-selector" id="decorationSelector">
                                         <button type="button" class="decoration-btn active" data-decoration="none"
-                                            onclick="selectDecoration('none')" title="无装饰">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="none" title="无装饰">
                                             <span class="deco-icon">✕</span>
                                             <span class="deco-label">无</span>
                                         </button>
                                         <button type="button" class="decoration-btn" data-decoration="snow"
-                                            onclick="selectDecoration('snow')" title="飘雪效果">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="snow" title="飘雪效果">
                                             <span class="deco-icon">❄️</span>
                                             <span class="deco-label">飘雪</span>
                                         </button>
                                         <button type="button" class="decoration-btn" data-decoration="sakura"
-                                            onclick="selectDecoration('sakura')" title="樱花飘落">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="sakura" title="樱花飘落">
                                             <span class="deco-icon">🌸</span>
                                             <span class="deco-label">樱花</span>
                                         </button>
                                         <button type="button" class="decoration-btn" data-decoration="fireworks"
-                                            onclick="selectDecoration('fireworks')" title="烟花庆典">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="fireworks" title="烟花庆典">
                                             <span class="deco-icon">🎆</span>
                                             <span class="deco-label">烟花</span>
                                         </button>
                                         <button type="button" class="decoration-btn" data-decoration="hearts"
-                                            onclick="selectDecoration('hearts')" title="漂浮爱心">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="hearts" title="漂浮爱心">
                                             <span class="deco-icon">❤️</span>
                                             <span class="deco-label">爱心</span>
                                         </button>
                                         <button type="button" class="decoration-btn" data-decoration="leaves"
-                                            onclick="selectDecoration('leaves')" title="秋日落叶">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="leaves" title="秋日落叶">
                                             <span class="deco-icon">🍂</span>
                                             <span class="deco-label">落叶</span>
                                         </button>
                                         <button type="button" class="decoration-btn" data-decoration="rain"
-                                            onclick="selectDecoration('rain')" title="雨天效果">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="rain" title="雨天效果">
                                             <span class="deco-icon">🌧️</span>
                                             <span class="deco-label">雨天</span>
                                         </button>
                                         <button type="button" class="decoration-btn" data-decoration="sunlight"
-                                            onclick="selectDecoration('sunlight')" title="阳光灿烂">
+                                            data-admin-action="settings-select-decoration" data-decoration-theme="sunlight" title="阳光灿烂">
                                             <span class="deco-icon">☀️</span>
                                             <span class="deco-label">阳光</span>
                                         </button>
@@ -1479,32 +1493,32 @@
                                     <div class="editor-section-label">显示页面</div>
                                     <div class="page-target-selector" id="pageTargetSelector">
                                         <button type="button" class="page-btn active" data-page="all"
-                                            onclick="togglePageTarget('all')" title="所有页面">
+                                            data-admin-action="settings-toggle-page-target" data-target-page="all" title="所有页面">
                                             <span class="page-icon"><i class="fas fa-globe-americas"></i></span>
                                             <span class="page-label">全部</span>
                                         </button>
                                         <button type="button" class="page-btn" data-page="prompts"
-                                            onclick="togglePageTarget('prompts')" title="灵感图库">
+                                            data-admin-action="settings-toggle-page-target" data-target-page="prompts" title="灵感图库">
                                             <span class="page-icon"><i class="fas fa-images"></i></span>
                                             <span class="page-label">图库</span>
                                         </button>
                                         <button type="button" class="page-btn" data-page="index"
-                                            onclick="togglePageTarget('index')" title="主页">
+                                            data-admin-action="settings-toggle-page-target" data-target-page="index" title="主页">
                                             <span class="page-icon"><i class="fas fa-home"></i></span>
                                             <span class="page-label">主页</span>
                                         </button>
                                         <button type="button" class="page-btn" data-page="shop"
-                                            onclick="togglePageTarget('shop')" title="资源商城">
+                                            data-admin-action="settings-toggle-page-target" data-target-page="shop" title="资源商城">
                                             <span class="page-icon"><i class="fas fa-shopping-cart"></i></span>
                                             <span class="page-label">商城</span>
                                         </button>
                                         <button type="button" class="page-btn" data-page="verify"
-                                            onclick="togglePageTarget('verify')" title="Gemini验证">
+                                            data-admin-action="settings-toggle-page-target" data-target-page="verify" title="Gemini验证">
                                             <span class="page-icon"><i class="fas fa-check-circle"></i></span>
                                             <span class="page-label">验证</span>
                                         </button>
                                         <button type="button" class="page-btn" data-page="guestbook"
-                                            onclick="togglePageTarget('guestbook')" title="留言板">
+                                            data-admin-action="settings-toggle-page-target" data-target-page="guestbook" title="留言板">
                                             <span class="page-icon"><i class="fas fa-comment-dots"></i></span>
                                             <span class="page-label">留言</span>
                                         </button>
@@ -1515,104 +1529,86 @@
                                 <div class="editor-section">
                                     <div class="editor-section-label">公告内容</div>
                                     <div class="announcement-toolbar" id="announcementToolbar">
-                                        <button type="button" class="toolbar-btn" onclick="insertFormat('b')"
+                                        <button type="button" class="toolbar-btn" data-admin-action="settings-insert-format" data-format-tag="b"
                                             title="加粗"><i class="fas fa-bold"></i></button>
-                                        <button type="button" class="toolbar-btn" onclick="insertFormat('i')"
+                                        <button type="button" class="toolbar-btn" data-admin-action="settings-insert-format" data-format-tag="i"
                                             title="斜体"><i class="fas fa-italic"></i></button>
-                                        <button type="button" class="toolbar-btn" onclick="insertFormat('u')"
+                                        <button type="button" class="toolbar-btn" data-admin-action="settings-insert-format" data-format-tag="u"
                                             title="下划线"><i class="fas fa-underline"></i></button>
                                         <div class="align-picker-container">
                                             <button type="button" class="toolbar-btn" id="alignPickerBtn"
-                                                onclick="toggleAlignPicker()" title="对齐"><i
+                                                data-admin-action="settings-toggle-align-picker" title="对齐"><i
                                                     class="fas fa-align-center"></i></button>
                                             <div class="align-picker" id="alignPicker">
                                                 <button type="button" class="align-item"
-                                                    onclick="applyTextAlign('left')" title="左对齐">
+                                                    data-admin-action="settings-apply-text-align" data-text-align="left" title="左对齐">
                                                     <i class="fas fa-align-left"></i>
                                                 </button>
                                                 <button type="button" class="align-item"
-                                                    onclick="applyTextAlign('center')" title="居中">
+                                                    data-admin-action="settings-apply-text-align" data-text-align="center" title="居中">
                                                     <i class="fas fa-align-center"></i>
                                                 </button>
                                                 <button type="button" class="align-item"
-                                                    onclick="applyTextAlign('right')" title="右对齐">
+                                                    data-admin-action="settings-apply-text-align" data-text-align="right" title="右对齐">
                                                     <i class="fas fa-align-right"></i>
                                                 </button>
                                             </div>
                                         </div>
                                         <div class="toolbar-divider"></div>
-                                        <button type="button" class="toolbar-btn" onclick="insertLink()" title="链接"><i
+                                        <button type="button" class="toolbar-btn" data-admin-action="settings-insert-link" title="链接"><i
                                                 class="fas fa-link"></i></button>
                                         <div class="emoji-picker-container">
                                             <button type="button" class="toolbar-btn" id="emojiPickerBtn"
-                                                onclick="toggleEmojiPicker()" title="表情"><i
+                                                data-admin-action="settings-toggle-emoji-picker" title="表情"><i
                                                     class="fas fa-smile"></i></button>
                                             <div class="emoji-picker" id="emojiPicker">
                                                 <div class="emoji-picker-header">表情</div>
                                                 <div class="emoji-grid">
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('🎉')">🎉</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('📢')">📢</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('⚠️')">⚠️</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('✨')">✨</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('🔥')">🔥</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('💡')">💡</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('🎁')">🎁</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('❤️')">❤️</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('👍')">👍</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('🚀')">🚀</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('🌟')">🌟</button>
-                                                    <button type="button" class="emoji-item"
-                                                        onclick="selectEmoji('💯')">💯</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="🎉">🎉</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="📢">📢</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="⚠️">⚠️</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="✨">✨</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="🔥">🔥</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="💡">💡</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="🎁">🎁</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="❤️">❤️</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="👍">👍</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="🚀">🚀</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="🌟">🌟</button>
+                                                    <button type="button" class="emoji-item" data-admin-action="settings-select-emoji" data-emoji-value="💯">💯</button>
                                                 </div>
                                             </div>
                                         </div>
                                         <!-- Color Picker -->
                                         <div class="toolbar-dropdown" id="colorDropdown">
                                             <button type="button" class="toolbar-btn"
-                                                onclick="toggleDropdown('colorDropdown')" title="文字颜色">
+                                                data-admin-action="settings-toggle-toolbar-dropdown" data-dropdown-id="colorDropdown" title="文字颜色">
                                                 <span class="color-swatch preview" id="colorPreview"
                                                     style="background:#6b9ece"></span>
                                             </button>
                                             <div class="dropdown-menu">
                                                 <button type="button" class="dropdown-item"
-                                                    data-color-option="#ffffff"
-                                                    onclick="selectColor('#ffffff')">
+                                                    data-color-option="#ffffff" data-admin-action="settings-select-color" data-color-value="#ffffff">
                                                     <span class="color-swatch" style="background:#ffffff"></span> 白色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
-                                                    data-color-option="#ffeb3b"
-                                                    onclick="selectColor('#ffeb3b')">
+                                                    data-color-option="#ffeb3b" data-admin-action="settings-select-color" data-color-value="#ffeb3b">
                                                     <span class="color-swatch" style="background:#ffeb3b"></span> 黄色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
-                                                    data-color-option="#ff9800"
-                                                    onclick="selectColor('#ff9800')">
+                                                    data-color-option="#ff9800" data-admin-action="settings-select-color" data-color-value="#ff9800">
                                                     <span class="color-swatch" style="background:#ff9800"></span> 橙色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
-                                                    data-color-option="#4caf50"
-                                                    onclick="selectColor('#4caf50')">
+                                                    data-color-option="#4caf50" data-admin-action="settings-select-color" data-color-value="#4caf50">
                                                     <span class="color-swatch" style="background:#4caf50"></span> 绿色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
-                                                    data-color-option="#e57373"
-                                                    onclick="selectColor('#e57373')">
+                                                    data-color-option="#e57373" data-admin-action="settings-select-color" data-color-value="#e57373">
                                                     <span class="color-swatch" style="background:#e57373"></span> 红色
                                                 </button>
                                                 <button type="button" class="dropdown-item selected"
-                                                    data-color-option="#6b9ece"
-                                                    onclick="selectColor('#6b9ece')">
+                                                    data-color-option="#6b9ece" data-admin-action="settings-select-color" data-color-value="#6b9ece">
                                                     <span class="color-swatch" style="background:#6b9ece"></span> 蓝色
                                                 </button>
                                             </div>
@@ -1620,23 +1616,20 @@
                                         <!-- Font Size -->
                                         <div class="toolbar-dropdown" id="sizeDropdown">
                                             <button type="button" class="toolbar-btn"
-                                                onclick="toggleDropdown('sizeDropdown')" title="字号">
+                                                data-admin-action="settings-toggle-toolbar-dropdown" data-dropdown-id="sizeDropdown" title="字号">
                                                 <span class="size-indicator medium" id="sizePreview">A</span>
                                             </button>
                                             <div class="dropdown-menu">
                                                 <button type="button" class="dropdown-item"
-                                                    data-size-option="2"
-                                                    onclick="selectFontSize('2', 'small')">
+                                                    data-size-option="2" data-admin-action="settings-select-font-size" data-font-size-value="2" data-font-size-class="small">
                                                     <span class="size-indicator small">A</span> 小
                                                 </button>
                                                 <button type="button" class="dropdown-item selected"
-                                                    data-size-option="3"
-                                                    onclick="selectFontSize('3', 'medium')">
+                                                    data-size-option="3" data-admin-action="settings-select-font-size" data-font-size-value="3" data-font-size-class="medium">
                                                     <span class="size-indicator medium">A</span> 中
                                                 </button>
                                                 <button type="button" class="dropdown-item"
-                                                    data-size-option="5"
-                                                    onclick="selectFontSize('5', 'large')">
+                                                    data-size-option="5" data-admin-action="settings-select-font-size" data-font-size-value="5" data-font-size-class="large">
                                                     <span class="size-indicator large">A</span> 大
                                                 </button>
                                             </div>
@@ -1648,7 +1641,7 @@
 
                                 <!-- Save Button -->
                                 <div class="editor-actions">
-                                    <button class="btn-primary" onclick="saveAnnouncement()">
+                                    <button class="btn-primary" data-admin-action="settings-save-announcement">
                                         <i class="fas fa-paper-plane"></i> 发布公告
                                     </button>
                                     <div class="announcement-toggle-inline">
@@ -1691,7 +1684,7 @@
                                 <textarea class="config-textarea" id="cfgSensitiveWords" rows="8"
                                     placeholder="敏感词1&#10;敏感词2&#10;..."></textarea>
                                 <div class="config-actions" style="margin-top: 26px; justify-content: flex-end;">
-                                    <button class="btn-sm btn-primary" onclick="saveSensitiveWords()">
+                                    <button class="btn-sm btn-primary" data-admin-action="settings-save-sensitive-words">
                                         <i class="fas fa-save"></i> 保存
                                     </button>
                                 </div>
@@ -1725,20 +1718,29 @@
                                 </div>
                                 <div class="config-value">
                                     <div class="custom-dropdown" id="perPageDropdown">
-                                        <button class="dropdown-trigger"
-                                            onclick="toggleCustomDropdown('perPageDropdown')">
+                                        <button class="dropdown-trigger" type="button"
+                                            data-admin-action="settings-toggle-custom-dropdown"
+                                            data-dropdown-id="perPageDropdown">
                                             <span class="dropdown-value" id="perPageValue">24</span>
                                             <i class="fas fa-chevron-down"></i>
                                         </button>
                                         <div class="dropdown-menu">
                                             <div class="dropdown-option" data-value="12"
-                                                onclick="selectDropdownOption('perPageDropdown', '12', '12')">12</div>
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="perPageDropdown" data-option-value="12"
+                                                data-option-label="12">12</div>
                                             <div class="dropdown-option selected" data-value="24"
-                                                onclick="selectDropdownOption('perPageDropdown', '24', '24')">24</div>
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="perPageDropdown" data-option-value="24"
+                                                data-option-label="24">24</div>
                                             <div class="dropdown-option" data-value="36"
-                                                onclick="selectDropdownOption('perPageDropdown', '36', '36')">36</div>
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="perPageDropdown" data-option-value="36"
+                                                data-option-label="36">36</div>
                                             <div class="dropdown-option" data-value="48"
-                                                onclick="selectDropdownOption('perPageDropdown', '48', '48')">48</div>
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="perPageDropdown" data-option-value="48"
+                                                data-option-label="48">48</div>
                                         </div>
                                     </div>
                                 </div>
@@ -1750,20 +1752,27 @@
                                 </div>
                                 <div class="config-value">
                                     <div class="custom-dropdown" id="defaultSortDropdown">
-                                        <button class="dropdown-trigger"
-                                            onclick="toggleCustomDropdown('defaultSortDropdown')">
+                                        <button class="dropdown-trigger" type="button"
+                                            data-admin-action="settings-toggle-custom-dropdown"
+                                            data-dropdown-id="defaultSortDropdown">
                                             <span class="dropdown-value" id="defaultSortValue">最新</span>
                                             <i class="fas fa-chevron-down"></i>
                                         </button>
                                         <div class="dropdown-menu">
                                             <div class="dropdown-option selected" data-value="newest"
-                                                onclick="selectDropdownOption('defaultSortDropdown', 'newest', '最新')">最新
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="defaultSortDropdown" data-option-value="newest"
+                                                data-option-label="最新">最新
                                             </div>
                                             <div class="dropdown-option" data-value="popular"
-                                                onclick="selectDropdownOption('defaultSortDropdown', 'popular', '最热')">
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="defaultSortDropdown" data-option-value="popular"
+                                                data-option-label="最热">
                                                 最热</div>
                                             <div class="dropdown-option" data-value="random"
-                                                onclick="selectDropdownOption('defaultSortDropdown', 'random', '随机')">随机
+                                                data-admin-action="settings-select-dropdown-option"
+                                                data-dropdown-id="defaultSortDropdown" data-option-value="random"
+                                                data-option-label="随机">随机
                                             </div>
                                         </div>
                                     </div>
@@ -1782,8 +1791,7 @@
                                 <div class="config-value">
                                     <div class="input-with-addon">
                                         <input type="number" id="cfgVerifyPrice" class="config-input" value="10" min="1"
-                                            max="100" step="1"
-                                            onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
+                                            max="100" step="1" data-admin-change-action="settings-save-verify-config">
                                         <span class="input-addon">积分/次</span>
                                     </div>
                                 </div>
@@ -1796,10 +1804,10 @@
                                 </div>
                                 <input type="password" id="cfgVerifyApiKey" class="config-input"
                                     placeholder="ak_XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="new-password" readonly
-                                    onfocus="this.removeAttribute('readonly');"
-                                    onblur="this.setAttribute('readonly', 'readonly');"
+                                    data-admin-focus-action="settings-verify-api-key-unlock"
+                                    data-admin-blur-action="settings-verify-api-key-lock"
                                     style="width: 100%; text-align: left; box-sizing: border-box;"
-                                    onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
+                                    data-admin-change-action="settings-save-verify-config">
                             </div>
                             <div class="config-item-row">
                                 <div class="config-label">
@@ -1809,7 +1817,7 @@
                                 <div class="config-value">
                                     <label class="toggle-switch">
                                         <input type="checkbox" id="cfgVerifyEnabled" checked
-                                            onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
+                                            data-admin-change-action="settings-save-verify-config">
                                         <span class="toggle-slider"></span>
                                     </label>
                                 </div>
@@ -1824,10 +1832,8 @@
                                         style="font-size: 1.1em; font-weight: 600; color: var(--accent-starry, #6c5ce7); white-space: nowrap;">
                                         <i class="fas fa-spinner fa-spin" style="opacity: 0.4;"></i> 加载中...
                                     </span>
-                                    <button onclick="window.checkVerifyQuota && window.checkVerifyQuota()" title="刷新额度"
-                                        style="background: none; border: none; cursor: pointer; color: var(--text-secondary); padding: 4px 6px; border-radius: 4px; transition: all 0.2s; font-size: 0.85rem;"
-                                        onmouseover="this.style.color='var(--accent-starry)'"
-                                        onmouseout="this.style.color='var(--text-secondary)'">
+                                    <button type="button" data-admin-action="settings-check-verify-quota" title="刷新额度"
+                                        style="background: none; border: none; cursor: pointer; color: var(--text-secondary); padding: 4px 6px; border-radius: 4px; transition: all 0.2s; font-size: 0.85rem;">
                                         <i class="fas fa-sync-alt"></i>
                                     </button>
                                 </div>
@@ -1901,7 +1907,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="number" id="affiliate_setting_commission_rate_shop" step="0.01"
                                             min="0" max="1" placeholder="0.10" class="config-input"
-                                            onchange="window.saveAffiliateSetting('commission_rate_shop', this.value)">
+                                            data-admin-change-action="affiliate-save-setting"
+                                            data-affiliate-setting-field="commission_rate_shop">
                                     </div>
                                 </div>
                             </div>
@@ -1924,7 +1931,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="number" id="affiliate_setting_commission_rate_agent" step="0.01"
                                             min="0" max="1" placeholder="0.10" class="config-input"
-                                            onchange="window.saveAffiliateSetting('commission_rate_agent', this.value)">
+                                            data-admin-change-action="affiliate-save-setting"
+                                            data-affiliate-setting-field="commission_rate_agent">
                                     </div>
                                 </div>
                             </div>
@@ -1947,7 +1955,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="number" id="affiliate_setting_registration_reward_points" step="0.1"
                                             min="0" placeholder="100" class="config-input"
-                                            onchange="window.saveAffiliateSetting('registration_reward_points', this.value)">
+                                            data-admin-change-action="affiliate-save-setting"
+                                            data-affiliate-setting-field="registration_reward_points">
                                     </div>
                                 </div>
                             </div>
@@ -1972,7 +1981,9 @@
                                         <label class="toggle-switch">
                                             <input type="checkbox"
                                                 id="affiliate_setting_registration_reward_requires_purchase" checked
-                                                onchange="window.saveAffiliateSetting('registration_reward_requires_purchase', this.checked ? 'true' : 'false')">
+                                                data-admin-change-action="affiliate-save-setting"
+                                                data-affiliate-setting-field="registration_reward_requires_purchase"
+                                                data-affiliate-value-source="checked-bool">
                                             <span class="toggle-slider"></span>
                                         </label>
                                     </div>
@@ -1996,7 +2007,8 @@
                                     <div class="config-input-wrapper affiliate-textarea-wrapper">
                                         <textarea class="config-textarea" id="affiliate_setting_reward_notice" rows="4"
                                             placeholder="例如：拉新固定奖励与返佣奖励可叠加；异常账号、作弊流量、退款订单不计入活动奖励。"
-                                            onchange="window.saveAffiliateSetting('reward_notice', this.value)"></textarea>
+                                            data-admin-change-action="affiliate-save-setting"
+                                            data-affiliate-setting-field="reward_notice"></textarea>
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -2007,7 +2019,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_setting_legal_disclaimer" class="config-input"
                                             placeholder="活动最终解释权归平台所有"
-                                            onchange="window.saveAffiliateSetting('legal_disclaimer', this.value)">
+                                            data-admin-change-action="affiliate-save-setting"
+                                            data-affiliate-setting-field="legal_disclaimer">
                                     </div>
                                 </div>
                             </div>
@@ -2029,7 +2042,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_poster_chip_label" class="config-input"
                                             placeholder="推广"
-                                            onchange="window.saveAffiliatePosterField('chip_label', this.value)">
+                                            data-admin-change-action="affiliate-save-poster-field"
+                                            data-affiliate-poster-field="chip_label">
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -2040,7 +2054,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_poster_title" class="config-input"
                                             placeholder="专属邀请函"
-                                            onchange="window.saveAffiliatePosterField('title', this.value)">
+                                            data-admin-change-action="affiliate-save-poster-field"
+                                            data-affiliate-poster-field="title">
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -2051,7 +2066,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_poster_subtitle" class="config-input"
                                             placeholder="扫码注册 · 首单激活奖励"
-                                            onchange="window.saveAffiliatePosterField('subtitle', this.value)">
+                                            data-admin-change-action="affiliate-save-poster-field"
+                                            data-affiliate-poster-field="subtitle">
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -2062,7 +2078,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_poster_reward_badge_text" class="config-input"
                                             placeholder="拉新奖励 {registration_reward_text} · 商城返佣 {shop_commission}"
-                                            onchange="window.saveAffiliatePosterField('reward_badge_text', this.value)">
+                                            data-admin-change-action="affiliate-save-poster-field"
+                                            data-affiliate-poster-field="reward_badge_text">
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -2073,7 +2090,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_poster_invite_code_label" class="config-input"
                                             placeholder="邀请码"
-                                            onchange="window.saveAffiliatePosterField('invite_code_label', this.value)">
+                                            data-admin-change-action="affiliate-save-poster-field"
+                                            data-affiliate-poster-field="invite_code_label">
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -2084,7 +2102,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_poster_qr_label" class="config-input"
                                             placeholder="扫码注册领取新人福利"
-                                            onchange="window.saveAffiliatePosterField('qr_label', this.value)">
+                                            data-admin-change-action="affiliate-save-poster-field"
+                                            data-affiliate-poster-field="qr_label">
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -2095,7 +2114,8 @@
                                     <div class="config-input-wrapper">
                                         <input type="text" id="affiliate_poster_footer" class="config-input"
                                             placeholder="邀请好友注册，享受固定奖励与持续返佣"
-                                            onchange="window.saveAffiliatePosterField('footer', this.value)">
+                                            data-admin-change-action="affiliate-save-poster-field"
+                                            data-affiliate-poster-field="footer">
                                     </div>
                                 </div>
 
@@ -2428,11 +2448,11 @@
             <div id="module-points" class="module-container">
                 <!-- Tabs -->
                 <nav class="admin-tabs">
-                    <button class="admin-tab active" data-points-view="batches" onclick="switchPointsView('batches')">📦
+                    <button class="admin-tab active" data-points-view="batches" data-admin-action="points-switch-view" data-points-view-target="batches">📦
                         批次管理</button>
-                    <button class="admin-tab" data-points-view="generate" onclick="switchPointsView('generate')">➕
+                    <button class="admin-tab" data-points-view="generate" data-admin-action="points-switch-view" data-points-view-target="generate">➕
                         生成兑换码</button>
-                    <button class="admin-tab" data-points-view="lookup" onclick="switchPointsView('lookup')">🔍
+                    <button class="admin-tab" data-points-view="lookup" data-admin-action="points-switch-view" data-points-view-target="lookup">🔍
                         查询</button>
                     <div class="admin-tab-indicator"></div>
                 </nav>
@@ -2447,25 +2467,25 @@
                                 <div class="search-bar">
                                     <i class="fas fa-search"></i>
                                     <input type="text" id="batchSearchInput" placeholder="搜索批次名称或兑换码..."
-                                        autocomplete="off" onkeydown="if(event.key==='Enter') searchCodeInBatches()">
+                                        autocomplete="off" data-admin-keydown-action="points-search-enter">
                                 </div>
                                 <div class="filter-dropdowns">
                                     <!-- Date Filter -->
                                     <div class="filter-dropdown" data-filter="batchDate" id="batchDateFilter">
-                                        <button class="filter-btn" onclick="toggleBatchDateFilter()">
+                                        <button class="filter-btn" data-admin-action="points-toggle-date-filter">
                                             <i class="fas fa-calendar-alt"></i>
                                             <span class="filter-label" id="batchDateLabel">日期</span>
                                             <i class="fas fa-chevron-down filter-arrow"></i>
                                         </button>
                                         <div class="filter-popup glass-popup" id="batchDatePopup">
                                             <div class="filter-option selected" data-value="all"
-                                                onclick="filterBatchByDate('all')">全部时间</div>
+                                                data-admin-action="points-filter-date" data-batch-date="all">全部时间</div>
                                             <div class="filter-option" data-value="today"
-                                                onclick="filterBatchByDate('today')">今天</div>
+                                                data-admin-action="points-filter-date" data-batch-date="today">今天</div>
                                             <div class="filter-option" data-value="week"
-                                                onclick="filterBatchByDate('week')">本周</div>
+                                                data-admin-action="points-filter-date" data-batch-date="week">本周</div>
                                             <div class="filter-option" data-value="month"
-                                                onclick="filterBatchByDate('month')">本月</div>
+                                                data-admin-action="points-filter-date" data-batch-date="month">本月</div>
                                             <div class="filter-divider"></div>
                                             <div class="filter-custom-date">
                                                 <label>自定义范围</label>
@@ -2479,52 +2499,52 @@
                                     </div>
                                     <!-- Channel Filter -->
                                     <div class="filter-dropdown" data-filter="batchChannel" id="batchChannelFilter">
-                                        <button class="filter-btn" onclick="toggleBatchChannelFilter()">
+                                        <button class="filter-btn" data-admin-action="points-toggle-channel-filter">
                                             <i class="fas fa-store"></i>
                                             <span class="filter-label" id="batchChannelLabel">渠道</span>
                                             <i class="fas fa-chevron-down filter-arrow"></i>
                                         </button>
                                         <div class="filter-popup glass-popup" id="batchChannelPopup">
                                             <div class="filter-option selected" data-value="all"
-                                                onclick="filterBatchByChannel('all')">全部渠道</div>
+                                                data-admin-action="points-filter-channel" data-batch-channel="all">全部渠道</div>
                                             <div class="filter-option" data-value="xianyu"
-                                                onclick="filterBatchByChannel('xianyu')">闲鱼</div>
+                                                data-admin-action="points-filter-channel" data-batch-channel="xianyu">闲鱼</div>
 
                                             <div class="filter-option" data-value="taobao"
-                                                onclick="filterBatchByChannel('taobao')">淘宝</div>
+                                                data-admin-action="points-filter-channel" data-batch-channel="taobao">淘宝</div>
                                             <div class="filter-option" data-value="manual"
-                                                onclick="filterBatchByChannel('manual')">手动</div>
+                                                data-admin-action="points-filter-channel" data-batch-channel="manual">手动</div>
                                             <div class="filter-option" data-value="promotion"
-                                                onclick="filterBatchByChannel('promotion')">促销</div>
+                                                data-admin-action="points-filter-channel" data-batch-channel="promotion">促销</div>
                                             <div class="filter-option" data-value="test"
-                                                onclick="filterBatchByChannel('test')">测试</div>
+                                                data-admin-action="points-filter-channel" data-batch-channel="test">测试</div>
                                         </div>
                                     </div>
                                     <!-- Package Filter -->
                                     <div class="filter-dropdown" data-filter="batchPackage" id="batchPackageFilter">
-                                        <button class="filter-btn" onclick="toggleBatchPackageFilter()">
+                                        <button class="filter-btn" data-admin-action="points-toggle-package-filter">
                                             <i class="fas fa-gift"></i>
                                             <span class="filter-label" id="batchPackageLabel">套餐</span>
                                             <i class="fas fa-chevron-down filter-arrow"></i>
                                         </button>
                                         <div class="filter-popup glass-popup" id="batchPackagePopup">
                                             <div class="filter-option selected" data-value="all"
-                                                onclick="filterBatchByPackage('all')">全部套餐</div>
+                                                data-admin-action="points-filter-package" data-batch-package="all">全部套餐</div>
                                             <!-- Populated dynamically -->
                                         </div>
                                     </div>
                                     <!-- Export Dropdown (moved here, next to Package filter) -->
                                     <div class="filter-dropdown" data-filter="batchExport" id="batchExportDropdown">
-                                        <button class="filter-btn" onclick="toggleBatchExportMenu()">
+                                        <button class="filter-btn" data-admin-action="points-toggle-export-menu">
                                             <i class="fas fa-file-export"></i>
                                             <span class="filter-label">导出</span>
                                             <i class="fas fa-chevron-down filter-arrow"></i>
                                         </button>
                                         <div class="filter-popup glass-popup" id="batchExportPopup">
-                                            <div class="filter-option" onclick="exportBatchList()">
+                                            <div class="filter-option" data-admin-action="points-export-batch-list">
                                                 <i class="fas fa-list"></i> 导出批次列表
                                             </div>
-                                            <div class="filter-option" onclick="exportSelectedBatches()"
+                                            <div class="filter-option" data-admin-action="points-export-selected-batches"
                                                 id="exportSelectedOption" style="display: none;">
                                                 <i class="fas fa-check-double"></i> 导出选中批次
                                             </div>
@@ -2532,22 +2552,22 @@
                                     </div>
                                     <!-- Batch Select Toggle Button (after Package filter) -->
                                     <button class="btn-icon batch-select-btn" id="batchSelectToggle"
-                                        onclick="toggleBatchSelectMode()" title="选择模式">
+                                        data-admin-action="points-toggle-select-mode" title="选择模式">
                                         <i class="fas fa-check-square"></i>
                                     </button>
                                     <!-- Batch Actions Menu (moved here, next to checkbox toggle) -->
                                     <div class="batch-menu-container" id="pointsBatchMenuContainer"
                                         style="display: none;">
-                                        <button class="btn-icon" onclick="togglePointsBatchActionsMenu()">
+                                        <button class="btn-icon" data-admin-action="points-toggle-actions-menu">
                                             <i class="fas fa-ellipsis-h"></i>
                                         </button>
                                         <div class="batch-menu-popup glass-popup" id="pointsBatchActionsMenu">
-                                            <div class="batch-menu-item" onclick="batchInvalidateCodes()">
+                                            <div class="batch-menu-item" data-admin-action="points-batch-invalidate">
                                                 <i class="fas fa-ban"></i>
                                                 <span>作废未使用</span>
                                             </div>
                                             <div class="batch-menu-divider"></div>
-                                            <div class="batch-menu-item danger" onclick="batchDeleteBatches()">
+                                            <div class="batch-menu-item danger" data-admin-action="points-batch-delete">
                                                 <i class="fas fa-trash"></i>
                                                 <span>删除选中</span>
                                             </div>
@@ -2570,22 +2590,22 @@
                                     <th class="checkbox-col" id="batchCheckboxHeader" style="display: none;">
                                         <label class="custom-checkbox">
                                             <input type="checkbox" id="selectAllBatches"
-                                                onchange="toggleSelectAllBatches()" title="全选当前页">
+                                                data-admin-change-action="points-toggle-select-all-batches" title="全选当前页">
                                             <span class="checkmark"></span>
                                         </label>
                                     </th>
-                                    <th class="sortable" data-sort="name" onclick="sortBatches('name')">
+                                    <th class="sortable" data-sort="name" data-admin-action="points-sort-batches" data-sort-field="name">
                                         批次名称 <i class="fas fa-sort sort-icon"></i>
                                     </th>
                                     <th>套餐</th>
                                     <th>渠道</th>
-                                    <th class="sortable" data-sort="total_count" onclick="sortBatches('total_count')">
+                                    <th class="sortable" data-sort="total_count" data-admin-action="points-sort-batches" data-sort-field="total_count">
                                         总数 <i class="fas fa-sort sort-icon"></i>
                                     </th>
-                                    <th class="sortable" data-sort="used_count" onclick="sortBatches('used_count')">
+                                    <th class="sortable" data-sort="used_count" data-admin-action="points-sort-batches" data-sort-field="used_count">
                                         已用 <i class="fas fa-sort sort-icon"></i>
                                     </th>
-                                    <th class="sortable" data-sort="created_at" onclick="sortBatches('created_at')">
+                                    <th class="sortable" data-sort="created_at" data-admin-action="points-sort-batches" data-sort-field="created_at">
                                         创建时间 <i class="fas fa-sort-down sort-icon active"></i>
                                     </th>
                                     <th>操作</th>
@@ -2606,7 +2626,7 @@
                             <div class="section-title">
                                 <i class="fas fa-cog"></i> 配置参数
                             </div>
-                            <form id="generateCodesForm" onsubmit="generateCodes(event)" class="prompt-form">
+                            <form id="generateCodesForm" class="prompt-form">
                                 <div class="form-group">
                                     <label>批次名称</label>
                                     <input type="text" id="batchName" placeholder="如: 闲鱼1月活动" required>
@@ -2690,10 +2710,10 @@
                                     style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                                     <h4 style="margin: 0; color: #22c55e;"><i class="fas fa-check-circle"></i> 生成成功</h4>
                                     <div class="codes-actions">
-                                        <button class="btn-sm btn-secondary" onclick="copyAllCodes()">
+                                        <button class="btn-sm btn-secondary" data-admin-action="points-copy-all-codes">
                                             <i class="fas fa-copy"></i> 复制
                                         </button>
-                                        <button class="btn-sm btn-secondary" onclick="downloadCodesCSV()">
+                                        <button class="btn-sm btn-secondary" data-admin-action="points-download-codes-csv">
                                             <i class="fas fa-download"></i> CSV
                                         </button>
                                     </div>
@@ -2715,7 +2735,7 @@
                                     <i class="fas fa-search" style="color: var(--text-dim);"></i>
                                     <input type="text" id="lookupCodeInput" placeholder="输入兑换码或订单号" maxlength="50">
                                 </div>
-                                <button class="btn-primary lookup-btn" onclick="lookupCode()">查询</button>
+                                <button class="btn-primary lookup-btn" data-admin-action="points-lookup-code">查询</button>
                             </div>
                         </div>
 
@@ -2808,32 +2828,32 @@
                         <div class="filter-dropdowns">
                             <!-- Status Filter -->
                             <div class="filter-dropdown" data-filter="userStatus">
-                                <button class="filter-btn" onclick="toggleUserStatusFilter()">
+                                <button class="filter-btn" data-admin-action="users-toggle-status-filter">
                                     <i class="fas fa-shield-alt"></i>
                                     <span class="filter-label">状态</span>
                                     <i class="fas fa-chevron-down filter-arrow"></i>
                                 </button>
                                 <div class="filter-popup glass-popup">
                                     <div class="filter-option selected" data-value="all"
-                                        onclick="filterUserByStatus('all')">全部</div>
+                                        data-admin-action="users-filter-status" data-user-status="all">全部</div>
                                     <div class="filter-option" data-value="active"
-                                        onclick="filterUserByStatus('active')">正常</div>
+                                        data-admin-action="users-filter-status" data-user-status="active">正常</div>
                                     <div class="filter-option" data-value="banned"
-                                        onclick="filterUserByStatus('banned')">封禁中</div>
+                                        data-admin-action="users-filter-status" data-user-status="banned">封禁中</div>
                                 </div>
                             </div>
 
                             <!-- Level Filter -->
                             <div class="filter-dropdown" data-filter="userLevel">
-                                <button class="filter-btn" onclick="toggleUserLevelFilter()">
+                                <button class="filter-btn" data-admin-action="users-toggle-level-filter">
                                     <i class="fas fa-star"></i>
                                     <span class="filter-label">等级</span>
                                     <i class="fas fa-chevron-down filter-arrow"></i>
                                 </button>
                                 <div class="filter-popup glass-popup">
                                     <div class="filter-option selected" data-value="all"
-                                        onclick="filterUserByLevel('all')">全部</div>
-                                    <div class="filter-option" data-value="vip" onclick="filterUserByLevel('vip')">VIP
+                                        data-admin-action="users-filter-level" data-user-level="all">全部</div>
+                                    <div class="filter-option" data-value="vip" data-admin-action="users-filter-level" data-user-level="vip">VIP
                                         会员</div>
                                 </div>
                             </div>
@@ -2841,17 +2861,17 @@
                             <!-- Role Filter (Super Admin Only) -->
                             <div class="filter-dropdown" data-filter="userRole" id="adminRoleFilter"
                                 style="display: none;">
-                                <button class="filter-btn" onclick="toggleUserRoleFilter()">
+                                <button class="filter-btn" data-admin-action="users-toggle-role-filter">
                                     <i class="fas fa-user-shield"></i>
                                     <span class="filter-label">角色</span>
                                     <i class="fas fa-chevron-down filter-arrow"></i>
                                 </button>
                                 <div class="filter-popup glass-popup">
                                     <div class="filter-option selected" data-value="all"
-                                        onclick="filterUserByRole('all')">全部</div>
-                                    <div class="filter-option" data-value="admin" onclick="filterUserByRole('admin')">
+                                        data-admin-action="users-filter-role" data-user-role="all">全部</div>
+                                    <div class="filter-option" data-value="admin" data-admin-action="users-filter-role" data-user-role="admin">
                                         管理员</div>
-                                    <div class="filter-option" data-value="user" onclick="filterUserByRole('user')">普通用户
+                                    <div class="filter-option" data-value="user" data-admin-action="users-filter-role" data-user-role="user">普通用户
                                     </div>
                                 </div>
                             </div>
@@ -2863,45 +2883,45 @@
                             </div>
                             <label class="toggle-switch-sm">
                                 <input type="checkbox" id="userShowTestAccountsToggle"
-                                    onchange="toggleUserTestAccountVisibility(this.checked)">
+                                    data-admin-change-action="users-toggle-test-accounts">
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>
                         <!-- Batch Actions (like Gallery Manage) -->
                         <div class="batch-actions-wrapper">
-                            <button class="batch-btn" id="userSelectModeBtn" onclick="toggleUserSelectMode()"
+                            <button class="batch-btn" id="userSelectModeBtn" data-admin-action="users-toggle-select-mode"
                                 title="选择模式">
                                 <i class="fas fa-check-square"></i>
                             </button>
                             <div class="batch-menu-container" id="userBatchMenuContainer" style="display: none;">
-                                <button class="batch-btn" id="userBatchMenuTrigger" onclick="toggleUserBatchMenu()"
+                                <button class="batch-btn" id="userBatchMenuTrigger" data-admin-action="users-toggle-batch-menu"
                                     title="批量操作">
                                     <i class="fas fa-ellipsis-h"></i>
                                 </button>
                                 <div class="batch-dropdown-menu" id="userBatchDropdownMenu">
-                                    <div class="batch-menu-item" onclick="selectAllUsersOnPage()">
+                                    <div class="batch-menu-item" data-admin-action="users-select-all-page">
                                         <i class="fas fa-check-double"></i>
                                         <span>全选当前页</span>
                                     </div>
                                     <div class="batch-menu-divider"></div>
-                                    <div class="batch-menu-item" onclick="batchSendNotification()">
+                                    <div class="batch-menu-item" data-admin-action="users-batch-send-notification">
                                         <i class="fas fa-bell"></i>
                                         <span>发送通知</span>
                                     </div>
-                                    <div class="batch-menu-item" onclick="batchAdjustPoints()">
+                                    <div class="batch-menu-item" data-admin-action="users-batch-adjust-points">
                                         <i class="fas fa-coins"></i>
                                         <span>调整积分</span>
                                     </div>
-                                    <div class="batch-menu-item" onclick="batchAddTags()">
+                                    <div class="batch-menu-item" data-admin-action="users-batch-add-tags">
                                         <i class="fas fa-tags"></i>
                                         <span>添加标签</span>
                                     </div>
-                                    <div class="batch-menu-item" onclick="batchExportUsers()">
+                                    <div class="batch-menu-item" data-admin-action="users-batch-export">
                                         <i class="fas fa-download"></i>
                                         <span>导出数据</span>
                                     </div>
                                     <div class="batch-menu-divider"></div>
-                                    <div class="batch-menu-item danger" onclick="batchBanUsers()">
+                                    <div class="batch-menu-item danger" data-admin-action="users-batch-ban">
                                         <i class="fas fa-ban"></i>
                                         <span>封禁管理</span>
                                     </div>
@@ -2956,7 +2976,7 @@
                         <div class="user-modal-header">
 
                             <h2 class="modal-title">用户详情</h2>
-                            <button class="modal-close-btn" onclick="closeUserModal()">
+                            <button class="modal-close-btn" data-admin-action="users-close-modal">
                                 <i class="fas fa-times"></i>
                             </button>
                         </div>
@@ -2973,28 +2993,28 @@
                                 <!-- Tab Navigation -->
                                 <div class="user-tab-nav">
                                     <button class="user-tab-btn active" data-tab="ledger"
-                                        onclick="switchUserTab('ledger')">
+                                        data-admin-action="users-switch-tab" data-user-tab="ledger">
                                         <i class="fas fa-chart-line"></i> 积分流水
                                     </button>
                                     <button class="user-tab-btn" data-tab="activity"
-                                        onclick="switchUserTab('activity')">
+                                        data-admin-action="users-switch-tab" data-user-tab="activity">
                                         <i class="fas fa-history"></i> 近期动态
                                     </button>
-                                    <button class="user-tab-btn" data-tab="notes" onclick="switchUserTab('notes')">
+                                    <button class="user-tab-btn" data-tab="notes" data-admin-action="users-switch-tab" data-user-tab="notes">
                                         <i class="far fa-sticky-note"></i> 备注
                                     </button>
-                                    <button class="user-tab-btn" data-tab="audit" onclick="switchUserTab('audit')">
+                                    <button class="user-tab-btn" data-tab="audit" data-admin-action="users-switch-tab" data-user-tab="audit">
                                         <i class="fas fa-shield-alt"></i> 审计
                                     </button>
-                                    <button class="user-tab-btn" data-tab="blocks" onclick="switchUserTab('blocks')">
+                                    <button class="user-tab-btn" data-tab="blocks" data-admin-action="users-switch-tab" data-user-tab="blocks">
                                         <i class="fas fa-ban"></i> 封禁记录
                                     </button>
                                     <button class="user-tab-btn" data-tab="affiliate"
-                                        onclick="switchUserTab('affiliate')">
+                                        data-admin-action="users-switch-tab" data-user-tab="affiliate">
                                         <i class="fas fa-share-alt"></i> 推广
                                     </button>
                                     <button class="user-tab-btn" data-tab="relatives"
-                                        onclick="switchUserTab('relatives')">
+                                        data-admin-action="users-switch-tab" data-user-tab="relatives">
                                         <i class="fas fa-users-cog"></i> 关联账号
                                     </button>
                                     <div class="tab-indicator"></div>
@@ -3022,23 +3042,23 @@
                 <!-- Shop Tabs -->
                 <div class="shop-tabs"
                     style="display: flex; justify-content: center; gap: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;">
-                    <div class="shop-tab active" onclick="ShopAdmin.switchTab('products')"
+                    <div class="shop-tab active" data-shop-action="shop-switch-tab" data-shop-tab="products"
                         style="padding: 10px 20px; cursor: pointer; color: #fff; border-bottom: 2px solid #6b9ece;">
                         商品
                     </div>
-                    <div class="shop-tab" onclick="ShopAdmin.switchTab('import')"
+                    <div class="shop-tab" data-shop-action="shop-switch-tab" data-shop-tab="import"
                         style="padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.6);">
                         导入
                     </div>
-                    <div class="shop-tab" onclick="ShopAdmin.switchTab('inventory')"
+                    <div class="shop-tab" data-shop-action="shop-switch-tab" data-shop-tab="inventory"
                         style="padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.6);">
                         库存
                     </div>
-                    <div class="shop-tab" onclick="ShopAdmin.switchTab('orders')"
+                    <div class="shop-tab" data-shop-action="shop-switch-tab" data-shop-tab="orders"
                         style="padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.6);">
                         订单
                     </div>
-                    <div class="shop-tab" onclick="ShopAdmin.switchTab('fulfillment')"
+                    <div class="shop-tab" data-shop-action="shop-switch-tab" data-shop-tab="fulfillment"
                         style="padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.6);">
                         API 履约
                     </div>
@@ -3675,7 +3695,7 @@
 
                     <div id="productCategoryFilters" class="category-filters"
                         style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; padding-bottom:5px; align-items:center;">
-                        <button class="filter-tab active" onclick="ShopAdmin.filterCategory('all', this)">全部</button>
+                        <button class="filter-tab active" data-shop-action="product-filter-category" data-category="all">全部</button>
                         <!-- Dynamic category buttons will be inserted here by JS -->
                     </div>
 
@@ -3685,12 +3705,12 @@
 
                         <!-- Status Filter Icon Buttons (moved here, before checkbox) -->
                         <button id="statusActiveBtn" class="icon-btn-square status-filter active" data-status="active"
-                            onclick="ShopAdmin.filterStatus('active', this)" title="上架中"
+                            data-shop-action="product-filter-status" title="上架中"
                             style="background:rgba(74, 222, 128, 0.2); border-color:rgba(74, 222, 128, 0.5); color:#4ade80;">
                             <i class="fas fa-eye"></i>
                         </button>
                         <button id="statusDeletedBtn" class="icon-btn-square status-filter" data-status="deleted"
-                            onclick="ShopAdmin.filterStatus('deleted', this)" title="回收站"
+                            data-shop-action="product-filter-status" title="回收站"
                             style="background:rgba(255,255,255,0.03); color:rgba(255,255,255,0.5);">
                             <i class="fas fa-trash"></i>
                         </button>
@@ -3700,14 +3720,14 @@
 
                         <!-- Toggle Selection Mode Button -->
                         <button id="toggleProductSelectionBtn" class="icon-btn-square"
-                            onclick="ShopAdmin.toggleProductSelectionMode()" title="多选模式">
+                            data-shop-action="product-toggle-selection-mode" title="多选模式">
                             <i class="fas fa-check-square"></i>
                         </button>
 
                         <!-- Batch Actions Button & Menu -->
                         <div class="batch-action-wrapper" style="position: relative;">
                             <button id="productBatchActionsBtn" class="icon-btn-square"
-                                onclick="ShopAdmin.toggleProductBatchMenu()" title="批量操作" style="display: none;">
+                                data-shop-action="product-toggle-batch-menu" title="批量操作" style="display: none;">
                                 <i class="fas fa-ellipsis-h"></i>
                             </button>
                             <!-- Product Batch Menu -->
@@ -3717,13 +3737,13 @@
                                     <i class="fas fa-check-circle" style="color: #34d399;"></i>
                                     已选 <span id="productBatchSelectedCount">0</span> 项
                                 </div>
-                                <div class="batch-menu-item" onclick="ShopAdmin.selectAllProducts()">
+                                <div class="batch-menu-item" data-shop-action="product-select-all">
                                     <i class="fas fa-check-double"></i> 全选当前页
                                 </div>
-                                <div class="batch-menu-item" onclick="ShopAdmin.batchDeleteProducts()">
+                                <div class="batch-menu-item" data-shop-action="product-batch-delete">
                                     <i class="fas fa-trash-alt"></i> 批量删除
                                 </div>
-                                <div class="batch-menu-item" onclick="ShopAdmin.exportProducts(true)">
+                                <div class="batch-menu-item" data-shop-action="product-export-selected">
                                     <i class="fas fa-file-export"></i> 导出选中
                                 </div>
                             </div>
@@ -4572,20 +4592,20 @@
                             <div class="inv-search-box" style="margin-left: 10px;">
                                 <i class="fas fa-search"></i>
                                 <input type="text" id="invSearchInput" placeholder="搜索内容/批次..."
-                                    onkeypress="if(event.key==='Enter') ShopAdmin.loadInventoryList()">
+                                    data-shop-keydown="inventory-search-enter">
                             </div>
                             <!-- Hidden Date State -->
                             <input type="hidden" id="invFilterDateType" value="all">
 
                             <!-- Manage Buttons -->
                             <button id="toggleSelectionBtn" class="icon-btn-square"
-                                onclick="ShopAdmin.toggleSelectionMode()" title="管理模式">
+                                data-shop-action="inventory-toggle-selection-mode" title="管理模式">
                                 <i class="fas fa-check-square"></i>
                             </button>
 
                             <div class="batch-action-wrapper" style="position: relative;">
                                 <button id="batchActionsBtn" class="icon-btn-square"
-                                    onclick="ShopAdmin.toggleBatchMenu()" title="批量操作" style="display: none;">
+                                    data-shop-action="inventory-toggle-batch-menu" title="批量操作" style="display: none;">
                                     <i class="fas fa-ellipsis-h"></i>
                                 </button>
                                 <!-- Batch Menu -->
@@ -4594,13 +4614,13 @@
                                         <i class="fas fa-check-circle" style="color: #34d399;"></i>
                                         已选 <span id="batchSelectedCount">0</span> 项
                                     </div>
-                                    <div class="batch-menu-item" onclick="ShopAdmin.selectAllRows()">
+                                    <div class="batch-menu-item" data-shop-action="inventory-select-all-rows">
                                         <i class="fas fa-check-double"></i> 全选当前页
                                     </div>
-                                    <div class="batch-menu-item" onclick="ShopAdmin.batchDelete()">
+                                    <div class="batch-menu-item" data-shop-action="inventory-batch-delete">
                                         <i class="fas fa-trash-alt"></i> 批量删除
                                     </div>
-                                    <div class="batch-menu-item" onclick="ShopAdmin.exportInventory(true)">
+                                    <div class="batch-menu-item" data-shop-action="inventory-export-selected">
                                         <i class="fas fa-file-export"></i> 导出选中
                                     </div>
                                 </div>
@@ -4610,11 +4630,11 @@
 
                             <!-- Action Buttons -->
                             <div style="display: flex; gap: 8px; flex-shrink: 0;">
-                                <button onclick="ShopAdmin.exportInventory()" class="btn btn-secondary"
+                                <button data-shop-action="inventory-export-all" class="btn btn-secondary"
                                     style="padding: 10px 18px; font-size: 13px; white-space: nowrap;">
                                     <i class="fas fa-file-excel"></i> 导出
                                 </button>
-                                <button onclick="ShopAdmin.openReleaseModal()" class="btn btn-primary"
+                                <button data-shop-action="inventory-open-release-modal" class="btn btn-primary"
                                     style="padding: 10px 18px; font-size: 13px; background: #3d5a80; border-color: #3d5a80; white-space: nowrap;">
                                     <i class="fas fa-rocket"></i> 释放
                                 </button>
@@ -4629,7 +4649,7 @@
                                     <tr>
                                         <th style="width: 50px; display:none;" class="inv-checkbox-col"><input
                                                 type="checkbox" id="selectAllInv"
-                                                onchange="ShopAdmin.toggleSelectAll(this)"></th>
+                                                data-shop-change="inventory-toggle-select-all"></th>
                                         <th>商品</th>
                                         <th>账号内容</th>
                                         <th>状态</th>
@@ -4662,7 +4682,7 @@
 
                                     <!-- Custom Dropdown Trigger (Subtab) -->
                                     <div id="custom-inv-dropdown" class="custom-dropdown"
-                                        onclick="document.getElementById('custom-inv-menu').classList.toggle('show');"
+                                        data-shop-action="inventory-toggle-category-menu"
                                         style="padding: 4px 10px; font-size: 11px;">
                                         <span id="inv-dropdown-label">全部</span>
                                         <i class="fas fa-chevron-down" style="font-size: 9px; opacity: 0.6;"></i>
@@ -4672,14 +4692,14 @@
                                     <div id="custom-inv-menu" class="custom-dropdown-menu"
                                         style="left: 0; right: auto; transform-origin: top left;">
                                         <div class="dropdown-item active"
-                                            onclick="ShopAdmin.selectInvCategory('all', '全部', this)">全部</div>
+                                            data-shop-action="inventory-select-category" data-category="all" data-category-label="全部">全部</div>
                                         <div class="dropdown-item"
-                                            onclick="ShopAdmin.selectInvCategory('gemini', 'Gemini', this)">Gemini</div>
+                                            data-shop-action="inventory-select-category" data-category="gemini" data-category-label="Gemini">Gemini</div>
                                         <div class="dropdown-item"
-                                            onclick="ShopAdmin.selectInvCategory('chatgpt', 'ChatGPT', this)">ChatGPT
+                                            data-shop-action="inventory-select-category" data-category="chatgpt" data-category-label="ChatGPT">ChatGPT
                                         </div>
                                         <div class="dropdown-item"
-                                            onclick="ShopAdmin.selectInvCategory('gmail', 'Gmail', this)">Gmail</div>
+                                            data-shop-action="inventory-select-category" data-category="gmail" data-category-label="Gmail">Gmail</div>
                                     </div>
                                 </div>
                                 <!-- Buttons removed, logic simplified -->
@@ -4711,7 +4731,7 @@
                                 <div class="import-status">
                                     <div style="color: rgba(255,255,255,0.5);">检测到 <span id="lineCount"
                                             style="color: #fff; font-weight: bold;">0</span> 条数据</div>
-                                    <button class="btn btn-primary" onclick="ShopAdmin.importInventory(this)">
+                                    <button class="btn btn-primary" data-shop-action="inventory-import-submit">
                                         <i class="fas fa-check"></i> 确认导入
                                     </button>
                                 </div>
@@ -4744,8 +4764,8 @@
                             </div>
                         </div>
                         <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                            <button onclick="ShopAdmin.closeReleaseModal()" class="btn btn-secondary">取消</button>
-                            <button onclick="ShopAdmin.releaseReserve()" class="btn btn-primary"><i
+                            <button data-shop-action="inventory-release-modal-close" class="btn btn-secondary">取消</button>
+                            <button data-shop-action="inventory-release-modal-submit" class="btn btn-primary"><i
                                     class="fas fa-check"></i> 确认释放</button>
                         </div>
                     </div>
@@ -4783,11 +4803,11 @@
                                     id="importLineCount" style="color: #888;">(0行)</span></label>
                             <textarea id="importContentInput" placeholder="每行一个账号，格式：邮箱----密码----恢复邮箱"
                                 style="width: 100%; height: 200px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; color: #fff; margin-top: 5px; resize: vertical; font-family: monospace; box-sizing: border-box;"
-                                oninput="document.getElementById('importLineCount').textContent = '(' + (this.value.trim() ? this.value.trim().split('\\n').length : 0) + '行)'"></textarea>
+                                data-shop-input="inventory-import-line-count"></textarea>
                         </div>
                         <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                            <button onclick="ShopAdmin.closeImportModal()" class="btn btn-secondary">取消</button>
-                            <button onclick="ShopAdmin.doImport()" class="btn btn-primary"><i class="fas fa-upload"></i>
+                            <button data-shop-action="inventory-close-import-modal" class="btn btn-secondary">取消</button>
+                            <button data-shop-action="inventory-do-import" class="btn btn-primary"><i class="fas fa-upload"></i>
                                 导入</button>
                         </div>
                     </div>
@@ -8277,7 +8297,7 @@
                             <div class="chart-card glass-panel">
                                 <div class="chart-header">
                                     <h3><i class="fas fa-chart-line"></i> 趋势预测 (未来7天)</h3>
-                                    <button class="btn-sm btn-secondary" onclick="loadAIPrediction()">
+                                    <button class="btn-sm btn-secondary" data-admin-action="analytics-load-ai-prediction">
                                         <i class="fas fa-sync-alt"></i> 生成
                                     </button>
                                 </div>
@@ -8291,10 +8311,10 @@
                                 <div class="chart-header">
                                     <h3><i class="fas fa-flask"></i> A/B 实验管理</h3>
                                     <div class="header-actions">
-                                        <button class="btn-sm btn-primary" onclick="openExperimentModal()">
+                                        <button class="btn-sm btn-primary" data-admin-action="analytics-open-experiment-modal">
                                             <i class="fas fa-plus"></i> 创建
                                         </button>
-                                        <button class="btn-sm btn-secondary" onclick="loadExperimentsList()">
+                                        <button class="btn-sm btn-secondary" data-admin-action="analytics-load-experiments-list">
                                             <i class="fas fa-sync-alt"></i>
                                         </button>
                                     </div>
@@ -8309,7 +8329,7 @@
                                 <div class="ab-results-chart" id="abResultsChart" style="display: none;">
                                     <div class="ab-chart-header">
                                         <span id="abChartTitle">实验结果对比</span>
-                                        <button class="btn-icon-sm" onclick="closeABResultsChart()">
+                                        <button class="btn-icon-sm" data-admin-action="analytics-close-ab-results-chart">
                                             <i class="fas fa-times"></i>
                                         </button>
                                     </div>
@@ -8324,6 +8344,26 @@
 
             <!-- ========== DISCOUNTS MODULE ========== -->
             <div id="module-discounts" class="module-container" style="display: none;">
+                <style>
+                    .discount-type-option:hover {
+                        background: rgba(91, 155, 213, 0.15);
+                    }
+
+                    #ticketAdminReply.ticket-reply-textarea:focus {
+                        border-color: rgba(91, 155, 213, 0.5);
+                        box-shadow: 0 0 0 3px rgba(91, 155, 213, 0.1);
+                    }
+
+                    .ticket-reply-cancel-btn:hover {
+                        background: rgba(255, 255, 255, 0.08);
+                        color: rgba(255, 255, 255, 0.8);
+                    }
+
+                    .ticket-reply-submit-btn:hover {
+                        transform: translateY(-1px);
+                        box-shadow: 0 6px 20px rgba(91, 155, 213, 0.35);
+                    }
+                </style>
                 <!-- Toolbar -->
                 <div class="admin-toolbar" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                     <div class="toolbar-left"
@@ -8331,18 +8371,18 @@
                         <div class="search-bar">
                             <i class="fas fa-search"></i>
                             <input type="text" id="discountSearchInput" placeholder="搜索优惠码或创建者..."
-                                oninput="AdminDiscounts.search()">
+                                data-admin-input-action="discounts-search">
                         </div>
                         <div class="filter-dropdowns" style="display:flex; gap:8px;">
                             <button class="filter-btn active" data-status="all"
-                                onclick="AdminDiscounts.filter('all', this)">全部</button>
+                                data-admin-action="discounts-filter" data-discount-status="all">全部</button>
                             <button class="filter-btn" data-status="active"
-                                onclick="AdminDiscounts.filter('active', this)">生效中</button>
+                                data-admin-action="discounts-filter" data-discount-status="active">生效中</button>
                             <button class="filter-btn" data-status="used"
-                                onclick="AdminDiscounts.filter('used', this)">已核销/失效</button>
+                                data-admin-action="discounts-filter" data-discount-status="used">已核销/失效</button>
                         </div>
                     </div>
-                    <button class="btn-primary" onclick="AdminDiscounts.openGenerateModal()"
+                    <button class="btn-primary" data-admin-action="discounts-open-generate-modal"
                         style="background: linear-gradient(135deg, #4a8ec7, #5b9bd5); border: none; color: white; border-radius: 10px; padding: 10px 20px; font-size: 0.9rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; box-shadow: 0 4px 15px rgba(91, 155, 213, 0.3); transition: all 0.3s ease; flex-shrink: 0;">
                         <i class="fas fa-plus"></i> 生成优惠券
                     </button>
@@ -8386,8 +8426,7 @@
                 <div class="pagination" id="discountsPagination"></div>
 
                 <!-- Generate Discount Modal -->
-                <div id="discountGenerateModal" class="modal-overlay"
-                    onclick="if(event.target===this){this.style.opacity='0';this.style.visibility='hidden';setTimeout(()=>{this.style.display='none'},200)}"
+                <div id="discountGenerateModal" class="modal-overlay" data-admin-overlay-close="discount-generate-modal"
                     style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.55); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); z-index:9999; align-items:center; justify-content:center;">
                     <div
                         style="background: rgba(18, 22, 36, 0.97); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 36px; width: 90%; max-width: 520px; box-shadow: 0 24px 80px rgba(0,0,0,0.6); animation: modalSlideIn 0.3s ease;">
@@ -8404,7 +8443,7 @@
                             </div>
                         </div>
 
-                        <form id="discountGenerateForm" onsubmit="return false;">
+                        <form id="discountGenerateForm">
                             <!-- Code Input -->
                             <div style="margin-bottom:20px;">
                                 <label
@@ -8422,7 +8461,7 @@
                                         style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px;">优惠类型</label>
                                     <input type="hidden" id="discountValueType" value="percent">
                                     <div id="discountTypeTrigger"
-                                        onclick="(function(e){e.stopPropagation();var dd=document.getElementById('discountTypeDropdown');dd.style.display=dd.style.display==='block'?'none':'block'})(event)"
+                                        data-admin-action="discounts-toggle-type-dropdown"
                                         style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.9rem; cursor:pointer; box-sizing:border-box; display:flex; align-items:center; justify-content:space-between; user-select:none; transition:border-color 0.2s;">
                                         <span id="discountTypeLabel" style="display:flex; align-items:center; gap:8px;">
                                             <span style="font-size:1rem;">📊</span> 按比例打折
@@ -8432,10 +8471,8 @@
                                     </div>
                                     <div id="discountTypeDropdown"
                                         style="display:none; position:absolute; top:calc(100% + 6px); left:0; right:0; background:rgba(22,28,44,0.98); border:1px solid rgba(255,255,255,0.1); border-radius:12px; overflow:hidden; z-index:100; box-shadow:0 12px 40px rgba(0,0,0,0.5);">
-                                        <div onclick="document.getElementById('discountValueType').value='percent';document.getElementById('discountTypeLabel').innerHTML='<span style=\'font-size:1rem\'>📊</span> 按比例打折';document.getElementById('discountTypeDropdown').style.display='none';document.getElementById('discountValueSuffix').innerText='折';document.getElementById('discountValue').placeholder='如: 80';"
-                                            style="padding:12px 16px; color:#e8edf4; font-size:0.9rem; cursor:pointer; display:flex; align-items:center; gap:10px; transition:background 0.15s;"
-                                            onmouseenter="this.style.background='rgba(91,155,213,0.15)'"
-                                            onmouseleave="this.style.background='transparent'">
+                                        <div class="discount-type-option" data-admin-action="discounts-select-type" data-discount-type="percent"
+                                            style="padding:12px 16px; color:#e8edf4; font-size:0.9rem; cursor:pointer; display:flex; align-items:center; gap:10px; transition:background 0.15s;">
                                             <span style="font-size:1.1rem;">📊</span>
                                             <div>
                                                 <div style="font-weight:500;">按比例打折</div>
@@ -8446,10 +8483,8 @@
                                         </div>
                                         <div style="height:1px; background:rgba(255,255,255,0.06); margin:0 12px;">
                                         </div>
-                                        <div onclick="document.getElementById('discountValueType').value='fixed';document.getElementById('discountTypeLabel').innerHTML='<span style=\'font-size:1rem\'>💰</span> 固定金额立减';document.getElementById('discountTypeDropdown').style.display='none';document.getElementById('discountValueSuffix').innerText='积分';document.getElementById('discountValue').placeholder='如: 100';"
-                                            style="padding:12px 16px; color:#e8edf4; font-size:0.9rem; cursor:pointer; display:flex; align-items:center; gap:10px; transition:background 0.15s;"
-                                            onmouseenter="this.style.background='rgba(91,155,213,0.15)'"
-                                            onmouseleave="this.style.background='transparent'">
+                                        <div class="discount-type-option" data-admin-action="discounts-select-type" data-discount-type="fixed"
+                                            style="padding:12px 16px; color:#e8edf4; font-size:0.9rem; cursor:pointer; display:flex; align-items:center; gap:10px; transition:background 0.15s;">
                                             <span style="font-size:1.1rem;">💰</span>
                                             <div>
                                                 <div style="font-weight:500;">固定金额立减</div>
@@ -8484,18 +8519,17 @@
                                     <label
                                         style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px;">过期时间
                                         <span style="color:rgba(255,255,255,0.2);">(可选)</span></label>
-                                    <div style="display:flex; gap:8px;">
-                                        <div style="flex:1; position:relative;">
-                                            <input type="text" id="discountExpiryDate" placeholder="2026-12-31"
-                                                maxlength="10"
-                                                oninput="(function(t){let v=t.value.replace(/[^0-9]/g,'');if(v.length>4)v=v.slice(0,4)+'-'+v.slice(4);if(v.length>7)v=v.slice(0,7)+'-'+v.slice(7);t.value=v.slice(0,10);})(this)"
-                                                style="width:100%; padding:12px 12px 12px 36px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.85rem; outline:none; box-sizing:border-box; font-family:'SF Mono',Consolas,monospace;">
+                                        <div style="display:flex; gap:8px;">
+                                            <div style="flex:1; position:relative;">
+                                                <input type="text" id="discountExpiryDate" placeholder="2026-12-31"
+                                                    maxlength="10" data-admin-input-action="discounts-format-expiry-date"
+                                                    style="width:100%; padding:12px 12px 12px 36px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.85rem; outline:none; box-sizing:border-box; font-family:'SF Mono',Consolas,monospace;">
                                             <i class="fas fa-calendar-alt"
                                                 style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.25); font-size:0.8rem;"></i>
                                         </div>
                                         <div style="width:90px; position:relative;">
                                             <input type="text" id="discountExpiryTime" placeholder="23:59" maxlength="5"
-                                                oninput="(function(t){let v=t.value.replace(/[^0-9]/g,'');if(v.length>2)v=v.slice(0,2)+':'+v.slice(2);t.value=v.slice(0,5);})(this)"
+                                                data-admin-input-action="discounts-format-expiry-time"
                                                 style="width:100%; padding:12px 12px 12px 34px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.85rem; outline:none; box-sizing:border-box; font-family:'SF Mono',Consolas,monospace;">
                                             <i class="fas fa-clock"
                                                 style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.25); font-size:0.8rem;"></i>
@@ -8506,10 +8540,9 @@
 
                             <!-- Action Buttons -->
                             <div style="display:flex; justify-content:flex-end; gap:12px;">
-                                <button type="button"
-                                    onclick="var m=document.getElementById('discountGenerateModal');m.style.opacity='0';m.style.visibility='hidden';setTimeout(function(){m.style.display='none'},200)"
+                                <button type="button" data-admin-action="discounts-close-generate-modal"
                                     style="padding:11px 24px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:rgba(255,255,255,0.5); font-size:0.9rem; font-weight:500; cursor:pointer; transition:all 0.2s;">取消</button>
-                                <button type="button" onclick="AdminDiscounts.submitGenerate()"
+                                <button type="button" data-admin-action="discounts-submit-generate"
                                     style="padding:11px 28px; background:linear-gradient(135deg, #4a8ec7, #5b9bd5); border:none; border-radius:12px; color:white; font-size:0.9rem; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(91,155,213,0.25); transition:all 0.3s; display:flex; align-items:center; gap:8px;">
                                     <i class="fas fa-magic"></i> 立即生成
                                 </button>
@@ -8536,17 +8569,17 @@
                         <div class="search-bar">
                             <i class="fas fa-search"></i>
                             <input type="text" id="ticketSearchInput" placeholder="搜索订单号或描述..."
-                                oninput="AdminTickets.search()">
+                                data-admin-input-action="tickets-search">
                         </div>
                         <div class="filter-dropdowns" style="display:flex; gap:8px;">
                             <button class="filter-btn active" data-status="all"
-                                onclick="AdminTickets.filter('all', this)">全部</button>
+                                data-admin-action="tickets-filter" data-ticket-status="all">全部</button>
                             <button class="filter-btn" data-status="pending"
-                                onclick="AdminTickets.filter('pending', this)">待处理</button>
+                                data-admin-action="tickets-filter" data-ticket-status="pending">待处理</button>
                             <button class="filter-btn" data-status="resolved"
-                                onclick="AdminTickets.filter('resolved', this)">已解决</button>
+                                data-admin-action="tickets-filter" data-ticket-status="resolved">已解决</button>
                             <button class="filter-btn" data-status="rejected"
-                                onclick="AdminTickets.filter('rejected', this)">已拒绝</button>
+                                data-admin-action="tickets-filter" data-ticket-status="rejected">已拒绝</button>
                         </div>
                     </div>
                 </div>
@@ -8574,8 +8607,7 @@
                 <div class="pagination" id="ticketsPagination"></div>
 
                 <!-- Ticket Reply Modal -->
-                <div id="ticketReplyModal"
-                    onclick="if(event.target===this){this.style.display='none';this.style.visibility='hidden';this.style.opacity='0';}"
+                <div id="ticketReplyModal" data-admin-overlay-close="ticket-reply-modal"
                     style="display: none; z-index: 10000; justify-content:center; align-items:center; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.55); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);">
                     <div
                         style="background: rgba(18, 22, 36, 0.97); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 0; width: 90%; max-width: 480px; box-shadow: 0 24px 80px rgba(0,0,0,0.6); animation: modalSlideIn 0.3s ease; overflow: hidden;">
@@ -8594,14 +8626,12 @@
                             </div>
                         </div>
                         <!-- Body -->
-                        <form id="ticketReplyForm" onsubmit="return false;" style="padding: 24px 28px 28px;">
+                        <form id="ticketReplyForm" style="padding: 24px 28px 28px;">
                             <div style="margin-bottom:20px;">
                                 <label
                                     style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px; letter-spacing:0.3px;">管理员回复</label>
-                                <textarea id="ticketAdminReply" placeholder="请输入处理结果或回复..."
-                                    style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.9rem; outline:none; transition:border-color 0.2s, box-shadow 0.2s; box-sizing:border-box; min-height:100px; resize:vertical; font-family:inherit; line-height:1.6;"
-                                    onfocus="this.style.borderColor='rgba(91,155,213,0.5)';this.style.boxShadow='0 0 0 3px rgba(91,155,213,0.1)';"
-                                    onblur="this.style.borderColor='rgba(255,255,255,0.08)';this.style.boxShadow='none';"></textarea>
+                                <textarea id="ticketAdminReply" class="ticket-reply-textarea" placeholder="请输入处理结果或回复..."
+                                    style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.9rem; outline:none; transition:border-color 0.2s, box-shadow 0.2s; box-sizing:border-box; min-height:100px; resize:vertical; font-family:inherit; line-height:1.6;"></textarea>
                             </div>
                             <div
                                 style="margin-bottom:24px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:14px 16px;">
@@ -8620,15 +8650,10 @@
                             <input type="hidden" id="replyNewStatus">
 
                             <div style="display:flex; justify-content:flex-end; gap:12px;">
-                                <button type="button"
-                                    onclick="var m=document.getElementById('ticketReplyModal');m.style.display='none';m.style.visibility='hidden';m.style.opacity='0';"
-                                    style="padding:11px 24px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:rgba(255,255,255,0.5); font-size:0.9rem; font-weight:500; cursor:pointer; transition:all 0.2s;"
-                                    onmouseover="this.style.background='rgba(255,255,255,0.08)';this.style.color='rgba(255,255,255,0.8)';"
-                                    onmouseout="this.style.background='rgba(255,255,255,0.04)';this.style.color='rgba(255,255,255,0.5)';">取消</button>
-                                <button type="button" class="btn-primary" onclick="AdminTickets.submitReply()"
-                                    style="padding:11px 28px; background:linear-gradient(135deg, #4a8ec7, #5b9bd5); border:none; border-radius:12px; color:white; font-size:0.9rem; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(91,155,213,0.25); transition:all 0.3s; display:flex; align-items:center; gap:8px;"
-                                    onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 20px rgba(91,155,213,0.35)';"
-                                    onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 15px rgba(91,155,213,0.25)';">
+                                <button type="button" class="ticket-reply-cancel-btn" data-admin-action="tickets-close-reply-modal"
+                                    style="padding:11px 24px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:rgba(255,255,255,0.5); font-size:0.9rem; font-weight:500; cursor:pointer; transition:all 0.2s;">取消</button>
+                                <button type="button" class="btn-primary ticket-reply-submit-btn" data-admin-action="tickets-submit-reply"
+                                    style="padding:11px 28px; background:linear-gradient(135deg, #4a8ec7, #5b9bd5); border:none; border-radius:12px; color:white; font-size:0.9rem; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(91,155,213,0.25); transition:all 0.3s; display:flex; align-items:center; gap:8px;">
                                     <i class="fas fa-check-circle"></i> 确认处理
                                 </button>
                             </div>
@@ -8649,9 +8674,9 @@
         <div class="modal-content experiment-form">
             <div class="modal-header">
                 <h3><i class="fas fa-flask"></i> 创建 A/B 实验</h3>
-                <button class="modal-close" onclick="closeExperimentModal()">&times;</button>
+                <button class="modal-close" type="button" data-admin-action="analytics-close-experiment-modal">&times;</button>
             </div>
-            <form id="experimentForm" onsubmit="handleCreateExperiment(event)">
+            <form id="experimentForm">
                 <div class="form-group">
                     <label>实验名称</label>
                     <input type="text" id="expName" required placeholder="例：首页按钮颜色测试">
@@ -8674,7 +8699,7 @@
                             <span>%</span>
                         </div>
                     </div>
-                    <button type="button" class="btn-link" onclick="addVariantRow()">
+                    <button type="button" class="btn-link" data-admin-action="analytics-add-variant-row">
                         <i class="fas fa-plus"></i> 添加变体
                     </button>
                 </div>
@@ -8690,7 +8715,7 @@
                     <small class="form-hint">选择要追踪的转化指标</small>
                 </div>
                 <div class="form-actions">
-                    <button type="button" class="btn-secondary" onclick="closeExperimentModal()">取消</button>
+                    <button type="button" class="btn-secondary" data-admin-action="analytics-close-experiment-modal">取消</button>
                     <button type="submit" class="btn-primary">创建实验</button>
                 </div>
             </form>
@@ -8700,7 +8725,7 @@
 
 
     <!-- Product Edit Modal (Redesigned) -->
-    <div id="productModal" class="modal-overlay" onclick="if(event.target===this) this.style.display='none'"
+    <div id="productModal" class="modal-overlay" data-shop-overlay-close="product-modal"
         style="display: none; z-index: 9999; justify-content:center; align-items:center; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); transition: all 0.3s;">
 
         <style>
@@ -9133,11 +9158,10 @@
 
             <!-- Right Column: Form -->
             <div class="modal-form-content" autocomplete="off">
-                <form autocomplete="off" onsubmit="return false;">
+                <form autocomplete="off" id="productModalForm">
                     <div class="form-header">
                         <div class="form-title" id="productModalTitle">新建商品</div>
-                        <button class="form-close-btn"
-                            onclick="document.getElementById('productModal').style.display='none'">✕</button>
+                        <button class="form-close-btn" type="button" data-shop-action="product-close-modal">✕</button>
                     </div>
                     <div id="productSiteHint"
                         style="padding:4px 16px 8px; font-size:12px; color:rgba(255,255,255,0.5); display:none;"></div>
@@ -9146,7 +9170,7 @@
                         <div class="modern-form-group" style="flex:2">
                             <label class="modern-label" id="prodNameLabel">商品名称</label>
                             <input type="text" id="prodName" class="modern-input" placeholder="输入商品名称"
-                                oninput="ShopAdmin.updatePreview()">
+                                data-shop-input="product-update-preview">
                         </div>
                         <div class="modern-form-group" style="flex:1">
                             <label class="modern-label">所属分类</label>
@@ -9154,7 +9178,7 @@
                             <input type="hidden" id="prodCategory" value="">
                             <!-- Custom dropdown -->
                             <div class="custom-category-dropdown" id="prodCategoryDropdown">
-                                <div class="custom-category-selected" onclick="ShopAdmin.toggleCategoryDropdown()">
+                                <div class="custom-category-selected" data-shop-action="product-toggle-category-dropdown">
                                     <span class="category-color-dot"></span>
                                     <span class="category-name">选择分类</span>
                                     <svg class="dropdown-arrow" width="12" height="12" viewBox="0 0 12 12">
@@ -9275,7 +9299,7 @@
                         <div class="modern-form-group">
                             <label class="modern-label" id="prodPriceLabel">价格 (积分)</label>
                             <input type="number" id="prodPrice" class="modern-input" placeholder="0"
-                                oninput="ShopAdmin.updatePreview()">
+                                data-shop-input="product-update-preview">
                         </div>
                         <div class="modern-form-group">
                             <label class="modern-label">排序权重</label>
@@ -9285,19 +9309,19 @@
 
                     <div class="modern-form-group">
                         <label class="modern-label">商品图标</label>
-                        <div class="upload-box" onclick="document.getElementById('iconUploadFile').click()">
+                        <div class="upload-box" data-shop-action="product-upload-icon">
                             <div class="upload-icon-large"><i class="fas fa-cloud-upload-alt"></i></div>
                             <div class="upload-text">点击上传图片 (支持 JPG, PNG, WebP)</div>
                         </div>
                         <input type="file" id="iconUploadFile" hidden accept="image/*"
-                            onchange="ShopAdmin.handleIconUpload(this)">
+                            data-shop-change="product-handle-icon-upload">
                         <input type="hidden" id="prodIcon">
                     </div>
 
                     <div class="modern-form-group">
                         <label class="modern-label" id="prodDescLabel">商品描述</label>
                         <textarea id="prodDesc" class="modern-input" placeholder="商品简介..."
-                            oninput="ShopAdmin.updatePreview()"></textarea>
+                            data-shop-input="product-update-preview"></textarea>
                     </div>
 
                     <!-- Marketing Config (Phase 2) -->
@@ -9313,10 +9337,8 @@
                             </div>
 
                             <!-- Add Rule Button -->
-                            <button type="button" onclick="ShopAdmin.addTieredPricingRow()"
-                                style="background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.2); border-radius: 8px; color: #6b9ece; padding: 10px 15px; width: 100%; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s;"
-                                onmouseover="this.style.background='rgba(107, 158, 206, 0.1)'; this.style.borderColor='#6b9ece'"
-                                onmouseout="this.style.background='rgba(255,255,255,0.05)'; this.style.borderColor='rgba(255,255,255,0.2)'">
+                            <button type="button" data-shop-action="product-add-tiered-pricing"
+                                style="background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.2); border-radius: 8px; color: #6b9ece; padding: 10px 15px; width: 100%; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s;">
                                 <i class="fas fa-plus"></i> 添加阶梯价
                             </button>
 
@@ -9346,7 +9368,7 @@
                             <input type="hidden" id="prodDeliveryType" value="KEY">
                             <!-- Custom dropdown -->
                             <div class="custom-category-dropdown" id="prodDeliveryTypeDropdown">
-                                <div class="custom-category-selected" onclick="ShopAdmin.toggleDeliveryTypeDropdown()">
+                                <div class="custom-category-selected" data-shop-action="product-toggle-delivery-type-dropdown">
                                     <span class="category-name" id="prodDeliveryTypeName">卡密池发放 (KEY)</span>
                                     <svg class="dropdown-arrow" width="12" height="12" viewBox="0 0 12 12">
                                         <path fill="currentColor"
@@ -9355,11 +9377,11 @@
                                 </div>
                                 <div class="custom-category-options" id="prodDeliveryTypeOptions">
                                     <div class="custom-category-option"
-                                        onclick="ShopAdmin.selectDeliveryType('KEY', '卡密池发放 (KEY)')">
+                                        data-shop-action="product-select-delivery-type" data-delivery-type="KEY" data-delivery-label="卡密池发放 (KEY)">
                                         <span class="category-name">卡密池发放 (KEY)</span>
                                     </div>
                                     <div class="custom-category-option"
-                                        onclick="ShopAdmin.selectDeliveryType('API', '外部接口履约 (API Webhook)')">
+                                        data-shop-action="product-select-delivery-type" data-delivery-type="API" data-delivery-label="外部接口履约 (API Webhook)">
                                         <span class="category-name">外部接口履约 (API Webhook)</span>
                                     </div>
                                 </div>
@@ -9393,7 +9415,7 @@
                             <label class="toggle-switch"
                                 style="position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;">
                                 <input type="checkbox" id="prodShowPurchaseNotes"
-                                    onchange="ShopAdmin.togglePurchaseNotes(this.checked)"
+                                    data-shop-change="product-toggle-purchase-notes"
                                     style="opacity:0;width:0;height:0;">
                                 <span class="toggle-slider" style="
                                     position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
@@ -9426,7 +9448,7 @@
                             <label class="toggle-switch"
                                 style="position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;">
                                 <input type="checkbox" id="prodShowUsageInstructions"
-                                    onchange="ShopAdmin.toggleUsageInstructions(this.checked)"
+                                    data-shop-change="product-toggle-usage-instructions"
                                     style="opacity:0;width:0;height:0;">
                                 <span class="toggle-slider" style="
                                     position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
@@ -9474,9 +9496,8 @@
                     <input type="hidden" id="editProductId">
 
                     <div class="action-bar">
-                        <button class="btn-cancel"
-                            onclick="document.getElementById('productModal').style.display='none'">取消</button>
-                        <button class="btn-save" onclick="ShopAdmin.saveProduct()">保存商品</button>
+                        <button class="btn-cancel" type="button" data-shop-action="product-close-modal">取消</button>
+                        <button class="btn-save" type="submit">保存商品</button>
                     </div>
                 </form>
             </div>
@@ -9581,8 +9602,8 @@
     <script src="js/admin-site-filter.js"></script>
     <script src="js/admin-tickets.js"></script>
     <script src="js/admin-access.js"></script>
-    <script src="admin-studio.js?v=20260323_ADMIN_DELEGATION_2"></script>
-    <script src="js/admin-shop.js?v=20260323_SHOP_PAGINATION_DELEGATION_1"></script>
+    <script src="admin-studio.js?v=20260323_ADMIN_DELEGATION_4"></script>
+    <script src="js/admin-shop.js?v=20260323_SHOP_DELEGATION_3"></script>
 </body>
 
 <!-- Admin Chat Script -->

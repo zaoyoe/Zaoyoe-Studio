@@ -348,14 +348,14 @@ Example output format:
         container.innerHTML = `
             <div style="display: flex; align-items: center; gap: 15px;">
                 <div class="pagination-control">
-                    <button class="pagination-btn" data-shop-pagination-target="${loadFuncStr}" data-shop-pagination-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''} style="font-family:'Outfit',sans-serif;font-weight:300;font-size:20px;">
+                    <button class="pagination-btn" data-shop-action="pagination-go" data-pagination-target="${loadFuncStr}" data-pagination-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''} style="font-family:'Outfit',sans-serif;font-weight:300;font-size:20px;">
                         −
                     </button>
                     
                     <input type="number" class="pagination-input" 
-                        value="${currentPage}" min="1" max="${totalPages}" data-shop-pagination-target="${loadFuncStr}" data-shop-pagination-max="${totalPages}">
+                        value="${currentPage}" min="1" max="${totalPages}" data-shop-change="pagination-go" data-pagination-target="${loadFuncStr}" data-pagination-max="${totalPages}">
                     
-                    <button class="pagination-btn" data-shop-pagination-target="${loadFuncStr}" data-shop-pagination-page="${currentPage + 1}" ${currentPage >= totalPages ? 'disabled' : ''} style="font-family:'Outfit',sans-serif;font-weight:300;font-size:20px;">
+                    <button class="pagination-btn" data-shop-action="pagination-go" data-pagination-target="${loadFuncStr}" data-pagination-page="${currentPage + 1}" ${currentPage >= totalPages ? 'disabled' : ''} style="font-family:'Outfit',sans-serif;font-weight:300;font-size:20px;">
                         +
                     </button>
                 </div>
@@ -365,54 +365,376 @@ Example output format:
     },
 
     invokePaginationTarget: function (targetName, pageValue) {
-        const fn = this[targetName];
-        if (typeof fn !== 'function') {
+        const handler = this[targetName];
+        if (typeof handler !== 'function') {
             console.warn(`[ShopAdmin] Unknown pagination target: ${targetName}`);
             return;
         }
 
         const page = Number.parseInt(pageValue, 10);
+
         if (!Number.isFinite(page) || page < 1) {
             return;
         }
 
-        fn.call(this, page);
+        handler.call(this, page);
+    },
+
+    hideProductModal: function () {
+        const modal = document.getElementById('productModal');
+        if (modal) {
+            modal.style.display = 'none';
+            modal.classList.remove('active');
+        }
+    },
+
+    closeDynamicModal: function (modalId) {
+        document.getElementById(modalId)?.remove();
+    },
+
+    updateLegacyImportLineCount: function () {
+        const textarea = document.getElementById('importContentInput');
+        const counter = document.getElementById('importLineCount');
+        if (!textarea || !counter) {
+            return;
+        }
+
+        const lineCount = textarea.value.trim() ? textarea.value.trim().split('\n').length : 0;
+        counter.textContent = `(${lineCount}行)`;
     },
 
     bindDelegatedHandlers: function () {
         if (this.delegatedHandlersBound) {
             return;
         }
-
         this.delegatedHandlersBound = true;
 
         document.addEventListener('click', (event) => {
             const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-            const trigger = target?.closest?.('[data-shop-pagination-target][data-shop-pagination-page]');
-            if (!trigger || trigger.disabled) {
+            if (!target) {
                 return;
             }
 
-            this.invokePaginationTarget(
-                trigger.dataset.shopPaginationTarget,
-                trigger.dataset.shopPaginationPage
-            );
+            const actionEl = target.closest('[data-shop-action]');
+            if (!actionEl) {
+                return;
+            }
+
+            switch (actionEl.dataset.shopAction) {
+                case 'pagination-go':
+                    this.invokePaginationTarget(actionEl.dataset.paginationTarget, actionEl.dataset.paginationPage);
+                    break;
+                case 'shop-switch-tab':
+                    this.switchTab(actionEl.dataset.shopTab);
+                    break;
+                case 'product-filter-category':
+                    this.filterCategory(actionEl.dataset.category, actionEl);
+                    break;
+                case 'product-filter-status':
+                    this.filterStatus(actionEl.dataset.status, actionEl);
+                    break;
+                case 'product-toggle-selection-mode':
+                    this.toggleProductSelectionMode();
+                    break;
+                case 'product-toggle-batch-menu':
+                    this.toggleProductBatchMenu();
+                    break;
+                case 'product-select-all':
+                    this.selectAllProducts();
+                    break;
+                case 'product-batch-delete':
+                    this.batchDeleteProducts();
+                    break;
+                case 'product-export-selected':
+                    this.exportProducts(true);
+                    break;
+                case 'product-edit':
+                    this.editProduct(actionEl.dataset.productId);
+                    break;
+                case 'product-toggle-status':
+                    this.toggleStatus(actionEl.dataset.productId, actionEl.dataset.newStatus === 'true');
+                    break;
+                case 'product-delete':
+                    this.deleteProduct(actionEl.dataset.productId, actionEl.dataset.productName || '');
+                    break;
+                case 'inventory-toggle-selection-mode':
+                    this.toggleSelectionMode();
+                    break;
+                case 'inventory-toggle-batch-menu':
+                    this.toggleBatchMenu();
+                    break;
+                case 'inventory-select-all-rows':
+                    this.selectAllRows();
+                    break;
+                case 'inventory-batch-delete':
+                    this.batchDelete();
+                    break;
+                case 'inventory-export-selected':
+                    this.exportInventory(true);
+                    break;
+                case 'inventory-export-all':
+                    this.exportInventory();
+                    break;
+                case 'inventory-open-release-modal':
+                    this.openReleaseModal();
+                    break;
+                case 'inventory-toggle-category-menu':
+                    document.getElementById('custom-inv-menu')?.classList.toggle('show');
+                    break;
+                case 'inventory-select-category':
+                    this.selectInvCategory(
+                        actionEl.dataset.category,
+                        actionEl.dataset.categoryLabel,
+                        actionEl
+                    );
+                    break;
+                case 'inventory-import-submit':
+                    this.importInventory(actionEl);
+                    break;
+                case 'inventory-release-modal-close':
+                    this.closeReleaseModal();
+                    break;
+                case 'inventory-release-modal-submit':
+                    this.releaseReserve();
+                    break;
+                case 'inventory-close-import-modal':
+                    this.closeImportModal?.();
+                    break;
+                case 'inventory-do-import':
+                    this.doImport?.();
+                    break;
+                case 'inventory-toggle-selection-cell':
+                    this.toggleSelectionClick(actionEl);
+                    break;
+                case 'inventory-copy-content':
+                    this.copyContent(actionEl, event);
+                    break;
+                case 'inventory-show-detail':
+                    this.showInventoryDetail(actionEl.dataset.inventoryId);
+                    break;
+                case 'inventory-open-fault-modal':
+                    this.openFaultModal(actionEl.dataset.inventoryId);
+                    break;
+                case 'inventory-delete-item':
+                    this.deleteInventoryItem(actionEl.dataset.inventoryId);
+                    break;
+                case 'inventory-freeze-item':
+                    this.freezeInventoryItem(actionEl.dataset.inventoryId, actionEl.dataset.freeze === 'true');
+                    break;
+                case 'inventory-release-item':
+                    this.releaseOne(actionEl.dataset.inventoryId);
+                    break;
+                case 'inventory-detail-close':
+                    this.closeDynamicModal(actionEl.dataset.modalId);
+                    break;
+                case 'inventory-detail-copy-main':
+                case 'inventory-detail-copy-entry':
+                    navigator.clipboard.writeText(actionEl.dataset.content || '').then(() => {
+                        if (actionEl.dataset.shopAction === 'inventory-detail-copy-main') {
+                            const originalHtml = actionEl.innerHTML;
+                            actionEl.innerHTML = '<i class="fas fa-check"></i> 已复制';
+                            setTimeout(() => {
+                                actionEl.innerHTML = originalHtml;
+                            }, 1000);
+                        } else {
+                            const originalBackground = actionEl.style.background;
+                            actionEl.style.background = 'rgba(16,185,129,0.2)';
+                            setTimeout(() => {
+                                actionEl.style.background = originalBackground;
+                            }, 1000);
+                        }
+                    }).catch((error) => {
+                        console.error('Copy failed:', error);
+                        alert('复制失败');
+                    });
+                    break;
+                case 'inventory-detail-copy-list':
+                    this.copyListContent(actionEl);
+                    break;
+                case 'inventory-detail-export-list':
+                    this.exportListContent(actionEl, actionEl.dataset.filename);
+                    break;
+                case 'fault-modal-close':
+                    this.closeDynamicModal(actionEl.dataset.modalId || 'markFaultModal');
+                    break;
+                case 'fault-modal-submit':
+                    this.submitFault(actionEl.dataset.inventoryId);
+                    break;
+                case 'product-close-modal':
+                    this.hideProductModal();
+                    break;
+                case 'product-toggle-category-dropdown':
+                    this.toggleCategoryDropdown();
+                    break;
+                case 'product-upload-icon':
+                    document.getElementById('iconUploadFile')?.click();
+                    break;
+                case 'product-add-tiered-pricing':
+                    this.addTieredPricingRow();
+                    break;
+                case 'product-toggle-delivery-type-dropdown':
+                    this.toggleDeliveryTypeDropdown();
+                    break;
+                case 'product-select-delivery-type':
+                    this.selectDeliveryType(actionEl.dataset.deliveryType, actionEl.dataset.deliveryLabel);
+                    break;
+                case 'product-select-category':
+                    this.selectCategory(actionEl.dataset.categoryName, actionEl.dataset.categoryColor);
+                    break;
+                case 'product-show-add-category-input':
+                    this.showAddCategoryInput();
+                    break;
+                case 'product-cancel-add-category':
+                    this.cancelAddCategory();
+                    break;
+                case 'product-save-new-category':
+                    this.saveNewCategory();
+                    break;
+                case 'order-show-content':
+                    this.showOrderContent(actionEl.dataset.orderId, actionEl.dataset.itemsData);
+                    break;
+                case 'order-actions-stop':
+                    break;
+                case 'order-refund':
+                    this.refundOrder(actionEl.dataset.orderId);
+                    break;
+                case 'refund-close-modal':
+                    this.closeDynamicModal(actionEl.dataset.modalId || 'refundModal');
+                    break;
+                case 'refund-submit':
+                    this.submitRefund(actionEl.dataset.orderId, actionEl);
+                    break;
+            default:
+                break;
+            }
         });
 
         document.addEventListener('change', (event) => {
-            const target = event.target instanceof HTMLInputElement ? event.target : null;
-            if (!target || !target.matches('[data-shop-pagination-target][data-shop-pagination-max]')) {
+            const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+            if (!target) {
                 return;
             }
 
-            const max = Math.max(1, Number.parseInt(target.dataset.shopPaginationMax || '1', 10) || 1);
-            let nextPage = Number.parseInt(target.value || '1', 10) || 1;
-            if (nextPage < 1) nextPage = 1;
-            if (nextPage > max) nextPage = max;
-            target.value = String(nextPage);
+            const actionEl = target.closest('[data-shop-change]');
+            if (!actionEl) {
+                return;
+            }
 
-            this.invokePaginationTarget(target.dataset.shopPaginationTarget, nextPage);
+            switch (actionEl.dataset.shopChange) {
+                case 'pagination-go': {
+                    const max = Math.max(1, Number.parseInt(actionEl.dataset.paginationMax || '1', 10) || 1);
+                    let nextPage = Number.parseInt(actionEl.value || '1', 10) || 1;
+                    if (nextPage < 1) nextPage = 1;
+                    if (nextPage > max) nextPage = max;
+                    actionEl.value = String(nextPage);
+                    this.invokePaginationTarget(actionEl.dataset.paginationTarget, nextPage);
+                    break;
+                }
+                case 'inventory-toggle-select-all':
+                    this.toggleSelectAll(actionEl);
+                    break;
+                case 'inventory-selection-count':
+                    this.updateSelectionCount();
+                    break;
+                case 'product-handle-icon-upload':
+                    this.handleIconUpload(actionEl);
+                    break;
+                case 'product-toggle-purchase-notes':
+                    this.togglePurchaseNotes(actionEl.checked);
+                    break;
+                case 'product-toggle-usage-instructions':
+                    this.toggleUsageInstructions(actionEl.checked);
+                    break;
+                case 'product-selection-count':
+                    this.updateProductSelectionCount();
+                    break;
+            default:
+                break;
+            }
         });
+
+        document.addEventListener('input', (event) => {
+            const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+            if (!target) {
+                return;
+            }
+
+            const actionEl = target.closest('[data-shop-input]');
+            if (!actionEl) {
+                return;
+            }
+
+            switch (actionEl.dataset.shopInput) {
+                case 'product-update-preview':
+                    this.updatePreview();
+                    break;
+                case 'inventory-import-line-count':
+                    this.updateLegacyImportLineCount();
+                    break;
+            default:
+                break;
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+            if (!target) {
+                return;
+            }
+
+            const actionEl = target.closest('[data-shop-keydown]');
+            if (!actionEl) {
+                return;
+            }
+
+            switch (actionEl.dataset.shopKeydown) {
+                case 'inventory-search-enter':
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        this.loadInventoryList();
+                    }
+                    break;
+                case 'product-save-new-category':
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        this.saveNewCategory();
+                    }
+                    break;
+                default:
+                    break;
+            }
+        });
+
+        document.addEventListener('submit', (event) => {
+            const form = event.target instanceof HTMLFormElement ? event.target : null;
+            if (!form) return;
+
+            if (form.id === 'productModalForm') {
+                event.preventDefault();
+                this.saveProduct();
+            }
+        });
+
+        document.addEventListener('click', (event) => {
+            const overlay = event.target instanceof HTMLElement && event.target.matches('[data-shop-overlay-close]');
+            if (!overlay || event.target !== overlay) return;
+
+            if (overlay.dataset.shopOverlayClose === 'product-modal') {
+                this.hideProductModal();
+            } else if (overlay.dataset.shopOverlayClose === 'dynamic-modal') {
+                this.closeDynamicModal(overlay.dataset.modalId);
+            }
+        });
+
+        document.addEventListener('error', (event) => {
+            const image = event.target instanceof HTMLImageElement ? event.target : null;
+            const fallbackSrc = image?.dataset.fallbackSrc;
+            if (!image || !fallbackSrc || image.src === fallbackSrc) {
+                return;
+            }
+
+            image.src = fallbackSrc;
+        }, true);
     },
 
     // Render Product Category Filter Buttons dynamically
@@ -431,18 +753,21 @@ Example output format:
 
             // Rebuild: first add "全部" button
             container.innerHTML = '';
+            const currentCategory = this.currentCategory || 'all';
             const allBtn = document.createElement('button');
-            allBtn.className = 'filter-tab active';
+            allBtn.className = `filter-tab${currentCategory === 'all' ? ' active' : ''}`;
             allBtn.textContent = '全部';
-            allBtn.onclick = () => this.filterCategory('all', allBtn);
+            allBtn.dataset.shopAction = 'product-filter-category';
+            allBtn.dataset.category = 'all';
             container.appendChild(allBtn);
 
             // Add dynamic category buttons from categoryData
             (this.categoryData || []).forEach(cat => {
                 const btn = document.createElement('button');
-                btn.className = 'filter-tab';
+                btn.className = `filter-tab${currentCategory === cat.name ? ' active' : ''}`;
                 btn.textContent = cat.name;
-                btn.onclick = () => this.filterCategory(cat.name, btn);
+                btn.dataset.shopAction = 'product-filter-category';
+                btn.dataset.category = cat.name;
                 container.appendChild(btn);
             });
 
@@ -2149,7 +2474,7 @@ Example output format:
             el.style.borderBottom = 'none';
             el.style.color = 'rgba(255,255,255,0.6)';
 
-            if (el.onclick.toString().includes(tabName)) {
+            if (el.dataset.shopTab === tabName) {
                 el.classList.add('active');
                 el.style.borderBottom = '2px solid #6b9ece';
                 el.style.color = '#fff';
@@ -2280,7 +2605,7 @@ Example output format:
                         ${displayHtml}
                         <div style="position:absolute; top:12px; left:12px; display:${checkboxDisplay};" class="product-checkbox-wrapper">
                             <input type="checkbox" class="inv-checkbox product-select-checkbox" data-product-id="${p.id}" 
-                                onclick="event.stopPropagation(); ShopAdmin.updateProductSelectionCount();">
+                                data-shop-change="product-selection-count">
                         </div>
                         <div style="position:absolute; top:12px; right:12px;">${statusBadge}</div>
                     </div>
@@ -2307,15 +2632,15 @@ Example output format:
                         </div>
                         
                         <div style="display:flex; gap:8px;">
-                           <button class="action-btn" onclick="ShopAdmin.editProduct('${p.id}')" title="编辑"
+                           <button class="action-btn" data-shop-action="product-edit" data-product-id="${p.id}" title="编辑"
                                 style="width:32px; height:32px; border-radius:8px; border:none; background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.7); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s;">
                                 <i class="fas fa-edit" style="font-size:14px;"></i>
                            </button>
-                           <button class="action-btn" onclick="ShopAdmin.toggleStatus('${p.id}', ${!p.is_active})" title="${p.is_active ? '下架' : '上架'}"
+                           <button class="action-btn" data-shop-action="product-toggle-status" data-product-id="${p.id}" data-new-status="${!p.is_active}" title="${p.is_active ? '下架' : '上架'}"
                                 style="width:32px; height:32px; border-radius:8px; border:none; background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.7); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s;">
                                 <i class="fas fa-${p.is_active ? 'eye-slash' : 'eye'}" style="font-size:14px;"></i>
                            </button>
-                           <button class="action-btn" onclick="ShopAdmin.deleteProduct('${p.id}', '${p.name}')" title="删除"
+                           <button class="action-btn" data-shop-action="product-delete" data-product-id="${p.id}" data-product-name="${this.escapeForAttr(p.name)}" title="删除"
                                 style="width:32px; height:32px; border-radius:8px; border:none; background:rgba(255,80,80,0.1); color:#ff6b6b; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s;">
                                 <i class="fas fa-trash" style="font-size:14px;"></i>
                            </button>
@@ -2338,16 +2663,22 @@ Example output format:
                     btn.addEventListener('click', (e) => e.stopPropagation());
                 });
 
+                const checkbox = card.querySelector('.product-select-checkbox');
+                if (checkbox) {
+                    checkbox.addEventListener('click', (e) => e.stopPropagation());
+                    checkbox.addEventListener('change', () => this.updateProductSelectionCount());
+                }
+
                 // Card Click Selection
                 card.onclick = (e) => {
                     if (this.isProductSelectionMode) {
                         // Avoid triggering if clicking on buttons (though stopPropagation above helps)
-                        if (e.target.closest('.action-btn')) return;
+                        if (e.target.closest('.action-btn') || e.target.closest('.product-select-checkbox')) return;
 
-                        const checkbox = card.querySelector('.product-select-checkbox');
-                        if (checkbox) {
-                            checkbox.checked = !checkbox.checked;
-                            ShopAdmin.updateProductSelectionCount();
+                        const cardCheckbox = card.querySelector('.product-select-checkbox');
+                        if (cardCheckbox) {
+                            cardCheckbox.checked = !cardCheckbox.checked;
+                            this.updateProductSelectionCount();
                         }
                     }
                 };
@@ -2717,7 +3048,7 @@ Example output format:
 
             let optionsHtml = categories.map(cat => {
                 const color = cat.color || '#6b9ece';
-                return `<div class="custom-category-option" onclick="ShopAdmin.selectCategory('${cat.name}', '${color}')">
+                return `<div class="custom-category-option" data-shop-action="product-select-category" data-category-name="${this.escapeForAttr(cat.name)}" data-category-color="${this.escapeForAttr(color)}">
                     <span class="option-dot" style="background: ${color}"></span>
                     <span>${cat.name}</span>
                 </div>`;
@@ -2725,14 +3056,14 @@ Example output format:
 
             // If no categories, add default
             if (categories.length === 0) {
-                optionsHtml = `<div class="custom-category-option" onclick="ShopAdmin.selectCategory('other', '#9aa0a6')">
+                optionsHtml = `<div class="custom-category-option" data-shop-action="product-select-category" data-category-name="other" data-category-color="#9aa0a6">
                     <span class="option-dot" style="background: #9aa0a6"></span>
                     <span>其他</span>
                 </div>`;
             }
 
             // Add "Create new category" option at the bottom
-            optionsHtml += `<div class="custom-category-option add-new-category" onclick="ShopAdmin.showAddCategoryInput(event)" style="border-top: 1px solid rgba(255,255,255,0.1); margin-top: 6px; padding-top: 12px; color: #6b9ece;">
+            optionsHtml += `<div class="custom-category-option add-new-category" data-shop-action="product-show-add-category-input" style="border-top: 1px solid rgba(255,255,255,0.1); margin-top: 6px; padding-top: 12px; color: #6b9ece;">
                 <i class="fas fa-plus" style="width: 10px; text-align: center; font-size: 10px;"></i>
                 <span>添加新分类</span>
             </div>`;
@@ -2741,10 +3072,10 @@ Example output format:
             optionsHtml += `<div id="newCategoryInputContainer" style="display: none; padding: 12px; border-top: 1px solid rgba(255,255,255,0.1); margin-top: 6px; box-sizing: border-box;">
                 <input type="text" id="newCategoryName" placeholder="输入分类名称" 
                     style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08); color: #fff; font-size: 13px; outline: none; box-sizing: border-box;"
-                    onkeydown="if(event.key==='Enter') ShopAdmin.saveNewCategory()" onclick="event.stopPropagation()">
+                    data-shop-keydown="product-save-new-category">
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button onclick="event.stopPropagation(); ShopAdmin.cancelAddCategory()" style="flex:1; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.7); cursor: pointer; font-size: 13px; transition: all 0.2s;">取消</button>
-                    <button onclick="event.stopPropagation(); ShopAdmin.saveNewCategory()" style="flex:1; padding: 8px 12px; border-radius: 8px; border: none; background: linear-gradient(135deg, #6b9ece 0%, #5a8fc0 100%); color: #fff; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s;">确定</button>
+                    <button type="button" data-shop-action="product-cancel-add-category" style="flex:1; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.7); cursor: pointer; font-size: 13px; transition: all 0.2s;">取消</button>
+                    <button type="button" data-shop-action="product-save-new-category" style="flex:1; padding: 8px 12px; border-radius: 8px; border: none; background: linear-gradient(135deg, #6b9ece 0%, #5a8fc0 100%); color: #fff; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s;">确定</button>
                 </div>
             </div>`;
 
@@ -2755,8 +3086,7 @@ Example output format:
     },
 
     // Show input field for adding new category
-    showAddCategoryInput: function (event) {
-        event.stopPropagation();
+    showAddCategoryInput: function () {
         const inputContainer = document.getElementById('newCategoryInputContainer');
         const addBtn = document.querySelector('.add-new-category');
         if (inputContainer) {
@@ -2809,7 +3139,7 @@ Example output format:
         const addNewBtn = document.querySelector('.add-new-category');
 
         // Insert new option before the "add new" button
-        const newOptionHtml = `<div class="custom-category-option pending-category" onclick="ShopAdmin.selectCategory('${name}', '${color}')">
+        const newOptionHtml = `<div class="custom-category-option pending-category" data-shop-action="product-select-category" data-category-name="${this.escapeForAttr(name)}" data-category-color="${this.escapeForAttr(color)}">
             <span class="option-dot" style="background: ${color}"></span>
             <span>${name}</span>
             <span style="font-size: 10px; color: rgba(255,255,255,0.4); margin-left: auto;">(新)</span>
@@ -6681,7 +7011,7 @@ Example output format:
                 // Two-line layout like user management page
                 const userDisplay = `
                     <div class="user-cell">
-                        <img src="${safeUserAvatar}" class="user-avatar-small" style="width:36px;height:36px;" onerror="this.src='https://api.dicebear.com/7.x/initials/svg?seed=U&backgroundColor=6b9ece'">
+                        <img src="${safeUserAvatar}" class="user-avatar-small" style="width:36px;height:36px;" data-fallback-src="https://api.dicebear.com/7.x/initials/svg?seed=U&backgroundColor=6b9ece">
                         <div class="user-info" style="line-height:1.3;">
                             <div class="user-name" style="color:#fff;">${safeUserName}</div>
                             <div class="user-email" style="font-size:12px;color:rgba(255,255,255,0.5);">${safeUserEmail}</div>
@@ -6725,15 +7055,15 @@ Example output format:
                 const status = this.getOrderDeliveryStatusBadge(order);
 
                 tbody.innerHTML += `
-                <tr onclick="ShopAdmin.showOrderContent('${order.id}', '${contentData}')" style="cursor: pointer;" title="点击查看订单详情">
+                <tr data-shop-action="order-show-content" data-order-id="${this.escapeForAttr(order.id)}" data-items-data="${contentData}" style="cursor: pointer;" title="点击查看订单详情">
                     <td data-label="用户" title="${safeOrderUserId}">${userDisplay}</td>
                     <td data-label="订单时间">${safeDate}</td>
                     <td data-label="商品">${this.escapeHtml(productName)}</td>
                     <td data-label="支付积分">${order.total_price || order.price_paid}</td>
                     <td data-label="发货状态">${status}</td>
-                    <td data-label="操作" onclick="event.stopPropagation()">
+                    <td data-label="操作" data-shop-action="order-actions-stop">
                         ${(order.refund_status !== 'refunded' && order.refund_status !== 'full_refund') ?
-                        `<button class="btn-icon danger" onclick="ShopAdmin.refundOrder('${order.id}')" title="退款"><i class="fas fa-undo"></i></button>`
+                        `<button class="btn-icon danger" data-shop-action="order-refund" data-order-id="${this.escapeForAttr(order.id)}" title="退款"><i class="fas fa-undo"></i></button>`
                         : '<span style="color: rgba(255,255,255,0.3); font-size: 12px;">-</span>'}
                     </td>
                 </tr>
@@ -6912,7 +7242,7 @@ Example output format:
                     filter: brightness(0.95);
                 }
             </style>
-            <div id="refundModal" onclick="if(event.target.id==='refundModal')this.remove()" 
+            <div id="refundModal" data-shop-overlay-close="dynamic-modal" data-modal-id="refundModal"
                 style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(12px);z-index:9999;display:flex;justify-content:center;align-items:center;">
                 <div style="background:rgba(20,25,40,0.9);border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 50px rgba(0,0,0,0.5);border-radius:20px;padding:30px;width:480px;animation:modalFadeIn 0.3s ease-out;">
                     <h3 style="margin:0 0 25px 0;color:#fff;font-size:18px;font-weight:600;display:flex;align-items:center;gap:10px;">
@@ -6950,8 +7280,8 @@ Example output format:
                     </div>
                     
                     <div style="display:flex;justify-content:flex-end;gap:12px;">
-                        <button onclick="document.getElementById('refundModal').remove()" class="refund-btn-cancel">取消</button>
-                        <button onclick="ShopAdmin.submitRefund('${orderId}')" class="refund-btn-confirm">确认退款</button>
+                        <button type="button" data-shop-action="refund-close-modal" data-modal-id="refundModal" class="refund-btn-cancel">取消</button>
+                        <button type="button" data-shop-action="refund-submit" data-order-id="${this.escapeForAttr(orderId)}" class="refund-btn-confirm">确认退款</button>
                     </div>
                 </div>
             </div>
@@ -6959,15 +7289,17 @@ Example output format:
         document.body.insertAdjacentHTML('beforeend', modalHtml);
     },
 
-    submitRefund: async function (orderId) {
+    submitRefund: async function (orderId, submitButton = null) {
         const targetStatus = document.querySelector('input[name="refundTargetStatus"]:checked').value;
         const remark = document.getElementById('refundRemarkInput').value.trim();
 
         // Disable button to prevent double submit
-        const btn = event.target;
-        const originalText = btn.textContent;
-        btn.disabled = true;
-        btn.textContent = '处理中...';
+        const btn = submitButton || document.querySelector('#refundModal [data-shop-action="refund-submit"]');
+        const originalText = btn?.textContent || '确认退款';
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = '处理中...';
+        }
 
         try {
             const { data, error } = await supabaseClient.rpc('fn_admin_refund_order', {
@@ -6987,14 +7319,18 @@ Example output format:
                 if (this.currentTab === 'inventory') this.loadInventoryList();
             } else {
                 alert('Refund Failed: ' + data.message);
-                btn.disabled = false;
-                btn.textContent = originalText;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                }
             }
         } catch (err) {
             console.error(err);
             alert('Error: ' + err.message);
-            btn.disabled = false;
-            btn.textContent = originalText;
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
         }
     },
 
@@ -7427,13 +7763,13 @@ Example output format:
                 return `
                     <tr>
                         <td class="inv-checkbox-col" style="display:${checkboxDisplay}">
-                            <input type="checkbox" class="inv-checkbox" data-id="${item.id}" onchange="ShopAdmin.updateSelectionCount()">
+                            <input type="checkbox" class="inv-checkbox" data-id="${item.id}" data-shop-change="inventory-selection-count">
                         </td>
                         <td>${item.product_name || '-'}</td>
-                        <td onclick="ShopAdmin.toggleSelectionClick(this)">
+                        <td data-shop-action="inventory-toggle-selection-cell">
                             <div class="content-cell" 
                                  data-content="${this.escapeForAttr(item.content)}" 
-                                 onclick="ShopAdmin.copyContent(this, event)"
+                                 data-shop-action="inventory-copy-content"
                                  title="点击复制全部内容&#10;───────────&#10;${this.escapeForAttr(item.content)}"
                                  style="cursor:pointer; padding:5px 10px; border-radius:6px; background:rgba(255,255,255,0.03); transition:all 0.2s; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                                 ${emailOnly}
@@ -7444,13 +7780,13 @@ Example output format:
                         <td>${buyerInfo}</td>
                         <td>
                             <div style="display:flex;gap:5px;">
-                                <button onclick="ShopAdmin.showInventoryDetail('${item.id}')" class="btn-icon-sm" title="详情"><i class="fas fa-info-circle"></i></button>
-                                ${item.status === 'sold' ? `<button onclick="ShopAdmin.openFaultModal('${item.id}')" class="btn-icon-sm" title="标记故障"><i class="fas fa-exclamation-triangle" style="color:#ef4444;"></i></button>` : ''}
-                                ${item.status !== 'sold' ? `<button onclick="ShopAdmin.deleteInventoryItem('${item.id}')" class="btn-icon-sm" title="删除"><i class="fas fa-trash"></i></button>` : ''}
-                                ${item.status === 'available' ? `<button onclick="ShopAdmin.freezeInventoryItem('${item.id}', true)" class="btn-icon-sm" title="冻结"><i class="fas fa-ban"></i></button>` : ''}
-                                ${item.status === 'frozen' ? `<button onclick="ShopAdmin.freezeInventoryItem('${item.id}', false)" class="btn-icon-sm" title="解冻"><i class="fas fa-check"></i></button>` : ''}
-                                ${item.status === 'reserve' ? `<button onclick="ShopAdmin.releaseOne('${item.id}')" class="btn-icon-sm" title="上架"><i class="fas fa-rocket"></i></button>` : ''}
-                                ${item.status === 'fault' ? `<button onclick="ShopAdmin.releaseOne('${item.id}')" class="btn-icon-sm" title="修复/上架"><i class="fas fa-wrench" style="color:#e879f9;"></i></button>` : ''}
+                                <button data-shop-action="inventory-show-detail" data-inventory-id="${item.id}" class="btn-icon-sm" title="详情"><i class="fas fa-info-circle"></i></button>
+                                ${item.status === 'sold' ? `<button data-shop-action="inventory-open-fault-modal" data-inventory-id="${item.id}" class="btn-icon-sm" title="标记故障"><i class="fas fa-exclamation-triangle" style="color:#ef4444;"></i></button>` : ''}
+                                ${item.status !== 'sold' ? `<button data-shop-action="inventory-delete-item" data-inventory-id="${item.id}" class="btn-icon-sm" title="删除"><i class="fas fa-trash"></i></button>` : ''}
+                                ${item.status === 'available' ? `<button data-shop-action="inventory-freeze-item" data-inventory-id="${item.id}" data-freeze="true" class="btn-icon-sm" title="冻结"><i class="fas fa-ban"></i></button>` : ''}
+                                ${item.status === 'frozen' ? `<button data-shop-action="inventory-freeze-item" data-inventory-id="${item.id}" data-freeze="false" class="btn-icon-sm" title="解冻"><i class="fas fa-check"></i></button>` : ''}
+                                ${item.status === 'reserve' ? `<button data-shop-action="inventory-release-item" data-inventory-id="${item.id}" class="btn-icon-sm" title="上架"><i class="fas fa-rocket"></i></button>` : ''}
+                                ${item.status === 'fault' ? `<button data-shop-action="inventory-release-item" data-inventory-id="${item.id}" class="btn-icon-sm" title="修复/上架"><i class="fas fa-wrench" style="color:#e879f9;"></i></button>` : ''}
                             </div>
                         </td>
                     </tr>
@@ -7576,7 +7912,6 @@ Example output format:
 
     // Copy list content
     copyListContent: function (btn) {
-        if (event) event.stopPropagation();
         const content = btn.dataset.content;
         navigator.clipboard.writeText(content).then(() => {
             const originalHtml = btn.innerHTML;
@@ -7587,7 +7922,6 @@ Example output format:
 
     // Export list content
     exportListContent: function (btn, filename) {
-        if (event) event.stopPropagation();
         const content = btn.dataset.content;
         const blob = new Blob([content], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
@@ -7601,7 +7935,7 @@ Example output format:
     // Open Fault Marking Modal
     openFaultModal: function (itemId) {
         const modalHtml = `
-            <div id="markFaultModal" onclick="if(event.target.id==='markFaultModal')this.remove()" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;display:flex;justify-content:center;align-items:center;">
+            <div id="markFaultModal" data-shop-overlay-close="dynamic-modal" data-modal-id="markFaultModal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;display:flex;justify-content:center;align-items:center;">
                 <div style="background:rgba(30,35,50,0.95);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:25px;width:400px;">
                     <h3 style="margin:0 0 20px 0;color:#fff;"><i class="fas fa-exclamation-triangle" style="color:#ef4444;"></i> 标记故障</h3>
                     
@@ -7611,8 +7945,8 @@ Example output format:
                     </div>
                     
                     <div style="display:flex;justify-content:flex-end;gap:10px;">
-                        <button onclick="document.getElementById('markFaultModal').remove()" style="padding:8px 16px;background:none;border:1px solid rgba(255,255,255,0.2);color:#ccc;border-radius:6px;cursor:pointer;">取消</button>
-                        <button onclick="ShopAdmin.submitFault('${itemId}')" style="padding:8px 16px;background:#ef4444;border:none;color:#fff;border-radius:6px;cursor:pointer;">确认标记</button>
+                        <button type="button" data-shop-action="fault-modal-close" data-modal-id="markFaultModal" style="padding:8px 16px;background:none;border:1px solid rgba(255,255,255,0.2);color:#ccc;border-radius:6px;cursor:pointer;">取消</button>
+                        <button type="button" data-shop-action="fault-modal-submit" data-inventory-id="${itemId}" style="padding:8px 16px;background:#ef4444;border:none;color:#fff;border-radius:6px;cursor:pointer;">确认标记</button>
                     </div>
                 </div>
             </div>
@@ -7654,11 +7988,11 @@ Example output format:
 
         // Build modal content
         let modalHtml = `
-            <div id="inventoryDetailModal" onclick="if(event.target.id==='inventoryDetailModal')this.remove()" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;display:flex;justify-content:center;align-items:center;">
+            <div id="inventoryDetailModal" data-shop-overlay-close="dynamic-modal" data-modal-id="inventoryDetailModal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;display:flex;justify-content:center;align-items:center;">
                 <div style="background:rgba(30,35,50,0.95);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:25px;width:500px;max-width:90%;max-height:80vh;overflow-y:auto;" class="custom-scrollbar">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
                         <h3 style="margin:0;color:#fff;"><i class="fas fa-info-circle" style="color:#6b9ece;"></i> 库存详情</h3>
-                        <button onclick="document.getElementById('inventoryDetailModal').remove()" style="background:none;border:none;color:#888;font-size:20px;cursor:pointer;">&times;</button>
+                        <button type="button" data-shop-action="inventory-detail-close" data-modal-id="inventoryDetailModal" style="background:none;border:none;color:#888;font-size:20px;cursor:pointer;">&times;</button>
                     </div>
                     <div id="detailContent" style="color:#e2e8f0;">
                         <div style="text-align:center;padding:20px;"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>
@@ -7768,7 +8102,7 @@ Example output format:
                 <div style="background:rgba(255,255,255,0.03);border-radius:12px;padding:15px;margin-bottom:15px;">
                     <div style="color:#888;font-size:12px;margin-bottom:5px;">账号内容</div>
                     <div style="font-family:monospace;word-break:break-all;background:rgba(0,0,0,0.2);padding:10px;border-radius:8px;">${invData.content}</div>
-                    <button onclick="navigator.clipboard.writeText('${this.escapeForAttr(invData.content)}');this.innerHTML='<i class=\\'fas fa-check\\'></i> 已复制';setTimeout(()=>this.innerHTML='<i class=\\'fas fa-copy\\'></i> 复制',1000);" 
+                    <button type="button" data-shop-action="inventory-detail-copy-main" data-content="${this.escapeForAttr(invData.content)}"
                         style="margin-top:10px;background:rgba(107,158,206,0.2);border:1px solid rgba(107,158,206,0.3);color:#6b9ece;padding:6px 15px;border-radius:6px;cursor:pointer;">
                         <i class="fas fa-copy"></i> 复制
                     </button>
@@ -7844,11 +8178,11 @@ Example output format:
                             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                                 <div style="color:#fbbf24;font-weight:bold;"><i class="fas fa-layer-group"></i> 本次交易关联商品 (${sameOrderItems.length})</div>
                                 <div style="display:flex;gap:5px;">
-                                    <button onclick="ShopAdmin.copyListContent(this)" data-content="${this.escapeForAttr(sameOrderItems.map(i => i.shop_inventory?.content || '').join('\n'))}" 
+                                    <button type="button" data-shop-action="inventory-detail-copy-list" data-content="${this.escapeForAttr(sameOrderItems.map(i => i.shop_inventory?.content || '').join('\n'))}"
                                         style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);color:#fbbf24;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">
                                         <i class="fas fa-copy"></i> 复制
                                     </button>
-                                    <button onclick="ShopAdmin.exportListContent(this, 'sameday_orders.txt')" data-content="${this.escapeForAttr(sameOrderItems.map(i => i.shop_inventory?.content || '').join('\n'))}"
+                                    <button type="button" data-shop-action="inventory-detail-export-list" data-content="${this.escapeForAttr(sameOrderItems.map(i => i.shop_inventory?.content || '').join('\n'))}" data-filename="sameday_orders.txt"
                                         style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);color:#fbbf24;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">
                                         <i class="fas fa-download"></i> 导出
                                     </button>
@@ -7857,7 +8191,7 @@ Example output format:
                             <div style="max-height:150px;overflow-y:auto;" class="custom-scrollbar">
                                 ${sameOrderItems.map(r => `
                                     <div style="background:rgba(251,191,36,0.1);border-radius:6px;padding:8px 12px;margin-bottom:5px;font-size:12px;font-family:monospace;cursor:pointer;transition:all 0.2s;"
-                                         onclick="navigator.clipboard.writeText('${this.escapeForAttr(r.shop_inventory?.content || '')}');this.style.background='rgba(16,185,129,0.2)';"
+                                         data-shop-action="inventory-detail-copy-entry" data-content="${this.escapeForAttr(r.shop_inventory?.content || '')}"
                                          title="点击复制">
                                         ${this.escapeHtml((r.shop_inventory?.content || '').split('----')[0])}
                                     </div>
@@ -7874,11 +8208,11 @@ Example output format:
                             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                                 <div style="color:#818cf8;font-weight:bold;"><i class="fas fa-history"></i> 该买家购买历史 (${historyItems.length})</div>
                                 <div style="display:flex;gap:5px;">
-                                    <button onclick="ShopAdmin.copyListContent(this)" data-content="${this.escapeForAttr(historyItems.map(i => i.shop_inventory?.content || '').join('\n'))}"
+                                    <button type="button" data-shop-action="inventory-detail-copy-list" data-content="${this.escapeForAttr(historyItems.map(i => i.shop_inventory?.content || '').join('\n'))}"
                                         style="background:rgba(129,140,248,0.1);border:1px solid rgba(129,140,248,0.3);color:#818cf8;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">
                                         <i class="fas fa-copy"></i> 复制
                                     </button>
-                                    <button onclick="ShopAdmin.exportListContent(this, 'order_history.txt')" data-content="${this.escapeForAttr(historyItems.map(i => i.shop_inventory?.content || '').join('\n'))}"
+                                    <button type="button" data-shop-action="inventory-detail-export-list" data-content="${this.escapeForAttr(historyItems.map(i => i.shop_inventory?.content || '').join('\n'))}" data-filename="order_history.txt"
                                         style="background:rgba(129,140,248,0.1);border:1px solid rgba(129,140,248,0.3);color:#818cf8;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">
                                         <i class="fas fa-download"></i> 导出
                                     </button>
@@ -7887,7 +8221,7 @@ Example output format:
                             <div style="max-height:150px;overflow-y:auto;" class="custom-scrollbar">
                                 ${historyItems.map(r => `
                                     <div style="background:rgba(99,102,241,0.1);border-radius:6px;padding:8px 12px;margin-bottom:5px;font-size:12px;font-family:monospace;cursor:pointer;transition:all 0.2s;"
-                                         onclick="navigator.clipboard.writeText('${this.escapeForAttr(r.shop_inventory?.content || '')}');this.style.background='rgba(16,185,129,0.2)';"
+                                         data-shop-action="inventory-detail-copy-entry" data-content="${this.escapeForAttr(r.shop_inventory?.content || '')}"
                                          title="点击复制">
                                         ${this.escapeHtml((r.shop_inventory?.content || '').split('----')[0])}
                                     </div>
@@ -7930,6 +8264,49 @@ Example output format:
 
     closeReleaseModal: function () {
         document.getElementById('releaseReserveModal').style.display = 'none';
+    },
+
+    closeImportModal: function () {
+        document.getElementById('importInventoryModal')?.style.setProperty('display', 'none');
+    },
+
+    doImport: async function () {
+        const productId = document.getElementById('importProductSelect')?.value || '';
+        const contentInput = document.getElementById('importContentInput');
+        const content = contentInput?.value || '';
+        const status = document.querySelector('#importInventoryModal input[name="importStatus"]:checked')?.value || 'available';
+
+        if (!productId) { alert('请选择商品'); return; }
+        if (!content.trim()) { alert('请输入账号内容'); return; }
+
+        const contentLines = content.split('\n').map((line) => line.trim()).filter(Boolean);
+        if (contentLines.length === 0) { alert('请输入有效的账号内容'); return; }
+
+        const date = new Date();
+        const batchId = date.getFullYear().toString().slice(-2) +
+            (date.getMonth() + 1).toString().padStart(2, '0') +
+            date.getDate().toString().padStart(2, '0') +
+            date.getHours().toString().padStart(2, '0') +
+            date.getMinutes().toString().padStart(2, '0');
+
+        try {
+            const { error } = await supabaseClient.rpc('fn_import_inventory', {
+                p_product_id: productId,
+                p_content_list: contentLines,
+                p_batch_id: batchId,
+                p_status: status
+            });
+
+            if (error) throw error;
+
+            alert(`成功导入 ${contentLines.length} 个账号\n批次号: ${batchId}`);
+            contentInput.value = '';
+            this.updateLegacyImportLineCount();
+            this.closeImportModal();
+            this.loadInventoryList(this.inventoryPage);
+        } catch (err) {
+            alert('导入失败: ' + err.message);
+        }
     },
 
     releaseReserve: async function () {
