@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+    explainClientIpResolution,
     ipMatchesCidr,
     isIpAllowed,
     normalizeIp,
@@ -50,6 +51,31 @@ test('resolveClientIp falls back to the direct peer when forwarded headers are u
     };
 
     assert.equal(resolveClientIp(req, { env: { TRUST_ALL_PROXIES: 'false' }, trustedProxies: '192.0.2.0/24' }), '203.0.113.9');
+});
+
+test('explainClientIpResolution returns proxy trust metadata for diagnostics', () => {
+    const req = {
+        headers: {
+            'x-forwarded-for': '198.51.100.23, 10.0.0.2',
+            forwarded: 'for=198.51.100.23;proto=https'
+        },
+        socket: {
+            remoteAddress: '10.0.0.2'
+        }
+    };
+
+    const diagnostic = explainClientIpResolution(req, {
+        env: { TRUST_ALL_PROXIES: 'false' },
+        trustedProxies: '10.0.0.0/8'
+    });
+
+    assert.equal(diagnostic.socketIp, '10.0.0.2');
+    assert.deepEqual(diagnostic.forwardedIps, ['198.51.100.23', '10.0.0.2']);
+    assert.equal(diagnostic.resolvedClientIp, '198.51.100.23');
+    assert.equal(diagnostic.directPeerTrusted, true);
+    assert.equal(diagnostic.usedForwardedChain, true);
+    assert.equal(diagnostic.directPeerTrustReason, 'private_or_loopback_peer');
+    assert.deepEqual(diagnostic.trustedProxies, ['10.0.0.0/8']);
 });
 
 test('takeRateLimitToken blocks after the configured threshold and resets after the window', () => {

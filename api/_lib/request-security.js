@@ -269,6 +269,49 @@ function resolveClientIp(req, options = {}) {
     return socketIp;
 }
 
+function explainClientIpResolution(req, options = {}) {
+    const env = options.env || process.env;
+    const trustedProxiesRaw = options.trustedProxies || env.TRUSTED_PROXY_IPS || env.TRUSTED_PROXY_CIDRS || '';
+    const trustedProxies = splitIpRules(trustedProxiesRaw);
+    const trustAllProxies = options.trustAllProxies === true
+        || String(env.TRUST_ALL_PROXIES || '').trim() === '1'
+        || String(env.TRUST_ALL_PROXIES || '').trim().toLowerCase() === 'true';
+    const socketIp = normalizeIp(
+        req?.socket?.remoteAddress
+        || req?.connection?.remoteAddress
+        || req?.ip
+    );
+    const forwardedIps = extractForwardedIps(req);
+    const directPeerTrusted = Boolean(socketIp) && (
+        trustAllProxies
+        || isPrivateOrLoopbackIp(socketIp)
+        || isIpAllowed(socketIp, trustedProxies)
+    );
+    const usedForwardedChain = Boolean(forwardedIps.length && (!socketIp || directPeerTrusted));
+    const resolvedClientIp = usedForwardedChain
+        ? forwardedIps[0]
+        : socketIp;
+
+    return {
+        socketIp,
+        forwardedIps,
+        resolvedClientIp: resolvedClientIp || '',
+        trustedProxies,
+        trustAllProxies,
+        directPeerTrusted,
+        usedForwardedChain,
+        directPeerTrustReason: !socketIp
+            ? 'missing_direct_peer'
+            : trustAllProxies
+                ? 'trust_all_proxies'
+                : isPrivateOrLoopbackIp(socketIp)
+                    ? 'private_or_loopback_peer'
+                    : isIpAllowed(socketIp, trustedProxies)
+                        ? 'configured_trusted_proxy'
+                        : 'untrusted_peer'
+    };
+}
+
 function trimRateLimitStore(store = sharedRateLimitStore, now = Date.now()) {
     if (store.size < MAX_RATE_LIMIT_BUCKETS) return;
 
@@ -352,6 +395,7 @@ function resetSharedRateLimitStore() {
 
 module.exports = {
     applyRateLimitHeaders,
+    explainClientIpResolution,
     ipMatchesCidr,
     isIpAllowed,
     normalizeIp,

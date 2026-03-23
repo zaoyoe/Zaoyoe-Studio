@@ -508,7 +508,8 @@ async function dispatchRoute(app, {
     method = 'GET',
     url = '/',
     headers = {},
-    body = null
+    body = null,
+    remoteAddress = ''
 } = {}) {
     const parsedUrl = new URL(url, 'http://local.test');
     const normalizedHeaders = Object.fromEntries(
@@ -521,7 +522,13 @@ async function dispatchRoute(app, {
         headers: normalizedHeaders,
         body,
         params,
-        query: Object.fromEntries(parsedUrl.searchParams.entries())
+        query: Object.fromEntries(parsedUrl.searchParams.entries()),
+        socket: {
+            remoteAddress
+        },
+        connection: {
+            remoteAddress
+        }
     };
 
     const responseState = {
@@ -737,6 +744,65 @@ test('queue endpoint allows admins and proxies upstream data', async () => {
         } finally {
             global.fetch = originalFetch;
         }
+    });
+});
+
+test('network request-context endpoint requires admin privileges', async () => {
+    await withTestServer({
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        }
+    }, async ({ app }) => {
+        const response = await dispatchRoute(app, {
+            url: '/api/admin/network/request-context',
+            headers: {
+                Authorization: 'Bearer member-token'
+            },
+            remoteAddress: '10.0.0.2'
+        });
+        const payload = response.json();
+
+        assert.equal(response.status, 403);
+        assert.equal(payload.code, 'admin_required');
+    });
+});
+
+test('network request-context endpoint returns proxy diagnostics for admins', async () => {
+    await withTestServer({
+        tokens: {
+            'admin-token': { id: 'admin-1', email: 'admin@example.com' }
+        },
+        permissions: {
+            'admin-1': { is_admin: true, is_super_admin: false }
+        }
+    }, async ({ app }) => {
+        const response = await withEnv({
+            TRUST_ALL_PROXIES: 'false',
+            TRUSTED_PROXY_IPS: '10.0.0.0/8',
+            AFDIAN_WEBHOOK_TRUSTED_PROXIES: '10.0.0.0/8',
+            AFDIAN_WEBHOOK_ALLOWED_IPS: '198.51.100.0/24'
+        }, async () => dispatchRoute(app, {
+            url: '/api/admin/network/request-context',
+            headers: {
+                Authorization: 'Bearer admin-token',
+                Host: 'zaoyoe-verify-server-production.up.railway.app',
+                'x-forwarded-for': '198.51.100.23, 10.0.0.2',
+                forwarded: 'for=198.51.100.23;proto=https'
+            },
+            remoteAddress: '10.0.0.2'
+        }));
+        const payload = response.json();
+
+        assert.equal(response.status, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.request_context.app_proxy.socket_ip, '10.0.0.2');
+        assert.equal(payload.request_context.app_proxy.resolved_client_ip, '198.51.100.23');
+        assert.equal(payload.request_context.app_proxy.direct_peer_trusted, true);
+        assert.equal(payload.request_context.app_proxy.used_forwarded_chain, true);
+        assert.deepEqual(payload.request_context.app_proxy.trusted_proxies, ['10.0.0.0/8']);
+        assert.equal(payload.request_context.afdian_webhook.allowlist_configured, true);
+        assert.equal(payload.request_context.afdian_webhook.would_pass_allowlist, true);
+        assert.equal(Array.isArray(payload.findings), true);
     });
 });
 

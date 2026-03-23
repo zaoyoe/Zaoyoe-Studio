@@ -95,18 +95,22 @@
      - `Vercel` 和 `Railway / verify server` 各自该补哪些变量，会逐项列出来
    - `SUPABASE_SERVICE_ROLE_KEY`
      - 如果脚本提示它看起来像 `publishable/anon key`，说明 env 文件把公钥塞进了高权限槽位，不能继续上线
-7. 重新部署：
+7. 如果 `TRUSTED_PROXY_IPS` / `AFDIAN_WEBHOOK_TRUSTED_PROXIES` 还拿不准，先用管理员账号带 Bearer Token 请求：
+   - `GET /api/admin/network/request-context`
+   - 这个接口会返回当前请求看到的 `socket_ip`、`x-forwarded-for/forwarded`、解析后的 `resolved_client_ip`，以及当前代理链配置缺口
+   - 真正的 `AFDIAN_WEBHOOK_ALLOWED_IPS` 仍要结合爱发电官方来源和 Railway 日志确认；当 webhook 因白名单被拦时，日志里现在会打印完整的结构化网络上下文
+8. 重新部署：
    - Vercel
    - Railway（如果它依赖这个 key）
-8. 部署后重新验证：
+9. 部署后重新验证：
    - 管理员后台
    - 钱包充值
    - 爱发电订单查询
-9. 验证通过后，再跑一次只读收尾审计：
+10. 验证通过后，再跑一次只读收尾审计：
    - `npm run audit:payment-closeout -- --env-file server/.env.staging`
    - 如果结果提示 `remote_mock_payment_still_enabled`，说明生产态远程 mock 仍开放，测试完成后应尽快关闭。
    - 如果结果提示 `smoke_payment_artifacts_present` 或 `smoke_users_still_present`，说明专用 smoke 测试痕迹还在，建议去 `支付对账 -> 异常运维 -> 测试数据清理` 做清理。
-10. 如果后台尚未部署到带有新 cleanup 规则的版本，或需要命令行收尾，可改用：
+11. 如果后台尚未部署到带有新 cleanup 规则的版本，或需要命令行收尾，可改用：
    - 预览：`npm run cleanup:payment-fixtures -- --env-file server/.env.staging`
    - 真删：`npm run cleanup:payment-fixtures -- --env-file server/.env.staging --execute`
    - 默认只会清理 `AUTO_CDX_*` / `SMOKE_*` 订单，以及 `codex.*@example.com` / `smoke-payment-*@zaoyoe.invalid` 测试账号。
