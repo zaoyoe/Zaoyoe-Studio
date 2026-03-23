@@ -3231,13 +3231,11 @@
                 }
 
                 // 🚀 Run ALL API calls in PARALLEL
-                const rechargeOptionsPromise = this.loadRechargeOptionsConfig();
                 const paymentRuntimePromise = this.loadPaymentRuntimeConfig();
                 const [balance, packages, history] = await Promise.all([
                     PointsService.getBalance(),
                     PointsService.getPackages(),
                     PointsService.getHistory(),
-                    rechargeOptionsPromise,
                     paymentRuntimePromise
                 ]);
                 const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
