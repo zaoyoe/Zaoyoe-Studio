@@ -8,6 +8,9 @@ const {
     normalizeRechargeOptionsConfig
 } = require('../api/_lib/payments/providers');
 const {
+    normalizeHupijiaoConfig
+} = require('../api/_lib/payments/hupijiao');
+const {
     getMockPaymentRuntimeState
 } = require('../api/_lib/payments/orders');
 
@@ -90,13 +93,12 @@ function resolveTargetProvider(paymentChannels = {}, explicitProvider = '') {
         return 'afdian';
     }
 
-    const hupijiaoConfigured = Boolean(
-        String(providers.hupijiao?.checkout_url || '').trim()
-        || String(providers.hupijiao?.gateway_url || '').trim()
-        || String(providers.hupijiao?.merchant_id || '').trim()
-    );
-    if (hupijiaoConfigured) {
-        return 'hupijiao';
+    const hupijiaoReadiness = normalizeHupijiaoConfig({
+        channelConfig: providers.hupijiao || {},
+        secretValues: {}
+    });
+    if (providers.hupijiao && hupijiaoReadiness.createReady) {
+        return 'afdian';
     }
 
     return 'afdian';

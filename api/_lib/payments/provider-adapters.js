@@ -3,6 +3,9 @@ const {
     normalizeSiteValue
 } = require('../site');
 const {
+    normalizeHupijiaoConfig
+} = require('./hupijiao');
+const {
     loadStoredPaymentConfigs,
     resolvePaymentProviderSecrets
 } = require('./providers');
@@ -275,12 +278,21 @@ const providerRegistry = {
                     afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
                 });
             const secrets = await resolvePaymentProviderSecrets(supabase, 'hupijiao', env);
+            const integration = normalizeHupijiaoConfig({
+                channelConfig: loaded.paymentChannels.providers.hupijiao,
+                secretValues: {
+                    hupijiao_api_key: secrets.hupijiao_api_key?.value || '',
+                    hupijiao_secret_key: secrets.hupijiao_secret_key?.value || ''
+                },
+                requestOrigin: env.APP_BASE_URL
+            });
 
             return {
                 provider: 'hupijiao',
                 channelConfig: loaded.paymentChannels.providers.hupijiao,
                 activeProvider: loaded.paymentChannels.active_provider,
                 implemented: false,
+                integration,
                 secretValues: {
                     hupijiao_api_key: secrets.hupijiao_api_key?.value || '',
                     hupijiao_secret_key: secrets.hupijiao_secret_key?.value || ''
@@ -290,11 +302,22 @@ const providerRegistry = {
         },
         createCheckoutContext({ runtimeContext } = {}) {
             const channelConfig = runtimeContext?.channelConfig || {};
+            const integration = runtimeContext?.integration || normalizeHupijiaoConfig({
+                channelConfig,
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: ''
+            });
+            const missingFields = Array.isArray(integration?.missingFields)
+                ? integration.missingFields
+                : [];
+            const readinessHint = missingFields.length
+                ? `当前还缺少：${missingFields.join(', ')}。`
+                : `APPID / SECRET / notify_url 已可用于官方 API 联调。`;
             return {
                 supported: false,
                 action: 'redirect',
                 displayName: channelConfig.display_name || '虎皮椒',
-                message: '虎皮椒通道尚未完成统一落单、验签回调和查单闭环，已默认禁止拉起真实支付。请先切换到爱发电或完成虎皮椒全链路接入后再启用。'
+                message: `${readinessHint} 但统一落单、验签回调、查单和自动入账闭环尚未完成，已默认禁止拉起真实支付。请先切换到爱发电或继续完成虎皮椒全链路接入后再启用。`
             };
         },
         verifyWebhook() {

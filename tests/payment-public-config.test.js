@@ -78,3 +78,40 @@ test('public payment config preserves mock when runtime explicitly allows it', (
     assert.equal(result.paymentChannels.providers.mock.enabled, true);
     assert.equal(result.rechargeOptions.mock_payment_enabled, true);
 });
+
+test('public payment config does not auto-promote hupijiao from partial gateway config while afdian remains available', () => {
+    const result = buildPublicPaymentConfig(
+        {
+            active_provider: 'mock',
+            providers: {
+                mock: {
+                    enabled: true,
+                    display_name: '模拟支付'
+                },
+                afdian: {
+                    enabled: true,
+                    display_name: '爱发电',
+                    checkout_url: 'https://afdian.com/a/zaoyoe'
+                },
+                hupijiao: {
+                    enabled: true,
+                    display_name: '虎皮椒',
+                    gateway_url: 'https://api.xunhupay.com/payment/do.html',
+                    merchant_id: 'appid-demo'
+                }
+            }
+        },
+        {
+            custom_amount_enabled: true,
+            mock_payment_enabled: true
+        },
+        {
+            mock_payment: {
+                allowed: false,
+                reason: 'production_like_runtime'
+            }
+        }
+    );
+
+    assert.equal(result.paymentChannels.active_provider, 'afdian');
+});

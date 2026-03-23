@@ -24,7 +24,7 @@ test('parseArgs collects sync flags', () => {
     assert.equal(options.provider, 'afdian');
 });
 
-test('resolveTargetProvider prefers explicit provider and falls back to configured checkout links', () => {
+test('resolveTargetProvider prefers explicit provider and does not auto-switch to half-wired hupijiao config', () => {
     assert.equal(resolveTargetProvider({}, 'mock'), 'mock');
     assert.equal(resolveTargetProvider({}, 'hupijiao'), 'hupijiao');
     assert.equal(resolveTargetProvider({
@@ -37,7 +37,7 @@ test('resolveTargetProvider prefers explicit provider and falls back to configur
             afdian: { checkout_url: '' },
             hupijiao: { gateway_url: 'https://pay.example.com' }
         }
-    }), 'hupijiao');
+    }), 'afdian');
 });
 
 test('buildSyncPlan disables mock and switches the stored config to afdian', () => {

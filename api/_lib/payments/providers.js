@@ -187,15 +187,6 @@ function resolvePublicActiveProvider(paymentChannels = {}) {
         return 'afdian';
     }
 
-    const hupijiaoReady = Boolean(
-        String(providers.hupijiao?.checkout_url || '').trim()
-        || String(providers.hupijiao?.gateway_url || '').trim()
-        || String(providers.hupijiao?.merchant_id || '').trim()
-    );
-    if (hupijiaoReady) {
-        return 'hupijiao';
-    }
-
     if (providers.afdian) return 'afdian';
     if (providers.hupijiao) return 'hupijiao';
     return 'afdian';
