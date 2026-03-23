@@ -2445,6 +2445,148 @@ function triggerAvatarUpload() {
 
 window.triggerAvatarUpload = triggerAvatarUpload;
 
+let managedDismissMouseDownOverlay = null;
+
+function closeManagedModalOverlay(overlay) {
+    if (!overlay) return;
+
+    if (overlay.id === 'profileModal') {
+        closeProfileModal();
+        return;
+    }
+
+    overlay.classList.remove('active');
+    overlay.style.removeProperty('visibility');
+    overlay.style.removeProperty('opacity');
+    overlay.style.removeProperty('display');
+
+    if (window.iOSScrollLock) {
+        window.iOSScrollLock.unlock();
+    }
+}
+
+function handleManagedModalPointerDismiss(event) {
+    const target = event.target;
+    const overlay = target instanceof Element && target.classList.contains('modal-overlay')
+        ? target
+        : null;
+    const isManagedOverlay = overlay?.dataset?.modalDismissManaged === '1';
+
+    if (event.type === 'mousedown') {
+        managedDismissMouseDownOverlay = isManagedOverlay ? overlay : null;
+        return;
+    }
+
+    if (event.type === 'mouseup') {
+        if (isManagedOverlay && managedDismissMouseDownOverlay === overlay) {
+            closeManagedModalOverlay(overlay);
+        }
+        managedDismissMouseDownOverlay = null;
+    }
+}
+
+function handleManagedModalCloseTrigger(event) {
+    const target = event.target;
+    const closeTrigger = target instanceof Element
+        ? target.closest('[data-modal-close-button="1"]')
+        : null;
+    if (!closeTrigger) return;
+
+    event.preventDefault?.();
+    const overlay = closeTrigger.closest('.modal-overlay[data-modal-dismiss-managed="1"]');
+    if (overlay) {
+        closeManagedModalOverlay(overlay);
+    }
+}
+
+function handleProfileModalAction(event) {
+    const target = event.target;
+    const actionTrigger = target instanceof Element
+        ? target.closest('[data-profile-action]')
+        : null;
+    if (!actionTrigger) return;
+
+    const profileModal = document.getElementById('profileModal');
+    if (!profileModal || !profileModal.contains(actionTrigger)) {
+        return;
+    }
+
+    const action = String(actionTrigger.dataset.profileAction || '').trim();
+    if (!action) return;
+
+    event.preventDefault?.();
+
+    switch (action) {
+        case 'switch-tab':
+            switchProfileTab(actionTrigger.dataset.profileTab || 'profile');
+            break;
+        case 'trigger-avatar-upload':
+            triggerAvatarUpload();
+            break;
+        case 'open-editor':
+            openProfileEditor(event);
+            break;
+        case 'toggle-nickname-edit':
+            toggleNicknameEdit(actionTrigger.dataset.profileToggleVisible === 'true');
+            break;
+        case 'save-nickname':
+            void saveNickname();
+            break;
+        case 'open-wallet-view':
+            openProfileWalletView(actionTrigger.dataset.walletView || 'balance', event);
+            break;
+        case 'switch-security-panel':
+            switchProfileSecurityPanel(actionTrigger.dataset.securityPanel || 'change-password', event);
+            break;
+        case 'change-password':
+            void changePassword();
+            break;
+        case 'send-phone-code':
+            sendPhoneVerificationCode();
+            break;
+        case 'bind-phone':
+            bindPhone();
+            break;
+        case 'delete-account':
+            void deleteAccount();
+            break;
+        default:
+            break;
+    }
+}
+
+function handleProfileModalChange(event) {
+    const target = event.target;
+    const changeTarget = target instanceof Element
+        ? target.closest('[data-profile-change]')
+        : null;
+    if (!changeTarget) return;
+
+    const profileModal = document.getElementById('profileModal');
+    if (!profileModal || !profileModal.contains(changeTarget)) {
+        return;
+    }
+
+    const changeType = String(changeTarget.dataset.profileChange || '').trim();
+    if (changeType === 'avatar-upload') {
+        void handleAvatarUpload(event);
+    }
+}
+
+function initializeManagedProfileInteractions() {
+    if (window.__managedProfileInteractionsBound) return;
+
+    document.addEventListener('mousedown', handleManagedModalPointerDismiss);
+    document.addEventListener('mouseup', handleManagedModalPointerDismiss);
+    document.addEventListener('click', handleManagedModalCloseTrigger);
+    document.addEventListener('click', handleProfileModalAction);
+    document.addEventListener('change', handleProfileModalChange);
+
+    window.__managedProfileInteractionsBound = true;
+}
+
+initializeManagedProfileInteractions();
+
 // ==================== 强制登出 ====================
 async function forceLogout(event) {
     if (event) event.stopPropagation();
