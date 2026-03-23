@@ -3394,6 +3394,7 @@
                     }
 
                     window.open(paymentResult.checkout_url, '_blank', 'noopener,noreferrer');
+                    this.rememberPendingPaymentClaim(paymentResult);
                     this.showToast(
                         paymentResult.message
                             || `${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}已准备就绪，请完成支付后按页面提示继续操作。`,
@@ -3474,6 +3475,7 @@
                         throw new Error('支付页面被浏览器拦截，请允许弹窗后重试');
                     }
 
+                    this.rememberPendingPaymentClaim(paymentResult);
                     this.rememberPendingCustomRechargeQuote(paymentResult);
 
                     this.showToast(
@@ -3513,6 +3515,84 @@
 
         getPendingCustomRechargeQuoteStorageKey() {
             return 'wallet_pending_custom_recharge_quotes_v1';
+        },
+
+        getPendingPaymentClaimStorageKey() {
+            return 'wallet_pending_payment_claims_v1';
+        },
+
+        loadPendingPaymentClaims() {
+            try {
+                const raw = window.localStorage?.getItem(this.getPendingPaymentClaimStorageKey());
+                const parsed = JSON.parse(raw || '[]');
+                const now = Date.now();
+                const filtered = (Array.isArray(parsed) ? parsed : []).filter((item) => {
+                    const token = String(item?.token || '').trim();
+                    const intentId = String(item?.intent_id || '').trim();
+                    const checkoutSessionId = String(item?.checkout_session_id || '').trim();
+                    const expiresAt = Date.parse(String(item?.expires_at || ''));
+                    return token && intentId && checkoutSessionId && Number.isFinite(expiresAt) && expiresAt > now;
+                });
+
+                if (filtered.length !== (Array.isArray(parsed) ? parsed.length : 0)) {
+                    window.localStorage?.setItem(this.getPendingPaymentClaimStorageKey(), JSON.stringify(filtered));
+                }
+
+                return filtered;
+            } catch (_) {
+                return [];
+            }
+        },
+
+        savePendingPaymentClaims(claims = []) {
+            try {
+                window.localStorage?.setItem(
+                    this.getPendingPaymentClaimStorageKey(),
+                    JSON.stringify(Array.isArray(claims) ? claims : [])
+                );
+            } catch (_) {
+                // ignore storage failures
+            }
+        },
+
+        rememberPendingPaymentClaim(paymentResult = {}) {
+            const claim = paymentResult?.payment_claim;
+            const token = String(claim?.token || '').trim();
+            const intentId = String(claim?.intent_id || '').trim();
+            if (!token || !intentId) {
+                return;
+            }
+
+            const existing = this.loadPendingPaymentClaims().filter((item) => item.intent_id !== intentId);
+            existing.unshift({
+                intent_id: intentId,
+                token,
+                provider: String(claim?.provider || paymentResult?.provider || 'afdian').trim().toLowerCase() || 'afdian',
+                site: String(claim?.site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn',
+                checkout_session_id: String(claim?.checkout_session_id || paymentResult?.checkout_session_id || '').trim() || null,
+                package_id: String(claim?.package_id || '').trim() || null,
+                package_name: String(claim?.package_name || paymentResult?.package_name || '').trim() || null,
+                expected_amount: Number(claim?.expected_amount || paymentResult?.paid_amount || 0) || 0,
+                points_amount: Number(claim?.points_amount || paymentResult?.points_amount || 0) || 0,
+                charge_type: String(claim?.charge_type || '').trim().toLowerCase() || null,
+                issued_at: String(claim?.issued_at || '').trim() || new Date().toISOString(),
+                expires_at: String(claim?.expires_at || '').trim() || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+            });
+
+            this.savePendingPaymentClaims(existing.slice(0, 20));
+        },
+
+        consumePendingPaymentClaims(intentIds = []) {
+            const normalizedIds = (Array.isArray(intentIds) ? intentIds : [])
+                .map((item) => String(item || '').trim())
+                .filter(Boolean);
+            if (!normalizedIds.length) {
+                return;
+            }
+
+            const remaining = this.loadPendingPaymentClaims()
+                .filter((item) => !normalizedIds.includes(String(item?.intent_id || '').trim()));
+            this.savePendingPaymentClaims(remaining);
         },
 
         loadPendingCustomRechargeQuotes() {
@@ -3986,6 +4066,11 @@
                     .filter((item) => (item.provider || 'afdian') === 'afdian')
                     .map((item) => item.token)
                     .filter(Boolean);
+                const pendingClaimTokens = this.loadPendingPaymentClaims()
+                    .filter((item) => (item.site || 'cn') === (window.SiteConfig?.site || 'cn'))
+                    .filter((item) => (item.provider || 'afdian') === 'afdian')
+                    .map((item) => item.token)
+                    .filter(Boolean);
 
                 // Get server URL from verify config or default
                 const serverUrl = window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app';
@@ -3997,13 +4082,17 @@
                     },
                     body: JSON.stringify({
                         order_no: orderNo,
-                        quote_tokens: pendingQuoteTokens
+                        quote_tokens: pendingQuoteTokens,
+                        claim_tokens: pendingClaimTokens
                     })
                 });
                 const data = await response.json().catch(() => ({}));
 
                 if (Array.isArray(data?.consumed_custom_quote_ids) && data.consumed_custom_quote_ids.length > 0) {
                     this.consumePendingCustomRechargeQuotes(data.consumed_custom_quote_ids);
+                }
+                if (Array.isArray(data?.consumed_payment_claim_ids) && data.consumed_payment_claim_ids.length > 0) {
+                    this.consumePendingPaymentClaims(data.consumed_payment_claim_ids);
                 }
 
                 resultDiv.innerHTML = '';
