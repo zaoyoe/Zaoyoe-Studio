@@ -5,14 +5,15 @@ const { createClient } = require('@supabase/supabase-js');
 const {
     bootstrapAccessTokenViaAdminLink
 } = require('./payment-smoke-test');
+const {
+    FALLBACK_FAIL_CLOSED_ALLOWLIST
+} = require('./_lib/afdian-network-guards');
 
 const DEFAULT_ENV_FILE = path.resolve(__dirname, '../server/.env.production');
 const DEFAULT_BASE_URL = 'https://www.zaoyoe.com';
 const DEFAULT_VERIFY_SERVER_URL = 'https://zaoyoe-verify-server-production.up.railway.app';
 const DEFAULT_SAMPLE_COUNT = 5;
 const DEFAULT_TIMEOUT_MS = 15000;
-const FALLBACK_FAIL_CLOSED_ALLOWLIST = '203.0.113.254/32';
-
 function parseArgs(argv = []) {
     const options = {
         envFile: DEFAULT_ENV_FILE,
