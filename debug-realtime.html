@@ -177,9 +177,9 @@
             <div class="info-grid" id="infoGrid"></div>
 
             <div class="button-group">
-                <button onclick="checkRealtimeStatus()">🔄 刷新状态</button>
-                <button onclick="testRealtimeConnection()">🧪 测试连接</button>
-                <button onclick="clearLogs()">🗑️ 清空日志</button>
+                <button type="button" data-debug-action="refresh-status">🔄 刷新状态</button>
+                <button type="button" data-debug-action="test-connection">🧪 测试连接</button>
+                <button type="button" data-debug-action="clear-logs">🗑️ 清空日志</button>
             </div>
         </div>
 
@@ -362,9 +362,35 @@
             log('日志已清空', 'info');
         }
 
+        function bindDebugActions() {
+            document.querySelectorAll('[data-debug-action]').forEach((button) => {
+                if (button.dataset.debugActionBound === '1') {
+                    return;
+                }
+
+                button.dataset.debugActionBound = '1';
+                button.addEventListener('click', async () => {
+                    switch (button.dataset.debugAction) {
+                        case 'refresh-status':
+                            await checkRealtimeStatus();
+                            break;
+                        case 'test-connection':
+                            await testRealtimeConnection();
+                            break;
+                        case 'clear-logs':
+                            clearLogs();
+                            break;
+                        default:
+                            break;
+                    }
+                });
+            });
+        }
+
         // Initialize on load
         window.addEventListener('DOMContentLoaded', async () => {
             log('调试工具已加载', 'success');
+            bindDebugActions();
 
             // Wait for supabase client to load
             setTimeout(async () => {

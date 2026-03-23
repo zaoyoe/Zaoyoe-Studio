@@ -187,7 +187,7 @@ test('vercel CSP does not allow unsafe-eval in frontend script execution', () =>
     assert.equal(cspValue.includes("'unsafe-eval'"), false);
 });
 
-test('vercel CSP restricts inline script elements to hashed runtime pages while isolating legacy event attributes', () => {
+test('vercel CSP restricts inline script elements to hashed runtime pages while blocking inline event attributes', () => {
     const cspValue = getGlobalCspHeaderValue();
     const directives = parseCspDirectives(cspValue);
     const scriptSrc = directives.get('script-src') || [];
@@ -197,7 +197,7 @@ test('vercel CSP restricts inline script elements to hashed runtime pages while 
 
     assert.notEqual(scriptSrc.length, 0, 'Missing script-src directive');
     assert.notEqual(scriptSrcElem.length, 0, 'Missing script-src-elem directive');
-    assert.deepEqual(scriptSrcAttr, ["'unsafe-inline'"], 'script-src-attr should stay isolated to legacy inline handlers');
+    assert.deepEqual(scriptSrcAttr, ["'none'"], 'script-src-attr should explicitly block inline event handlers');
     assert.equal(scriptSrc.includes("'unsafe-inline'"), false, 'script-src should no longer broadly allow unsafe-inline');
     assert.equal(scriptSrcElem.includes("'unsafe-inline'"), false, 'script-src-elem should no longer broadly allow unsafe-inline');
 
@@ -252,13 +252,14 @@ test('critical auth pages consume delegated profile modal and form bindings', ()
     );
 });
 
-test('prompts, guestbook, and shop entry pages no longer ship inline handler attributes', () => {
+test('public and debug entry pages no longer ship inline handler attributes', () => {
     const inlineHandlerPattern = /\bon(?:click|change|submit|mousedown|mouseup|input|keydown|mouseover|mouseout|error|load)\s*=\s*["']/i;
     const files = [
         'index.html',
         'prompts.html',
         'guestbook.html',
-        'shop.html'
+        'shop.html',
+        'debug-realtime.html'
     ];
 
     for (const relativePath of files) {
@@ -268,6 +269,33 @@ test('prompts, guestbook, and shop entry pages no longer ship inline handler att
             false,
             `${relativePath} should not contain inline event handler attributes`
         );
+    }
+});
+
+test('debug realtime page binds diagnostics controls without inline handlers', () => {
+    const source = readRepoFile('debug-realtime.html');
+
+    const removedInlineMarkers = [
+        'onclick="checkRealtimeStatus()"',
+        'onclick="testRealtimeConnection()"',
+        'onclick="clearLogs()"'
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(source.includes(marker), false, `debug-realtime.html should not contain ${marker}`);
+    }
+
+    const delegatedMarkers = [
+        'data-debug-action="refresh-status"',
+        'data-debug-action="test-connection"',
+        'data-debug-action="clear-logs"',
+        'function bindDebugActions()',
+        "button.dataset.debugActionBound = '1'",
+        "switch (button.dataset.debugAction)"
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(source.includes(marker), true, `debug-realtime.html should contain ${marker}`);
     }
 });
 
