@@ -98,6 +98,10 @@
    - `npm run audit:payment-closeout -- --env-file server/.env.staging`
    - 如果结果提示 `remote_mock_payment_still_enabled`，说明生产态远程 mock 仍开放，测试完成后应尽快关闭。
    - 如果结果提示 `smoke_payment_artifacts_present` 或 `smoke_users_still_present`，说明专用 smoke 测试痕迹还在，建议去 `支付对账 -> 异常运维 -> 测试数据清理` 做清理。
+10. 如果后台尚未部署到带有新 cleanup 规则的版本，或需要命令行收尾，可改用：
+   - 预览：`npm run cleanup:payment-fixtures -- --env-file server/.env.staging`
+   - 真删：`npm run cleanup:payment-fixtures -- --env-file server/.env.staging --execute`
+   - 默认只会清理 `AUTO_CDX_*` / `SMOKE_*` 订单，以及 `codex.*@example.com` / `smoke-payment-*@zaoyoe.invalid` 测试账号。
 
 ## 6. 模拟支付收尾
 

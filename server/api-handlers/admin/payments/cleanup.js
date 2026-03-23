@@ -55,7 +55,7 @@ async function listTestUsers(supabaseAdmin) {
 async function countLike(supabase, table, column, pattern) {
     const { count, error } = await supabase
         .from(table)
-        .select('id', { count: 'exact', head: true })
+        .select('*', { count: 'exact', head: true })
         .like(column, pattern);
 
     if (error) {
@@ -96,7 +96,7 @@ async function countIn(supabase, table, column, ids) {
 
     const { count, error } = await supabase
         .from(table)
-        .select('id', { count: 'exact', head: true })
+        .select('*', { count: 'exact', head: true })
         .in(column, ids);
 
     if (error) {
@@ -127,7 +127,7 @@ async function safeDeleteIn(supabase, table, column, values) {
         .from(table)
         .delete()
         .in(column, values)
-        .select('id');
+        .select('*');
 
     if (error) {
         const wrapped = new Error(error.message || `Failed to delete ${table}`);
@@ -155,7 +155,7 @@ async function safeDeleteLike(supabase, table, column, pattern) {
         .from(table)
         .delete()
         .like(column, pattern)
-        .select('id');
+        .select('*');
 
     if (error) {
         const wrapped = new Error(error.message || `Failed to delete ${table}`);
