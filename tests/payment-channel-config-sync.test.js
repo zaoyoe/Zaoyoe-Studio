@@ -2,8 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+    assertExecuteAllowed,
     buildSyncPlan,
     formatHumanReport,
+    getMockRuntimeForEnv,
     parseArgs,
     resolveTargetProvider
 } = require('../scripts/payment-channel-config-sync');
@@ -23,6 +25,7 @@ test('parseArgs collects sync flags', () => {
 });
 
 test('resolveTargetProvider prefers explicit provider and falls back to configured checkout links', () => {
+    assert.equal(resolveTargetProvider({}, 'mock'), 'mock');
     assert.equal(resolveTargetProvider({}, 'hupijiao'), 'hupijiao');
     assert.equal(resolveTargetProvider({
         providers: {
@@ -61,6 +64,70 @@ test('buildSyncPlan disables mock and switches the stored config to afdian', () 
     assert.equal(plan.next.rechargeOptions.mock_payment_enabled, false);
 });
 
+test('buildSyncPlan can switch the stored config back to mock for a temporary test window', () => {
+    const plan = buildSyncPlan(
+        {
+            active_provider: 'afdian',
+            providers: {
+                mock: { enabled: false, display_name: '模拟支付' },
+                afdian: { enabled: true, checkout_url: 'https://afdian.com/a/zaoyoe', display_name: '爱发电' },
+                hupijiao: { enabled: false, gateway_url: '', merchant_id: '' }
+            }
+        },
+        {
+            custom_amount_enabled: true,
+            mock_payment_enabled: false
+        },
+        {
+            provider: 'mock'
+        }
+    );
+
+    assert.equal(plan.changed, true);
+    assert.equal(plan.targetProvider, 'mock');
+    assert.equal(plan.next.paymentChannels.active_provider, 'mock');
+    assert.equal(plan.next.paymentChannels.providers.mock.enabled, true);
+    assert.equal(plan.next.rechargeOptions.mock_payment_enabled, true);
+});
+
+test('getMockRuntimeForEnv recognizes a valid temporary override', () => {
+    const runtime = getMockRuntimeForEnv({
+        DEPLOYMENT_TIER: 'production',
+        APP_BASE_URL: 'https://www.zaoyoe.com',
+        ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL: '2026-03-28T23:59:59+08:00'
+    });
+
+    assert.equal(runtime.allowed, true);
+    assert.equal(runtime.reason, 'remote_whitelist_until_enabled');
+});
+
+test('assertExecuteAllowed blocks switching to mock when runtime override is missing', () => {
+    const plan = buildSyncPlan(
+        {
+            active_provider: 'afdian',
+            providers: {
+                mock: { enabled: false, display_name: '模拟支付' },
+                afdian: { enabled: true, checkout_url: 'https://afdian.com/a/zaoyoe', display_name: '爱发电' }
+            }
+        },
+        {
+            custom_amount_enabled: true,
+            mock_payment_enabled: false
+        },
+        {
+            provider: 'mock'
+        }
+    );
+
+    assert.throws(() => assertExecuteAllowed(plan, {
+        DEPLOYMENT_TIER: 'production',
+        APP_BASE_URL: 'https://www.zaoyoe.com'
+    }, {
+        execute: true,
+        provider: 'mock'
+    }), /Refusing to switch stored payment config to mock/);
+});
+
 test('formatHumanReport surfaces the key sync toggles', () => {
     const report = formatHumanReport({
         mode: 'execute',
@@ -90,6 +157,10 @@ test('formatHumanReport surfaces the key sync toggles', () => {
                     mock_payment_enabled: false
                 }
             }
+        },
+        runtime: {
+            allowed: false,
+            reason: 'production_like_runtime'
         }
     });
 
@@ -97,4 +168,5 @@ test('formatHumanReport surfaces the key sync toggles', () => {
     assert.match(report, /target_provider: afdian/);
     assert.match(report, /current/);
     assert.match(report, /next/);
+    assert.match(report, /mock_reason: production_like_runtime/);
 });

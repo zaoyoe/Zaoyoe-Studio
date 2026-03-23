@@ -7,6 +7,9 @@ const {
     normalizePaymentChannelsConfig,
     normalizeRechargeOptionsConfig
 } = require('../api/_lib/payments/providers');
+const {
+    getMockPaymentRuntimeState
+} = require('../api/_lib/payments/orders');
 
 const DEFAULT_ENV_FILE = path.resolve(__dirname, '../server/.env.production');
 
@@ -77,7 +80,7 @@ function buildSupabaseClient(envValues = {}) {
 }
 
 function resolveTargetProvider(paymentChannels = {}, explicitProvider = '') {
-    if (explicitProvider === 'afdian' || explicitProvider === 'hupijiao') {
+    if (explicitProvider === 'mock' || explicitProvider === 'afdian' || explicitProvider === 'hupijiao') {
         return explicitProvider;
     }
 
@@ -106,11 +109,11 @@ function buildSyncPlan(paymentChannels, rechargeOptions, options = {}) {
     const nextPaymentChannels = JSON.parse(JSON.stringify(normalizedPaymentChannels));
     const nextRechargeOptions = {
         ...normalizedRechargeOptions,
-        mock_payment_enabled: false
+        mock_payment_enabled: targetProvider === 'mock'
     };
 
     nextPaymentChannels.active_provider = targetProvider;
-    if (nextPaymentChannels.providers?.mock) {
+    if (nextPaymentChannels.providers?.mock && targetProvider !== 'mock') {
         nextPaymentChannels.providers.mock.enabled = false;
     }
     if (nextPaymentChannels.providers?.[targetProvider]) {
@@ -132,6 +135,37 @@ function buildSyncPlan(paymentChannels, rechargeOptions, options = {}) {
             rechargeOptions: nextRechargeOptions
         }
     };
+}
+
+function getRuntimeEnv(envValues = {}) {
+    return {
+        ...process.env,
+        ...envValues
+    };
+}
+
+function getMockRuntimeForEnv(envValues = {}) {
+    const env = getRuntimeEnv(envValues);
+    return getMockPaymentRuntimeState({
+        requestHost: String(env.APP_BASE_URL || '').trim(),
+        env
+    });
+}
+
+function assertExecuteAllowed(plan, envValues = {}, options = {}) {
+    if (!options.execute || plan?.targetProvider !== 'mock') {
+        return null;
+    }
+
+    const runtime = getMockRuntimeForEnv(envValues);
+    if (runtime.allowed === true) {
+        return runtime;
+    }
+
+    throw new Error(
+        `Refusing to switch stored payment config to mock because runtime mock payments are still blocked (${runtime.reason || 'unknown'}). `
+        + '请先设置 ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL 并完成 redeploy。'
+    );
 }
 
 async function upsertSystemConfig(supabase, existingRow = {}, configValue) {
@@ -173,6 +207,12 @@ function formatHumanReport(result = {}) {
     lines.push(`  active_provider: ${result.plan?.next?.paymentChannels?.active_provider || ''}`);
     lines.push(`  mock_enabled: ${result.plan?.next?.paymentChannels?.providers?.mock?.enabled === true ? 'yes' : 'no'}`);
     lines.push(`  recharge_mock_enabled: ${result.plan?.next?.rechargeOptions?.mock_payment_enabled === true ? 'yes' : 'no'}`);
+    if (result.runtime) {
+        lines.push('');
+        lines.push('runtime');
+        lines.push(`  mock_allowed: ${result.runtime.allowed === true ? 'yes' : 'no'}`);
+        lines.push(`  mock_reason: ${result.runtime.reason || ''}`);
+    }
     return lines.join('\n');
 }
 
@@ -192,11 +232,15 @@ async function runSync(options = {}) {
     const rowMap = Object.fromEntries(rows.map((row) => [row.config_key, row]));
     const loaded = await loadStoredPaymentConfigs(supabase);
     const plan = buildSyncPlan(loaded.rawPaymentChannels, loaded.rawRechargeOptions, options);
+    const runtime = plan.targetProvider === 'mock' ? getMockRuntimeForEnv(envValues) : null;
     const result = {
         mode: options.execute ? 'execute' : 'preview',
         project_host: new URL(getRequiredEnv(envValues, 'SUPABASE_URL')).host,
-        plan
+        plan,
+        runtime
     };
+
+    assertExecuteAllowed(plan, envValues, options);
 
     if (options.execute && plan.changed) {
         await upsertSystemConfig(supabase, {
@@ -229,8 +273,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+    assertExecuteAllowed,
     buildSyncPlan,
     formatHumanReport,
+    getMockRuntimeForEnv,
     parseArgs,
     resolveTargetProvider,
     runSync

@@ -111,6 +111,36 @@
    - 保留历史订单对账
    - 不再允许新用户走模拟直充
 
+### 临时开启 mock 的正确顺序
+
+1. 在绑定 [https://www.zaoyoe.com](https://www.zaoyoe.com) 的 `Vercel Production` 环境添加：
+   - `ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL=2026-03-28T23:59:59+08:00`
+2. 完成一次 `Redeploy`。
+3. 先预览存储层切换计划：
+   - `npm run sync:payment-channel -- --env-file server/.env.staging --provider mock`
+4. 预览输出里必须看到：
+   - `target_provider: mock`
+   - `runtime.mock_allowed: yes`
+5. 再真正切换：
+   - `npm run sync:payment-channel -- --env-file server/.env.staging --provider mock --execute`
+6. 验证 [https://www.zaoyoe.com/api/payments/config](https://www.zaoyoe.com/api/payments/config)：
+   - `config.active_provider = "mock"`
+   - `config.providers.mock.enabled = true`
+   - `recharge_options.mock_payment_enabled = true`
+   - `runtime.mock_payment.allowed = true`
+
+### 测试结束后恢复真实支付
+
+1. 删除 `ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL`。
+2. 再次 `Redeploy`。
+3. 切回真实通道：
+   - `npm run sync:payment-channel -- --env-file server/.env.staging --provider afdian --execute`
+4. 复核 [https://www.zaoyoe.com/api/payments/config](https://www.zaoyoe.com/api/payments/config)：
+   - `config.active_provider = "afdian"`
+   - `config.providers.mock.enabled = false`
+   - `recharge_options.mock_payment_enabled = false`
+   - `runtime.mock_payment.allowed = false`
+
 ## 7. 后续接入虎皮椒时的最低要求
 
 当前默认策略：
