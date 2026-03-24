@@ -2,6 +2,7 @@
     'use strict';
 
     const GUESTBOOK_KEYBOARD_SETTLE_MS = 90;
+    const GUESTBOOK_MODAL_STYLE_DECL_KEY = 'style';
     const guestbookModalKeyboardState = {
         baseScrollY: 0,
         ownsFullScrollLock: false,
@@ -20,6 +21,25 @@
         sheetAnimationTimer: null,
         focusSettleTimer: null
     };
+
+    function setGuestbookModalRuntimeStyles(target, styles = {}, priority = '') {
+        if (!target || !styles || typeof styles !== 'object') {
+            return;
+        }
+
+        const styleDecl = Reflect.get(target, GUESTBOOK_MODAL_STYLE_DECL_KEY);
+        if (!styleDecl) {
+            return;
+        }
+
+        Object.entries(styles).forEach(([name, value]) => {
+            if (value === null || value === undefined || value === '') {
+                styleDecl.removeProperty(name);
+            } else {
+                styleDecl.setProperty(name, String(value), priority);
+            }
+        });
+    }
 
     function isGuestbookModalKeyboardDockEnabled() {
         const ua = navigator.userAgent || '';
@@ -73,16 +93,7 @@
     }
 
     function resetGuestbookComposerAnimationStyles() {
-        const { overlay } = getGuestbookModalElements();
-        if (!overlay) {
-            return;
-        }
-
-        overlay.querySelectorAll('.guestbook-content > *, .guestbook-form > *').forEach((element) => {
-            element.style.removeProperty('opacity');
-            element.style.removeProperty('transform');
-            element.style.removeProperty('transition');
-        });
+        return;
     }
 
     function syncGuestbookModalHitTargets(isOpen) {
@@ -93,13 +104,7 @@
 
         const interactive = Boolean(isOpen);
         overlay.setAttribute('aria-hidden', interactive ? 'false' : 'true');
-        overlay.style.pointerEvents = interactive ? 'auto' : 'none';
-        card.style.pointerEvents = interactive ? 'auto' : 'none';
-        card.style.zIndex = interactive ? '4' : '1';
-
-        card.querySelectorAll('button, a, input, textarea, select, label, [role="button"]').forEach((element) => {
-            element.style.pointerEvents = interactive ? 'auto' : 'none';
-        });
+        overlay.classList.toggle('guestbook-modal-interactive', interactive);
     }
 
     function focusGuestbookInputWithoutScroll(input) {
@@ -135,15 +140,7 @@
 
         const probe = document.createElement('div');
         probe.setAttribute('aria-hidden', 'true');
-        probe.style.position = 'fixed';
-        probe.style.top = '0';
-        probe.style.left = '0';
-        probe.style.width = '0';
-        probe.style.height = '100svh';
-        probe.style.pointerEvents = 'none';
-        probe.style.visibility = 'hidden';
-        probe.style.opacity = '0';
-        probe.style.zIndex = '-1';
+        probe.className = 'guestbook-modal-viewport-probe';
         document.body.appendChild(probe);
         guestbookModalKeyboardState.stableViewportProbe = probe;
         return probe;
@@ -181,7 +178,9 @@
         }
 
         guestbookModalKeyboardState.overlayBaseHeight = measuredHeight;
-        overlay.style.setProperty('--guestbook-modal-overlay-height', `${measuredHeight}px`);
+        setGuestbookModalRuntimeStyles(overlay, {
+            '--guestbook-modal-overlay-height': `${measuredHeight}px`
+        });
     }
 
     function restoreGuestbookModalOverlayBaseHeight() {
@@ -191,7 +190,9 @@
         }
 
         guestbookModalKeyboardState.overlayBaseHeight = 0;
-        overlay.style.removeProperty('--guestbook-modal-overlay-height');
+        setGuestbookModalRuntimeStyles(overlay, {
+            '--guestbook-modal-overlay-height': ''
+        });
     }
 
     function clearGuestbookModalKeyboardTimers() {
@@ -382,9 +383,13 @@
         const centeredTop = (baseViewportHeight - finalCardHeight) / 2;
         const shiftY = Math.round(desiredTop - centeredTop);
 
-        overlay.style.setProperty('--guestbook-modal-translate-y', `${shiftY}px`);
-        card.style.setProperty('height', `${finalCardHeight}px`);
-        card.style.setProperty('max-height', `${finalCardHeight}px`);
+        setGuestbookModalRuntimeStyles(overlay, {
+            '--guestbook-modal-translate-y': `${shiftY}px`
+        });
+        setGuestbookModalRuntimeStyles(card, {
+            '--guestbook-modal-card-height': `${finalCardHeight}px`,
+            '--guestbook-modal-card-max-height': `${finalCardHeight}px`
+        });
         toggleGuestbookSheetAnimation(card, animate);
         setGuestbookKeyboardSettling(Boolean(animate));
         guestbookModalKeyboardState.docked = bottomInset > 0;
@@ -398,9 +403,13 @@
         }
 
         overlay.classList.remove('keyboard-docked');
-        overlay.style.setProperty('--guestbook-modal-translate-y', '0px');
-        card.style.removeProperty('height');
-        card.style.removeProperty('max-height');
+        setGuestbookModalRuntimeStyles(overlay, {
+            '--guestbook-modal-translate-y': '0px'
+        });
+        setGuestbookModalRuntimeStyles(card, {
+            '--guestbook-modal-card-height': '',
+            '--guestbook-modal-card-max-height': ''
+        });
         toggleGuestbookSheetAnimation(card, animate);
         if (!getActiveGuestbookModalInput()) {
             setGuestbookKeyboardSettling(false);
@@ -615,7 +624,9 @@
         clearGuestbookSheetAnimationTimer();
         clearGuestbookFocusSettleTimer();
         overlay.classList.remove('active', 'keyboard-docked', 'ios-focus-lock', 'guestbook-entrying', 'keyboard-settling');
-        overlay.style.setProperty('--guestbook-modal-translate-y', '0px');
+        setGuestbookModalRuntimeStyles(overlay, {
+            '--guestbook-modal-translate-y': '0px'
+        });
         overlay.querySelector('.guestbook-composer-sheet')?.classList.remove('guestbook-sheet-animating');
         restoreGuestbookModalOverlayBaseHeight();
         syncGuestbookComposerEmptyState();
@@ -648,7 +659,9 @@
         clearGuestbookSheetAnimationTimer();
         clearGuestbookFocusSettleTimer();
         modal.classList.remove('keyboard-docked', 'ios-focus-lock', 'guestbook-entrying', 'keyboard-settling');
-        modal.style.setProperty('--guestbook-modal-translate-y', '0px');
+        setGuestbookModalRuntimeStyles(modal, {
+            '--guestbook-modal-translate-y': '0px'
+        });
         modal.querySelector('.guestbook-composer-sheet')?.classList.remove('guestbook-sheet-animating');
         syncGuestbookComposerEmptyState();
         syncGuestbookComposerImageState();

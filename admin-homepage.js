@@ -24,6 +24,55 @@ const HomepageAdmin = (() => {
     };
     // Map homepage_config section names to visibility section names
     const SECTION_TO_VIS = { prompts: 'gallery' };
+    const HOMEPAGE_ADMIN_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';
+    const HOMEPAGE_ADMIN_PREVIEW_HIDDEN_CLASS = 'admin-studio-inline-style-attr-149';
+
+    function setHomepageAdminHiddenState(target, hidden, hiddenClass = HOMEPAGE_ADMIN_HIDDEN_CLASS) {
+        if (!target) return;
+        if (hiddenClass) {
+            target.classList.toggle(hiddenClass, !!hidden);
+            return;
+        }
+        target.hidden = !!hidden;
+    }
+
+    function showHomepageSaveIndicator(indicator, durationMs = 2000) {
+        if (!indicator) return;
+        indicator.classList.add('visible');
+        clearTimeout(indicator._homepageSaveTimer);
+        indicator._homepageSaveTimer = setTimeout(() => {
+            indicator.classList.remove('visible');
+        }, durationMs);
+    }
+
+    function setHomepageSectionViewState(view, isActive) {
+        if (!view) return;
+        view.classList.toggle('active', !!isActive);
+        view.hidden = !isActive;
+    }
+
+    function setHomepagePreviewState(previewImg, placeholder, hasPreview) {
+        if (previewImg) {
+            previewImg.classList.toggle(HOMEPAGE_ADMIN_PREVIEW_HIDDEN_CLASS, !hasPreview);
+        }
+        if (placeholder) {
+            placeholder.hidden = !!hasPreview;
+        }
+    }
+
+    function renderHomepageLoadingError(loading, message) {
+        if (!loading) return;
+        loading.innerHTML = `
+            <i class="fas fa-exclamation-triangle hp-loading-error-icon"></i>
+            <div>加载失败: ${message}</div>
+            <button class="btn-sm btn-primary js-homepage-retry-btn hp-loading-retry-btn" data-homepage-retry="1">
+                <i class="fas fa-redo"></i> 重试
+            </button>
+        `;
+        loading.querySelector('[data-homepage-retry="1"]')?.addEventListener('click', () => {
+            init();
+        });
+    }
 
     // ============================================
     // INIT
@@ -47,25 +96,14 @@ const HomepageAdmin = (() => {
             // Hide loading, show content
             const loading = document.getElementById('hp-loading');
             const content = document.getElementById('hp-section-content');
-            if (loading) loading.style.display = 'none';
-            if (content) content.style.display = 'block';
+            setHomepageAdminHiddenState(loading, true);
+            setHomepageAdminHiddenState(content, false);
 
             console.log('[Homepage] Initialized successfully');
         } catch (err) {
             console.error('[Homepage] Init error:', err);
             const loading = document.getElementById('hp-loading');
-            if (loading) {
-                loading.innerHTML = `
-                    <i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 12px; color: #f59e0b;"></i>
-                    <div>加载失败: ${err.message}</div>
-                    <button class="btn-sm btn-primary js-homepage-retry-btn" data-homepage-retry="1" style="margin-top: 16px;">
-                        <i class="fas fa-redo"></i> 重试
-                    </button>
-                `;
-                loading.querySelector('[data-homepage-retry="1"]')?.addEventListener('click', () => {
-                    init();
-                });
-            }
+            renderHomepageLoadingError(loading, err.message);
         }
     }
 
@@ -292,8 +330,7 @@ const HomepageAdmin = (() => {
             // Show save indicator
             const indicator = document.getElementById(`hp-${section}-save-indicator`);
             if (indicator) {
-                indicator.style.opacity = '1';
-                setTimeout(() => indicator.style.opacity = '0', 2000);
+                showHomepageSaveIndicator(indicator, 2000);
             }
 
             // Invalidate homepage_config cache so homepage reflects changes immediately
@@ -345,18 +382,15 @@ const HomepageAdmin = (() => {
 
             // Move tab indicator
             const activeTab = tabNav.querySelector(`.admin-tab[data-hp-section="${section}"]`);
-            const indicator = tabNav.querySelector('.admin-tab-indicator');
-            if (activeTab && indicator) {
-                indicator.style.left = activeTab.offsetLeft + 'px';
-                indicator.style.width = activeTab.offsetWidth + 'px';
+            if (activeTab && typeof window.updateAdminTabIndicator === 'function') {
+                window.updateAdminTabIndicator(activeTab);
             }
         }
 
         // Show/hide section views
         document.querySelectorAll('.hp-section-view').forEach(view => {
             const isActive = view.getAttribute('data-hp-view') === section;
-            view.classList.toggle('active', isActive);
-            view.style.display = isActive ? 'block' : 'none';
+            setHomepageSectionViewState(view, isActive);
         });
     }
 
@@ -678,7 +712,7 @@ const HomepageAdmin = (() => {
         // Initialize section view visibility
         document.querySelectorAll('.hp-section-view').forEach(view => {
             const isActive = view.classList.contains('active');
-            view.style.display = isActive ? 'block' : 'none';
+            setHomepageSectionViewState(view, isActive);
         });
 
         // Listen for admin site filter change to reload visibility toggles
@@ -721,9 +755,8 @@ const HomepageAdmin = (() => {
                 const placeholder = document.getElementById('hp-verify-upload-placeholder');
                 if (previewImg) {
                     previewImg.src = webpData;
-                    previewImg.style.display = 'block';
                 }
-                if (placeholder) placeholder.style.display = 'none';
+                setHomepagePreviewState(previewImg, placeholder, true);
 
                 // Store WebP base64 data directly (will be saved to DB)
                 setInputValue('hp-verify-screenshot', webpData);
@@ -745,16 +778,13 @@ const HomepageAdmin = (() => {
 
         if (path) {
             img.src = path;
-            img.style.display = 'block';
-            placeholder.style.display = 'none';
+            setHomepagePreviewState(img, placeholder, true);
             // Handle load error — show placeholder again
             img.onerror = () => {
-                img.style.display = 'none';
-                placeholder.style.display = 'flex';
+                setHomepagePreviewState(img, placeholder, false);
             };
         } else {
-            img.style.display = 'none';
-            placeholder.style.display = 'flex';
+            setHomepagePreviewState(img, placeholder, false);
         }
     }
 

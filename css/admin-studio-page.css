@@ -4406,6 +4406,10 @@ body.admin-access-pending,
                         margin: 0 auto;
                     }
 
+                    #module-homepage .hp-section-view[hidden] {
+                        display: none !important;
+                    }
+
                     /* Section Control — Compact inline bar */
                     #module-homepage .hp-control-bar {
                         display: flex;
@@ -4498,6 +4502,16 @@ body.admin-access-pending,
                         flex-direction: column;
                         align-items: center;
                         gap: 2px;
+                    }
+
+                    .hp-loading-error-icon {
+                        font-size: 24px;
+                        margin-bottom: 12px;
+                        color: #f59e0b;
+                    }
+
+                    .hp-loading-retry-btn {
+                        margin-top: 16px;
                     }
 
                     /* Auto-aggregation — compact inline */

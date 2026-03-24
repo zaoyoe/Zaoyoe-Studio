@@ -15,6 +15,7 @@
         pollTimeout: 300000
     };
     const PENDING_TASK_STORAGE_KEY = 'verify_pending_google_one_job_v1';
+    const VERIFY_STYLE_DECL_KEY = 'style';
 
     let currentUser = null;
     let userBalance = 0;
@@ -304,6 +305,36 @@
         return document.querySelector(`#${CONFIG.containerId} .verify-widget`) || document.querySelector('.verify-widget');
     }
 
+    function setVerifyRuntimeStyles(target, styles = {}, priority = '') {
+        if (!target || !styles || typeof styles !== 'object') return;
+        const styleDecl = Reflect.get(target, VERIFY_STYLE_DECL_KEY);
+        if (!styleDecl) return;
+
+        Object.entries(styles).forEach(([name, value]) => {
+            if (value === null || value === undefined || value === '') {
+                styleDecl.removeProperty(name);
+            } else {
+                styleDecl.setProperty(name, String(value), priority);
+            }
+        });
+    }
+
+    function setVerifyHidden(target, hidden) {
+        if (!target) return;
+        target.hidden = !!hidden;
+    }
+
+    function setVerifyQuotaTone(target, tone = 'unknown') {
+        if (!target) return;
+        target.classList.remove(
+            'verify-api-quota--unknown',
+            'verify-api-quota--ok',
+            'verify-api-quota--warning',
+            'verify-api-quota--danger'
+        );
+        target.classList.add(`verify-api-quota--${tone}`);
+    }
+
     function clearPreviewTimers() {
         previewTimers.forEach((timer) => clearTimeout(timer));
         previewTimers = [];
@@ -320,8 +351,10 @@
         const widget = getWidgetElement();
         if (!widget) return;
 
-        widget.style.setProperty('--verify-progress', `${clampProgress(progress)}%`);
-        widget.style.setProperty('--verify-progress-opacity', visible ? '1' : '0');
+        setVerifyRuntimeStyles(widget, {
+            '--verify-progress': `${clampProgress(progress)}%`,
+            '--verify-progress-opacity': visible ? '1' : '0'
+        });
     }
 
     function applyRingState(state, progress = null) {
@@ -680,28 +713,27 @@
 
         if (quotaEl) {
             if (apiCredits < 0) {
-                quotaEl.innerHTML = '<i class="fas fa-question-circle"></i> --';
+                setVerifyQuotaTone(quotaEl, 'unknown');
+                quotaEl.innerHTML = '<i class="fas fa-question-circle"></i> <span class="verify-api-quota-value">--</span>';
             } else {
-                const color = apiCredits > 5 ? '#27ae60' : apiCredits > 0 ? '#f39c12' : '#e74c3c';
-                quotaEl.innerHTML = `<i class="fas fa-gem" style="color: ${color}"></i> <span style="color: ${color}">${escapeHtml(formatBalanceValue(apiCredits))}</span>`;
+                const tone = apiCredits > 5 ? 'ok' : apiCredits > 0 ? 'warning' : 'danger';
+                setVerifyQuotaTone(quotaEl, tone);
+                quotaEl.innerHTML = `<i class="fas fa-gem"></i> <span class="verify-api-quota-value">${escapeHtml(formatBalanceValue(apiCredits))}</span>`;
             }
         }
 
         if (quotaBar) {
             if (apiCredits === 0) {
-                quotaBar.style.display = 'flex';
+                setVerifyHidden(quotaBar, false);
                 if (submitBtn && !isLoading) submitBtn.disabled = true;
             } else {
-                quotaBar.style.display = 'none';
+                setVerifyHidden(quotaBar, true);
                 if (submitBtn && !isLoading) submitBtn.disabled = false;
             }
         }
     }
 
     function render(container, isLoggedIn = false) {
-        const loginDisplay = 'none';
-        const formDisplay = 'block';
-        const balanceDisplay = isLoggedIn ? 'flex' : 'none';
         const supportedRegionsUrl = getLang() === 'zh'
             ? 'https://support.google.com/googleone/answer/9080668?hl=zh-Hans'
             : 'https://support.google.com/googleone/answer/9080668?hl=en';
@@ -714,7 +746,7 @@
                 </div>
                 <div class="verify-widget-header">
                     <div class="verify-widget-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path fill-rule="evenodd" clip-rule="evenodd" d="M15.5 4C12.4624 4 10 6.46243 10 9.5C10 10.751 10.4173 11.9039 11.129 12.835L4.56066 19.4033C4.24647 19.7175 4.24647 20.227 4.56066 20.5412L5.45879 21.4393C5.77298 21.7535 6.28248 21.7535 6.59667 21.4393L8.5 19.536L10.4033 21.4393C10.7175 21.7535 11.227 21.7535 11.5412 21.4393L12.4393 20.5412C12.7535 20.227 12.7535 19.7175 12.4393 19.4033L11.536 17.5L12.835 16.129C13.7547 16.708 14.739 17 15.5 17C18.5376 17 21 14.5376 21 11.5C21 8.46243 18.5376 4 15.5 4ZM17 9C17.5523 9 18 8.55228 18 8C18 7.44772 17.5523 7 17 7C16.4477 7 16 7.44772 16 8C16 8.55228 16.4477 9 17 9Z" fill="white"/>
                         </svg>
                     </div>
@@ -726,20 +758,20 @@
                         <div class="verify-api-quota" id="verifyApiQuota" title="${t('verify.apiQuotaTitle', 'API 剩余额度')}">
                             <i class="fas fa-gem"></i> --
                         </div>
-                        <div class="verify-balance" id="verifyBalance" data-verify-action="wallet-open" style="display: ${balanceDisplay}; cursor: pointer;" title="${t('verify.walletTitle', '我的钱包')}">
+                        <div class="verify-balance" id="verifyBalance" data-verify-action="wallet-open" title="${t('verify.walletTitle', '我的钱包')}"${isLoggedIn ? '' : ' hidden'}>
                             <i class="fas fa-coins"></i>
                             <span id="verifyBalanceValue">0</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="verify-quota-warning" id="verifyQuotaWarning" style="display: none;">
+                <div class="verify-quota-warning" id="verifyQuotaWarning" hidden>
                     <i class="fas fa-exclamation-triangle"></i>
                     ${t('verify.quotaExhausted', 'API 余额不足，暂时无法提交任务。')}
                 </div>
 
                 <div id="verifyContent">
-                    <div class="verify-login-prompt" id="verifyLoginPrompt" style="display: ${loginDisplay};">
+                    <div class="verify-login-prompt" id="verifyLoginPrompt" hidden>
                         <p>${t('verify.loginPrompt', '登录后即可使用验证服务')}</p>
                         <button class="verify-login-btn" data-verify-action="login-gate">
                             <i class="fas fa-sign-in-alt"></i>
@@ -747,7 +779,7 @@
                         </button>
                     </div>
 
-                    <div id="verifyForm" style="display: ${formDisplay};">
+                    <div id="verifyForm">
                         <div class="verify-form-shell">
                             <div class="verify-input-area verify-form-main">
                                 <label class="verify-form-field">
@@ -831,7 +863,7 @@
                                         </div>
                                     </div>
                                     <div id="verifyResultsList"></div>
-                                    <div class="verify-batch-summary" id="verifyBatchSummary" style="display: none;">
+                                    <div class="verify-batch-summary" id="verifyBatchSummary" hidden>
                                         <div class="verify-batch-stat success">
                                             ${t('verify.success', '成功')}: <span id="successCount">0</span>
                                         </div>
@@ -1056,16 +1088,16 @@
         const balanceEl = document.getElementById('verifyBalance');
 
         if (currentUser) {
-            if (loginPrompt) loginPrompt.style.display = 'none';
-            if (form) form.style.display = 'block';
-            if (balanceEl) balanceEl.style.display = 'flex';
+            setVerifyHidden(loginPrompt, true);
+            setVerifyHidden(form, false);
+            setVerifyHidden(balanceEl, false);
             persistMergedCachedProfile(currentUser);
             await loadUserBalance();
             restorePendingTask();
         } else {
-            if (loginPrompt) loginPrompt.style.display = 'none';
-            if (form) form.style.display = 'block';
-            if (balanceEl) balanceEl.style.display = 'none';
+            setVerifyHidden(loginPrompt, true);
+            setVerifyHidden(form, false);
+            setVerifyHidden(balanceEl, true);
             if (clearCache) localStorage.removeItem('cached_user_profile');
         }
 
@@ -1268,7 +1300,10 @@
         prepareExecutionDisplay(label, t('verify.previewQueued', '演示排队中...'));
 
         isLoading = true;
-        if (submitBtn) submitBtn.disabled = true;
+        if (submitBtn) {
+            submitBtn.classList.remove('verify-submit-btn--maintenance');
+            submitBtn.disabled = true;
+        }
         if (resetBtn) resetBtn.disabled = true;
         setPreviewControlsDisabled(true, true);
 
@@ -1352,6 +1387,7 @@
         const submitBtn = document.getElementById('verifySubmitBtn');
         const resetBtn = document.getElementById('verifyResetBtn');
         if (submitBtn) {
+            submitBtn.classList.remove('verify-submit-btn--maintenance');
             submitBtn.disabled = true;
             submitBtn.innerHTML = `<div class="spinner"></div> ${t('verify.restoringTask', '恢复中...')}`;
         }
@@ -1423,6 +1459,7 @@
         const resetBtn = document.getElementById('verifyResetBtn');
 
         if (!submitBtn) return;
+        submitBtn.classList.remove('verify-submit-btn--maintenance');
 
         const parsed = readFormEntry();
         if (!parsed.valid) {
@@ -1681,6 +1718,7 @@
         const submitBtn = document.getElementById('verifySubmitBtn');
         const resetBtn = document.getElementById('verifyResetBtn');
         if (submitBtn) {
+            submitBtn.classList.remove('verify-submit-btn--maintenance');
             submitBtn.disabled = false;
             submitBtn.innerHTML = `<i class="fas fa-paper-plane"></i> ${t('verify.startVerify', '提交账号')}`;
         }
@@ -1755,7 +1793,7 @@
 
     function showBatchSummary() {
         const el = document.getElementById('verifyBatchSummary');
-        if (el) el.style.display = 'flex';
+        setVerifyHidden(el, false);
 
         const successEl = document.getElementById('successCount');
         const failedEl = document.getElementById('failedCount');
@@ -1768,7 +1806,7 @@
 
     function hideBatchSummary() {
         const el = document.getElementById('verifyBatchSummary');
-        if (el) el.style.display = 'none';
+        setVerifyHidden(el, true);
     }
 
     function showSingleResult(type, title, message) {
@@ -1797,13 +1835,13 @@
         const normalized = String(status || '').toLowerCase();
 
         if (normalized.includes('success') || normalized.includes('completed')) {
-            return `<i class="fas fa-check-circle" style="color: #22c55e;"></i> ${t('verify.successText', '成功')}`;
+            return `<span class="verify-history-status-badge"><i class="fas fa-check-circle"></i> ${t('verify.successText', '成功')}</span>`;
         }
         if (normalized.includes('queued') || normalized.includes('running') || normalized.includes('process')) {
-            return `<i class="fas fa-sync fa-spin" style="color: #3498db;"></i> ${t('verify.processText', '处理中')}`;
+            return `<span class="verify-history-status-badge"><i class="fas fa-sync fa-spin"></i> ${t('verify.processText', '处理中')}</span>`;
         }
         if (normalized.includes('fail') || normalized.includes('error') || normalized.includes('timeout')) {
-            return `<i class="fas fa-times-circle" style="color: #ef4444;"></i> ${t('verify.failText', '失败')}`;
+            return `<span class="verify-history-status-badge"><i class="fas fa-times-circle"></i> ${t('verify.failText', '失败')}</span>`;
         }
 
         return escapeHtml(status || '--');
@@ -1875,17 +1913,18 @@
 
         navigator.clipboard.writeText(value).then(() => {
             const original = el.innerHTML;
-            el.innerHTML = `<i class="fas fa-check" style="color: #22c55e;"></i> ${t('verify.copied', '已复制')}`;
-            el.style.color = '#22c55e';
+            el.classList.add('verify-history-item-id--copied');
+            el.innerHTML = `<i class="fas fa-check"></i> ${t('verify.copied', '已复制')}`;
             setTimeout(() => {
                 el.innerHTML = original;
-                el.style.color = '';
+                el.classList.remove('verify-history-item-id--copied');
             }, 1200);
         }).catch(() => {
             const ta = document.createElement('textarea');
             ta.value = value;
-            ta.style.position = 'fixed';
-            ta.style.opacity = '0';
+            ta.className = 'verify-copy-fallback';
+            ta.setAttribute('aria-hidden', 'true');
+            ta.tabIndex = -1;
             document.body.appendChild(ta);
             ta.select();
             document.execCommand('copy');
@@ -1999,9 +2038,7 @@
         if (!submitBtn) return;
 
         submitBtn.disabled = false;
-        submitBtn.style.background = 'rgba(239, 68, 68, 0.3)';
-        submitBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
-        submitBtn.style.cursor = 'pointer';
+        submitBtn.classList.add('verify-submit-btn--maintenance');
         submitBtn.innerHTML = `<i class="fas fa-tools"></i> ${t('verify.serviceUnavailable', '服务维护中')}`;
     }
 

@@ -15,6 +15,7 @@
     const CONFIG_KEY = 'section_visibility';
     const CACHE_KEY_PREFIX = 'zaoyoe_section_vis_';
     const SECTIONS = ['hero', 'gallery', 'shop', 'verify', 'guestbook', 'footer'];
+    const HIDDEN_CLASS = 'section-visibility-hidden';
 
     // Section → page mapping
     const SECTION_PAGES = {
@@ -152,6 +153,12 @@
         return { ...defaults, ...siteConfig };
     }
 
+    function setDomVisibility(element, visible) {
+        if (!element) return;
+        element.hidden = !visible;
+        element.classList.toggle(HIDDEN_CLASS, !visible);
+    }
+
     /**
      * Check if a section is visible
      */
@@ -183,14 +190,14 @@
             if (selectors.sections) {
                 selectors.sections.forEach(sel => {
                     const el = document.querySelector(sel);
-                    if (el) el.style.display = visible ? '' : 'none';
+                    setDomVisibility(el, visible);
                 });
             }
 
             // Hide/show desktop nav links
             if (selectors.navDesktop) {
                 const navEls = document.querySelectorAll(`.nav-menu ${selectors.navDesktop}, .nav-container ${selectors.navDesktop}`);
-                navEls.forEach(el => el.style.display = visible ? '' : 'none');
+                navEls.forEach(el => setDomVisibility(el, visible));
             }
 
             // Hide/show mobile menu items
@@ -200,9 +207,9 @@
                 mobileLinks.forEach(el => {
                     const menuItem = el.closest('.mobile-menu-item');
                     if (menuItem) {
-                        menuItem.style.display = visible ? '' : 'none';
+                        setDomVisibility(menuItem, visible);
                     } else {
-                        el.style.display = visible ? '' : 'none';
+                        setDomVisibility(el, visible);
                     }
                 });
             }
@@ -210,7 +217,7 @@
             // Hide/show footer links
             if (selectors.footer) {
                 const footerEls = document.querySelectorAll(`footer ${selectors.footer}, .framer-footer ${selectors.footer}`);
-                footerEls.forEach(el => el.style.display = visible ? '' : 'none');
+                footerEls.forEach(el => setDomVisibility(el, visible));
             }
         });
     }
@@ -236,52 +243,27 @@
      * Show "page not available" overlay
      */
     function showBlockedOverlay() {
+        if (document.getElementById('section-blocked-overlay')) return;
+
         const overlay = document.createElement('div');
         overlay.id = 'section-blocked-overlay';
-        overlay.style.cssText = `
-            position: fixed; inset: 0; z-index: 99999;
-            background: linear-gradient(135deg, #0f1724 0%, #1a2332 50%, #0f1724 100%);
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            font-family: 'Inter', 'Outfit', -apple-system, sans-serif;
-            color: #fff; text-align: center; padding: 40px;
-        `;
+        overlay.className = 'section-blocked-overlay';
         overlay.innerHTML = `
-            <div style="
-                width: 80px; height: 80px; border-radius: 50%;
-                background: rgba(107, 158, 206, 0.1);
-                display: flex; align-items: center; justify-content: center;
-                margin-bottom: 24px;
-                box-shadow: 0 0 40px rgba(107, 158, 206, 0.15);
-            ">
-                <i class="fas fa-lock" style="font-size: 32px; color: #6b9ece;"></i>
+            <div class="section-blocked-overlay__icon-shell">
+                <i class="fas fa-lock section-blocked-overlay__icon"></i>
             </div>
-            <h2 style="
-                font-size: 1.5rem; font-weight: 700; margin: 0 0 12px 0;
-                background: linear-gradient(135deg, #6b9ece, #89b8e0);
-                -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            ">该页面暂未开放</h2>
-            <p style="
-                color: rgba(255,255,255,0.5); font-size: 0.95rem;
-                max-width: 400px; line-height: 1.6; margin: 0 0 32px 0;
-            ">此功能当前未在该站点启用，请联系管理员了解更多信息。</p>
-            <a href="/" style="
-                display: inline-flex; align-items: center; gap: 8px;
-                padding: 12px 28px; border-radius: 12px;
-                background: rgba(107, 158, 206, 0.15);
-                border: 1px solid rgba(107, 158, 206, 0.3);
-                color: #6b9ece; text-decoration: none;
-                font-weight: 600; font-size: 0.9rem;
-                transition: all 0.3s;
-            " onmouseenter="this.style.background='rgba(107,158,206,0.25)';this.style.transform='translateY(-2px)'"
-               onmouseleave="this.style.background='rgba(107,158,206,0.15)';this.style.transform='translateY(0)'">
+            <h2 class="section-blocked-overlay__title">该页面暂未开放</h2>
+            <p class="section-blocked-overlay__description">此功能当前未在该站点启用，请联系管理员了解更多信息。</p>
+            <a href="/" class="section-blocked-overlay__home-link">
                 <i class="fas fa-home"></i>
                 返回首页
             </a>
         `;
+        document.body.classList.add('section-visibility-page-blocked');
         document.body.appendChild(overlay);
         // Hide all other content
         document.querySelectorAll('body > *:not(#section-blocked-overlay):not(script):not(link):not(style)').forEach(el => {
-            el.style.display = 'none';
+            setDomVisibility(el, false);
         });
     }
 

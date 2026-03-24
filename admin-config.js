@@ -12,6 +12,76 @@ let paymentChannelAccordionState = {
     afdian: false,
     hupijiao: false
 };
+const ADMIN_CONFIG_TOGGLE_PULSE_CLASS = 'status-toggle--pulse';
+const ADMIN_CONFIG_SAVE_VISIBLE_CLASS = 'visible';
+const ADMIN_CONFIG_VERIFY_QUOTA_TONE_CLASSES = [
+    'verify-quota-badge--neutral',
+    'verify-quota-badge--success',
+    'verify-quota-badge--warning',
+    'verify-quota-badge--danger'
+];
+const ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP = Object.freeze({
+    '#ffffff': 'color-swatch--white',
+    '#ffeb3b': 'color-swatch--yellow',
+    '#ff9800': 'color-swatch--orange',
+    '#4caf50': 'color-swatch--green',
+    '#e57373': 'color-swatch--red',
+    '#6b9ece': 'color-swatch--blue'
+});
+const ADMIN_CONFIG_AFFILIATE_POSTER_PRESET_CLASS_MAP = Object.freeze({
+    midnight: 'affiliate-poster-preview--midnight',
+    sunset: 'affiliate-poster-preview--sunset',
+    crystal: 'affiliate-poster-preview--crystal'
+});
+
+function pulseAdminConfigToggle(toggleEl) {
+    if (!toggleEl) return;
+    toggleEl.classList.remove(ADMIN_CONFIG_TOGGLE_PULSE_CLASS);
+    void toggleEl.offsetWidth;
+    toggleEl.classList.add(ADMIN_CONFIG_TOGGLE_PULSE_CLASS);
+    clearTimeout(toggleEl._adminConfigPulseTimer);
+    toggleEl._adminConfigPulseTimer = setTimeout(() => {
+        toggleEl.classList.remove(ADMIN_CONFIG_TOGGLE_PULSE_CLASS);
+    }, 160);
+}
+
+function setAdminConfigHiddenState(target, hidden) {
+    if (!target) return;
+    target.hidden = !!hidden;
+}
+
+function showAdminConfigSaveIndicator(indicator, text = '✓ 已保存', durationMs = 1500) {
+    if (!indicator) return;
+    indicator.textContent = text;
+    indicator.classList.add(ADMIN_CONFIG_SAVE_VISIBLE_CLASS);
+    clearTimeout(indicator._adminConfigSaveTimer);
+    indicator._adminConfigSaveTimer = setTimeout(() => {
+        indicator.classList.remove(ADMIN_CONFIG_SAVE_VISIBLE_CLASS);
+    }, durationMs);
+}
+
+function getAdminConfigRichTextColorClass(color) {
+    return ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP[color] || ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP['#6b9ece'];
+}
+
+function applyAdminConfigRichTextColorSwatch(target, color, options = {}) {
+    if (!target) return;
+    const previewClass = options.preview ? 'preview' : '';
+    target.className = ['color-swatch', previewClass, getAdminConfigRichTextColorClass(color)].filter(Boolean).join(' ');
+}
+
+function getAffiliatePosterPreviewClass(templateId) {
+    return ADMIN_CONFIG_AFFILIATE_POSTER_PRESET_CLASS_MAP[templateId] || ADMIN_CONFIG_AFFILIATE_POSTER_PRESET_CLASS_MAP.midnight;
+}
+
+function renderVerifyQuotaState(quotaEl, tone, iconClass, message, options = {}) {
+    if (!quotaEl) return;
+    ADMIN_CONFIG_VERIFY_QUOTA_TONE_CLASSES.forEach((className) => quotaEl.classList.remove(className));
+    quotaEl.classList.add('verify-quota-badge', `verify-quota-badge--${tone}`);
+    const safeMessage = escapeConfigHtml(message);
+    const textTag = options.emphasized ? 'strong' : 'span';
+    quotaEl.innerHTML = `<i class="${iconClass} verify-quota-badge__icon" aria-hidden="true"></i> <${textTag} class="verify-quota-badge__text">${safeMessage}</${textTag}>`;
+}
 
 function getDefaultCheckinConfig() {
     return {
@@ -815,13 +885,14 @@ function renderAffiliatePosterTemplates(config = normalizeAffiliatePosterConfig(
     container.innerHTML = config.templates.map(template => {
         const preset = presets.find(item => item.id === template.id) || presets[0];
         const isActive = config.active_template_id === template.id;
-                const previewBackground = template.custom_background_url
-                    ? `linear-gradient(180deg, rgba(3, 7, 18, 0.08) 0%, rgba(3, 7, 18, 0.44) 100%), url('${escapeConfigHtml(template.custom_background_url)}') center/cover`
-                    : preset.preview_background;
+        const previewMedia = template.custom_background_url
+            ? `<img class="affiliate-poster-preview-media" src="${escapeConfigHtml(template.custom_background_url)}" alt="">`
+            : '';
 
         return `
             <div class="affiliate-poster-card ${isActive ? 'active' : ''}">
-                <div class="affiliate-poster-preview" style="background:${previewBackground};">
+                <div class="affiliate-poster-preview ${getAffiliatePosterPreviewClass(preset.id)}">
+                    ${previewMedia}
                     <div class="affiliate-poster-chip">${escapeConfigHtml(config.chip_label || '推广')}</div>
                     <div class="affiliate-poster-preview-content">
                         <div class="affiliate-poster-preview-title">${escapeConfigHtml(config.title)}</div>
@@ -1394,9 +1465,7 @@ async function togglePackageStatus(index) {
     const toggleEl = document.querySelector(`#packagesTableBody tr[data-index="${index}"] .status-toggle`);
     if (toggleEl) {
         toggleEl.classList.toggle('active', packages[index].enabled);
-        // Add brief pulse animation
-        toggleEl.style.transform = 'scale(1.1)';
-        setTimeout(() => toggleEl.style.transform = '', 150);
+        pulseAdminConfigToggle(toggleEl);
     }
 
     // Save in background (don't wait)
@@ -1451,10 +1520,7 @@ async function toggleCustomRechargeEntryStatus() {
 
     if (toggleEl) {
         toggleEl.classList.toggle('active', nextValue);
-        toggleEl.style.transform = 'scale(1.1)';
-        setTimeout(() => {
-            toggleEl.style.transform = '';
-        }, 150);
+        pulseAdminConfigToggle(toggleEl);
     }
 
     const success = await saveConfig('recharge_options', config);
@@ -1583,10 +1649,7 @@ async function togglePaymentProviderEnabled(providerKey) {
 
     const nextValue = !toggleEl.classList.contains('active');
     toggleEl.classList.toggle('active', nextValue);
-    toggleEl.style.transform = 'scale(1.1)';
-    setTimeout(() => {
-        toggleEl.style.transform = '';
-    }, 150);
+    pulseAdminConfigToggle(toggleEl);
 
     if (nextValue) {
         setPaymentProviderPanelExpanded(providerKey, true);
@@ -1713,8 +1776,7 @@ async function saveIpBlacklist() {
 
     const indicator = document.getElementById('ipBlacklistSaveIndicator');
     if (indicator && success) {
-        indicator.style.opacity = '1';
-        setTimeout(() => indicator.style.opacity = '0', 2000);
+        showAdminConfigSaveIndicator(indicator, '✓ 已保存', 2000);
     }
 }
 
@@ -1755,8 +1817,7 @@ async function saveLoginSecuritySettings() {
         if (success) {
             const indicator = document.getElementById('loginSecuritySaveIndicator');
             if (indicator) {
-                indicator.style.opacity = '1';
-                setTimeout(() => indicator.style.opacity = '0', 2000);
+                showAdminConfigSaveIndicator(indicator, '✓ 已保存', 2000);
             }
             if (typeof showToast === 'function') {
                 showToast('登录安全设置已保存', 'success');
@@ -1818,21 +1879,21 @@ async function refreshLockedAccounts() {
         // Update badge
         if (badgeEl) {
             badgeEl.textContent = accountsWithEmail.length;
-            badgeEl.style.display = accountsWithEmail.length > 0 ? 'inline-flex' : 'none';
+            setAdminConfigHiddenState(badgeEl, accountsWithEmail.length === 0);
         }
 
         // Update unlock all button
         if (unlockAllBtn) {
-            unlockAllBtn.style.display = accountsWithEmail.length > 0 ? 'flex' : 'none';
+            setAdminConfigHiddenState(unlockAllBtn, accountsWithEmail.length === 0);
         }
 
         // Render list
         if (accountsWithEmail.length === 0) {
-            if (emptyMsg) emptyMsg.style.display = 'flex';
+            setAdminConfigHiddenState(emptyMsg, false);
             // Remove any account items
             listEl.querySelectorAll('.locked-account-item').forEach(el => el.remove());
         } else {
-            if (emptyMsg) emptyMsg.style.display = 'none';
+            setAdminConfigHiddenState(emptyMsg, true);
 
             // Clear existing items
             listEl.querySelectorAll('.locked-account-item').forEach(el => el.remove());
@@ -2228,7 +2289,7 @@ const AdminRichTextEditor = (() => {
     function updateColorUI(instance, color) {
         if (!instance) return;
         if (instance.colorPreview) {
-            instance.colorPreview.style.background = color;
+            applyAdminConfigRichTextColorSwatch(instance.colorPreview, color, { preview: true });
         }
         const colorDropdown = instance.dropdowns?.color;
         colorDropdown?.querySelectorAll('.dropdown-item').forEach(item => {
@@ -2270,7 +2331,7 @@ const AdminRichTextEditor = (() => {
                 data-admin-action="settings-rich-text-select-color"
                 data-rich-text-key="${config.key}"
                 data-rich-text-color="${value}">
-                <span class="color-swatch" style="background:${value}"></span> ${label}
+                <span class="color-swatch ${getAdminConfigRichTextColorClass(value)}"></span> ${label}
             </button>
         `).join('');
 
@@ -2363,8 +2424,7 @@ const AdminRichTextEditor = (() => {
                         data-admin-action="settings-rich-text-toggle-dropdown"
                         data-rich-text-key="${config.key}"
                         data-rich-text-dropdown="color" title="文字颜色">
-                        <span class="color-swatch preview" id="${config.colorPreviewId}"
-                            style="background:#6b9ece"></span>
+                        <span class="color-swatch preview ${getAdminConfigRichTextColorClass('#6b9ece')}" id="${config.colorPreviewId}"></span>
                     </button>
                     <div class="dropdown-menu">
                         ${colorItems}
@@ -2417,7 +2477,7 @@ const AdminRichTextEditor = (() => {
         if (!instance.editor) return null;
 
         if (instance.hiddenInput) {
-            instance.hiddenInput.style.display = 'none';
+            instance.hiddenInput.hidden = true;
         }
 
         bindToolbarMouseDown(instance);
@@ -2905,13 +2965,7 @@ function showStandaloneSaveIndicator(elementId, text = '✓ 已保存') {
     const indicator = document.getElementById(elementId);
     if (!indicator) return;
 
-    indicator.textContent = text;
-    indicator.style.opacity = '1';
-    clearTimeout(showStandaloneSaveIndicator._timeouts?.[elementId]);
-    showStandaloneSaveIndicator._timeouts = showStandaloneSaveIndicator._timeouts || {};
-    showStandaloneSaveIndicator._timeouts[elementId] = setTimeout(() => {
-        indicator.style.opacity = '0';
-    }, 1500);
+    showAdminConfigSaveIndicator(indicator, text, 1500);
 }
 
 async function saveSeoSettings() {
@@ -3196,7 +3250,7 @@ async function checkVerifyQuota() {
     const quotaEl = document.getElementById('cfgVerifyQuota');
     if (!quotaEl) return;
 
-    quotaEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 查询中...';
+    renderVerifyQuotaState(quotaEl, 'neutral', 'fas fa-spinner fa-spin', '查询中...');
 
     try {
         const headers = await getAdminConfigApiHeaders();
@@ -3205,14 +3259,14 @@ async function checkVerifyQuota() {
 
         if (data.success) {
             const balance = Number(data.balance ?? data.credits ?? 0);
-            const color = balance > 5 ? '#27ae60' : balance > 0 ? '#f39c12' : '#e74c3c';
+            const tone = balance > 5 ? 'success' : balance > 0 ? 'warning' : 'danger';
             const display = Number.isInteger(balance) ? balance : balance.toFixed(1);
-            quotaEl.innerHTML = `<i class="fas fa-gem" style="color: ${color};"></i> <strong style="color: ${color};">${display}</strong>`;
+            renderVerifyQuotaState(quotaEl, tone, 'fas fa-gem', display, { emphasized: true });
         } else {
-            quotaEl.innerHTML = `<i class="fas fa-exclamation-triangle" style="color: #e74c3c;"></i> ${data.message || '查询失败'}`;
+            renderVerifyQuotaState(quotaEl, 'danger', 'fas fa-exclamation-triangle', data.message || '查询失败');
         }
     } catch (e) {
-        quotaEl.innerHTML = '<i class="fas fa-exclamation-triangle" style="color: #e74c3c;"></i> 网络错误';
+        renderVerifyQuotaState(quotaEl, 'danger', 'fas fa-exclamation-triangle', '网络错误');
     }
 }
 

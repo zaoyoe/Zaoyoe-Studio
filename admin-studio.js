@@ -15,6 +15,33 @@ window.currentUserPermissions = [];
 window.isSuperAdmin = false;
 window.isAdmin = false;
 window.adminStudioAccessGranted = false;
+const ADMIN_STUDIO_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';
+
+function setAdminStudioVisibility(target, visible, visibleClass = '') {
+    if (!target) return;
+    target.classList.toggle(ADMIN_STUDIO_HIDDEN_CLASS, !visible);
+    target.toggleAttribute('hidden', !visible);
+    if (visibleClass) {
+        target.classList.toggle(visibleClass, visible);
+    }
+}
+
+function createAdminStudioEmptyElement(text, className = 'admin-empty-message', tagName = 'p') {
+    const element = document.createElement(tagName);
+    element.className = className;
+    element.textContent = text;
+    return element;
+}
+
+function renderAdminStudioEmptyMessage(container, text) {
+    if (!container) return;
+    container.replaceChildren(createAdminStudioEmptyElement(text));
+}
+
+function syncAdminSearchCardVisibility(card, visible) {
+    if (!card) return;
+    card.classList.toggle('admin-card--hidden-by-search', !visible);
+}
 
 function sanitizeImageUrl(url) {
     if (typeof url !== 'string' || !url.trim()) return '';
@@ -107,16 +134,16 @@ function renderAdminStudioAccessGate(state, options = {}) {
     if (primaryAction) {
         primaryAction.textContent = options.primaryLabel || '返回首页';
         primaryAction.href = options.primaryHref || 'index.html';
-        primaryAction.style.display = '';
+        setAdminStudioVisibility(primaryAction, true);
     }
 
     if (secondaryAction) {
         if (options.secondaryLabel) {
             secondaryAction.textContent = options.secondaryLabel;
             secondaryAction.href = options.secondaryHref || 'index.html';
-            secondaryAction.style.display = '';
+            setAdminStudioVisibility(secondaryAction, true);
         } else {
-            secondaryAction.style.display = 'none';
+            setAdminStudioVisibility(secondaryAction, false);
         }
     }
 }
@@ -1177,7 +1204,7 @@ function updateUIBasedOnPermissions() {
     // Hide/Show sections based on permissions
     const manageTab = document.querySelector('[data-view="manage"]');
     if (manageTab && !hasPermission('prompts.manage') && !hasPermission('content.moderate')) {
-        manageTab.style.display = 'none';
+        manageTab.hidden = true;
     }
 
     // Additional UI updates can be handled by respective modules listening to 'permissionsLoaded'
@@ -1277,7 +1304,6 @@ function updateAdminTabIndicator(activeTab) {
 
         indicator.style.left = `${left}px`;
         indicator.style.width = `${tabRect.width}px`;
-        indicator.style.opacity = '1';
     }
 }
 
@@ -1307,7 +1333,7 @@ async function loadAdminPrompts() {
             });
             grid.replaceChildren(fragment);
         } else {
-            grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--text-dim);">No prompts yet. Create your first one!</p>';
+            renderAdminStudioEmptyMessage(grid, 'No prompts yet. Create your first one!');
         }
 
         // Setup search after data is loaded
@@ -1440,7 +1466,7 @@ async function editPrompt(id) {
 
         // Show the form (it's hidden by default)
         const promptForm = document.getElementById('promptForm');
-        promptForm.style.display = 'flex';
+        setAdminStudioVisibility(promptForm, true);
 
         // Populate form fields
         document.getElementById('promptTitle').value = data.title || '';
@@ -1459,7 +1485,7 @@ async function editPrompt(id) {
                 minute: '2-digit'
             });
             lastEditedTime.textContent = formatted;
-            lastEditedInfo.style.display = 'inline-flex';
+            setAdminStudioVisibility(lastEditedInfo, true);
         } else if (data.created_at) {
             // Fallback to created_at if no updated_at
             const date = new Date(data.created_at);
@@ -1470,9 +1496,9 @@ async function editPrompt(id) {
                 minute: '2-digit'
             });
             lastEditedTime.textContent = formatted + ' (创建)';
-            lastEditedInfo.style.display = 'inline-flex';
+            setAdminStudioVisibility(lastEditedInfo, true);
         } else {
-            lastEditedInfo.style.display = 'none';
+            setAdminStudioVisibility(lastEditedInfo, false);
         }
 
         // Update button
@@ -1500,7 +1526,6 @@ async function editPrompt(id) {
                     <img src="${url}" alt="Preview ${idx + 1}">
                 </div>
             `).join('');
-            previewGrid.style.display = 'grid';
 
             // Clear and load images into uploadedFiles for analysis capability
             uploadedFiles = [];
@@ -1595,9 +1620,7 @@ async function deletePrompt(id) {
         // Remove from UI with animation
         const card = document.querySelector(`[data-id="${id}"]`);
         if (card) {
-            card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-            card.style.opacity = '0';
-            card.style.transform = 'scale(0.9)';
+            card.classList.add('is-removing');
             setTimeout(() => {
                 card.remove();
                 // Update count after removal
@@ -1609,7 +1632,7 @@ async function deletePrompt(id) {
                 // If no prompts left, show empty message
                 if (newCount === 0) {
                     const grid = document.getElementById('adminGrid');
-                    grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--text-dim);">No prompts yet. Create your first one!</p>';
+                    renderAdminStudioEmptyMessage(grid, 'No prompts yet. Create your first one!');
                 }
             }, 300);
         }
@@ -1831,13 +1854,13 @@ function renderApiKeySelector() {
                     <span class="key-name-label">Server Proxy</span>
                     <span class="key-preview-label">${meta.preview}</span>
                 </div>
-                <div class="key-actions" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <div class="key-actions">
                     <span class="key-active-badge">${isReady ? meta.badge : '待配置'}</span>
-                    <button class="btn-add-config" type="button" data-admin-action="settings-prompt-api-key" style="margin-top: 0; padding: 8px 12px;">
+                    <button class="btn-add-config btn-add-config--compact" type="button" data-admin-action="settings-prompt-api-key">
                         ${isReady ? '更新 Key' : '录入 Key'}
                     </button>
                     ${meta.source === 'stored' ? `
-                        <button class="btn-add-config" type="button" data-admin-action="settings-delete-api-key" style="margin-top: 0; padding: 8px 12px; border-color: rgba(248, 113, 113, 0.35); color: #fecaca;">
+                        <button class="btn-add-config btn-add-config--compact btn-add-config--danger" type="button" data-admin-action="settings-delete-api-key">
                             删除 Key
                         </button>
                     ` : ''}
@@ -2243,8 +2266,8 @@ async function analyzeImages() {
     const btn = document.getElementById('analyzeBtn');
 
     // Show loading
-    loadingEl.style.display = 'flex';
-    formEl.style.display = 'none';
+    setAdminStudioVisibility(loadingEl, true);
+    setAdminStudioVisibility(formEl, false);
     btn.disabled = true;
     updateStatus('Analyzing...', 'processing');
 
@@ -2265,14 +2288,14 @@ async function analyzeImages() {
         analysisResult = result;
         populateForm(result);
 
-        loadingEl.style.display = 'none';
-        formEl.style.display = 'flex';
+        setAdminStudioVisibility(loadingEl, false);
+        setAdminStudioVisibility(formEl, true);
         updateStatus('Analysis Complete', 'ready');
         showToast(`AI 分析完成！(${imageCount} 张图片)`, 'success');
 
     } catch (error) {
         console.error('Analysis error:', error);
-        loadingEl.style.display = 'none';
+        setAdminStudioVisibility(loadingEl, false);
         updateStatus('Error', 'error');
         showToast(`分析失败: ${error.message}`, 'error');
     }
@@ -2395,7 +2418,7 @@ function populateForm(data) {
 function renderTags(containerId, tagData) {
     const container = document.getElementById(containerId);
     if (!tagData || !tagData.en) {
-        container.innerHTML = '<span style="color: var(--text-dim)">No tags</span>';
+        container.replaceChildren(createAdminStudioEmptyElement('No tags', 'admin-empty-tag', 'span'));
         return;
     }
 
@@ -2961,7 +2984,7 @@ function showToast(message, type = 'info') {
     container.appendChild(toast);
 
     setTimeout(() => {
-        toast.style.animation = 'slideIn 0.3s ease reverse';
+        toast.classList.add('is-dismissing');
         setTimeout(() => toast.remove(), 300);
     }, 3000);
 }
@@ -2970,7 +2993,7 @@ function resetForm() {
     uploadedFiles = [];
     analysisResult = null;
     document.getElementById('previewGrid').innerHTML = '';
-    document.getElementById('promptForm').style.display = 'none';
+    setAdminStudioVisibility(document.getElementById('promptForm'), false);
     document.getElementById('promptForm').reset();
     document.getElementById('tagObjects').innerHTML = '';
     document.getElementById('tagScenes').innerHTML = '';
@@ -2980,7 +3003,7 @@ function resetForm() {
 
     // Hide last edited info
     const lastEditedInfo = document.getElementById('lastEditedInfo');
-    if (lastEditedInfo) lastEditedInfo.style.display = 'none';
+    setAdminStudioVisibility(lastEditedInfo, false);
 
     updateAnalyzeButton();
     updateStatus('Ready', 'ready');
@@ -3073,7 +3096,7 @@ function closeBatchMenu() {
 // Select all prompts (only visible cards)
 function selectAllPrompts() {
     // Only select cards that are NOT hidden by search filter
-    const cards = document.querySelectorAll('.admin-card:not([style*="display: none"])');
+    const cards = document.querySelectorAll('.admin-card:not(.admin-card--hidden-by-search)');
     cards.forEach(card => {
         const id = card.dataset.id; // UUID string, not parseInt
         if (!selectedPrompts.has(id)) {
@@ -3098,18 +3121,18 @@ function toggleSelectMode() {
 
     // Show/hide the ... button and auto-open dropdown when entering select mode
     if (isSelectMode) {
-        batchMenuContainer.style.display = 'block';
+        setAdminStudioVisibility(batchMenuContainer, true);
         batchMenuContainer.classList.add('open'); // Auto-open dropdown
         attachCardSelectionListeners();
     } else {
-        batchMenuContainer.style.display = 'none';
+        setAdminStudioVisibility(batchMenuContainer, false);
         batchMenuContainer.classList.remove('open');
         selectedPrompts.clear();
         document.querySelectorAll('.admin-card.selected').forEach(card => {
             card.classList.remove('selected');
         });
         // Hide count when exiting select mode
-        if (promptCountWrapper) promptCountWrapper.style.display = 'none';
+        setAdminStudioVisibility(promptCountWrapper, false);
     }
 
     updateBatchButtonStates();
@@ -3172,9 +3195,7 @@ function updateBatchButtonStates() {
     }
 
     // Show/hide count wrapper based on selection
-    if (promptCountWrapper) {
-        promptCountWrapper.style.display = count > 0 ? 'block' : 'none';
-    }
+    setAdminStudioVisibility(promptCountWrapper, count > 0);
 }
 
 // Get selected prompts data
@@ -3227,7 +3248,7 @@ function startBatchEdit() {
 
     // Show batch edit bar
     const bar = document.getElementById('batchEditBar');
-    bar.style.display = 'flex';
+    setAdminStudioVisibility(bar, true);
 
     // Switch to create view
     switchView('create');
@@ -3283,7 +3304,7 @@ function closeBatchEditDropdown() {
 function exitBatchEditMode() {
     batchEditPrompts = [];
     batchEditIndex = 0;
-    document.getElementById('batchEditBar').style.display = 'none';
+    setAdminStudioVisibility(document.getElementById('batchEditBar'), false);
     cancelEdit();
 }
 
@@ -3466,11 +3487,11 @@ function showDeleteConfirmation() {
 
     document.getElementById('deleteConfirmText').textContent =
         `确定要删除选中的 ${count} 个提示词吗？`;
-    document.getElementById('deleteConfirmOverlay').style.display = 'flex';
+    setAdminStudioVisibility(document.getElementById('deleteConfirmOverlay'), true);
 }
 
 function hideDeleteConfirmation() {
-    document.getElementById('deleteConfirmOverlay').style.display = 'none';
+    setAdminStudioVisibility(document.getElementById('deleteConfirmOverlay'), false);
 }
 
 async function executeBatchDelete() {
@@ -3504,12 +3525,12 @@ async function executeBatchDelete() {
 // ========================================
 function showBatchProgressModal(title, total) {
     document.getElementById('batchModalTitle').textContent = title;
-    document.getElementById('batchProgressOverlay').style.display = 'flex';
+    setAdminStudioVisibility(document.getElementById('batchProgressOverlay'), true);
     updateBatchProgress(0, total, '准备中...');
 }
 
 function hideBatchProgressModal() {
-    document.getElementById('batchProgressOverlay').style.display = 'none';
+    setAdminStudioVisibility(document.getElementById('batchProgressOverlay'), false);
 }
 
 function updateBatchProgress(current, total, currentItem) {
@@ -3585,11 +3606,11 @@ document.addEventListener('mouseout', (e) => {
 function openLightbox(src) {
     if (!src) return;
     document.getElementById('lightboxImage').src = src;
-    document.getElementById('lightboxOverlay').style.display = 'flex';
+    setAdminStudioVisibility(document.getElementById('lightboxOverlay'), true);
 }
 
 function closeLightbox() {
-    document.getElementById('lightboxOverlay').style.display = 'none';
+    setAdminStudioVisibility(document.getElementById('lightboxOverlay'), false);
 }
 
 // ========================================
@@ -3605,7 +3626,7 @@ function openCropModal(index) {
 
     const cropImage = document.getElementById('cropImage');
     cropImage.src = file.dataUrl;
-    document.getElementById('cropModalOverlay').style.display = 'flex';
+    setAdminStudioVisibility(document.getElementById('cropModalOverlay'), true);
 
     // Wait for image to load before initializing Cropper
     cropImage.onload = function () {
@@ -3642,7 +3663,7 @@ function openCropModal(index) {
 }
 
 function closeCropModal() {
-    document.getElementById('cropModalOverlay').style.display = 'none';
+    setAdminStudioVisibility(document.getElementById('cropModalOverlay'), false);
     cropImageIndex = null;
 
     // Destroy Cropper instance
@@ -4320,12 +4341,8 @@ function applySearchResults(matchedIds) {
         const cardId = card.dataset.id;
         const isVisible = matchedIds.has(cardId);
 
-        if (isVisible) {
-            card.style.display = '';
-            visibleCount++;
-        } else {
-            card.style.display = 'none';
-        }
+        syncAdminSearchCardVisibility(card, isVisible);
+        if (isVisible) visibleCount++;
     });
 
     // Update count
@@ -4336,10 +4353,7 @@ function applySearchResults(matchedIds) {
     if (visibleCount === 0) {
         const existingMsg = grid.querySelector('.no-results-message');
         if (!existingMsg) {
-            const msg = document.createElement('p');
-            msg.className = 'no-results-message';
-            msg.style.cssText = 'grid-column: 1/-1; text-align: center; color: var(--text-dim); padding: 2rem;';
-            msg.textContent = 'No prompts found matching your search.';
+            const msg = createAdminStudioEmptyElement('No prompts found matching your search.', 'no-results-message');
             grid.appendChild(msg);
         }
     } else {
@@ -4358,7 +4372,7 @@ async function filterBySearch(query) {
 
     // If no query, show all cards
     if (!query) {
-        cards.forEach(card => card.style.display = '');
+        cards.forEach(card => syncAdminSearchCardVisibility(card, true));
         const countEl = document.getElementById('promptCount');
         if (countEl) countEl.textContent = allPrompts.length;
         const existingMsg = document.querySelector('.no-results-message');
@@ -4466,7 +4480,7 @@ function setupAdminSearch() {
 
         // 无查询时不显示下拉菜单
         if (!query) {
-            suggestionsSection.style.display = 'none';
+            setAdminStudioVisibility(suggestionsSection, false, 'is-visible');
             hideDropdown();
             return;
         }
@@ -4489,13 +4503,13 @@ function setupAdminSearch() {
         const suggestionArray = Array.from(suggestions).slice(0, 5);
 
         if (suggestionArray.length === 0) {
-            suggestionsSection.style.display = 'none';
+            setAdminStudioVisibility(suggestionsSection, false, 'is-visible');
             hideDropdown();
             return;
         }
 
         showDropdown();
-        suggestionsSection.style.display = 'flex';
+        setAdminStudioVisibility(suggestionsSection, true, 'is-visible');
 
         const html = suggestionArray.map(s =>
             `<div class="suggestion-item"><i class="fas fa-search"></i>${s}</div>`
@@ -4588,7 +4602,7 @@ function setupAdminSearch() {
             const cardId = card.dataset.id;
             const prompt = allPrompts.find(p => String(p.id) === cardId);
             if (!prompt) {
-                card.style.display = 'none';
+                syncAdminSearchCardVisibility(card, false);
                 return;
             }
 
@@ -4624,7 +4638,7 @@ function setupAdminSearch() {
                 }
             }
 
-            card.style.display = visible ? '' : 'none';
+            syncAdminSearchCardVisibility(card, visible);
             if (visible) visibleCount++;
         });
 
@@ -4637,10 +4651,7 @@ function setupAdminSearch() {
         const existingMsg = grid.querySelector('.no-results-message');
         if (visibleCount === 0) {
             if (!existingMsg) {
-                const msg = document.createElement('p');
-                msg.className = 'no-results-message';
-                msg.style.cssText = 'grid-column: 1/-1; text-align: center; color: var(--text-dim); padding: 2rem;';
-                msg.textContent = '没有找到匹配的提示词';
+                const msg = createAdminStudioEmptyElement('没有找到匹配的提示词', 'no-results-message');
                 grid.appendChild(msg);
             }
         } else if (existingMsg) {

@@ -1,424 +1,4 @@
 (function () {
-    // macOS-style Notification Center Styles
-    const style = document.createElement('style');
-    style.textContent = `
-        html.notif-scroll-locked,
-        body.notif-scroll-locked {
-            overflow: hidden !important;
-            overscroll-behavior: none !important;
-        }
-
-        /* Blurred Backdrop when drawer is open */
-        .notif-backdrop {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.3);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            z-index: 2150;
-            opacity: 0;
-            visibility: hidden;
-            transition: all 0.35s ease;
-        }
-        .notif-backdrop.active {
-            opacity: 1;
-            visibility: visible;
-        }
-        
-        /* Notification Drawer - floating style (transparent container) */
-        .notif-drawer {
-            position: fixed;
-            top: 70px;
-            right: -400px;
-            width: 380px;
-            max-height: calc(100vh - 100px);
-            z-index: 2200;
-            
-            /* Transparent container */
-            background: transparent;
-            backdrop-filter: none;
-            -webkit-backdrop-filter: none;
-            border: none;
-            box-shadow: none;
-            
-            display: flex;
-            flex-direction: column;
-            
-            transition: right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-            pointer-events: none; 
-        }
-        /* Allow interaction with header and list */
-        .notif-drawer-header,
-        .notif-drawer-list {
-            pointer-events: auto;
-        }
-        .notif-drawer.active {
-            right: 20px;
-        }
-        
-        /* Header */
-        .notif-drawer-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0px; /* Adjust padding since no border */
-            margin-bottom: 8px; /* Space between header and list */
-            border-bottom: none;
-        }
-        .notif-drawer-title {
-            font-size: 1.1rem; /* Slightly larger for floating header */
-            font-weight: 600;
-            color: rgba(255, 255, 255, 0.95);
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3); /* Add shadow for readability */
-        }
-        .notif-clear-all {
-             /* Adjust to sit nicely without container */
-             background: rgba(0,0,0,0.2);
-             backdrop-filter: blur(10px);
-        }
-        
-        /* Clear All Button - X transforms to text on hover (no slide) */
-        .notif-clear-all {
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 4px 10px;
-            cursor: pointer;
-            border-radius: 6px;
-            background: transparent;
-            transition: background 0.2s, padding 0.2s;
-            min-width: 24px;
-            height: 24px;
-        }
-        .notif-clear-all:hover {
-            background: rgba(255, 255, 255, 0.1);
-        }
-        .notif-clear-all .icon-x {
-            font-size: 0.75rem;
-            color: rgba(255, 255, 255, 0.5);
-            transition: opacity 0.15s;
-        }
-        .notif-clear-all .text-clear {
-            position: absolute;
-            font-size: 0.7rem;
-            color: rgba(255, 255, 255, 0.8);
-            white-space: nowrap;
-            opacity: 0;
-            transition: opacity 0.15s;
-        }
-        .notif-clear-all:hover .icon-x {
-            opacity: 0;
-        }
-        .notif-clear-all:hover .text-clear {
-            opacity: 1;
-        }
-        
-        /* Notification List - Simplified */
-        .notif-drawer-list {
-            flex: 1;
-            overflow-y: auto;
-            overflow-x: hidden; /* No overflow needed anymore */
-            padding: 8px 12px;
-            scrollbar-width: none;
-        }
-        .notif-drawer-list::-webkit-scrollbar {
-            display: none;
-        }
-        
-        /* Single Notification Card - Clean, Contained */
-        .notif-card {
-            position: relative;
-            z-index: 1; /* Base stacking level */
-            background: rgba(30, 40, 55, 0.7); /* Darker, more visible */
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 12px 14px; /* Balanced padding, button is outside */
-            margin-bottom: 8px;
-            cursor: pointer;
-            overflow: visible; /* Allow close button to hang off edge */
-            transition: background 0.2s, transform 0.2s, z-index 0s;
-        }
-        .notif-card:hover {
-            z-index: 100; /* Lift well above siblings on hover */
-            isolation: isolate; /* Create stacking context */
-            background: rgba(40, 55, 75, 0.8);
-            transform: translateY(-2px);
-        }
-        .notif-card.unread {
-            background: rgba(60, 50, 90, 0.75);
-            border-left: 3px solid #818cf8;
-        }
-        
-        /* Card Close Button - Corner Badge Style */
-        .notif-card-close {
-            position: absolute;
-            top: -6px;
-            left: -6px;
-            right: auto;
-            transform: scale(0.9);
-            z-index: 10; /* Ensure above card content */
-            pointer-events: auto; /* Explicitly enable clicks */
-            
-            width: 22px;
-            height: 22px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            
-            background: rgba(255, 255, 255, 0.08);
-            border: none;
-            border-radius: 50%;
-            cursor: pointer;
-            
-            opacity: 0;
-            transition: opacity 0.15s, background 0.15s, transform 0.15s;
-        }
-        .notif-card:hover .notif-card-close {
-            opacity: 1;
-            transform: scale(1);
-        }
-        .notif-card-close:hover {
-            background: #ef4444;
-        }
-        .notif-card-close i {
-            font-size: 0.6rem;
-            color: rgba(255, 255, 255, 0.8);
-        }
-        .notif-card-close:hover i {
-            color: #fff;
-        }
-        
-        /* Card Content */
-        .notif-card-header {
-            display: flex;
-            align-items: flex-start;
-            gap: 8px;
-        }
-        .notif-card-icon {
-            width: 24px;
-            height: 24px;
-            border-radius: 5px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-        .notif-card-icon.info { background: rgba(96, 165, 250, 0.2); color: #60a5fa; }
-        .notif-card-icon.warning { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
-        .notif-card-icon.success { background: rgba(52, 211, 153, 0.2); color: #34d399; }
-        .notif-card-icon i { font-size: 0.65rem; }
-        
-        .notif-card-info {
-            flex: 1;
-            min-width: 0;
-        }
-        .notif-card-title {
-            font-size: 0.78rem;
-            font-weight: 500;
-            color: rgba(255, 255, 255, 0.88);
-            margin-bottom: 2px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .notif-card-body {
-            font-size: 0.72rem;
-            color: rgba(255, 255, 255, 0.5);
-            line-height: 1.35;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-            transition: all 0.3s ease;
-        }
-        
-        .notif-card.expanded .notif-card-body {
-            -webkit-line-clamp: unset; /* Remove line clamp when expanded */
-        }
-        .notif-card-time {
-            font-size: 0.65rem;
-            color: rgba(255, 255, 255, 0.35);
-            white-space: nowrap;
-            margin-left: auto;
-            flex-shrink: 0;
-        }
-        
-        /* Expand Button - clean minimal pill */
-        .notif-expand-btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 3px;
-            padding: 4px 10px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .notif-expand-btn:hover {
-            background: rgba(255, 255, 255, 0.08);
-        }
-        .notif-expand-btn span {
-            font-size: 0.62rem;
-            color: rgba(255, 255, 255, 0.5);
-        }
-        .notif-expand-btn i {
-            font-size: 0.4rem;
-            color: rgba(255, 255, 255, 0.35);
-        }
-        
-        /* Empty State */
-        .notif-empty {
-            text-align: center;
-            padding: 30px 16px;
-            color: rgba(255, 255, 255, 0.3);
-            font-size: 0.75rem;
-        }
-        
-        /* Badge */
-        .notif-badge {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            width: 8px;
-            height: 8px;
-            background: #ef4444;
-            border-radius: 50%;
-            border: 1.5px solid rgba(30, 30, 40, 0.9);
-            box-shadow: 0 0 5px #ef4444;
-        }
-        
-        /* Animations */
-        /* Enter Animation (Height + Slide) */
-        @keyframes notifSlideIn {
-            0% { transform: translateY(-15px); opacity: 0; }
-            100% { transform: translateY(0); opacity: 1; }
-        }
-        
-        /* Unified Exit Animation */
-        @keyframes notifExit {
-            0% {
-                transform: translateX(0);
-                opacity: 1;
-                max-height: 150px; /* Large enough to fit content */
-                margin-bottom: 6px;
-                padding-top: 10px;
-                padding-bottom: 10px;
-                border-width: 1px;
-            }
-            40% {
-                transform: translateX(100%);
-                opacity: 0;
-                max-height: 150px;
-                margin-bottom: 6px;
-                padding-top: 10px;
-                padding-bottom: 10px;
-                border-width: 1px;
-            }
-            100% {
-                transform: translateX(100%);
-                opacity: 0;
-                max-height: 0;
-                margin-bottom: 0;
-                padding-top: 0;
-                padding-bottom: 0;
-                border-width: 0;
-            }
-        }
-
-        .notif-card.exit {
-            transition: none !important;
-            transform: none !important; /* Reset any hover transform */
-            animation: notifExit 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
-            pointer-events: none;
-            z-index: 0 !important; /* Drop below others */
-        }
-
-        @keyframes notifEnter {
-            0% {
-                opacity: 0;
-                transform: translateY(20px);
-                max-height: 0;
-                margin-bottom: 0;
-                padding-top: 0;
-                padding-bottom: 0;
-                border-width: 0;
-            }
-            100% {
-                opacity: 1;
-                transform: translateY(0);
-                max-height: 150px;
-                margin-bottom: 6px;
-                padding-top: 10px;
-                padding-bottom: 10px;
-                border-width: 1px;
-            }
-        }
-
-        .notif-card.sliding-in {
-            animation: notifEnter 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-        }
-
-        /* ====== MOBILE RESPONSIVE STYLES ====== */
-        @media (max-width: 768px) {
-            .notif-drawer {
-                top: -100%;
-                right: 0;
-                width: 100%;
-                max-height: 70vh;
-                border-radius: 0 0 20px 20px;
-                transition: top 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-            }
-            .notif-drawer.active {
-                top: 0;
-                right: 0;
-            }
-
-            .notif-drawer-header {
-                padding: 40px 20px 20px;
-                background: transparent;
-                backdrop-filter: none;
-                -webkit-backdrop-filter: none;
-                border-bottom: none;
-                margin-bottom: 8px;
-                justify-content: center;
-                position: relative;
-            }
-
-            .notif-drawer-title {
-                text-align: center;
-                font-size: 1.3rem;
-            }
-
-            /* Hide X button on mobile - tap outside to close */
-            .notif-clear-all {
-                display: none;
-            }
-
-            .notif-drawer-list {
-                padding: 12px 16px;
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-                min-height: 50vh;
-            }
-
-            .notif-empty {
-                flex: 1;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 0.9rem;
-                min-height: 40vh;
-            }
-        }
-    `;
-    document.head.appendChild(style);
-
     // State
     let notifications = [];
     let unreadCount = 0;
@@ -426,8 +6,6 @@
     let notifScrollLocked = false;
     let notifSavedScrollY = 0;
     let notifTouchStartY = 0;
-    let notifPrevBodyStyle = null;
-    let notifPrevHtmlStyle = null;
     const MAX_COLLAPSED = 3;
 
     function getDrawerListFromTarget(target) {
@@ -484,27 +62,9 @@
         if (notifScrollLocked) return;
 
         notifSavedScrollY = window.scrollY || window.pageYOffset || 0;
-        notifPrevBodyStyle = {
-            position: document.body.style.position,
-            top: document.body.style.top,
-            left: document.body.style.left,
-            right: document.body.style.right,
-            width: document.body.style.width,
-            overflow: document.body.style.overflow
-        };
-        notifPrevHtmlStyle = {
-            overflow: document.documentElement.style.overflow
-        };
 
         document.documentElement.classList.add('notif-scroll-locked');
         document.body.classList.add('notif-scroll-locked');
-        document.body.style.position = 'fixed';
-        document.body.style.top = `-${notifSavedScrollY}px`;
-        document.body.style.left = '0';
-        document.body.style.right = '0';
-        document.body.style.width = '100%';
-        document.body.style.overflow = 'hidden';
-        document.documentElement.style.overflow = 'hidden';
 
         document.addEventListener('touchstart', handleNotifTouchStart, { passive: true });
         document.addEventListener('touchmove', handleNotifTouchMove, { passive: false });
@@ -522,20 +82,6 @@
 
         document.documentElement.classList.remove('notif-scroll-locked');
         document.body.classList.remove('notif-scroll-locked');
-
-        if (notifPrevBodyStyle) {
-            document.body.style.position = notifPrevBodyStyle.position || '';
-            document.body.style.top = notifPrevBodyStyle.top || '';
-            document.body.style.left = notifPrevBodyStyle.left || '';
-            document.body.style.right = notifPrevBodyStyle.right || '';
-            document.body.style.width = notifPrevBodyStyle.width || '';
-            document.body.style.overflow = notifPrevBodyStyle.overflow || '';
-        }
-
-        if (notifPrevHtmlStyle) {
-            document.documentElement.style.overflow = notifPrevHtmlStyle.overflow || '';
-        }
-
         window.scrollTo(0, notifSavedScrollY);
         notifScrollLocked = false;
     }
@@ -660,11 +206,11 @@
         const wrapper = document.getElementById('navNotifWrapper');
 
         if (!user) {
-            if (wrapper) wrapper.style.display = 'none';
+            if (wrapper) wrapper.hidden = true;
             return;
         }
 
-        if (wrapper) wrapper.style.display = 'block';
+        if (wrapper) wrapper.hidden = false;
         fetchNotifications(user.id);
 
         window.supabaseClient
@@ -710,7 +256,7 @@
     function updateBadge() {
         const badge = document.getElementById('notifBadge');
         if (badge) {
-            badge.style.display = unreadCount > 0 ? 'block' : 'none';
+            badge.hidden = unreadCount <= 0;
         }
 
         // Also update avatar and dropdown badges (B+D Hybrid)
@@ -765,7 +311,7 @@
 
         if (!isExpanded && remaining > 0) {
             html += `
-                <div id="notifExpandWrapper" style="text-align: center; padding: 8px 0;">
+                <div id="notifExpandWrapper" class="notif-expand-wrapper">
                     <div class="notif-expand-btn">
                         <span>还有 ${remaining} 个通知</span>
                         <i class="fas fa-chevron-down"></i>

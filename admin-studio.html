@@ -19,9 +19,9 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=48">
+    <link rel="stylesheet" href="admin-studio.css?v=53">
     <link rel="stylesheet" href="admin-sidebar.css?v=10">
-    <link rel="stylesheet" href="css/admin-chat.css">
+    <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
 
     <!-- Cropper.js CSS -->
@@ -30,7 +30,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
     <!-- Prevent flash of wrong theme -->
-    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_SHOP_RUNTIME_STYLE_ZERO_1">
+    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_HOMEPAGE_RUNTIME_STYLE_1">
     <script src="./js/theme-preload.js"></script>
 
 </head>
@@ -1135,7 +1135,7 @@
                         <!-- Locked Accounts -->
                         <div class="settings-section">
                             <h3><i class="fas fa-user-lock"></i> 锁定账户 <span class="locked-count-badge"
-                                    id="lockedCountBadge">0</span></h3>
+                                    id="lockedCountBadge" hidden>0</span></h3>
                             <div class="locked-accounts-container">
                                 <div class="locked-accounts-list" id="lockedAccountsList">
                                     <div class="empty-state" id="noLockedAccountsMsg">
@@ -1148,7 +1148,7 @@
                                     <button class="btn-sm btn-secondary" data-admin-action="settings-refresh-locked-accounts">
                                         <i class="fas fa-sync-alt"></i> 刷新
                                     </button>
-                                    <button class="btn-sm btn-warning admin-studio-inline-style-attr-8" data-admin-action="settings-unlock-all-accounts" id="unlockAllBtn"
+                                    <button class="btn-sm btn-warning admin-studio-inline-style-attr-8" data-admin-action="settings-unlock-all-accounts" id="unlockAllBtn" hidden
                                        >
                                         <i class="fas fa-unlock"></i>全部解锁
                                     </button>
@@ -4698,7 +4698,7 @@
                 <div class="analytics-dashboard">
                     <!-- Status bar removed - elements moved to toolbar -->
                     <!-- Anomaly Alerts Area -->
-                    <div class="anomaly-alerts-area admin-studio-inline-style-attr-3" id="anomalyAlertsArea">
+                    <div class="anomaly-alerts-area" id="anomalyAlertsArea" hidden>
                         <div class="alerts-header">
                             <i class="fas fa-exclamation-triangle"></i>
                             <span>异常告警</span>
@@ -5092,7 +5092,7 @@
                                     </div>
                                 </div>
                                 <!-- A/B Results Chart -->
-                                <div class="ab-results-chart admin-studio-inline-style-attr-3" id="abResultsChart">
+                                <div class="ab-results-chart" id="abResultsChart" hidden>
                                     <div class="ab-chart-header">
                                         <span id="abChartTitle">实验结果对比</span>
                                         <button class="btn-icon-sm" data-admin-action="analytics-close-ab-results-chart">
@@ -5160,7 +5160,7 @@
                 <div class="pagination" id="discountsPagination"></div>
 
                 <!-- Generate Discount Modal -->
-                <div id="discountGenerateModal" class="modal-overlay admin-studio-inline-style-attr-164" data-admin-overlay-close="discount-generate-modal"
+                <div id="discountGenerateModal" class="modal-overlay admin-studio-inline-style-attr-164 admin-discount-generate-modal" data-admin-overlay-close="discount-generate-modal" aria-hidden="true"
                    >
                     <div
                         class="admin-studio-inline-style-attr-165">
@@ -5204,7 +5204,8 @@
                                            ></i>
                                     </div>
                                     <div id="discountTypeDropdown"
-                                        class="admin-studio-inline-style-attr-182">
+                                        class="admin-studio-inline-style-attr-182 admin-discount-type-dropdown"
+                                        aria-hidden="true">
                                         <div class="discount-type-option admin-studio-inline-style-attr-183" data-admin-action="discounts-select-type" data-discount-type="percent"
                                            >
                                             <span class="admin-studio-inline-style-attr-184">📊</span>
@@ -5700,26 +5701,26 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="js/admin-studio-bootstrap.js?v=20260324_ADMIN_STUDIO_BOOTSTRAP_1"></script>
     <script src="admin-users.js?v=20260324_ADMIN_USERS_RUNTIME_STYLE_BATCH_2"></script>
-    <script src="admin-points.js?v=20260323_ADMIN_POINTS_DELEGATION_1"></script>
-    <script src="admin-discounts.js"></script>
+    <script src="admin-points.js?v=20260324_ADMIN_POINTS_RUNTIME_STYLE_1"></script>
+    <script src="admin-discounts.js?v=20260324_ADMIN_DISCOUNTS_RUNTIME_STYLE_1"></script>
     <script src="starry-sky.js"></script>
     <!-- Flatpickr JS -->
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="js/admin-ai.js"></script>
     <script src="admin-comments.js?v=20260323_ADMIN_COMMENTS_DELEGATION_1"></script>
-    <script src="admin-analytics.js?v=20260323_ANALYTICS_DELEGATION_2"></script>
+    <script src="admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-payments.js?v=20260323_ADMIN_PAYMENTS_V12"></script>
-    <script src="admin-config.js?v=20260323_ADMIN_GENERAL_SETTINGS_DELEGATION_3"></script>
-    <script src="admin-homepage.js?v=20260323_HOMEPAGE_DELEGATION_1"></script>
+    <script src="admin-config.js?v=20260324_ADMIN_CONFIG_RUNTIME_STYLE_1"></script>
+    <script src="admin-homepage.js?v=20260324_HOMEPAGE_RUNTIME_STYLE_2"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
     <script src="js/admin-tickets.js?v=20260324_ADMIN_TICKETS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-access.js"></script>
-    <script src="admin-studio.js?v=20260323_ADMIN_DELEGATION_9"></script>
+    <script src="admin-studio.js?v=20260324_ADMIN_RUNTIME_STYLE_HELPERS_1"></script>
     <script src="js/admin-shop.js?v=20260324_SHOP_RUNTIME_STYLE_ZERO_1"></script>
 </body>
 
 <!-- Admin Chat Script -->
-<script src="js/admin-chat.js?v=20260323_ADMIN_CHAT_DELEGATION_1"></script>
+<script src="js/admin-chat.js?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1"></script>
 </html>

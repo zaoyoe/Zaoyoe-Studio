@@ -351,6 +351,14 @@ input[type="tel"]:focus {
     font-size: 2rem;
 }
 
+#profit.profit-negative {
+    color: var(--danger-color);
+}
+
+#profit.profit-neutral {
+    color: var(--text-color);
+}
+
 /* Mobile Optimization */
 @media (max-width: 480px) {
     header h1 {
@@ -1016,6 +1024,20 @@ input.submit-btn {
     box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.4) !important;
 }
 
+.glass-box.glass-box-runtime-ready {
+    opacity: 1 !important;
+    animation: none !important;
+}
+
+@media (hover: hover) {
+    .glass-box.glass-box-magnetic-entering {
+        transition: transform 0.2s ease-out, box-shadow 0.25s ease-out;
+    }
+
+    .glass-box.glass-box-magnetic-tracking {
+        transition: transform 0.05s linear, box-shadow 0.25s ease-out;
+    }
+}
 
 .glass-box:active {
     transform: scale(0.98);
@@ -2089,11 +2111,15 @@ svg {
     height: 100%;
     background: rgba(0, 0, 0, 0.9);
     z-index: 2000;
-    display: none;
+    display: flex;
     justify-content: center;
     align-items: center;
     opacity: 0;
     transition: opacity 0.3s ease;
+}
+
+.lightbox-overlay[hidden] {
+    display: none;
 }
 
 .lightbox-overlay.active {
@@ -7488,6 +7514,8 @@ input[type="submit"],
 #guestbookModal {
     --guestbook-modal-overlay-height: 100dvh;
     --guestbook-modal-translate-y: 0px;
+    --guestbook-modal-card-height: 420px;
+    --guestbook-modal-card-max-height: calc(100svh - 56px);
     background: rgba(7, 9, 12, 0.28) !important;
     backdrop-filter: blur(14px) saturate(108%) !important;
     -webkit-backdrop-filter: blur(14px) saturate(108%) !important;
@@ -7504,6 +7532,22 @@ input[type="submit"],
 
 #guestbookModal.active {
     pointer-events: auto !important;
+}
+
+#guestbookModal.guestbook-modal-interactive {
+    pointer-events: auto !important;
+}
+
+.guestbook-modal-viewport-probe {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 100svh;
+    pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+    z-index: -1;
 }
 
 @keyframes guestbookComposerSectionRise {
@@ -7545,10 +7589,9 @@ input[type="submit"],
 #guestbookModal .guestbook-composer-sheet {
     width: min(calc(100vw - 40px), 620px) !important;
     max-width: 620px !important;
-    height: 420px;
+    height: var(--guestbook-modal-card-height, 420px);
     min-height: 320px;
-    max-height: calc(100vh - 56px);
-    max-height: calc(100svh - 56px);
+    max-height: var(--guestbook-modal-card-max-height, calc(100svh - 56px));
     margin: 0 auto !important;
     padding: 14px 18px calc(18px + env(safe-area-inset-bottom)) !important;
     box-sizing: border-box !important;
@@ -8812,9 +8855,9 @@ body {
     #guestbookModal.ios-focus-lock .guestbook-composer-sheet {
         width: calc(100vw - 40px) !important;
         max-width: 620px !important;
-        height: min(400px, calc(var(--guestbook-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
+        height: var(--guestbook-modal-card-height, min(400px, calc(var(--guestbook-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px)));
         min-height: 300px;
-        max-height: calc(var(--guestbook-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
+        max-height: var(--guestbook-modal-card-max-height, calc(var(--guestbook-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
         padding: 14px 16px calc(16px + env(safe-area-inset-bottom)) !important;
         border-radius: 20px !important;
     }

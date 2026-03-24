@@ -22,6 +22,49 @@ const AdminDiscounts = {
             .replace(/'/g, '&#39;');
     },
 
+    createTableStateRow: function ({ message, icon = 'fa-inbox', variant = 'empty', spinning = false }) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        const wrapper = document.createElement('div');
+        const iconNode = document.createElement('i');
+        const textNode = document.createElement('span');
+
+        cell.colSpan = 5;
+        cell.className = `empty-state admin-discount-table-state-cell admin-discount-table-state-cell--${variant}`;
+
+        wrapper.className = 'admin-discount-table-state';
+        iconNode.className = `fas ${icon}${spinning ? ' fa-spin' : ''} admin-discount-table-state-icon`;
+        textNode.className = 'admin-discount-table-state-text';
+        textNode.textContent = String(message ?? '暂无数据');
+
+        wrapper.appendChild(iconNode);
+        wrapper.appendChild(textNode);
+        cell.appendChild(wrapper);
+        row.appendChild(cell);
+        return row;
+    },
+
+    setGenerateModalVisible: function (visible) {
+        const modal = document.getElementById('discountGenerateModal');
+        if (!modal) return;
+        modal.classList.toggle('is-visible', visible);
+        modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    },
+
+    setTypeDropdownOpen: function (open) {
+        const dropdown = document.getElementById('discountTypeDropdown');
+        if (!dropdown) return;
+        dropdown.classList.toggle('is-open', open);
+        dropdown.setAttribute('aria-hidden', open ? 'false' : 'true');
+    },
+
+    getDiscountTypeMarkup: function (discount) {
+        if (discount.discount_type === 'percent') {
+            return `<span class="admin-discount-type-value admin-discount-type-value--percent">${100 - discount.discount_value}折</span>`;
+        }
+        return `<span class="admin-discount-type-value admin-discount-type-value--fixed">立减 ${discount.discount_value} 积分</span>`;
+    },
+
     init: function () {
         console.log('🎟️ Initializing Discounts Module...');
         this.loadDiscounts();
@@ -34,9 +77,12 @@ const AdminDiscounts = {
         const tableBody = document.getElementById('discountsTableBody');
         if (!tableBody) return;
 
-        tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);padding:20px;">
-            <i class="fas fa-spinner fa-spin"></i> 加载中...
-        </td></tr>`;
+        tableBody.replaceChildren(this.createTableStateRow({
+            message: '加载中...',
+            icon: 'fa-spinner',
+            variant: 'loading',
+            spinning: true
+        }));
 
         try {
             const { data, error } = await supabaseClient
@@ -53,9 +99,11 @@ const AdminDiscounts = {
 
         } catch (err) {
             console.error('Failed to load discounts:', err);
-            tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#ef4444;padding:20px;">
-                加载失败: ${err.message}
-            </td></tr>`;
+            tableBody.replaceChildren(this.createTableStateRow({
+                message: `加载失败: ${err.message}`,
+                icon: 'fa-circle-exclamation',
+                variant: 'error'
+            }));
         }
     },
 
@@ -119,12 +167,11 @@ const AdminDiscounts = {
         if (!tableBody) return;
 
         if (this.filteredDiscounts.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-dim);height:300px;vertical-align:middle;">
-                <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%;">
-                    <i class="fas fa-inbox" style="font-size:32px;margin-bottom:16px;opacity:0.5;"></i>
-                    <span>未找到匹配的优惠券</span>
-                </div>
-            </td></tr>`;
+            tableBody.replaceChildren(this.createTableStateRow({
+                message: '未找到匹配的优惠券',
+                icon: 'fa-inbox',
+                variant: 'empty'
+            }));
             const pContainer = document.getElementById('discountsPagination');
             if (pContainer) pContainer.innerHTML = '';
             return;
@@ -142,16 +189,13 @@ const AdminDiscounts = {
             const escapedCode = this.escapeHtml(d.code);
             const escapedId = this.escapeHtml(d.id);
             const nextActiveState = (!d.is_active).toString();
-
-            const typeLabel = d.discount_type === 'percent'
-                ? `<span style="color:#60a5fa;font-weight:600;">${100 - d.discount_value}折</span>`
-                : `<span style="color:#f59e0b;font-weight:600;">立减 ${d.discount_value} 积分</span>`;
+            const typeLabel = this.getDiscountTypeMarkup(d);
 
             // Status Badge
             let statusBadge = '<span class="status-badge active"><i class="fas fa-check-circle"></i> 生效中</span>';
             if (!d.is_active) statusBadge = '<span class="status-badge banned"><i class="fas fa-ban"></i> 已停用</span>';
             else if (isExpired) statusBadge = '<span class="status-badge away"><i class="fas fa-clock"></i> 已过期</span>';
-            else if (isExhausted) statusBadge = '<span style="color:#94a3b8;"><i class="fas fa-check-double"></i> 被抢光</span>';
+            else if (isExhausted) statusBadge = '<span class="admin-discount-status-muted"><i class="fas fa-check-double"></i> 被抢光</span>';
 
             // Min Order
             /* Usually you'd have min_order amount, if not in DB schema, we might not render it initially,
@@ -162,25 +206,25 @@ const AdminDiscounts = {
             <tr class="${isPracticallyUsed ? 'opacity-70' : ''}">
                 <td>
                     <button type="button"
+                        class="admin-discount-code-btn"
                         data-admin-action="discounts-copy-code"
                         data-discount-code="${escapedCode}"
-                        title="点击复制"
-                        style="font-family:'SF Mono',Consolas,monospace; font-size:14px; font-weight:500; letter-spacing:0.5px; color:#e8edf4; cursor:pointer; transition:color 0.2s; background:none; border:none; padding:0;">
+                        title="点击复制">
                         ${escapedCode}
                     </button>
                 </td>
                 <td>${typeLabel}</td>
                 <td>
-                    <div style="font-size:13px;">已用: <span style="color:#fff">${d.used_count}</span> / ${d.max_uses || '∞'}</div>
+                    <div class="admin-discount-usage-meta">已用: <span class="admin-discount-usage-count">${d.used_count}</span> / ${d.max_uses || '∞'}</div>
                 </td>
                 <td>
-                    <div style="display:inline-flex; flex-direction:column; align-items:center;">
+                    <div class="admin-discount-status-stack">
                         <div>${statusBadge}</div>
-                        ${d.expires_at ? `<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">截止: ${new Date(d.expires_at).toLocaleDateString()}</div>` : '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">永久有效</div>'}
+                        ${d.expires_at ? `<div class="admin-discount-expiry-meta">截止: ${new Date(d.expires_at).toLocaleDateString()}</div>` : '<div class="admin-discount-expiry-meta">永久有效</div>'}
                     </div>
                 </td>
                 <td>
-                    <div class="action-buttons" style="display: flex; justify-content: center; gap: 8px;">
+                    <div class="action-buttons admin-discount-action-wrap">
                         <button class="action-btn ${d.is_active ? 'warning' : 'success'}"
                                 type="button"
                                 data-admin-action="discounts-toggle-status"
@@ -220,7 +264,7 @@ const AdminDiscounts = {
         }
 
         pContainer.innerHTML = `
-            <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-top: 20px;">
+            <div class="admin-discount-pagination-shell">
                 <div class="pagination-control">
                     <button class="pagination-btn"
                         type="button"
@@ -235,28 +279,25 @@ const AdminDiscounts = {
                         data-discount-page="${Math.min(this.currentPage + 1, totalPages)}"
                         ${this.currentPage >= totalPages ? 'disabled' : ''}>+</button>
                 </div>
-                <div class="pagination-total" style="margin:0;">共 ${totalPages} 页 / ${this.filteredDiscounts.length} 条</div>
+                <div class="pagination-total pagination-total--compact">共 ${totalPages} 页 / ${this.filteredDiscounts.length} 条</div>
             </div>
         `;
     },
 
     copyCode: function (code) {
         navigator.clipboard.writeText(code).then(() => {
-            // Show a sleek toast notification
             let toast = document.getElementById('discountCopyToast');
             if (!toast) {
                 toast = document.createElement('div');
                 toast.id = 'discountCopyToast';
-                toast.style.cssText = 'position:fixed; bottom:40px; left:50%; transform:translateX(-50%) translateY(20px); background:rgba(20,28,44,0.95); color:#e8edf4; padding:12px 24px; border-radius:12px; font-size:0.9rem; z-index:99999; opacity:0; transition:all 0.3s ease; border:1px solid rgba(255,255,255,0.1); box-shadow:0 8px 30px rgba(0,0,0,0.4); display:flex; align-items:center; gap:10px; pointer-events:none;';
+                toast.className = 'admin-discount-copy-toast';
                 document.body.appendChild(toast);
             }
-            toast.innerHTML = '<i class="fas fa-check-circle" style="color:#4ade80;"></i> 已复制';
-            toast.style.opacity = '1';
-            toast.style.transform = 'translateX(-50%) translateY(0)';
+            toast.innerHTML = '<i class="fas fa-check-circle admin-discount-copy-toast-icon"></i><span>已复制</span>';
+            toast.classList.add('is-visible');
             clearTimeout(toast._timer);
             toast._timer = setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateX(-50%) translateY(20px)';
+                toast.classList.remove('is-visible');
             }, 2000);
         });
     },
@@ -303,30 +344,18 @@ const AdminDiscounts = {
         document.getElementById('discountGenerateForm').reset();
         document.getElementById('discountCodeInput').value = '';
         this.selectDiscountType('percent');
-        const modal = document.getElementById('discountGenerateModal');
-        modal.style.display = 'flex';
-        // Override CSS .modal-overlay defaults (opacity:0, visibility:hidden)
-        requestAnimationFrame(() => {
-            modal.style.opacity = '1';
-            modal.style.visibility = 'visible';
-        });
+        this.setGenerateModalVisible(true);
     },
 
     closeGenerateModal: function () {
-        const modal = document.getElementById('discountGenerateModal');
-        if (!modal) return;
-
-        modal.style.opacity = '0';
-        modal.style.visibility = 'hidden';
-        setTimeout(() => {
-            modal.style.display = 'none';
-        }, 200);
+        this.setTypeDropdownOpen(false);
+        this.setGenerateModalVisible(false);
     },
 
     toggleTypeDropdown: function () {
         const dropdown = document.getElementById('discountTypeDropdown');
         if (!dropdown) return;
-        dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+        this.setTypeDropdownOpen(!dropdown.classList.contains('is-open'));
     },
 
     selectDiscountType: function (type) {
@@ -343,8 +372,8 @@ const AdminDiscounts = {
 
         if (label) {
             label.innerHTML = isFixed
-                ? '<span style="font-size:1rem">💰</span> 固定金额立减'
-                : '<span style="font-size:1rem">📊</span> 按比例打折';
+                ? '<span class="admin-discount-type-label-icon">💰</span> 固定金额立减'
+                : '<span class="admin-discount-type-label-icon">📊</span> 按比例打折';
         }
 
         if (suffix) {
@@ -355,9 +384,7 @@ const AdminDiscounts = {
             valueInput.placeholder = isFixed ? '如: 100' : '如: 80';
         }
 
-        if (dropdown) {
-            dropdown.style.display = 'none';
-        }
+        this.setTypeDropdownOpen(false);
     },
 
     formatExpiryDateInput: function (input) {
