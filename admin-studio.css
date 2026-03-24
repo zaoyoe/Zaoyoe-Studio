@@ -2627,6 +2627,201 @@ body {
     vertical-align: middle;
 }
 
+.admin-ticket-row td {
+    vertical-align: middle;
+}
+
+.admin-ticket-nowrap-cell {
+    white-space: nowrap;
+}
+
+.admin-ticket-meta-id,
+.admin-ticket-copyable {
+    font-family: 'SF Mono', 'Consolas', monospace;
+    font-size: 12px;
+}
+
+.admin-ticket-meta-id {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.admin-ticket-meta-date {
+    margin-top: 4px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.admin-ticket-copyable {
+    cursor: pointer;
+    color: #60a5fa;
+    transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.admin-ticket-copyable:hover {
+    color: #93c5fd;
+    transform: translateY(-1px);
+}
+
+.admin-ticket-reason-preview,
+.admin-ticket-notes-preview {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-ticket-notes-preview {
+    margin-top: 4px;
+    padding-left: 4px;
+    border-left: 2px solid #4ade80;
+    font-size: 11px;
+    color: #4ade80;
+    cursor: pointer;
+}
+
+.admin-ticket-status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 76px;
+    border: 1px solid transparent;
+}
+
+.admin-ticket-status-badge--pending {
+    background: rgba(234, 179, 8, 0.2);
+    color: #eab308;
+    border-color: rgba(234, 179, 8, 0.5);
+}
+
+.admin-ticket-status-badge--resolved {
+    background: rgba(74, 222, 128, 0.2);
+    color: #4ade80;
+    border-color: rgba(74, 222, 128, 0.5);
+}
+
+.admin-ticket-status-badge--rejected {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+.admin-ticket-action-wrap {
+    display: flex;
+    gap: 8px;
+}
+
+.admin-ticket-action-btn {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    font-size: 14px;
+    cursor: pointer;
+    transition: transform 0.25s ease, background 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.admin-ticket-action-btn:hover {
+    transform: scale(1.15);
+}
+
+.admin-ticket-action-btn--resolve {
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.1);
+    border-color: rgba(74, 222, 128, 0.15);
+}
+
+.admin-ticket-action-btn--resolve:hover {
+    background: rgba(74, 222, 128, 0.25);
+    border-color: rgba(74, 222, 128, 0.4);
+    box-shadow: 0 0 12px rgba(74, 222, 128, 0.3);
+}
+
+.admin-ticket-action-btn--reject {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.15);
+}
+
+.admin-ticket-action-btn--reject:hover {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: rgba(239, 68, 68, 0.4);
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
+}
+
+.admin-ticket-processed-text {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.3);
+}
+
+.admin-ticket-table-state-cell {
+    height: 300px;
+    padding: 20px !important;
+    text-align: center !important;
+    vertical-align: middle !important;
+}
+
+.admin-ticket-table-state-cell--loading {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.admin-ticket-table-state-cell--error {
+    color: #ef4444;
+}
+
+.admin-ticket-table-state-cell--empty {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.admin-ticket-table-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+.admin-ticket-table-state-icon {
+    margin-bottom: 16px;
+    font-size: 32px;
+    opacity: 0.5;
+}
+
+.admin-ticket-pagination-shell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.admin-ticket-reply-modal {
+    display: none;
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.admin-ticket-reply-modal.is-visible {
+    display: flex;
+    visibility: visible;
+    opacity: 1;
+}
+
+.admin-ticket-copy-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 20px;
+    z-index: 10000;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+}
+
 /* Row Styles - Clean, no green border */
 .user-row {
     cursor: pointer;

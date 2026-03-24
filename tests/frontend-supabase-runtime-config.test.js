@@ -1870,6 +1870,63 @@ test('discount and ticket admin renderers no longer emit inline row or paginatio
     }
 });
 
+test('ticket admin runtime renderers externalize row states, modal visibility, and copy toast styling', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioCss = readRepoFile('admin-studio.css');
+    const ticketsSource = readRepoFile('js/admin-tickets.js');
+
+    const removedRuntimeMarkers = [
+        `style="text-align:center; padding: 20px;"`,
+        `badge.style.background =`,
+        `button.style.color =`,
+        `actionWrap.style.display = 'flex'`,
+        `modal.style.display = 'flex'`,
+        `toast.style.cssText =`
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(ticketsSource.includes(marker), false, `js/admin-tickets.js should not contain ${marker}`);
+    }
+
+    const delegatedRuntimeMarkers = [
+        'createTableStateRow: function',
+        "variant: 'loading'",
+        'admin-ticket-status-badge admin-ticket-status-badge--${normalizedStatus.toLowerCase()}',
+        'admin-ticket-action-btn admin-ticket-action-btn--${variant}',
+        'admin-ticket-pagination-shell',
+        "modal.classList.add('is-visible')",
+        "modal.classList.remove('is-visible')",
+        'admin-ticket-copy-toast'
+    ];
+
+    for (const marker of delegatedRuntimeMarkers) {
+        assert.equal(ticketsSource.includes(marker), true, `js/admin-tickets.js should contain ${marker}`);
+    }
+
+    const expectedCssMarkers = [
+        '.admin-ticket-table-state-cell',
+        '.admin-ticket-status-badge--pending',
+        '.admin-ticket-action-btn--resolve',
+        '.admin-ticket-reply-modal.is-visible',
+        '.admin-ticket-copy-toast'
+    ];
+
+    for (const marker of expectedCssMarkers) {
+        assert.equal(adminStudioCss.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioSource.includes('admin-studio.css?v=48'),
+        true,
+        'admin-studio.html should reference the updated admin stylesheet version'
+    );
+    assert.equal(
+        adminStudioSource.includes('js/admin-tickets.js?v=20260324_ADMIN_TICKETS_RUNTIME_STYLE_1'),
+        true,
+        'admin-studio.html should reference the updated admin tickets script version'
+    );
+});
+
 test('admin studio security, verify, affiliate, and experiment controls route through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
