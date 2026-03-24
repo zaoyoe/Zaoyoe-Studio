@@ -30,7 +30,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
     <!-- Prevent flash of wrong theme -->
-    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_PAGE_STYLES_1">
+    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_INLINE_STYLE_ATTRS_1">
     <script src="./js/theme-preload.js"></script>
 
 </head>
@@ -59,7 +59,7 @@
             <a href="index.html" class="sidebar-brand" title="返回主页">
                 <div class="sidebar-brand-icon">
                     <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg"
-                        style="width: 24px; height: 24px;">
+                        class="admin-studio-inline-style-attr-1">
                         <path d="M30 20 H80 L70 35 H20 Z" fill="white" />
                         <path d="M40 40 H90 L80 55 H30 Z" fill="#ccc" />
                         <path d="M20 60 H70 L60 75 H10 Z" fill="white" />
@@ -168,7 +168,7 @@
 
             <!-- ========== CHAT MODULE ========== -->
             <div id="module-chat" class="module-container">
-                <div id="chat-admin-container" style="height: calc(100vh - 80px);">
+                <div id="chat-admin-container" class="admin-studio-inline-style-attr-2">
                     <!-- Chat Interface injected by JS -->
                 </div>
             </div>
@@ -188,7 +188,7 @@
                     <!-- CREATE VIEW -->
                     <div id="view-create" class="view-section active">
                         <!-- Batch Edit Switcher (only visible in batch edit mode) -->
-                        <div class="batch-edit-bar" id="batchEditBar" style="display: none;">
+                        <div class="batch-edit-bar admin-studio-inline-style-attr-3" id="batchEditBar">
 
                             <div class="batch-edit-dropdown" id="batchEditDropdown">
                                 <button class="batch-edit-current" id="batchEditCurrent">
@@ -235,7 +235,7 @@
                             </h2>
 
                             <!-- Loading State - Elegant Neural Animation -->
-                            <div class="analysis-loading" id="analysisLoading" style="display: none;">
+                            <div class="analysis-loading admin-studio-inline-style-attr-3" id="analysisLoading">
                                 <div class="neural-loader">
                                     <div class="neural-dot"></div>
                                     <div class="neural-dot"></div>
@@ -246,7 +246,7 @@
                             </div>
 
                             <!-- Results Form -->
-                            <form class="prompt-form" id="promptForm" style="display: none;">
+                            <form class="prompt-form admin-studio-inline-style-attr-3" id="promptForm">
                                 <!-- Title -->
                                 <div class="form-group">
                                     <label for="promptTitle">
@@ -254,7 +254,7 @@
                                         Title
                                         <span class="ai-badge">AI Generated</span>
                                         <!-- Last Edited Info (shown only in edit mode) -->
-                                        <span class="last-edited-info" id="lastEditedInfo" style="display: none;">
+                                        <span class="last-edited-info admin-studio-inline-style-attr-3" id="lastEditedInfo">
                                             <i class="fas fa-clock"></i>
                                             <time id="lastEditedTime"></time>
                                         </span>
@@ -299,7 +299,7 @@
                                 </div>
 
                                 <!-- Description (Hidden - still analyzed in background) -->
-                                <div class="form-group" style="display: none;">
+                                <div class="form-group admin-studio-inline-style-attr-3">
                                     <label for="promptDescription">
                                         <i class="fas fa-align-left"></i>
                                         Description
@@ -310,7 +310,7 @@
                                 </div>
 
                                 <!-- AI Tags Display (Hidden - still analyzed in background) -->
-                                <div class="form-group" style="display: none;">
+                                <div class="form-group admin-studio-inline-style-attr-3">
                                     <label>
                                         <i class="fas fa-tags"></i>
                                         AI Tags
@@ -337,7 +337,7 @@
                                 </div>
 
                                 <!-- Dominant Colors (Hidden - still analyzed in background) -->
-                                <div class="form-group" style="display: none;">
+                                <div class="form-group admin-studio-inline-style-attr-3">
                                     <label>
                                         <i class="fas fa-palette"></i>
                                         Dominant Colors
@@ -383,7 +383,7 @@
                                 <!-- Search Dropdown -->
                                 <div class="search-dropdown" id="adminSearchDropdown">
                                     <!-- Autocomplete Suggestions (shown when typing) -->
-                                    <div class="search-suggestions" id="searchSuggestions" style="display: none;">
+                                    <div class="search-suggestions admin-studio-inline-style-attr-3" id="searchSuggestions">
                                         <!-- Dynamically generated -->
                                     </div>
                                 </div>
@@ -426,7 +426,7 @@
                                 <button class="batch-btn" id="selectModeBtn" title="选择模式">
                                     <i class="fas fa-check-square"></i>
                                 </button>
-                                <div class="batch-menu-container" id="batchMenuContainer" style="display: none;">
+                                <div class="batch-menu-container admin-studio-inline-style-attr-3" id="batchMenuContainer">
                                     <button class="batch-btn" id="batchMenuTrigger" title="批量操作">
                                         <i class="fas fa-ellipsis-h"></i>
                                     </button>
@@ -455,7 +455,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="prompt-count" id="promptCountWrapper" style="display: none;">
+                            <div class="prompt-count admin-studio-inline-style-attr-3" id="promptCountWrapper">
                                 <span class="select-count">已选 <span id="selectedCount">0</span> 项</span>
                             </div>
                         </div>
@@ -1044,8 +1044,8 @@
                                 </div>
                                 <div class="config-value">
                                     <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgLoginLockoutAttempts" min="3"
-                                            max="10" value="5" style="width: 80px;">
+                                        <input type="number" class="config-input admin-studio-inline-style-attr-4" id="cfgLoginLockoutAttempts" min="3"
+                                            max="10" value="5">
                                         <span class="config-unit">次</span>
                                     </div>
                                 </div>
@@ -1123,9 +1123,9 @@
                                 </div>
                             </div>
                             <!-- Save Button -->
-                            <div class="config-actions" style="margin-top: 32px; justify-content: flex-end;">
-                                <span class="config-save-indicator" id="loginSecuritySaveIndicator"
-                                    style="margin-right: 12px; opacity: 0;">✓ 已保存</span>
+                            <div class="config-actions admin-studio-inline-style-attr-5">
+                                <span class="config-save-indicator admin-studio-inline-style-attr-6" id="loginSecuritySaveIndicator"
+                                   >✓ 已保存</span>
                                 <button class="btn-sm btn-primary" data-admin-action="settings-save-login-security">
                                     <i class="fas fa-save"></i> 保存
                                 </button>
@@ -1144,12 +1144,12 @@
                                     </div>
                                     <!-- Dynamic locked accounts will be inserted here -->
                                 </div>
-                                <div class="config-actions" style="margin-top: 16px; justify-content: space-between;">
+                                <div class="config-actions admin-studio-inline-style-attr-7">
                                     <button class="btn-sm btn-secondary" data-admin-action="settings-refresh-locked-accounts">
                                         <i class="fas fa-sync-alt"></i> 刷新
                                     </button>
-                                    <button class="btn-sm btn-warning" data-admin-action="settings-unlock-all-accounts" id="unlockAllBtn"
-                                        style="display: none; align-items: center; gap: 6px;">
+                                    <button class="btn-sm btn-warning admin-studio-inline-style-attr-8" data-admin-action="settings-unlock-all-accounts" id="unlockAllBtn"
+                                       >
                                         <i class="fas fa-unlock"></i>全部解锁
                                     </button>
                                 </div>
@@ -1159,16 +1159,16 @@
                         <!-- IP Blacklist -->
                         <div class="settings-section">
                             <h3><i class="fas fa-ban"></i> IP 黑名单</h3>
-                            <div class="config-item-row" style="flex-direction: column; align-items: stretch;">
-                                <div class="config-label" style="margin-bottom: 8px;">
+                            <div class="config-item-row admin-studio-inline-style-attr-9">
+                                <div class="config-label admin-studio-inline-style-attr-10">
                                     <span>被封禁的IP地址</span>
                                     <span class="config-hint">一行一个IP地址，支持CIDR格式 (如 192.168.1.0/24)</span>
                                 </div>
                                 <textarea class="config-textarea" id="cfgIpBlacklist" rows="6"
                                     placeholder="192.168.1.100&#10;10.0.0.0/8&#10;..."></textarea>
-                                <div class="config-actions" style="margin-top: 26px; justify-content: flex-end;">
-                                    <span class="config-save-indicator" id="ipBlacklistSaveIndicator"
-                                        style="margin-right: 12px; opacity: 0;">✓ 已保存</span>
+                                <div class="config-actions admin-studio-inline-style-attr-11">
+                                    <span class="config-save-indicator admin-studio-inline-style-attr-6" id="ipBlacklistSaveIndicator"
+                                       >✓ 已保存</span>
                                     <button class="btn-sm btn-primary" data-admin-action="settings-save-ip-blacklist">
                                         <i class="fas fa-save"></i> 保存
                                     </button>
@@ -1180,7 +1180,7 @@
 
                 <!-- NOTIFICATIONS VIEW -->
                 <div id="settings-view-notifications" class="view-section">
-                    <div class="module-content" style="display: block; padding: 20px;">
+                    <div class="module-content admin-studio-inline-style-attr-12">
 
                         <!-- Two Column Layout -->
                         <div class="announcement-full-layout">
@@ -1377,33 +1377,33 @@
                                         <div class="toolbar-dropdown" id="colorDropdown">
                                             <button type="button" class="toolbar-btn"
                                                 data-admin-action="settings-toggle-toolbar-dropdown" data-dropdown-id="colorDropdown" title="文字颜色">
-                                                <span class="color-swatch preview" id="colorPreview"
-                                                    style="background:#6b9ece"></span>
+                                                <span class="color-swatch preview admin-studio-inline-style-attr-13" id="colorPreview"
+                                                   ></span>
                                             </button>
                                             <div class="dropdown-menu">
                                                 <button type="button" class="dropdown-item"
                                                     data-color-option="#ffffff" data-admin-action="settings-select-color" data-color-value="#ffffff">
-                                                    <span class="color-swatch" style="background:#ffffff"></span> 白色
+                                                    <span class="color-swatch admin-studio-inline-style-attr-14"></span> 白色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
                                                     data-color-option="#ffeb3b" data-admin-action="settings-select-color" data-color-value="#ffeb3b">
-                                                    <span class="color-swatch" style="background:#ffeb3b"></span> 黄色
+                                                    <span class="color-swatch admin-studio-inline-style-attr-15"></span> 黄色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
                                                     data-color-option="#ff9800" data-admin-action="settings-select-color" data-color-value="#ff9800">
-                                                    <span class="color-swatch" style="background:#ff9800"></span> 橙色
+                                                    <span class="color-swatch admin-studio-inline-style-attr-16"></span> 橙色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
                                                     data-color-option="#4caf50" data-admin-action="settings-select-color" data-color-value="#4caf50">
-                                                    <span class="color-swatch" style="background:#4caf50"></span> 绿色
+                                                    <span class="color-swatch admin-studio-inline-style-attr-17"></span> 绿色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
                                                     data-color-option="#e57373" data-admin-action="settings-select-color" data-color-value="#e57373">
-                                                    <span class="color-swatch" style="background:#e57373"></span> 红色
+                                                    <span class="color-swatch admin-studio-inline-style-attr-18"></span> 红色
                                                 </button>
                                                 <button type="button" class="dropdown-item selected"
                                                     data-color-option="#6b9ece" data-admin-action="settings-select-color" data-color-value="#6b9ece">
-                                                    <span class="color-swatch" style="background:#6b9ece"></span> 蓝色
+                                                    <span class="color-swatch admin-studio-inline-style-attr-13"></span> 蓝色
                                                 </button>
                                             </div>
                                         </div>
@@ -1469,15 +1469,15 @@
                                     </label>
                                 </div>
                             </div>
-                            <div class="config-item-row"
-                                style="flex-direction: column; align-items: stretch; margin-top: 12px;">
-                                <div class="config-label" style="margin-bottom: 8px;">
+                            <div class="config-item-row admin-studio-inline-style-attr-19"
+                               >
+                                <div class="config-label admin-studio-inline-style-attr-10">
                                     <span>敏感词库</span>
                                     <span class="config-hint">一行一个词，匹配时自动过滤</span>
                                 </div>
                                 <textarea class="config-textarea" id="cfgSensitiveWords" rows="8"
                                     placeholder="敏感词1&#10;敏感词2&#10;..."></textarea>
-                                <div class="config-actions" style="margin-top: 26px; justify-content: flex-end;">
+                                <div class="config-actions admin-studio-inline-style-attr-11">
                                     <button class="btn-sm btn-primary" data-admin-action="settings-save-sensitive-words">
                                         <i class="fas fa-save"></i> 保存
                                     </button>
@@ -1590,17 +1590,17 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="config-item-row"
-                                style="flex-direction: column; align-items: stretch; gap: 8px;">
+                            <div class="config-item-row admin-studio-inline-style-attr-20"
+                               >
                                 <div class="config-label">
                                     <span>验证 API Key</span>
                                     <span class="config-hint">iqless.icu 用户 API 的 ak_ 密钥</span>
                                 </div>
-                                <input type="password" id="cfgVerifyApiKey" class="config-input"
+                                <input type="password" id="cfgVerifyApiKey" class="config-input admin-studio-inline-style-attr-21"
                                     placeholder="ak_XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="new-password" readonly
                                     data-admin-focus-action="settings-verify-api-key-unlock"
                                     data-admin-blur-action="settings-verify-api-key-lock"
-                                    style="width: 100%; text-align: left; box-sizing: border-box;"
+                                   
                                     data-admin-change-action="settings-save-verify-config">
                             </div>
                             <div class="config-item-row">
@@ -1621,13 +1621,13 @@
                                     <span>API 余额</span>
                                     <span class="config-hint">当前 API Key 的剩余额度</span>
                                 </div>
-                                <div class="config-value" style="display: flex; align-items: center; gap: 8px;">
+                                <div class="config-value admin-studio-inline-style-attr-22">
                                     <span id="cfgVerifyQuota"
-                                        style="font-size: 1.1em; font-weight: 600; color: var(--accent-starry, #6c5ce7); white-space: nowrap;">
-                                        <i class="fas fa-spinner fa-spin" style="opacity: 0.4;"></i> 加载中...
+                                        class="admin-studio-inline-style-attr-23">
+                                        <i class="fas fa-spinner fa-spin admin-studio-inline-style-attr-24"></i> 加载中...
                                     </span>
                                     <button type="button" data-admin-action="settings-check-verify-quota" title="刷新额度"
-                                        style="background: none; border: none; cursor: pointer; color: var(--text-secondary); padding: 4px 6px; border-radius: 4px; transition: all 0.2s; font-size: 0.85rem;">
+                                        class="admin-studio-inline-style-attr-25">
                                         <i class="fas fa-sync-alt"></i>
                                     </button>
                                 </div>
@@ -1983,11 +1983,11 @@
                             <div class="api-keys-list" id="settingsApiKeysList">
                                 <!-- Dynamic key items -->
                             </div>
-                            <button class="btn-add-config" type="button" data-admin-action="settings-add-api-key"
-                                style="margin-top: 12px;">
+                            <button class="btn-add-config admin-studio-inline-style-attr-26" type="button" data-admin-action="settings-add-api-key"
+                               >
                                 <i class="fas fa-plus"></i> 添加新 Key
                             </button>
-                            <p class="settings-status" id="apiKeyStatus" style="margin-top: 12px;">
+                            <p class="settings-status admin-studio-inline-style-attr-26" id="apiKeyStatus">
                                 <span class="status-dot"></span>
                                 <span>检测中...</span>
                             </p>
@@ -2123,36 +2123,36 @@
                         <!-- SEO Section (Merged) -->
                         <div class="settings-section">
                             <h3><i class="fas fa-search"></i> SEO 设置</h3>
-                            <div class="config-item-row" style="flex-direction: column; align-items: stretch;">
-                                <div class="config-label" style="margin-bottom: 8px;">
+                            <div class="config-item-row admin-studio-inline-style-attr-9">
+                                <div class="config-label admin-studio-inline-style-attr-10">
                                     <span>网站标题</span>
                                     <span class="config-hint">显示在浏览器标签页的标题</span>
                                 </div>
-                                <input type="text" class="config-input" id="cfgSiteTitle"
-                                    style="width: 100%; text-align: left;" placeholder="我的提示词画廊">
+                                <input type="text" class="config-input admin-studio-inline-style-attr-27" id="cfgSiteTitle"
+                                    placeholder="我的提示词画廊">
                             </div>
-                            <div class="config-item-row"
-                                style="flex-direction: column; align-items: stretch; margin-top: 16px;">
-                                <div class="config-label" style="margin-bottom: 8px;">
+                            <div class="config-item-row admin-studio-inline-style-attr-28"
+                               >
+                                <div class="config-label admin-studio-inline-style-attr-10">
                                     <span>网站描述</span>
                                     <span class="config-hint">Meta description，用于搜索引擎展示</span>
                                 </div>
                                 <textarea class="config-textarea" id="cfgSiteDescription" rows="3"
                                     placeholder="精选AI生成图片提示词，一键复制使用..."></textarea>
                             </div>
-                            <div class="config-item-row"
-                                style="flex-direction: column; align-items: stretch; margin-top: 16px;">
-                                <div class="config-label" style="margin-bottom: 8px;">
+                            <div class="config-item-row admin-studio-inline-style-attr-28"
+                               >
+                                <div class="config-label admin-studio-inline-style-attr-10">
                                     <span>关键词</span>
                                     <span class="config-hint">Meta keywords，用逗号分隔</span>
                                 </div>
-                                <input type="text" class="config-input" id="cfgSiteKeywords"
-                                    style="width: 100%; text-align: left;"
+                                <input type="text" class="config-input admin-studio-inline-style-attr-27" id="cfgSiteKeywords"
+                                   
                                     placeholder="AI图片, 提示词, Midjourney, Stable Diffusion">
                             </div>
-                            <div class="config-actions" style="margin-top: 24px; justify-content: flex-end;">
-                                <span class="config-save-indicator" id="seoSaveIndicator"
-                                    style="margin-right: 12px; opacity: 0;">✓ 已保存</span>
+                            <div class="config-actions admin-studio-inline-style-attr-29">
+                                <span class="config-save-indicator admin-studio-inline-style-attr-6" id="seoSaveIndicator"
+                                   >✓ 已保存</span>
                                 <button class="btn-sm btn-primary" data-admin-action="settings-save-seo">
                                     <i class="fas fa-save"></i> 保存
                                 </button>
@@ -2179,12 +2179,12 @@
                                     <span>图片压缩质量</span>
                                     <span class="config-hint">WebP转换质量 (60-100%)</span>
                                 </div>
-                                <div class="config-value"
-                                    style="flex-direction: column; align-items: flex-end; gap: 4px;">
+                                <div class="config-value admin-studio-inline-style-attr-30"
+                                   >
                                     <input type="range" id="cfgImageQuality" min="60" max="100" value="85"
-                                        style="width: 150px;">
+                                        class="admin-studio-inline-style-attr-31">
                                     <span id="cfgImageQualityValue"
-                                        style="font-size: 0.85rem; color: var(--text-secondary);">85%</span>
+                                        class="admin-studio-inline-style-attr-32">85%</span>
                                 </div>
                             </div>
                             <div class="config-item-row">
@@ -2338,8 +2338,8 @@
                                             <div class="filter-option" data-admin-action="points-export-batch-list">
                                                 <i class="fas fa-list"></i> 导出批次列表
                                             </div>
-                                            <div class="filter-option" data-admin-action="points-export-selected-batches"
-                                                id="exportSelectedOption" style="display: none;">
+                                            <div class="filter-option admin-studio-inline-style-attr-3" data-admin-action="points-export-selected-batches"
+                                                id="exportSelectedOption">
                                                 <i class="fas fa-check-double"></i> 导出选中批次
                                             </div>
                                         </div>
@@ -2350,8 +2350,8 @@
                                         <i class="fas fa-check-square"></i>
                                     </button>
                                     <!-- Batch Actions Menu (moved here, next to checkbox toggle) -->
-                                    <div class="batch-menu-container" id="pointsBatchMenuContainer"
-                                        style="display: none;">
+                                    <div class="batch-menu-container admin-studio-inline-style-attr-3" id="pointsBatchMenuContainer"
+                                       >
                                         <button class="btn-icon" data-admin-action="points-toggle-actions-menu">
                                             <i class="fas fa-ellipsis-h"></i>
                                         </button>
@@ -2371,7 +2371,7 @@
                             </div>
                             <div class="toolbar-right">
                                 <!-- Selected Count Display -->
-                                <div class="prompt-count" id="pointsBatchSelectedCountWrapper" style="display: none;">
+                                <div class="prompt-count admin-studio-inline-style-attr-3" id="pointsBatchSelectedCountWrapper">
                                     <span class="select-count">已选 <span id="pointsBatchSelectedCount">0</span> 项</span>
                                 </div>
                             </div>
@@ -2381,7 +2381,7 @@
                             <thead>
                                 <tr>
                                     <!-- Checkbox column - dynamically shown -->
-                                    <th class="checkbox-col" id="batchCheckboxHeader" style="display: none;">
+                                    <th class="checkbox-col admin-studio-inline-style-attr-3" id="batchCheckboxHeader">
                                         <label class="custom-checkbox">
                                             <input type="checkbox" id="selectAllBatches"
                                                 data-admin-change-action="points-toggle-select-all-batches" title="全选当前页">
@@ -2460,7 +2460,7 @@
                                     </div>
                                 </div>
                                 <!-- Custom Points Input (shown when "自定义积分" is selected) -->
-                                <div id="customPointsWrapper" class="form-group" style="display: none;">
+                                <div id="customPointsWrapper" class="form-group admin-studio-inline-style-attr-3">
                                     <label>自定义积分数量</label>
                                     <input type="number" id="customPointsAmount" min="1" max="100000"
                                         placeholder="输入积分数量">
@@ -2492,17 +2492,17 @@
 
                             <!-- Initial State -->
                             <div id="generatePlaceholder" class="empty-state-content">
-                                <i class="fas fa-ticket-alt"
-                                    style="font-size: 3rem; color: var(--text-dim); opacity: 0.3; margin-bottom: 16px;"></i>
-                                <p style="color: var(--text-dim);">填写左侧配置并点击生成<br>结果将在此处显示</p>
+                                <i class="fas fa-ticket-alt admin-studio-inline-style-attr-33"
+                                   ></i>
+                                <p class="admin-studio-inline-style-attr-34">填写左侧配置并点击生成<br>结果将在此处显示</p>
                             </div>
 
                             <!-- Result State -->
                             <div id="generatedCodesResult"
-                                style="display: none; border-top: none; margin-top: 0; padding-top: 0;">
-                                <div class="result-header"
-                                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                                    <h4 style="margin: 0; color: #22c55e;"><i class="fas fa-check-circle"></i> 生成成功</h4>
+                                class="admin-studio-inline-style-attr-35">
+                                <div class="result-header admin-studio-inline-style-attr-36"
+                                   >
+                                    <h4 class="admin-studio-inline-style-attr-37"><i class="fas fa-check-circle"></i> 生成成功</h4>
                                     <div class="codes-actions">
                                         <button class="btn-sm btn-secondary" data-admin-action="points-copy-all-codes">
                                             <i class="fas fa-copy"></i> 复制
@@ -2512,7 +2512,7 @@
                                         </button>
                                     </div>
                                 </div>
-                                <div class="codes-list" id="codesListDisplay" style="max-height: 400px;"></div>
+                                <div class="codes-list admin-studio-inline-style-attr-38" id="codesListDisplay"></div>
                             </div>
                         </div>
                     </div>
@@ -2522,19 +2522,19 @@
                 <div id="points-view-lookup" class="view-section">
                     <div class="points-lookup-container">
                         <div class="lookup-hero">
-                            <div class="lookup-search-container"
-                                style="display: flex; gap: 16px; max-width: 600px; margin: 0 auto; align-items: center;">
-                                <div class="lookup-search-box"
-                                    style="display: flex; gap: 12px; padding: 12px 20px; border-radius: 12px; align-items: center; flex: 1;">
-                                    <i class="fas fa-search" style="color: var(--text-dim);"></i>
+                            <div class="lookup-search-container admin-studio-inline-style-attr-39"
+                               >
+                                <div class="lookup-search-box admin-studio-inline-style-attr-40"
+                                   >
+                                    <i class="fas fa-search admin-studio-inline-style-attr-34"></i>
                                     <input type="text" id="lookupCodeInput" placeholder="输入兑换码或订单号" maxlength="50">
                                 </div>
                                 <button class="btn-primary lookup-btn" data-admin-action="points-lookup-code">查询</button>
                             </div>
                         </div>
 
-                        <div id="lookupResult" class="lookup-result"
-                            style="display: none; max-width: 500px; margin: 40px auto 0;">
+                        <div id="lookupResult" class="lookup-result admin-studio-inline-style-attr-41"
+                           >
                             <!-- Result populated by JS -->
                         </div>
                     </div>
@@ -2543,7 +2543,7 @@
             <!-- END POINTS MODULE -->
 
             <!-- Batch Progress Modal -->
-            <div class="batch-modal-overlay" id="batchProgressOverlay" style="display: none;">
+            <div class="batch-modal-overlay admin-studio-inline-style-attr-3" id="batchProgressOverlay">
                 <div class="batch-modal">
                     <h3 class="batch-modal-title" id="batchModalTitle">批量重分析</h3>
                     <div class="batch-modal-body">
@@ -2566,7 +2566,7 @@
             </div>
 
             <!-- Delete Confirmation Modal -->
-            <div class="batch-modal-overlay" id="deleteConfirmOverlay" style="display: none;">
+            <div class="batch-modal-overlay admin-studio-inline-style-attr-3" id="deleteConfirmOverlay">
                 <div class="batch-modal confirm-modal">
                     <h3 class="batch-modal-title">⚠️ 确认删除</h3>
                     <div class="batch-modal-body">
@@ -2581,13 +2581,13 @@
             </div>
 
             <!-- Image Preview Lightbox -->
-            <div class="lightbox-overlay" id="lightboxOverlay" style="display: none;">
+            <div class="lightbox-overlay admin-studio-inline-style-attr-3" id="lightboxOverlay">
                 <button class="lightbox-close" id="lightboxClose"><i class="fas fa-times"></i></button>
                 <img class="lightbox-image" id="lightboxImage" src="" alt="Preview">
             </div>
 
             <!-- Crop Modal -->
-            <div class="batch-modal-overlay" id="cropModalOverlay" style="display: none;">
+            <div class="batch-modal-overlay admin-studio-inline-style-attr-3" id="cropModalOverlay">
                 <div class="batch-modal crop-modal">
                     <h3 class="batch-modal-title">✂️ 裁切图片</h3>
                     <div class="crop-aspect-buttons">
@@ -2653,8 +2653,8 @@
                             </div>
 
                             <!-- Role Filter (Super Admin Only) -->
-                            <div class="filter-dropdown" data-filter="userRole" id="adminRoleFilter"
-                                style="display: none;">
+                            <div class="filter-dropdown admin-studio-inline-style-attr-3" data-filter="userRole" id="adminRoleFilter"
+                               >
                                 <button class="filter-btn" data-admin-action="users-toggle-role-filter">
                                     <i class="fas fa-user-shield"></i>
                                     <span class="filter-label">角色</span>
@@ -2687,7 +2687,7 @@
                                 title="选择模式">
                                 <i class="fas fa-check-square"></i>
                             </button>
-                            <div class="batch-menu-container" id="userBatchMenuContainer" style="display: none;">
+                            <div class="batch-menu-container admin-studio-inline-style-attr-3" id="userBatchMenuContainer">
                                 <button class="batch-btn" id="userBatchMenuTrigger" data-admin-action="users-toggle-batch-menu"
                                     title="批量操作">
                                     <i class="fas fa-ellipsis-h"></i>
@@ -2721,7 +2721,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="prompt-count" id="userSelectedCountWrapper" style="display: none;">
+                            <div class="prompt-count admin-studio-inline-style-attr-3" id="userSelectedCountWrapper">
                                 <span class="select-count">已选 <span id="userSelectedCount">0</span> 人</span>
                             </div>
                         </div>
@@ -2831,29 +2831,29 @@
             </div>
 
             <!-- Shop Management Module -->
-            <div id="module-shop" class="module-container" style="padding: 0 30px;">
+            <div id="module-shop" class="module-container admin-studio-inline-style-attr-42">
 
                 <!-- Shop Tabs -->
-                <div class="shop-tabs"
-                    style="display: flex; justify-content: center; gap: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;">
-                    <div class="shop-tab active" data-shop-action="shop-switch-tab" data-shop-tab="products"
-                        style="padding: 10px 20px; cursor: pointer; color: #fff; border-bottom: 2px solid #6b9ece;">
+                <div class="shop-tabs admin-studio-inline-style-attr-43"
+                   >
+                    <div class="shop-tab active admin-studio-inline-style-attr-44" data-shop-action="shop-switch-tab" data-shop-tab="products"
+                       >
                         商品
                     </div>
-                    <div class="shop-tab" data-shop-action="shop-switch-tab" data-shop-tab="import"
-                        style="padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.6);">
+                    <div class="shop-tab admin-studio-inline-style-attr-45" data-shop-action="shop-switch-tab" data-shop-tab="import"
+                       >
                         导入
                     </div>
-                    <div class="shop-tab" data-shop-action="shop-switch-tab" data-shop-tab="inventory"
-                        style="padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.6);">
+                    <div class="shop-tab admin-studio-inline-style-attr-45" data-shop-action="shop-switch-tab" data-shop-tab="inventory"
+                       >
                         库存
                     </div>
-                    <div class="shop-tab" data-shop-action="shop-switch-tab" data-shop-tab="orders"
-                        style="padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.6);">
+                    <div class="shop-tab admin-studio-inline-style-attr-45" data-shop-action="shop-switch-tab" data-shop-tab="orders"
+                       >
                         订单
                     </div>
-                    <div class="shop-tab" data-shop-action="shop-switch-tab" data-shop-tab="fulfillment"
-                        style="padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.6);">
+                    <div class="shop-tab admin-studio-inline-style-attr-45" data-shop-action="shop-switch-tab" data-shop-tab="fulfillment"
+                       >
                         API 履约
                     </div>
                 </div>
@@ -2863,30 +2863,30 @@
                     <!-- Style for Shop Module -->
                     
 
-                    <div id="productCategoryFilters" class="category-filters"
-                        style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; padding-bottom:5px; align-items:center;">
+                    <div id="productCategoryFilters" class="category-filters admin-studio-inline-style-attr-46"
+                       >
                         <button class="filter-tab active" data-shop-action="product-filter-category" data-category="all">全部</button>
                         <!-- Dynamic category buttons will be inserted here by JS -->
                     </div>
 
                     <!-- Product Selection Controls (Inventory Style) -->
                     <div id="productSelectControls"
-                        style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+                        class="admin-studio-inline-style-attr-47">
 
                         <!-- Status Filter Icon Buttons (moved here, before checkbox) -->
-                        <button id="statusActiveBtn" class="icon-btn-square status-filter active" data-status="active"
+                        <button id="statusActiveBtn" class="icon-btn-square status-filter active admin-studio-inline-style-attr-48" data-status="active"
                             data-shop-action="product-filter-status" title="上架中"
-                            style="background:rgba(74, 222, 128, 0.2); border-color:rgba(74, 222, 128, 0.5); color:#4ade80;">
+                           >
                             <i class="fas fa-eye"></i>
                         </button>
-                        <button id="statusDeletedBtn" class="icon-btn-square status-filter" data-status="deleted"
+                        <button id="statusDeletedBtn" class="icon-btn-square status-filter admin-studio-inline-style-attr-49" data-status="deleted"
                             data-shop-action="product-filter-status" title="回收站"
-                            style="background:rgba(255,255,255,0.03); color:rgba(255,255,255,0.5);">
+                           >
                             <i class="fas fa-trash"></i>
                         </button>
 
                         <!-- Divider -->
-                        <span style="width:1px; height:24px; background:rgba(255,255,255,0.1); margin:0 4px;"></span>
+                        <span class="admin-studio-inline-style-attr-50"></span>
 
                         <!-- Toggle Selection Mode Button -->
                         <button id="toggleProductSelectionBtn" class="icon-btn-square"
@@ -2895,16 +2895,16 @@
                         </button>
 
                         <!-- Batch Actions Button & Menu -->
-                        <div class="batch-action-wrapper" style="position: relative;">
-                            <button id="productBatchActionsBtn" class="icon-btn-square"
-                                data-shop-action="product-toggle-batch-menu" title="批量操作" style="display: none;">
+                        <div class="batch-action-wrapper admin-studio-inline-style-attr-51">
+                            <button id="productBatchActionsBtn" class="icon-btn-square admin-studio-inline-style-attr-3"
+                                data-shop-action="product-toggle-batch-menu" title="批量操作">
                                 <i class="fas fa-ellipsis-h"></i>
                             </button>
                             <!-- Product Batch Menu -->
-                            <div id="productBatchActionMenu" class="batch-menu"
-                                style="display: none; left: 0; right: auto; transform-origin: top left;">
+                            <div id="productBatchActionMenu" class="batch-menu admin-studio-inline-style-attr-52"
+                               >
                                 <div class="batch-menu-header">
-                                    <i class="fas fa-check-circle" style="color: #34d399;"></i>
+                                    <i class="fas fa-check-circle admin-studio-inline-style-attr-53"></i>
                                     已选 <span id="productBatchSelectedCount">0</span> 项
                                 </div>
                                 <div class="batch-menu-item" data-shop-action="product-select-all">
@@ -2928,7 +2928,7 @@
                 </div>
 
                 <!-- 2. Import View (New) -->
-                <div id="shop-view-import" class="shop-view" style="display: none;">
+                <div id="shop-view-import" class="shop-view admin-studio-inline-style-attr-3">
                     <!-- Tree View Styles -->
                     
 
@@ -2959,7 +2959,7 @@
                             <div id="importProductTree" class="import-tree">
                                 <!-- Loaded by JS -->
                                 <div
-                                    style="padding: 20px; text-align: center; color: rgba(255,255,255,0.4); font-size: 13px;">
+                                    class="admin-studio-inline-style-attr-54">
                                     正在加载商品...
                                 </div>
                             </div>
@@ -2973,17 +2973,17 @@
                             </div>
                             <div class="context-menu-divider"></div>
                             <div class="context-menu-colors">
-                                <div class="color-option" style="background: #6b9ece;"
+                                <div class="color-option admin-studio-inline-style-attr-55"
                                     data-shop-action="import-category-color" data-category-color="#6b9ece" title="蓝色"></div>
-                                <div class="color-option" style="background: #f4b400;"
+                                <div class="color-option admin-studio-inline-style-attr-56"
                                     data-shop-action="import-category-color" data-category-color="#f4b400" title="黄色"></div>
-                                <div class="color-option" style="background: #0f9d58;"
+                                <div class="color-option admin-studio-inline-style-attr-57"
                                     data-shop-action="import-category-color" data-category-color="#0f9d58" title="绿色"></div>
-                                <div class="color-option" style="background: #e57373;"
+                                <div class="color-option admin-studio-inline-style-attr-58"
                                     data-shop-action="import-category-color" data-category-color="#e57373" title="红色"></div>
-                                <div class="color-option" style="background: #9c27b0;"
+                                <div class="color-option admin-studio-inline-style-attr-59"
                                     data-shop-action="import-category-color" data-category-color="#9c27b0" title="紫色"></div>
-                                <div class="color-option" style="background: #9aa0a6;"
+                                <div class="color-option admin-studio-inline-style-attr-60"
                                     data-shop-action="import-category-color" data-category-color="#9aa0a6" title="灰色"></div>
                             </div>
                             <div class="context-menu-divider"></div>
@@ -2996,59 +2996,59 @@
                         <!-- Right Main: Import Form -->
                         <div class="import-main">
                             <div class="import-main-header">
-                                <div style="display: flex; align-items: center; gap: 10px;">
-                                    <i class="fas fa-meteor" style="color: #6b9ece;"></i> 批量导入库存
+                                <div class="admin-studio-inline-style-attr-61">
+                                    <i class="fas fa-meteor admin-studio-inline-style-attr-62"></i> 批量导入库存
                                 </div>
-                                <span id="selectedProductBadge" class="product-badge" style="display: none;">未选择</span>
+                                <span id="selectedProductBadge" class="product-badge admin-studio-inline-style-attr-3">未选择</span>
                             </div>
 
                             <div class="import-main-content">
                                 <input type="hidden" id="importViewProductId"> <!-- Hidden Input for ID -->
 
-                                <div style="margin-bottom: 25px;">
+                                <div class="admin-studio-inline-style-attr-63">
                                     <label class="glass-label">导入状态</label>
                                     <div class="status-options">
                                         <label class="status-card">
                                             <input type="radio" name="importViewStatus" value="available" checked
-                                                style="display: none;">
-                                            <div class="status-card-content" style="padding: 15px;">
-                                                <div class="status-icon"
-                                                    style="width: 32px; height: 32px; font-size: 14px;">
+                                                class="admin-studio-inline-style-attr-3">
+                                            <div class="status-card-content admin-studio-inline-style-attr-64">
+                                                <div class="status-icon admin-studio-inline-style-attr-65"
+                                                   >
                                                     <i class="fas fa-check"></i>
                                                 </div>
                                                 <div class="status-info">
-                                                    <h4 style="font-size: 14px;">直接上架</h4>
+                                                    <h4 class="admin-studio-inline-style-attr-66">直接上架</h4>
                                                 </div>
                                             </div>
                                         </label>
 
                                         <label class="status-card">
                                             <input type="radio" name="importViewStatus" value="reserve"
-                                                style="display: none;">
-                                            <div class="status-card-content" style="padding: 15px;">
-                                                <div class="status-icon"
-                                                    style="width: 32px; height: 32px; font-size: 14px;">
+                                                class="admin-studio-inline-style-attr-3">
+                                            <div class="status-card-content admin-studio-inline-style-attr-64">
+                                                <div class="status-icon admin-studio-inline-style-attr-65"
+                                                   >
                                                     <i class="fas fa-archive"></i>
                                                 </div>
                                                 <div class="status-info">
-                                                    <h4 style="font-size: 14px;">储备库存</h4>
+                                                    <h4 class="admin-studio-inline-style-attr-66">储备库存</h4>
                                                 </div>
                                             </div>
                                         </label>
                                     </div>
                                 </div>
 
-                                <div style="flex: 1; display: flex; flex-direction: column; margin-bottom: 20px;">
+                                <div class="admin-studio-inline-style-attr-67">
                                     <label class="glass-label">
                                         账号列表 <span id="importViewLineCount"
-                                            style="color: #6b9ece; margin-left: 8px; font-weight: normal;">(0个)</span>
+                                            class="admin-studio-inline-style-attr-68">(0个)</span>
                                     </label>
-                                    <textarea id="importViewContentInput" class="glass-input import-textarea"
-                                        style="flex: 1; height: 100%; min-height: 200px;"
+                                    <textarea id="importViewContentInput" class="glass-input import-textarea admin-studio-inline-style-attr-69"
+                                       
                                         data-shop-input="import-view-line-count"></textarea>
                                 </div>
 
-                                <div id="importButtonContainer" style="display: flex; justify-content: flex-end;">
+                                <div id="importButtonContainer" class="admin-studio-inline-style-attr-70">
                                     <button type="button" data-shop-action="inventory-import-from-view" class="btn-glow">
                                         开始导入
                                     </button>
@@ -3059,46 +3059,46 @@
                 </div>
 
                 <!-- 2. Inventory View (Enhanced) -->
-                <div id="shop-view-inventory" class="shop-view" style="display: none;">
+                <div id="shop-view-inventory" class="shop-view admin-studio-inline-style-attr-3">
                     <!-- Inventory Browser (default, no subtabs) -->
                     <div id="inventory-subtab-browser" class="inventory-subtab-content">
                         <!-- Stats Cards -->
                         <!-- Stats Cards -->
-                        <div class="inventory-stats-row"
-                            style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; margin-bottom: 20px;">
-                            <div class="inv-stat-card"
-                                style="background: linear-gradient(135deg, rgba(107, 158, 206, 0.2), rgba(107, 158, 206, 0.05)); border: 1px solid rgba(107, 158, 206, 0.3); border-radius: 12px; padding: 15px;">
-                                <div style="color: #93c5fd; font-size: 12px; margin-bottom: 5px;"><i
+                        <div class="inventory-stats-row admin-studio-inline-style-attr-71"
+                           >
+                            <div class="inv-stat-card admin-studio-inline-style-attr-72"
+                               >
+                                <div class="admin-studio-inline-style-attr-73"><i
                                         class="fas fa-archive"></i> 储备</div>
-                                <div id="statReserve" style="font-size: 24px; font-weight: bold; color: #bfdbfe;">--
+                                <div id="statReserve" class="admin-studio-inline-style-attr-74">--
                                 </div>
                             </div>
-                            <div class="inv-stat-card"
-                                style="background: linear-gradient(135deg, rgba(16,185,129,0.2), rgba(16,185,129,0.05)); border: 1px solid rgba(16,185,129,0.3); border-radius: 12px; padding: 15px;">
-                                <div style="color: #10b981; font-size: 12px; margin-bottom: 5px;"><i
+                            <div class="inv-stat-card admin-studio-inline-style-attr-75"
+                               >
+                                <div class="admin-studio-inline-style-attr-76"><i
                                         class="fas fa-check-circle"></i> 在售</div>
-                                <div id="statAvailable" style="font-size: 24px; font-weight: bold; color: #34d399;">--
+                                <div id="statAvailable" class="admin-studio-inline-style-attr-77">--
                                 </div>
                             </div>
-                            <div class="inv-stat-card"
-                                style="background: linear-gradient(135deg, rgba(239,68,68,0.2), rgba(239,68,68,0.05)); border: 1px solid rgba(239,68,68,0.3); border-radius: 12px; padding: 15px;">
-                                <div style="color: #ef4444; font-size: 12px; margin-bottom: 5px;"><i
+                            <div class="inv-stat-card admin-studio-inline-style-attr-78"
+                               >
+                                <div class="admin-studio-inline-style-attr-79"><i
                                         class="fas fa-shopping-cart"></i> 已售</div>
-                                <div id="statSold" style="font-size: 24px; font-weight: bold; color: #f87171;">--</div>
+                                <div id="statSold" class="admin-studio-inline-style-attr-80">--</div>
                             </div>
-                            <div class="inv-stat-card"
-                                style="background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(245,158,11,0.05)); border: 1px solid rgba(245,158,11,0.3); border-radius: 12px; padding: 15px;">
-                                <div style="color: #f59e0b; font-size: 12px; margin-bottom: 5px;"><i
+                            <div class="inv-stat-card admin-studio-inline-style-attr-81"
+                               >
+                                <div class="admin-studio-inline-style-attr-82"><i
                                         class="fas fa-ban"></i>
                                     冻结</div>
-                                <div id="statFrozen" style="font-size: 24px; font-weight: bold; color: #fbbf24;">--
+                                <div id="statFrozen" class="admin-studio-inline-style-attr-83">--
                                 </div>
                             </div>
-                            <div class="inv-stat-card"
-                                style="background: linear-gradient(135deg, rgba(192,132,252,0.2), rgba(192,132,252,0.05)); border: 1px solid rgba(192,132,252,0.3); border-radius: 12px; padding: 15px;">
-                                <div style="color: #c084fc; font-size: 12px; margin-bottom: 5px;"><i
+                            <div class="inv-stat-card admin-studio-inline-style-attr-84"
+                               >
+                                <div class="admin-studio-inline-style-attr-85"><i
                                         class="fas fa-exclamation-triangle"></i> 故障</div>
-                                <div id="statFault" style="font-size: 24px; font-weight: bold; color: #e879f9;">--
+                                <div id="statFault" class="admin-studio-inline-style-attr-86">--
                                 </div>
                             </div>
                         </div>
@@ -3113,7 +3113,7 @@
                             <div class="custom-dropdown" id="productDropdown">
                                 <div class="custom-dropdown-trigger">
                                     <span id="productDropdownLabel">所有商品</span>
-                                    <i class="fas fa-chevron-down" style="font-size: 11px; opacity: 0.6;"></i>
+                                    <i class="fas fa-chevron-down admin-studio-inline-style-attr-87"></i>
                                 </div>
                                 <div class="custom-dropdown-menu" id="productDropdownMenu">
                                     <div class="custom-dropdown-item selected" data-value="">所有商品</div>
@@ -3124,59 +3124,59 @@
                             <div class="custom-dropdown" id="statusDropdown">
                                 <div class="custom-dropdown-trigger">
                                     <span id="statusDropdownLabel">全部状态</span>
-                                    <i class="fas fa-chevron-down" style="font-size: 11px; opacity: 0.6;"></i>
+                                    <i class="fas fa-chevron-down admin-studio-inline-style-attr-87"></i>
                                 </div>
                                 <div class="custom-dropdown-menu">
                                     <div class="custom-dropdown-item selected" data-value="">全部状态</div>
                                     <div class="custom-dropdown-item" data-value="reserve">
-                                        <span style="color:#bfdbfe;">●</span> 储备
+                                        <span class="admin-studio-inline-style-attr-88">●</span> 储备
                                     </div>
                                     <div class="custom-dropdown-item" data-value="available">
-                                        <span style="color:#34d399;">●</span> 在售
+                                        <span class="admin-studio-inline-style-attr-89">●</span> 在售
                                     </div>
                                     <div class="custom-dropdown-item" data-value="sold">
-                                        <span style="color:#f87171;">●</span> 已售
+                                        <span class="admin-studio-inline-style-attr-90">●</span> 已售
                                     </div>
                                     <div class="custom-dropdown-item" data-value="frozen">
-                                        <span style="color:#fbbf24;">●</span> 冻结
+                                        <span class="admin-studio-inline-style-attr-91">●</span> 冻结
                                     </div>
                                     <div class="custom-dropdown-item" data-value="fault">
-                                        <span style="color:#e879f9;">●</span> 故障
+                                        <span class="admin-studio-inline-style-attr-92">●</span> 故障
                                     </div>
                                 </div>
                             </div>
 
                             <!-- Date Filter -->
-                            <div class="custom-dropdown" id="invDateFilterDropdown" style="margin-left: 10px;">
+                            <div class="custom-dropdown admin-studio-inline-style-attr-93" id="invDateFilterDropdown">
                                 <div class="custom-dropdown-trigger">
                                     <span id="invDateFilterLabel">全部时间</span>
-                                    <i class="fas fa-calendar-alt"
-                                        style="margin-left: 8px; font-size: 11px; opacity: 0.6;"></i>
+                                    <i class="fas fa-calendar-alt admin-studio-inline-style-attr-94"
+                                       ></i>
                                 </div>
-                                <div class="custom-dropdown-menu" style="width: 260px;">
+                                <div class="custom-dropdown-menu admin-studio-inline-style-attr-95">
                                     <div class="custom-dropdown-item selected" data-value="all">全部时间</div>
                                     <div class="custom-dropdown-item" data-value="today">今天</div>
                                     <div class="custom-dropdown-item" data-value="week">本周</div>
                                     <div class="custom-dropdown-item" data-value="month">本月</div>
-                                    <div style="height:1px; background:rgba(255,255,255,0.1); margin:4px 0;"></div>
-                                    <div style="padding: 10px;">
+                                    <div class="admin-studio-inline-style-attr-96"></div>
+                                    <div class="admin-studio-inline-style-attr-97">
                                         <label
-                                            style="display:block; font-size:12px; color:rgba(255,255,255,0.5); margin-bottom:5px;">自定义范围</label>
-                                        <div style="display:flex; gap:5px; align-items:center;">
-                                            <input type="text" id="invDateFrom" class="flatpickr-input" placeholder="开始"
+                                            class="admin-studio-inline-style-attr-98">自定义范围</label>
+                                        <div class="admin-studio-inline-style-attr-99">
+                                            <input type="text" id="invDateFrom" class="flatpickr-input admin-studio-inline-style-attr-100" placeholder="开始"
                                                 readonly
-                                                style="width:100%; height:28px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:4px; color:#fff; font-size:12px; padding:0 5px; cursor:pointer;">
-                                            <span style="color:rgba(255,255,255,0.3);">-</span>
-                                            <input type="text" id="invDateTo" class="flatpickr-input" placeholder="结束"
+                                               >
+                                            <span class="admin-studio-inline-style-attr-101">-</span>
+                                            <input type="text" id="invDateTo" class="flatpickr-input admin-studio-inline-style-attr-100" placeholder="结束"
                                                 readonly
-                                                style="width:100%; height:28px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:4px; color:#fff; font-size:12px; padding:0 5px; cursor:pointer;">
+                                               >
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
                             <!-- Search Box -->
-                            <div class="inv-search-box" style="margin-left: 10px;">
+                            <div class="inv-search-box admin-studio-inline-style-attr-93">
                                 <i class="fas fa-search"></i>
                                 <input type="text" id="invSearchInput" placeholder="搜索内容/批次..."
                                     data-shop-keydown="inventory-search-enter">
@@ -3190,15 +3190,15 @@
                                 <i class="fas fa-check-square"></i>
                             </button>
 
-                            <div class="batch-action-wrapper" style="position: relative;">
-                                <button id="batchActionsBtn" class="icon-btn-square"
-                                    data-shop-action="inventory-toggle-batch-menu" title="批量操作" style="display: none;">
+                            <div class="batch-action-wrapper admin-studio-inline-style-attr-51">
+                                <button id="batchActionsBtn" class="icon-btn-square admin-studio-inline-style-attr-3"
+                                    data-shop-action="inventory-toggle-batch-menu" title="批量操作">
                                     <i class="fas fa-ellipsis-h"></i>
                                 </button>
                                 <!-- Batch Menu -->
-                                <div id="batchActionMenu" class="batch-menu" style="display: none;">
+                                <div id="batchActionMenu" class="batch-menu admin-studio-inline-style-attr-3">
                                     <div class="batch-menu-header">
-                                        <i class="fas fa-check-circle" style="color: #34d399;"></i>
+                                        <i class="fas fa-check-circle admin-studio-inline-style-attr-53"></i>
                                         已选 <span id="batchSelectedCount">0</span> 项
                                     </div>
                                     <div class="batch-menu-item" data-shop-action="inventory-select-all-rows">
@@ -3216,13 +3216,13 @@
                             <div class="spacer"></div>
 
                             <!-- Action Buttons -->
-                            <div style="display: flex; gap: 8px; flex-shrink: 0;">
-                                <button data-shop-action="inventory-export-all" class="btn btn-secondary"
-                                    style="padding: 10px 18px; font-size: 13px; white-space: nowrap;">
+                            <div class="admin-studio-inline-style-attr-102">
+                                <button data-shop-action="inventory-export-all" class="btn btn-secondary admin-studio-inline-style-attr-103"
+                                   >
                                     <i class="fas fa-file-excel"></i> 导出
                                 </button>
-                                <button data-shop-action="inventory-open-release-modal" class="btn btn-primary"
-                                    style="padding: 10px 18px; font-size: 13px; background: #3d5a80; border-color: #3d5a80; white-space: nowrap;">
+                                <button data-shop-action="inventory-open-release-modal" class="btn btn-primary admin-studio-inline-style-attr-104"
+                                   >
                                     <i class="fas fa-rocket"></i> 释放
                                 </button>
                             </div>
@@ -3234,7 +3234,7 @@
                                 <thead>
                                     <tr>
                                     <tr>
-                                        <th style="width: 50px; display:none;" class="inv-checkbox-col"><input
+                                        <th class="inv-checkbox-col admin-studio-inline-style-attr-105"><input
                                                 type="checkbox" id="selectAllInv"
                                                 data-shop-change="inventory-toggle-select-all"></th>
                                         <th>商品</th>
@@ -3248,7 +3248,7 @@
                                 <tbody id="inventoryTableBody">
                                     <tr>
                                         <td colspan="7"
-                                            style="text-align: center; padding: 40px; color: rgba(255,255,255,0.4);">
+                                            class="admin-studio-inline-style-attr-106">
                                             点击"库存浏览"标签加载数据</td>
                                     </tr>
                                 </tbody>
@@ -3256,28 +3256,28 @@
                         </div>
                         <!-- Pagination -->
                         <div id="inventoryPagination"
-                            style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;"></div>
+                            class="admin-studio-inline-style-attr-107"></div>
                     </div>
 
                     <!-- Subtab: Import -->
-                    <div id="inventory-subtab-import" class="inventory-subtab-content" style="display: none;">
+                    <div id="inventory-subtab-import" class="inventory-subtab-content admin-studio-inline-style-attr-3">
                         <div class="inventory-layout">
                             <!-- Left: Product List -->
                             <div class="inventory-panel">
-                                <div class="panel-title"
-                                    style="display: flex; justify-content: flex-start; align-items: center; padding-right: 5px; position: relative; z-index: 10;">
+                                <div class="panel-title admin-studio-inline-style-attr-108"
+                                   >
 
                                     <!-- Custom Dropdown Trigger (Subtab) -->
-                                    <div id="custom-inv-dropdown" class="custom-dropdown"
+                                    <div id="custom-inv-dropdown" class="custom-dropdown admin-studio-inline-style-attr-109"
                                         data-shop-action="inventory-toggle-category-menu"
-                                        style="padding: 4px 10px; font-size: 11px;">
+                                       >
                                         <span id="inv-dropdown-label">全部</span>
-                                        <i class="fas fa-chevron-down" style="font-size: 9px; opacity: 0.6;"></i>
+                                        <i class="fas fa-chevron-down admin-studio-inline-style-attr-110"></i>
                                     </div>
 
                                     <!-- Dropdown Menu (Subtab) -->
-                                    <div id="custom-inv-menu" class="custom-dropdown-menu"
-                                        style="left: 0; right: auto; transform-origin: top left;">
+                                    <div id="custom-inv-menu" class="custom-dropdown-menu admin-studio-inline-style-attr-111"
+                                       >
                                         <div class="dropdown-item active"
                                             data-shop-action="inventory-select-category" data-category="all" data-category-label="全部">全部</div>
                                         <div class="dropdown-item"
@@ -3298,26 +3298,26 @@
                                 <div class="panel-title">
                                     <span><i class="fas fa-file-import"></i> 批量导入库存</span>
                                     <span id="targetProductName"
-                                        style="font-size: 0.8em; color: #38bdf8; background: rgba(56, 189, 248, 0.1); padding: 4px 12px; border-radius: 20px; display:none;"></span>
+                                        class="admin-studio-inline-style-attr-112"></span>
                                 </div>
                                 <!-- Import Status Selection -->
-                                <div style="display: flex; gap: 20px; margin-bottom: 15px;">
-                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <div class="admin-studio-inline-style-attr-113">
+                                    <label class="admin-studio-inline-style-attr-114">
                                         <input type="radio" name="importStatus" value="available" checked
-                                            style="accent-color: #10b981;">
-                                        <span style="color: #10b981;"><i class="fas fa-check-circle"></i> 直接上架</span>
+                                            class="admin-studio-inline-style-attr-115">
+                                        <span class="admin-studio-inline-style-attr-116"><i class="fas fa-check-circle"></i> 直接上架</span>
                                     </label>
-                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <label class="admin-studio-inline-style-attr-114">
                                         <input type="radio" name="importStatus" value="reserve"
-                                            style="accent-color: #818cf8;">
-                                        <span style="color: #818cf8;"><i class="fas fa-archive"></i> 储备库存</span>
+                                            class="admin-studio-inline-style-attr-117">
+                                        <span class="admin-studio-inline-style-attr-118"><i class="fas fa-archive"></i> 储备库存</span>
                                     </label>
                                 </div>
                                 <textarea id="inventoryInput" class="inventory-textarea custom-scrollbar"
                                     placeholder="在此粘贴卡密/账号&#10;每行一条&#10;例如：&#10;user1:pass1&#10;user2:pass2"></textarea>
                                 <div class="import-status">
-                                    <div style="color: rgba(255,255,255,0.5);">检测到 <span id="lineCount"
-                                            style="color: #fff; font-weight: bold;">0</span> 条数据</div>
+                                    <div class="admin-studio-inline-style-attr-119">检测到 <span id="lineCount"
+                                            class="admin-studio-inline-style-attr-120">0</span> 条数据</div>
                                     <button class="btn btn-primary" data-shop-action="inventory-import-submit">
                                         <i class="fas fa-check"></i> 确认导入
                                     </button>
@@ -3328,29 +3328,29 @@
                 </div>
 
                 <!-- Release Reserve Modal -->
-                <div id="releaseReserveModal" class="modal-overlay"
-                    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); z-index: 9999; justify-content: center; align-items: center;">
+                <div id="releaseReserveModal" class="modal-overlay admin-studio-inline-style-attr-121"
+                   >
                     <div
-                        style="background: rgba(30, 35, 50, 0.95); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 25px; width: 400px; max-width: 90%;">
-                        <h3 style="margin: 0 0 20px 0; color: #fff;"><i class="fas fa-rocket"></i> 释放储备库存</h3>
-                        <div style="margin-bottom: 15px;">
-                            <label style="color: rgba(255,255,255,0.7); font-size: 14px;">选择商品</label>
+                        class="admin-studio-inline-style-attr-122">
+                        <h3 class="admin-studio-inline-style-attr-123"><i class="fas fa-rocket"></i> 释放储备库存</h3>
+                        <div class="admin-studio-inline-style-attr-124">
+                            <label class="admin-studio-inline-style-attr-125">选择商品</label>
                             <select id="releaseProductSelect"
-                                style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; color: #fff; margin-top: 5px;"></select>
+                                class="admin-studio-inline-style-attr-126"></select>
                         </div>
-                        <div style="display: flex; gap: 15px; margin-bottom: 15px;">
-                            <div style="flex: 1;">
-                                <label style="color: rgba(255,255,255,0.7); font-size: 14px;">按数量释放</label>
+                        <div class="admin-studio-inline-style-attr-127">
+                            <div class="admin-studio-inline-style-attr-128">
+                                <label class="admin-studio-inline-style-attr-125">按数量释放</label>
                                 <input type="number" id="releaseCount" placeholder="如：10"
-                                    style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; color: #fff; margin-top: 5px; box-sizing: border-box;">
+                                    class="admin-studio-inline-style-attr-129">
                             </div>
-                            <div style="flex: 1;">
-                                <label style="color: rgba(255,255,255,0.7); font-size: 14px;">或按日期前</label>
+                            <div class="admin-studio-inline-style-attr-128">
+                                <label class="admin-studio-inline-style-attr-125">或按日期前</label>
                                 <input type="date" id="releaseBeforeDate"
-                                    style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; color: #fff; margin-top: 5px; box-sizing: border-box;">
+                                    class="admin-studio-inline-style-attr-129">
                             </div>
                         </div>
-                        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <div class="admin-studio-inline-style-attr-130">
                             <button data-shop-action="inventory-release-modal-close" class="btn btn-secondary">取消</button>
                             <button data-shop-action="inventory-release-modal-submit" class="btn btn-primary"><i
                                     class="fas fa-check"></i> 确认释放</button>
@@ -3359,40 +3359,40 @@
                 </div>
 
                 <!-- Import Modal -->
-                <div id="importInventoryModal" class="modal-overlay"
-                    style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); z-index: 9999; justify-content: center; align-items: center;">
+                <div id="importInventoryModal" class="modal-overlay admin-studio-inline-style-attr-121"
+                   >
                     <div
-                        style="background: rgba(30, 35, 50, 0.95); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 25px; width: 500px; max-width: 90%;">
-                        <h3 style="margin: 0 0 20px 0; color: #fff;"><i class="fas fa-file-import"></i> 批量导入库存</h3>
-                        <div style="margin-bottom: 15px;">
-                            <label style="color: rgba(255,255,255,0.7); font-size: 14px;">选择商品</label>
+                        class="admin-studio-inline-style-attr-131">
+                        <h3 class="admin-studio-inline-style-attr-123"><i class="fas fa-file-import"></i> 批量导入库存</h3>
+                        <div class="admin-studio-inline-style-attr-124">
+                            <label class="admin-studio-inline-style-attr-125">选择商品</label>
                             <select id="importProductSelect"
-                                style="width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; color: #fff; margin-top: 5px;"></select>
+                                class="admin-studio-inline-style-attr-126"></select>
                         </div>
-                        <div style="margin-bottom: 15px;">
-                            <label style="color: rgba(255,255,255,0.7); font-size: 14px;">导入状态</label>
-                            <div style="display: flex; gap: 15px; margin-top: 8px;">
+                        <div class="admin-studio-inline-style-attr-124">
+                            <label class="admin-studio-inline-style-attr-125">导入状态</label>
+                            <div class="admin-studio-inline-style-attr-132">
                                 <label
-                                    style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: #34d399;">
+                                    class="admin-studio-inline-style-attr-133">
                                     <input type="radio" name="importStatus" value="available" checked
-                                        style="accent-color: #34d399;"> 直接上架
+                                        class="admin-studio-inline-style-attr-134"> 直接上架
                                 </label>
                                 <label
-                                    style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: #a5b4fc;">
+                                    class="admin-studio-inline-style-attr-135">
                                     <input type="radio" name="importStatus" value="reserve"
-                                        style="accent-color: #a5b4fc;">
+                                        class="admin-studio-inline-style-attr-136">
                                     储备库存
                                 </label>
                             </div>
                         </div>
-                        <div style="margin-bottom: 15px;">
-                            <label style="color: rgba(255,255,255,0.7); font-size: 14px;">账号内容 <span
-                                    id="importLineCount" style="color: #888;">(0行)</span></label>
+                        <div class="admin-studio-inline-style-attr-124">
+                            <label class="admin-studio-inline-style-attr-125">账号内容 <span
+                                    id="importLineCount" class="admin-studio-inline-style-attr-137">(0行)</span></label>
                             <textarea id="importContentInput" placeholder="每行一个账号，格式：邮箱----密码----恢复邮箱"
-                                style="width: 100%; height: 200px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; color: #fff; margin-top: 5px; resize: vertical; font-family: monospace; box-sizing: border-box;"
-                                data-shop-input="inventory-import-line-count"></textarea>
+                               
+                                data-shop-input="inventory-import-line-count" class="admin-studio-inline-style-attr-138"></textarea>
                         </div>
-                        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <div class="admin-studio-inline-style-attr-130">
                             <button data-shop-action="inventory-close-import-modal" class="btn btn-secondary">取消</button>
                             <button data-shop-action="inventory-do-import" class="btn btn-primary"><i class="fas fa-upload"></i>
                                 导入</button>
@@ -3401,25 +3401,25 @@
                 </div>
 
                 <!-- 3. Orders View -->
-                <div id="shop-view-orders" class="shop-view" style="display: none;">
+                <div id="shop-view-orders" class="shop-view admin-studio-inline-style-attr-3">
                     
 
                     <!-- Hero Search Section (Copied from Points Lookup) -->
                     <div class="shop-orders-toolbar-shell">
                         <div class="lookup-search-container shop-orders-search-bar">
-                            <div class="lookup-search-box"
-                                style="display: flex; gap: 12px; padding: 12px 20px; border-radius: 12px; align-items: center; flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);">
-                                <i class="fas fa-search" style="color: var(--text-dim, #888);"></i>
+                            <div class="lookup-search-box admin-studio-inline-style-attr-139"
+                               >
+                                <i class="fas fa-search admin-studio-inline-style-attr-140"></i>
                                 <input type="text" id="orderSearchInput" placeholder="输入订单号查询"
-                                    style="background: transparent; border: none; color: #fff; width: 100%; outline: none; font-size: 16px;"
-                                    data-shop-keydown="orders-search-enter">
+                                   
+                                    data-shop-keydown="orders-search-enter" class="admin-studio-inline-style-attr-141">
                             </div>
-                            <button class="btn btn-primary shop-theme-primary-btn" type="button" data-shop-action="orders-search"
-                                style="padding: 12px 30px; font-size: 16px;">
+                            <button class="btn btn-primary shop-theme-primary-btn admin-studio-inline-style-attr-142" type="button" data-shop-action="orders-search"
+                               >
                                 查询
                             </button>
-                            <button class="btn btn-secondary" type="button" data-shop-action="orders-export"
-                                style="padding: 12px 20px; font-size: 16px;">
+                            <button class="btn btn-secondary admin-studio-inline-style-attr-143" type="button" data-shop-action="orders-export"
+                               >
                                 <i class="fas fa-file-excel"></i> 导出
                             </button>
                         </div>
@@ -3444,11 +3444,11 @@
                     </div>
                     <!-- Pagination -->
                     <div id="ordersPagination"
-                        style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
+                        class="admin-studio-inline-style-attr-107">
                     </div>
                 </div>
 
-                <div id="shop-view-fulfillment" class="shop-view" style="display: none;">
+                <div id="shop-view-fulfillment" class="shop-view admin-studio-inline-style-attr-3">
                     <div id="shopDeliveryMount">
                         <div id="shopDeliveryWorkspace" class="shop-delivery-panel">
                         <div class="shop-delivery-header">
@@ -3597,7 +3597,7 @@
                         </div>
 
                         <div id="deliveryTasksPagination"
-                            style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
+                            class="admin-studio-inline-style-attr-107">
                         </div>
 
                         <section class="shop-delivery-subcard shop-delivery-subcard--wide">
@@ -3695,7 +3695,7 @@
                                     </div>
 
                                     <div id="deliveryDeadLetterPagination"
-                                        style="display: flex; justify-content: center; gap: 10px; margin-top: 18px;">
+                                        class="admin-studio-inline-style-attr-144">
                                     </div>
                                 </div>
                             </section>
@@ -3738,7 +3738,7 @@
                                     </div>
 
                                     <div id="deliveryLockConflictsPagination"
-                                        style="display: flex; justify-content: center; gap: 10px; margin-top: 18px;">
+                                        class="admin-studio-inline-style-attr-144">
                                     </div>
                                 </div>
                             </section>
@@ -3804,7 +3804,7 @@
                                     </div>
 
                                     <div id="deliveryReplayPagination"
-                                        style="display: flex; justify-content: center; gap: 10px; margin-top: 18px;">
+                                        class="admin-studio-inline-style-attr-144">
                                     </div>
                                 </div>
                             </section>
@@ -3953,7 +3953,7 @@
 
 
             <!-- ========== HOMEPAGE CONTENT MODULE ========== -->
-            <div id="module-homepage" class="module-container" style="padding: 0 30px;">
+            <div id="module-homepage" class="module-container admin-studio-inline-style-attr-42">
 
                 
 
@@ -3984,13 +3984,13 @@
                 </nav>
 
                 <!-- Loading State -->
-                <div id="hp-loading" style="text-align: center; padding: 60px 0; color: rgba(255,255,255,0.5);">
-                    <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 12px;"></i>
+                <div id="hp-loading" class="admin-studio-inline-style-attr-145">
+                    <i class="fas fa-spinner fa-spin admin-studio-inline-style-attr-146"></i>
                     <div>加载主页配置中...</div>
                 </div>
 
                 <!-- Section Content (dynamically rendered by admin-homepage.js) -->
-                <div id="hp-section-content" style="display: none;">
+                <div id="hp-section-content" class="admin-studio-inline-style-attr-3">
 
                     <!-- ===== HERO Section ===== -->
                     <div class="hp-section-view active" data-hp-view="hero">
@@ -4030,8 +4030,8 @@
 
                             <div class="hp-save-bar">
                                 <span id="hp-hero-updated"
-                                    style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
-                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    class="admin-studio-inline-style-attr-147"></span>
+                                <div class="admin-studio-inline-style-attr-148">
                                     <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="hero"><i
                                             class="fas fa-save"></i> 保存修改</button>
                                 </div>
@@ -4084,8 +4084,8 @@
 
                             <div class="hp-save-bar">
                                 <span id="hp-prompts-updated"
-                                    style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
-                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    class="admin-studio-inline-style-attr-147"></span>
+                                <div class="admin-studio-inline-style-attr-148">
 
                                     <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="prompts"><i
                                             class="fas fa-save"></i> 保存修改</button>
@@ -4146,8 +4146,8 @@
 
                             <div class="hp-save-bar">
                                 <span id="hp-shop-updated"
-                                    style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
-                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    class="admin-studio-inline-style-attr-147"></span>
+                                <div class="admin-studio-inline-style-attr-148">
 
                                     <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="shop"><i
                                             class="fas fa-save"></i> 保存修改</button>
@@ -4186,23 +4186,23 @@
                                                 data-admin-action="homepage-upload-screenshot"
                                                 title="点击上传图片">
                                                 <img id="hp-verify-preview-img" src="" alt="预览截图"
-                                                    style="display:none; max-width:100%; max-height:200px; border-radius:8px; object-fit:contain;">
+                                                    class="admin-studio-inline-style-attr-149">
                                                 <div id="hp-verify-upload-placeholder" class="hp-upload-placeholder">
-                                                    <i class="fas fa-cloud-upload-alt"
-                                                        style="font-size:28px; margin-bottom:8px; color:rgba(93,159,216,0.6)"></i>
+                                                    <i class="fas fa-cloud-upload-alt admin-studio-inline-style-attr-150"
+                                                       ></i>
                                                     <span
-                                                        style="font-size:13px; color:rgba(255,255,255,0.4)">点击上传预览截图</span>
+                                                        class="admin-studio-inline-style-attr-151">点击上传预览截图</span>
                                                     <span
-                                                        style="font-size:11px; color:rgba(255,255,255,0.2); margin-top:4px">支持
+                                                        class="admin-studio-inline-style-attr-152">支持
                                                         PNG / JPG / WebP</span>
                                                 </div>
                                             </div>
                                             <input type="file" id="hp-verify-file-input" accept="image/*"
-                                                style="display:none"
-                                                data-admin-change-action="homepage-handle-screenshot-upload">
+                                               
+                                                data-admin-change-action="homepage-handle-screenshot-upload" class="admin-studio-inline-style-attr-153">
                                         </div>
                                         <div class="hp-field"><label>特色标签 <span
-                                                    style="font-size:0.75rem;color:rgba(255,255,255,0.3)">逗号分隔</span></label><input
+                                                    class="admin-studio-inline-style-attr-154">逗号分隔</span></label><input
                                                 type="text" class="config-input" id="hp-verify-features"
                                                 placeholder="免费, 实时, 安全"></div>
                                     </div>
@@ -4217,8 +4217,8 @@
 
                             <div class="hp-save-bar">
                                 <span id="hp-verify-updated"
-                                    style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
-                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    class="admin-studio-inline-style-attr-147"></span>
+                                <div class="admin-studio-inline-style-attr-148">
 
                                     <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="verify"><i
                                             class="fas fa-save"></i> 保存修改</button>
@@ -4266,8 +4266,8 @@
 
                             <div class="hp-save-bar">
                                 <span id="hp-guestbook-updated"
-                                    style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
-                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    class="admin-studio-inline-style-attr-147"></span>
+                                <div class="admin-studio-inline-style-attr-148">
 
                                     <button class="btn-sm btn-primary"
                                         data-admin-action="homepage-save-section" data-homepage-section="guestbook"><i class="fas fa-save"></i>
@@ -4312,7 +4312,7 @@
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="hp-toggle-group" style="margin-top: 16px;">
+                                    <div class="hp-toggle-group admin-studio-inline-style-attr-155">
                                         <div class="hp-toggle-item">
                                             <div class="status-toggle" id="hp-ticker-prompts"
                                                 data-admin-action="homepage-toggle-field" data-homepage-section="ticker" data-homepage-field="enable_prompts"></div>
@@ -4335,8 +4335,8 @@
 
                             <div class="hp-save-bar">
                                 <span id="hp-ticker-updated"
-                                    style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
-                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    class="admin-studio-inline-style-attr-147"></span>
+                                <div class="admin-studio-inline-style-attr-148">
 
                                     <button class="btn-sm btn-primary" data-admin-action="homepage-save-section" data-homepage-section="ticker"><i
                                             class="fas fa-save"></i> 保存修改</button>
@@ -4698,7 +4698,7 @@
                 <div class="analytics-dashboard">
                     <!-- Status bar removed - elements moved to toolbar -->
                     <!-- Anomaly Alerts Area -->
-                    <div class="anomaly-alerts-area" id="anomalyAlertsArea" style="display: none;">
+                    <div class="anomaly-alerts-area admin-studio-inline-style-attr-3" id="anomalyAlertsArea">
                         <div class="alerts-header">
                             <i class="fas fa-exclamation-triangle"></i>
                             <span>异常告警</span>
@@ -5045,7 +5045,7 @@
                     <!-- Tab Content: AI Insights -->
                     <div id="analytics-tab-ai" class="analytics-tab-content">
                         <!-- AI Insight Card -->
-                        <div class="ai-insight-card glass-panel" id="aiInsightCard" style="margin-bottom: 24px;">
+                        <div class="ai-insight-card glass-panel admin-studio-inline-style-attr-156" id="aiInsightCard">
                             <div class="ai-insight-header">
                                 <div class="ai-icon"><i class="fas fa-robot"></i></div>
                                 <h3>AI 智能洞察</h3>
@@ -5092,7 +5092,7 @@
                                     </div>
                                 </div>
                                 <!-- A/B Results Chart -->
-                                <div class="ab-results-chart" id="abResultsChart" style="display: none;">
+                                <div class="ab-results-chart admin-studio-inline-style-attr-3" id="abResultsChart">
                                     <div class="ab-chart-header">
                                         <span id="abChartTitle">实验结果对比</span>
                                         <button class="btn-icon-sm" data-admin-action="analytics-close-ab-results-chart">
@@ -5109,18 +5109,18 @@
             <!-- END ANALYTICS MODULE -->
 
             <!-- ========== DISCOUNTS MODULE ========== -->
-            <div id="module-discounts" class="module-container" style="display: none;">
+            <div id="module-discounts" class="module-container admin-studio-inline-style-attr-3">
                 
                 <!-- Toolbar -->
-                <div class="admin-toolbar" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <div class="toolbar-left"
-                        style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1;">
+                <div class="admin-toolbar admin-studio-inline-style-attr-157">
+                    <div class="toolbar-left admin-studio-inline-style-attr-158"
+                       >
                         <div class="search-bar">
                             <i class="fas fa-search"></i>
                             <input type="text" id="discountSearchInput" placeholder="搜索优惠码或创建者..."
                                 data-admin-input-action="discounts-search">
                         </div>
-                        <div class="filter-dropdowns" style="display:flex; gap:8px;">
+                        <div class="filter-dropdowns admin-studio-inline-style-attr-159">
                             <button class="filter-btn active" data-status="all"
                                 data-admin-action="discounts-filter" data-discount-status="all">全部</button>
                             <button class="filter-btn" data-status="active"
@@ -5129,8 +5129,8 @@
                                 data-admin-action="discounts-filter" data-discount-status="used">已核销/失效</button>
                         </div>
                     </div>
-                    <button class="btn-primary" data-admin-action="discounts-open-generate-modal"
-                        style="background: linear-gradient(135deg, #4a8ec7, #5b9bd5); border: none; color: white; border-radius: 10px; padding: 10px 20px; font-size: 0.9rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; box-shadow: 0 4px 15px rgba(91, 155, 213, 0.3); transition: all 0.3s ease; flex-shrink: 0;">
+                    <button class="btn-primary admin-studio-inline-style-attr-160" data-admin-action="discounts-open-generate-modal"
+                       >
                         <i class="fas fa-plus"></i> 生成优惠券
                     </button>
                 </div>
@@ -5141,11 +5141,11 @@
                     <table class="admin-table users-table discounts-table">
                         <thead>
                             <tr>
-                                <th style="width: 20%;">优惠码</th>
-                                <th style="width: 25%;">类型与面额</th>
-                                <th style="width: 20%;">使用限制</th>
-                                <th style="width: 20%;">状态/有效期</th>
-                                <th style="width: 15%;">操作</th>
+                                <th class="admin-studio-inline-style-attr-161">优惠码</th>
+                                <th class="admin-studio-inline-style-attr-162">类型与面额</th>
+                                <th class="admin-studio-inline-style-attr-161">使用限制</th>
+                                <th class="admin-studio-inline-style-attr-161">状态/有效期</th>
+                                <th class="admin-studio-inline-style-attr-163">操作</th>
                             </tr>
                         </thead>
                         <tbody id="discountsTableBody">
@@ -5160,70 +5160,70 @@
                 <div class="pagination" id="discountsPagination"></div>
 
                 <!-- Generate Discount Modal -->
-                <div id="discountGenerateModal" class="modal-overlay" data-admin-overlay-close="discount-generate-modal"
-                    style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.55); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); z-index:9999; align-items:center; justify-content:center;">
+                <div id="discountGenerateModal" class="modal-overlay admin-studio-inline-style-attr-164" data-admin-overlay-close="discount-generate-modal"
+                   >
                     <div
-                        style="background: rgba(18, 22, 36, 0.97); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 36px; width: 90%; max-width: 520px; box-shadow: 0 24px 80px rgba(0,0,0,0.6); animation: modalSlideIn 0.3s ease;">
+                        class="admin-studio-inline-style-attr-165">
                         <!-- Modal Header -->
-                        <div style="display:flex; align-items:center; gap:14px; margin-bottom:28px;">
+                        <div class="admin-studio-inline-style-attr-166">
                             <div
-                                style="width:44px; height:44px; border-radius:14px; background:linear-gradient(135deg, #4a8ec7, #5b9bd5); display:flex; align-items:center; justify-content:center; box-shadow: 0 4px 15px rgba(91,155,213,0.25);">
-                                <i class="fas fa-ticket-alt" style="color:white; font-size:1.1rem;"></i>
+                                class="admin-studio-inline-style-attr-167">
+                                <i class="fas fa-ticket-alt admin-studio-inline-style-attr-168"></i>
                             </div>
                             <div>
-                                <h2 style="margin:0; font-size:1.25rem; font-weight:600; color:#e8edf4;">生成新优惠券</h2>
-                                <p style="margin:2px 0 0; font-size:0.8rem; color:rgba(255,255,255,0.35);">创建折扣码供客户使用
+                                <h2 class="admin-studio-inline-style-attr-169">生成新优惠券</h2>
+                                <p class="admin-studio-inline-style-attr-170">创建折扣码供客户使用
                                 </p>
                             </div>
                         </div>
 
                         <form id="discountGenerateForm">
                             <!-- Code Input -->
-                            <div style="margin-bottom:20px;">
+                            <div class="admin-studio-inline-style-attr-171">
                                 <label
-                                    style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px; letter-spacing:0.3px;">优惠码
-                                    <span style="color:rgba(255,255,255,0.2);">(留空自动生成)</span></label>
+                                    class="admin-studio-inline-style-attr-172">优惠码
+                                    <span class="admin-studio-inline-style-attr-173">(留空自动生成)</span></label>
                                 <input type="text" id="discountCodeInput" placeholder="输入自定义码或留空随机"
-                                    style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.95rem; text-transform:uppercase; outline:none; transition:border-color 0.2s; box-sizing:border-box; font-family:'SF Mono',Consolas,monospace; letter-spacing:2px;">
+                                    class="admin-studio-inline-style-attr-174">
                             </div>
 
                             <!-- Type & Value Row -->
-                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;">
+                            <div class="admin-studio-inline-style-attr-175">
                                 <!-- Custom Dropdown for Type -->
-                                <div style="position:relative;" id="discountTypeWrapper">
+                                <div id="discountTypeWrapper" class="admin-studio-inline-style-attr-176">
                                     <label
-                                        style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px;">优惠类型</label>
+                                        class="admin-studio-inline-style-attr-177">优惠类型</label>
                                     <input type="hidden" id="discountValueType" value="percent">
                                     <div id="discountTypeTrigger"
                                         data-admin-action="discounts-toggle-type-dropdown"
-                                        style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.9rem; cursor:pointer; box-sizing:border-box; display:flex; align-items:center; justify-content:space-between; user-select:none; transition:border-color 0.2s;">
-                                        <span id="discountTypeLabel" style="display:flex; align-items:center; gap:8px;">
-                                            <span style="font-size:1rem;">📊</span> 按比例打折
+                                        class="admin-studio-inline-style-attr-178">
+                                        <span id="discountTypeLabel" class="admin-studio-inline-style-attr-179">
+                                            <span class="admin-studio-inline-style-attr-180">📊</span> 按比例打折
                                         </span>
-                                        <i class="fas fa-chevron-down"
-                                            style="font-size:0.7rem; color:rgba(255,255,255,0.3); transition:transform 0.2s;"></i>
+                                        <i class="fas fa-chevron-down admin-studio-inline-style-attr-181"
+                                           ></i>
                                     </div>
                                     <div id="discountTypeDropdown"
-                                        style="display:none; position:absolute; top:calc(100% + 6px); left:0; right:0; background:rgba(22,28,44,0.98); border:1px solid rgba(255,255,255,0.1); border-radius:12px; overflow:hidden; z-index:100; box-shadow:0 12px 40px rgba(0,0,0,0.5);">
-                                        <div class="discount-type-option" data-admin-action="discounts-select-type" data-discount-type="percent"
-                                            style="padding:12px 16px; color:#e8edf4; font-size:0.9rem; cursor:pointer; display:flex; align-items:center; gap:10px; transition:background 0.15s;">
-                                            <span style="font-size:1.1rem;">📊</span>
+                                        class="admin-studio-inline-style-attr-182">
+                                        <div class="discount-type-option admin-studio-inline-style-attr-183" data-admin-action="discounts-select-type" data-discount-type="percent"
+                                           >
+                                            <span class="admin-studio-inline-style-attr-184">📊</span>
                                             <div>
-                                                <div style="font-weight:500;">按比例打折</div>
+                                                <div class="admin-studio-inline-style-attr-185">按比例打折</div>
                                                 <div
-                                                    style="font-size:0.75rem; color:rgba(255,255,255,0.35); margin-top:2px;">
+                                                    class="admin-studio-inline-style-attr-186">
                                                     输入折扣比例，如 80 表示 8 折</div>
                                             </div>
                                         </div>
-                                        <div style="height:1px; background:rgba(255,255,255,0.06); margin:0 12px;">
+                                        <div class="admin-studio-inline-style-attr-187">
                                         </div>
-                                        <div class="discount-type-option" data-admin-action="discounts-select-type" data-discount-type="fixed"
-                                            style="padding:12px 16px; color:#e8edf4; font-size:0.9rem; cursor:pointer; display:flex; align-items:center; gap:10px; transition:background 0.15s;">
-                                            <span style="font-size:1.1rem;">💰</span>
+                                        <div class="discount-type-option admin-studio-inline-style-attr-183" data-admin-action="discounts-select-type" data-discount-type="fixed"
+                                           >
+                                            <span class="admin-studio-inline-style-attr-184">💰</span>
                                             <div>
-                                                <div style="font-weight:500;">固定金额立减</div>
+                                                <div class="admin-studio-inline-style-attr-185">固定金额立减</div>
                                                 <div
-                                                    style="font-size:0.75rem; color:rgba(255,255,255,0.35); margin-top:2px;">
+                                                    class="admin-studio-inline-style-attr-186">
                                                     直接减去固定金额，如 100 元</div>
                                             </div>
                                         </div>
@@ -5231,53 +5231,53 @@
                                 </div>
                                 <div>
                                     <label
-                                        style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px;">优惠面额</label>
-                                    <div style="position:relative; display:flex; align-items:center;">
+                                        class="admin-studio-inline-style-attr-177">优惠面额</label>
+                                    <div class="admin-studio-inline-style-attr-188">
                                         <input type="number" id="discountValue" placeholder="如: 80" min="0"
-                                            style="width:100%; padding:12px 40px 12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.95rem; outline:none; box-sizing:border-box;">
+                                            class="admin-studio-inline-style-attr-189">
                                         <span id="discountValueSuffix"
-                                            style="position:absolute; right:16px; color:rgba(255,255,255,0.5); font-size:0.9rem; pointer-events:none;">折</span>
+                                            class="admin-studio-inline-style-attr-190">折</span>
                                     </div>
                                 </div>
                             </div>
 
                             <!-- Max Uses & Expiry Row -->
-                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:28px;">
+                            <div class="admin-studio-inline-style-attr-191">
                                 <div>
                                     <label
-                                        style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px;">最大核销次数</label>
+                                        class="admin-studio-inline-style-attr-177">最大核销次数</label>
                                     <input type="number" id="discountMaxUses" placeholder="默认1次" value="1"
-                                        style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.95rem; outline:none; box-sizing:border-box;">
+                                        class="admin-studio-inline-style-attr-192">
                                 </div>
                                 <div>
                                     <label
-                                        style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px;">过期时间
-                                        <span style="color:rgba(255,255,255,0.2);">(可选)</span></label>
-                                        <div style="display:flex; gap:8px;">
-                                            <div style="flex:1; position:relative;">
+                                        class="admin-studio-inline-style-attr-177">过期时间
+                                        <span class="admin-studio-inline-style-attr-173">(可选)</span></label>
+                                        <div class="admin-studio-inline-style-attr-159">
+                                            <div class="admin-studio-inline-style-attr-193">
                                                 <input type="text" id="discountExpiryDate" placeholder="2026-12-31"
                                                     maxlength="10" data-admin-input-action="discounts-format-expiry-date"
-                                                    style="width:100%; padding:12px 12px 12px 36px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.85rem; outline:none; box-sizing:border-box; font-family:'SF Mono',Consolas,monospace;">
-                                            <i class="fas fa-calendar-alt"
-                                                style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.25); font-size:0.8rem;"></i>
+                                                    class="admin-studio-inline-style-attr-194">
+                                            <i class="fas fa-calendar-alt admin-studio-inline-style-attr-195"
+                                               ></i>
                                         </div>
-                                        <div style="width:90px; position:relative;">
+                                        <div class="admin-studio-inline-style-attr-196">
                                             <input type="text" id="discountExpiryTime" placeholder="23:59" maxlength="5"
                                                 data-admin-input-action="discounts-format-expiry-time"
-                                                style="width:100%; padding:12px 12px 12px 34px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.85rem; outline:none; box-sizing:border-box; font-family:'SF Mono',Consolas,monospace;">
-                                            <i class="fas fa-clock"
-                                                style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.25); font-size:0.8rem;"></i>
+                                                class="admin-studio-inline-style-attr-197">
+                                            <i class="fas fa-clock admin-studio-inline-style-attr-195"
+                                               ></i>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
                             <!-- Action Buttons -->
-                            <div style="display:flex; justify-content:flex-end; gap:12px;">
+                            <div class="admin-studio-inline-style-attr-198">
                                 <button type="button" data-admin-action="discounts-close-generate-modal"
-                                    style="padding:11px 24px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:rgba(255,255,255,0.5); font-size:0.9rem; font-weight:500; cursor:pointer; transition:all 0.2s;">取消</button>
+                                    class="admin-studio-inline-style-attr-199">取消</button>
                                 <button type="button" data-admin-action="discounts-submit-generate"
-                                    style="padding:11px 28px; background:linear-gradient(135deg, #4a8ec7, #5b9bd5); border:none; border-radius:12px; color:white; font-size:0.9rem; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(91,155,213,0.25); transition:all 0.3s; display:flex; align-items:center; gap:8px;">
+                                    class="admin-studio-inline-style-attr-200">
                                     <i class="fas fa-magic"></i> 立即生成
                                 </button>
                             </div>
@@ -5287,7 +5287,7 @@
             </div>
 
             <!-- ========== TICKETS MODULE ========== -->
-            <div id="module-tickets" class="module-container" style="display: none;">
+            <div id="module-tickets" class="module-container admin-studio-inline-style-attr-3">
                 <!-- Filters -->
                 <div class="admin-toolbar">
                     <div class="toolbar-left">
@@ -5296,7 +5296,7 @@
                             <input type="text" id="ticketSearchInput" placeholder="搜索订单号或描述..."
                                 data-admin-input-action="tickets-search">
                         </div>
-                        <div class="filter-dropdowns" style="display:flex; gap:8px;">
+                        <div class="filter-dropdowns admin-studio-inline-style-attr-159">
                             <button class="filter-btn active" data-status="all"
                                 data-admin-action="tickets-filter" data-ticket-status="all">全部</button>
                             <button class="filter-btn" data-status="pending"
@@ -5318,7 +5318,7 @@
                                 <th>关联订单号</th>
                                 <th>用户UUID</th>
                                 <th>问题描述</th>
-                                <th style="text-align: center;">分类/状态</th>
+                                <th class="admin-studio-inline-style-attr-201">分类/状态</th>
                                 <th>操作</th>
                             </tr>
                         </thead>
@@ -5333,52 +5333,52 @@
 
                 <!-- Ticket Reply Modal -->
                 <div id="ticketReplyModal" data-admin-overlay-close="ticket-reply-modal"
-                    style="display: none; z-index: 10000; justify-content:center; align-items:center; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.55); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);">
+                    class="admin-studio-inline-style-attr-202">
                     <div
-                        style="background: rgba(18, 22, 36, 0.97); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 0; width: 90%; max-width: 480px; box-shadow: 0 24px 80px rgba(0,0,0,0.6); animation: modalSlideIn 0.3s ease; overflow: hidden;">
+                        class="admin-studio-inline-style-attr-203">
                         <!-- Header -->
                         <div
-                            style="display:flex; align-items:center; gap:14px; padding: 24px 28px 20px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                            class="admin-studio-inline-style-attr-204">
                             <div
-                                style="width:40px; height:40px; border-radius:12px; background:linear-gradient(135deg, #4a8ec7, #5b9bd5); display:flex; align-items:center; justify-content:center; box-shadow: 0 4px 15px rgba(91,155,213,0.25); flex-shrink:0;">
-                                <i class="fas fa-headset" style="color:white; font-size:1rem;"></i>
+                                class="admin-studio-inline-style-attr-205">
+                                <i class="fas fa-headset admin-studio-inline-style-attr-206"></i>
                             </div>
                             <div>
-                                <h2 class="modal-title"
-                                    style="margin:0; font-size:1.15rem; font-weight:600; color:#e8edf4;">处理售后工单</h2>
-                                <p style="margin:2px 0 0; font-size:0.78rem; color:rgba(255,255,255,0.35);">回复处理结果并通知用户
+                                <h2 class="modal-title admin-studio-inline-style-attr-207"
+                                   >处理售后工单</h2>
+                                <p class="admin-studio-inline-style-attr-208">回复处理结果并通知用户
                                 </p>
                             </div>
                         </div>
                         <!-- Body -->
-                        <form id="ticketReplyForm" style="padding: 24px 28px 28px;">
-                            <div style="margin-bottom:20px;">
+                        <form id="ticketReplyForm" class="admin-studio-inline-style-attr-209">
+                            <div class="admin-studio-inline-style-attr-171">
                                 <label
-                                    style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px; letter-spacing:0.3px;">管理员回复</label>
-                                <textarea id="ticketAdminReply" class="ticket-reply-textarea" placeholder="请输入处理结果或回复..."
-                                    style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.9rem; outline:none; transition:border-color 0.2s, box-shadow 0.2s; box-sizing:border-box; min-height:100px; resize:vertical; font-family:inherit; line-height:1.6;"></textarea>
+                                    class="admin-studio-inline-style-attr-172">管理员回复</label>
+                                <textarea id="ticketAdminReply" class="ticket-reply-textarea admin-studio-inline-style-attr-210" placeholder="请输入处理结果或回复..."
+                                   ></textarea>
                             </div>
                             <div
-                                style="margin-bottom:24px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:14px 16px;">
+                                class="admin-studio-inline-style-attr-211">
                                 <label
-                                    style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.9rem; color:rgba(255,255,255,0.8); font-weight:500;">
+                                    class="admin-studio-inline-style-attr-212">
                                     <input type="checkbox" id="ticketRefundCheckbox"
-                                        style="width:18px; height:18px; accent-color:#5b9bd5; cursor:pointer;">
-                                    <i class="fas fa-undo-alt" style="color:#5b9bd5; font-size:0.85rem;"></i>
+                                        class="admin-studio-inline-style-attr-213">
+                                    <i class="fas fa-undo-alt admin-studio-inline-style-attr-214"></i>
                                     退还订单积分
                                 </label>
                                 <p
-                                    style="margin:8px 0 0 28px; font-size:0.75rem; color:rgba(255,255,255,0.3); line-height:1.5;">
+                                    class="admin-studio-inline-style-attr-215">
                                     勾选后将自动退还该订单对应的积分给用户</p>
                             </div>
                             <input type="hidden" id="replyTicketId">
                             <input type="hidden" id="replyNewStatus">
 
-                            <div style="display:flex; justify-content:flex-end; gap:12px;">
-                                <button type="button" class="ticket-reply-cancel-btn" data-admin-action="tickets-close-reply-modal"
-                                    style="padding:11px 24px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:rgba(255,255,255,0.5); font-size:0.9rem; font-weight:500; cursor:pointer; transition:all 0.2s;">取消</button>
-                                <button type="button" class="btn-primary ticket-reply-submit-btn" data-admin-action="tickets-submit-reply"
-                                    style="padding:11px 28px; background:linear-gradient(135deg, #4a8ec7, #5b9bd5); border:none; border-radius:12px; color:white; font-size:0.9rem; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(91,155,213,0.25); transition:all 0.3s; display:flex; align-items:center; gap:8px;">
+                            <div class="admin-studio-inline-style-attr-198">
+                                <button type="button" class="ticket-reply-cancel-btn admin-studio-inline-style-attr-199" data-admin-action="tickets-close-reply-modal"
+                                   >取消</button>
+                                <button type="button" class="btn-primary ticket-reply-submit-btn admin-studio-inline-style-attr-200" data-admin-action="tickets-submit-reply"
+                                   >
                                     <i class="fas fa-check-circle"></i> 确认处理
                                 </button>
                             </div>
@@ -5450,8 +5450,8 @@
 
 
     <!-- Product Edit Modal (Redesigned) -->
-    <div id="productModal" class="modal-overlay" data-shop-overlay-close="product-modal"
-        style="display: none; z-index: 9999; justify-content:center; align-items:center; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); transition: all 0.3s;">
+    <div id="productModal" class="modal-overlay admin-studio-inline-style-attr-216" data-shop-overlay-close="product-modal"
+       >
 
         
 
@@ -5490,15 +5490,15 @@
                         <button class="form-close-btn" type="button" data-shop-action="product-close-modal">✕</button>
                     </div>
                     <div id="productSiteHint"
-                        style="padding:4px 16px 8px; font-size:12px; color:rgba(255,255,255,0.5); display:none;"></div>
+                        class="admin-studio-inline-style-attr-217"></div>
 
                     <div class="input-group-row">
-                        <div class="modern-form-group" style="flex:2">
+                        <div class="modern-form-group admin-studio-inline-style-attr-218">
                             <label class="modern-label" id="prodNameLabel">商品名称</label>
                             <input type="text" id="prodName" class="modern-input" placeholder="输入商品名称"
                                 data-shop-input="product-update-preview">
                         </div>
-                        <div class="modern-form-group" style="flex:1">
+                        <div class="modern-form-group admin-studio-inline-style-attr-219">
                             <label class="modern-label">所属分类</label>
                             <!-- Hidden input to store actual value -->
                             <input type="hidden" id="prodCategory" value="">
@@ -5551,19 +5551,19 @@
 
                     <!-- Marketing Config (Phase 2) -->
                     <div class="input-group-row">
-                        <div class="modern-form-group" style="flex:1;">
-                            <label class="modern-label"><i class="fas fa-layer-group"
-                                    style="color:#f29c38; margin-right:6px;"></i>阶梯定价规则 (买满 x 件享特价)</label>
+                        <div class="modern-form-group admin-studio-inline-style-attr-219">
+                            <label class="modern-label"><i class="fas fa-layer-group admin-studio-inline-style-attr-220"
+                                   ></i>阶梯定价规则 (买满 x 件享特价)</label>
 
                             <!-- Visual Builder Container -->
                             <div id="prodQuantityRulesContainer"
-                                style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px;">
+                                class="admin-studio-inline-style-attr-221">
                                 <!-- Rows injected by JS -->
                             </div>
 
                             <!-- Add Rule Button -->
                             <button type="button" data-shop-action="product-add-tiered-pricing"
-                                style="background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.2); border-radius: 8px; color: #6b9ece; padding: 10px 15px; width: 100%; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s;">
+                                class="admin-studio-inline-style-attr-222">
                                 <i class="fas fa-plus"></i> 添加阶梯价
                             </button>
 
@@ -5573,22 +5573,22 @@
                     </div>
                     <div class="input-group-row">
                         <div class="modern-form-group">
-                            <label class="modern-label"><i class="fas fa-bolt"
-                                    style="color:#ef4444; margin-right:6px;"></i>秒杀特价 (积分)</label>
+                            <label class="modern-label"><i class="fas fa-bolt admin-studio-inline-style-attr-223"
+                                   ></i>秒杀特价 (积分)</label>
                             <input type="number" id="prodFlashSalePrice" class="modern-input" placeholder="0 (选填)">
                         </div>
                         <div class="modern-form-group">
                             <label class="modern-label">秒杀结束时间</label>
-                            <input type="datetime-local" id="prodFlashSaleEnd" class="modern-input"
-                                style="color-scheme: dark;">
+                            <input type="datetime-local" id="prodFlashSaleEnd" class="modern-input admin-studio-inline-style-attr-224"
+                               >
                         </div>
                     </div>
 
                     <!-- Phase 4 Delivery Config -->
                     <div class="input-group-row">
                         <div class="modern-form-group">
-                            <label class="modern-label"><i class="fas fa-truck"
-                                    style="color:#10b981; margin-right:6px;"></i>发货模式</label>
+                            <label class="modern-label"><i class="fas fa-truck admin-studio-inline-style-attr-225"
+                                   ></i>发货模式</label>
                             <!-- Hidden input to store actual value -->
                             <input type="hidden" id="prodDeliveryType" value="KEY">
                             <!-- Custom dropdown -->
@@ -5614,7 +5614,7 @@
                                 
                             </div>
                         </div>
-                        <div class="modern-form-group" id="webhookTargetGroup" style="display: none;">
+                        <div class="modern-form-group admin-studio-inline-style-attr-3" id="webhookTargetGroup">
                             <label class="modern-label">Webhook URL</label>
                             <input type="text" id="prodWebhookTarget" class="modern-input"
                                 placeholder="https://api.example.com/webhook">
@@ -5624,32 +5624,25 @@
                     <!-- Purchase Notes Toggle + Textarea -->
                     <div class="modern-form-group">
                         <div
-                            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                            <label class="modern-label" style="margin-bottom: 0;">
-                                <i class="fas fa-triangle-exclamation"
-                                    style="color: #fbbf24; margin-right: 6px;"></i>注意事项
+                            class="admin-studio-inline-style-attr-226">
+                            <label class="modern-label admin-studio-inline-style-attr-227">
+                                <i class="fas fa-triangle-exclamation admin-studio-inline-style-attr-228"
+                                   ></i>注意事项
                             </label>
-                            <label class="toggle-switch"
-                                style="position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;">
+                            <label class="toggle-switch admin-studio-inline-style-attr-229"
+                               >
                                 <input type="checkbox" id="prodShowPurchaseNotes"
                                     data-shop-change="product-toggle-purchase-notes"
-                                    style="opacity:0;width:0;height:0;">
-                                <span class="toggle-slider" style="
-                                    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-                                    background: rgba(255,255,255,0.1); border-radius: 24px; transition: all 0.3s;
-                                "></span>
+                                    class="admin-studio-inline-style-attr-230">
+                                <span class="toggle-slider admin-studio-inline-style-attr-231"></span>
                             </label>
                         </div>
-                        <div id="purchaseNotesWrapper" style="
-                            max-height: 0; overflow: hidden; opacity: 0;
-                            transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, margin 0.3s ease;
-                            margin-top: 0;
-                        ">
-                            <textarea id="prodPurchaseNotes" class="modern-input"
+                        <div id="purchaseNotesWrapper" class="admin-studio-inline-style-attr-232">
+                            <textarea id="prodPurchaseNotes" class="modern-input admin-studio-inline-style-attr-233"
                                 placeholder="输入确认兑换前展示的注意事项（支持链接，如 https://example.com）"
-                                style="min-height: 100px;"></textarea>
+                               ></textarea>
                             <small
-                                style="color: rgba(255,255,255,0.35); font-size: 11px; margin-top: 4px; display: block;">
+                                class="admin-studio-inline-style-attr-234">
                                 用户在点击“兑换”后的确认兑换弹窗里会看到此内容，支持输入链接
                             </small>
                         </div>
@@ -5658,31 +5651,24 @@
                     <!-- Usage Instructions Toggle + Textarea -->
                     <div class="modern-form-group">
                         <div
-                            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                            <label class="modern-label" style="margin-bottom: 0;">
-                                <i class="fas fa-info-circle" style="color: #60a5fa; margin-right: 6px;"></i>使用说明
+                            class="admin-studio-inline-style-attr-226">
+                            <label class="modern-label admin-studio-inline-style-attr-227">
+                                <i class="fas fa-info-circle admin-studio-inline-style-attr-235"></i>使用说明
                             </label>
-                            <label class="toggle-switch"
-                                style="position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;">
+                            <label class="toggle-switch admin-studio-inline-style-attr-229"
+                               >
                                 <input type="checkbox" id="prodShowUsageInstructions"
                                     data-shop-change="product-toggle-usage-instructions"
-                                    style="opacity:0;width:0;height:0;">
-                                <span class="toggle-slider" style="
-                                    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-                                    background: rgba(255,255,255,0.1); border-radius: 24px; transition: all 0.3s;
-                                "></span>
+                                    class="admin-studio-inline-style-attr-230">
+                                <span class="toggle-slider admin-studio-inline-style-attr-231"></span>
                             </label>
                         </div>
-                        <div id="usageInstructionsWrapper" style="
-                            max-height: 0; overflow: hidden; opacity: 0;
-                            transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, margin 0.3s ease;
-                            margin-top: 0;
-                        ">
-                            <textarea id="prodUsageInstructions" class="modern-input"
+                        <div id="usageInstructionsWrapper" class="admin-studio-inline-style-attr-232">
+                            <textarea id="prodUsageInstructions" class="modern-input admin-studio-inline-style-attr-233"
                                 placeholder="输入使用说明 / 注意事项（支持链接，如 https://example.com）"
-                                style="min-height: 100px;"></textarea>
+                               ></textarea>
                             <small
-                                style="color: rgba(255,255,255,0.35); font-size: 11px; margin-top: 4px; display: block;">
+                                class="admin-studio-inline-style-attr-234">
                                 兑换成功后将展示给用户，支持输入链接
                             </small>
                         </div>
