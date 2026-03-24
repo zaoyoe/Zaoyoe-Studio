@@ -103,11 +103,15 @@ function createSupabaseStub(state = {}) {
     const paymentEvents = state.paymentEvents || [];
     const pointsLedger = state.pointsLedger || [];
     const adminRoles = state.adminRoles || [];
+    const systemConfigs = state.systemConfigs || [];
+    const adminSecretStore = state.adminSecretStore || [];
     const systemNotifications = state.systemNotifications || [];
     state.anomalyCases = anomalyCases;
     state.paymentEvents = paymentEvents;
     state.pointsLedger = pointsLedger;
     state.adminRoles = adminRoles;
+    state.systemConfigs = systemConfigs;
+    state.adminSecretStore = adminSecretStore;
     state.systemNotifications = systemNotifications;
     state.metrics = state.metrics || {};
     state.metrics.reviewRpcCalls = state.metrics.reviewRpcCalls || [];
@@ -299,6 +303,22 @@ function createSupabaseStub(state = {}) {
                     };
                 }
 
+                if (table === 'system_config' && query.mode === 'select') {
+                    const rows = sortRows(applyFilters(systemConfigs, query.filters), query.order);
+                    return {
+                        data: query.single ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'admin_secret_store' && query.mode === 'select') {
+                    const rows = sortRows(applyFilters(adminSecretStore, query.filters), query.order);
+                    return {
+                        data: query.single ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
                 throw new Error(`Unexpected table access: ${table}/${query.mode}`);
             });
         }
@@ -364,6 +384,7 @@ async function withPaymentsActionHandler(state, callback) {
     const originalLoad = Module._load;
     const mockAdminModule = createMockAdminModule(state);
     const providerAdaptersModule = state.providerAdaptersModule || null;
+    const opsAlertsModule = state.opsAlertsModule || null;
 
     delete require.cache[handlerPath];
     Module._load = function patchedLoad(request, parent, isMain) {
@@ -373,6 +394,10 @@ async function withPaymentsActionHandler(state, callback) {
 
         if (request === '../../../../api/_lib/payments/provider-adapters' && providerAdaptersModule) {
             return providerAdaptersModule;
+        }
+
+        if (request === '../../../../api/_lib/ops-alerts' && opsAlertsModule) {
+            return opsAlertsModule;
         }
 
         return originalLoad.call(this, request, parent, isMain);
@@ -1057,5 +1082,107 @@ test('refund_hupijiao dedupes repeated admin refund alerts within the recent win
         assert.equal(secondRes.statusCode, 502);
         assert.equal(state.systemNotifications.length, 2);
         assert.equal(state.systemNotifications.every((item) => item.title === '支付退款失败（已补回）'), true);
+    });
+});
+
+test('refund_hupijiao enqueues external ops alerts for critical refund failures', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-hj-6',
+                user_id: 'user-6',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_ORDER_6',
+                checkout_session_id: 'session-6',
+                site: 'cn',
+                expected_amount: 30,
+                paid_amount: 30,
+                points_amount: 1000,
+                status: 'redeemed',
+                claimed_at: '2026-03-24T08:15:00.000Z',
+                paid_at: '2026-03-24T08:00:00.000Z',
+                verified_at: '2026-03-24T08:05:00.000Z',
+                last_error: null,
+                provider_metadata: {
+                    gateway_open_order_id: 'OPEN_ORDER_6',
+                    paid_points: 1000,
+                    bonus_points: 0
+                },
+                raw_payload: {
+                    request: {
+                        points_amount: 1000,
+                        bonus_points: 0
+                    }
+                }
+            }
+        ],
+        userBalances: {
+            'user-6': {
+                total_balance: 100,
+                paid_balance: 100,
+                bonus_balance: 0
+            }
+        },
+        adminRoles: [
+            { user_id: 'admin-1', role_name: 'admin', expires_at: null }
+        ],
+        opsAlertEnqueues: [],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter() {
+                return {
+                    async resolveRuntimeContext() {
+                        return {
+                            provider: 'hupijiao'
+                        };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'HJ_ORDER_6',
+                            openOrderId: 'OPEN_ORDER_6',
+                            status: 'paid',
+                            statusRaw: 'OD',
+                            message: 'success'
+                        };
+                    },
+                    async refundOrder() {
+                        return {
+                            supported: true,
+                            success: true
+                        };
+                    }
+                };
+            }
+        },
+        opsAlertsModule: {
+            async enqueueOpsAlertJob(_supabase, payload) {
+                state.opsAlertEnqueues.push(payload);
+                return { queued: true };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-hj-6',
+                action: 'refund_hupijiao',
+                note: '扣回失败应进入站外告警'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 409);
+        assert.equal(payload.success, false);
+        assert.equal(state.opsAlertEnqueues.length, 1);
+        assert.equal(state.opsAlertEnqueues[0].severity, 'critical');
+        assert.equal(state.opsAlertEnqueues[0].payload.processing_result, 'admin_refund_reclaim_failed');
+        assert.equal(state.opsAlertEnqueues[0].payload.provider_order_no, 'HJ_ORDER_6');
     });
 });

@@ -172,6 +172,7 @@
 - 已入账/已发点的订单会先扣回积分，再调虎皮椒退款；若网关失败，会按精确 paid / bonus 拆分自动补回积分
 - `admin_refund_failed` / `admin_refund_reclaim_failed` / `admin_refund_compensation_failed` 会进入退款专题，并给管理员投递站内 `system_notifications` 告警
 - 同一笔退款异常通知带有最近窗口去重，短时间重复重试不会把管理员通知刷爆
+- 现在已经支持把高危退款异常异步投递到 Telegram / 飞书；投递走 `ops_alert_jobs` 队列，不会阻塞退款主流程
 
 上线前至少确认这几项：
 
@@ -187,3 +188,16 @@
    - `payment_events.admin_refund_*`
    - `payment_orders.provider_metadata.refund_reclaimed_*`
    - `admin_audit_logs`
+8. 如果要启用站外退款异常告警，再执行 migration：`20260324_add_ops_alert_queue.sql`
+9. 进入 `Admin Studio -> 设置 -> 站外退款告警`，至少确认：
+   - 总开关已开启
+   - 至少 1 个外部通道已开启
+   - Telegram 已填写 `Chat ID` 且 `Bot Token` 状态显示已配置
+   - 或飞书 `Webhook` 状态显示已配置
+10. 站外告警密钥管理规则：
+   - 后台页面里输入的 Telegram Bot Token / 飞书 Webhook 会进入 `admin_secret_store`
+   - 如果状态显示“环境变量”，说明密钥来自部署平台，需去 Vercel / Railway 修改，后台不会直接删除环境变量
+11. 启用后可在库里抽查：
+   - `ops_alert_jobs`
+   - `ops_alert_job_attempts`
+   - 重点看 `status`、`remaining_channels`、`last_error`

@@ -2020,6 +2020,70 @@ test('admin pricing package controls no longer emit inline handlers in static or
     );
 });
 
+test('admin ops alert controls expose delegated settings actions and runtime wiring', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminConfigSource = readRepoFile('admin-config.js');
+
+    const inlineMarkers = [
+        'onclick="saveOpsAlertSettings()"',
+        'onclick="toggleOpsAlertsEnabled()"',
+        'onclick="toggleOpsAlertChannelEnabled(',
+        'onclick="deleteOpsAlertSecret('
+    ];
+
+    for (const marker of inlineMarkers) {
+        assert.equal(
+            adminStudioSource.includes(marker) || adminConfigSource.includes(marker),
+            false,
+            `ops alert settings should not contain inline handler ${marker}`
+        );
+    }
+
+    const delegatedHtmlMarkers = [
+        'id="opsAlertSummary"',
+        'id="opsAlertEnabledToggle"',
+        'data-admin-action="settings-toggle-ops-alerts-enabled"',
+        'data-admin-action="settings-toggle-ops-alert-channel"',
+        'data-admin-action="settings-save-ops-alerts"',
+        'data-admin-action="settings-delete-ops-alert-secret"',
+        'id="opsAlertTelegramChatIds"',
+        'id="opsAlertTelegramBotToken"',
+        'id="opsAlertFeishuWebhookUrl"'
+    ];
+
+    for (const marker of delegatedHtmlMarkers) {
+        assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+
+    const delegatedHandlerMarkers = [
+        "case 'settings-toggle-ops-alerts-enabled':",
+        "case 'settings-toggle-ops-alert-channel':",
+        "case 'settings-save-ops-alerts':",
+        "case 'settings-delete-ops-alert-secret':"
+    ];
+
+    for (const marker of delegatedHandlerMarkers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'function getDefaultOpsAlertConfig()',
+        'function normalizeOpsAlertConfig(raw)',
+        'function renderOpsAlertSettings()',
+        'function applyOpsAlertOverview(config)',
+        'function collectOpsAlertConfigFromForm()',
+        "fetch('/api/admin/settings/ops-alerts'",
+        'window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;',
+        'window.saveOpsAlertSettings = saveOpsAlertSettings;',
+        'window.deleteOpsAlertSecret = deleteOpsAlertSecret;'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should contain ${marker}`);
+    }
+});
+
 test('shop admin pagination renderer no longer emits inline handler attributes', () => {
     const source = readRepoFile('js/admin-shop.js');
     const start = source.indexOf('renderPagination: function');

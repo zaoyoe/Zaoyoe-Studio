@@ -9,6 +9,9 @@ const {
     notifyActiveAdmins
 } = require('../../../../api/_lib/admin-notifications');
 const {
+    enqueueOpsAlertJob
+} = require('../../../../api/_lib/ops-alerts');
+const {
     applyPaymentOrderReview,
     deductPointsForRefundReclaim,
     getUserBalance,
@@ -56,18 +59,21 @@ const REFUND_ALERT_CONFIG = Object.freeze({
     admin_refund_failed: {
         title: '支付退款失败（已补回）',
         type: 'warning',
+        severity: 'warning',
         topicLabel: '退款失败',
         detail: '网关退款失败，但系统已自动补回积分，请尽快复核通道状态并确认是否需要人工跟进。'
     },
     admin_refund_reclaim_failed: {
         title: '支付退款积分扣回失败',
         type: 'alert',
+        severity: 'critical',
         topicLabel: '扣回失败',
         detail: '已入账订单在退款前无法安全扣回积分，系统已停止继续退款，请先处理余额或扣回链路。'
     },
     admin_refund_compensation_failed: {
         title: '支付退款积分回滚失败',
         type: 'alert',
+        severity: 'critical',
         topicLabel: '回滚失败',
         detail: '网关退款失败后，系统自动补回积分也失败了，需要立即人工核对账务并修复。'
     }
@@ -411,6 +417,28 @@ async function tryNotifyRefundOpsAlert(supabase, target, processingResult) {
         });
     } catch (error) {
         console.warn('[admin/payments/actions] failed to create refund ops alert:', error.message);
+    }
+
+    try {
+        await enqueueOpsAlertJob(supabase, {
+            alertType: 'payment_refund_ops',
+            severity: config.severity || 'warning',
+            title: config.title,
+            content: buildRefundAlertContent(target, config.topicLabel, config.detail),
+            payload: {
+                processing_result: normalizeText(processingResult),
+                target_type: 'order',
+                target_id: normalizeText(target?.id),
+                provider: normalizeText(target?.provider),
+                provider_order_no: normalizeText(target?.provider_order_no),
+                site: normalizeText(target?.site).toLowerCase() || 'cn',
+                topic_label: config.topicLabel
+            },
+            source: 'admin_refund_ops',
+            dedupeWindowMinutes: 45
+        });
+    } catch (error) {
+        console.warn('[admin/payments/actions] failed to enqueue external refund ops alert:', error.message);
     }
 }
 

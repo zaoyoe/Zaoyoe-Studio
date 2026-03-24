@@ -317,6 +317,18 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-delete-api-key':
                 window.deleteApiKey?.();
                 break;
+            case 'settings-toggle-ops-alerts-enabled':
+                window.toggleOpsAlertsEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-channel':
+                window.toggleOpsAlertChannelEnabled?.(actionEl.dataset.alertChannel);
+                break;
+            case 'settings-save-ops-alerts':
+                window.saveOpsAlertSettings?.();
+                break;
+            case 'settings-delete-ops-alert-secret':
+                window.deleteOpsAlertSecret?.(actionEl.dataset.secretName);
+                break;
             case 'settings-select-affiliate-poster-template':
                 window.selectAffiliatePosterTemplate?.(actionEl.dataset.posterTemplateId);
                 break;

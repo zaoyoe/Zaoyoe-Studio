@@ -977,6 +977,110 @@
                                 </div>
                             </div>
 
+                            <div class="config-card payment-channel-config-card" data-config="ops-alerts">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-bell"></i>
+                                        <span>站外退款告警</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-inline-note" id="opsAlertSummary">
+                                        <i class="fas fa-satellite-dish"></i>
+                                        <span>当前未启用站外退款告警。</span>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用站外退款告警</div>
+                                            <div class="config-desc">针对退款失败、扣回失败、回滚失败，异步投递到 Telegram / 飞书，不阻塞退款主流程。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertEnabledToggle" data-admin-action="settings-toggle-ops-alerts-enabled"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">Telegram 告警</div>
+                                            <div class="config-desc">建议用于秒级高危提醒。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertTelegramEnabledToggle" data-admin-action="settings-toggle-ops-alert-channel" data-alert-channel="telegram"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <label>Telegram Chat IDs</label>
+                                        <div class="config-input-wrapper">
+                                            <textarea class="config-input" id="opsAlertTelegramChatIds" rows="3" placeholder="123456789&#10;987654321"></textarea>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <label>Telegram 最低级别</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertTelegramSeverity">
+                                                <option value="warning">warning</option>
+                                                <option value="critical">critical</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">Telegram Bot Token</div>
+                                            <div class="config-desc" id="opsAlertTelegramBotTokenStatus">未配置后台安全密钥</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <input type="password" class="config-input" id="opsAlertTelegramBotToken" placeholder="留空表示保持现有密钥不变">
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">飞书告警</div>
+                                            <div class="config-desc">适合团队群提醒和处理分派。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertFeishuEnabledToggle" data-admin-action="settings-toggle-ops-alert-channel" data-alert-channel="feishu"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <label>飞书最低级别</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertFeishuSeverity">
+                                                <option value="warning">warning</option>
+                                                <option value="critical">critical</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">飞书 Webhook</div>
+                                            <div class="config-desc" id="opsAlertFeishuWebhookStatus">未配置后台安全密钥</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <input type="password" class="config-input" id="opsAlertFeishuWebhookUrl" placeholder="留空表示保持现有密钥不变">
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row payment-channel-save-row">
+                                        <button type="button" class="btn-add-config" data-admin-action="settings-save-ops-alerts">
+                                            <i class="fas fa-save"></i> 保存站外告警配置
+                                        </button>
+                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="settings-delete-ops-alert-secret" data-secret-name="telegram_bot_token">
+                                            删除 Telegram 密钥
+                                        </button>
+                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="settings-delete-ops-alert-secret" data-secret-name="feishu_webhook_url">
+                                            删除飞书密钥
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Unlock Pricing Card -->
                             <div class="config-card" data-config="unlock_pricing">
                                 <div class="config-card-header">
