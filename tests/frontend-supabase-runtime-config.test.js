@@ -602,7 +602,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
     const expectations = new Map([
         ['verify.html', 'css/verify-page.css?v=20260324_VERIFY_STYLE_ATTRS_1'],
         ['prompts.html', 'css/prompts-page.css?v=20260324_PROMPTS_STYLE_ATTRS_1'],
-        ['reset-password.html', 'css/reset-password-page.css?v=20260324_RESET_PASSWORD_STYLES_1'],
+        ['reset-password.html', 'css/reset-password-page.css?v=20260324_RESET_PASSWORD_RUNTIME_STYLE_1'],
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
@@ -762,6 +762,51 @@ test('auth and verify runtime pages externalize page bootstraps instead of embed
 
     assert.equal(guestbookSource.includes('./js/guestbook-optional-enhancements.js'), true, 'guestbook.html should load the guestbook optional enhancements bootstrap file');
     assert.equal(guestbookSource.includes('scheduleOptionalGuestbookEnhancements'), false, 'guestbook.html should not inline optional guestbook enhancement boot logic');
+});
+
+test('reset password runtime bootstrap externalizes status visibility state', () => {
+    const resetPasswordSource = readRepoFile('reset-password.html');
+    const resetPasswordBootstrap = readRepoFile('js/reset-password-page.js');
+    const resetPasswordStyleSource = readRepoFile('css/reset-password-page.css');
+
+    const removedMarkers = [
+        "statusMsg.style.display = 'none';",
+        "statusMsg.style.display = 'block';",
+        "statusMsg.className = 'status-message';",
+        "statusMsg.className = 'status-message success';"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(resetPasswordBootstrap.includes(marker), false, `js/reset-password-page.js should not contain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'function resetStatusMessage(statusMsg)',
+        'function showStatusMessage(statusMsg, message, options = {})',
+        'statusMsg.hidden = true;',
+        'statusMsg.hidden = false;',
+        "statusMsg.classList.toggle('success', success);"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(resetPasswordBootstrap.includes(marker), true, `js/reset-password-page.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        resetPasswordSource.includes('./js/reset-password-page.js?v=20260324_RESET_PASSWORD_RUNTIME_STYLE_1'),
+        true,
+        'reset-password.html should load the latest reset password runtime-style bootstrap'
+    );
+    assert.equal(
+        resetPasswordSource.includes('class="status-message" hidden'),
+        true,
+        'reset-password.html should initialize the status message in a hidden state'
+    );
+    assert.equal(
+        resetPasswordStyleSource.includes('.status-message[hidden]'),
+        true,
+        'css/reset-password-page.css should hide status messages via the hidden attribute'
+    );
 });
 
 test('home, prompts, and admin studio pages externalize their remaining runtime bootstraps', () => {
