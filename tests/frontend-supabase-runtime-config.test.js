@@ -906,6 +906,70 @@ test('homepage entry points expose delegated guestbook triggers instead of inlin
     assert.equal(framerHomeSource.includes("closest('[data-home-trigger-upload=\"1\"]')"), true, 'js/framer_home.js should delegate homepage upload triggers');
 });
 
+test('guestbook runtime renderers externalize loading, modal, and interaction styling', () => {
+    const guestbookSource = readRepoFile('guestbook.js');
+    const guestbookHtml = readRepoFile('guestbook.html');
+    const styleSource = readRepoFile('style.css');
+
+    const removedMarkers = [
+        `sentinel.style.cssText =`,
+        `loadingIndicator.style.cssText =`,
+        `messageContainer.style.display = 'flex'`,
+        `messageContainer.style.opacity = '1'`,
+        `btn.style.opacity = '0.6'`,
+        `modal.style.visibility = 'hidden'`,
+        `messageCard.style.background = 'rgba(155, 93, 229, 0.15)'`,
+        `icon.style.transform = 'scale(1.2)'`
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(guestbookSource.includes(marker), false, `guestbook.js should not contain ${marker}`);
+    }
+
+    const delegatedMarkers = [
+        'setInlineStyles(target, styles)',
+        'setCssVariables(target, variables)',
+        "messageContainer.classList.add('message-container--masonry')",
+        "loadingIndicator.classList.add('is-visible')",
+        'comment-item--depth-',
+        "messageCard.classList.add('comment-post-highlight')",
+        "overlay.classList.toggle('comment-modal-interactive', interactive)",
+        "btn.classList.add('is-processing')",
+        "icon.classList.add('like-icon-bounce')",
+        "messageContainer.classList.add('guestbook-message-container-ready')"
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(guestbookSource.includes(marker), true, `guestbook.js should contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '.guestbook-loading-state',
+        '.message-container.message-container--masonry',
+        '.comment-item--depth-1',
+        '.guestbook-loading-indicator',
+        '#commentModal.comment-modal-interactive .comment-composer-sheet',
+        'body.guestbook-page .message-item.comment-post-highlight',
+        '.message-item .action-btn.is-processing',
+        '.message-item .action-btn i.like-icon-bounce'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(styleSource.includes(marker), true, `style.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        guestbookHtml.includes('style.css?v=20260324_GUESTBOOK_RUNTIME_STYLE_HELPERS_1'),
+        true,
+        'guestbook.html should reference the updated guestbook stylesheet version'
+    );
+    assert.equal(
+        guestbookHtml.includes('guestbook.js?v=20260324_GUESTBOOK_RUNTIME_STYLE_HELPERS_1'),
+        true,
+        'guestbook.html should reference the updated guestbook script version'
+    );
+});
+
 test('admin studio shell tabs and dashboards route core controls through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');

@@ -2811,11 +2811,30 @@ body.guestbook-page.auth-sheet-open::after {
     /* 允许抬起的卡片完全显示 */
 }
 
+.message-container.message-container--single-column {
+    display: block;
+    width: 100%;
+}
+
+.message-container.message-container--masonry {
+    display: flex;
+    width: 100%;
+}
+
+.guestbook-loading-state {
+    padding: 20px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.9rem;
+}
+
 /* Message Animation Wrapper - 防止白色闪烁 */
 .message-anim-wrapper {
+    --guestbook-stagger-delay: 0s;
     opacity: 0;
     transform: translateY(20px);
     transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+    transition-delay: var(--guestbook-stagger-delay);
 }
 
 .message-anim-wrapper.visible {
@@ -2963,6 +2982,14 @@ body.guestbook-page.auth-sheet-open::after {
     margin-bottom: 12px;
     /* 渐进式圆角方案：主评论容器添加8px圆角，避免高亮启动时的"直角→圆角"闪烁 */
     border-radius: 8px;
+}
+
+.comment-item--depth-1 {
+    margin-left: 10px;
+}
+
+.comment-item--depth-2 {
+    margin-left: 20px;
 }
 
 .comment-row {
@@ -9702,6 +9729,11 @@ body.guestbook-page .message-item {
     width: 100% !important;
 }
 
+body.guestbook-page .message-item.comment-post-highlight {
+    transition: background 0.5s ease;
+    background: rgba(155, 93, 229, 0.15);
+}
+
 @keyframes guestbookPageFadeOutDown {
     from {
         opacity: 1;
@@ -9948,6 +9980,69 @@ body.guestbook-page #skeletonContainer.hidden {
 .guestbook-message-container-initial {
     opacity: 0;
     transition: opacity 0.3s ease;
+}
+
+.guestbook-message-container-initial.guestbook-message-container-ready {
+    opacity: 1;
+}
+
+.guestbook-scroll-sentinel {
+    width: 100%;
+    height: 10px;
+    clear: both;
+    background: transparent;
+    pointer-events: none;
+}
+
+.guestbook-loading-indicator {
+    width: 100%;
+    clear: both;
+    display: block;
+    padding: 20px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.9rem;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s, visibility 0.3s;
+    pointer-events: none;
+}
+
+.guestbook-loading-indicator.is-visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+#commentModal:not(.comment-modal-interactive) {
+    pointer-events: none !important;
+}
+
+#commentModal:not(.comment-modal-interactive) .comment-composer-sheet,
+#commentModal:not(.comment-modal-interactive) .comment-composer-sheet :is(button, a, input, textarea, select, label, [role="button"]) {
+    pointer-events: none !important;
+}
+
+#commentModal.comment-modal-interactive .comment-composer-sheet {
+    z-index: 4 !important;
+}
+
+.message-item .action-btn.is-processing,
+.message-item .comment-like-btn.is-processing {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.message-item .action-btn i,
+.message-item .comment-like-btn i {
+    transition: transform 0.2s ease;
+}
+
+.message-item .action-btn i.like-icon-bounce,
+.message-item .comment-like-btn i.like-icon-bounce {
+    transform: scale(1.2);
 }
 
 .guestbook-empty-state-hidden {

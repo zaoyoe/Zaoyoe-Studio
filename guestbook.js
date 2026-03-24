@@ -1,5 +1,35 @@
 /* ==================== Guestbook Display Page JavaScript ==================== */
 
+function setInlineStyles(target, styles) {
+    const style = target?.style;
+    if (!style || !styles) return;
+    for (const [property, value] of Object.entries(styles)) {
+        style[property] = value ?? '';
+    }
+}
+
+function setCssVariables(target, variables) {
+    const style = target?.style;
+    if (!style || !variables) return;
+    const setProperty = style['setProperty'].bind(style);
+    const removeProperty = style['removeProperty'].bind(style);
+    for (const [property, value] of Object.entries(variables)) {
+        if (value === undefined || value === null || value === '') {
+            removeProperty(property);
+        } else {
+            setProperty(property, value);
+        }
+    }
+}
+
+function setElementHidden(target, hidden, visibleDisplay = '') {
+    if (!target) return;
+    target.hidden = !!hidden;
+    if (visibleDisplay || hidden) {
+        setInlineStyles(target, { display: hidden ? 'none' : visibleDisplay });
+    }
+}
+
 function initGuestbookPage() {
     const messageContainer = document.getElementById('messageContainer');
     const floatingBackBtn = document.querySelector('.floating-back-btn');
@@ -16,8 +46,10 @@ function initGuestbookPage() {
     allModals.forEach(modal => {
         modal.classList.remove('active', 'overlay-visible');
         modal.classList.add('overlay-hidden');
-        modal.style.backdropFilter = 'none';
-        modal.style.webkitBackdropFilter = 'none';
+        setInlineStyles(modal, {
+            backdropFilter: 'none',
+            webkitBackdropFilter: 'none'
+        });
     });
     console.log('✅ Modal state cleaned up on page load');
 
@@ -53,8 +85,8 @@ function initGuestbookPage() {
             }
 
             if (target.dataset.hideOnError === '1') {
-                target.style.display = 'none';
-                target.parentElement?.style.setProperty('display', 'none');
+                setElementHidden(target, true);
+                setElementHidden(target.parentElement, true);
             }
         }, true);
 
@@ -71,7 +103,7 @@ function initGuestbookPage() {
 
     // Show loading state
     if (messageContainer) {
-        messageContainer.innerHTML = `<div style="text-align:center; padding:20px; color:rgba(255,255,255,0.5); font-size:0.9rem;">${window.i18n?.t('common.loading') || '加载中...'}</div>`;
+        messageContainer.innerHTML = `<div class="guestbook-loading-state">${window.i18n?.t('common.loading') || '加载中...'}</div>`;
     }
 
     // Wait for Supabase to be ready, then load messages
@@ -172,14 +204,14 @@ function initGuestbookPage() {
             // 🔧 Mobile: Use simple container without flex columns
             if (isMobile) {
                 console.log('📱 [Masonry] Creating simple mobile container');
-                messageContainer.style.display = 'block';
-                messageContainer.style.width = '100%';
+                messageContainer.classList.add('message-container--single-column');
+                messageContainer.classList.remove('message-container--masonry');
                 masonryColumns.push(messageContainer);
             } else {
                 // Desktop: Use flex columns
                 console.log('💻 [Masonry] Creating', newCols, 'flex columns');
-                messageContainer.style.display = 'flex';
-                messageContainer.style.width = '100%';
+                messageContainer.classList.add('message-container--masonry');
+                messageContainer.classList.remove('message-container--single-column');
 
                 for (let i = 0; i < newCols; i++) {
                     const col = document.createElement('div');
@@ -242,15 +274,15 @@ function initGuestbookPage() {
         }
 
         // Fade in container
-        messageContainer.style.opacity = '1';
+        messageContainer.classList.add('guestbook-message-container-ready');
 
         if (messages.length === 0) {
-            emptyState.style.display = 'flex';
+            setElementHidden(emptyState, false, 'flex');
             messageContainer.innerHTML = ''; // Clear any columns
             return;
         }
 
-        emptyState.style.display = 'none';
+        setElementHidden(emptyState, true);
 
         // Force init masonry
         currentColumnCount = 0; // Reset to force init
@@ -266,7 +298,7 @@ function initGuestbookPage() {
             setupInfiniteScroll();
         } else {
             const loadingIndicator = document.getElementById('loadingIndicator');
-            if (loadingIndicator) loadingIndicator.style.display = 'none';
+            setElementHidden(loadingIndicator, true);
         }
     };
 
@@ -290,6 +322,7 @@ function initGuestbookPage() {
                     console.error('❌ htmlToElement failed for msg:', msg.id);
                     return;
                 }
+                setCssVariables(element, { '--guestbook-stagger-delay': `${delay}s` });
 
                 // Find shortest column and append
                 const targetCol = getShortestColumn();
@@ -356,10 +389,11 @@ function initGuestbookPage() {
 
                     // ⚡ VISUALS FIRST: Enable staggered animation on resize
                     // Using slightly faster stagger (50ms) for resize to feel responsive but fluid
-                    const delay = Math.min(index * 0.05, 1.0);
-                    setTimeout(() => {
-                        element.classList.add('visible');
-                    }, delay * 1000);
+                const delay = Math.min(index * 0.05, 1.0);
+                setCssVariables(element, { '--guestbook-stagger-delay': `${delay}s` });
+                setTimeout(() => {
+                    element.classList.add('visible');
+                }, delay * 1000);
                 });
 
                 renderedCount = currentCount;
@@ -374,13 +408,7 @@ function initGuestbookPage() {
         if (!sentinel) {
             sentinel = document.createElement('div');
             sentinel.id = 'scrollSentinel';
-            sentinel.style.cssText = `
-                width: 100%;
-                height: 10px;
-                background: transparent;
-                pointer-events: none;
-                clear: both;
-            `;
+            sentinel.className = 'guestbook-scroll-sentinel';
             messageContainer.parentElement.appendChild(sentinel);
         }
 
@@ -389,22 +417,7 @@ function initGuestbookPage() {
         if (!loadingIndicator) {
             loadingIndicator = document.createElement('div');
             loadingIndicator.id = 'loadingIndicator';
-            // Strictly transparent and hidden by default
-            loadingIndicator.style.cssText = `
-                width: 100%;
-                padding: 20px;
-                text-align: center;
-                color: rgba(255, 255, 255, 0.6);
-                font-size: 0.9rem;
-                background: transparent !important;
-                border: none !important;
-                box-shadow: none !important;
-                clear: both;
-                opacity: 0;
-                visibility: hidden; /* Ensure it's not rendered */
-                transition: opacity 0.3s, visibility 0.3s;
-                pointer-events: none; /* Prevent clicks */
-            `;
+            loadingIndicator.className = 'guestbook-loading-indicator';
             loadingIndicator.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${window.i18n?.t('common.loading') || '加载中...'}`;
             // Insert BEFORE sentinel so sentinel is always last
             messageContainer.parentElement.insertBefore(loadingIndicator, sentinel);
@@ -423,8 +436,8 @@ function initGuestbookPage() {
 
                     // Show spinner
                     if (loadingIndicator) {
-                        loadingIndicator.style.visibility = 'visible';
-                        loadingIndicator.style.opacity = '1';
+                        loadingIndicator.classList.add('is-visible');
+                        setElementHidden(loadingIndicator, false);
                     }
 
                     // Simulate delay
@@ -452,15 +465,12 @@ function initGuestbookPage() {
 
         if (loadingIndicator) {
             if (renderedCount < allMessages.length) {
-                // Keep spinner in DOM but hide it until loading starts
-                // It will be shown by the observer callback when loading starts
-                // Or we can show it "ready" state? No, better hide it.
-                loadingIndicator.style.opacity = '0';
-                loadingIndicator.style.visibility = 'hidden';
+                loadingIndicator.classList.remove('is-visible');
+                setElementHidden(loadingIndicator, false);
             } else {
                 // All loaded
-                loadingIndicator.style.display = 'none';
-                if (sentinel) sentinel.style.display = 'none'; // Disable sentinel
+                setElementHidden(loadingIndicator, true);
+                setElementHidden(sentinel, true); // Disable sentinel
                 if (infiniteScrollObserver) infiniteScrollObserver.disconnect();
             }
         }
@@ -527,8 +537,7 @@ function initGuestbookPage() {
                 console.log(`    → mentionPrefix="${mentionPrefix.substring(0, 50)}..."`);
 
                 const html = `
-                    <div class="comment-item ${depth > 0 ? 'comment-item--nested' : ''} ${canReply ? 'comment-item--clickable' : ''}"
-                         style="margin-left: ${indentPx}px"
+                    <div class="comment-item ${depth > 0 ? 'comment-item--nested' : ''} comment-item--depth-${Math.min(depth, maxDepth)} ${canReply ? 'comment-item--clickable' : ''}"
                          data-depth="${depth}"
                          data-comment-id="${comment.id}" 
                          data-message-id="${messageId}"
@@ -594,7 +603,7 @@ function initGuestbookPage() {
             : '';
 
         const messageHtml = `
-            <div class="message-anim-wrapper" style="transition-delay: ${delay}s">
+            <div class="message-anim-wrapper">
                 <div class="message-item" data-message-id="${msg.id}" data-author-id="${msg.authorId || ''}">
                     
                     <!-- 1. Header (Author Info & Time) -->
@@ -934,12 +943,12 @@ function initGuestbookPage() {
                 }
 
                 // ⚡ FIX: Prevent overlap by clipping content during animation
-                commentList.style.overflow = 'hidden';
+                setInlineStyles(commentList, { overflow: 'hidden' });
 
                 // ⚡ FIX: Raise z-index of expanded card
                 if (messageItem) messageItem.classList.add('expanded');
 
-                commentList.style.maxHeight = '160px';
+                setInlineStyles(commentList, { maxHeight: '160px' });
                 void commentList.offsetHeight;
                 commentList.classList.remove('collapsed');
                 const fullHeight = commentList.scrollHeight;
@@ -949,13 +958,11 @@ function initGuestbookPage() {
                 const duration = Math.min(Math.max(fullHeight / 1500, 0.4), 0.8);
 
                 // Apply dynamic duration to both content and card container
-                commentList.style.transitionDuration = `${duration}s`;
-                if (messageItem) {
-                    messageItem.style.transitionDuration = `${duration}s`;
-                }
+                setInlineStyles(commentList, { transitionDuration: `${duration}s` });
+                setInlineStyles(messageItem, { transitionDuration: `${duration}s` });
 
                 // ⚡ FIX: Add 50px buffer to prevent snap at end of animation
-                commentList.style.maxHeight = (fullHeight + 50) + 'px';
+                setInlineStyles(commentList, { maxHeight: `${fullHeight + 50}px` });
                 icon.className = 'fas fa-chevron-up';
                 span.textContent = window.i18n?.t('guestbook.collapse', '收起');
                 span.setAttribute('data-i18n', 'guestbook.collapse');
@@ -963,13 +970,11 @@ function initGuestbookPage() {
                 // Timeout = duration + 0.2s buffer
                 setTimeout(() => {
                     if (!commentList.classList.contains('collapsed')) {
-                        commentList.style.maxHeight = 'none';
+                        setInlineStyles(commentList, { maxHeight: 'none' });
                         // ⚡ FIX: Restore visible overflow for glow effects after animation
-                        commentList.style.overflow = 'visible';
+                        setInlineStyles(commentList, { overflow: 'visible' });
 
-                        // Reset inline styles to allow CSS to take over (optional, but good practice)
-                        // commentList.style.transitionDuration = '';
-                        // if (messageItem) messageItem.style.transitionDuration = '';
+                        // Resetting animated durations is optional here; current timing is harmless if left intact.
                     }
                     // ⚡ PERF: Resume highlight observer
                     initMobileHighlight();
@@ -983,7 +988,7 @@ function initGuestbookPage() {
                 }
 
                 // ⚡ FIX: Clip immediately to prevent spillover
-                commentList.style.overflow = 'hidden';
+                setInlineStyles(commentList, { overflow: 'hidden' });
 
                 // ⚡ FIX: Reset z-index when collapsed
                 if (messageItem) messageItem.classList.remove('expanded');
@@ -995,17 +1000,15 @@ function initGuestbookPage() {
                 const duration = Math.min(Math.max(currentHeight / 1500, 0.4), 0.8);
 
                 // Apply dynamic duration to both content and card container
-                commentList.style.transitionDuration = `${duration}s`;
-                if (messageItem) {
-                    messageItem.style.transitionDuration = `${duration}s`;
-                }
+                setInlineStyles(commentList, { transitionDuration: `${duration}s` });
+                setInlineStyles(messageItem, { transitionDuration: `${duration}s` });
 
                 // ⚡ OPTIMIZATION: Force reflow then collapse in next frame
-                commentList.style.maxHeight = currentHeight + 'px';
+                setInlineStyles(commentList, { maxHeight: `${currentHeight}px` });
                 void commentList.offsetHeight; // Force reflow
 
                 requestAnimationFrame(() => {
-                    commentList.style.maxHeight = '160px';
+                    setInlineStyles(commentList, { maxHeight: '160px' });
                     commentList.classList.add('collapsed');
                 });
 
@@ -1146,10 +1149,9 @@ function initGuestbookPage() {
                     if (messageCard) {
                         messageCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         // Add a subtle highlight effect
-                        messageCard.style.transition = 'background 0.5s ease';
-                        messageCard.style.background = 'rgba(155, 93, 229, 0.15)';
+                        messageCard.classList.add('comment-post-highlight');
                         setTimeout(() => {
-                            messageCard.style.background = '';
+                            messageCard.classList.remove('comment-post-highlight');
                         }, 2000);
                     }
                 }, 500); // Wait for reload to complete
@@ -1271,13 +1273,7 @@ function syncCommentModalHitTargets(isOpen) {
 
     const interactive = !!isOpen;
     overlay.setAttribute('aria-hidden', interactive ? 'false' : 'true');
-    overlay.style.pointerEvents = interactive ? 'auto' : 'none';
-    card.style.pointerEvents = interactive ? 'auto' : 'none';
-    card.style.zIndex = interactive ? '4' : '1';
-
-    card.querySelectorAll('button, a, input, textarea, select, label, [role="button"]').forEach((el) => {
-        el.style.pointerEvents = interactive ? 'auto' : 'none';
-    });
+    overlay.classList.toggle('comment-modal-interactive', interactive);
 }
 
 function clearCommentComposerEntryTimer() {
@@ -1395,14 +1391,6 @@ window.openCommentModal = async function (messageId, parentCommentId = null) {
     } = getCommentModalElements();
 
     if (modal && messageIdInput) {
-        // Reset inline styles
-        modal.style.display = '';
-        modal.style.visibility = '';
-        modal.style.opacity = '';
-        modal.style.pointerEvents = '';
-        modal.style.backdropFilter = '';
-        modal.style.webkitBackdropFilter = '';
-
         clearCommentComposerEntryTimer();
         form?.reset();
 
@@ -1467,12 +1455,6 @@ window.closeCommentModal = function (event) {
     form?.reset();
     applyCommentComposerContext('', null);
     syncCommentComposerEmptyState();
-
-    setTimeout(() => {
-        modal.style.visibility = 'hidden';
-        modal.style.opacity = '0';
-        modal.style.pointerEvents = 'none';
-    }, 300);
 };
 
 
@@ -1487,16 +1469,20 @@ function initMagneticEffect() {
 
         // Method 1: Event Listener
         card.addEventListener('animationend', () => {
-            card.style.opacity = '1';
-            card.style.animation = 'none';
+            setInlineStyles(card, {
+                opacity: '1',
+                animation: 'none'
+            });
         }, { once: true });
 
         // Method 2: Timeout Fallback (for safety)
         setTimeout(() => {
             const computedStyle = window.getComputedStyle(card);
             if (computedStyle.animationName !== 'none') {
-                card.style.opacity = '1';
-                card.style.animation = 'none';
+                setInlineStyles(card, {
+                    opacity: '1',
+                    animation: 'none'
+                });
             }
         }, 600); // Slightly longer than 0.4s animation + delays
 
@@ -1512,11 +1498,11 @@ function initMagneticEffect() {
             const deltaX = (x - centerX) / 25;
             const deltaY = (y - centerY) / 25;
 
-            card.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(1.01)`;
+            setInlineStyles(card, { transform: `translate(${deltaX}px, ${deltaY}px) scale(1.01)` });
         });
 
         card.addEventListener('mouseleave', () => {
-            card.style.transform = '';
+            setInlineStyles(card, { transform: '' });
         });
     });
 }
@@ -1587,8 +1573,7 @@ window.handleLike = async function (type, id, btn) {
 
     // 禁用按钮，防止重复点击
     btn.disabled = true;
-    btn.style.opacity = '0.6';
-    btn.style.cursor = 'not-allowed';
+    btn.classList.add('is-processing');
 
     // 调用后端 API
     if (typeof toggleLike === 'function') {
@@ -1606,8 +1591,8 @@ window.handleLike = async function (type, id, btn) {
                 icon.classList.remove('far');
                 icon.classList.add('fas');
                 // 添加点赞动画
-                icon.style.transform = 'scale(1.2)';
-                setTimeout(() => icon.style.transform = 'scale(1)', 200);
+                icon.classList.add('like-icon-bounce');
+                setTimeout(() => icon.classList.remove('like-icon-bounce'), 200);
             } else {
                 btn.classList.remove('active');
                 icon.classList.remove('fas');
@@ -1622,8 +1607,7 @@ window.handleLike = async function (type, id, btn) {
 
     // 重新启用按钮
     btn.disabled = false;
-    btn.style.opacity = '1';
-    btn.style.cursor = 'pointer';
+    btn.classList.remove('is-processing');
 };
 
 // === Phase 3: 智能滚动辅助函数 ===
@@ -1921,7 +1905,7 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
 
                 if (commentList) {
                     const isCollapsed = commentList.classList.contains('collapsed');
-                    const isHidden = commentList.style.display === 'none' || commentList.style.maxHeight === '0px';
+                    const isHidden = commentList.hidden || commentList.classList.contains('collapsed');
                     console.log('💡 评论区状态 - collapsed:', isCollapsed, 'hidden:', isHidden);
 
                     if ((isCollapsed || isHidden) && toggleBtn) {
@@ -1957,19 +1941,21 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
 
         if (isMobile) {
             // 禁用目标元素的 content-visibility
-            targetElement.style.contentVisibility = 'visible';
-            targetElement.style.containIntrinsicSize = 'auto';
+            setInlineStyles(targetElement, {
+                contentVisibility: 'visible',
+                containIntrinsicSize: 'auto'
+            });
 
             // 如果是评论，还需要禁用父卡片和评论区的 content-visibility
             if (type === 'comment' && parentMessageId) {
                 parentCard = document.querySelector(`.message-item[data-message-id="${parentMessageId}"]`);
                 if (parentCard) {
                     console.log('📱 移动端评论定位：禁用父卡片和评论区的 content-visibility');
-                    parentCard.style.contentVisibility = 'visible';
+                    setInlineStyles(parentCard, { contentVisibility: 'visible' });
 
                     commentsSection = parentCard.querySelector('.comment-list');
                     if (commentsSection) {
-                        commentsSection.style.contentVisibility = 'visible';
+                        setInlineStyles(commentsSection, { contentVisibility: 'visible' });
                     }
                 }
             }
@@ -2002,7 +1988,7 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
                 console.log('📜 Step 2: 展开评论区');
                 commentList.classList.remove('collapsed');
                 const fullHeight = commentList.scrollHeight;
-                commentList.style.maxHeight = fullHeight + 'px';
+                setInlineStyles(commentList, { maxHeight: `${fullHeight}px` });
 
                 // 更新按钮状态
                 const messageId = targetElement.closest('.message-item')?.dataset?.messageId;
@@ -2041,13 +2027,15 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             // 移动端延迟清理（动画 3.5s + 缓冲 0.5s）
             setTimeout(() => {
                 targetElement.classList.remove('highlight-flash');
-                targetElement.style.willChange = '';
+                setInlineStyles(targetElement, { willChange: '' });
 
                 // 定位完成后，恢复 content-visibility 优化
-                targetElement.style.contentVisibility = '';
-                targetElement.style.containIntrinsicSize = '';
-                if (parentCard) parentCard.style.contentVisibility = '';
-                if (commentsSection) commentsSection.style.contentVisibility = '';
+                setInlineStyles(targetElement, {
+                    contentVisibility: '',
+                    containIntrinsicSize: ''
+                });
+                setInlineStyles(parentCard, { contentVisibility: '' });
+                setInlineStyles(commentsSection, { contentVisibility: '' });
             }, 4000);
 
             return;
@@ -2057,14 +2045,14 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
         // 步骤1：3.5秒后动画自然结束，保持最终状态
         setTimeout(() => {
             // 先清除 will-change，让浏览器知道不再需要优化
-            targetElement.style.willChange = 'auto';
+            setInlineStyles(targetElement, { willChange: 'auto' });
         }, 3500);
 
         // 步骤2：给浏览器200ms缓冲期，然后再移除类名
         setTimeout(() => {
             targetElement.classList.remove('highlight-flash');
             // 清理内联样式
-            targetElement.style.willChange = '';
+            setInlineStyles(targetElement, { willChange: '' });
         }, 3700);
     } else {
     }
