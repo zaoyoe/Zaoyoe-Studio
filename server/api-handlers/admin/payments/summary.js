@@ -52,6 +52,26 @@ const REFUND_FAILURE_EVENT_META = Object.freeze({
         topicLabel: '回滚失败'
     }
 });
+const REFUND_EXCEPTION_TOPIC_META = Object.freeze([
+    {
+        key: 'refund_failures',
+        label: '退款失败',
+        severity: 'warning',
+        description: '网关退款失败，但系统已自动补回积分，仍需复核通道响应和重复提交风险。'
+    },
+    {
+        key: 'refund_reclaim_failures',
+        label: '扣回失败',
+        severity: 'critical',
+        description: '已入账订单在退款前无法安全扣回积分，当前退款已 fail-closed 停止。'
+    },
+    {
+        key: 'refund_compensation_failures',
+        label: '回滚失败',
+        severity: 'critical',
+        description: '退款失败后自动补回积分也失败了，需要立刻人工对账修复。'
+    }
+]);
 const TREND_FAILED_EVENT_RESULTS = new Set([
     'webhook_exception',
     'process_rpc_failed',
@@ -926,7 +946,25 @@ function buildRefundFailureTopicItems(events) {
                 topic_key: refundMeta.topicKey,
                 topic_label: refundMeta.topicLabel
             };
-        });
+        })
+        .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+}
+
+function buildRefundExceptionTopics(events) {
+    const refundItems = buildRefundFailureTopicItems(events);
+    const topicItems = REFUND_EXCEPTION_TOPIC_META
+        .flatMap((topic) => refundItems.filter((item) => item.topic_key === topic.key).slice(0, 12))
+        .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+
+    return {
+        topics: REFUND_EXCEPTION_TOPIC_META
+            .map((topic) => ({
+                ...topic,
+                count: refundItems.filter((item) => item.topic_key === topic.key).length
+            }))
+            .filter((topic) => Number(topic.count || 0) > 0),
+        items: topicItems
+    };
 }
 
 function buildExceptionTopics({ orders, events, queryAttempts }) {
@@ -946,19 +984,14 @@ function buildExceptionTopics({ orders, events, queryAttempts }) {
         }));
     const duplicateItems = buildDuplicateWebhookTopicItems(events);
     const queryFailureItems = buildQueryFailureTopicItems(queryAttempts);
-    const refundFailureItems = buildRefundFailureTopicItems(events);
-    const refundGatewayFailureItems = refundFailureItems.filter((item) => item.topic_key === 'refund_failures');
-    const refundReclaimFailureItems = refundFailureItems.filter((item) => item.topic_key === 'refund_reclaim_failures');
-    const refundCompensationFailureItems = refundFailureItems.filter((item) => item.topic_key === 'refund_compensation_failures');
+    const refundTopics = buildRefundExceptionTopics(events);
 
     const topicItems = [
         ...amountMismatchItems.slice(0, 12),
         ...reviewItems.slice(0, 12),
         ...duplicateItems.slice(0, 12),
         ...queryFailureItems.slice(0, 12),
-        ...refundGatewayFailureItems.slice(0, 12),
-        ...refundReclaimFailureItems.slice(0, 12),
-        ...refundCompensationFailureItems.slice(0, 12)
+        ...(refundTopics.items || [])
     ].sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
 
     return {
@@ -991,27 +1024,7 @@ function buildExceptionTopics({ orders, events, queryAttempts }) {
                 description: '追踪钱包查码失败原因，判断是用户误输、订单未落单还是接口异常。',
                 count: queryFailureItems.length
             },
-            {
-                key: 'refund_failures',
-                label: '退款失败',
-                severity: 'warning',
-                description: '网关退款失败，但系统已自动补回积分，仍需复核通道响应和重复提交风险。',
-                count: refundGatewayFailureItems.length
-            },
-            {
-                key: 'refund_reclaim_failures',
-                label: '扣回失败',
-                severity: 'critical',
-                description: '已入账订单在退款前无法安全扣回积分，当前退款已 fail-closed 停止。',
-                count: refundReclaimFailureItems.length
-            },
-            {
-                key: 'refund_compensation_failures',
-                label: '回滚失败',
-                severity: 'critical',
-                description: '退款失败后自动补回积分也失败了，需要立刻人工对账修复。',
-                count: refundCompensationFailureItems.length
-            }
+            ...(refundTopics.topics || [])
         ].filter((topic) => Number(topic.count || 0) > 0),
         items: topicItems
     };
@@ -1572,6 +1585,9 @@ module.exports = async function handler(req, res) {
                 .filter(Boolean)
                 .slice(0, 24)
             : [];
+        const refundAlertSummary = needsEvents
+            ? buildRefundExceptionTopics(scopedEvents || [])
+            : { topics: [], items: [] };
         const exceptionTopics = view === 'ops'
             ? buildExceptionTopics({
                 orders: visibleOrders || [],
@@ -1584,14 +1600,26 @@ module.exports = async function handler(req, res) {
             ? [...recentOrderAnomalies, ...recentEventAnomalies, ...recentSessionAnomalies]
                 .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
             : [];
-        const anomalyCases = view === 'ops'
-            ? await fetchAnomalyCasesByTargets(scopedClient, [...combinedRecentAnomalies, ...(exceptionTopics.items || [])])
+        const anomalyCaseTargets = view === 'ops'
+            ? [...combinedRecentAnomalies, ...(exceptionTopics.items || [])]
+            : (refundAlertSummary.items || []);
+        const anomalyCases = anomalyCaseTargets.length
+            ? await fetchAnomalyCasesByTargets(scopedClient, anomalyCaseTargets)
+            : [];
+        const enrichedRefundAlertItems = needsEvents
+            ? enrichAnomaliesWithCases(refundAlertSummary.items || [], anomalyCases)
             : [];
         const enrichedRecentAnomalies = view === 'ops'
             ? enrichAnomaliesWithCases(combinedRecentAnomalies, anomalyCases)
             : [];
         const enrichedExceptionTopicItems = view === 'ops'
             ? enrichAnomaliesWithCases(exceptionTopics.items || [], anomalyCases)
+            : [];
+        const refundAlertTopics = needsEvents
+            ? (refundAlertSummary.topics || []).map((topic) => ({
+                ...topic,
+                count: enrichedRefundAlertItems.filter((item) => item.topic_key === topic.key).length
+            })).filter((topic) => Number(topic.count || 0) > 0)
             : [];
         const recentAnomalies = view === 'ops'
             ? enrichedRecentAnomalies
@@ -1667,6 +1695,8 @@ module.exports = async function handler(req, res) {
             sitewide_summary,
             points_breakdown,
             business_breakdown,
+            refund_alert_topics: needsEvents ? refundAlertTopics : undefined,
+            refund_alert_items: needsEvents ? enrichedRefundAlertItems : undefined,
             exception_topics: exceptionTopics.topics || [],
             exception_topic_items: enrichedExceptionTopicItems,
             recent_anomalies: recentAnomalies,

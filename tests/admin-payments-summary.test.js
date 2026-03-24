@@ -377,12 +377,91 @@ test('payments summary groups refund failure events into dedicated ops topics an
     });
 });
 
+test('payments overview summary exposes refund alerts for admin-studio visibility panel', async () => {
+    const now = new Date('2026-03-24T10:00:00.000Z').toISOString();
+    const state = {
+        paymentOrders: [
+            {
+                id: 'order-2',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_OVERVIEW_1',
+                package_name: '积分充值 500 点',
+                paid_amount: 10,
+                expected_amount: 10,
+                points_amount: 500,
+                status: 'redeemed',
+                user_id: 'user-2',
+                created_at: now,
+                paid_at: now,
+                claimed_at: now,
+                site: 'cn',
+                last_error: null,
+                sign_verified: true,
+                amount_verified: true,
+                provider_metadata: {}
+            }
+        ],
+        paymentEvents: [
+            {
+                id: 'event-overview-1',
+                payment_order_id: 'order-2',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_OVERVIEW_1',
+                event_type: 'admin_refund',
+                signature_valid: true,
+                amount_valid: null,
+                processing_result: 'admin_refund_compensation_failed',
+                error_message: 'points compensation failed',
+                response_status: 500,
+                created_at: '2026-03-24T10:10:00.000Z'
+            }
+        ],
+        paymentAnomalyCases: [
+            {
+                id: 'case-overview-1',
+                target_type: 'event',
+                target_id: 'event-overview-1',
+                status: 'handled',
+                note: 'ops handled',
+                resolution: '已人工补回积分',
+                last_action: 'mark_handled',
+                last_action_at: '2026-03-24T10:20:00.000Z'
+            }
+        ]
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'overview',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(Array.isArray(payload.refund_alert_topics), true);
+        assert.equal(Array.isArray(payload.refund_alert_items), true);
+        assert.equal(payload.refund_alert_topics.some((topic) => topic.key === 'refund_compensation_failures' && topic.count === 1), true);
+        assert.equal(payload.refund_alert_items.some((item) => item.title === '退款积分回滚失败' && item.ops_status === 'handled'), true);
+        assert.equal((payload.exception_topics || []).length, 0);
+    });
+});
+
 test('payments runtime summary UI keeps refund anomaly indicators wired in source', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'js', 'admin-payments.js'), 'utf8');
 
     assert.match(source, /refund_failures/);
     assert.match(source, /refund_reclaim_failures/);
     assert.match(source, /refund_compensation_failures/);
+    assert.match(source, /refund_alert_topics/);
     assert.match(source, /退款异常/);
     assert.match(source, /退款积分回滚失败/);
+    assert.match(source, /payments-focus-exception-topic/);
+    assert.match(source, /paymentsRefundAlertsPanel/);
 });

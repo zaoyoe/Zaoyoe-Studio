@@ -40,6 +40,8 @@
     ]);
     const CLEANUP_SCOPE_HTML = '只会清理订单号前缀为 <code>AUTO_CDX_*</code> 或 <code>SMOKE_*</code> 的测试订单，以及邮箱匹配 <code>codex.*@example.com</code> 或 <code>smoke-payment-*@zaoyoe.invalid</code> 的测试账号。';
     const CLEANUP_SCOPE_TEXT = '将删除 AUTO_CDX_* / SMOKE_* 测试订单，以及 codex.*@example.com / smoke-payment-*@zaoyoe.invalid 测试账号。此操作不可撤销，是否继续？';
+    const REFUND_TOPIC_ORDER = ['refund_compensation_failures', 'refund_reclaim_failures', 'refund_failures'];
+    const REFUND_TOPIC_KEY_SET = new Set(REFUND_TOPIC_ORDER);
 
     function escapeHtml(value) {
         return String(value ?? '')
@@ -232,6 +234,22 @@
             hupijiao: 'fas fa-pepper-hot'
         };
         return map[String(provider || '').trim().toLowerCase()] || 'fas fa-credit-card';
+    }
+
+    function getRefundTopicIcon(topicKey) {
+        const map = {
+            refund_compensation_failures: 'fas fa-triangle-exclamation',
+            refund_reclaim_failures: 'fas fa-rotate-left',
+            refund_failures: 'fas fa-arrow-rotate-left'
+        };
+        return map[String(topicKey || '').trim().toLowerCase()] || 'fas fa-bell';
+    }
+
+    function getRefundTopicTone(topic) {
+        const severity = String(topic?.severity || '').trim().toLowerCase();
+        if (severity === 'critical') return 'danger';
+        if (severity === 'warning') return 'warning';
+        return 'info';
     }
 
     function getSeverityLabel(severity) {
@@ -1024,6 +1042,86 @@
         renderMetricCards(target, cards);
     }
 
+    function renderRefundAlerts(data) {
+        const panel = document.getElementById('paymentsRefundAlertsPanel');
+        const target = document.getElementById('paymentsRefundAlerts');
+        const meta = document.getElementById('paymentsRefundAlertsMeta');
+        if (!panel || !target || !meta) return;
+
+        const topics = (Array.isArray(data?.refund_alert_topics) ? data.refund_alert_topics : [])
+            .filter((topic) => REFUND_TOPIC_KEY_SET.has(String(topic?.key || '').trim().toLowerCase()))
+            .sort((left, right) => REFUND_TOPIC_ORDER.indexOf(String(left?.key || '').trim().toLowerCase()) - REFUND_TOPIC_ORDER.indexOf(String(right?.key || '').trim().toLowerCase()));
+        const items = Array.isArray(data?.refund_alert_items) ? data.refund_alert_items : [];
+        const totalCount = topics.reduce((sum, topic) => sum + Number(topic?.count || 0), 0);
+        const criticalCount = topics.reduce((sum, topic) => sum + (String(topic?.severity || '').trim().toLowerCase() === 'critical' ? Number(topic?.count || 0) : 0), 0);
+
+        if (!topics.length || !items.length) {
+            panel.hidden = true;
+            target.innerHTML = '';
+            meta.textContent = '';
+            return;
+        }
+
+        panel.hidden = false;
+        meta.textContent = criticalCount > 0
+            ? `当前有 ${formatNumber(totalCount)} 项退款售后告警，其中 ${formatNumber(criticalCount)} 项需要立即人工对账。`
+            : `当前有 ${formatNumber(totalCount)} 项退款售后告警，已同步管理员站内通知。`;
+
+        target.innerHTML = topics.map((topic) => {
+            const topicKey = String(topic?.key || '').trim().toLowerCase();
+            const topicItems = items
+                .filter((item) => String(item?.topic_key || '').trim().toLowerCase() === topicKey)
+                .slice(0, 2);
+            const tone = getRefundTopicTone(topic);
+            return `
+                <article class="payments-refund-topic-card severity-${escapeHtml(topic?.severity || 'warning')}">
+                    <div class="payments-refund-topic-head">
+                        <div class="payments-refund-topic-copy">
+                            <div class="payments-refund-topic-title">
+                                <i class="${escapeHtml(getRefundTopicIcon(topicKey))}"></i>
+                                <span>${escapeHtml(topic?.label || '退款告警')}</span>
+                            </div>
+                            <div class="payments-refund-topic-description">${escapeHtml(topic?.description || '')}</div>
+                        </div>
+                        <div class="payments-provider-badges">
+                            <span class="payments-mini-badge ${escapeHtml(tone)}">${escapeHtml(formatNumber(topic?.count || 0))} 项</span>
+                            <button
+                                type="button"
+                                class="payments-anomaly-action-btn request_retry"
+                                data-admin-action="payments-focus-exception-topic"
+                                data-payments-topic-key="${escapeHtml(topicKey)}"
+                            >
+                                查看专题
+                            </button>
+                        </div>
+                    </div>
+                    <div class="payments-refund-alert-stream">
+                        ${topicItems.length ? topicItems.map((item) => `
+                            <div class="payments-refund-alert-item severity-${escapeHtml(item?.severity || 'warning')}">
+                                <div class="payments-refund-alert-item-top">
+                                    <div class="payments-refund-alert-item-copy">
+                                        <strong>${escapeHtml(item?.title || '退款异常')}</strong>
+                                        <span>${escapeHtml(item?.message || '')}</span>
+                                    </div>
+                                    <span class="payments-anomaly-severity">${escapeHtml(getSeverityLabel(item?.severity))}</span>
+                                </div>
+                                <div class="payments-refund-alert-item-meta">
+                                    <span><small>订单号</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
+                                    <span><small>通道</small><strong>${escapeHtml(getProviderLabel(item?.provider))}</strong></span>
+                                    <span><small>时间</small><strong>${escapeHtml(formatDateTime(item?.created_at))}</strong></span>
+                                </div>
+                                ${renderAnomalyOpsState(item)}
+                                <div class="payments-refund-alert-hint">${escapeHtml(getHandlingSuggestion(item))}</div>
+                            </div>
+                        `).join('') : `
+                            <div class="payments-empty-state compact">当前专题暂无可展开的最新明细，请切到异常运维查看完整历史。</div>
+                        `}
+                    </div>
+                </article>
+            `;
+        }).join('');
+    }
+
     function renderProviderStats(data) {
         const target = document.getElementById('paymentsProviderStats');
         if (!target) return;
@@ -1523,6 +1621,7 @@
 
     function rerenderCurrentView() {
         if (!state.summary) return;
+        renderRefundAlerts(state.summary);
         renderOverviewCards(state.summary);
         renderSitewideSummary(state.summary);
         renderBusinessBreakdown(state.summary);
@@ -1567,6 +1666,7 @@
         const data = state.summary;
         state.viewCache[state.activeTab] = getCurrentCacheKey();
         updateToolbarHighlights(data);
+        renderRefundAlerts(data);
         renderOverviewCards(data);
         renderProviderStats(data);
         renderSitewideSummary(data);
@@ -1639,6 +1739,26 @@
     function setExceptionTopicFilter(topicKey = 'all') {
         state.exceptionTopicFilter = String(topicKey || 'all').trim().toLowerCase() || 'all';
         renderExceptionTopics(state.summary || {});
+    }
+
+    async function focusExceptionTopic(topicKey = 'all') {
+        const normalizedTopicKey = String(topicKey || 'all').trim().toLowerCase() || 'all';
+        state.exceptionTopicFilter = normalizedTopicKey;
+        switchTab('ops', { reload: false });
+        if (state.initialized) {
+            if (!hasCachedDataForTab('ops')) {
+                await reload();
+            } else {
+                renderExceptionTopics(state.summary || {});
+            }
+        }
+
+        const target = document.getElementById('paymentsExceptionTopics');
+        if (target && typeof target.scrollIntoView === 'function') {
+            window.setTimeout(() => {
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 40);
+        }
     }
 
     async function init() {
@@ -2060,6 +2180,7 @@
         cleanupTestData,
         goToPage,
         handleAnomalyAction,
-        setExceptionTopicFilter
+        setExceptionTopicFilter,
+        focusExceptionTopic
     };
 })();
