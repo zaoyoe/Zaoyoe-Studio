@@ -423,6 +423,40 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
     }
 });
 
+test('selected preview showcase pages no longer embed inline style attributes', () => {
+    const previewFiles = [
+        'avatar_dropdown_preview.html',
+        'icons_preview_v1.html',
+        'icons_preview_v2.html',
+        'icons_preview_v3.html',
+        'icons_preview_v6.html',
+        'icons_preview_v7.html',
+        'icons_preview_v8.html',
+        'logo_preview_v6.html',
+        'logo_preview_v7.html',
+        'logo_preview_v15.html',
+        'logo_preview_v16.html',
+        'logo_preview_v17.html',
+        'profile_security_frosted_board.html',
+        'profile_security_frosted_board_glass.html',
+        'profile_security_frosted_board_mono.html',
+        'profile_security_glass_redesign_preview.html',
+        'profile_security_glass_reset_preview.html',
+        'profile_security_selective_frost_preview.html',
+        'profile_security_unified_sheet_preview.html'
+    ];
+    const inlineStyleAttrPattern = /\sstyle\s*=/i;
+
+    for (const relativePath of previewFiles) {
+        const source = readRepoFile(relativePath);
+        assert.equal(
+            inlineStyleAttrPattern.test(source),
+            false,
+            `${relativePath} should not contain inline style attributes`
+        );
+    }
+});
+
 test('shared theme preload replaces duplicated inline theme bootstraps on public and admin pages', () => {
     const files = [
         'guestbook.html',

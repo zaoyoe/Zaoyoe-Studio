@@ -251,3 +251,16 @@ body {
                 filter: hue-rotate(30deg);
             }
         }
+
+/* icons_preview_v7.html inline style attribute classes */
+.icons-preview-v7-inline-style-1 { transition:0.4s; }
+.icons-preview-v7-inline-style-2 { animation-delay:0s; }
+.icons-preview-v7-inline-style-3 { animation-delay:0.5s; }
+.icons-preview-v7-inline-style-4 { animation-delay:1s; }
+.icons-preview-v7-inline-style-5 { animation-delay:1.5s; }
+.icons-preview-v7-inline-style-6 { animation-delay: 0.2s; }
+.icons-preview-v7-inline-style-7 { animation-delay: 0.4s; }
+.icons-preview-v7-inline-style-8 { animation-delay:0.6s; }
+.icons-preview-v7-inline-style-9 { animation-delay:1.2s; }
+.icons-preview-v7-inline-style-10 { pointer-events:none; }
+/* end icons_preview_v7.html inline style attribute classes */

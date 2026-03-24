@@ -283,3 +283,10 @@
             border: 5px solid transparent;
             border-left-color: #667eea;
         }
+
+/* avatar_dropdown_preview.html inline style attribute classes */
+.avatar-dropdown-preview-inline-style-1 { background: linear-gradient(135deg, #f472b6, #db2777); }
+.avatar-dropdown-preview-inline-style-2 { background: linear-gradient(135deg, #4ade80, #16a34a); }
+.avatar-dropdown-preview-inline-style-3 { margin-left: auto; font-size: 12px; color: #4ade80; }
+.avatar-dropdown-preview-inline-style-4 { margin-left: auto; font-size: 12px; opacity: 0.5; }
+/* end avatar_dropdown_preview.html inline style attribute classes */

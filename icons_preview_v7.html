@@ -1,129 +1,102 @@
 <!DOCTYPE html>
+
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Icons Set 7: Prompts - Internal Motion</title>
-    
-    <link rel="stylesheet" href="css/icons-preview-v7.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Icons Set 7: Prompts - Internal Motion</title>
+<link href="css/icons-preview-v7.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1" rel="stylesheet"/>
 </head>
-
 <body data-preview-stagger="140">
-
-    <h1 data-preview-trigger-all="1">Prompts Icon - Internal Dynamics (Set 7)</h1>
-    <p class="subtitle">Focusing on separate moving parts within the icon itself</p>
-
-    <div class="set-container">
-        <h2>Variations for "Prompts" (AI 提示词)</h2>
-        <div class="icons-grid">
-
-            <!-- A: Galactic Sparkle -->
-            <div class="icon-wrapper">
-                <svg width="100" height="100" viewBox="0 0 100 100" fill="none" class="c-galactic">
-                    <defs>
-                        <radialGradient id="gal_glow" cx="50" cy="50" r="40">
-                            <stop offset="0" stop-color="#F472B6" stop-opacity="0.2" />
-                            <stop offset="1" stop-color="#F472B6" stop-opacity="0" />
-                        </radialGradient>
-                    </defs>
-                    <!-- Background Glow -->
-                    <circle cx="50" cy="50" r="40" fill="url(#gal_glow)" />
-
-                    <!-- Center Star -->
-                    <path d="M50 20 L55 45 L80 50 L55 55 L50 80 L45 55 L20 50 L45 45 Z" fill="#F472B6" class="star-main"
-                        style="transition:0.4s" />
-
-                    <!-- Orbiting Stars Group -->
-                    <g class="orbit-group">
-                        <circle cx="50" cy="15" r="3" fill="#FBCFE8" class="star-small" style="animation-delay:0s" />
-                        <circle cx="85" cy="50" r="2" fill="#FBCFE8" class="star-small" style="animation-delay:0.5s" />
-                        <circle cx="50" cy="85" r="4" fill="#DB2777" class="star-small" style="animation-delay:1s" />
-                        <circle cx="15" cy="50" r="2" fill="#FBCFE8" class="star-small" style="animation-delay:1.5s" />
-
-                        <!-- Connecting Orbit Line (Optional) -->
-                        <circle cx="50" cy="50" r="35" stroke="#F472B6" stroke-width="1" stroke-opacity="0.3"
-                            stroke-dasharray="4 4" fill="none" />
-                    </g>
-                </svg>
-                <div class="icon-label">Galactic Sparkle (星系)</div>
-            </div>
-
-            <!-- B: Neural Pulse -->
-            <div class="icon-wrapper">
-                <svg width="100" height="100" viewBox="0 0 100 100" fill="none" class="c-neural">
-                    <!-- Connections -->
-                    <line x1="50" y1="50" x2="50" y2="20" stroke="#EC4899" stroke-width="2" class="connection" />
-                    <line x1="50" y1="50" x2="80" y2="65" stroke="#EC4899" stroke-width="2" class="connection"
-                        style="animation-delay: 0.2s" />
-                    <line x1="50" y1="50" x2="20" y2="65" stroke="#EC4899" stroke-width="2" class="connection"
-                        style="animation-delay: 0.4s" />
-
-                    <!-- Satellite Nodes -->
-                    <circle cx="50" cy="20" r="6" fill="#FBCFE8" class="node node-sat" style="animation-delay:0s" />
-                    <circle cx="80" cy="65" r="6" fill="#FBCFE8" class="node node-sat" style="animation-delay:0.6s" />
-                    <circle cx="20" cy="65" r="6" fill="#FBCFE8" class="node node-sat" style="animation-delay:1.2s" />
-
-                    <!-- Center Node -->
-                    <circle cx="50" cy="50" r="12" fill="#DB2777" class="node node-center" />
-                    <circle cx="50" cy="50" r="6" fill="#FFF" />
-                </svg>
-                <div class="icon-label">Neural Pulse (神经网络)</div>
-            </div>
-
-            <!-- C: Magic Flow -->
-            <div class="icon-wrapper">
-                <svg width="100" height="100" viewBox="0 0 100 100" fill="none" class="c-magic">
-                    <defs>
-                        <linearGradient id="wand_grad" x1="20" y1="80" x2="80" y2="20">
-                            <stop offset="0" stop-color="#831843" />
-                            <stop offset="1" stop-color="#F472B6" />
-                        </linearGradient>
-                    </defs>
-
-                    <!-- Particles (Initially hidden, rise on hover) -->
-                    <circle cx="75" cy="25" r="3" fill="#FFF" class="particle p1" />
-                    <path d="M85 35 L88 40 L82 40 Z" fill="#FBCFE8" class="particle p2" />
-                    <circle cx="65" cy="35" r="2" fill="#FFF" class="particle p3" />
-
-                    <!-- Wand -->
-                    <g class="wand">
-                        <rect x="25" y="65" width="40" height="8" rx="4" transform="rotate(-45 45 69)"
-                            fill="url(#wand_grad)" />
-                        <!-- Wand Tip -->
-                        <circle cx="68" cy="32" r="8" fill="#F472B6" filter="drop-shadow(0 0 5px #F472B6)" />
-                        <path d="M68 32 L75 25 M68 32 L78 32 M68 32 L75 39" stroke="#FFF" stroke-width="2"
-                            stroke-linecap="round" />
-                    </g>
-                </svg>
-                <div class="icon-label">Magic Flow (魔法流动)</div>
-            </div>
-
-            <!-- D: Prism Core -->
-            <div class="icon-wrapper">
-                <svg width="100" height="100" viewBox="0 0 100 100" fill="none" class="c-prism">
-                    <!-- Core Glow -->
-                    <circle cx="50" cy="50" r="15" fill="#F472B6" filter="blur(10px)" class="core" />
-
-                    <!-- Floating Faces -->
-                    <path d="M50 20 L75 40 L50 60 L25 40 Z" fill="#FBCFE8" opacity="0.8" class="face face-1" />
-                    <!-- Top -->
-                    <path d="M25 40 L50 60 V90 L25 70 Z" fill="#BE185D" opacity="0.8" class="face face-2" />
-                    <!-- Left -->
-                    <path d="M75 40 L50 60 V90 L75 70 Z" fill="#DB2777" opacity="0.8" class="face face-3" />
-                    <!-- Right -->
-
-                    <!-- Highlight lines -->
-                    <path d="M50 20 V60 M25 40 L50 60 L75 40 M50 60 V90" stroke="#FFF" stroke-width="1"
-                        stroke-opacity="0.5" style="pointer-events:none" />
-                </svg>
-                <div class="icon-label">Prism Core (棱镜核心)</div>
-            </div>
-
-        </div>
-    </div>
-
-    <script src="./js/preview-icons-page.js"></script>
+<h1 data-preview-trigger-all="1">Prompts Icon - Internal Dynamics (Set 7)</h1>
+<p class="subtitle">Focusing on separate moving parts within the icon itself</p>
+<div class="set-container">
+<h2>Variations for "Prompts" (AI 提示词)</h2>
+<div class="icons-grid">
+<!-- A: Galactic Sparkle -->
+<div class="icon-wrapper">
+<svg class="c-galactic" fill="none" height="100" viewbox="0 0 100 100" width="100">
+<defs>
+<radialgradient cx="50" cy="50" id="gal_glow" r="40">
+<stop offset="0" stop-color="#F472B6" stop-opacity="0.2"></stop>
+<stop offset="1" stop-color="#F472B6" stop-opacity="0"></stop>
+</radialgradient>
+</defs>
+<!-- Background Glow -->
+<circle cx="50" cy="50" fill="url(#gal_glow)" r="40"></circle>
+<!-- Center Star -->
+<path class="star-main icons-preview-v7-inline-style-1" d="M50 20 L55 45 L80 50 L55 55 L50 80 L45 55 L20 50 L45 45 Z" fill="#F472B6"></path>
+<!-- Orbiting Stars Group -->
+<g class="orbit-group">
+<circle class="star-small icons-preview-v7-inline-style-2" cx="50" cy="15" fill="#FBCFE8" r="3"></circle>
+<circle class="star-small icons-preview-v7-inline-style-3" cx="85" cy="50" fill="#FBCFE8" r="2"></circle>
+<circle class="star-small icons-preview-v7-inline-style-4" cx="50" cy="85" fill="#DB2777" r="4"></circle>
+<circle class="star-small icons-preview-v7-inline-style-5" cx="15" cy="50" fill="#FBCFE8" r="2"></circle>
+<!-- Connecting Orbit Line (Optional) -->
+<circle cx="50" cy="50" fill="none" r="35" stroke="#F472B6" stroke-dasharray="4 4" stroke-opacity="0.3" stroke-width="1"></circle>
+</g>
+</svg>
+<div class="icon-label">Galactic Sparkle (星系)</div>
+</div>
+<!-- B: Neural Pulse -->
+<div class="icon-wrapper">
+<svg class="c-neural" fill="none" height="100" viewbox="0 0 100 100" width="100">
+<!-- Connections -->
+<line class="connection" stroke="#EC4899" stroke-width="2" x1="50" x2="50" y1="50" y2="20"></line>
+<line class="connection icons-preview-v7-inline-style-6" stroke="#EC4899" stroke-width="2" x1="50" x2="80" y1="50" y2="65"></line>
+<line class="connection icons-preview-v7-inline-style-7" stroke="#EC4899" stroke-width="2" x1="50" x2="20" y1="50" y2="65"></line>
+<!-- Satellite Nodes -->
+<circle class="node node-sat icons-preview-v7-inline-style-2" cx="50" cy="20" fill="#FBCFE8" r="6"></circle>
+<circle class="node node-sat icons-preview-v7-inline-style-8" cx="80" cy="65" fill="#FBCFE8" r="6"></circle>
+<circle class="node node-sat icons-preview-v7-inline-style-9" cx="20" cy="65" fill="#FBCFE8" r="6"></circle>
+<!-- Center Node -->
+<circle class="node node-center" cx="50" cy="50" fill="#DB2777" r="12"></circle>
+<circle cx="50" cy="50" fill="#FFF" r="6"></circle>
+</svg>
+<div class="icon-label">Neural Pulse (神经网络)</div>
+</div>
+<!-- C: Magic Flow -->
+<div class="icon-wrapper">
+<svg class="c-magic" fill="none" height="100" viewbox="0 0 100 100" width="100">
+<defs>
+<lineargradient id="wand_grad" x1="20" x2="80" y1="80" y2="20">
+<stop offset="0" stop-color="#831843"></stop>
+<stop offset="1" stop-color="#F472B6"></stop>
+</lineargradient>
+</defs>
+<!-- Particles (Initially hidden, rise on hover) -->
+<circle class="particle p1" cx="75" cy="25" fill="#FFF" r="3"></circle>
+<path class="particle p2" d="M85 35 L88 40 L82 40 Z" fill="#FBCFE8"></path>
+<circle class="particle p3" cx="65" cy="35" fill="#FFF" r="2"></circle>
+<!-- Wand -->
+<g class="wand">
+<rect fill="url(#wand_grad)" height="8" rx="4" transform="rotate(-45 45 69)" width="40" x="25" y="65"></rect>
+<!-- Wand Tip -->
+<circle cx="68" cy="32" fill="#F472B6" filter="drop-shadow(0 0 5px #F472B6)" r="8"></circle>
+<path d="M68 32 L75 25 M68 32 L78 32 M68 32 L75 39" stroke="#FFF" stroke-linecap="round" stroke-width="2"></path>
+</g>
+</svg>
+<div class="icon-label">Magic Flow (魔法流动)</div>
+</div>
+<!-- D: Prism Core -->
+<div class="icon-wrapper">
+<svg class="c-prism" fill="none" height="100" viewbox="0 0 100 100" width="100">
+<!-- Core Glow -->
+<circle class="core" cx="50" cy="50" fill="#F472B6" filter="blur(10px)" r="15"></circle>
+<!-- Floating Faces -->
+<path class="face face-1" d="M50 20 L75 40 L50 60 L25 40 Z" fill="#FBCFE8" opacity="0.8"></path>
+<!-- Top -->
+<path class="face face-2" d="M25 40 L50 60 V90 L25 70 Z" fill="#BE185D" opacity="0.8"></path>
+<!-- Left -->
+<path class="face face-3" d="M75 40 L50 60 V90 L75 70 Z" fill="#DB2777" opacity="0.8"></path>
+<!-- Right -->
+<!-- Highlight lines -->
+<path class="icons-preview-v7-inline-style-10" d="M50 20 V60 M25 40 L50 60 L75 40 M50 60 V90" stroke="#FFF" stroke-opacity="0.5" stroke-width="1"></path>
+</svg>
+<div class="icon-label">Prism Core (棱镜核心)</div>
+</div>
+</div>
+</div>
+<script src="./js/preview-icons-page.js"></script>
 </body>
-
 </html>

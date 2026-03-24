@@ -1,243 +1,210 @@
 <!DOCTYPE html>
+
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Icons Set 3: Rich & Figurative</title>
-    
-    <link rel="stylesheet" href="css/icons-preview-v3.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Icons Set 3: Rich & Figurative</title>
+<link href="css/icons-preview-v3.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1" rel="stylesheet"/>
 </head>
-
 <body>
-
-    <h1 data-preview-trigger-all="1">Rich & Figurative Icons (Set 3)</h1>
-    <p class="subtitle">Detailed compositions with depth, gradients, and engaging interactions</p>
-
-    <!-- Set 3A: Neo-Glass 3D -->
-    <div class="set-container set-glass3d">
-        <h2>Set A: Neo-Glass 3D (浮空玻璃 3D)</h2>
-        <div class="icons-row">
-            <!-- Prompts: Flying Card + Magic Wand -->
-            <div class="icon-wrapper">
-                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
-                    <defs>
-                        <linearGradient id="g3d_p_1" x1="0" y1="0" x2="80" y2="80">
-                            <stop offset="0" stop-color="#F472B6" />
-                            <stop offset="1" stop-color="#DB2777" />
-                        </linearGradient>
-                        <linearGradient id="g3d_p_2" x1="0" y1="0" x2="80" y2="80">
-                            <stop offset="0" stop-color="#fff" stop-opacity="0.8" />
-                            <stop offset="1" stop-color="#fff" stop-opacity="0.1" />
-                        </linearGradient>
-                    </defs>
-                    <!-- Shadow -->
-                    <ellipse cx="40" cy="70" rx="20" ry="5" fill="black" fill-opacity="0.3" filter="blur(5px)" />
-                    <!-- Back Card -->
-                    <rect x="25" y="25" width="30" height="40" rx="4" transform="rotate(-10 40 45)" fill="url(#g3d_p_1)"
-                        class="layer-back" opacity="0.6" />
-                    <!-- Front Card (Glass) -->
-                    <rect x="35" y="20" width="30" height="40" rx="4" transform="rotate(5 50 40)" fill="url(#g3d_p_2)"
-                        stroke="white" stroke-width="1" class="layer-mid" />
-                    <!-- Wand (Floating) -->
-                    <path d="M15 65 L30 50 M30 50 L35 45" stroke="white" stroke-width="3" stroke-linecap="round"
-                        class="layer-front" />
-                    <path d="M55 25 L35 45" stroke="#FCE7F3" stroke-width="4" stroke-linecap="round"
-                        class="layer-front" />
-                    <circle cx="55" cy="25" r="3" fill="white" filter="drop-shadow(0 0 5px #fff)" class="layer-front" />
-                    <!-- Sparkles -->
-                    <path d="M60 15 L62 20 L58 20 Z" fill="white" class="layer-front">
-                        <animate attributeName="opacity" values="0;1;0" dur="2s" repeatCount="indefinite" />
-                    </path>
-                </svg>
-                <div class="icon-label">Prompts</div>
-            </div>
-
-            <!-- Shop: Floating Iso Box -->
-            <div class="icon-wrapper">
-                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
-                    <defs>
-                        <linearGradient id="g3d_s_1" x1="40" y1="20" x2="40" y2="70">
-                            <stop offset="0" stop-color="#4ADE80" />
-                            <stop offset="1" stop-color="#16A34A" />
-                        </linearGradient>
-                        <linearGradient id="g3d_s_2" x1="0" y1="0" x2="1" y2="1">
-                            <stop offset="0" stop-color="#ffffff" stop-opacity="0.9" />
-                            <stop offset="1" stop-color="#ffffff" stop-opacity="0.2" />
-                        </linearGradient>
-                    </defs>
-                    <ellipse cx="40" cy="72" rx="22" ry="6" fill="black" fill-opacity="0.3" filter="blur(6px)" />
-                    <!-- Box Body -->
-                    <path d="M40 65 L15 52 V28 L40 40 V65 Z" fill="#22c55e" class="layer-back" /> <!-- Left Face -->
-                    <path d="M40 65 L65 52 V28 L40 40 V65 Z" fill="#15803d" class="layer-back" /> <!-- Right Face -->
-                    <path d="M40 40 L65 28 L40 16 L15 28 Z" fill="#86efac" class="layer-mid" /> <!-- Top Face -->
-                    <!-- Floating Tag -->
-                    <rect x="45" y="10" width="20" height="12" rx="2" fill="url(#g3d_s_2)" stroke="white"
-                        stroke-width="1" class="layer-front" transform="rotate(10)" />
-                    <circle cx="60" cy="16" r="2" fill="#22c55e" class="layer-front" transform="rotate(10)" />
-                </svg>
-                <div class="icon-label">Shop</div>
-            </div>
-
-            <!-- Verify: Holographic Shield -->
-            <div class="icon-wrapper">
-                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
-                    <defs>
-                        <linearGradient id="g3d_v_1" x1="40" y1="10" x2="40" y2="70">
-                            <stop offset="0" stop-color="#667EEA" />
-                            <stop offset="1" stop-color="#4338CA" />
-                        </linearGradient>
-                        <radialGradient id="g3d_v_glow" cx="40" cy="40" r="30">
-                            <stop offset="0" stop-color="#818CF8" stop-opacity="0.6" />
-                            <stop offset="1" stop-color="#818CF8" stop-opacity="0" />
-                        </radialGradient>
-                    </defs>
-                    <circle cx="40" cy="40" r="30" fill="url(#g3d_v_glow)" class="layer-back" />
-                    <!-- Shield Shape -->
-                    <path d="M40 70 C40 70 65 60 65 30 V20 L40 10 L15 20 V30 C15 60 40 70 40 70 Z" fill="url(#g3d_v_1)"
-                        opacity="0.9" class="layer-mid" stroke="#A5B4FC" stroke-width="1" />
-                    <!-- Checkmark (Floating) -->
-                    <path d="M30 40 L40 50 L55 30" stroke="white" stroke-width="5" stroke-linecap="round"
-                        stroke-linejoin="round" class="layer-front" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.5))" />
-                </svg>
-                <div class="icon-label">Verify</div>
-            </div>
-
-            <!-- Guestbook: Open Magic Book -->
-            <div class="icon-wrapper">
-                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
-                    <defs>
-                        <linearGradient id="g3d_b_1" x1="0" y1="0" x2="80" y2="0">
-                            <stop offset="0" stop-color="#F59E0B" />
-                            <stop offset="1" stop-color="#D97706" />
-                        </linearGradient>
-                    </defs>
-                    <ellipse cx="40" cy="65" rx="25" ry="5" fill="black" fill-opacity="0.3" filter="blur(5px)" />
-                    <!-- Book Cover -->
-                    <path d="M10 35 H38 V60 H10 Z" fill="#B45309" transform="skewY(10)" class="layer-back" />
-                    <path d="M42 35 H70 V60 H42 Z" fill="#B45309" transform="skewY(-10)" class="layer-back" />
-                    <!-- Pages -->
-                    <path d="M12 33 H39 V56 H12 Z" fill="#FFFBEB" transform="skewY(10)" class="layer-mid" />
-                    <path d="M41 33 H68 V56 H41 Z" fill="#FFFBEB" transform="skewY(-10)" class="layer-mid" />
-                    <!-- Floating Pen -->
-                    <path d="M50 20 L60 10 L65 15 L55 25 Z" fill="#F59E0B" class="layer-front" />
-                    <path d="M55 25 L45 35 L48 38 L50 20 Z" fill="#FCD34D" class="layer-front" />
-                </svg>
-                <div class="icon-label">Guestbook</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Set 3B: Cyber HUD -->
-    <div class="set-container set-hud">
-        <h2>Set B: Cyber HUD (赛博仪表 - 精细科技)</h2>
-        <div class="icons-row">
-            <!-- Prompts -->
-            <div class="icon-wrapper" style="color: #F472B6">
-                <svg width="70" height="70" viewBox="0 0 70 70" fill="none">
-                    <circle cx="35" cy="35" r="32" stroke="currentColor" stroke-width="1" stroke-opacity="0.3"
-                        stroke-dasharray="4 4" class="ring ring-outer" />
-                    <circle cx="35" cy="35" r="24" stroke="currentColor" stroke-width="1" stroke-opacity="0.5"
-                        stroke-dasharray="10 10" class="ring ring-inner" />
-                    <path d="M35 15 L38 25 H45 L38 30 L40 40 L35 32 L30 40 L32 30 L25 25 H32 L35 15 Z"
-                        fill="currentColor" class="core" />
-                    <rect x="20" y="34" width="30" height="2" fill="white" class="glitch-line" />
-                </svg>
-                <div class="icon-label">Prompts</div>
-            </div>
-
-            <!-- Shop -->
-            <div class="icon-wrapper" style="color: #4ADE80">
-                <svg width="70" height="70" viewBox="0 0 70 70" fill="none">
-                    <path d="M10 20 L20 10 H50 L60 20 V50 L50 60 H20 L10 50 Z" stroke="currentColor" stroke-width="1"
-                        stroke-opacity="0.5" class="ring ring-outer" />
-                    <rect x="25" y="25" width="20" height="20" stroke="currentColor" stroke-width="2" class="core" />
-                    <path d="M25 25 L35 35 L45 25" stroke="currentColor" stroke-width="1" />
-                    <path d="M35 20 V25" stroke="currentColor" stroke-width="1" />
-                    <rect x="15" y="45" width="40" height="1" fill="white" class="glitch-line" />
-                </svg>
-                <div class="icon-label">Shop</div>
-            </div>
-
-            <!-- Verify -->
-            <div class="icon-wrapper" style="color: #667EEA">
-                <svg width="70" height="70" viewBox="0 0 70 70" fill="none">
-                    <path d="M35 5 V10 M65 35 H60 M35 65 V60 M5 35 H10" stroke="currentColor" stroke-width="2"
-                        class="ring ring-outer" />
-                    <path d="M35 15 L50 25 V45 L35 55 L20 45 V25 L35 15 Z" stroke="currentColor" stroke-width="1.5"
-                        class="core" />
-                    <path d="M30 35 L35 40 L40 30" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                        stroke-linejoin="round" />
-                    <circle cx="35" cy="35" r="28" stroke="currentColor" stroke-width="1" stroke-opacity="0.2"
-                        stroke-dasharray="2 4" />
-                </svg>
-                <div class="icon-label">Verify</div>
-            </div>
-
-            <!-- Guestbook -->
-            <div class="icon-wrapper" style="color: #F59E0B">
-                <svg width="70" height="70" viewBox="0 0 70 70" fill="none">
-                    <rect x="15" y="15" width="40" height="40" rx="4" stroke="currentColor" stroke-width="1"
-                        stroke-opacity="0.5" class="ring ring-outer" />
-                    <path d="M20 25 H50 M20 35 H40 M20 45 H30" stroke="currentColor" stroke-width="2"
-                        stroke-linecap="round" class="core" />
-                    <circle cx="55" cy="15" r="3" fill="currentColor" />
-                    <path d="M10 50 L60 20" stroke="white" stroke-width="1" class="glitch-line" />
-                </svg>
-                <div class="icon-label">Guestbook</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Set 3C: Illustrative Pop -->
-    <div class="set-container set-crypto">
-        <h2>Set C: Illustrative Pop (波普插画 - 平面色彩)</h2>
-        <div class="icons-row">
-            <!-- Prompts -->
-            <div class="icon-wrapper">
-                <svg width="60" height="60" viewBox="0 0 60 60">
-                    <circle cx="30" cy="30" r="28" fill="#FCE7F3" />
-                    <path d="M30 15 L35 25 L45 28 L35 32 L30 42 L25 32 L15 28 L25 25 Z" fill="#EC4899" />
-                    <path d="M45 40 L48 45 L53 47 L48 49 L45 53 L43 49 L38 47 L43 45 Z" fill="#F472B6" />
-                </svg>
-                <div class="icon-label">Prompts</div>
-            </div>
-            <!-- Shop -->
-            <div class="icon-wrapper">
-                <svg width="60" height="60" viewBox="0 0 60 60">
-                    <rect x="10" y="15" width="40" height="35" rx="8" fill="#DCFCE7" />
-                    <rect x="15" y="20" width="30" height="25" rx="4" fill="#22C55E" />
-                    <path d="M20 15 V10 A10 10 0 0 1 40 10 V15" stroke="#166534" stroke-width="4" stroke-linecap="round"
-                        fill="none" />
-                </svg>
-                <div class="icon-label">Shop</div>
-            </div>
-            <!-- Verify -->
-            <div class="icon-wrapper">
-                <svg width="60" height="60" viewBox="0 0 60 60">
-                    <path d="M30 55 C30 55 55 45 55 15 V10 L30 5 L5 10 V15 C5 45 30 55 30 55 Z" fill="#E0E7FF" />
-                    <path d="M30 48 C30 48 48 40 48 18 V15 L30 12 L12 15 V18 C12 40 30 48 30 48 Z" fill="#6366F1" />
-                    <path d="M22 28 L28 34 L38 22" stroke="white" stroke-width="4" stroke-linecap="round"
-                        stroke-linejoin="round" fill="none" />
-                </svg>
-                <div class="icon-label">Verify</div>
-            </div>
-            <!-- Guestbook -->
-            <div class="icon-wrapper">
-                <svg width="60" height="60" viewBox="0 0 60 60">
-                    <rect x="12" y="10" width="36" height="40" fill="#FFFBEB" stroke="#B45309" stroke-width="2" />
-                    <path d="M12 10 L8 50 L44 50" fill="#F59E0B" opacity="0.5" />
-                    <circle cx="20" cy="30" r="2" fill="#B45309" />
-                    <circle cx="30" cy="30" r="2" fill="#B45309" />
-                    <circle cx="40" cy="30" r="2" fill="#B45309" />
-                    <path d="M40 35 L55 50 L52 55 L38 42" fill="#EF4444" />
-                </svg>
-                <div class="icon-label">Guestbook</div>
-            </div>
-        </div>
-    </div>
-
-    <script src="./js/preview-icons-page.js"></script>
+<h1 data-preview-trigger-all="1">Rich & Figurative Icons (Set 3)</h1>
+<p class="subtitle">Detailed compositions with depth, gradients, and engaging interactions</p>
+<!-- Set 3A: Neo-Glass 3D -->
+<div class="set-container set-glass3d">
+<h2>Set A: Neo-Glass 3D (浮空玻璃 3D)</h2>
+<div class="icons-row">
+<!-- Prompts: Flying Card + Magic Wand -->
+<div class="icon-wrapper">
+<svg fill="none" height="80" viewbox="0 0 80 80" width="80">
+<defs>
+<lineargradient id="g3d_p_1" x1="0" x2="80" y1="0" y2="80">
+<stop offset="0" stop-color="#F472B6"></stop>
+<stop offset="1" stop-color="#DB2777"></stop>
+</lineargradient>
+<lineargradient id="g3d_p_2" x1="0" x2="80" y1="0" y2="80">
+<stop offset="0" stop-color="#fff" stop-opacity="0.8"></stop>
+<stop offset="1" stop-color="#fff" stop-opacity="0.1"></stop>
+</lineargradient>
+</defs>
+<!-- Shadow -->
+<ellipse cx="40" cy="70" fill="black" fill-opacity="0.3" filter="blur(5px)" rx="20" ry="5"></ellipse>
+<!-- Back Card -->
+<rect class="layer-back" fill="url(#g3d_p_1)" height="40" opacity="0.6" rx="4" transform="rotate(-10 40 45)" width="30" x="25" y="25"></rect>
+<!-- Front Card (Glass) -->
+<rect class="layer-mid" fill="url(#g3d_p_2)" height="40" rx="4" stroke="white" stroke-width="1" transform="rotate(5 50 40)" width="30" x="35" y="20"></rect>
+<!-- Wand (Floating) -->
+<path class="layer-front" d="M15 65 L30 50 M30 50 L35 45" stroke="white" stroke-linecap="round" stroke-width="3"></path>
+<path class="layer-front" d="M55 25 L35 45" stroke="#FCE7F3" stroke-linecap="round" stroke-width="4"></path>
+<circle class="layer-front" cx="55" cy="25" fill="white" filter="drop-shadow(0 0 5px #fff)" r="3"></circle>
+<!-- Sparkles -->
+<path class="layer-front" d="M60 15 L62 20 L58 20 Z" fill="white">
+<animate attributename="opacity" dur="2s" repeatcount="indefinite" values="0;1;0"></animate>
+</path>
+</svg>
+<div class="icon-label">Prompts</div>
+</div>
+<!-- Shop: Floating Iso Box -->
+<div class="icon-wrapper">
+<svg fill="none" height="80" viewbox="0 0 80 80" width="80">
+<defs>
+<lineargradient id="g3d_s_1" x1="40" x2="40" y1="20" y2="70">
+<stop offset="0" stop-color="#4ADE80"></stop>
+<stop offset="1" stop-color="#16A34A"></stop>
+</lineargradient>
+<lineargradient id="g3d_s_2" x1="0" x2="1" y1="0" y2="1">
+<stop offset="0" stop-color="#ffffff" stop-opacity="0.9"></stop>
+<stop offset="1" stop-color="#ffffff" stop-opacity="0.2"></stop>
+</lineargradient>
+</defs>
+<ellipse cx="40" cy="72" fill="black" fill-opacity="0.3" filter="blur(6px)" rx="22" ry="6"></ellipse>
+<!-- Box Body -->
+<path class="layer-back" d="M40 65 L15 52 V28 L40 40 V65 Z" fill="#22c55e"></path> <!-- Left Face -->
+<path class="layer-back" d="M40 65 L65 52 V28 L40 40 V65 Z" fill="#15803d"></path> <!-- Right Face -->
+<path class="layer-mid" d="M40 40 L65 28 L40 16 L15 28 Z" fill="#86efac"></path> <!-- Top Face -->
+<!-- Floating Tag -->
+<rect class="layer-front" fill="url(#g3d_s_2)" height="12" rx="2" stroke="white" stroke-width="1" transform="rotate(10)" width="20" x="45" y="10"></rect>
+<circle class="layer-front" cx="60" cy="16" fill="#22c55e" r="2" transform="rotate(10)"></circle>
+</svg>
+<div class="icon-label">Shop</div>
+</div>
+<!-- Verify: Holographic Shield -->
+<div class="icon-wrapper">
+<svg fill="none" height="80" viewbox="0 0 80 80" width="80">
+<defs>
+<lineargradient id="g3d_v_1" x1="40" x2="40" y1="10" y2="70">
+<stop offset="0" stop-color="#667EEA"></stop>
+<stop offset="1" stop-color="#4338CA"></stop>
+</lineargradient>
+<radialgradient cx="40" cy="40" id="g3d_v_glow" r="30">
+<stop offset="0" stop-color="#818CF8" stop-opacity="0.6"></stop>
+<stop offset="1" stop-color="#818CF8" stop-opacity="0"></stop>
+</radialgradient>
+</defs>
+<circle class="layer-back" cx="40" cy="40" fill="url(#g3d_v_glow)" r="30"></circle>
+<!-- Shield Shape -->
+<path class="layer-mid" d="M40 70 C40 70 65 60 65 30 V20 L40 10 L15 20 V30 C15 60 40 70 40 70 Z" fill="url(#g3d_v_1)" opacity="0.9" stroke="#A5B4FC" stroke-width="1"></path>
+<!-- Checkmark (Floating) -->
+<path class="layer-front" d="M30 40 L40 50 L55 30" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.5))" stroke="white" stroke-linecap="round" stroke-linejoin="round" stroke-width="5"></path>
+</svg>
+<div class="icon-label">Verify</div>
+</div>
+<!-- Guestbook: Open Magic Book -->
+<div class="icon-wrapper">
+<svg fill="none" height="80" viewbox="0 0 80 80" width="80">
+<defs>
+<lineargradient id="g3d_b_1" x1="0" x2="80" y1="0" y2="0">
+<stop offset="0" stop-color="#F59E0B"></stop>
+<stop offset="1" stop-color="#D97706"></stop>
+</lineargradient>
+</defs>
+<ellipse cx="40" cy="65" fill="black" fill-opacity="0.3" filter="blur(5px)" rx="25" ry="5"></ellipse>
+<!-- Book Cover -->
+<path class="layer-back" d="M10 35 H38 V60 H10 Z" fill="#B45309" transform="skewY(10)"></path>
+<path class="layer-back" d="M42 35 H70 V60 H42 Z" fill="#B45309" transform="skewY(-10)"></path>
+<!-- Pages -->
+<path class="layer-mid" d="M12 33 H39 V56 H12 Z" fill="#FFFBEB" transform="skewY(10)"></path>
+<path class="layer-mid" d="M41 33 H68 V56 H41 Z" fill="#FFFBEB" transform="skewY(-10)"></path>
+<!-- Floating Pen -->
+<path class="layer-front" d="M50 20 L60 10 L65 15 L55 25 Z" fill="#F59E0B"></path>
+<path class="layer-front" d="M55 25 L45 35 L48 38 L50 20 Z" fill="#FCD34D"></path>
+</svg>
+<div class="icon-label">Guestbook</div>
+</div>
+</div>
+</div>
+<!-- Set 3B: Cyber HUD -->
+<div class="set-container set-hud">
+<h2>Set B: Cyber HUD (赛博仪表 - 精细科技)</h2>
+<div class="icons-row">
+<!-- Prompts -->
+<div class="icon-wrapper icons-preview-v3-inline-style-1">
+<svg fill="none" height="70" viewbox="0 0 70 70" width="70">
+<circle class="ring ring-outer" cx="35" cy="35" r="32" stroke="currentColor" stroke-dasharray="4 4" stroke-opacity="0.3" stroke-width="1"></circle>
+<circle class="ring ring-inner" cx="35" cy="35" r="24" stroke="currentColor" stroke-dasharray="10 10" stroke-opacity="0.5" stroke-width="1"></circle>
+<path class="core" d="M35 15 L38 25 H45 L38 30 L40 40 L35 32 L30 40 L32 30 L25 25 H32 L35 15 Z" fill="currentColor"></path>
+<rect class="glitch-line" fill="white" height="2" width="30" x="20" y="34"></rect>
+</svg>
+<div class="icon-label">Prompts</div>
+</div>
+<!-- Shop -->
+<div class="icon-wrapper icons-preview-v3-inline-style-2">
+<svg fill="none" height="70" viewbox="0 0 70 70" width="70">
+<path class="ring ring-outer" d="M10 20 L20 10 H50 L60 20 V50 L50 60 H20 L10 50 Z" stroke="currentColor" stroke-opacity="0.5" stroke-width="1"></path>
+<rect class="core" height="20" stroke="currentColor" stroke-width="2" width="20" x="25" y="25"></rect>
+<path d="M25 25 L35 35 L45 25" stroke="currentColor" stroke-width="1"></path>
+<path d="M35 20 V25" stroke="currentColor" stroke-width="1"></path>
+<rect class="glitch-line" fill="white" height="1" width="40" x="15" y="45"></rect>
+</svg>
+<div class="icon-label">Shop</div>
+</div>
+<!-- Verify -->
+<div class="icon-wrapper icons-preview-v3-inline-style-3">
+<svg fill="none" height="70" viewbox="0 0 70 70" width="70">
+<path class="ring ring-outer" d="M35 5 V10 M65 35 H60 M35 65 V60 M5 35 H10" stroke="currentColor" stroke-width="2"></path>
+<path class="core" d="M35 15 L50 25 V45 L35 55 L20 45 V25 L35 15 Z" stroke="currentColor" stroke-width="1.5"></path>
+<path d="M30 35 L35 40 L40 30" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+<circle cx="35" cy="35" r="28" stroke="currentColor" stroke-dasharray="2 4" stroke-opacity="0.2" stroke-width="1"></circle>
+</svg>
+<div class="icon-label">Verify</div>
+</div>
+<!-- Guestbook -->
+<div class="icon-wrapper icons-preview-v3-inline-style-4">
+<svg fill="none" height="70" viewbox="0 0 70 70" width="70">
+<rect class="ring ring-outer" height="40" rx="4" stroke="currentColor" stroke-opacity="0.5" stroke-width="1" width="40" x="15" y="15"></rect>
+<path class="core" d="M20 25 H50 M20 35 H40 M20 45 H30" stroke="currentColor" stroke-linecap="round" stroke-width="2"></path>
+<circle cx="55" cy="15" fill="currentColor" r="3"></circle>
+<path class="glitch-line" d="M10 50 L60 20" stroke="white" stroke-width="1"></path>
+</svg>
+<div class="icon-label">Guestbook</div>
+</div>
+</div>
+</div>
+<!-- Set 3C: Illustrative Pop -->
+<div class="set-container set-crypto">
+<h2>Set C: Illustrative Pop (波普插画 - 平面色彩)</h2>
+<div class="icons-row">
+<!-- Prompts -->
+<div class="icon-wrapper">
+<svg height="60" viewbox="0 0 60 60" width="60">
+<circle cx="30" cy="30" fill="#FCE7F3" r="28"></circle>
+<path d="M30 15 L35 25 L45 28 L35 32 L30 42 L25 32 L15 28 L25 25 Z" fill="#EC4899"></path>
+<path d="M45 40 L48 45 L53 47 L48 49 L45 53 L43 49 L38 47 L43 45 Z" fill="#F472B6"></path>
+</svg>
+<div class="icon-label">Prompts</div>
+</div>
+<!-- Shop -->
+<div class="icon-wrapper">
+<svg height="60" viewbox="0 0 60 60" width="60">
+<rect fill="#DCFCE7" height="35" rx="8" width="40" x="10" y="15"></rect>
+<rect fill="#22C55E" height="25" rx="4" width="30" x="15" y="20"></rect>
+<path d="M20 15 V10 A10 10 0 0 1 40 10 V15" fill="none" stroke="#166534" stroke-linecap="round" stroke-width="4"></path>
+</svg>
+<div class="icon-label">Shop</div>
+</div>
+<!-- Verify -->
+<div class="icon-wrapper">
+<svg height="60" viewbox="0 0 60 60" width="60">
+<path d="M30 55 C30 55 55 45 55 15 V10 L30 5 L5 10 V15 C5 45 30 55 30 55 Z" fill="#E0E7FF"></path>
+<path d="M30 48 C30 48 48 40 48 18 V15 L30 12 L12 15 V18 C12 40 30 48 30 48 Z" fill="#6366F1"></path>
+<path d="M22 28 L28 34 L38 22" fill="none" stroke="white" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"></path>
+</svg>
+<div class="icon-label">Verify</div>
+</div>
+<!-- Guestbook -->
+<div class="icon-wrapper">
+<svg height="60" viewbox="0 0 60 60" width="60">
+<rect fill="#FFFBEB" height="40" stroke="#B45309" stroke-width="2" width="36" x="12" y="10"></rect>
+<path d="M12 10 L8 50 L44 50" fill="#F59E0B" opacity="0.5"></path>
+<circle cx="20" cy="30" fill="#B45309" r="2"></circle>
+<circle cx="30" cy="30" fill="#B45309" r="2"></circle>
+<circle cx="40" cy="30" fill="#B45309" r="2"></circle>
+<path d="M40 35 L55 50 L52 55 L38 42" fill="#EF4444"></path>
+</svg>
+<div class="icon-label">Guestbook</div>
+</div>
+</div>
+</div>
+<script src="./js/preview-icons-page.js"></script>
 </body>
-
 </html>

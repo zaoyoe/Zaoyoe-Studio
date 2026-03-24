@@ -278,3 +278,14 @@ body {
                 transform: rotateY(360deg);
             }
         }
+
+/* icons_preview_v2.html inline style attribute classes */
+.icons-preview-v2-inline-style-1 { --active-color: #f472b6; }
+.icons-preview-v2-inline-style-2 { --active-color: #4ade80; }
+.icons-preview-v2-inline-style-3 { --active-color: #667eea; }
+.icons-preview-v2-inline-style-4 { --active-color: #f59e0b; }
+.icons-preview-v2-inline-style-5 { --active-color: #ff00ff; }
+.icons-preview-v2-inline-style-6 { --active-color: #00ff00; }
+.icons-preview-v2-inline-style-7 { --active-color: #00ffff; }
+.icons-preview-v2-inline-style-8 { --active-color: #ffff00; }
+/* end icons_preview_v2.html inline style attribute classes */

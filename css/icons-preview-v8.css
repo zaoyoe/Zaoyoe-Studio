@@ -244,3 +244,14 @@ body {
                 stroke-dashoffset: -20;
             }
         }
+
+/* icons_preview_v8.html inline style attribute classes */
+.icons-preview-v8-inline-style-1 { transform: rotate(30deg) scaleY(0.4); }
+.icons-preview-v8-inline-style-2 { transform: rotate(-30deg) scaleY(0.4); }
+.icons-preview-v8-inline-style-3 { opacity:0.6; }
+.icons-preview-v8-inline-style-4 { opacity:0.4; }
+.icons-preview-v8-inline-style-5 { animation-delay: 0.2s; }
+.icons-preview-v8-inline-style-6 { animation-delay: 0.4s; }
+.icons-preview-v8-inline-style-7 { animation-delay: 0.1s; animation-direction: reverse; }
+.icons-preview-v8-inline-style-8 { animation-delay: 0.3s; animation-direction: reverse; }
+/* end icons_preview_v8.html inline style attribute classes */

@@ -1,307 +1,288 @@
 <!DOCTYPE html>
+
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>个人资料一体化磨砂预览</title>
-  
-    <link rel="stylesheet" href="css/profile-security-unified-sheet-preview.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport"/>
+<title>个人资料一体化磨砂预览</title>
+<link href="css/profile-security-unified-sheet-preview.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1" rel="stylesheet"/>
 </head>
 <body>
-  <main class="board">
-    <aside class="panel">
-      <div class="eyebrow">Unified Sheet</div>
-      <h1>减少“拼卡片”分裂感</h1>
-      <p class="panel-intro">
+<main class="board">
+<aside class="panel">
+<div class="eyebrow">Unified Sheet</div>
+<h1>减少“拼卡片”分裂感</h1>
+<p class="panel-intro">
         现在的问题不是磨砂不够，而是结构切得太碎。最有效的优化不是继续给每张卡调样式，而是把整个弹窗收成一张连续主面板，只在内部用分区和分隔线建立秩序。
       </p>
-
-      <div class="stack">
-        <section class="note-card">
-          <h2>优化原则</h2>
-          <ul>
-            <li>把头部、Tab、主体、底部动作都收进同一块主磨砂面板</li>
-            <li>用内部节奏和细分隔线代替“一个模块一个外卡”</li>
-            <li>背景彩图只从边缘和透色里参与，不要和内容层互相抢</li>
-          </ul>
-        </section>
-
-        <section class="note-card">
-          <h2>资料页怎么做</h2>
-          <p>头像区、必要资料、快捷入口全部放进一张纵向连续面板里。快捷入口可以是“面板内部的小区块”，但不再独立漂浮成三张大卡。</p>
-        </section>
-
-        <section class="note-card">
-          <h2>安全页怎么做</h2>
-          <p>安全概览、改密、绑手机、最近登录、危险区都放进一张主面板里，靠段落和分隔组织层级，而不是靠大外框切断阅读流。</p>
-        </section>
-      </div>
-    </aside>
-
-    <section class="phones">
-      <div class="phone-wrap">
-        <p class="phone-label">资料 Tab：一体化主面板，内部只做分区</p>
-        <div class="phone">
-          <div class="screen">
-            <div class="scene" aria-hidden="true">
-              <div class="scene-frame"></div>
-              <div class="poster">
-                <div class="shape a"></div>
-                <div class="shape b"></div>
-                <div class="shape c"></div>
-                <div class="shape d"></div>
-                <div class="shape e"></div>
-                <div class="shape f"></div>
-                <div class="poster-line a"></div>
-                <div class="poster-line b"></div>
-                <div class="poster-label">Studio Issue 04</div>
-              </div>
-            </div>
-
-            <div class="status">iPhone 17 Safari · 9:41</div>
-
-            <div class="modal-shell">
-              <div class="sheet-head">
-                <div class="head-top">
-                  <div>
-                    <div class="title">我的账户</div>
-                    <div class="subtitle">仅自己可见</div>
-                  </div>
-                  <div class="icon-btn">⚙</div>
-                </div>
-                <div class="segmented">
-                  <div class="segment active">资料</div>
-                  <div class="segment">安全</div>
-                </div>
-              </div>
-
-              <div class="sheet-body">
-                <section class="sheet-section">
-                  <div class="hero">
-                    <div class="avatar">林</div>
-                    <div class="hero-main">
-                      <div class="kicker">Account</div>
-                      <div class="name">林晚青</div>
-                      <div class="meta">lin@example.com<br />ID 103294</div>
-                    </div>
-                  </div>
-                  <div class="chips">
-                    <span class="chip safe">资料仅自己可见</span>
-                    <span class="chip">账户设置入口</span>
-                  </div>
-                </section>
-
-                <section class="sheet-section">
-                  <div class="section-head">
-                    <div class="section-title">必要资料</div>
-                    <div class="section-note">只保留需要确认和编辑的字段</div>
-                  </div>
-                  <div class="rows">
-                    <div class="row">
-                      <div class="row-key">昵称</div>
-                      <div class="row-val">林晚青</div>
-                    </div>
-                    <div class="row">
-                      <div class="row-key">邮箱</div>
-                      <div class="row-val">lin@example.com</div>
-                    </div>
-                    <div class="row">
-                      <div class="row-key">注册时间</div>
-                      <div class="row-val">2025-10-22</div>
-                    </div>
-                    <div class="row">
-                      <div class="row-key">手机号</div>
-                      <div class="row-val">
-                        <span class="pill">未绑定</span>
-                        <span>前往安全页</span>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                <section class="sheet-section">
-                  <div class="section-head">
-                    <div class="section-title">快捷入口</div>
-                    <div class="section-note">详情不重复展示</div>
-                  </div>
-                  <div class="quick-grid">
-                    <div class="quick">
-                      <div class="quick-kicker">Wallet</div>
-                      <div class="quick-title">积分钱包</div>
-                      <div class="quick-desc">余额、充值与兑换</div>
-                    </div>
-                    <div class="quick">
-                      <div class="quick-kicker">Records</div>
-                      <div class="quick-title">交易记录</div>
-                      <div class="quick-desc">订单与提示词解锁</div>
-                    </div>
-                    <div class="quick">
-                      <div class="quick-kicker">Affiliate</div>
-                      <div class="quick-title">推广中心</div>
-                      <div class="quick-desc">邀请人数与佣金</div>
-                    </div>
-                    <div class="quick">
-                      <div class="quick-kicker">Check-in</div>
-                      <div class="quick-title">每日签到</div>
-                      <div class="quick-desc">连续天数与补签</div>
-                    </div>
-                  </div>
-                </section>
-              </div>
-
-              <div class="actions">
-                <div class="action-grid">
-                  <button class="btn ghost">前往钱包</button>
-                  <button class="btn primary">编辑资料</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="phone-wrap">
-        <p class="phone-label">安全 Tab：同一张主面板里完成所有安全操作</p>
-        <div class="phone">
-          <div class="screen">
-            <div class="scene" aria-hidden="true">
-              <div class="scene-frame"></div>
-              <div class="poster">
-                <div class="shape a"></div>
-                <div class="shape b"></div>
-                <div class="shape c"></div>
-                <div class="shape d"></div>
-                <div class="shape e"></div>
-                <div class="shape f"></div>
-                <div class="poster-line a"></div>
-                <div class="poster-line b"></div>
-                <div class="poster-label">Color Archive</div>
-              </div>
-            </div>
-
-            <div class="status">iPhone 17 Safari · 9:41</div>
-
-            <div class="modal-shell">
-              <div class="sheet-head">
-                <div class="head-top">
-                  <div>
-                    <div class="title">账户安全</div>
-                    <div class="subtitle">状态概览与关键操作</div>
-                  </div>
-                  <div class="icon-btn">🛡</div>
-                </div>
-                <div class="segmented">
-                  <div class="segment">资料</div>
-                  <div class="segment active">安全</div>
-                </div>
-              </div>
-
-              <div class="sheet-body">
-                <section class="sheet-section">
-                  <div class="section-head">
-                    <div class="section-title">安全概览</div>
-                    <div class="pill safe">整体状态良好</div>
-                  </div>
-                  <div class="security-top">
-                    <div class="metric">
-                      <div class="metric-label">邮箱验证</div>
-                      <div class="metric-value">已验证</div>
-                    </div>
-                    <div class="metric">
-                      <div class="metric-label">手机号</div>
-                      <div class="metric-value">未绑定</div>
-                    </div>
-                    <div class="metric">
-                      <div class="metric-label">最近改密</div>
-                      <div class="metric-value">32 天前</div>
-                    </div>
-                  </div>
-                </section>
-
-                <section class="sheet-section">
-                  <div class="sub-head">
-                    <div class="sub-icon">✦</div>
-                    <div>
-                      <div class="sub-title">修改密码</div>
-                      <div class="sub-desc">保留第一优先级，但不再做成一张独立悬浮卡，而是主面板中的第一个安全分区。</div>
-                    </div>
-                  </div>
-                  <div class="input-stack">
-                    <input class="glass-input" type="password" placeholder="当前密码" />
-                    <input class="glass-input" type="password" placeholder="新密码（至少 6 位）" />
-                    <button class="btn primary">更新密码</button>
-                  </div>
-                </section>
-
-                <section class="sheet-section">
-                  <div class="sub-head">
-                    <div class="sub-icon safe">☎</div>
-                    <div>
-                      <div class="sub-title">绑定手机号</div>
-                      <div class="sub-desc">在同一张安全面板里继续往下操作，阅读流和操作流会比“多卡片跳跃”顺很多。</div>
-                    </div>
-                  </div>
-                  <div class="section-head">
-                    <div class="section-note">建议优先完成</div>
-                    <div class="pill">未绑定</div>
-                  </div>
-                  <div class="input-stack">
-                    <input class="glass-input" type="text" placeholder="输入手机号" />
-                    <div class="input-inline">
-                      <input class="glass-input" type="text" placeholder="输入验证码" />
-                      <button class="btn subtle">获取</button>
-                    </div>
-                    <button class="btn ghost">绑定手机号</button>
-                  </div>
-                </section>
-
-                <section class="sheet-section">
-                  <div class="sub-head">
-                    <div class="sub-icon">⎋</div>
-                    <div>
-                      <div class="sub-title">最近登录</div>
-                      <div class="sub-desc">登录设备、位置、时间继续作为安全域信息保留，但和其它内容属于同一主容器内部。</div>
-                    </div>
-                  </div>
-                  <div class="rows">
-                    <div class="row">
-                      <div class="row-key">最近设备</div>
-                      <div class="row-val">iPhone Safari</div>
-                    </div>
-                    <div class="row">
-                      <div class="row-key">登录位置</div>
-                      <div class="row-val">上海</div>
-                    </div>
-                    <div class="row">
-                      <div class="row-key">登录时间</div>
-                      <div class="row-val">今天 09:12</div>
-                    </div>
-                  </div>
-                </section>
-
-                <section class="sheet-section danger-strip">
-                  <div class="sub-head">
-                    <div class="sub-icon danger">!</div>
-                    <div>
-                      <div class="sub-title">危险区</div>
-                      <div class="sub-desc">危险操作仍然和普通操作分层，但不再另外漂浮成一整张重卡，而是主面板的最后一个警示分区。</div>
-                    </div>
-                  </div>
-                  <button class="btn danger" style="width: 100%;">确认注销账号</button>
-                </section>
-              </div>
-
-              <div class="actions">
-                <div class="action-grid">
-                  <button class="btn ghost">返回资料</button>
-                  <button class="btn primary">保存安全设置</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  </main>
+<div class="stack">
+<section class="note-card">
+<h2>优化原则</h2>
+<ul>
+<li>把头部、Tab、主体、底部动作都收进同一块主磨砂面板</li>
+<li>用内部节奏和细分隔线代替“一个模块一个外卡”</li>
+<li>背景彩图只从边缘和透色里参与，不要和内容层互相抢</li>
+</ul>
+</section>
+<section class="note-card">
+<h2>资料页怎么做</h2>
+<p>头像区、必要资料、快捷入口全部放进一张纵向连续面板里。快捷入口可以是“面板内部的小区块”，但不再独立漂浮成三张大卡。</p>
+</section>
+<section class="note-card">
+<h2>安全页怎么做</h2>
+<p>安全概览、改密、绑手机、最近登录、危险区都放进一张主面板里，靠段落和分隔组织层级，而不是靠大外框切断阅读流。</p>
+</section>
+</div>
+</aside>
+<section class="phones">
+<div class="phone-wrap">
+<p class="phone-label">资料 Tab：一体化主面板，内部只做分区</p>
+<div class="phone">
+<div class="screen">
+<div aria-hidden="true" class="scene">
+<div class="scene-frame"></div>
+<div class="poster">
+<div class="shape a"></div>
+<div class="shape b"></div>
+<div class="shape c"></div>
+<div class="shape d"></div>
+<div class="shape e"></div>
+<div class="shape f"></div>
+<div class="poster-line a"></div>
+<div class="poster-line b"></div>
+<div class="poster-label">Studio Issue 04</div>
+</div>
+</div>
+<div class="status">iPhone 17 Safari · 9:41</div>
+<div class="modal-shell">
+<div class="sheet-head">
+<div class="head-top">
+<div>
+<div class="title">我的账户</div>
+<div class="subtitle">仅自己可见</div>
+</div>
+<div class="icon-btn">⚙</div>
+</div>
+<div class="segmented">
+<div class="segment active">资料</div>
+<div class="segment">安全</div>
+</div>
+</div>
+<div class="sheet-body">
+<section class="sheet-section">
+<div class="hero">
+<div class="avatar">林</div>
+<div class="hero-main">
+<div class="kicker">Account</div>
+<div class="name">林晚青</div>
+<div class="meta">lin@example.com<br/>ID 103294</div>
+</div>
+</div>
+<div class="chips">
+<span class="chip safe">资料仅自己可见</span>
+<span class="chip">账户设置入口</span>
+</div>
+</section>
+<section class="sheet-section">
+<div class="section-head">
+<div class="section-title">必要资料</div>
+<div class="section-note">只保留需要确认和编辑的字段</div>
+</div>
+<div class="rows">
+<div class="row">
+<div class="row-key">昵称</div>
+<div class="row-val">林晚青</div>
+</div>
+<div class="row">
+<div class="row-key">邮箱</div>
+<div class="row-val">lin@example.com</div>
+</div>
+<div class="row">
+<div class="row-key">注册时间</div>
+<div class="row-val">2025-10-22</div>
+</div>
+<div class="row">
+<div class="row-key">手机号</div>
+<div class="row-val">
+<span class="pill">未绑定</span>
+<span>前往安全页</span>
+</div>
+</div>
+</div>
+</section>
+<section class="sheet-section">
+<div class="section-head">
+<div class="section-title">快捷入口</div>
+<div class="section-note">详情不重复展示</div>
+</div>
+<div class="quick-grid">
+<div class="quick">
+<div class="quick-kicker">Wallet</div>
+<div class="quick-title">积分钱包</div>
+<div class="quick-desc">余额、充值与兑换</div>
+</div>
+<div class="quick">
+<div class="quick-kicker">Records</div>
+<div class="quick-title">交易记录</div>
+<div class="quick-desc">订单与提示词解锁</div>
+</div>
+<div class="quick">
+<div class="quick-kicker">Affiliate</div>
+<div class="quick-title">推广中心</div>
+<div class="quick-desc">邀请人数与佣金</div>
+</div>
+<div class="quick">
+<div class="quick-kicker">Check-in</div>
+<div class="quick-title">每日签到</div>
+<div class="quick-desc">连续天数与补签</div>
+</div>
+</div>
+</section>
+</div>
+<div class="actions">
+<div class="action-grid">
+<button class="btn ghost">前往钱包</button>
+<button class="btn primary">编辑资料</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="phone-wrap">
+<p class="phone-label">安全 Tab：同一张主面板里完成所有安全操作</p>
+<div class="phone">
+<div class="screen">
+<div aria-hidden="true" class="scene">
+<div class="scene-frame"></div>
+<div class="poster">
+<div class="shape a"></div>
+<div class="shape b"></div>
+<div class="shape c"></div>
+<div class="shape d"></div>
+<div class="shape e"></div>
+<div class="shape f"></div>
+<div class="poster-line a"></div>
+<div class="poster-line b"></div>
+<div class="poster-label">Color Archive</div>
+</div>
+</div>
+<div class="status">iPhone 17 Safari · 9:41</div>
+<div class="modal-shell">
+<div class="sheet-head">
+<div class="head-top">
+<div>
+<div class="title">账户安全</div>
+<div class="subtitle">状态概览与关键操作</div>
+</div>
+<div class="icon-btn">🛡</div>
+</div>
+<div class="segmented">
+<div class="segment">资料</div>
+<div class="segment active">安全</div>
+</div>
+</div>
+<div class="sheet-body">
+<section class="sheet-section">
+<div class="section-head">
+<div class="section-title">安全概览</div>
+<div class="pill safe">整体状态良好</div>
+</div>
+<div class="security-top">
+<div class="metric">
+<div class="metric-label">邮箱验证</div>
+<div class="metric-value">已验证</div>
+</div>
+<div class="metric">
+<div class="metric-label">手机号</div>
+<div class="metric-value">未绑定</div>
+</div>
+<div class="metric">
+<div class="metric-label">最近改密</div>
+<div class="metric-value">32 天前</div>
+</div>
+</div>
+</section>
+<section class="sheet-section">
+<div class="sub-head">
+<div class="sub-icon">✦</div>
+<div>
+<div class="sub-title">修改密码</div>
+<div class="sub-desc">保留第一优先级，但不再做成一张独立悬浮卡，而是主面板中的第一个安全分区。</div>
+</div>
+</div>
+<div class="input-stack">
+<input class="glass-input" placeholder="当前密码" type="password"/>
+<input class="glass-input" placeholder="新密码（至少 6 位）" type="password"/>
+<button class="btn primary">更新密码</button>
+</div>
+</section>
+<section class="sheet-section">
+<div class="sub-head">
+<div class="sub-icon safe">☎</div>
+<div>
+<div class="sub-title">绑定手机号</div>
+<div class="sub-desc">在同一张安全面板里继续往下操作，阅读流和操作流会比“多卡片跳跃”顺很多。</div>
+</div>
+</div>
+<div class="section-head">
+<div class="section-note">建议优先完成</div>
+<div class="pill">未绑定</div>
+</div>
+<div class="input-stack">
+<input class="glass-input" placeholder="输入手机号" type="text"/>
+<div class="input-inline">
+<input class="glass-input" placeholder="输入验证码" type="text"/>
+<button class="btn subtle">获取</button>
+</div>
+<button class="btn ghost">绑定手机号</button>
+</div>
+</section>
+<section class="sheet-section">
+<div class="sub-head">
+<div class="sub-icon">⎋</div>
+<div>
+<div class="sub-title">最近登录</div>
+<div class="sub-desc">登录设备、位置、时间继续作为安全域信息保留，但和其它内容属于同一主容器内部。</div>
+</div>
+</div>
+<div class="rows">
+<div class="row">
+<div class="row-key">最近设备</div>
+<div class="row-val">iPhone Safari</div>
+</div>
+<div class="row">
+<div class="row-key">登录位置</div>
+<div class="row-val">上海</div>
+</div>
+<div class="row">
+<div class="row-key">登录时间</div>
+<div class="row-val">今天 09:12</div>
+</div>
+</div>
+</section>
+<section class="sheet-section danger-strip">
+<div class="sub-head">
+<div class="sub-icon danger">!</div>
+<div>
+<div class="sub-title">危险区</div>
+<div class="sub-desc">危险操作仍然和普通操作分层，但不再另外漂浮成一整张重卡，而是主面板的最后一个警示分区。</div>
+</div>
+</div>
+<button class="btn danger profile-security-unified-sheet-preview-inline-style-1">确认注销账号</button>
+</section>
+</div>
+<div class="actions">
+<div class="action-grid">
+<button class="btn ghost">返回资料</button>
+<button class="btn primary">保存安全设置</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
 </body>
 </html>

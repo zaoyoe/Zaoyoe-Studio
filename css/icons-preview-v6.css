@@ -156,3 +156,13 @@ body {
                 transform: rotate(360deg);
             }
         }
+
+/* icons_preview_v6.html inline style attribute classes */
+.icons-preview-v6-inline-style-1 { animation-delay: 0s; }
+.icons-preview-v6-inline-style-2 { animation-delay: 0.5s; }
+.icons-preview-v6-inline-style-3 { animation-delay: 1s; }
+.icons-preview-v6-inline-style-4 { animation-delay: 1.5s; }
+.icons-preview-v6-inline-style-5 { animation-delay: 0.3s; }
+.icons-preview-v6-inline-style-6 { animation-delay: 0.6s; }
+.icons-preview-v6-inline-style-7 { animation-delay: 0.9s; }
+/* end icons_preview_v6.html inline style attribute classes */

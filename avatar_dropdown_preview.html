@@ -1,105 +1,91 @@
 <!DOCTYPE html>
+
 <html lang="zh-CN">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>头像下拉菜单预览 - Linear 风格</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    
-    <link rel="stylesheet" href="css/avatar-dropdown-preview.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>头像下拉菜单预览 - Linear 风格</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet"/>
+<link href="css/avatar-dropdown-preview.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1" rel="stylesheet"/>
 </head>
-
 <body>
-
-    <!-- Simulated Nav Bar -->
-    <nav class="nav-bar">
-        <div class="nav-logo">早鸟工作室</div>
-        <div class="nav-links">
-            <a href="#">提示词</a>
-            <a href="#">商城</a>
-            <a href="#">验证</a>
-            <a href="#">留言板</a>
-        </div>
-
-        <!-- Avatar with Badge -->
-        <div class="avatar-wrapper">
-            <button class="avatar-btn">
+<!-- Simulated Nav Bar -->
+<nav class="nav-bar">
+<div class="nav-logo">早鸟工作室</div>
+<div class="nav-links">
+<a href="#">提示词</a>
+<a href="#">商城</a>
+<a href="#">验证</a>
+<a href="#">留言板</a>
+</div>
+<!-- Avatar with Badge -->
+<div class="avatar-wrapper">
+<button class="avatar-btn">
                 C
                 <span class="notif-badge">3</span>
-            </button>
-
-            <!-- Dropdown -->
-            <div class="dropdown">
-                <!-- FIRST SCREEN: Notifications at the TOP -->
-                <div class="dropdown-notifications">
-                    <div class="notif-header">
-                        <span class="notif-title">通知</span>
-                        <span class="notif-clear">全部已读</span>
-                    </div>
-
-                    <div class="notif-item">
-                        <div class="notif-avatar" style="background: linear-gradient(135deg, #f472b6, #db2777);"></div>
-                        <div class="notif-content">
-                            <div class="notif-text"><strong>Alice</strong> 回复了你的评论</div>
-                            <div class="notif-time">2 分钟前</div>
-                        </div>
-                        <div class="notif-dot"></div>
-                    </div>
-
-                    <div class="notif-item">
-                        <div class="notif-avatar" style="background: linear-gradient(135deg, #4ade80, #16a34a);"></div>
-                        <div class="notif-content">
-                            <div class="notif-text"><strong>Bob</strong> 点赞了你的作品</div>
-                            <div class="notif-time">15 分钟前</div>
-                        </div>
-                        <div class="notif-dot"></div>
-                    </div>
-                </div>
-
-                <!-- User Actions -->
-                <div class="dropdown-actions">
-                    <div class="action-item">
-                        <i class="fas fa-user"></i>
-                        <span>个人资料</span>
-                    </div>
-                    <div class="action-item">
-                        <i class="fas fa-gem"></i>
-                        <span>钱包</span>
-                        <span style="margin-left: auto; font-size: 12px; color: #4ade80;">128 点</span>
-                    </div>
-                    <div class="action-item">
-                        <i class="fas fa-globe"></i>
-                        <span>语言</span>
-                        <span style="margin-left: auto; font-size: 12px; opacity: 0.5;">中文</span>
-                    </div>
-                    <div class="action-item">
-                        <i class="fas fa-moon"></i>
-                        <span>深色模式</span>
-                        <span class="toggle">🌙</span>
-                    </div>
-                </div>
-
-                <div class="dropdown-divider"></div>
-
-                <div class="dropdown-footer">
-                    <div class="action-item action-logout">
-                        <i class="fas fa-sign-out-alt"></i>
-                        <span>退出登录</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Annotation -->
-            <div class="annotation">
-                <div class="annotation-text">← "第一屏" 通知区</div>
-                <div class="annotation-arrow"></div>
-            </div>
-        </div>
-    </nav>
-
-    <div class="preview-label">Linear 风格 - 头像下拉菜单预览</div>
-
+</button>
+<!-- Dropdown -->
+<div class="dropdown">
+<!-- FIRST SCREEN: Notifications at the TOP -->
+<div class="dropdown-notifications">
+<div class="notif-header">
+<span class="notif-title">通知</span>
+<span class="notif-clear">全部已读</span>
+</div>
+<div class="notif-item">
+<div class="notif-avatar avatar-dropdown-preview-inline-style-1"></div>
+<div class="notif-content">
+<div class="notif-text"><strong>Alice</strong> 回复了你的评论</div>
+<div class="notif-time">2 分钟前</div>
+</div>
+<div class="notif-dot"></div>
+</div>
+<div class="notif-item">
+<div class="notif-avatar avatar-dropdown-preview-inline-style-2"></div>
+<div class="notif-content">
+<div class="notif-text"><strong>Bob</strong> 点赞了你的作品</div>
+<div class="notif-time">15 分钟前</div>
+</div>
+<div class="notif-dot"></div>
+</div>
+</div>
+<!-- User Actions -->
+<div class="dropdown-actions">
+<div class="action-item">
+<i class="fas fa-user"></i>
+<span>个人资料</span>
+</div>
+<div class="action-item">
+<i class="fas fa-gem"></i>
+<span>钱包</span>
+<span class="avatar-dropdown-preview-inline-style-3">128 点</span>
+</div>
+<div class="action-item">
+<i class="fas fa-globe"></i>
+<span>语言</span>
+<span class="avatar-dropdown-preview-inline-style-4">中文</span>
+</div>
+<div class="action-item">
+<i class="fas fa-moon"></i>
+<span>深色模式</span>
+<span class="toggle">🌙</span>
+</div>
+</div>
+<div class="dropdown-divider"></div>
+<div class="dropdown-footer">
+<div class="action-item action-logout">
+<i class="fas fa-sign-out-alt"></i>
+<span>退出登录</span>
+</div>
+</div>
+</div>
+<!-- Annotation -->
+<div class="annotation">
+<div class="annotation-text">← "第一屏" 通知区</div>
+<div class="annotation-arrow"></div>
+</div>
+</div>
+</nav>
+<div class="preview-label">Linear 风格 - 头像下拉菜单预览</div>
 </body>
-
 </html>
