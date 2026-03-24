@@ -1292,7 +1292,7 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_1'),
+        guestbookHtml.includes('style.css?v=20260324_GUESTBOOK_SUPABASE_RUNTIME_STYLE_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
@@ -1301,6 +1301,82 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
         true,
         'guestbook.html should reference the updated guestbook script version'
     );
+});
+
+test('supabase guestbook runtime renderers externalize error, empty state, delete, heart, and preview styling', () => {
+    const guestbookSupabaseSource = readRepoFile('supabase-guestbook-functions.js');
+    const homepageGuestbookSource = readRepoFile('js/homepage-guestbook-modal.js');
+    const styleSource = readRepoFile('style.css');
+    const indexSource = readRepoFile('index.html');
+    const guestbookHtml = readRepoFile('guestbook.html');
+    const archivedIndexSource = readRepoFile('index_old.html');
+
+    const removedMarkers = [
+        '<p style="color: red;">加载留言失败，请刷新重试</p>',
+        "emptyState.style.display = 'flex'",
+        "container.style.opacity = '1'",
+        "emptyState.style.display = 'none'",
+        "msgEl.style.transition = 'opacity 0.3s, transform 0.3s';",
+        "msgEl.style.opacity = '0';",
+        "msgEl.style.transform = 'scale(0.9)';",
+        "const style = document.createElement('style');",
+        "heartIcon.style.animation = 'heartBounce 1.2s ease-in-out';",
+        "heartIcon.style.color = '#ff4757';",
+        "heartIcon.style.animation = 'heartPulse 1s ease-in-out 3';",
+        "imagePreview.style.display = 'block';",
+        "imagePreview.style.display = 'none';"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(guestbookSupabaseSource.includes(marker), false, `supabase-guestbook-functions.js should not contain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'function markGuestbookContainerReady(container)',
+        'function setGuestbookEmptyStateVisible(emptyState, visible)',
+        'function setGuestbookImagePreviewVisible(imagePreview, visible)',
+        "container.innerHTML = '<p class=\"guestbook-message-error\">加载留言失败，请刷新重试</p>';",
+        'markGuestbookContainerReady(container);',
+        "msgEl.classList.add('guestbook-message-removing');",
+        "triggerGuestbookHeartAnimation(heartIcon, 'guestbook-heart-bounce', 1500);",
+        "triggerGuestbookHeartAnimation(heartIcon, 'guestbook-heart-pulse', 3500);",
+        "imagePreview.classList.toggle('guestbook-composer-preview-hidden', !visible);",
+        "imagePreview.classList.toggle('index-guestbook-image-preview-hidden', !visible);"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(guestbookSupabaseSource.includes(marker), true, `supabase-guestbook-functions.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        homepageGuestbookSource.includes("!imagePreview.hidden"),
+        true,
+        'js/homepage-guestbook-modal.js should detect image preview visibility without inline display state'
+    );
+
+    const cssMarkers = [
+        '.guestbook-message-error',
+        'body.guestbook-page .message-item.guestbook-message-removing',
+        '.guestbook-heart-liked',
+        '@keyframes guestbookHeartBounce',
+        '@keyframes guestbookHeartPulse',
+        '.guestbook-composer-preview-hidden'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(styleSource.includes(marker), true, `style.css should contain ${marker}`);
+    }
+
+    const htmlMarkers = [
+        'style.css?v=20260324_GUESTBOOK_SUPABASE_RUNTIME_STYLE_1',
+        'supabase-guestbook-functions.js?v=20260324_GUESTBOOK_SUPABASE_RUNTIME_STYLE_1'
+    ];
+
+    for (const marker of htmlMarkers) {
+        assert.equal(indexSource.includes(marker), true, `index.html should contain ${marker}`);
+        assert.equal(guestbookHtml.includes(marker), true, `guestbook.html should contain ${marker}`);
+        assert.equal(archivedIndexSource.includes(marker), true, `index_old.html should contain ${marker}`);
+    }
 });
 
 test('homepage guestbook modal runtime renderers externalize keyboard dock, viewport probe, and overlay state styling', () => {
@@ -1359,17 +1435,17 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
     }
 
     assert.equal(
-        indexSource.includes('style.css?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_1'),
+        indexSource.includes('style.css?v=20260324_GUESTBOOK_SUPABASE_RUNTIME_STYLE_1'),
         true,
         'index.html should load the latest homepage guestbook modal stylesheet version'
     );
     assert.equal(
-        indexSource.includes('./js/homepage-guestbook-modal.js?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_1'),
+        indexSource.includes('./js/homepage-guestbook-modal.js?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_2'),
         true,
         'index.html should load the latest homepage guestbook modal script version'
     );
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_1'),
+        guestbookHtml.includes('style.css?v=20260324_GUESTBOOK_SUPABASE_RUNTIME_STYLE_1'),
         true,
         'guestbook.html should load the latest shared stylesheet version'
     );

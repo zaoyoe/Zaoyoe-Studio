@@ -88,7 +88,12 @@
 
         const uploadBtn = overlay.querySelector('#guestbookComposerUploadBtn');
         const imagePreview = document.getElementById('imagePreview');
-        const hasImage = Boolean(imagePreview && imagePreview.style.display !== 'none');
+        const hasImage = Boolean(
+            imagePreview
+            && !imagePreview.hidden
+            && !imagePreview.classList.contains('guestbook-composer-preview-hidden')
+            && !imagePreview.classList.contains('index-guestbook-image-preview-hidden')
+        );
         uploadBtn?.classList.toggle('has-image', hasImage);
     }
 

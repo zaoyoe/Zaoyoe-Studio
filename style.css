@@ -2854,6 +2854,12 @@ body.guestbook-page.auth-sheet-open::after {
     font-size: 0.9rem;
 }
 
+.guestbook-message-error {
+    margin: 0;
+    color: #ef4444;
+    text-align: center;
+}
+
 /* Message Animation Wrapper - 防止白色闪烁 */
 .message-anim-wrapper {
     --guestbook-stagger-delay: 0s;
@@ -9777,6 +9783,12 @@ body.guestbook-page .message-item.comment-post-highlight {
     background: rgba(155, 93, 229, 0.15);
 }
 
+body.guestbook-page .message-item.guestbook-message-removing {
+    transition: opacity 0.3s, transform 0.3s;
+    opacity: 0;
+    transform: scale(0.9);
+}
+
 @keyframes guestbookPageFadeOutDown {
     from {
         opacity: 1;
@@ -10088,6 +10100,47 @@ body.guestbook-page #skeletonContainer.hidden {
     transform: scale(1.2);
 }
 
+.like-btn i.guestbook-heart-liked,
+.comment-like-btn i.guestbook-heart-liked,
+.like-btn svg.guestbook-heart-liked,
+.comment-like-btn svg.guestbook-heart-liked {
+    color: #ff4757;
+}
+
+@keyframes guestbookHeartBounce {
+    0%, 100% { transform: scale(1); }
+    20% { transform: scale(1.3); }
+    40% { transform: scale(1); }
+    60% { transform: scale(1.2); }
+    80% { transform: scale(1); }
+}
+
+@keyframes guestbookHeartPulse {
+    0%, 100% { transform: scale(1); }
+    15% { transform: scale(1.25); }
+    30% { transform: scale(1); }
+    45% { transform: scale(1.15); }
+    60% { transform: scale(1); }
+}
+
+.like-btn i.guestbook-heart-bounce,
+.comment-like-btn i.guestbook-heart-bounce,
+.like-btn svg.guestbook-heart-bounce,
+.comment-like-btn svg.guestbook-heart-bounce {
+    animation: guestbookHeartBounce 1.2s ease-in-out;
+}
+
+.like-btn i.guestbook-heart-pulse,
+.comment-like-btn i.guestbook-heart-pulse,
+.like-btn svg.guestbook-heart-pulse,
+.comment-like-btn svg.guestbook-heart-pulse {
+    animation: guestbookHeartPulse 1s ease-in-out 3;
+}
+
 .guestbook-empty-state-hidden {
     display: none;
+}
+
+.guestbook-composer-preview-hidden {
+    display: none !important;
 }
