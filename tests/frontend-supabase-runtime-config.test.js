@@ -1112,6 +1112,7 @@ test('admin studio points and users controls route through delegated actions', (
 test('admin user runtime renderers route list, modal, toolbar, and notification controls through delegated actions', () => {
     const adminUsersSource = readRepoFile('admin-users.js');
     const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
 
     const removedInlineMarkers = [
         `onclick="openUserDrawer('`,
@@ -1144,7 +1145,16 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         `onclick="showBanDetails(null)"`,
         `onclick="executeBanSelection()"`,
         `onclick="closePointsModal()"`,
-        `onclick="closeClearContentModal()"`
+        `onclick="closeClearContentModal()"`,
+        'modalOverlay.style.cssText =',
+        'modal.style.cssText =',
+        "const style = document.createElement('style');",
+        "modal.style.display = 'flex'",
+        "modal.style.display = 'none'",
+        'class="notes-container" style="display:flex',
+        'class="audit-list" id="auditList" style="padding:16px',
+        'style="margin-right: 8px;"',
+        'style="font-size:0.9rem;color:#94a3b8;margin-left:6px;"'
     ];
 
     for (const marker of removedInlineMarkers) {
@@ -1180,6 +1190,12 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         'data-admin-action="users-close-notification-modal"',
         'data-admin-action="users-select-notification-type"',
         'data-admin-action="users-send-notification"',
+        'batch-export-modal-overlay',
+        'notification-modal-overlay',
+        'users-notes-container',
+        'users-audit-item',
+        'users-modal-title-count',
+        'users-hidden-date-picker',
         'data-batch-tag-value="',
         'data-batch-tag-close="1"',
         'data-batch-tag-submit="1"',
@@ -1231,6 +1247,19 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
 
     for (const marker of delegatedHandlerMarkers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.batch-export-modal-overlay',
+        '.notification-modal-overlay',
+        '.users-notes-container',
+        '.users-audit-item',
+        '.users-modal-title-count',
+        '.users-hidden-date-picker'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 });
 

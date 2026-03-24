@@ -850,38 +850,91 @@ async function batchSendNotification() {
     showNotificationModalBatch(userIds.length);
 }
 
-// Open notification modal in batch mode
-function showNotificationModalBatch(count) {
-    // Reuse the existing showNotificationModal logic but with batch marker
-    let modal = document.getElementById('notificationModal');
+function buildUsersModalCountBadge(count) {
+    return `<span class="users-modal-title-count">(${escapeHtml(String(count))} 人)</span>`;
+}
 
-    if (!modal) {
-        // Create modal if not exists (similar to showNotificationModal)
-        showNotificationModal('__BATCH__');
-        modal = document.getElementById('notificationModal');
+function buildNotificationModalTitle(count = null) {
+    const isBatch = Number.isFinite(Number(count)) && Number(count) > 0;
+    const badge = isBatch ? ` ${buildUsersModalCountBadge(count)}` : '';
+    return `<i class="far fa-bell notification-modal-title-icon" aria-hidden="true"></i>${isBatch ? '批量通知' : '通知'}${badge}`;
+}
+
+function getNotificationModal() {
+    let modal = document.getElementById('notificationModal');
+    if (modal) {
+        return modal;
     }
 
-    // Update modal title for batch mode
+    modal = document.createElement('div');
+    modal.id = 'notificationModal';
+    modal.className = 'custom-modal-overlay notification-modal-overlay';
+    modal.innerHTML = `
+        <div class="custom-modal notification-modal-dialog">
+            <div class="modal-header">
+                <h3 class="modal-title">${buildNotificationModalTitle()}</h3>
+                <button class="modal-close-btn" type="button" data-admin-action="users-close-notification-modal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>标题</label>
+                    <input type="text" id="notifTitle" class="modal-input" placeholder="简短的通知标题">
+                </div>
+                <div class="form-group">
+                    <label>内容</label>
+                    <textarea id="notifContent" class="modal-input" rows="4" placeholder="通知详细内容..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>类型</label>
+                    <div class="notif-type-selector notification-type-selector">
+                        <button class="type-btn active" type="button" data-type="info" data-admin-action="users-select-notification-type" data-notification-type="info"><i class="fas fa-info-circle"></i> 信息</button>
+                        <button class="type-btn" type="button" data-type="warning" data-admin-action="users-select-notification-type" data-notification-type="warning"><i class="fas fa-exclamation-triangle"></i> 警告</button>
+                        <button class="type-btn" type="button" data-type="success" data-admin-action="users-select-notification-type" data-notification-type="success"><i class="fas fa-check-circle"></i> 成功</button>
+                    </div>
+                    <input type="hidden" id="notifType" value="info">
+                </div>
+            </div>
+            <div class="modal-footer notification-modal-footer">
+                <button class="send-notification-btn" type="button" data-admin-action="users-send-notification" data-user-id=""><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+    `;
+
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            closeNotificationModal();
+        }
+    });
+
+    document.body.appendChild(modal);
+    return modal;
+}
+
+function openNotificationModal(userId, count = null) {
+    const modal = getNotificationModal();
     const titleEl = modal.querySelector('.modal-title');
     if (titleEl) {
-        titleEl.innerHTML = `<i class="far fa-bell" style="margin-right: 8px;"></i> 批量通知 <span style="font-size:0.9rem;color:#94a3b8;margin-left:6px;">(${count} 人)</span>`;
+        titleEl.innerHTML = buildNotificationModalTitle(count);
     }
 
-    // Update send button onclick for batch mode
+    document.getElementById('notifTitle').value = '';
+    document.getElementById('notifContent').value = '';
+
     const sendBtn = modal.querySelector('.send-notification-btn');
     if (sendBtn) {
-        sendBtn.onclick = () => executeBatchNotification();
+        sendBtn.dataset.userId = userId;
     }
 
-    // Clear previous input
-    const titleInput = document.getElementById('notifTitle');
-    const contentInput = document.getElementById('notifContent');
-    if (titleInput) titleInput.value = '';
-    if (contentInput) contentInput.value = '';
+    selectNotifType('info');
 
-    // Show modal
-    modal.style.display = 'flex';
-    modal.classList.add('active');
+    requestAnimationFrame(() => {
+        modal.classList.add('active');
+    });
+}
+
+// Open notification modal in batch mode
+function showNotificationModalBatch(count) {
+    openNotificationModal('__BATCH__', count);
 }
 
 // Execute batch notification send
@@ -920,11 +973,7 @@ async function executeBatchNotification() {
         showToast(`成功发送通知给 ${batchNotificationUserIds.length} 位用户`, 'success');
 
         // Close modal
-        const modal = document.getElementById('notificationModal');
-        if (modal) {
-            modal.classList.remove('active');
-            setTimeout(() => modal.style.display = 'none', 300);
-        }
+        closeNotificationModal();
 
         batchNotificationUserIds = [];
         clearAllSelections();
@@ -962,7 +1011,7 @@ async function openBanModalBatch(count) {
     // Update modal title to show batch mode
     const titleEl = document.querySelector('#banUserModalOverlay .modal-title');
     if (titleEl) {
-        titleEl.innerHTML = `🚫 批量封禁管理 <span style="font-size:0.9rem;color:#94a3b8;">(${count} 人)</span>`;
+        titleEl.innerHTML = `🚫 批量封禁管理 ${buildUsersModalCountBadge(count)}`;
     }
 
     // Reset State
@@ -1251,76 +1300,61 @@ async function batchExportUsers() {
 function showBatchExportModal(count) {
     return new Promise((resolve, reject) => {
         // Remove existing modal if any
-        document.querySelector('.batch-export-modal')?.remove();
+        document.querySelector('.batch-export-modal-overlay')?.remove();
 
         const modalOverlay = document.createElement('div');
         modalOverlay.className = 'batch-export-modal-overlay';
-        modalOverlay.style.cssText = `
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
-            z-index: 10000; display: flex; align-items: center; justify-content: center;
-            opacity: 0; transition: opacity 0.3s ease;
-        `;
 
         const modal = document.createElement('div');
         modal.className = 'batch-export-modal glass-panel';
-        modal.style.cssText = `
-            width: 380px; max-width: 90vw;
-            background: var(--bg-color, #fff);
-            color: var(--text-main, #1e1e1e);
-            border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.2);
-            border: 1px solid var(--border-color, rgba(0,0,0,0.1));
-            overflow: hidden; transform: scale(0.95); transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-        `;
-
         modal.innerHTML = `
-            <div style="padding: 14px 16px; border-bottom: 1px solid var(--border-color, rgba(0,0,0,0.1)); text-align: center;">
-                <h3 style="margin: 0; font-size: 1rem; font-weight: 600; color: var(--text-main);">📥 批量导出用户</h3>
+            <div class="batch-export-modal-header">
+                <h3 class="batch-export-modal-title">📥 批量导出用户</h3>
             </div>
-            
-            <div style="padding: 14px 20px;">
-                <div style="margin-bottom: 14px; font-size: 0.95rem; color: var(--text-main);">
-                    已选 <span style="font-weight:700; color:#3b82f6;">${count}</span> 位用户
+
+            <div class="batch-export-modal-body">
+                <div class="batch-export-modal-summary">
+                    已选 <span class="batch-export-modal-count">${escapeHtml(String(count))}</span> 位用户
                 </div>
 
-                <div style="margin-bottom: 16px;">
-                    <div style="color: var(--text-dim, #666); margin-bottom: 8px; font-size: 0.85rem;">导出格式:</div>
-                    <div style="display: flex; flex-direction: column; gap: 8px;">
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
-                            <input type="radio" name="exportMode" value="simple" style="accent-color: #3b82f6;">
+                <div class="batch-export-modal-section">
+                    <div class="batch-export-modal-section-title">导出格式:</div>
+                    <div class="batch-export-modal-options">
+                        <label class="batch-export-modal-option">
+                            <input type="radio" name="exportMode" value="simple">
                             <span>简洁模式 (CSV) - 仅基本信息</span>
                         </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
-                            <input type="radio" name="exportMode" value="full" checked style="accent-color: #3b82f6;">
+                        <label class="batch-export-modal-option">
+                            <input type="radio" name="exportMode" value="full" checked>
                             <span>完整模式 (Excel) - 含积分流水/封禁记录</span>
                         </label>
                     </div>
                 </div>
 
-                <div id="exportDataOptions" style="margin-bottom: 6px;">
-                    <div style="color: var(--text-dim, #666); margin-bottom: 8px; font-size: 0.85rem;">包含数据:</div>
-                    <div style="display: flex; flex-direction: column; gap: 6px;">
-                        <label style="display: flex; align-items: center; gap: 8px; opacity: 0.7; color: var(--text-main); font-size: 0.9rem;">
+                <div id="exportDataOptions" class="batch-export-modal-section batch-export-modal-section-compact">
+                    <div class="batch-export-modal-section-title">包含数据:</div>
+                    <div class="batch-export-modal-options batch-export-modal-options-tight">
+                        <label class="batch-export-modal-option is-disabled">
                             <input type="checkbox" checked disabled> 基本信息 (用户名/邮箱/积分/状态)
                         </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
-                            <input type="checkbox" id="exportLedger" checked style="accent-color: #3b82f6;"> 积分流水记录
+                        <label class="batch-export-modal-option">
+                            <input type="checkbox" id="exportLedger" checked> 积分流水记录
                         </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
-                            <input type="checkbox" id="exportBanHistory" style="accent-color: #3b82f6;"> 封禁历史
+                        <label class="batch-export-modal-option">
+                            <input type="checkbox" id="exportBanHistory"> 封禁历史
                         </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
-                            <input type="checkbox" id="exportTags" style="accent-color: #3b82f6;"> 标签详情
+                        <label class="batch-export-modal-option">
+                            <input type="checkbox" id="exportTags"> 标签详情
                         </label>
                     </div>
                 </div>
             </div>
 
-            <div style="padding: 14px 20px; border-top: 1px solid var(--border-color, rgba(0,0,0,0.1)); display: flex; justify-content: center; gap: 16px;">
-                <button class="modal-btn-cancel" style="padding: 6px 24px; border-radius: 6px; border: 1px solid var(--border-color, rgba(0,0,0,0.2)); background: transparent; color: var(--text-main); cursor: pointer; font-size: 0.9rem;">
+            <div class="batch-export-modal-footer">
+                <button class="modal-btn-cancel batch-export-modal-btn" type="button">
                     取消
                 </button>
-                <button class="modal-btn-confirm" style="padding: 6px 24px; border-radius: 6px; border: none; background: #3b82f6; color: #fff; cursor: pointer; font-weight: 600; font-size: 0.9rem;">
+                <button class="modal-btn-confirm batch-export-modal-btn batch-export-modal-btn-primary" type="button">
                     导出
                 </button>
             </div>
@@ -1331,20 +1365,26 @@ function showBatchExportModal(count) {
 
         // Animation in
         requestAnimationFrame(() => {
-            modalOverlay.style.opacity = '1';
-            modal.style.transform = 'scale(1)';
+            modalOverlay.classList.add('active');
         });
 
-        // Event Listeners
-        const close = () => {
-            modalOverlay.style.opacity = '0';
-            modal.style.transform = 'scale(0.95)';
-            setTimeout(() => modalOverlay.remove(), 300);
-            resolve(null);
+        let finished = false;
+
+        const finish = (result) => {
+            if (finished) return;
+            finished = true;
+            modalOverlay.classList.remove('active');
+            setTimeout(() => {
+                modalOverlay.remove();
+                resolve(result);
+            }, 300);
         };
 
+        // Event Listeners
+        const close = () => finish(null);
+
         const confirm = () => {
-            const mode = modal.querySelector('input[name="exportMode"]:checked').value;
+            const mode = modal.querySelector('input[name="exportMode"]:checked')?.value || 'full';
             const options = {
                 mode,
                 includeLedger: modal.querySelector('#exportLedger')?.checked ?? false,
@@ -1352,10 +1392,7 @@ function showBatchExportModal(count) {
                 includeTags: modal.querySelector('#exportTags')?.checked ?? false
             };
 
-            modalOverlay.style.opacity = '0';
-            modal.style.transform = 'scale(0.95)';
-            setTimeout(() => modalOverlay.remove(), 300);
-            resolve(options);
+            finish(options);
         };
 
         // Bind event listeners to buttons
@@ -2220,9 +2257,9 @@ function buildUserTabToolbar(tabName, options = {}) {
     ];
 
     return `
-        <div class="tab-toolbar" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+        <div class="tab-toolbar users-tab-toolbar">
             <div class="modal-dropdown" id="${tabName}TimeDropdown">
-                <div class="modal-dropdown-trigger" data-admin-action="users-toggle-modal-dropdown" data-dropdown-id="${tabName}TimeDropdown" style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;background:transparent;border:1px solid var(--border-color);border-radius:6px;font-size:0.85rem;color:var(--text-dim);">
+                <div class="modal-dropdown-trigger users-tab-date-trigger" data-admin-action="users-toggle-modal-dropdown" data-dropdown-id="${tabName}TimeDropdown">
                     <i class="far fa-calendar-alt"></i>
                     <span id="${tabName}TimeLabel">全部时间</span>
                     <i class="fas fa-chevron-down"></i>
@@ -2234,11 +2271,19 @@ function buildUserTabToolbar(tabName, options = {}) {
                     ${includeCustomDate ? `<div class="modal-dropdown-item" data-admin-action="users-open-custom-date-picker" data-user-tab-name="${tabName}">📅 自定义</div>` : ''}
                 </div>
             </div>
-            <button class="btn-export" type="button" data-admin-action="users-export-tab-data" data-user-tab-name="${tabName}" style="background:transparent;border:1px solid var(--border-color);padding:6px 12px;border-radius:6px;font-size:0.85rem;cursor:pointer;color:var(--text-dim);">
+            <button class="btn-export users-tab-export-btn" type="button" data-admin-action="users-export-tab-data" data-user-tab-name="${tabName}">
                 <i class="fas fa-download"></i> ${exportLabel}
             </button>
         </div>
     `;
+}
+
+function buildUsersTabEmptyState(message) {
+    return `<div class="empty-state users-tab-empty-state">${escapeHtml(message)}</div>`;
+}
+
+function buildUsersTabError(message) {
+    return `<div class="error-msg users-tab-error">加载失败: ${escapeHtml(message)}</div>`;
 }
 
 // Render Ledger Tab
@@ -2247,7 +2292,7 @@ function renderLedgerTab(container) {
 
     container.innerHTML = `
         ${buildUserTabToolbar('ledger', { includeCustomDate: true })}
-        <input type="text" id="ledgerDatePicker" style="position:absolute; visibility:hidden; height:0; width:0;" placeholder="选择日期范围">
+        <input type="text" id="ledgerDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
         <div class="data-list" id="ledgerList">
             ${renderLedgerItems(data)}
         </div>
@@ -2257,7 +2302,7 @@ function renderLedgerTab(container) {
 // Render ledger items helper
 function renderLedgerItems(data) {
     if (data.length === 0) {
-        return '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">暂无积分记录</div>';
+        return buildUsersTabEmptyState('暂无积分记录');
     }
     return data.map(record => {
         const meta = getAdminLedgerMeta(record);
@@ -3244,7 +3289,7 @@ function renderActivityTab(container) {
 
     container.innerHTML = `
         ${buildUserTabToolbar('activity', { includeCustomDate: true })}
-        <input type="text" id="activityDatePicker" style="position:absolute; visibility:hidden; height:0; width:0;" placeholder="选择日期范围">
+        <input type="text" id="activityDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
         <div class="data-list" id="activityList">
             ${renderActivityItems(data)}
         </div>
@@ -3254,16 +3299,16 @@ function renderActivityTab(container) {
 // Render activity items helper
 function renderActivityItems(data) {
     if (data.length === 0) {
-        return '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">暂无内容记录</div>';
+        return buildUsersTabEmptyState('暂无内容记录');
     }
     return data.map(item => `
         <div class="data-list-item">
-            <div style="width:32px;height:32px;border-radius:8px;background:rgba(107,158,206,0.15);display:flex;align-items:center;justify-content:center;">
-                <i class="fas ${item.type === 'comment' ? 'fa-comment' : 'fa-book'}" style="color:#6b9ece;font-size:0.85rem;"></i>
+            <div class="users-tab-item-icon users-tab-item-icon-info">
+                <i class="fas ${item.type === 'comment' ? 'fa-comment' : 'fa-book'} users-tab-item-icon-glyph"></i>
             </div>
-            <div style="flex:1;">
-                <div style="font-size:0.9rem;">${escapeHtml(item.content.substring(0, 80))}${item.content.length > 80 ? '...' : ''}</div>
-                <div style="font-size:0.75rem;color:var(--text-dim);">${item.source} · ${formatTimeAgo(item.created_at)}</div>
+            <div class="users-tab-item-main">
+                <div class="users-tab-item-title">${escapeHtml(item.content.substring(0, 80))}${item.content.length > 80 ? '...' : ''}</div>
+                <div class="users-tab-item-subtitle">${escapeHtml(String(item.source || '-'))} · ${formatTimeAgo(item.created_at)}</div>
             </div>
         </div>
     `).join('');
@@ -3275,7 +3320,7 @@ function renderBlocksTab(container) {
 
     container.innerHTML = `
         ${buildUserTabToolbar('blocks', { includeCustomDate: true })}
-        <input type="text" id="blocksDatePicker" style="position:absolute; visibility:hidden; height:0; width:0;" placeholder="选择日期范围">
+        <input type="text" id="blocksDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
         <div class="data-list" id="blocksList">
             ${renderBlocksItems(data)}
         </div>
@@ -3285,16 +3330,16 @@ function renderBlocksTab(container) {
 // Render blocks items helper
 function renderBlocksItems(data) {
     if (data.length === 0) {
-        return '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">无封禁记录</div>';
+        return buildUsersTabEmptyState('无封禁记录');
     }
     return data.map(record => `
-        <div class="data-list-item" style="border-left-color: ${record.action === 'block' ? '#ef4444' : '#10b981'};">
-            <div style="width:32px;height:32px;border-radius:8px;background:${record.action === 'block' ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)'};display:flex;align-items:center;justify-content:center;">
-                <i class="fas ${record.action === 'block' ? 'fa-ban' : 'fa-unlock'}" style="color:${record.action === 'block' ? '#ef4444' : '#10b981'};font-size:0.85rem;"></i>
+        <div class="data-list-item users-block-item ${record.action === 'block' ? 'is-block' : 'is-unblock'}">
+            <div class="users-tab-item-icon ${record.action === 'block' ? 'users-tab-item-icon-danger' : 'users-tab-item-icon-success'}">
+                <i class="fas ${record.action === 'block' ? 'fa-ban' : 'fa-unlock'} users-tab-item-icon-glyph"></i>
             </div>
-            <div style="flex:1;">
-                <div style="font-size:0.9rem;">${record.action === 'block' ? '封禁' : '解封'} - ${record.scope === 'all' ? '全站' : record.scope}</div>
-                <div style="font-size:0.75rem;color:var(--text-dim);">${record.reason || '无备注'} · ${formatTimeAgo(record.created_at)}</div>
+            <div class="users-tab-item-main">
+                <div class="users-tab-item-title">${record.action === 'block' ? '封禁' : '解封'} - ${record.scope === 'all' ? '全站' : record.scope}</div>
+                <div class="users-tab-item-subtitle">${escapeHtml(record.reason || '无备注')} · ${formatTimeAgo(record.created_at)}</div>
             </div>
         </div>
     `).join('');
@@ -3307,17 +3352,17 @@ function renderRelatedTab(container) {
     container.innerHTML = `
         <div class="data-list">
             ${data.length > 0 ? data.map(acc => `
-                <div class="data-list-item" style="cursor:pointer;" data-admin-action="users-open-user-modal" data-user-id="${encodeURIComponent(acc.related_user_id)}">
-                    <div style="width:40px;height:40px;border-radius:50%;background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center;">
-                        <i class="fas fa-user-circle" style="color:#f59e0b;font-size:1.2rem;"></i>
+                <div class="data-list-item users-related-item" data-admin-action="users-open-user-modal" data-user-id="${encodeURIComponent(acc.related_user_id)}">
+                    <div class="users-related-avatar">
+                        <i class="fas fa-user-circle users-related-avatar-icon"></i>
                     </div>
-                    <div style="flex:1;">
-                        <div style="font-size:0.9rem;font-weight:500;">${escapeHtml(acc.related_username || 'Unknown')}</div>
-                        <div style="font-size:0.75rem;color:var(--text-dim);">共享 IP: ${acc.shared_ip}</div>
+                    <div class="users-tab-item-main">
+                        <div class="users-related-title">${escapeHtml(acc.related_username || 'Unknown')}</div>
+                        <div class="users-tab-item-subtitle">共享 IP: ${escapeHtml(acc.shared_ip || '-')}</div>
                     </div>
-                    <i class="fas fa-chevron-right" style="color:var(--text-dim);"></i>
+                    <i class="fas fa-chevron-right users-related-arrow"></i>
                 </div>
-            `).join('') : '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">未检测到关联账号</div>'}
+            `).join('') : buildUsersTabEmptyState('未检测到关联账号')}
         </div>
     `;
 }
@@ -3327,7 +3372,7 @@ function renderAffiliateTab(container) {
     currentModalData.affiliate = affiliateState;
 
     if (!currentModalUser?.id) {
-        container.innerHTML = '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">未找到用户</div>';
+        container.innerHTML = buildUsersTabEmptyState('未找到用户');
         return;
     }
 
@@ -5444,22 +5489,21 @@ bindAdminUsersRuntimeDelegates();
 // ==========================================
 // Helper for auto-resizing notes input
 window.autoResizeNotesInput = function (el) {
-    el.style.height = 'auto';
-    el.style.height = el.scrollHeight + 'px';
+    el.style.setProperty('--users-note-height', 'auto');
+    el.style.setProperty('--users-note-height', `${el.scrollHeight}px`);
 };
 
 async function renderNotesTab(container) {
     container.innerHTML = `
         ${buildUserTabToolbar('notes')}
-        <div class="notes-container" style="display:flex;flex-direction:column;height:calc(100% - 60px);max-height:600px;">
-             <div class="notes-list" id="notesList" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;">
+        <div class="notes-container users-notes-container">
+             <div class="notes-list users-notes-list" id="notesList">
                  <div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载备注...</div>
              </div>
-             <div class="notes-input-area" style="padding:16px;background:transparent">
-                 <div style="display:flex;align-items:flex-end;gap:10px;">
-                     <textarea id="newNoteInput" placeholder="添加内部备注..." rows="1" data-users-note-input="1" style="flex:1;min-height:38px;max-height:120px;padding:8px 0;border:none;border-bottom:1px solid var(--card-border);background:transparent;color:inherit;outline:none;resize:none;font-family:inherit;font-size:0.9rem;line-height:1.5;overflow-y:auto;box-sizing:border-box;display:block;"></textarea>
-                     <button class="btn-primary" type="button" data-admin-action="users-submit-note" style="padding:0 20px;height:38px;border-radius:8px;flex-shrink:0;"><i class="fas fa-paper-plane"></i></button>
-                 </div>
+             <div class="notes-input-area users-notes-input-area">
+                 <div class="users-notes-composer">
+                     <textarea id="newNoteInput" class="users-notes-input" placeholder="添加内部备注..." rows="1" data-users-note-input="1"></textarea>
+                     <button class="btn-primary users-notes-submit-btn" type="button" data-admin-action="users-submit-note"><i class="fas fa-paper-plane"></i></button>
                  </div>
              </div>
         </div>
@@ -5479,21 +5523,21 @@ async function renderNotesTab(container) {
 
     } catch (err) {
         console.error('Error loading notes:', err);
-        document.getElementById('notesList').innerHTML = `<div class="error-msg" style="text-align:center;padding:20px;color:#ef4444;">加载失败: ${escapeHtml(err.message)}</div>`;
+        document.getElementById('notesList').innerHTML = buildUsersTabError(err.message);
     }
 }
 
 function renderNotesItems(data) {
     if (!data || data.length === 0) {
-        return `<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">暂无备注</div>`;
+        return buildUsersTabEmptyState('暂无备注');
     }
 
     return data.map(note => {
         const adminEmail = note.admin_email || 'Unknown';
         return `
-            <div class="note-item" style="background:rgba(255,255,255,0.03);padding:10px 12px;border-radius:8px;border-left:2px solid rgba(107,158,206,0.5);">
-                <div class="note-content" style="margin-bottom:6px;line-height:1.5;font-size:0.85rem;color:var(--text-main);">${escapeHtml(note.content)}</div>
-                <div class="note-meta" style="font-size:0.75rem;color:var(--text-dim);display:flex;justify-content:space-between;">
+            <div class="note-item users-note-item">
+                <div class="note-content users-note-content">${escapeHtml(note.content)}</div>
+                <div class="note-meta users-note-meta">
                         <span><i class="fas fa-user-shield"></i> ${escapeHtml(adminEmail)}</span>
                         <span>${formatTimeAgo(note.created_at)}</span>
                 </div>
@@ -5538,7 +5582,7 @@ async function submitUserNote() {
 async function renderAuditTab(container) {
     container.innerHTML = `
         ${buildUserTabToolbar('audit')}
-        <div class="audit-list" id="auditList" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+        <div class="audit-list users-audit-list" id="auditList">
             <div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载审计日志...</div>
         </div>
     `;
@@ -5557,25 +5601,28 @@ async function renderAuditTab(container) {
 
     } catch (err) {
         console.error('Error loading audit logs:', err);
-        document.getElementById('auditList').innerHTML = `<div class="error-msg" style="text-align:center;padding:20px;color:#ef4444;">加载失败: ${escapeHtml(err.message)}</div>`;
+        document.getElementById('auditList').innerHTML = buildUsersTabError(err.message);
     }
 }
 
 function renderAuditItems(data) {
     if (!data || data.length === 0) {
-        return `<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">暂无审计记录</div>`;
+        return buildUsersTabEmptyState('暂无审计记录');
     }
 
     return data.map(log => {
         const adminEmail = log.admin_email || 'Unknown';
         // Format details helper
         const formatDetails = (type, details) => {
-            if (type.includes('POINT')) return `变动: <span style="color:${details.amount > 0 ? '#10b981' : '#ef4444'}">${details.amount > 0 ? '+' : ''}${details.amount}</span> · 理由: ${details.reason}`;
-            if (type.includes('BAN')) return `范围: ${details.scope === 'all' ? '全站' : '单项'} · 时长: ${details.days}天`;
+            if (type.includes('POINT')) {
+                const detailClass = details.amount > 0 ? 'is-positive' : 'is-negative';
+                return `变动: <span class="audit-detail-amount ${detailClass}">${details.amount > 0 ? '+' : ''}${details.amount}</span> · 理由: ${escapeHtml(details.reason || '-')} `;
+            }
+            if (type.includes('BAN')) return `范围: ${details.scope === 'all' ? '全站' : '单项'} · 时长: ${escapeHtml(String(details.days || 0))}天`;
             if (type.includes('UNBAN')) return `解封范围: ${details.scope === 'all' ? '全站' : '单项'}`;
-            if (type.includes('NOTE')) return `内容: ${details.content_preview}...`;
-            if (type.includes('NOTIFICATION')) return `标题: ${details.title} (${details.type})`;
-            if (type.includes('CLEAR')) return `清空项目: ${details.cleared_items ? details.cleared_items.join(', ') : '无'}`;
+            if (type.includes('NOTE')) return `内容: ${escapeHtml(String(details.content_preview || ''))}...`;
+            if (type.includes('NOTIFICATION')) return `标题: ${escapeHtml(String(details.title || '-'))} (${escapeHtml(String(details.type || 'info'))})`;
+            if (type.includes('CLEAR')) return `清空项目: ${Array.isArray(details.cleared_items) ? details.cleared_items.map((item) => escapeHtml(String(item))).join(', ') : '无'}`;
 
             // Admin Permission Changes
             if (type === 'grant_admin' || type === 'update_admin_permissions') {
@@ -5588,40 +5635,39 @@ function renderAuditItems(data) {
                 const perms = details.permissions
                     ? details.permissions.map(p => permMap[p] || p).join(', ')
                     : '无';
-                return `授予权限: ${perms}`;
+                return `授予权限: ${escapeHtml(perms)}`;
             }
             if (type === 'revoke_admin') return '已移除该用户的管理员权限';
 
-            return JSON.stringify(details, null, 2); // Fallback
+            return escapeHtml(JSON.stringify(details, null, 2)); // Fallback
         };
 
         let icon = 'fa-shield-alt';
-        let color = '#64748b'; // default slate
+        let toneClass = 'is-neutral';
 
-        if (log.action_type.includes('BAN')) { icon = 'fa-ban'; color = '#ef4444'; }
-        else if (log.action_type.includes('UNBAN')) { icon = 'fa-unlock'; color = '#10b981'; }
-        else if (log.action_type.includes('POINTS')) { icon = 'fa-coins'; color = '#f59e0b'; }
-        else if (log.action_type.includes('NOTE')) { icon = 'fa-sticky-note'; color = '#3b82f6'; }
-        else if (log.action_type.includes('CLEAR')) { icon = 'fa-trash-alt'; color = '#ef4444'; }
-        else if (log.action_type.includes('NOTIFICATION')) { icon = 'fa-bell'; color = '#8b5cf6'; }
-        else if (log.action_type.includes('AVATAR')) { icon = 'fa-user-circle'; color = '#64748b'; }
-        else if (log.action_type.includes('admin')) { icon = 'fa-user-shield'; color = '#8b5cf6'; }
+        if (log.action_type.includes('BAN')) { icon = 'fa-ban'; toneClass = 'is-danger'; }
+        else if (log.action_type.includes('UNBAN')) { icon = 'fa-unlock'; toneClass = 'is-success'; }
+        else if (log.action_type.includes('POINTS')) { icon = 'fa-coins'; toneClass = 'is-warning'; }
+        else if (log.action_type.includes('NOTE')) { icon = 'fa-sticky-note'; toneClass = 'is-info'; }
+        else if (log.action_type.includes('CLEAR')) { icon = 'fa-trash-alt'; toneClass = 'is-danger'; }
+        else if (log.action_type.includes('NOTIFICATION')) { icon = 'fa-bell'; toneClass = 'is-accent'; }
+        else if (log.action_type.includes('admin')) { icon = 'fa-user-shield'; toneClass = 'is-accent'; }
 
         return `
-            <div class="audit-item" style="display:flex;gap:12px;padding:12px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid var(--card-border);">
-                <div class="audit-icon" style="color:${color};font-size:1.1rem;margin-top:2px;">
+            <div class="audit-item users-audit-item ${toneClass}">
+                <div class="audit-icon users-audit-icon ${toneClass}">
                     <i class="fas ${icon}"></i>
                 </div>
-                <div class="audit-content" style="flex:1;">
-                    <div class="audit-header" style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                        <span style="font-weight:600;color:var(--text-main);font-size:0.9rem;">${formatAuditAction(log.action_type)}</span>
-                        <span style="font-size:0.75rem;color:var(--text-dim);">${formatTimeAgo(log.created_at)}</span>
+                <div class="audit-content users-audit-content">
+                    <div class="audit-header users-audit-header">
+                        <span class="users-audit-title">${formatAuditAction(log.action_type)}</span>
+                        <span class="users-audit-time">${formatTimeAgo(log.created_at)}</span>
                     </div>
-                    <div class="audit-meta" style="font-size:0.8rem;color:var(--text-dim);margin-bottom:6px;">
-                        <i class="fas fa-user-tie" style="font-size:0.7rem;"></i> ${escapeHtml(adminEmail)}
+                    <div class="audit-meta users-audit-meta">
+                        <i class="fas fa-user-tie users-audit-meta-icon"></i> ${escapeHtml(adminEmail)}
                     </div>
                     ${Object.keys(log.details).length > 0 || log.action_type === 'revoke_admin' ? `
-                    <div class="audit-details" style="font-size:0.85rem;color:var(--text-main);background:transparent;padding:0;">
+                    <div class="audit-details users-audit-details">
                         ${formatDetails(log.action_type, log.details)}
                     </div>` : ''}
 
@@ -5652,128 +5698,7 @@ function formatAuditAction(action) {
 // SYSTEM NOTIFICATIONS
 // ==========================================
 function showNotificationModal(userId) {
-    let modal = document.getElementById('notificationModal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'notificationModal';
-        modal.className = 'custom-modal-overlay';
-        modal.style.zIndex = '10000'; // Ensure it's above other modals
-        modal.onclick = (e) => {
-            if (e.target === modal) {
-                modal.classList.remove('active');
-                setTimeout(() => modal.style.display = 'none', 300);
-            }
-        };
-        modal.innerHTML = `
-            <div class="custom-modal" style="width:400px;">
-                <div class="modal-header">
-                    <h3 class="modal-title"><i class="far fa-bell" style="margin-right: 8px;"></i> 通知</h3>
-                    <button class="modal-close-btn" type="button" data-admin-action="users-close-notification-modal"><i class="fas fa-times"></i></button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label>标题</label>
-                        <input type="text" id="notifTitle" class="modal-input" placeholder="简短的通知标题">
-                    </div>
-                    <div class="form-group">
-                        <label>内容</label>
-                        <textarea id="notifContent" class="modal-input" rows="4" placeholder="通知详细内容..."></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>类型</label>
-                        <div class="notif-type-selector" style="display:flex;gap:8px;">
-                            <button class="type-btn active" type="button" data-type="info" data-admin-action="users-select-notification-type" data-notification-type="info"><i class="fas fa-info-circle"></i> 信息</button>
-                            <button class="type-btn" type="button" data-type="warning" data-admin-action="users-select-notification-type" data-notification-type="warning"><i class="fas fa-exclamation-triangle"></i> 警告</button>
-                            <button class="type-btn" type="button" data-type="success" data-admin-action="users-select-notification-type" data-notification-type="success"><i class="fas fa-check-circle"></i> 成功</button>
-                        </div>
-                        <input type="hidden" id="notifType" value="info">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="send-notification-btn" type="button" data-admin-action="users-send-notification" data-user-id="${encodeURIComponent(userId)}"><i class="fas fa-paper-plane"></i></button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-
-        const style = document.createElement('style');
-        style.textContent = `
-            .type-btn { 
-                flex: 1; 
-                padding: 10px; 
-                border: 1px solid transparent; 
-                background: rgba(255, 255, 255, 0.03); 
-                border-radius: 10px; 
-                cursor: pointer; 
-                color: var(--text-dim); 
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
-                font-size: 0.9rem;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 8px;
-                font-weight: 500;
-            }
-            .type-btn:hover { 
-                background: rgba(255, 255, 255, 0.08); 
-                color: var(--text-main);
-            }
-            .type-btn.active { 
-                border-color: #6b9ece; 
-                background: rgba(107, 158, 206, 0.12); 
-                color: #6b9ece; 
-                font-weight: 600;
-            }
-            
-            /* Specific colors for types when active */
-            .type-btn[data-type="warning"].active {
-                border-color: #f59e0b;
-                color: #f59e0b;
-                background: rgba(245, 158, 11, 0.08);
-            }
-            .type-btn[data-type="success"].active {
-                border-color: #10b981;
-                color: #10b981;
-                background: rgba(16, 185, 129, 0.08);
-            }
-
-            @media (prefers-color-scheme: dark) {
-                .type-btn {
-                    background: rgba(255,255,255,0.05);
-                }
-            }
-            
-            .send-notification-btn {
-                background: transparent;
-                border: none;
-                color: #94a3b8; /* Neutral default */
-                font-size: 1.5rem;
-                cursor: pointer;
-                padding: 10px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                transition: color 0.2s;
-            }
-            .send-notification-btn:hover {
-                color: #6b9ece; /* Blue on hover */
-            }
-        `;
-        document.head.appendChild(style);
-    }
-
-    document.getElementById('notifTitle').value = '';
-    document.getElementById('notifContent').value = '';
-    const btnParam = modal.querySelector('.send-notification-btn');
-    if (btnParam) {
-        btnParam.dataset.userId = encodeURIComponent(userId);
-    }
-    selectNotifType('info');
-
-    modal.style.display = 'flex';
-    // Force reflow to enable transition
-    void modal.offsetWidth;
-    modal.classList.add('active');
+    openNotificationModal(userId);
 }
 
 function closeNotificationModal() {
@@ -5783,9 +5708,6 @@ function closeNotificationModal() {
     }
 
     modal.classList.remove('active');
-    setTimeout(() => {
-        modal.style.display = 'none';
-    }, 300);
 }
 
 function selectNotifType(buttonOrType, maybeType = null) {
@@ -5806,6 +5728,10 @@ function selectNotifType(buttonOrType, maybeType = null) {
 }
 
 async function sendSystemNotification(userId, titleArg = null, contentArg = null, typeArg = null) {
+    if (!titleArg && userId === '__BATCH__') {
+        return executeBatchNotification();
+    }
+
     // Determine if manual (UI) or automated
     const isManual = !titleArg;
 
