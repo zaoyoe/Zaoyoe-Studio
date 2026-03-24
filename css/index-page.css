@@ -32,3 +32,19 @@ button.login-trigger-btn:hover #navUserAvatar,
     white-space: nowrap;
     border: 0;
 }
+
+.index-footer-tagline {
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+    font-size: 14px;
+}
+
+.index-footer-email {
+    color: rgba(255,255,255,0.6);
+    font-size: 14px;
+}
+
+.index-guestbook-image-preview-hidden,
+.index-guestbook-image-upload-hidden {
+    display: none;
+}

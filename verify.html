@@ -48,7 +48,7 @@
     <!-- Unified Navigation CSS -->
     <link rel="stylesheet" href="css/framer_home.css?v=NAV_UNIFIED_V9">
 
-    <link rel="stylesheet" href="css/verify-page.css?v=20260324_VERIFY_PAGE_STYLES_1">
+    <link rel="stylesheet" href="css/verify-page.css?v=20260324_VERIFY_STYLE_ATTRS_1">
 </head>
 
 <body>
@@ -158,14 +158,14 @@
 
         <!-- Afdian Support Link (Flow Sticky Footer) -->
         <div class="verify-footer">
-            <span style="font-size: 13px; color: rgba(255, 255, 255, 0.8);"><span
+            <span class="verify-footer-meta"><span
                     data-i18n="verify.supportUs">支持我们</span>:
                 <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer"
-                    style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);">afdian.com/a/zaoyoe</a>
-                <span style="margin: 0 10px; opacity: 0.4;">|</span>
+                    class="verify-footer-link">afdian.com/a/zaoyoe</a>
+                <span class="verify-footer-divider">|</span>
                 <span data-i18n="verify.chatGroup">交流群</span>: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"
                     rel="noopener noreferrer"
-                    style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);"
+                    class="verify-footer-link"
                     data-i18n="verify.clickToJoin">点击加入</a>
             </span>
         </div>
@@ -196,12 +196,11 @@
 
     <!-- Coming Soon Modal -->
     <div class="modal-overlay" id="comingSoonModal" data-modal-dismiss-managed="1">
-        <div class="modal-content premium-modal"
-            style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px;">
-            <div class="mac-controls" style="position: absolute; top: 20px; left: 20px;">
+        <div class="modal-content premium-modal verify-coming-soon-modal">
+            <div class="mac-controls verify-coming-soon-controls">
                 <div class="mac-dot red" data-modal-close-button="1"><i class="fas fa-times"></i></div>
             </div>
-            <i class="fa-solid fa-rocket" style="font-size: 4rem; color: #8b5cf6; margin-bottom: 20px;"></i>
+            <i class="fa-solid fa-rocket verify-coming-soon-icon"></i>
             <div class="modal-title" data-i18n="common.comingSoon">敬请期待</div>
             <p class="modal-subtitle" data-i18n="common.comingSoonDesc">该功能正在紧锣密鼓地开发中...</p>
         </div>

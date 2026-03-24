@@ -68,7 +68,7 @@
     <script src="./js/index-scroll-bootstrap.js"></script>
 
     <!-- CRITICAL: Avatar hover fix - MUST be last in head for highest priority -->
-    <link rel="stylesheet" href="./css/index-page.css?v=20260324_INDEX_PAGE_STYLES_1">
+    <link rel="stylesheet" href="./css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1">
 </head>
 
 <body>
@@ -186,7 +186,7 @@
                 <!-- Brand Column -->
                 <div class="footer-col">
                     <div class="footer-logo" data-i18n="footer.brand.name">早鸟工作室</div>
-                    <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 14px;"
+                    <p class="index-footer-tagline"
                         data-i18n="footer.brand.tagline">
                         AI 驱动的创意资源平台
                     </p>
@@ -220,7 +220,7 @@
                     <h4 data-i18n="footer.about.title">关于</h4>
                     <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
                         data-i18n="footer.about.tgGroup">TG群组</a>
-                    <span style="color: rgba(255,255,255,0.6); font-size: 14px;">zaoyoe@gmail.com</span>
+                    <span class="index-footer-email">zaoyoe@gmail.com</span>
 
                 </div>
             </div>
@@ -279,13 +279,13 @@
                     </button>
                 </div>
 
-                <div id="imagePreview" class="image-preview-container guestbook-composer-preview" style="display: none;">
+                <div id="imagePreview" class="image-preview-container guestbook-composer-preview index-guestbook-image-preview-hidden">
                     <img id="previewImg" src="" alt="Preview">
                     <button type="button" id="removeImageBtn" class="guestbook-composer-preview-remove" aria-label="移除图片">
                         <i class="fas fa-times"></i>
                     </button>
                 </div>
-                <input type="file" id="imageUpload" accept="image/*" style="display: none;">
+                <input type="file" id="imageUpload" accept="image/*" class="index-guestbook-image-upload-hidden">
 
                 <div class="guestbook-composer-actions">
                     <a href="guestbook.html" class="guestbook-composer-more" id="guestbookViewMoreWrap">

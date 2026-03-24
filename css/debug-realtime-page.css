@@ -29,6 +29,16 @@ h1 {
     margin-bottom: 10px;
 }
 
+.debug-realtime-subtitle {
+    color: #64748b;
+    margin-bottom: 20px;
+}
+
+.debug-realtime-steps {
+    line-height: 2;
+    color: #475569;
+}
+
 h2 {
     color: #333;
     margin-bottom: 16px;

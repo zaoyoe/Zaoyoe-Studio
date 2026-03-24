@@ -44,13 +44,13 @@
 
     <script src="./js/prompts-head-bootstrap.js"></script>
 
-    <link rel="stylesheet" href="css/prompts-page.css?v=20260324_PROMPTS_PAGE_STYLES_1">
+    <link rel="stylesheet" href="css/prompts-page.css?v=20260324_PROMPTS_STYLE_ATTRS_1">
 </head>
 
 <body class="prompts-page">
 
     <!-- System Announcement Banner (页面最顶部) -->
-    <div id="announcementBanner" class="announcement-banner" style="display: none;">
+    <div id="announcementBanner" class="announcement-banner prompts-announcement-banner-hidden">
         <div class="announcement-content">
             <i class="fas fa-bullhorn"></i>
             <span id="announcementText"></span>
@@ -175,7 +175,7 @@
                     </div>
 
                     <!-- Autocomplete Suggestions (shown when typing) -->
-                    <div class="search-suggestions" id="searchSuggestions" style="display: none;">
+                    <div class="search-suggestions prompts-search-suggestions-hidden" id="searchSuggestions">
                         <!-- Dynamically generated -->
                     </div>
                 </div>
@@ -213,14 +213,14 @@
                 <p class="disclaimer-text" data-i18n="gallery.disclaimer">
                     所展示的图片及提示词均由 AI 生成，创作灵感来自于互联网公开分享
                 </p>
-                <p class="support-link" style="margin-top: 12px; font-size: 12px; opacity: 0.6;">
+                <p class="support-link prompts-support-link">
                     <span data-i18n="gallery.supportUs">支持我们</span>: <a href="https://afdian.com/a/zaoyoe"
                         target="_blank" rel="noopener noreferrer"
-                        style="color: inherit; text-decoration: none; border-bottom: 1px dashed rgba(255,255,255,0.4);">afdian.com/a/zaoyoe</a>
-                    <span style="margin: 0 10px; opacity: 0.4;">|</span>
+                        class="prompts-support-link-anchor">afdian.com/a/zaoyoe</a>
+                    <span class="prompts-support-link-divider">|</span>
                     <span data-i18n="gallery.joinGroup">交流群</span>: <a href="https://t.me/+I86eX5sPF1c0OTc1"
                         target="_blank" rel="noopener noreferrer"
-                        style="color: inherit; text-decoration: none; border-bottom: 1px dashed rgba(255,255,255,0.4);"
+                        class="prompts-support-link-anchor"
                         data-i18n="common.clickToJoin">点击加入</a>
                 </p>
             </div>
@@ -330,7 +330,7 @@
                             data-i18n-placeholder="gallery.addComment" rows="1"></textarea>
 
                         <!-- Hidden file input -->
-                        <input type="file" id="commentImageUpload" accept="image/*" style="display: none;">
+                        <input type="file" id="commentImageUpload" accept="image/*" class="prompts-comment-image-upload-hidden">
 
                         <!-- Upload button -->
                         <button id="commentUploadBtn" class="comment-upload-btn" title="Attach image"

@@ -9944,3 +9944,12 @@ body.guestbook-page #skeletonContainer.hidden {
         grid-template-columns: repeat(5, 1fr);
     }
 }
+
+.guestbook-message-container-initial {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.guestbook-empty-state-hidden {
+    display: none;
+}

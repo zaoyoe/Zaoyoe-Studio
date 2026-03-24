@@ -109,6 +109,10 @@ input:focus {
     background: var(--border);
 }
 
+.migrate-prompts-stop-btn {
+    margin-left: 0.5rem;
+}
+
 .progress-container {
     margin-top: 1rem;
 }

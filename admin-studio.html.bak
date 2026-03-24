@@ -61,7 +61,7 @@
         <!-- CREATE VIEW -->
         <div id="view-create" class="view-section active">
             <!-- Batch Edit Switcher (only visible in batch edit mode) -->
-            <div class="batch-edit-bar" id="batchEditBar" style="display: none;">
+            <div class="batch-edit-bar admin-studio-backup-hidden" id="batchEditBar">
 
                 <div class="batch-edit-dropdown" id="batchEditDropdown">
                     <button class="batch-edit-current" id="batchEditCurrent">
@@ -108,7 +108,7 @@
                 </h2>
 
                 <!-- Loading State - Elegant Neural Animation -->
-                <div class="analysis-loading" id="analysisLoading" style="display: none;">
+                <div class="analysis-loading admin-studio-backup-hidden" id="analysisLoading">
                     <div class="neural-loader">
                         <div class="neural-dot"></div>
                         <div class="neural-dot"></div>
@@ -119,7 +119,7 @@
                 </div>
 
                 <!-- Results Form -->
-                <form class="prompt-form" id="promptForm" style="display: none;">
+                <form class="prompt-form admin-studio-backup-hidden" id="promptForm">
                     <!-- Title -->
                     <div class="form-group">
                         <label for="promptTitle">
@@ -127,7 +127,7 @@
                             Title
                             <span class="ai-badge">AI Generated</span>
                             <!-- Last Edited Info (shown only in edit mode) -->
-                            <span class="last-edited-info" id="lastEditedInfo" style="display: none;">
+                            <span class="last-edited-info admin-studio-backup-hidden" id="lastEditedInfo">
                                 <i class="fas fa-clock"></i>
                                 <time id="lastEditedTime"></time>
                             </span>
@@ -172,7 +172,7 @@
                     </div>
 
                     <!-- Description (Hidden - still analyzed in background) -->
-                    <div class="form-group" style="display: none;">
+                    <div class="form-group admin-studio-backup-hidden">
                         <label for="promptDescription">
                             <i class="fas fa-align-left"></i>
                             Description
@@ -182,7 +182,7 @@
                     </div>
 
                     <!-- AI Tags Display (Hidden - still analyzed in background) -->
-                    <div class="form-group" style="display: none;">
+                    <div class="form-group admin-studio-backup-hidden">
                         <label>
                             <i class="fas fa-tags"></i>
                             AI Tags
@@ -209,7 +209,7 @@
                     </div>
 
                     <!-- Dominant Colors (Hidden - still analyzed in background) -->
-                    <div class="form-group" style="display: none;">
+                    <div class="form-group admin-studio-backup-hidden">
                         <label>
                             <i class="fas fa-palette"></i>
                             Dominant Colors
@@ -254,7 +254,7 @@
                     <!-- Search Dropdown -->
                     <div class="search-dropdown" id="adminSearchDropdown">
                         <!-- Autocomplete Suggestions (shown when typing) -->
-                        <div class="search-suggestions" id="searchSuggestions" style="display: none;">
+                        <div class="search-suggestions admin-studio-backup-hidden" id="searchSuggestions">
                             <!-- Dynamically generated -->
                         </div>
                     </div>
@@ -297,7 +297,7 @@
                     <button class="batch-btn" id="selectModeBtn" title="选择模式">
                         <i class="fas fa-check-square"></i>
                     </button>
-                    <div class="batch-menu-container" id="batchMenuContainer" style="display: none;">
+                    <div class="batch-menu-container admin-studio-backup-hidden" id="batchMenuContainer">
                         <button class="batch-btn" id="batchMenuTrigger" title="批量操作">
                             <i class="fas fa-ellipsis-h"></i>
                         </button>
@@ -326,7 +326,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="prompt-count" id="promptCountWrapper" style="display: none;">
+                <div class="prompt-count admin-studio-backup-hidden" id="promptCountWrapper">
                     <span class="select-count">已选 <span id="selectedCount">0</span> 项</span>
                 </div>
             </div>
@@ -338,7 +338,7 @@
         </main>
 
         <!-- Batch Progress Modal -->
-        <div class="batch-modal-overlay" id="batchProgressOverlay" style="display: none;">
+        <div class="batch-modal-overlay admin-studio-backup-hidden" id="batchProgressOverlay">
             <div class="batch-modal">
                 <h3 class="batch-modal-title" id="batchModalTitle">批量重分析</h3>
                 <div class="batch-modal-body">
@@ -361,7 +361,7 @@
         </div>
 
         <!-- Delete Confirmation Modal -->
-        <div class="batch-modal-overlay" id="deleteConfirmOverlay" style="display: none;">
+        <div class="batch-modal-overlay admin-studio-backup-hidden" id="deleteConfirmOverlay">
             <div class="batch-modal confirm-modal">
                 <h3 class="batch-modal-title">⚠️ 确认删除</h3>
                 <div class="batch-modal-body">
@@ -376,13 +376,13 @@
         </div>
 
         <!-- Image Preview Lightbox -->
-        <div class="lightbox-overlay" id="lightboxOverlay" style="display: none;">
+        <div class="lightbox-overlay admin-studio-backup-hidden" id="lightboxOverlay">
             <button class="lightbox-close" id="lightboxClose"><i class="fas fa-times"></i></button>
             <img class="lightbox-image" id="lightboxImage" src="" alt="Preview">
         </div>
 
         <!-- Crop Modal -->
-        <div class="batch-modal-overlay" id="cropModalOverlay" style="display: none;">
+        <div class="batch-modal-overlay admin-studio-backup-hidden" id="cropModalOverlay">
             <div class="batch-modal crop-modal">
                 <h3 class="batch-modal-title">✂️ 裁切图片</h3>
                 <div class="crop-container" id="cropContainer">

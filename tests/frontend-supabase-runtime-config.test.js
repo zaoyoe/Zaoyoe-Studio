@@ -242,6 +242,13 @@ test('repository HTML pages no longer embed inline style blocks outside the test
     assert.deepEqual(violations, [], `Repository HTML pages should not contain inline style blocks:\n${violations.join('\n')}`);
 });
 
+test('repository HTML pages no longer embed inline style attributes outside the test suite', () => {
+    const htmlFiles = collectRepositoryHtmlFiles();
+    const violations = htmlFiles.filter((relativePath) => /\sstyle\s*=\s*["']/i.test(readRepoFile(relativePath)));
+
+    assert.deepEqual(violations, [], `Repository HTML pages should not contain inline style attributes:\n${violations.join('\n')}`);
+});
+
 test('vercel CSP blocks inline scripts and inline event attributes without hash exceptions', () => {
     const cspValue = getGlobalCspHeaderValue();
     const directives = parseCspDirectives(cspValue);
@@ -364,20 +371,20 @@ test('privacy page reuses the shared Supabase bootstrap instead of inlining a du
 
 test('selected runtime, preview, and tooling pages externalize page-specific style blocks into dedicated CSS files', () => {
     const expectations = new Map([
-        ['verify.html', 'css/verify-page.css?v=20260324_VERIFY_PAGE_STYLES_1'],
-        ['prompts.html', 'css/prompts-page.css?v=20260324_PROMPTS_PAGE_STYLES_1'],
+        ['verify.html', 'css/verify-page.css?v=20260324_VERIFY_STYLE_ATTRS_1'],
+        ['prompts.html', 'css/prompts-page.css?v=20260324_PROMPTS_STYLE_ATTRS_1'],
         ['reset-password.html', 'css/reset-password-page.css?v=20260324_RESET_PASSWORD_STYLES_1'],
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
-        ['index.html', './css/index-page.css?v=20260324_INDEX_PAGE_STYLES_1'],
+        ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
         ['shop.html', 'css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_INLINE_STYLE_ATTRS_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
-        ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_PAGE_STYLES_1'],
+        ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
         ['test-lang-toggle.html', 'css/test-lang-toggle-page.css?v=20260324_TEST_LANG_TOGGLE_PAGE_STYLES_1'],
         ['test-realtime-simple.html', 'css/test-realtime-simple-page.css?v=20260324_TEST_REALTIME_SIMPLE_PAGE_STYLES_1'],
-        ['tools/migrate-prompts-bilingual.html', '../css/migrate-prompts-bilingual-page.css?v=20260324_MIGRATE_PROMPTS_BILINGUAL_PAGE_STYLES_1'],
+        ['tools/migrate-prompts-bilingual.html', '../css/migrate-prompts-bilingual-page.css?v=20260324_MIGRATE_PROMPTS_BILINGUAL_STYLE_ATTRS_1'],
         ['logo_preview.html', 'css/logo-preview-page.css?v=20260324_LOGO_PREVIEW_PAGE_STYLES_1'],
         ['logo_preview_v2.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
         ['logo_preview_v3.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
