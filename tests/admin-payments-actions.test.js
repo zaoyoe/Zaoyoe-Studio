@@ -7,6 +7,7 @@ function createQueryBuilder(executor) {
     const state = {
         mode: 'select',
         filters: [],
+        order: null,
         payload: null,
         single: false
     };
@@ -16,7 +17,18 @@ function createQueryBuilder(executor) {
             return builder;
         },
         eq(column, value) {
-            state.filters.push({ column, value });
+            state.filters.push({ op: 'eq', column, value });
+            return builder;
+        },
+        gte(column, value) {
+            state.filters.push({ op: 'gte', column, value });
+            return builder;
+        },
+        order(column, options = {}) {
+            state.order = {
+                column,
+                ascending: options.ascending !== false
+            };
             return builder;
         },
         single() {
@@ -64,7 +76,25 @@ function createRpcResult(data, error = null) {
 }
 
 function applyFilters(rows, filters) {
-    return rows.filter((row) => filters.every(({ column, value }) => row[column] === value));
+    return rows.filter((row) => filters.every(({ op, column, value }) => {
+        if (op === 'gte') {
+            return new Date(row[column] || 0).getTime() >= new Date(value || 0).getTime();
+        }
+
+        return row[column] === value;
+    }));
+}
+
+function sortRows(rows, order) {
+    if (!order?.column) return rows.slice();
+
+    const sorted = rows.slice().sort((left, right) => {
+        const leftValue = left?.[order.column];
+        const rightValue = right?.[order.column];
+        return String(leftValue || '').localeCompare(String(rightValue || ''));
+    });
+
+    return order.ascending === false ? sorted.reverse() : sorted;
 }
 
 function createSupabaseStub(state = {}) {
@@ -72,9 +102,13 @@ function createSupabaseStub(state = {}) {
     const anomalyCases = state.anomalyCases || [];
     const paymentEvents = state.paymentEvents || [];
     const pointsLedger = state.pointsLedger || [];
+    const adminRoles = state.adminRoles || [];
+    const systemNotifications = state.systemNotifications || [];
     state.anomalyCases = anomalyCases;
     state.paymentEvents = paymentEvents;
     state.pointsLedger = pointsLedger;
+    state.adminRoles = adminRoles;
+    state.systemNotifications = systemNotifications;
     state.metrics = state.metrics || {};
     state.metrics.reviewRpcCalls = state.metrics.reviewRpcCalls || [];
     state.metrics.balanceRpcCalls = state.metrics.balanceRpcCalls || [];
@@ -230,6 +264,39 @@ function createSupabaseStub(state = {}) {
 
                 if (table === 'admin_audit_logs' && query.mode === 'insert') {
                     return { data: null, error: null };
+                }
+
+                if (table === 'admin_roles' && query.mode === 'select') {
+                    const rows = sortRows(applyFilters(adminRoles, query.filters), query.order);
+                    return {
+                        data: query.single ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'system_notifications' && query.mode === 'select') {
+                    const rows = sortRows(applyFilters(systemNotifications, query.filters), query.order);
+                    return {
+                        data: query.single ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'system_notifications' && query.mode === 'insert') {
+                    const payload = Array.isArray(query.payload)
+                        ? query.payload
+                        : [query.payload];
+                    payload.forEach((entry, index) => {
+                        systemNotifications.push({
+                            id: entry.id || `notification-${systemNotifications.length + index + 1}`,
+                            created_at: entry.created_at || new Date().toISOString(),
+                            ...entry
+                        });
+                    });
+                    return {
+                        data: query.single ? systemNotifications[systemNotifications.length - 1] : payload,
+                        error: null
+                    };
                 }
 
                 throw new Error(`Unexpected table access: ${table}/${query.mode}`);
@@ -702,6 +769,10 @@ test('refund_hupijiao compensates reclaimed points when credited-order refund fa
                 bonus_balance: 600
             }
         },
+        adminRoles: [
+            { user_id: 'admin-1', role_name: 'admin', expires_at: null },
+            { user_id: 'admin-2', role_name: 'super_admin', expires_at: null }
+        ],
         refundReclaimRpcData: {
             deducted: 1200,
             deducted_paid: 1000,
@@ -769,6 +840,10 @@ test('refund_hupijiao compensates reclaimed points when credited-order refund fa
         assert.match(state.pointsLedger[1].reference_id, /admin-refund-compensate:hupijiao:/);
         assert.equal(state.paymentEvents.length, 1);
         assert.equal(state.paymentEvents[0].processing_result, 'admin_refund_failed');
+        assert.equal(state.systemNotifications.length, 2);
+        assert.equal(state.systemNotifications.every((item) => item.title === '支付退款失败（已补回）'), true);
+        assert.equal(state.systemNotifications.every((item) => item.type === 'warning'), true);
+        assert.equal(state.systemNotifications.every((item) => String(item.content || '').includes('HJ_ORDER_3')), true);
         assert.equal(state.anomalyCases.length, 0);
         assert.equal(state.auditLogs.length, 0);
     });
@@ -813,6 +888,9 @@ test('refund_hupijiao fails closed when credited-order balance is insufficient f
                 bonus_balance: 0
             }
         },
+        adminRoles: [
+            { user_id: 'admin-1', role_name: 'admin', expires_at: null }
+        ],
         providerAdaptersModule: {
             getPaymentProviderAdapter() {
                 return {
@@ -867,7 +945,117 @@ test('refund_hupijiao fails closed when credited-order balance is insufficient f
         assert.equal(state.pointsLedger.length, 0);
         assert.equal(state.paymentEvents.length, 1);
         assert.equal(state.paymentEvents[0].processing_result, 'admin_refund_reclaim_failed');
+        assert.equal(state.systemNotifications.length, 1);
+        assert.equal(state.systemNotifications[0].title, '支付退款积分扣回失败');
+        assert.equal(state.systemNotifications[0].type, 'alert');
         assert.equal(state.anomalyCases.length, 0);
         assert.equal(state.auditLogs.length, 0);
+    });
+});
+
+test('refund_hupijiao dedupes repeated admin refund alerts within the recent window', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-hj-5',
+                user_id: 'user-5',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_ORDER_5',
+                checkout_session_id: 'session-5',
+                site: 'cn',
+                expected_amount: 30,
+                paid_amount: 30,
+                points_amount: 1200,
+                status: 'redeemed',
+                claimed_at: '2026-03-24T08:15:00.000Z',
+                paid_at: '2026-03-24T08:00:00.000Z',
+                verified_at: '2026-03-24T08:05:00.000Z',
+                last_error: null,
+                provider_metadata: {
+                    gateway_open_order_id: 'OPEN_ORDER_5',
+                    paid_points: 1000,
+                    bonus_points: 200
+                },
+                raw_payload: {
+                    request: {
+                        points_amount: 1000,
+                        bonus_points: 200
+                    }
+                }
+            }
+        ],
+        userBalances: {
+            'user-5': {
+                total_balance: 1800,
+                paid_balance: 1200,
+                bonus_balance: 600
+            }
+        },
+        adminRoles: [
+            { user_id: 'admin-1', role_name: 'admin', expires_at: null },
+            { user_id: 'admin-2', role_name: 'admin', expires_at: null }
+        ],
+        refundReclaimRpcData: {
+            deducted: 1200,
+            deducted_paid: 1000,
+            deducted_bonus: 200,
+            site: 'cn'
+        },
+        providerAdaptersModule: {
+            getPaymentProviderAdapter() {
+                return {
+                    async resolveRuntimeContext() {
+                        return {
+                            provider: 'hupijiao'
+                        };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'HJ_ORDER_5',
+                            openOrderId: 'OPEN_ORDER_5',
+                            status: 'paid',
+                            statusRaw: 'OD',
+                            message: 'success'
+                        };
+                    },
+                    async refundOrder() {
+                        return {
+                            supported: true,
+                            success: false,
+                            providerOrderNo: 'HJ_ORDER_5',
+                            openOrderId: 'OPEN_ORDER_5',
+                            status: 'paid',
+                            statusRaw: 'OD',
+                            message: 'gateway busy'
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-hj-5',
+                action: 'refund_hupijiao',
+                note: '重复重试时不应刷爆通知'
+            }
+        };
+
+        const firstRes = createMockResponse();
+        await handler(req, firstRes);
+        assert.equal(firstRes.statusCode, 502);
+        assert.equal(state.systemNotifications.length, 2);
+
+        const secondRes = createMockResponse();
+        await handler(req, secondRes);
+        assert.equal(secondRes.statusCode, 502);
+        assert.equal(state.systemNotifications.length, 2);
+        assert.equal(state.systemNotifications.every((item) => item.title === '支付退款失败（已补回）'), true);
     });
 });

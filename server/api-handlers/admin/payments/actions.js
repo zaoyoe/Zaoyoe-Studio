@@ -6,6 +6,9 @@ const {
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
 const {
+    notifyActiveAdmins
+} = require('../../../../api/_lib/admin-notifications');
+const {
     applyPaymentOrderReview,
     deductPointsForRefundReclaim,
     getUserBalance,
@@ -49,6 +52,26 @@ const REFUNDABLE_HUPIJIAO_STATUSES = new Set([
     'paid',
     'redeemed'
 ]);
+const REFUND_ALERT_CONFIG = Object.freeze({
+    admin_refund_failed: {
+        title: '支付退款失败（已补回）',
+        type: 'warning',
+        topicLabel: '退款失败',
+        detail: '网关退款失败，但系统已自动补回积分，请尽快复核通道状态并确认是否需要人工跟进。'
+    },
+    admin_refund_reclaim_failed: {
+        title: '支付退款积分扣回失败',
+        type: 'alert',
+        topicLabel: '扣回失败',
+        detail: '已入账订单在退款前无法安全扣回积分，系统已停止继续退款，请先处理余额或扣回链路。'
+    },
+    admin_refund_compensation_failed: {
+        title: '支付退款积分回滚失败',
+        type: 'alert',
+        topicLabel: '回滚失败',
+        detail: '网关退款失败后，系统自动补回积分也失败了，需要立即人工核对账务并修复。'
+    }
+});
 
 function normalizeText(value) {
     return String(value || '').trim();
@@ -284,6 +307,20 @@ function buildRefundCompensationReason(target = {}) {
     return `支付退款回滚 ${normalizeText(target.provider_order_no || target.id) || '未知订单'}`;
 }
 
+function buildRefundAlertContent(target = {}, topicLabel = '', detail = '') {
+    const providerOrderNo = normalizeText(target.provider_order_no) || '未知订单号';
+    const site = normalizeText(target.site).toUpperCase() || 'CN';
+    const orderId = normalizeText(target.id) || '未知订单ID';
+
+    return [
+        `站点：${site}`,
+        `订单号：${providerOrderNo}`,
+        `订单ID：${orderId}`,
+        `处理入口：支付对账 -> 异常运维 -> ${topicLabel || '退款专题'}`,
+        detail || '请尽快复核这笔退款异常。'
+    ].join('\n');
+}
+
 function extractRefundReclaimSummary(payload = {}) {
     return {
         reclaimedPoints: normalizePointAmount(payload?.deducted, 0),
@@ -357,6 +394,24 @@ async function compensateRefundReclaim(supabase, target, reclaimSummary, attempt
         data: data || null,
         error: error || null
     };
+}
+
+async function tryNotifyRefundOpsAlert(supabase, target, processingResult) {
+    const config = REFUND_ALERT_CONFIG[String(processingResult || '').trim()];
+    if (!config || !supabase) {
+        return;
+    }
+
+    try {
+        await notifyActiveAdmins(supabase, {
+            title: config.title,
+            content: buildRefundAlertContent(target, config.topicLabel, config.detail),
+            type: config.type,
+            dedupeWindowMinutes: 45
+        });
+    } catch (error) {
+        console.warn('[admin/payments/actions] failed to create refund ops alert:', error.message);
+    }
 }
 
 async function reclaimCreditedHupijiaoPoints(supabase, target, attemptId) {
@@ -507,6 +562,11 @@ async function failHupijiaoRefundAfterReclaim({
         response_status: compensation.success ? responseStatus : 500,
         processed_at: new Date().toISOString()
     });
+    await tryNotifyRefundOpsAlert(
+        supabase,
+        target,
+        compensation.success ? 'admin_refund_failed' : 'admin_refund_compensation_failed'
+    );
 
     const error = new Error(
         compensation.success
@@ -696,6 +756,7 @@ async function applyHupijiaoRefundDecision(supabase, target, note, actorId, env 
                         response_status: reclaimError?.statusCode || 409,
                         processed_at: new Date().toISOString()
                     });
+                    await tryNotifyRefundOpsAlert(supabase, target, 'admin_refund_reclaim_failed');
                     throw reclaimError;
                 }
             }
@@ -777,6 +838,7 @@ async function applyHupijiaoRefundDecision(supabase, target, note, actorId, env 
                 response_status: reclaimError?.statusCode || 409,
                 processed_at: new Date().toISOString()
             });
+            await tryNotifyRefundOpsAlert(supabase, target, 'admin_refund_reclaim_failed');
             throw reclaimError;
         }
     }
