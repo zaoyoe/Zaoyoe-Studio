@@ -2458,7 +2458,12 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         "document.body.style.overflow = 'hidden'",
         'style="${svgStyle}"',
         'style="overflow:visible;"',
-        'style="stop-color:#ffe6ea;stop-opacity:1"'
+        'style="stop-color:#ffe6ea;stop-opacity:1"',
+        'style="left:${left}%; top:${top}%; width:${size}px; height:${size}px;',
+        'style="left:${left}%;animation-delay:${delay.toFixed(2)}s;',
+        "container.style.setProperty('--cursor-x'",
+        "card.style.setProperty('--breathe-delay'",
+        "textarea.style.height = 'auto'"
     ];
 
     for (const marker of removedRuntimeMarkers) {
@@ -2494,7 +2499,11 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         "setPromptsPageOverflow('hidden')",
         'setPromptsPercentPosition(heart, initialPos.x, initialPos.y)',
         'applyPromptsTextareaAutoHeight(textarea, maxHeight)',
-        'resetPromptsTextareaAutoHeight(input)'
+        'resetPromptsTextareaAutoHeight(input)',
+        'hydrateDecorationParticleStyles(root)',
+        'data-left="${left.toFixed(2)}"',
+        "setPromptsCssVars(container, {",
+        "setPromptsCssVars(card, {"
     ];
 
     for (const marker of runtimeMarkers) {
@@ -2536,7 +2545,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260324_PROMPTS_UI_STATE_STYLES_4'),
+        promptsHtml.includes('prompts-poetry.js?v=20260324_PROMPTS_UI_STATE_STYLES_5'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
     );

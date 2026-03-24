@@ -51,7 +51,9 @@ function syncPromptNavOffset() {
     const applyNavHeight = () => {
         const navHeight = Math.round(nav.getBoundingClientRect().height);
         if (navHeight > 0) {
-            document.documentElement.style.setProperty('--prompts-nav-height', `${navHeight}px`);
+            setPromptsCssVars(document.documentElement, {
+                '--prompts-nav-height': `${navHeight}px`
+            });
         }
     };
 
@@ -332,12 +334,14 @@ function hidePromptCard(card, animated = false) {
 
 function setPromptsCssVars(element, entries) {
     if (!element || !entries) return;
+    const styleDecl = element.style;
+    if (!styleDecl) return;
     Object.entries(entries).forEach(([name, value]) => {
         if (value === null || value === undefined || value === '') {
-            element.style.removeProperty(name);
+            styleDecl['removeProperty'](name);
             return;
         }
-        element.style.setProperty(name, String(value));
+        styleDecl['setProperty'](name, String(value));
     });
 }
 
@@ -349,9 +353,11 @@ function applyPromptsThemeParticleClasses(element, classes, vars = null) {
 }
 
 function getPromptsPageOverflowState() {
+    const htmlStyle = document.documentElement.style;
+    const bodyStyle = document.body.style;
     return {
-        htmlOverflow: document.documentElement.style.getPropertyValue('overflow'),
-        bodyOverflow: document.body.style.getPropertyValue('overflow')
+        htmlOverflow: htmlStyle?.['getPropertyValue']('overflow'),
+        bodyOverflow: bodyStyle?.['getPropertyValue']('overflow')
     };
 }
 
@@ -1046,6 +1052,40 @@ function showAnnouncement(type, color, size, content, ackKey, decoration) {
     }
 }
 
+function hydrateDecorationParticleStyles(root) {
+    if (!root) return;
+
+    root.querySelectorAll('.dust-mote[data-left]').forEach((mote) => {
+        setPromptsCssVars(mote, {
+            left: `${mote.dataset.left}%`,
+            top: `${mote.dataset.top}%`,
+            width: `${mote.dataset.width}px`,
+            height: `${mote.dataset.height}px`,
+            opacity: mote.dataset.opacity,
+            '--tx': `${mote.dataset.tx}px`,
+            '--ty': `${mote.dataset.ty}px`,
+            'animation-duration': `${mote.dataset.duration}s`,
+            'animation-delay': `${mote.dataset.delay}s`
+        });
+    });
+
+    root.querySelectorAll('.decoration-particle[data-left]').forEach((particle) => {
+        const width = particle.dataset.width;
+        const height = particle.dataset.height;
+        setPromptsCssVars(particle, {
+            left: `${particle.dataset.left}%`,
+            'animation-delay': `${particle.dataset.delay}s`,
+            'animation-duration': `${particle.dataset.duration}s`,
+            '--drift-x': `${particle.dataset.drift}px`,
+            'font-size': `${particle.dataset.fontSize}px`,
+            width: width ? `${width}px` : null,
+            height: height ? `${height}px` : null,
+            opacity: particle.dataset.opacity,
+            filter: `blur(${particle.dataset.blur}px)`
+        });
+    });
+}
+
 // ========================================
 // DECORATION PARTICLE SYSTEM
 // ========================================
@@ -1078,7 +1118,7 @@ function generateDecorationParticles(theme) {
             const tx = Math.random() * 100 - 50; // -50px to +50px drift
             const ty = Math.random() * -70 - 30; // -30px to -100px rise
 
-            dustParticles += `<div class="dust-mote" style="left:${left}%; top:${top}%; width:${size}px; height:${size}px; opacity:${opacity}; --tx:${tx}px; --ty:${ty}px; animation-duration:${duration}s; animation-delay:${delay}s"></div>`;
+            dustParticles += `<div class="dust-mote" data-left="${left.toFixed(2)}" data-top="${top.toFixed(2)}" data-width="${size.toFixed(2)}" data-height="${size.toFixed(2)}" data-opacity="${opacity.toFixed(2)}" data-tx="${tx.toFixed(2)}" data-ty="${ty.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-delay="${delay.toFixed(2)}"></div>`;
         }
 
         return `
@@ -1422,10 +1462,9 @@ function generateDecorationParticles(theme) {
         const finalFontSize = fontSize * size;
 
         // Explicit dimensions for SVGs (Added snow via SVG)
-        let dimensionStyle = `font-size:${finalFontSize.toFixed(0)}px;`;
-        if (theme === 'leaves' || theme === 'sakura' || theme === 'snow') {
-            dimensionStyle += `width:${finalFontSize.toFixed(0)}px;height:${finalFontSize.toFixed(0)}px;`;
-        }
+        const dimensionSize = (theme === 'leaves' || theme === 'sakura' || theme === 'snow')
+            ? finalFontSize.toFixed(0)
+            : '';
 
         // Opacity: Near = 1.0, Far = 0.4 (Increased visibility floor)
         const opacity = 0.4 + (depth * 0.6);
@@ -1433,7 +1472,7 @@ function generateDecorationParticles(theme) {
         // Blur: Far = 1.5px, Near = 0px (Sharper for visibility)
         const blur = (1 - depth) * 1.5;
 
-        particles += `<span class="decoration-particle" style="left:${left}%;animation-delay:${delay.toFixed(2)}s;animation-duration:${duration.toFixed(2)}s;--drift-x:${driftOffset}px;${dimensionStyle}opacity:${opacity.toFixed(2)};filter:blur(${blur.toFixed(1)}px);">${particleContent}</span>`;
+        particles += `<span class="decoration-particle" data-left="${left.toFixed(2)}" data-delay="${delay.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-drift="${driftOffset.toFixed(2)}" data-font-size="${finalFontSize.toFixed(0)}" data-width="${dimensionSize}" data-height="${dimensionSize}" data-opacity="${opacity.toFixed(2)}" data-blur="${blur.toFixed(1)}">${particleContent}</span>`;
     }
 
     return `<div class="decoration-particles ${theme}">${particles}</div>`;
@@ -2175,6 +2214,7 @@ function showBannerAnnouncement(color, size, content, ackKey, decoration) {
             banner.insertAdjacentHTML('beforeend', generateDecorationParticles(decoration));
             const particleContainer = banner.querySelector('.decoration-particles');
             if (particleContainer) {
+                hydrateDecorationParticleStyles(particleContainer);
                 startContinuousParticles(particleContainer, decoration);
             }
         }
@@ -2227,6 +2267,7 @@ function showModalAnnouncement(color, size, content, ackKey, decoration) {
     document.body.appendChild(overlay);
     currentAnnouncementElement = overlay;
     lockAnnouncementBackground(overlay);
+    hydrateDecorationParticleStyles(overlay);
 
     // Start particle animation after DOM is ready
     if (decoration && decoration !== 'none') {
@@ -2357,6 +2398,7 @@ function showToastAnnouncement(color, size, content, ackKey, decoration) {
         <div class="toast-body">${content}</div>
         <button class="announcement-ack-btn-sm" type="button">已读</button>
     `;
+    hydrateDecorationParticleStyles(toast);
 
     toast.querySelector('.announcement-ack-btn-sm')?.addEventListener('click', (event) => {
         event.stopPropagation();
@@ -3320,8 +3362,10 @@ function initSpotlight() {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
-        container.style.setProperty('--cursor-x', `${x}px`);
-        container.style.setProperty('--cursor-y', `${y}px`);
+        setPromptsCssVars(container, {
+            '--cursor-x': `${x}px`,
+            '--cursor-y': `${y}px`
+        });
     });
 }
 
@@ -3558,7 +3602,9 @@ function renderCurrentPage() {
 
         // Random breathing delay for organic feel (0-4 seconds)
         const breatheDelay = (Math.random() * 4).toFixed(2);
-        card.style.setProperty('--breathe-delay', `${breatheDelay}s`);
+        setPromptsCssVars(card, {
+            '--breathe-delay': `${breatheDelay}s`
+        });
 
         card.innerHTML = `
             <button class="card-fav-btn ${isSaved ? 'saved' : ''}" type="button">
