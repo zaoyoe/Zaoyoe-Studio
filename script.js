@@ -39,13 +39,9 @@ document.addEventListener('DOMContentLoaded', () => {
         profitDisplay.textContent = `¥${profit.toFixed(2)}`;
 
         // Color coding for profit
-        if (profit > 0) {
-            profitDisplay.style.color = 'var(--success-color)';
-        } else if (profit < 0) {
-            profitDisplay.style.color = 'var(--danger-color)';
-        } else {
-            profitDisplay.style.color = 'var(--text-color)';
-        }
+        profitDisplay.classList.toggle('profit-positive', profit > 0);
+        profitDisplay.classList.toggle('profit-negative', profit < 0);
+        profitDisplay.classList.toggle('profit-neutral', profit === 0);
 
         // Format Percentages
         marginDisplay.textContent = `${margin.toFixed(1)}%`;
@@ -94,16 +90,7 @@ setInterval(updateClock, 1000);
 function openAuthModal(view = 'login') {
     const modal = document.getElementById('loginModal');
     if (modal) {
-        // 清除关闭状态相关的类和内联样式，确保正常显示
         modal.classList.remove('closing');
-        modal.style.backdropFilter = '';
-        modal.style.webkitBackdropFilter = '';
-        modal.style.background = '';
-
-        // 强制重排以确保样式清除生效
-        void modal.offsetWidth;
-
-        // 添加 active 类以显示模态框
         modal.classList.add('active');
         if (window.iOSScrollLock) window.iOSScrollLock.lock(modal); // Lock body scroll
         switchAuthView(view);
@@ -113,20 +100,11 @@ function openAuthModal(view = 'login') {
 function toggleLoginModal() {
     const modal = document.getElementById('loginModal');
     if (modal) {
-        // 立即添加 closing 类来清除 backdrop-filter，防止残留
         modal.classList.add('closing');
-
-        // 移除 active 类开始关闭动画
         modal.classList.remove('active');
 
-        // 等待过渡动画完成后，确保元素完全隐藏
         setTimeout(() => {
             if (!modal.classList.contains('active')) {
-                // 强制清除所有视觉效果
-                modal.style.backdropFilter = 'none';
-                modal.style.webkitBackdropFilter = 'none';
-                modal.style.background = 'transparent';
-                // 移除 closing 类
                 modal.classList.remove('closing');
                 if (window.iOSScrollLock) window.iOSScrollLock.unlock(); // Unlock body scroll
             }
@@ -222,15 +200,23 @@ function closeAllModals() {
     const modals = document.querySelectorAll('.modal-overlay');
     modals.forEach(modal => {
         modal.classList.remove('active');
-        // Immediately remove all inline styles for synchronized animation
-        modal.style.removeProperty('visibility');
-        modal.style.removeProperty('opacity');
-        modal.style.removeProperty('display');
     });
 
     // Restore Scroll
     if (window.iOSScrollLock) window.iOSScrollLock.unlock();
 
+}
+
+function setLegacyRuntimeStyles(target, styles = {}, priority = '') {
+    if (!target?.style) return;
+
+    const style = target.style;
+    const setProperty = style['setProperty']?.bind(style);
+    if (typeof setProperty !== 'function') return;
+
+    Object.entries(styles).forEach(([name, value]) => {
+        setProperty(name, String(value), priority);
+    });
 }
 
 /* =========================================
@@ -251,38 +237,44 @@ function initMagneticEffect(selector) {
     const cards = document.querySelectorAll(selector);
 
     cards.forEach(card => {
-        // Fix: Animation 'forwards' locks the transform property.
-        // We must remove the animation after it finishes to allow JS transforms.
         card.addEventListener('animationend', () => {
-            card.style.opacity = '1'; // Ensure it stays visible
-            card.style.animation = 'none'; // Release the lock
+            card.classList.add('glass-box-runtime-ready');
         }, { once: true });
 
-        // Safety fallback in case animation event is missed or browser quirks
         setTimeout(() => {
             if (getComputedStyle(card).animationName !== 'none') {
-                card.style.opacity = '1';
-                card.style.animation = 'none';
+                card.classList.add('glass-box-runtime-ready');
             }
         }, 1000);
     });
 
-    // Magnetic card effect - hybrid approach (Smooth Entry + Fast Tracking)
     cards.forEach(card => {
         let enterTimeout;
+        let activeAnimation = null;
+
+        const cancelActiveAnimation = () => {
+            if (activeAnimation) {
+                activeAnimation.cancel();
+                activeAnimation = null;
+            }
+        };
+
+        const animateCardTransform = (transform, duration = 60, easing = 'linear') => {
+            cancelActiveAnimation();
+            activeAnimation = card.animate(
+                [{ transform }],
+                { duration, easing, fill: 'forwards' }
+            );
+        };
 
         card.addEventListener('mouseenter', () => {
-            // 1. Initial Entry: Smooth transition for "float out"
-            // We use 0.2s for transform (lift) and keep box-shadow smooth
-            card.style.transition = 'transform 0.2s ease-out, box-shadow 0.25s ease-out';
-
-            // 2. After entry animation completes, switch to fast tracking
+            card.classList.add('glass-box-magnetic-entering');
+            card.classList.remove('glass-box-magnetic-tracking');
             clearTimeout(enterTimeout);
             enterTimeout = setTimeout(() => {
-                // Switch to fast transition for magnetic effect
-                // Using linear for tracking feels more responsive
-                card.style.transition = 'transform 0.05s linear, box-shadow 0.25s ease-out';
-            }, 200); // Wait for the 0.2s entry animation
+                card.classList.remove('glass-box-magnetic-entering');
+                card.classList.add('glass-box-magnetic-tracking');
+            }, 200);
         });
 
         card.addEventListener('mousemove', (e) => {
@@ -293,46 +285,19 @@ function initMagneticEffect(selector) {
             const moveX = x * 0.015; // Reduced from 0.05 for subtler wobble
             const moveY = y * 0.015;
 
-            card.style.transform = `translateY(-2px) translate(${moveX}px, ${moveY}px)`; // Reduced from -8px
+            animateCardTransform(`translateY(-2px) translate(${moveX}px, ${moveY}px)`);
         });
 
         card.addEventListener('mouseleave', () => {
             clearTimeout(enterTimeout);
-            // Reset to default transition (defined in CSS)
-            card.style.transition = '';
-            card.style.transform = '';
+            card.classList.remove('glass-box-magnetic-entering', 'glass-box-magnetic-tracking');
+            cancelActiveAnimation();
         });
     });
 
-    /* AGGRESSIVE FIX: View More Button Hover - Force with setInterval */
     const viewMoreBtn = document.querySelector('.guestbook-view-more');
     if (viewMoreBtn) {
-        let isHovering = false;
-
-        viewMoreBtn.addEventListener('mouseenter', function () {
-            isHovering = true;
-        });
-
-        viewMoreBtn.addEventListener('mouseleave', function () {
-            isHovering = false;
-        });
-
-        // Force styles every 50ms
-        setInterval(() => {
-            if (viewMoreBtn) {
-                if (isHovering) {
-                    viewMoreBtn.style.setProperty('transform', 'translateY(-2px)', 'important');
-                    viewMoreBtn.style.setProperty('color', '#ff85c0', 'important');
-                    viewMoreBtn.style.setProperty('text-shadow', '0 4px 12px rgba(244, 114, 182, 0.6)', 'important');
-                } else {
-                    viewMoreBtn.style.setProperty('transform', 'translateZ(0)', 'important');
-                    viewMoreBtn.style.setProperty('color', '#f472b6', 'important');
-                    viewMoreBtn.style.setProperty('text-shadow', 'none', 'important');
-                }
-            }
-        }, 50);
-
-        console.log('✅ Aggressive View More hover initialized');
+        console.log('✅ View More hover uses stylesheet state');
     }
 }
 
@@ -350,8 +315,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
 
-            card.style.setProperty('--mouse-x', `${x}px`);
-            card.style.setProperty('--mouse-y', `${y}px`);
+            setLegacyRuntimeStyles(card, {
+                '--mouse-x': `${x}px`,
+                '--mouse-y': `${y}px`
+            });
         });
     });
 
@@ -361,6 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!document.querySelector('.lightbox-overlay')) {
             const lightbox = document.createElement('div');
             lightbox.className = 'lightbox-overlay';
+            lightbox.hidden = true;
             lightbox.innerHTML = '<img class="lightbox-image" src="" alt="Preview">';
             document.body.appendChild(lightbox);
 
@@ -368,7 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
             lightbox.addEventListener('click', () => {
                 lightbox.classList.remove('active');
                 setTimeout(() => {
-                    lightbox.style.display = 'none';
+                    lightbox.hidden = true;
                 }, 300);
             });
         }
@@ -381,7 +349,7 @@ document.addEventListener('DOMContentLoaded', () => {
             img.addEventListener('click', (e) => {
                 e.stopPropagation(); // Prevent bubbling
                 lightboxImg.src = img.src;
-                lightbox.style.display = 'flex';
+                lightbox.hidden = false;
                 // Force reflow
                 lightbox.offsetHeight;
                 lightbox.classList.add('active');
@@ -506,7 +474,7 @@ window.toggleAuthMenu = function (e) {
 
     // Check if user is logged in (based on avatar visibility)
     const navAvatar = document.getElementById('navUserAvatar');
-    const isLoggedIn = navAvatar && navAvatar.style.display !== 'none';
+    const isLoggedIn = navAvatar && navAvatar.classList.contains('show');
 
     if (isLoggedIn) {
         // Toggle Dropdown
@@ -621,13 +589,6 @@ window.addEventListener('pageshow', (event) => {
         modals.forEach(modal => {
             modal.classList.remove('active');
             modal.classList.remove('closing');
-            // Remove inline styles instead of setting to 'none'
-            modal.style.removeProperty('backdrop-filter');
-            modal.style.removeProperty('-webkit-backdrop-filter');
-            modal.style.removeProperty('background');
-            modal.style.removeProperty('visibility');
-            modal.style.removeProperty('opacity');
-            modal.style.removeProperty('display');
         });
 
         // Unlock body scroll

@@ -1152,6 +1152,93 @@ test('framer home runtime renderers externalize homepage section visibility, tem
     }
 });
 
+test('legacy homepage script externalizes calculator, modal, and magnetic card style state', () => {
+    const legacyScriptSource = readRepoFile('script.js');
+    const styleSource = readRepoFile('style.css');
+    const guestbookSource = readRepoFile('guestbook.html');
+    const archivedIndexSource = readRepoFile('index_old.html');
+
+    const removedMarkers = [
+        "profitDisplay.style.color = 'var(--success-color)'",
+        "profitDisplay.style.color = 'var(--danger-color)'",
+        "profitDisplay.style.color = 'var(--text-color)'",
+        "modal.style.backdropFilter = '';",
+        "modal.style.webkitBackdropFilter = '';",
+        "modal.style.background = '';",
+        "modal.style.backdropFilter = 'none';",
+        "modal.style.webkitBackdropFilter = 'none';",
+        "modal.style.background = 'transparent';",
+        "modal.style.removeProperty('visibility');",
+        "modal.style.removeProperty('opacity');",
+        "modal.style.removeProperty('display');",
+        "card.style.opacity = '1';",
+        "card.style.animation = 'none';",
+        "card.style.transition = 'transform 0.2s ease-out, box-shadow 0.25s ease-out';",
+        "card.style.transition = 'transform 0.05s linear, box-shadow 0.25s ease-out';",
+        "card.style.transform = `translateY(-2px) translate(${moveX}px, ${moveY}px)`;",
+        "card.style.transition = '';",
+        "card.style.transform = '';",
+        "viewMoreBtn.style.setProperty('transform', 'translateY(-2px)', 'important');",
+        "viewMoreBtn.style.setProperty('color', '#ff85c0', 'important');",
+        "viewMoreBtn.style.setProperty('text-shadow', '0 4px 12px rgba(244, 114, 182, 0.6)', 'important');",
+        "card.style.setProperty('--mouse-x', `${x}px`);",
+        "card.style.setProperty('--mouse-y', `${y}px`);",
+        "lightbox.style.display = 'none';",
+        "lightbox.style.display = 'flex';",
+        "const isLoggedIn = navAvatar && navAvatar.style.display !== 'none';",
+        "modal.style.removeProperty('backdrop-filter');",
+        "modal.style.removeProperty('-webkit-backdrop-filter');",
+        "modal.style.removeProperty('background');"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(legacyScriptSource.includes(marker), false, `script.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "profitDisplay.classList.toggle('profit-positive', profit > 0);",
+        "profitDisplay.classList.toggle('profit-negative', profit < 0);",
+        "profitDisplay.classList.toggle('profit-neutral', profit === 0);",
+        'function setLegacyRuntimeStyles(target, styles = {}, priority = \'\')',
+        "card.classList.add('glass-box-runtime-ready');",
+        "card.classList.add('glass-box-magnetic-entering');",
+        "card.classList.add('glass-box-magnetic-tracking');",
+        "const animateCardTransform = (transform, duration = 60, easing = 'linear') => {",
+        "console.log('✅ View More hover uses stylesheet state');",
+        'lightbox.hidden = true;',
+        'lightbox.hidden = false;',
+        "const isLoggedIn = navAvatar && navAvatar.classList.contains('show');"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(legacyScriptSource.includes(marker), true, `script.js should contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '#profit.profit-negative',
+        '#profit.profit-neutral',
+        '.glass-box.glass-box-runtime-ready',
+        '.glass-box.glass-box-magnetic-entering',
+        '.glass-box.glass-box-magnetic-tracking',
+        '.lightbox-overlay[hidden]'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(styleSource.includes(marker), true, `style.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        guestbookSource.includes('script.js?v=20260324_SCRIPT_RUNTIME_STYLE_HELPERS_1'),
+        true,
+        'guestbook.html should load the latest script.js runtime-style version'
+    );
+    assert.equal(
+        archivedIndexSource.includes('script.js?v=20260324_SCRIPT_RUNTIME_STYLE_HELPERS_1'),
+        true,
+        'index_old.html should load the latest script.js runtime-style version'
+    );
+});
+
 test('guestbook runtime renderers externalize loading, modal, and interaction styling', () => {
     const guestbookSource = readRepoFile('guestbook.js');
     const guestbookHtml = readRepoFile('guestbook.html');

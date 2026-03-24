@@ -351,6 +351,14 @@ input[type="tel"]:focus {
     font-size: 2rem;
 }
 
+#profit.profit-negative {
+    color: var(--danger-color);
+}
+
+#profit.profit-neutral {
+    color: var(--text-color);
+}
+
 /* Mobile Optimization */
 @media (max-width: 480px) {
     header h1 {
@@ -1016,6 +1024,20 @@ input.submit-btn {
     box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.4) !important;
 }
 
+.glass-box.glass-box-runtime-ready {
+    opacity: 1 !important;
+    animation: none !important;
+}
+
+@media (hover: hover) {
+    .glass-box.glass-box-magnetic-entering {
+        transition: transform 0.2s ease-out, box-shadow 0.25s ease-out;
+    }
+
+    .glass-box.glass-box-magnetic-tracking {
+        transition: transform 0.05s linear, box-shadow 0.25s ease-out;
+    }
+}
 
 .glass-box:active {
     transform: scale(0.98);
@@ -2089,11 +2111,15 @@ svg {
     height: 100%;
     background: rgba(0, 0, 0, 0.9);
     z-index: 2000;
-    display: none;
+    display: flex;
     justify-content: center;
     align-items: center;
     opacity: 0;
     transition: opacity 0.3s ease;
+}
+
+.lightbox-overlay[hidden] {
+    display: none;
 }
 
 .lightbox-overlay.active {
