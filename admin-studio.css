@@ -19337,7 +19337,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     overflow: visible;
 }
 
-#settings-view-pricing .config-card[data-config="payment-channels"]:not(.collapsed) .config-card-body {
+#settings-view-pricing .config-card[data-config="payment-channels"]:not(.collapsed) .config-card-body,
+#settings-view-pricing .config-card[data-config="ops-alerts"]:not(.collapsed) .config-card-body {
     max-height: none;
     overflow: visible;
 }
