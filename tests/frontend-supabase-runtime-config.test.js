@@ -378,7 +378,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
         ['shop.html', 'css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_INLINE_STYLE_ATTRS_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_SHOP_RUNTIME_STYLES_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -486,7 +486,7 @@ test('admin studio page no longer embeds inline style attributes', () => {
     const source = readRepoFile('admin-studio.html');
 
     assert.equal(
-        source.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_INLINE_STYLE_ATTRS_1'),
+        source.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_SHOP_RUNTIME_STYLES_1'),
         true,
         'admin-studio.html should load the updated admin studio page stylesheet'
     );
@@ -1760,6 +1760,63 @@ test('shop admin pagination and inventory/product workflows no longer emit targe
 
     assert.equal(shopSource.includes('bindDelegatedHandlers: function'), true, 'js/admin-shop.js should bind delegated handlers');
     assert.equal(shopSource.includes('data-shop-overlay-close="dynamic-modal"'), true, 'js/admin-shop.js should render delegated dynamic modal overlays');
+});
+
+test('shop admin product grid runtime templates externalize card styling and visibility state', () => {
+    const shopSource = readRepoFile('js/admin-shop.js');
+    const shopStyles = readRepoFile('css/admin-studio-page.css');
+
+    const removedRuntimeMarkers = [
+        'container.style.gridTemplateColumns',
+        'container.style.gap =',
+        'container.style.padding =',
+        'addCard.style.cssText =',
+        'card.style.cssText =',
+        'addCard.onmouseover = () =>',
+        'addCard.onmouseout = () =>',
+        'btn.onmouseover = () =>',
+        'btn.onmouseout = () =>',
+        '<div style="${imageContainerStyle}">',
+        'class="action-btn" data-shop-action="product-edit"',
+        "card.style.cursor = 'pointer'",
+        "const checkboxDisplay = this.isProductSelectionMode ? 'block' : 'none';",
+        '<div style="position:absolute; top:12px; left:12px; display:${checkboxDisplay};" class="product-checkbox-wrapper">'
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(shopSource.includes(marker), false, `js/admin-shop.js should not retain ${marker}`);
+    }
+
+    const delegatedMarkers = [
+        "container.classList.add('shop-grid', 'shop-admin-products-grid')",
+        "addCard.dataset.shopAction = 'product-open-create-modal'",
+        'shop-admin-product-card shop-admin-product-card--create',
+        'shop-admin-product-cover',
+        'shop-admin-product-action-btn',
+        'shop-admin-status-badge',
+        "grid.classList.toggle('shop-admin-products-grid--selection-mode'",
+        "menu.classList.contains('is-open')",
+        "menu.classList.add('is-open')",
+        "menu.classList.remove('is-open')"
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.shop-view--active',
+        '.batch-menu.is-open',
+        '.shop-admin-products-grid',
+        '.shop-admin-product-card--create',
+        '.shop-admin-product-cover',
+        '.shop-admin-status-badge',
+        '.shop-admin-product-action-btn'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
+    }
 });
 
 test('admin studio create form and shop import/orders/fulfillment controls route through delegated actions', () => {
