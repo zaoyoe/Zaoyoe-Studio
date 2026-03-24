@@ -167,7 +167,8 @@
 - 虎皮椒已经能真实创建支付
 - `/api/payments/hupijiao/webhook` 已能验签、落 `payment_events`、更新 `payment_orders`、自动入账
 - `queryOrder` 已接进统一 adapter
-- 退款 helper 已就绪，但后台退款流还没真正开放
+- 后台退款流已开放给“未入账订单”，会先查单再退款并写审计
+- 已入账/已发点的订单继续 fail-closed，不允许直接退款
 
 上线前至少确认这几项：
 
@@ -178,4 +179,4 @@
 5. 如果要收紧来源链路，再补：
    - `HUPIJIAO_WEBHOOK_TRUSTED_PROXIES`
    - `HUPIJIAO_WEBHOOK_ALLOWED_IPS`
-6. 没接通后台退款前，不要把虎皮椒当成“已完成售后闭环”的通道
+6. 当前后台只允许退款“未入账订单”；已入账订单仍需先完成人工扣回/售后闭环

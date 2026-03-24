@@ -9,7 +9,9 @@ const EVENT_OK_RESULTS = new Set([
     'received',
     'ignored_non_success_ec',
     'ignored_non_order_event',
-    'ignored_non_paid_status'
+    'ignored_non_paid_status',
+    'admin_refund_processed',
+    'admin_refund_synced_refunded'
 ]);
 const SESSION_OPEN_STATUSES = new Set(['created', 'redirect_ready']);
 const SESSION_FAILURE_STATUSES = new Set(['failed', 'expired', 'cancelled']);
@@ -111,6 +113,8 @@ function buildOrderAnomaly(order) {
         provider: order.provider,
         provider_order_no: order.provider_order_no,
         status: order.status,
+        claimed_at: order.claimed_at || null,
+        provider_metadata: normalizeJsonObject(order.provider_metadata),
         severity,
         title,
         message,
@@ -282,6 +286,19 @@ function isResolvedOpsStatus(status) {
     return ['handled', 'ignored', 'approved', 'rejected'].includes(String(status || '').trim().toLowerCase());
 }
 
+function isRefundableHupijiaoOrder(item) {
+    if (item?.type !== 'order') return false;
+    if (String(item?.provider || '').trim().toLowerCase() !== 'hupijiao') return false;
+
+    const status = String(item?.status || '').trim().toLowerCase();
+    if (!['pending_review', 'amount_mismatch', 'paid'].includes(status)) return false;
+    if (status === 'redeemed' || Boolean(String(item?.claimed_at || '').trim())) return false;
+
+    const metadata = normalizeJsonObject(item?.provider_metadata);
+    const refundStatus = String(metadata.refund_status || '').trim().toLowerCase();
+    return !['refunded', 'refund_pending'].includes(refundStatus);
+}
+
 function getAnomalyAvailableActions(item, caseStatus) {
     const normalizedStatus = String(caseStatus || '').trim().toLowerCase();
 
@@ -294,11 +311,19 @@ function getAnomalyAvailableActions(item, caseStatus) {
     }
 
     if (item?.type === 'order' && String(item?.status || '').trim().toLowerCase() === 'amount_mismatch') {
-        return ['approve_amount_mismatch', 'reject_amount_mismatch', 'ignore'];
+        return isRefundableHupijiaoOrder(item)
+            ? ['approve_amount_mismatch', 'reject_amount_mismatch', 'refund_hupijiao', 'ignore']
+            : ['approve_amount_mismatch', 'reject_amount_mismatch', 'ignore'];
     }
 
     if (item?.type === 'order' && String(item?.status || '').trim().toLowerCase() === 'pending_review') {
-        return ['approve_review', 'reject_review', 'ignore'];
+        return isRefundableHupijiaoOrder(item)
+            ? ['approve_review', 'reject_review', 'refund_hupijiao', 'ignore']
+            : ['approve_review', 'reject_review', 'ignore'];
+    }
+
+    if (isRefundableHupijiaoOrder(item)) {
+        return ['refund_hupijiao', 'mark_handled', 'ignore', 'request_retry'];
     }
 
     return ['mark_handled', 'ignore', 'request_retry'];

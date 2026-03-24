@@ -9,6 +9,7 @@ const {
     normalizeHupijiaoConfig,
     normalizeHupijiaoPaymentStatus,
     queryHupijiaoPayment,
+    refundHupijiaoPayment,
     verifyHupijiaoHash
 } = require('./hupijiao');
 const {
@@ -280,6 +281,7 @@ const providerRegistry = {
             createCheckout: true,
             webhook: true,
             queryOrder: true,
+            refundOrder: true,
             autoCredit: true
         },
         async resolveRuntimeContext({ supabase, env = process.env, config = null } = {}) {
@@ -510,6 +512,60 @@ const providerRegistry = {
                 status: normalizeHupijiaoPaymentStatus(statusRaw),
                 statusRaw,
                 message: sanitizeText(gatewayPayload.errmsg, gatewayErrcode === 0 ? 'success' : '虎皮椒查单失败', 240)
+            };
+        },
+        async refundOrder({ runtimeContext, providerOrderNo = '', openOrderId = '', reason = '' } = {}) {
+            const integration = runtimeContext?.integration || normalizeHupijiaoConfig({
+                channelConfig: runtimeContext?.channelConfig || {},
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || ''
+            });
+            if (!integration?.appId || !integration?.appSecret) {
+                return {
+                    supported: false,
+                    message: '虎皮椒退款配置不完整，请先补齐 APPID / SECRET。'
+                };
+            }
+
+            const refundResult = await refundHupijiaoPayment({
+                channelConfig: runtimeContext?.channelConfig || {},
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || '',
+                tradeOrderId: providerOrderNo,
+                openOrderId,
+                reason
+            });
+            const gatewayPayload = refundResult.response?.data || {};
+            const gatewayErrcode = Number(gatewayPayload.errcode ?? 0);
+            const orderData = gatewayPayload.data && typeof gatewayPayload.data === 'object'
+                ? gatewayPayload.data
+                : {};
+            const statusRaw = sanitizeText(
+                orderData.status || gatewayPayload.status,
+                '',
+                12
+            ).toUpperCase();
+            const normalizedStatus = statusRaw
+                ? normalizeHupijiaoPaymentStatus(statusRaw)
+                : (gatewayErrcode === 0 ? 'refunded' : 'unknown');
+
+            return {
+                supported: true,
+                success: gatewayErrcode === 0,
+                providerOrderNo: sanitizeText(
+                    orderData.out_trade_order || gatewayPayload.trade_order_id || providerOrderNo,
+                    '',
+                    120
+                ) || null,
+                openOrderId: sanitizeText(
+                    orderData.open_order_id || gatewayPayload.open_order_id || openOrderId,
+                    '',
+                    120
+                ) || null,
+                status: normalizedStatus,
+                statusRaw: statusRaw || (gatewayErrcode === 0 ? 'CD' : ''),
+                message: sanitizeText(gatewayPayload.errmsg, gatewayErrcode === 0 ? 'success' : '虎皮椒退款失败', 240),
+                responsePayload: gatewayPayload
             };
         }
     }

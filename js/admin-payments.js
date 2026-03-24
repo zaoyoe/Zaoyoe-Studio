@@ -31,11 +31,12 @@
     };
 
     const PAYMENTS_PAGE_SIZE = 5;
-    const SENSITIVE_REVIEW_ACTIONS = new Set([
+    const NOTE_REQUIRED_ACTIONS = new Set([
         'approve_review',
         'reject_review',
         'approve_amount_mismatch',
-        'reject_amount_mismatch'
+        'reject_amount_mismatch',
+        'refund_hupijiao'
     ]);
     const CLEANUP_SCOPE_HTML = '只会清理订单号前缀为 <code>AUTO_CDX_*</code> 或 <code>SMOKE_*</code> 的测试订单，以及邮箱匹配 <code>codex.*@example.com</code> 或 <code>smoke-payment-*@zaoyoe.invalid</code> 的测试账号。';
     const CLEANUP_SCOPE_TEXT = '将删除 AUTO_CDX_* / SMOKE_* 测试订单，以及 codex.*@example.com / smoke-payment-*@zaoyoe.invalid 测试账号。此操作不可撤销，是否继续？';
@@ -263,9 +264,17 @@
             approve_review: '审核通过',
             reject_review: '驳回',
             approve_amount_mismatch: '人工放行',
-            reject_amount_mismatch: '拒绝入账'
+            reject_amount_mismatch: '拒绝入账',
+            refund_hupijiao: '执行退款'
         };
         return map[String(action || '').trim().toLowerCase()] || '执行操作';
+    }
+
+    function getAnomalyActionPrompt(action) {
+        if (String(action || '').trim().toLowerCase() === 'refund_hupijiao') {
+            return '请填写退款备注，这条备注会进入后台审计记录，并作为退款原因传给虎皮椒：';
+        }
+        return '请填写处理备注，这条备注会进入后台审计记录：';
     }
 
     function getAnomalyOpsTone(status) {
@@ -1515,8 +1524,8 @@
         if (!normalizedTargetType || !normalizedTargetId || !normalizedAction) return;
 
         let note = '';
-        if (SENSITIVE_REVIEW_ACTIONS.has(normalizedAction)) {
-            note = String(window.prompt('请填写处理备注，这条备注会进入后台审计记录：', '') || '').trim();
+        if (NOTE_REQUIRED_ACTIONS.has(normalizedAction)) {
+            note = String(window.prompt(getAnomalyActionPrompt(normalizedAction), '') || '').trim();
             if (!note) {
                 window.showToast?.('敏感操作必须填写处理备注。', 'warning');
                 return;
