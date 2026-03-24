@@ -1180,6 +1180,11 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         "btn.style.background = '#10b981'",
         "btn.style.background = '#ef4444'",
         "btn.style.background = '#94a3b8'",
+        "indicator.style.setProperty('--users-tab-indicator-left'",
+        "container.style.setProperty('--pill-count'",
+        "container.style.setProperty('--indicator-color'",
+        "instance.calendarContainer.style.setProperty('z-index', '2147483647', 'important')",
+        "el.style.setProperty('--users-note-height'",
         "confirmBtn.style.opacity = '1'",
         "confirmBtn.style.cursor = 'pointer'",
         "confirmBtn.style.opacity = '0.5'",
@@ -1309,7 +1314,10 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         '.users-ban-confirm-btn--ban',
         '.initials-avatar--tone-0',
         '.users-points-modal-footer',
-        '.custom-tag-input'
+        '.custom-tag-input',
+        '.scope-options-pills--tone-unban',
+        '.users-fixed-flatpickr-calendar',
+        '.users-notes-input--overflow'
     ];
 
     for (const marker of styleMarkers) {

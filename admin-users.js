@@ -2195,6 +2195,9 @@ function switchUserTab(tabName) {
     document.querySelectorAll('.user-tab-btn').forEach(btn => {
         const isActive = btn.dataset.tab === tabName;
         btn.classList.toggle('active', isActive);
+        if (!isActive) {
+            btn.removeAttribute('aria-current');
+        }
 
         // Move indicator to active button
         if (isActive) {
@@ -2208,13 +2211,8 @@ function switchUserTab(tabName) {
 
 // Update Sliding Indicator Position
 function updateTabIndicator(activeBtn) {
-    const nav = document.querySelector('.user-tab-nav');
-    const indicator = document.querySelector('.tab-indicator');
-
-    if (nav && indicator && activeBtn) {
-        indicator.style.setProperty('--users-tab-indicator-left', `${activeBtn.offsetLeft}px`);
-        indicator.style.setProperty('--users-tab-indicator-width', `${activeBtn.offsetWidth}px`);
-        indicator.style.setProperty('--users-tab-indicator-opacity', '1');
+    if (activeBtn) {
+        activeBtn.setAttribute('aria-current', 'page');
     }
 }
 
@@ -3239,6 +3237,7 @@ function openCustomDatePicker(tabName) {
                 const rect = targetEl.getBoundingClientRect();
 
                 // Force fixed positioning relative to viewport
+                instance.calendarContainer.classList.add('users-fixed-flatpickr-calendar');
                 Object.assign(instance.calendarContainer.style, {
                     position: 'fixed',
                     top: `${rect.bottom + 4}px`,
@@ -3247,8 +3246,6 @@ function openCustomDatePicker(tabName) {
                     visibility: 'visible',
                     opacity: '1'
                 });
-                // Force max z-index separately to ensure it applies
-                instance.calendarContainer.style.setProperty('z-index', '2147483647', 'important');
             }
         });
     }
@@ -4279,34 +4276,26 @@ function updatePillIndicator(container, selectedPill) {
     const pills = Array.from(container.querySelectorAll('.scope-pill'));
     const index = pills.indexOf(selectedPill);
     const count = pills.length;
+    const countClasses = ['scope-options-pills--count-4', 'scope-options-pills--count-5'];
+    const indexClasses = ['scope-options-pills--index-0', 'scope-options-pills--index-1', 'scope-options-pills--index-2', 'scope-options-pills--index-3', 'scope-options-pills--index-4'];
+    const toneClasses = ['scope-options-pills--tone-unban', 'scope-options-pills--tone-temp', 'scope-options-pills--tone-permanent'];
 
     if (index === -1) return;
 
-    // Set pill count and active index
-    container.style.setProperty('--pill-count', count);
-    container.style.setProperty('--active-index', index);
+    container.classList.remove(...countClasses, ...indexClasses, ...toneClasses);
+    container.classList.add(`scope-options-pills--count-${count}`, `scope-options-pills--index-${index}`);
 
     // Determine indicator color based on pill type
     const days = selectedPill.dataset.days;
     const isDanger = selectedPill.classList.contains('danger');
 
-    let bgColor, borderColor;
     if (days === 'unban') {
-        // Blue for normal/unban
-        bgColor = 'rgba(59, 130, 246, 0.25)';
-        borderColor = 'rgba(59, 130, 246, 0.5)';
+        container.classList.add('scope-options-pills--tone-unban');
     } else if (isDanger || days === 'permanent') {
-        // Red for permanent ban
-        bgColor = 'rgba(239, 68, 68, 0.25)';
-        borderColor = 'rgba(239, 68, 68, 0.5)';
+        container.classList.add('scope-options-pills--tone-permanent');
     } else {
-        // Orange for temporary ban
-        bgColor = 'rgba(245, 158, 11, 0.2)';
-        borderColor = 'rgba(245, 158, 11, 0.5)';
+        container.classList.add('scope-options-pills--tone-temp');
     }
-
-    container.style.setProperty('--indicator-color', bgColor);
-    container.style.setProperty('--indicator-border', borderColor);
 }
 
 // Toggle Selection (Pills behavior)
@@ -5515,8 +5504,19 @@ bindAdminUsersRuntimeDelegates();
 // ==========================================
 // Helper for auto-resizing notes input
 window.autoResizeNotesInput = function (el) {
-    el.style.setProperty('--users-note-height', 'auto');
-    el.style.setProperty('--users-note-height', `${el.scrollHeight}px`);
+    if (!(el instanceof HTMLTextAreaElement)) {
+        return;
+    }
+
+    const computedStyle = window.getComputedStyle(el);
+    const lineHeight = parseFloat(computedStyle.lineHeight) || 24;
+    const verticalPadding = (parseFloat(computedStyle.paddingTop) || 0) + (parseFloat(computedStyle.paddingBottom) || 0);
+    const maxRows = 4;
+
+    el.rows = 1;
+    const contentRows = Math.max(1, Math.ceil((el.scrollHeight - verticalPadding) / lineHeight));
+    el.rows = Math.min(maxRows, contentRows);
+    el.classList.toggle('users-notes-input--overflow', contentRows > maxRows);
 };
 
 async function renderNotesTab(container) {

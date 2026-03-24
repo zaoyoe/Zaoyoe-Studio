@@ -5237,15 +5237,15 @@ input:checked+.toggle-slider:before {
 .tab-indicator {
     position: absolute;
     bottom: -1px;
-    left: var(--users-tab-indicator-left, 0);
-    width: var(--users-tab-indicator-width, 0);
+    left: 0;
+    width: 0;
     height: 2px;
     background: #6b9ece;
     box-shadow: 0 -2px 8px rgba(107, 158, 206, 0.5);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     pointer-events: none;
     z-index: 10;
-    opacity: var(--users-tab-indicator-opacity, 0);
+    opacity: 0;
 }
 
 
@@ -7535,6 +7535,10 @@ input:checked+.toggle-slider:before {
     font-family: var(--font-sans);
 }
 
+.users-fixed-flatpickr-calendar {
+    z-index: 2147483647 !important;
+}
+
 .flatpickr-months {
     padding: 8px 0;
 }
@@ -9484,7 +9488,7 @@ input:checked+.toggle-slider:before {
 .users-notes-input {
     flex: 1;
     min-height: 38px;
-    height: var(--users-note-height, 38px);
+    height: auto;
     max-height: 120px;
     padding: 8px 0;
     border: none;
@@ -9496,9 +9500,13 @@ input:checked+.toggle-slider:before {
     font-family: inherit;
     font-size: 0.9rem;
     line-height: 1.5;
-    overflow-y: auto;
+    overflow-y: hidden;
     box-sizing: border-box;
     display: block;
+}
+
+.users-notes-input--overflow {
+    overflow-y: auto;
 }
 
 .users-notes-submit-btn {
@@ -12701,6 +12709,49 @@ input:checked+.toggle-slider:before {
     --active-index: 0;
     --indicator-color: rgba(59, 130, 246, 0.25);
     --indicator-border: rgba(59, 130, 246, 0.5);
+}
+
+.scope-options-pills--count-4 {
+    --pill-count: 4;
+}
+
+.scope-options-pills--count-5 {
+    --pill-count: 5;
+}
+
+.scope-options-pills--index-0 {
+    --active-index: 0;
+}
+
+.scope-options-pills--index-1 {
+    --active-index: 1;
+}
+
+.scope-options-pills--index-2 {
+    --active-index: 2;
+}
+
+.scope-options-pills--index-3 {
+    --active-index: 3;
+}
+
+.scope-options-pills--index-4 {
+    --active-index: 4;
+}
+
+.scope-options-pills--tone-unban {
+    --indicator-color: rgba(59, 130, 246, 0.25);
+    --indicator-border: rgba(59, 130, 246, 0.5);
+}
+
+.scope-options-pills--tone-temp {
+    --indicator-color: rgba(245, 158, 11, 0.2);
+    --indicator-border: rgba(245, 158, 11, 0.5);
+}
+
+.scope-options-pills--tone-permanent {
+    --indicator-color: rgba(239, 68, 68, 0.25);
+    --indicator-border: rgba(239, 68, 68, 0.5);
 }
 
 /* Sliding indicator background */
