@@ -1,0 +1,253 @@
+/* icons_preview_v7.html inline style block 1 (from line 8) */
+body {
+            background-color: #0b0b0b;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 50px;
+            gap: 80px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+
+        p.subtitle {
+            color: #888;
+            margin-bottom: 40px;
+            font-size: 14px;
+        }
+
+        .set-container {
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        h2 {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 40px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+            text-align: left;
+            width: 100%;
+        }
+
+        .icons-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 40px;
+            width: 100%;
+        }
+
+        .icon-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 25px;
+            cursor: pointer;
+            position: relative;
+            padding: 20px;
+            border-radius: 20px;
+            transition: 0.3s;
+        }
+
+        .icon-wrapper:hover,
+        .icon-wrapper.active {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .icon-label {
+            font-size: 14px;
+            color: #666;
+            transition: 0.3s;
+            font-weight: 500;
+        }
+
+        .icon-wrapper:hover .icon-label,
+        .icon-wrapper.active .icon-label {
+            color: #fff;
+        }
+
+        svg {
+            overflow: visible;
+        }
+
+        /* --- Concept A: Galactic Sparkle (Orbiting) --- */
+        .icon-wrapper:hover .c-galactic .star-main,
+        .icon-wrapper.active .c-galactic .star-main {
+            transform: scale(1.1) rotate(180deg);
+        }
+
+        .c-galactic .orbit-group {
+            animation: spinOrbit 10s linear infinite;
+            transform-origin: center;
+        }
+
+        .c-galactic .star-small {
+            animation: pulseStar 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes spinOrbit {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes pulseStar {
+            from {
+                transform: scale(1);
+                opacity: 0.6;
+            }
+
+            to {
+                transform: scale(1.5);
+                opacity: 1;
+            }
+        }
+
+
+        /* --- Concept B: Neural Pulse (Connecting) --- */
+        .c-neural .node {
+            transition: 0.3s;
+        }
+
+        .c-neural .connection {
+            stroke-dasharray: 20;
+            animation: dashFlow 1s linear infinite;
+            /* Fast data flow */
+            opacity: 0.6;
+        }
+
+        .icon-wrapper:hover .c-neural .node-center,
+        .icon-wrapper.active .c-neural .node-center {
+            fill: #fff;
+            filter: drop-shadow(0 0 10px #F472B6);
+        }
+
+        @keyframes dashFlow {
+            from {
+                stroke-dashoffset: 20;
+            }
+
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        @keyframes nodePulse {
+
+            0%,
+            100% {
+                r: 4;
+            }
+
+            50% {
+                r: 6;
+            }
+        }
+
+        .c-neural .node-sat {
+            animation: nodePulse 2s infinite ease-in-out;
+        }
+
+
+        /* --- Concept C: Magic Flow (Particle Trail) --- */
+        .c-magic .wand {
+            transform-origin: 20px 60px;
+            animation: wandFloat 3s ease-in-out infinite;
+        }
+
+        .c-magic .particle {
+            opacity: 0;
+        }
+
+        .icon-wrapper:hover .c-magic .particle,
+        .icon-wrapper.active .c-magic .particle {
+            animation: particleRise 1.5s ease-out infinite;
+        }
+
+        .p1 {
+            animation-delay: 0s;
+        }
+
+        .p2 {
+            animation-delay: 0.3s;
+        }
+
+        .p3 {
+            animation-delay: 0.6s;
+        }
+
+        @keyframes wandFloat {
+
+            0%,
+            100% {
+                transform: rotate(0deg);
+            }
+
+            50% {
+                transform: rotate(-5deg);
+            }
+        }
+
+        @keyframes particleRise {
+            0% {
+                transform: translate(0, 0) scale(0.5);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translate(10px, -30px) scale(0);
+                opacity: 0;
+            }
+        }
+
+        /* --- Concept D: Prism Core (Geometric Shifting) --- */
+        .c-prism .face {
+            transition: 0.5s;
+            transform-origin: center;
+        }
+
+        .c-prism .core {
+            animation: coreBreathe 3s ease-in-out infinite;
+        }
+
+        .icon-wrapper:hover .c-prism .face-1,
+        .icon-wrapper.active .c-prism .face-1 {
+            transform: translate(-5px, -5px);
+        }
+
+        .icon-wrapper:hover .c-prism .face-2,
+        .icon-wrapper.active .c-prism .face-2 {
+            transform: translate(5px, 5px);
+        }
+
+        .icon-wrapper:hover .c-prism .face-3,
+        .icon-wrapper.active .c-prism .face-3 {
+            transform: translate(-5px, 5px);
+        }
+
+        @keyframes coreBreathe {
+
+            0%,
+            100% {
+                transform: scale(1);
+                filter: hue-rotate(0deg);
+            }
+
+            50% {
+                transform: scale(1.2);
+                filter: hue-rotate(30deg);
+            }
+        }

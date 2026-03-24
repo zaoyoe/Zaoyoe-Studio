@@ -1,0 +1,105 @@
+/* index_old.html inline style block 1 (from line 48) */
+/* Homepage entrance animation - Subtle */
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(15px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .glass-box {
+            opacity: 0;
+            /* Start hidden to prevent flash */
+            animation: fadeInUpElastic 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+            /* Elastic entrance */
+            /* Transition for magnetic effect - separate from animation */
+            transition: transform 0.1s ease-out, background 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        /* Subtle stagger animation for each card */
+        .glass-box:nth-child(1) {
+            animation-delay: 0.1s;
+        }
+
+        .glass-box:nth-child(2) {
+            animation-delay: 0.15s;
+        }
+
+        .glass-box:nth-child(3) {
+            animation-delay: 0.2s;
+        }
+
+        .glass-box:nth-child(4) {
+            animation-delay: 0.25s;
+        }
+
+        .glass-box:nth-child(5) {
+            animation-delay: 0.3s;
+        }
+
+        .glass-box:nth-child(6) {
+            animation-delay: 0.35s;
+        }
+
+        .glass-box:nth-child(7) {
+            animation-delay: 0.4s;
+        }
+
+        .glass-box:nth-child(8) {
+            animation-delay: 0.45s;
+        }
+
+        .glass-box:nth-child(9) {
+            animation-delay: 0.5s;
+        }
+
+        .glass-box:nth-child(10) {
+            animation-delay: 0.55s;
+        }
+
+
+/* index_old.html inline style block 2 (from line 112) */
+/* FORCE FIX: Input Visibility - Show Background on Focus */
+        .guestbook-form input,
+        .guestbook-form textarea,
+        .modal-content input,
+        .modal-content textarea,
+        .modal-content select,
+        .login-card input,
+        .login-card textarea,
+        .nickname-edit input,
+        .security-input {
+            background: rgba(0, 0, 0, 0.3) !important;
+            border: 1.5px solid rgba(155, 93, 229, 0.3) !important;
+            color: #ffffff !important;
+            caret-color: #ffffff !important;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) !important;
+        }
+
+        .guestbook-form input:focus,
+        .guestbook-form textarea:focus,
+        .modal-content input:focus,
+        .modal-content textarea:focus,
+        .login-card input:focus,
+        .nickname-edit input:focus,
+        .security-input:focus {
+            background: rgba(0, 0, 0, 0.5) !important;
+            border-color: rgba(155, 93, 229, 0.7) !important;
+            box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.15) !important;
+        }
+
+        /* FORCE FIX: Placeholder Color */
+        ::placeholder {
+            color: rgba(255, 255, 255, 0.4) !important;
+            opacity: 1 !important;
+        }
+
+        /* FORCE FIX: Auth Button Children */
+        #authBtn * {
+            pointer-events: none !important;
+        }

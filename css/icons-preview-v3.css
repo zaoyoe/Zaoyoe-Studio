@@ -1,0 +1,249 @@
+/* icons_preview_v3.html inline style block 1 (from line 8) */
+body {
+            background-color: #080808;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 50px;
+            gap: 100px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+
+        p.subtitle {
+            color: #666;
+            margin-bottom: 40px;
+            font-size: 14px;
+        }
+
+        .set-container {
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        h2 {
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 40px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-bottom: 1px solid #222;
+            padding-bottom: 10px;
+        }
+
+        .icons-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 40px;
+        }
+
+        .icon-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            cursor: pointer;
+            position: relative;
+            transition: 0.3s;
+        }
+
+        .icon-label {
+            font-size: 13px;
+            color: #888;
+            transition: 0.3s;
+            font-weight: 500;
+        }
+
+        .icon-wrapper:hover .icon-label {
+            color: #fff;
+        }
+
+        .icon-wrapper:hover svg {
+            filter: brightness(1.2);
+        }
+
+        svg {
+            overflow: visible;
+        }
+
+        /* --- Set 3A: Neo-Glass 3D (Semi-realistic) --- */
+        .set-glass3d svg .layer-back {
+            transition: 0.4s;
+        }
+
+        .set-glass3d svg .layer-mid {
+            transition: 0.4s;
+        }
+
+        .set-glass3d svg .layer-front {
+            transition: 0.4s;
+            filter: drop-shadow(0 5px 10px rgba(0, 0, 0, 0.3));
+        }
+
+        .set-glass3d .icon-wrapper:hover svg .layer-front {
+            transform: translateY(-5px) scale(1.05);
+        }
+
+        .set-glass3d .icon-wrapper:hover svg .layer-mid {
+            transform: translateY(-2px) scale(1.02);
+        }
+
+        .set-glass3d .icon-wrapper.active svg .layer-front {
+            animation: floatBounce 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes floatBounce {
+            0% {
+                transform: translateY(-5px);
+            }
+
+            50% {
+                transform: translateY(5px);
+            }
+
+            100% {
+                transform: translateY(-5px);
+            }
+        }
+
+        /* --- Set 3B: Cyber HUD (High Detail Tech) --- */
+        .set-hud svg .ring {
+            transform-origin: center;
+            transition: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .set-hud svg .core {
+            transition: 0.3s;
+        }
+
+        .set-hud svg .glitch-line {
+            opacity: 0;
+        }
+
+        .set-hud .icon-wrapper:hover svg .ring-outer {
+            transform: rotate(45deg);
+            opacity: 0.8;
+        }
+
+        .set-hud .icon-wrapper:hover svg .ring-inner {
+            transform: rotate(-90deg);
+            opacity: 1;
+        }
+
+        .set-hud .icon-wrapper:hover svg .core {
+            filter: drop-shadow(0 0 5px currentColor);
+        }
+
+        .set-hud .icon-wrapper.active svg .ring-outer {
+            animation: spinFast 0.8s linear;
+        }
+
+        .set-hud .icon-wrapper.active svg .glitch-line {
+            animation: glitchFlash 0.3s steps(3);
+        }
+
+        @keyframes spinFast {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes glitchFlash {
+
+            0%,
+            100% {
+                opacity: 0;
+            }
+
+            50% {
+                opacity: 1;
+                transform: translateX(5px);
+            }
+        }
+
+        /* --- Set 3C: Crypto-Art (Vibrant Gradient Shapes) --- */
+        .set-crypto svg image {
+            transition: 0.4s;
+        }
+
+        /* Simulating complex shapes with gradients using paths */
+        .set-crypto .icon-wrapper:hover svg {
+            transform: scale(1.1);
+        }
+
+        .set-crypto .icon-wrapper.active svg {
+            animation: jelly 0.6s;
+        }
+
+        @keyframes jelly {
+
+            0%,
+            100% {
+                transform: scale(1, 1);
+            }
+
+            25% {
+                transform: scale(0.9, 1.1);
+            }
+
+            50% {
+                transform: scale(1.1, 0.9);
+            }
+
+            75% {
+                transform: scale(0.95, 1.05);
+            }
+        }
+
+        /* --- Set 3D: Luminous Depth (Glowing Layers) --- */
+        .set-luminous svg path {
+            stroke-linecap: round;
+        }
+
+        .set-luminous .glow-layer {
+            opacity: 0.5;
+            filter: blur(4px);
+            transition: 0.3s;
+        }
+
+        .set-luminous .main-layer {
+            filter: drop-shadow(0 0 5px currentColor);
+            transition: 0.3s;
+        }
+
+        .set-luminous .icon-wrapper:hover .glow-layer {
+            opacity: 0.8;
+            filter: blur(6px);
+        }
+
+        .set-luminous .icon-wrapper:hover .main-layer {
+            stroke-width: 2.5;
+        }
+
+        .set-luminous .icon-wrapper.active svg {
+            animation: pulseLight 0.5s;
+        }
+
+        @keyframes pulseLight {
+            0% {
+                transform: scale(1);
+                filter: brightness(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+                filter: brightness(1.5);
+            }
+
+            100% {
+                transform: scale(1);
+                filter: brightness(1);
+            }
+        }

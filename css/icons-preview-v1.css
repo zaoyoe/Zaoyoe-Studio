@@ -1,0 +1,130 @@
+/* icons_preview_v1.html inline style block 1 (from line 8) */
+body {
+            background-color: #111;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 50px;
+            gap: 60px;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+
+        h2 {
+            font-size: 16px;
+            color: #888;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .set-container {
+            width: 100%;
+            max-width: 1000px;
+            margin-bottom: 60px;
+        }
+
+        .icons-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 30px;
+        }
+
+        .icon-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 30px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            cursor: pointer;
+            transition: 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .icon-label {
+            font-size: 14px;
+            opacity: 0.7;
+            margin-top: 10px;
+        }
+
+        /* Set 1: Neon Cyber */
+        .set-neon .icon-card:hover {
+            box-shadow: 0 0 20px rgba(var(--neon-color), 0.4);
+            border: 1px solid rgba(var(--neon-color), 0.6);
+        }
+
+        .set-neon svg {
+            filter: drop-shadow(0 0 5px rgba(var(--neon-color), 0.8));
+            transition: 0.3s;
+        }
+
+        .set-neon .icon-card:hover svg {
+            filter: drop-shadow(0 0 15px rgba(var(--neon-color), 1));
+            transform: scale(1.1);
+        }
+
+        /* Set 2: Glassmorphism */
+        .set-glass .icon-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .set-glass .icon-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .set-glass svg {
+            opacity: 0.9;
+        }
+
+        /* Set 3: Minimalist Line */
+        .set-line .icon-card {
+            background: transparent;
+            border: 1px solid #333;
+        }
+
+        .set-line .icon-card:hover {
+            background: #fff;
+            color: #000;
+        }
+
+        .set-line svg path {
+            transition: 0.5s;
+        }
+
+        .set-line .icon-card:hover svg path {
+            stroke: #000;
+        }
+
+        /* Simple draw animation on hover */
+        .set-line .icon-card:hover svg path {
+            animation: dash 1s linear forwards;
+        }
+
+        /* Set 4: 3D Isometric */
+        .set-3d .icon-card {
+            background: #222;
+            transform-style: preserve-3d;
+            perspective: 1000px;
+        }
+
+        .set-3d .icon-card:hover svg {
+            transform: rotateX(10deg) rotateY(10deg) scale(1.1);
+        }
+
+        .set-3d svg {
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
