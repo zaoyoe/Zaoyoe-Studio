@@ -847,6 +847,7 @@ test('shop client runtime renderers externalize product cards, purchase feedback
 
     const runtimeMarkers = [
         'buildShopStatusMessage: function (message',
+        'setCssVariables: function (element, variables = {})',
         'setDiscountMessage: function (message = \'\'',
         'renderModalProductName: function (displayName, { wholesale = false } = {})',
         'buildSuccessToastMarkup: function ()',
@@ -868,7 +869,11 @@ test('shop client runtime renderers externalize product cards, purchase feedback
         'style="position:absolute; bottom:12px; left:12px; z-index: 10;',
         'style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;',
         'style="padding:6px 12px; border-radius:12px; background:rgba(255,255,255,0.1); border:none; color:#fff; cursor:pointer;"',
-        'style="color: #6b9ece; text-decoration: underline; text-underline-offset: 2px;"'
+        'style="color: #6b9ece; text-decoration: underline; text-underline-offset: 2px;"',
+        "el.style.setProperty('--breathe-delay'",
+        "overlay.style.setProperty('--shop-purchase-translate-y'",
+        "card.style.setProperty('--shop-purchase-dock-height'",
+        "card.style.removeProperty('--shop-purchase-dock-height'"
     ];
 
     for (const marker of removedRuntimeMarkers) {

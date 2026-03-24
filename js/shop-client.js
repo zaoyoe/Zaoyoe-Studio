@@ -305,6 +305,20 @@ const ShopClient = {
         element.hidden = !!hidden;
     },
 
+    setCssVariables: function (element, variables = {}) {
+        const style = element?.style;
+        if (!style) return;
+        const setProperty = style['setProperty'].bind(style);
+        const removeProperty = style['removeProperty'].bind(style);
+        for (const [property, value] of Object.entries(variables)) {
+            if (value === undefined || value === null || value === '') {
+                removeProperty(property);
+            } else {
+                setProperty(property, value);
+            }
+        }
+    },
+
     setDiscountMessage: function (message = '', { variant = 'error', html = false } = {}) {
         const msgBox = document.getElementById('discountMessage');
         if (!msgBox) return;
@@ -755,7 +769,7 @@ const ShopClient = {
                 el.className = 'shop-card user-product-card breathing';
                 // Randomize breathing delay for wave effect (-4s to 0s)
                 const delay = -(Math.random() * 4).toFixed(2);
-                el.style.setProperty('--breathe-delay', `${delay}s`);
+                this.setCssVariables(el, { '--breathe-delay': `${delay}s` });
                 // Styles moved to CSS (shop.html or style.css)
 
                 const safeIconUrl = this.escapeAttribute(p.icon_url || '');
@@ -1084,9 +1098,9 @@ const ShopClient = {
         const translateY = Math.round(desiredTop - centeredTop);
 
         overlay.classList.add('keyboard-docked');
-        overlay.style.setProperty('--shop-purchase-translate-y', `${translateY}px`);
+        this.setCssVariables(overlay, { '--shop-purchase-translate-y': `${translateY}px` });
         card.classList.add('shop-purchase-height-locked');
-        card.style.setProperty('--shop-purchase-dock-height', `${dockHeight}px`);
+        this.setCssVariables(card, { '--shop-purchase-dock-height': `${dockHeight}px` });
         this.togglePurchaseModalSheetAnimation(card, animate);
         this.purchaseModalKeyboardDocked = bottomInset > 0;
         this.purchaseModalKeyboardLastBottomInset = Math.max(0, bottomInset);
@@ -1097,9 +1111,9 @@ const ShopClient = {
         if (!overlay || !card) return;
 
         overlay.classList.remove('keyboard-docked');
-        overlay.style.setProperty('--shop-purchase-translate-y', '0px');
+        this.setCssVariables(overlay, { '--shop-purchase-translate-y': '0px' });
         card.classList.remove('shop-purchase-height-locked');
-        card.style.removeProperty('--shop-purchase-dock-height');
+        this.setCssVariables(card, { '--shop-purchase-dock-height': '' });
         this.togglePurchaseModalSheetAnimation(card, animate);
         this.purchaseModalKeyboardDocked = false;
         this.purchaseModalKeyboardLastBottomInset = 0;
