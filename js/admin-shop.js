@@ -317,22 +317,10 @@ Example output format:
         const allStatusTabs = document.querySelectorAll('.status-filter');
         allStatusTabs.forEach(t => {
             t.classList.remove('active');
-            t.style.background = 'rgba(255,255,255,0.03)';
-            t.style.borderColor = 'rgba(255,255,255,0.1)';
-            t.style.color = 'rgba(255,255,255,0.5)';
 
             // If this tab matches the selected status, activate it
             if (t.dataset.status === status) {
                 t.classList.add('active');
-                if (status === 'active') {
-                    t.style.background = 'rgba(74, 222, 128, 0.2)';
-                    t.style.borderColor = 'rgba(74, 222, 128, 0.5)';
-                    t.style.color = '#4ade80';
-                } else {
-                    t.style.background = 'rgba(239, 68, 68, 0.2)';
-                    t.style.borderColor = 'rgba(239, 68, 68, 0.5)';
-                    t.style.color = '#ef4444';
-                }
             }
         });
 
@@ -346,20 +334,20 @@ Example output format:
         const totalPages = Math.ceil(total / pageSize) || 1;
 
         container.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 15px;">
+            <div class="pagination-shell">
                 <div class="pagination-control">
-                    <button class="pagination-btn" data-shop-action="pagination-go" data-pagination-target="${loadFuncStr}" data-pagination-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''} style="font-family:'Outfit',sans-serif;font-weight:300;font-size:20px;">
+                    <button class="pagination-btn pagination-btn--step" data-shop-action="pagination-go" data-pagination-target="${loadFuncStr}" data-pagination-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''}>
                         −
                     </button>
                     
                     <input type="number" class="pagination-input" 
                         value="${currentPage}" min="1" max="${totalPages}" data-shop-change="pagination-go" data-pagination-target="${loadFuncStr}" data-pagination-max="${totalPages}">
                     
-                    <button class="pagination-btn" data-shop-action="pagination-go" data-pagination-target="${loadFuncStr}" data-pagination-page="${currentPage + 1}" ${currentPage >= totalPages ? 'disabled' : ''} style="font-family:'Outfit',sans-serif;font-weight:300;font-size:20px;">
+                    <button class="pagination-btn pagination-btn--step" data-shop-action="pagination-go" data-pagination-target="${loadFuncStr}" data-pagination-page="${currentPage + 1}" ${currentPage >= totalPages ? 'disabled' : ''}>
                         +
                     </button>
                 </div>
-                <div class="pagination-total" style="margin:0;">共 ${totalPages} 页 / ${total} 条</div>
+                <div class="pagination-total pagination-total--compact">共 ${totalPages} 页 / ${total} 条</div>
             </div>
         `;
     },
@@ -3454,44 +3442,43 @@ Example output format:
         if (!modal) {
             modal = document.createElement('div');
             modal.id = modalId;
-            modal.style.cssText = 'display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.55); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); z-index:10000; align-items:center; justify-content:center;';
+            modal.className = 'shop-delivery-switch-modal';
             document.body.appendChild(modal);
         }
 
         modal.innerHTML = `
-            <div style="background: rgba(18, 22, 36, 0.95); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 30px; width: 90%; max-width: 400px; box-shadow: 0 24px 60px rgba(0,0,0,0.5); animation: modalFadeIn 0.3s ease-out;">
-                <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;">
-                    <div style="width:40px; height:40px; border-radius:12px; background:rgba(239, 68, 68, 0.1); display:flex; align-items:center; justify-content:center; color:#ef4444;">
-                        <i class="fas fa-exclamation-triangle" style="font-size:18px;"></i>
+            <div class="shop-delivery-switch-modal__dialog">
+                <div class="shop-delivery-switch-modal__header">
+                    <div class="shop-delivery-switch-modal__icon">
+                        <i class="fas fa-exclamation-triangle"></i>
                     </div>
-                    <h3 style="margin:0; font-size:1.1rem; color:#fff; font-weight:600;">切换发货模式</h3>
+                    <h3 class="shop-delivery-switch-modal__title">切换发货模式</h3>
                 </div>
-                <div style="color:rgba(255,255,255,0.7); font-size:0.95rem; line-height:1.6; margin-bottom:24px;">
-                    即将发货模式切换为 <strong style="color:#6b9ece;">${typeName}</strong>。<br><br>
-                    <span style="color:rgba(255,255,255,0.5); font-size:0.85rem;">${warningText}</span>
+                <div class="shop-delivery-switch-modal__body">
+                    即将发货模式切换为 <strong class="shop-delivery-switch-modal__highlight">${this.escapeHtml(typeName)}</strong>。<br><br>
+                    <span class="shop-delivery-switch-modal__warning">${warningText}</span>
                 </div>
-                <div style="display:flex; gap:12px;">
-                    <button id="cancelDeliveryChange" style="flex:1; padding:10px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:rgba(255,255,255,0.7); cursor:pointer; font-size:0.95rem; transition:all 0.2s;">取消</button>
-                    <button id="confirmDeliveryChange" style="flex:1; padding:10px; background:#ef4444; border:none; border-radius:8px; color:#fff; cursor:pointer; font-size:0.95rem; font-weight:500; transition:all 0.2s;">确定切换</button>
+                <div class="shop-delivery-switch-modal__actions">
+                    <button id="cancelDeliveryChange" type="button" class="shop-delivery-switch-modal__btn shop-delivery-switch-modal__btn--cancel">取消</button>
+                    <button id="confirmDeliveryChange" type="button" class="shop-delivery-switch-modal__btn shop-delivery-switch-modal__btn--confirm">确定切换</button>
                 </div>
             </div>
         `;
 
-        modal.style.display = 'flex';
+        modal.classList.add('is-open');
+        const closeModal = () => modal.classList.remove('is-open');
 
         document.getElementById('cancelDeliveryChange').onclick = function () {
-            modal.style.display = 'none';
+            closeModal();
         };
 
-        document.getElementById('confirmDeliveryChange').onclick = function () {
+        document.getElementById('confirmDeliveryChange').onclick = () => {
             // Apply the change
             input.value = newType;
-            var nameLabel = document.getElementById('prodDeliveryTypeName');
+            const nameLabel = document.getElementById('prodDeliveryTypeName');
             if (nameLabel) nameLabel.textContent = typeName;
-            // Toggle webhook field
-            var group = document.getElementById('webhookTargetGroup');
-            if (group) group.style.display = (newType === 'API') ? 'block' : 'none';
-            modal.style.display = 'none';
+            this.toggleWebhookField(newType);
+            closeModal();
         };
     },
 
@@ -3499,7 +3486,7 @@ Example output format:
     toggleWebhookField: function (deliveryType) {
         const group = document.getElementById('webhookTargetGroup');
         if (group) {
-            group.style.display = (deliveryType === 'API') ? 'block' : 'none';
+            group.classList.toggle('admin-studio-inline-style-attr-3', deliveryType !== 'API');
         }
     },
 
@@ -3887,7 +3874,7 @@ Example output format:
 
         container.innerHTML = '';
         if (data.length === 0) {
-            container.innerHTML = '<div style="padding:20px; text-align:center; color:rgba(255,255,255,0.3);">暂无商品，请先新建</div>';
+            container.innerHTML = '<div class="shop-import-product-empty">暂无商品，请先新建</div>';
             return;
         }
 
@@ -3908,14 +3895,14 @@ Example output format:
                     const nameEl = document.getElementById('targetProductName');
                     if (nameEl) {
                         nameEl.textContent = p.name;
-                        nameEl.style.display = 'inline-block';
+                        nameEl.classList.add('shop-import-target-product--visible');
                     }
                 }, 0);
             }
 
             el.innerHTML = `
-    < div style = "font-weight: bold; color:#eee;" > ${p.name}</div >
-        <div style="font-size: 0.8em; color: rgba(255,255,255,0.5);">库存: ${p.stock_count || 0}</div>
+                <div class="product-select-item-name">${this.escapeHtml(p.name)}</div>
+                <div class="product-select-item-meta">库存: ${Number(p.stock_count || 0)}</div>
 `;
 
             el.onclick = () => {
@@ -3923,7 +3910,7 @@ Example output format:
                 const nameEl = document.getElementById('targetProductName');
                 if (nameEl) {
                     nameEl.textContent = p.name;
-                    nameEl.style.display = 'inline-block';
+                    nameEl.classList.add('shop-import-target-product--visible');
                 }
                 // Reload list to update active state
                 this.loadInventoryProductList(data);
@@ -4007,20 +3994,19 @@ Example output format:
         if (!container) return;
 
         const row = document.createElement('div');
-        row.className = 'tiered-pricing-row';
-        row.style.cssText = 'display: flex; gap: 8px; align-items: center; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); animation: modalFadeIn 0.2s ease-out;';
+        row.className = 'tiered-pricing-row shop-tiered-pricing-row';
         row.innerHTML = `
-            <div style="flex: 1; display: flex; align-items: center; gap: 6px;">
-                <span style="color: rgba(255,255,255,0.5); font-size: 13px;">满</span>
-                <input type="number" class="modern-input tp-qty" placeholder="10" value="${qty}" style="padding: 8px; flex: 1; min-width: 50px;">
-                <span style="color: rgba(255,255,255,0.5); font-size: 13px;">件</span>
+            <div class="shop-tiered-pricing-row__field">
+                <span class="shop-tiered-pricing-row__label">满</span>
+                <input type="number" class="modern-input tp-qty shop-tiered-pricing-row__input" placeholder="10" value="${qty}">
+                <span class="shop-tiered-pricing-row__label">件</span>
             </div>
-            <div style="flex: 1; display: flex; align-items: center; gap: 6px;">
-                <span style="color: rgba(255,255,255,0.5); font-size: 13px;">单价降至</span>
-                <input type="number" class="modern-input tp-price" placeholder="8" value="${price}" style="padding: 8px; flex: 1; min-width: 50px;">
-                <span style="color: rgba(255,255,255,0.5); font-size: 13px;">积分</span>
+            <div class="shop-tiered-pricing-row__field">
+                <span class="shop-tiered-pricing-row__label">单价降至</span>
+                <input type="number" class="modern-input tp-price shop-tiered-pricing-row__input" placeholder="8" value="${price}">
+                <span class="shop-tiered-pricing-row__label">积分</span>
             </div>
-            <button type="button" data-shop-action="product-remove-tiered-pricing-row" style="background: rgba(239,68,68,0.1); border: none; color: #ef4444; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; transition: all 0.2s;" title="删除阶梯价规则">
+            <button type="button" data-shop-action="product-remove-tiered-pricing-row" class="shop-tiered-pricing-row__remove" title="删除阶梯价规则">
                 <i class="fas fa-trash-alt"></i>
             </button>
         `;
@@ -7519,7 +7505,7 @@ Example output format:
             const batchMenu = document.getElementById('batchActionMenu');
             const batchBtn = document.getElementById('batchActionsBtn');
             if (batchMenu && batchBtn && !batchMenu.contains(e.target) && !batchBtn.contains(e.target)) {
-                batchMenu.style.display = 'none';
+                batchMenu.classList.remove('is-open');
             }
 
 
@@ -7593,27 +7579,25 @@ Example output format:
         this.isSelectionMode = !this.isSelectionMode;
         const btn = document.getElementById('toggleSelectionBtn');
         const batchBtn = document.getElementById('batchActionsBtn');
-        const cols = document.querySelectorAll('.inv-checkbox-col');
-        const contentCells = document.querySelectorAll('#inventoryTableBody td:nth-child(3)');
+        const inventoryView = document.getElementById('shop-view-inventory');
+        const batchMenu = document.getElementById('batchActionMenu');
 
         if (this.isSelectionMode) {
             btn.classList.add('active');
-            if (batchBtn) batchBtn.style.display = 'flex'; // Show batch button
-            cols.forEach(el => el.style.display = '');
-            contentCells.forEach(td => td.style.cursor = 'pointer');
+            inventoryView?.classList.add('shop-inventory-selection-mode');
+            if (batchBtn) batchBtn.classList.remove('admin-studio-inline-style-attr-3');
         } else {
             btn.classList.remove('active');
-            if (batchBtn) batchBtn.style.display = 'none'; // Hide batch button
-            document.getElementById('batchActionMenu').style.display = 'none'; // Close menu
-            cols.forEach(el => el.style.display = 'none');
-            contentCells.forEach(td => td.style.cursor = '');
+            inventoryView?.classList.remove('shop-inventory-selection-mode');
+            if (batchBtn) batchBtn.classList.add('admin-studio-inline-style-attr-3');
+            batchMenu?.classList.remove('is-open');
         }
     },
 
     toggleBatchMenu: function () {
         const menu = document.getElementById('batchActionMenu');
         if (menu) {
-            menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+            menu.classList.toggle('is-open');
             this.updateSelectionCount(); // Update count when opening
         }
     },
@@ -7626,7 +7610,7 @@ Example output format:
         }
         // Ensure menu stays open
         const menu = document.getElementById('batchActionMenu');
-        if (menu) menu.style.display = 'block';
+        if (menu) menu.classList.add('is-open');
     },
 
     batchDelete: async function () {
@@ -7648,7 +7632,7 @@ Example output format:
             this.updateSelectionCount();
 
             // Close menu
-            document.getElementById('batchActionMenu').style.display = 'none';
+            document.getElementById('batchActionMenu').classList.remove('is-open');
 
         } catch (err) {
             console.error('Batch delete error:', err);
@@ -7663,8 +7647,8 @@ Example output format:
         document.querySelectorAll('.subtab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelector(`[data-subtab="${tab}"]`).classList.add('active');
 
-        document.querySelectorAll('.inventory-subtab-content').forEach(el => el.style.display = 'none');
-        document.getElementById(`inventory-subtab-${tab}`).style.display = 'block';
+        document.querySelectorAll('.inventory-subtab-content').forEach(el => el.classList.add('admin-studio-inline-style-attr-3'));
+        document.getElementById(`inventory-subtab-${tab}`).classList.remove('admin-studio-inline-style-attr-3');
 
         if (tab === 'browser') {
             this.initInventoryBrowser();
@@ -7809,7 +7793,7 @@ Example output format:
         const tbody = document.getElementById('inventoryTableBody');
         if (!tbody) return;
 
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;"><i class="fas fa-spinner fa-spin"></i> 加载中...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="shop-inventory-loading-cell"><i class="fas fa-spinner fa-spin"></i> 加载中...</td></tr>';
 
         const productId = document.getElementById('invFilterProduct')?.value || null;
         const status = document.getElementById('invFilterStatus')?.value || null;
@@ -7896,15 +7880,13 @@ Example output format:
 
                 // Extract email only (assuming format: email----password----recovery)
                 const emailOnly = this.escapeHtml(item.content.split('----')[0] || item.content);
-                const checkboxClass = this.isSelectionMode ? '' : ' shop-inventory-checkbox-col--hidden';
-
                 return `
                     <tr>
-                        <td class="inv-checkbox-col shop-inventory-checkbox-col${checkboxClass}">
+                        <td class="inv-checkbox-col shop-inventory-checkbox-col">
                             <input type="checkbox" class="inv-checkbox" data-id="${safeItemId}" data-shop-change="inventory-selection-count">
                         </td>
                         <td>${safeProductName}</td>
-                        <td data-shop-action="inventory-toggle-selection-cell">
+                        <td class="shop-inventory-selection-toggle-cell" data-shop-action="inventory-toggle-selection-cell">
                             <div class="content-cell shop-inventory-content-chip" 
                                  data-content="${safeFullContent}" 
                                  data-shop-action="inventory-copy-content"
@@ -8533,11 +8515,11 @@ Example output format:
         // Target the tree container (new structure)
         const treeContainer = document.getElementById('importProductTree');
         // Clear and add loading state
-        treeContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: rgba(255,255,255,0.4); font-size: 13px;">正在加载商品...</div>';
+        treeContainer.innerHTML = '<div class="shop-import-tree-state">正在加载商品...</div>';
 
         // Reset selection
         document.getElementById('importViewProductId').value = '';
-        document.getElementById('targetProductName').style.display = 'none';
+        document.getElementById('targetProductName').classList.remove('shop-import-target-product--visible');
         document.getElementById('targetProductName').textContent = '';
 
         try {
@@ -8566,7 +8548,7 @@ Example output format:
 
         } catch (e) {
             console.error('Failed to load products for import view', e);
-            treeContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: rgba(255,100,100,0.6);">加载失败</div>';
+            treeContainer.innerHTML = '<div class="shop-import-tree-state shop-import-tree-state--error">加载失败</div>';
         }
     },
 
@@ -8711,7 +8693,7 @@ Example output format:
         });
 
         if (sortedKeys.length === 0) {
-            treeContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: rgba(255,255,255,0.4);">暂无商品</div>';
+            treeContainer.innerHTML = '<div class="shop-import-tree-state">暂无商品</div>';
             return;
         }
 
@@ -8881,11 +8863,11 @@ Example output format:
                     e.dataTransfer.setData('text/plain', p.id);
                     e.dataTransfer.effectAllowed = 'move';
                     item.classList.add('dragging');
-                    setTimeout(() => item.style.opacity = '0.4', 0);
+                    setTimeout(() => item.classList.add('tree-product-item--drag-dim'), 0);
                 };
                 item.ondragend = () => {
                     item.classList.remove('dragging');
-                    item.style.opacity = '';
+                    item.classList.remove('tree-product-item--drag-dim');
                     // Clean up any remaining indicators
                     document.querySelectorAll('.drop-indicator').forEach(i => i.remove());
                 };
@@ -8916,9 +8898,9 @@ Example output format:
             recycleBinHeader.dataset.category = '__recycle_bin__';
             recycleBinHeader.innerHTML = `
                 <i class="fas fa-chevron-right tree-chevron"></i>
-                <i class="fas fa-trash tree-folder-icon" style="color: #ef4444;"></i>
-                <span class="tree-category-name" style="color: rgba(255,255,255,0.5);">回收站</span>
-                <span class="tree-category-count" style="background:rgba(239, 68, 68, 0.2); color:#ef4444;">${this.deletedProductsForImport.length}</span>
+                <i class="fas fa-trash tree-folder-icon tree-folder-icon--recycle-bin"></i>
+                <span class="tree-category-name tree-category-name--muted">回收站</span>
+                <span class="tree-category-count tree-category-count--danger">${this.deletedProductsForImport.length}</span>
             `;
             recycleBinHeader.onclick = () => this.toggleTreeCategory(recycleBinDiv);
 
@@ -8928,13 +8910,12 @@ Example output format:
 
             this.deletedProductsForImport.forEach(p => {
                 const item = document.createElement('div');
-                item.className = 'tree-product-item deleted-product';
+                item.className = 'tree-product-item deleted-product tree-product-item--deleted';
                 item.dataset.id = p.id;
                 item.dataset.name = p.name;
-                item.style.opacity = '0.6';
                 item.onclick = () => this.selectImportProduct(p.id, p.name);
                 item.innerHTML = `
-                    <i class="fas fa-file-alt tree-product-icon" style="color: #ef4444;"></i>
+                    <i class="fas fa-file-alt tree-product-icon tree-product-icon--danger"></i>
                     <span class="tree-product-name">${p.name}</span>
                 `;
                 recycleBinChildren.appendChild(item);

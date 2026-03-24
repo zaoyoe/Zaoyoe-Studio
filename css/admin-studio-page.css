@@ -550,6 +550,12 @@ body.admin-access-pending,
                             color: rgba(255, 255, 255, 0.4);
                         }
 
+                        .shop-inventory-loading-cell {
+                            padding: 30px;
+                            text-align: center;
+                            color: rgba(255, 255, 255, 0.55);
+                        }
+
                         .shop-inventory-empty-cell--error {
                             padding: 30px;
                             color: #ef4444;
@@ -605,6 +611,149 @@ body.admin-access-pending,
                         .shop-inventory-actions {
                             display: flex;
                             gap: 5px;
+                        }
+
+                        .shop-tiered-pricing-row {
+                            display: flex;
+                            gap: 8px;
+                            align-items: center;
+                            background: rgba(0, 0, 0, 0.2);
+                            padding: 8px;
+                            border-radius: 8px;
+                            border: 1px solid rgba(255, 255, 255, 0.05);
+                            animation: modalFadeIn 0.2s ease-out;
+                        }
+
+                        .shop-tiered-pricing-row__field {
+                            flex: 1;
+                            display: flex;
+                            align-items: center;
+                            gap: 6px;
+                        }
+
+                        .shop-tiered-pricing-row__label {
+                            color: rgba(255, 255, 255, 0.5);
+                            font-size: 13px;
+                        }
+
+                        .shop-tiered-pricing-row__input {
+                            flex: 1;
+                            min-width: 50px;
+                            padding: 8px;
+                        }
+
+                        .shop-tiered-pricing-row__remove {
+                            width: 32px;
+                            height: 32px;
+                            border: none;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            color: #ef4444;
+                            background: rgba(239, 68, 68, 0.1);
+                            transition: all 0.2s;
+                        }
+
+                        .shop-tiered-pricing-row__remove:hover {
+                            background: rgba(239, 68, 68, 0.18);
+                        }
+
+                        .shop-delivery-switch-modal {
+                            position: fixed;
+                            inset: 0;
+                            display: none;
+                            align-items: center;
+                            justify-content: center;
+                            padding: 20px;
+                            background: rgba(0, 0, 0, 0.55);
+                            backdrop-filter: blur(8px);
+                            -webkit-backdrop-filter: blur(8px);
+                            z-index: 10000;
+                        }
+
+                        .shop-delivery-switch-modal.is-open {
+                            display: flex;
+                        }
+
+                        .shop-delivery-switch-modal__dialog {
+                            width: min(400px, 90%);
+                            padding: 30px;
+                            border-radius: 16px;
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            background: rgba(18, 22, 36, 0.95);
+                            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+                            animation: modalFadeIn 0.3s ease-out;
+                        }
+
+                        .shop-delivery-switch-modal__header {
+                            display: flex;
+                            align-items: center;
+                            gap: 12px;
+                            margin-bottom: 20px;
+                        }
+
+                        .shop-delivery-switch-modal__icon {
+                            width: 40px;
+                            height: 40px;
+                            border-radius: 12px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            color: #ef4444;
+                            background: rgba(239, 68, 68, 0.1);
+                        }
+
+                        .shop-delivery-switch-modal__icon i {
+                            font-size: 18px;
+                        }
+
+                        .shop-delivery-switch-modal__title {
+                            margin: 0;
+                            color: #fff;
+                            font-size: 1.1rem;
+                            font-weight: 600;
+                        }
+
+                        .shop-delivery-switch-modal__body {
+                            margin-bottom: 24px;
+                            color: rgba(255, 255, 255, 0.7);
+                            font-size: 0.95rem;
+                            line-height: 1.6;
+                        }
+
+                        .shop-delivery-switch-modal__highlight {
+                            color: #6b9ece;
+                        }
+
+                        .shop-delivery-switch-modal__warning {
+                            color: rgba(255, 255, 255, 0.5);
+                            font-size: 0.85rem;
+                        }
+
+                        .shop-delivery-switch-modal__actions {
+                            display: flex;
+                            gap: 12px;
+                        }
+
+                        .shop-delivery-switch-modal__btn {
+                            flex: 1;
+                            padding: 10px;
+                            border-radius: 8px;
+                            cursor: pointer;
+                            font-size: 0.95rem;
+                            transition: all 0.2s;
+                        }
+
+                        .shop-delivery-switch-modal__btn--cancel {
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            background: rgba(255, 255, 255, 0.05);
+                            color: rgba(255, 255, 255, 0.7);
+                        }
+
+                        .shop-delivery-switch-modal__btn--confirm {
+                            border: none;
+                            background: #ef4444;
+                            color: #fff;
+                            font-weight: 500;
                         }
 
                         .shop-inventory-action-btn--danger i {
@@ -1419,6 +1568,27 @@ body.admin-access-pending,
                             border-color: rgba(56, 189, 248, 0.3);
                         }
 
+                        .product-select-item-name {
+                            font-weight: 700;
+                            color: #eee;
+                        }
+
+                        .product-select-item-meta {
+                            margin-top: 4px;
+                            font-size: 0.8em;
+                            color: rgba(255, 255, 255, 0.5);
+                        }
+
+                        .shop-import-product-empty {
+                            padding: 20px;
+                            text-align: center;
+                            color: rgba(255, 255, 255, 0.3);
+                        }
+
+                        .shop-import-target-product--visible {
+                            display: inline-block !important;
+                        }
+
                         .inventory-textarea {
                             width: 100%;
                             height: 100%;
@@ -1501,6 +1671,18 @@ body.admin-access-pending,
                             box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
                         }
 
+                        .icon-btn-square.status-filter.active[data-status="active"] {
+                            background: rgba(74, 222, 128, 0.2);
+                            border-color: rgba(74, 222, 128, 0.5);
+                            color: #4ade80;
+                        }
+
+                        .icon-btn-square.status-filter.active[data-status="deleted"] {
+                            background: rgba(239, 68, 68, 0.2);
+                            border-color: rgba(239, 68, 68, 0.5);
+                            color: #ef4444;
+                        }
+
                         /* Specific adjustment for checkbox icon size */
                         #toggleSelectionBtn {
                             font-size: 13px;
@@ -1522,6 +1704,18 @@ body.admin-access-pending,
                             overflow: hidden;
                             animation: menuFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
                             transform-origin: top right;
+                        }
+
+                        .shop-inventory-selection-mode #batchActionsBtn {
+                            display: flex !important;
+                        }
+
+                        .shop-inventory-selection-mode .inv-checkbox-col {
+                            display: table-cell !important;
+                        }
+
+                        .shop-inventory-selection-mode .shop-inventory-selection-toggle-cell {
+                            cursor: pointer;
                         }
 
                         @keyframes menuFadeIn {
@@ -2014,6 +2208,10 @@ body.admin-access-pending,
                             margin-right: 10px;
                         }
 
+                        .tree-folder-icon--recycle-bin {
+                            color: #ef4444;
+                        }
+
                         .tree-category.expanded .tree-folder-icon {
                             color: #6b9ece;
                         }
@@ -2025,6 +2223,10 @@ body.admin-access-pending,
                             color: rgba(255, 255, 255, 0.85);
                         }
 
+                        .tree-category-name--muted {
+                            color: rgba(255, 255, 255, 0.5);
+                        }
+
                         .tree-category-count {
                             font-size: 13px;
                             color: rgba(255, 255, 255, 0.4);
@@ -2034,6 +2236,11 @@ body.admin-access-pending,
                             user-select: none;
                             -webkit-user-select: none;
                             -webkit-touch-callout: none;
+                        }
+
+                        .tree-category-count--danger {
+                            background: rgba(239, 68, 68, 0.2);
+                            color: #ef4444;
                         }
 
                         /* Product Children (Indented) */
@@ -2089,6 +2296,14 @@ body.admin-access-pending,
                             font-weight: 500;
                         }
 
+                        .tree-product-item--drag-dim {
+                            opacity: 0.4;
+                        }
+
+                        .tree-product-item--deleted {
+                            opacity: 0.6;
+                        }
+
                         /* Drag Handle */
                         .tree-drag-handle {
                             font-size: 10px;
@@ -2106,6 +2321,21 @@ body.admin-access-pending,
                         .tree-product-item.dragging {
                             opacity: 0.4;
                             background: rgba(107, 158, 206, 0.1);
+                        }
+
+                        .tree-product-icon--danger {
+                            color: #ef4444;
+                        }
+
+                        .shop-import-tree-state {
+                            padding: 20px;
+                            text-align: center;
+                            color: rgba(255, 255, 255, 0.4);
+                            font-size: 13px;
+                        }
+
+                        .shop-import-tree-state--error {
+                            color: rgba(255, 100, 100, 0.6);
                         }
 
                         /* Drop Zone Highlight */
@@ -2435,6 +2665,12 @@ body.admin-access-pending,
                                 /* Transparent container */
                             }
 
+                            .pagination-shell {
+                                display: flex;
+                                align-items: center;
+                                gap: 15px;
+                            }
+
                             .pagination-btn {
                                 width: 32px;
                                 height: 32px;
@@ -2448,6 +2684,12 @@ body.admin-access-pending,
                                 transition: all 0.2s ease;
                                 font-size: 16px;
                                 border-radius: 50%;
+                            }
+
+                            .pagination-btn--step {
+                                font-family: 'Outfit', sans-serif;
+                                font-weight: 300;
+                                font-size: 20px;
                             }
 
                             .pagination-btn:hover:not(:disabled) {
@@ -2491,6 +2733,10 @@ body.admin-access-pending,
                                 margin-left: 10px;
                                 color: rgba(255, 255, 255, 0.4);
                                 font-size: 13px;
+                            }
+
+                            .pagination-total--compact {
+                                margin: 0;
                             }
 
 
