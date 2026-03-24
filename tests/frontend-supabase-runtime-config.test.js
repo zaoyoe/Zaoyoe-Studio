@@ -2435,7 +2435,18 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         "modal.style.display = 'flex'",
         "if (modal) modal.style.display = 'none'",
         "title.style.cursor = 'pointer'",
-        "comment.style.display = 'none'"
+        "comment.style.display = 'none'",
+        "card.style.transition = 'transform 0.3s ease, opacity 0.3s ease'",
+        "card.style.display = 'none'",
+        'card.style.animationDelay =',
+        'shield.style.cssText =',
+        'shield.style.height = expanded',
+        "shield.style.visibility = 'visible'",
+        "shield.style.opacity = '1'",
+        "probe.style.position = 'fixed'",
+        "el.style.width = '4px'",
+        "el.style.fontSize = '8px'",
+        "el.style.backgroundColor = CONFIG.color"
     ];
 
     for (const marker of removedRuntimeMarkers) {
@@ -2453,7 +2464,15 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         "leftArrow.classList.add('is-visible')",
         "modal.classList.add('poetry-modal--visible')",
         "comment.classList.toggle('hidden-collapsed', shouldHide)",
-        'class="prompts-comment-image-upload-hidden"'
+        'class="prompts-comment-image-upload-hidden"',
+        'hidePromptCard(card, true)',
+        'showPromptCard(card, visibleIndex)',
+        'setPromptCardStaggerClass(card, index)',
+        "shield.classList.add('prompt-status-bar-shield--active')",
+        "probe.className = 'prompt-comment-composer-viewport-probe'",
+        "applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--spark'",
+        "applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--rain'",
+        "applyPromptsThemeParticleClasses(el, ['prompts-theme-particle--decor', 'prompts-theme-particle--decor-svg']"
     ];
 
     for (const marker of runtimeMarkers) {
@@ -2471,7 +2490,16 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         '.comment-header-title--expandable',
         '.comment-empty-subtitle--error',
         '.modal-img-nav.is-visible',
-        '.poetry-modal.poetry-modal--visible'
+        '.poetry-modal.poetry-modal--visible',
+        '.prompt-card.prompt-card-exiting',
+        '.prompt-card.card-visible.prompt-card-stagger-11',
+        '.prompt-status-bar-shield',
+        '.prompt-status-bar-shield.prompt-status-bar-shield--visible',
+        '.prompt-comment-composer-viewport-probe',
+        '.prompts-theme-particle--spark',
+        '.prompts-theme-particle--rain',
+        '.prompts-theme-particle--snow',
+        '.prompts-theme-particle--decor'
     ];
 
     for (const marker of styleMarkers) {
@@ -2479,12 +2507,12 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260324_PROMPTS_UI_STATE_STYLES_1'),
+        promptsHtml.includes('prompts-poetry.css?v=20260324_PROMPTS_UI_STATE_STYLES_2'),
         true,
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260324_PROMPTS_UI_STATE_STYLES_1'),
+        promptsHtml.includes('prompts-poetry.js?v=20260324_PROMPTS_UI_STATE_STYLES_2'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
     );

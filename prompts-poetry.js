@@ -284,6 +284,70 @@ function finishPromptsNavTransition(navContainer, hiddenClass) {
     });
 }
 
+function setPromptCardStaggerClass(card, index) {
+    if (!card) return;
+    const nextClass = `prompt-card-stagger-${Math.min(Math.max(Number(index) || 0, 0), 11)}`;
+    const previousClass = card.dataset.promptCardStaggerClass;
+    if (previousClass && previousClass !== nextClass) {
+        card.classList.remove(previousClass);
+    }
+    card.dataset.promptCardStaggerClass = nextClass;
+    card.classList.add(nextClass);
+}
+
+function clearPromptCardHideTimer(card) {
+    if (!card?.__promptCardHideTimer) return;
+    clearTimeout(card.__promptCardHideTimer);
+    card.__promptCardHideTimer = null;
+}
+
+function showPromptCard(card, index = 0) {
+    if (!card) return;
+    clearPromptCardHideTimer(card);
+    setPromptsHidden(card, false);
+    card.classList.remove('prompt-card-exiting', 'card-visible');
+    setPromptCardStaggerClass(card, index);
+    requestAnimationFrame(() => {
+        card.classList.add('card-visible');
+    });
+}
+
+function hidePromptCard(card, animated = false) {
+    if (!card) return;
+    clearPromptCardHideTimer(card);
+    card.classList.remove('card-visible');
+    if (!animated) {
+        card.classList.remove('prompt-card-exiting');
+        setPromptsHidden(card, true);
+        return;
+    }
+
+    card.classList.add('prompt-card-exiting');
+    card.__promptCardHideTimer = setTimeout(() => {
+        card.classList.remove('prompt-card-exiting');
+        setPromptsHidden(card, true);
+        card.__promptCardHideTimer = null;
+    }, 300);
+}
+
+function setPromptsCssVars(element, entries) {
+    if (!element || !entries) return;
+    Object.entries(entries).forEach(([name, value]) => {
+        if (value === null || value === undefined || value === '') {
+            element.style.removeProperty(name);
+            return;
+        }
+        element.style.setProperty(name, String(value));
+    });
+}
+
+function applyPromptsThemeParticleClasses(element, classes, vars = null) {
+    if (!element) return;
+    const nextClasses = Array.isArray(classes) ? classes : [classes];
+    element.className = ['prompts-theme-particle', ...nextClasses.filter(Boolean)].join(' ');
+    setPromptsCssVars(element, vars);
+}
+
 function setCommentCollapseVisibility(allComments, collapsed) {
     let shownParents = 0;
 
@@ -1359,14 +1423,7 @@ const ParticleSystem = {
         this.particles = [];
 
         // 强制容器样式，确保动画环境稳定
-        container.style.position = 'absolute';
-        container.style.top = '0';
-        container.style.left = '0';
-        container.style.width = '100%';
-        container.style.height = '100%';
-        container.style.overflow = 'hidden';
-        container.style.pointerEvents = 'none';
-        container.style.zIndex = '1';
+        container.classList.add('prompts-theme-particle-layer');
 
         // 更新尺寸
         this.updateDimensions();
@@ -1526,14 +1583,9 @@ const ParticleSystem = {
 
     createSpark(rocket, CONFIG) {
         const el = document.createElement('div');
-        el.style.position = 'absolute';
-        el.style.width = '4px';
-        el.style.height = '4px';
-        el.style.borderRadius = '50%';
-        el.style.backgroundColor = CONFIG.color;
-        el.style.boxShadow = `0 0 6px 1px ${CONFIG.color}`;
-        el.style.pointerEvents = 'none';
-        el.style.willChange = 'transform, opacity';
+        applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--spark', {
+            '--particle-color': CONFIG.color
+        });
 
         this.container.appendChild(el);
 
@@ -1622,15 +1674,10 @@ const ParticleSystem = {
         if (this.theme === 'fireworks') {
             const el = document.createElement('div');
             el.textContent = '✦'; // 烟花弹
-            el.style.position = 'absolute';
-            el.style.left = '0';
-            el.style.top = '0';
-            el.style.fontSize = '8px';
-            el.style.color = `hsl(${Math.random() * 360}, 100%, 70%)`; // 随机亮色
-            el.style.willChange = 'transform, opacity';
-            el.style.pointerEvents = 'none';
-            // 初始在底部
-            el.style.transform = `translate3d(0, 0, 0)`;
+            const rocketColor = `hsl(${Math.random() * 360}, 100%, 70%)`;
+            applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--rocket', {
+                '--particle-color': rocketColor
+            });
 
             this.container.appendChild(el);
 
@@ -1645,7 +1692,7 @@ const ParticleSystem = {
                 vy: -4 - Math.random() * 3, // 向上速度 (稍微加快)
                 state: 'rising',
                 opacity: 1,
-                color: el.style.color
+                color: rocketColor
             };
             this.particles.push(p);
             return;
@@ -1658,16 +1705,11 @@ const ParticleSystem = {
         // --- 雨滴逻辑分支 (CSS Streaks) ---
         if (this.theme === 'rain') {
             const el = document.createElement('div');
-            // 纯 CSS 实现雨滴拖尾效果 (Streak)
-            el.style.position = 'absolute';
-            el.style.width = (1 + Math.random()) + 'px'; // 极细 1-2px
-            el.style.height = (60 + Math.random() * 60) + 'px'; // 很长 60-120px
-            // 渐变色：上端透明 -> 下端钢蓝/深蓝，适配浅色背景
-            el.style.background = 'linear-gradient(to bottom, transparent, rgba(70, 130, 180, 0.6))'; // SteelBlue
-            el.style.filter = 'blur(0.5px)'; // 轻微羽化
-            el.style.willChange = 'transform, opacity';
-            el.style.pointerEvents = 'none';
-            el.style.opacity = 0.4 + Math.random() * 0.4; // 0.4-0.8，更明显
+            applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--rain', {
+                '--particle-width': `${1 + Math.random()}px`,
+                '--particle-height': `${60 + Math.random() * 60}px`,
+                '--particle-opacity': (0.4 + Math.random() * 0.4).toFixed(2)
+            });
 
             this.container.appendChild(el);
 
@@ -1700,21 +1742,18 @@ const ParticleSystem = {
             const rand = Math.random();
             let size, isCrystal = false;
             let swayParam = 1.0; // 物理参数系数
+            const particleClasses = ['prompts-theme-particle--snow'];
 
             // 层级 1: 微尘 (30%) - 极小，增加氛围感
             if (rand < 0.3) {
                 size = 1.5 + Math.random() * 1.5; // 1.5-3px (极小)
-                el.style.borderRadius = '50%';
-                el.style.backgroundColor = 'rgba(255, 255, 255, 0.6)'; // 更透明
-                el.style.filter = 'blur(0.8px)';
+                particleClasses.push('prompts-theme-particle--snow-dust');
                 swayParam = 1.5; // 更容易受风影响，摇摆快
             }
             // 层级 2: 柔光片 (20%) - 中等，模糊边缘
             else if (rand < 0.5) {
                 size = 3 + Math.random() * 2; // 3-5px (缩小)
-                el.style.borderRadius = '50%';
-                el.style.backgroundColor = 'rgba(255, 255, 255, 0.7)'; // 稍透
-                el.style.filter = 'blur(0.6px)';
+                particleClasses.push('prompts-theme-particle--snow-soft');
                 swayParam = 1.2;
             }
             // 层级 3: 冰晶 (20%) - 大，清晰 SVG
@@ -1722,20 +1761,13 @@ const ParticleSystem = {
                 isCrystal = true;
                 el.innerHTML = this.getParticleContent().trim();
                 size = 4 + Math.random() * 4; // 4-8px (极致精细)
-                el.style.filter = 'drop-shadow(0 0 0.5px rgba(255,255,255,0.6))';
+                particleClasses.push('prompts-theme-particle--snow-crystal');
                 swayParam = 0.8; // 重，摇摆稳
             }
 
-            el.style.width = size + 'px';
-            el.style.height = size + 'px';
-
-            el.style.position = 'absolute';
-            el.style.left = '0';
-            el.style.top = '0';
-            el.style.willChange = 'transform, opacity';
-            el.style.pointerEvents = 'none';
-            // 初始透明度 0 避免闪烁
-            el.style.opacity = '0';
+            applyPromptsThemeParticleClasses(el, particleClasses, {
+                '--particle-size': `${size}px`
+            });
 
             this.container.appendChild(el);
 
@@ -1789,24 +1821,15 @@ const ParticleSystem = {
 
         if (content.startsWith('<svg')) {
             el.innerHTML = content;
-            // SVG 必须显式设置宽高，否则会默认变得巨大
-            el.style.width = size + 'px';
-            el.style.height = size + 'px';
+            applyPromptsThemeParticleClasses(el, ['prompts-theme-particle--decor', 'prompts-theme-particle--decor-svg'], {
+                '--particle-size': `${size}px`
+            });
         } else {
             el.textContent = content;
-            // Emoji 使用字体大小控制
-            el.style.fontSize = size + 'px';
+            applyPromptsThemeParticleClasses(el, ['prompts-theme-particle--decor', 'prompts-theme-particle--decor-emoji'], {
+                '--particle-size': `${size}px`
+            });
         }
-
-        el.style.position = 'absolute';
-        el.style.left = '0';
-        el.style.top = '0';
-        el.style.willChange = 'transform, opacity';
-        el.style.pointerEvents = 'none';
-        el.style.userSelect = 'none';
-
-        el.style.opacity = '0';
-        el.style.transform = `translate3d(-100px, -100px, 0)`;
 
         this.container.appendChild(el);
 
@@ -1868,13 +1891,7 @@ const ParticleSystem = {
         const splashCount = 3 + Math.floor(Math.random() * 4); // 3-6 个水滴
         for (let i = 0; i < splashCount; i++) {
             const el = document.createElement('div');
-            el.style.position = 'absolute';
-            el.style.width = '2px';
-            el.style.height = '2px'; // 小圆点
-            el.style.borderRadius = '50%';
-            el.style.backgroundColor = 'rgba(70, 130, 180, 0.8)'; // 深蓝色 (SteelBlue)，浅色背景可见
-            el.style.willChange = 'transform, opacity';
-            el.style.pointerEvents = 'none';
+            applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--splash');
             // 修正：初始位置
             el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
 
@@ -3402,10 +3419,7 @@ function toggleFavorite(id, btn, e) {
     // If viewing favorites, remove card if unsaved
     if (currentFilter === 'favorites' && !favorites.has(id)) {
         const card = btn.closest('.prompt-card');
-        card.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
-        card.style.transform = 'scale(0.9)';
-        card.style.opacity = '0';
-        setTimeout(() => card.style.display = 'none', 300);
+        hidePromptCard(card, true);
     }
 }
 
@@ -3484,8 +3498,8 @@ function renderCurrentPage() {
         card.dataset.tags = item.tags.join(','); // For CSS filtering
         card.dataset.id = item.id;
         card.dataset.images = JSON.stringify(item.images); // Store all images
-        card.style.animationDelay = `${index * 0.05}s`; // Stagger effect
         card.onclick = () => openPromptModal(item.id);
+        setPromptCardStaggerClass(card, index);
 
         // Generate image indicator dots if multiple images
         const hasMultiple = item.images.length > 1;
@@ -4122,13 +4136,8 @@ async function filterBySearch(query) {
     if (!query) {
         let visibleIndex = 0;
         cards.forEach(card => {
-            card.style.display = '';
-            card.classList.remove('card-visible');
-            card.style.animationDelay = `${visibleIndex * 0.03}s`;
+            showPromptCard(card, visibleIndex);
             visibleIndex++;
-            requestAnimationFrame(() => {
-                card.classList.add('card-visible');
-            });
         });
         // Re-select "All" when search cleared
         const allItem = document.querySelector('.nav-item[data-filter="all"]');
@@ -4435,15 +4444,10 @@ function applySearchResults(cards, matchedIds, searchingForColor) {
         }
 
         if (isVisible) {
-            card.style.display = '';
-            card.classList.remove('card-visible');
-            card.style.animationDelay = `${visibleIndex * 0.03}s`;
+            showPromptCard(card, visibleIndex);
             visibleIndex++;
-            requestAnimationFrame(() => {
-                card.classList.add('card-visible');
-            });
         } else {
-            card.style.display = 'none';
+            hidePromptCard(card, false);
         }
     });
 
@@ -4709,19 +4713,6 @@ function ensurePromptModalStatusBarShield() {
     if (promptModalStatusBarShield?.isConnected) return promptModalStatusBarShield;
     const shield = document.createElement('div');
     shield.className = 'prompt-status-bar-shield';
-    shield.style.cssText = [
-        'position: fixed',
-        'top: 0',
-        'left: 0',
-        'right: 0',
-        'height: env(safe-area-inset-top, 0px)',
-        'background: #000',
-        'opacity: 0',
-        'visibility: hidden',
-        'pointer-events: none',
-        'z-index: 20000',
-        'transition: opacity 80ms linear'
-    ].join('; ');
     document.body.appendChild(shield);
     promptModalStatusBarShield = shield;
     return shield;
@@ -4731,9 +4722,7 @@ function setPromptModalStatusBarShieldExpanded(expanded) {
     if (!isPromptModalIOSMobile()) return;
     const shield = ensurePromptModalStatusBarShield();
     if (!shield) return;
-    shield.style.height = expanded
-        ? 'calc(env(safe-area-inset-top, 0px) + 8px)'
-        : 'env(safe-area-inset-top, 0px)';
+    shield.classList.toggle('prompt-status-bar-shield--expanded', Boolean(expanded));
 }
 
 function showPromptModalStatusBarShield() {
@@ -4741,18 +4730,20 @@ function showPromptModalStatusBarShield() {
     const shield = ensurePromptModalStatusBarShield();
     if (!shield) return;
     setPromptModalStatusBarShieldExpanded(false);
-    shield.style.visibility = 'visible';
-    shield.style.opacity = '1';
+    shield.classList.add('prompt-status-bar-shield--active');
+    requestAnimationFrame(() => {
+        shield.classList.add('prompt-status-bar-shield--visible');
+    });
 }
 
 function hidePromptModalStatusBarShield() {
     if (!promptModalStatusBarShield) return;
-    promptModalStatusBarShield.style.opacity = '0';
+    promptModalStatusBarShield.classList.remove('prompt-status-bar-shield--visible');
     setPromptModalStatusBarShieldExpanded(false);
 
     setTimeout(() => {
         if (!promptModalStatusBarShield) return;
-        promptModalStatusBarShield.style.visibility = 'hidden';
+        promptModalStatusBarShield.classList.remove('prompt-status-bar-shield--active');
     }, 90);
 }
 
@@ -5807,15 +5798,7 @@ function getPromptCommentComposerStableViewportProbe() {
 
     const probe = document.createElement('div');
     probe.setAttribute('aria-hidden', 'true');
-    probe.style.position = 'fixed';
-    probe.style.top = '0';
-    probe.style.left = '0';
-    probe.style.width = '0';
-    probe.style.height = '100svh';
-    probe.style.pointerEvents = 'none';
-    probe.style.visibility = 'hidden';
-    probe.style.opacity = '0';
-    probe.style.zIndex = '-1';
+    probe.className = 'prompt-comment-composer-viewport-probe';
     document.body.appendChild(probe);
     promptCommentComposerStableViewportProbe = probe;
     return probe;

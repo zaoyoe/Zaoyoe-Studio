@@ -2260,6 +2260,61 @@ html[lang="en"] .nav-item .en {
     transition: opacity 0.8s ease, transform 0.8s ease;
 }
 
+.prompt-card.prompt-card-exiting {
+    opacity: 0;
+    transform: scale(0.9);
+    transition: transform 0.3s ease, opacity 0.3s ease;
+    pointer-events: none;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-0 {
+    transition-delay: 0s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-1 {
+    transition-delay: 0.03s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-2 {
+    transition-delay: 0.06s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-3 {
+    transition-delay: 0.09s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-4 {
+    transition-delay: 0.12s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-5 {
+    transition-delay: 0.15s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-6 {
+    transition-delay: 0.18s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-7 {
+    transition-delay: 0.21s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-8 {
+    transition-delay: 0.24s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-9 {
+    transition-delay: 0.27s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-10 {
+    transition-delay: 0.3s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-11 {
+    transition-delay: 0.33s;
+}
+
 /* Override card-visible during filtering */
 .prompt-card.card-visible.filtering {
     transition: none !important;
@@ -2408,6 +2463,32 @@ html[lang="en"] .nav-item .en {
 }
 
 /* Removed buggy nav blurring rules */
+
+.prompt-status-bar-shield {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: env(safe-area-inset-top, 0px);
+    background: #000;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: 20000;
+    transition: opacity 80ms linear;
+}
+
+.prompt-status-bar-shield.prompt-status-bar-shield--active {
+    visibility: visible;
+}
+
+.prompt-status-bar-shield.prompt-status-bar-shield--visible {
+    opacity: 1;
+}
+
+.prompt-status-bar-shield.prompt-status-bar-shield--expanded {
+    height: calc(env(safe-area-inset-top, 0px) + 8px);
+}
 
 .poetry-modal-backdrop.visible {
     opacity: 1;
@@ -3670,6 +3751,18 @@ body.modal-open .prompt-card {
     transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
 
+.prompt-comment-composer-viewport-probe {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 100svh;
+    pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+    z-index: -1;
+}
+
 [data-theme="dark"] .prompt-comment-composer-sheet {
     background: rgba(11, 14, 20, 0.94);
     border-color: rgba(255, 255, 255, 0.08);
@@ -4670,6 +4763,91 @@ body.modal-open .prompt-card {
    Announcement Decoration Particles
    完全重写，禁用所有交互
    ======================================== */
+
+.prompts-theme-particle-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.prompts-theme-particle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+    will-change: transform, opacity;
+}
+
+.prompts-theme-particle--spark {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background-color: var(--particle-color);
+    box-shadow: 0 0 6px 1px var(--particle-color);
+}
+
+.prompts-theme-particle--rocket {
+    font-size: 8px;
+    color: var(--particle-color);
+    transform: translate3d(0, 0, 0);
+}
+
+.prompts-theme-particle--rain {
+    width: var(--particle-width, 2px);
+    height: var(--particle-height, 80px);
+    background: linear-gradient(to bottom, transparent, rgba(70, 130, 180, 0.6));
+    filter: blur(0.5px);
+    opacity: var(--particle-opacity, 0.5);
+}
+
+.prompts-theme-particle--snow {
+    width: var(--particle-size, 4px);
+    height: var(--particle-size, 4px);
+    opacity: 0;
+}
+
+.prompts-theme-particle--snow-dust {
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.6);
+    filter: blur(0.8px);
+}
+
+.prompts-theme-particle--snow-soft {
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.7);
+    filter: blur(0.6px);
+}
+
+.prompts-theme-particle--snow-crystal {
+    filter: drop-shadow(0 0 0.5px rgba(255, 255, 255, 0.6));
+}
+
+.prompts-theme-particle--decor {
+    opacity: 0;
+    transform: translate3d(-100px, -100px, 0);
+    user-select: none;
+}
+
+.prompts-theme-particle--decor-svg {
+    width: var(--particle-size, 32px);
+    height: var(--particle-size, 32px);
+}
+
+.prompts-theme-particle--decor-emoji {
+    font-size: var(--particle-size, 32px);
+}
+
+.prompts-theme-particle--splash {
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background-color: rgba(70, 130, 180, 0.8);
+}
 
 /* 粒子容器 - 绝对禁止所有鼠标交互 */
 .decoration-particles {
