@@ -380,7 +380,7 @@
     width: 24px;
     height: 24px;
     z-index: 1;
-    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.1));
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
 }
 
 .verify-widget-title {
@@ -410,6 +410,7 @@
     border-radius: 20px;
     font-size: 0.9rem;
     color: #fbbf24;
+    cursor: pointer;
 }
 
 .verify-balance i {
@@ -926,6 +927,18 @@
     transform: none;
 }
 
+.verify-submit-btn.verify-submit-btn--maintenance {
+    background: rgba(239, 68, 68, 0.3);
+    border: 1px solid rgba(239, 68, 68, 0.5);
+    box-shadow: none;
+}
+
+.verify-submit-btn.verify-submit-btn--maintenance:hover,
+.verify-submit-btn.verify-submit-btn--maintenance:active {
+    transform: none;
+    box-shadow: none;
+}
+
 .verify-submit-btn .spinner {
     width: 18px;
     height: 18px;
@@ -1417,8 +1430,34 @@
     font-weight: 600;
 }
 
+.verify-api-quota-value {
+    font-variant-numeric: tabular-nums;
+}
+
 .verify-api-quota i {
     font-size: 0.85rem;
+}
+
+.verify-api-quota--unknown {
+    color: #9fd7e5;
+}
+
+.verify-api-quota--ok {
+    background: rgba(34, 197, 94, 0.15);
+    border-color: rgba(34, 197, 94, 0.3);
+    color: #22c55e;
+}
+
+.verify-api-quota--warning {
+    background: rgba(243, 156, 18, 0.16);
+    border-color: rgba(243, 156, 18, 0.32);
+    color: #f39c12;
+}
+
+.verify-api-quota--danger {
+    background: rgba(231, 76, 60, 0.16);
+    border-color: rgba(231, 76, 60, 0.34);
+    color: #e74c3c;
 }
 
 /* Quota Warning Bar */
@@ -1600,6 +1639,10 @@
     color: rgba(255, 255, 255, 0.9);
 }
 
+.verify-history-item-id--copied {
+    color: #22c55e;
+}
+
 .verify-history-item-message {
     margin-top: 4px;
     font-size: 0.75rem;
@@ -1625,6 +1668,12 @@
     text-align: center;
 }
 
+.verify-history-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .verify-history-item.success .verify-history-item-status {
     color: #22c55e;
 }
@@ -1647,4 +1696,11 @@
     min-width: 40px;
     text-align: right;
     font-size: 0.75rem;
+}
+
+.verify-copy-fallback {
+    position: fixed;
+    opacity: 0;
+    pointer-events: none;
+    inset: 0 auto auto 0;
 }

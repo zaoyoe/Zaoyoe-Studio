@@ -2270,6 +2270,97 @@ test('verify widget runtime renderers route wallet/login/form/history actions th
     }
 });
 
+test('verify widget runtime renderers externalize progress, visibility, history tone, and maintenance styling', () => {
+    const verifyWidgetSource = readRepoFile('verify-widget.js');
+    const verifyWidgetCss = readRepoFile('verify-widget.css');
+    const verifyPageSource = readRepoFile('verify.html');
+    const archivedIndexSource = readRepoFile('index_old.html');
+
+    const removedMarkers = [
+        "widget.style.setProperty('--verify-progress'",
+        "quotaBar.style.display = 'flex'",
+        "quotaBar.style.display = 'none'",
+        'style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));"',
+        'style="display: ${balanceDisplay}; cursor: pointer;"',
+        'style="display: none;"',
+        "loginPrompt.style.display = 'none'",
+        "form.style.display = 'block'",
+        "balanceEl.style.display = 'flex'",
+        "balanceEl.style.display = 'none'",
+        "if (el) el.style.display = 'flex';",
+        "if (el) el.style.display = 'none';",
+        'style="color: #22c55e;"',
+        "el.style.color = '#22c55e'",
+        "ta.style.position = 'fixed'",
+        "ta.style.opacity = '0'",
+        "submitBtn.style.background = 'rgba(239, 68, 68, 0.3)'",
+        "submitBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)'",
+        "submitBtn.style.cursor = 'pointer'"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(verifyWidgetSource.includes(marker), false, `verify-widget.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "const VERIFY_STYLE_DECL_KEY = 'style';",
+        'function setVerifyRuntimeStyles(target, styles = {}, priority = \'\')',
+        'function setVerifyHidden(target, hidden)',
+        "function setVerifyQuotaTone(target, tone = 'unknown')",
+        "setVerifyRuntimeStyles(widget, {",
+        'setVerifyHidden(quotaBar, false);',
+        'setVerifyHidden(quotaBar, true);',
+        "target.classList.add(`verify-api-quota--${tone}`);",
+        '<div class="verify-quota-warning" id="verifyQuotaWarning" hidden>',
+        '<div class="verify-login-prompt" id="verifyLoginPrompt" hidden>',
+        '<div class="verify-batch-summary" id="verifyBatchSummary" hidden>',
+        "el.classList.add('verify-history-item-id--copied');",
+        "ta.className = 'verify-copy-fallback';",
+        "submitBtn.classList.add('verify-submit-btn--maintenance');",
+        '<span class="verify-history-status-badge"><i class="fas fa-check-circle"></i>'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(verifyWidgetSource.includes(marker), true, `verify-widget.js should contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '.verify-submit-btn.verify-submit-btn--maintenance',
+        '.verify-api-quota-value',
+        '.verify-api-quota--ok',
+        '.verify-api-quota--warning',
+        '.verify-api-quota--danger',
+        '.verify-history-item-id--copied',
+        '.verify-history-status-badge',
+        '.verify-copy-fallback'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(verifyWidgetCss.includes(marker), true, `verify-widget.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        verifyPageSource.includes('verify-widget.css?v=20260324_VERIFY_WIDGET_RUNTIME_STYLE_1'),
+        true,
+        'verify.html should load the latest verify-widget stylesheet version'
+    );
+    assert.equal(
+        verifyPageSource.includes('./verify-widget.js?v=20260324_VERIFY_WIDGET_RUNTIME_STYLE_1'),
+        true,
+        'verify.html should load the latest verify-widget script version'
+    );
+    assert.equal(
+        archivedIndexSource.includes('verify-widget.css?v=20260324_VERIFY_WIDGET_RUNTIME_STYLE_1'),
+        true,
+        'index_old.html should load the latest verify-widget stylesheet version'
+    );
+    assert.equal(
+        archivedIndexSource.includes('./verify-widget.js?v=20260324_VERIFY_WIDGET_RUNTIME_STYLE_1'),
+        true,
+        'index_old.html should load the latest verify-widget script version'
+    );
+});
+
 test('homepage admin runtime renderers route retry and section visibility controls through bound listeners', () => {
     const homepageAdminSource = readRepoFile('admin-homepage.js');
     const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|keyup|mouseover|mouseout|error|load)\s*=\s*["']/i;
