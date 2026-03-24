@@ -1208,20 +1208,19 @@ function showBatchTagModal(count) {
             .join('');
 
         modal.innerHTML = `
-            <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-content users-batch-tag-modal">
                 <div class="modal-header">
                     <h3>批量添加标签 (${count} 人)</h3>
                     <button class="modal-close" type="button" data-batch-tag-close="1">&times;</button>
                 </div>
-                <div class="modal-body" style="padding: 20px;">
-                    <p style="margin-bottom: 16px; color: var(--text-dim);">选择要添加的标签：</p>
-                    <div class="tag-options" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                <div class="modal-body users-batch-tag-body">
+                    <p class="users-batch-tag-note">选择要添加的标签：</p>
+                    <div class="tag-options users-batch-tag-options">
                         ${tagButtons}
                     </div>
-                    <div style="margin-top: 16px;">
-                        <input type="text" id="customTagInput" placeholder="或输入自定义标签..." 
-                               style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-main);">
-                        <button class="btn-secondary" type="button" style="width: 100%; margin-top: 8px;" data-batch-tag-submit="1">添加自定义标签</button>
+                    <div class="users-batch-tag-custom">
+                        <input type="text" id="customTagInput" class="users-batch-tag-input" placeholder="或输入自定义标签...">
+                        <button class="btn-secondary users-batch-tag-submit" type="button" data-batch-tag-submit="1">添加自定义标签</button>
                     </div>
                 </div>
             </div>
@@ -4122,10 +4121,10 @@ function injectBanUserModal() {
     <div id="banUserModalOverlay" class="custom-modal-overlay">
         <div class="custom-modal ban-user-modal">
             <div class="modal-header">
-                <h3 class="modal-title" style="color:#ef4444;">🚫 封禁管理</h3>
+                <h3 class="modal-title users-danger-modal-title">🚫 封禁管理</h3>
                 <button class="modal-close-btn" type="button" data-users-ban-action="close"><i class="fas fa-times"></i></button>
             </div>
-            <div class="modal-body" style="padding: 0 24px 24px 24px;">
+            <div class="modal-body users-ban-modal-body">
                  <input type="hidden" id="banTargetUserId">
                  
                  <!-- Permanent Bans -->
@@ -4167,16 +4166,16 @@ function injectBanUserModal() {
                      </div>
                  </div>
                  
-                 <div class="ban-scope-group" style="margin-top:20px;padding-top:15px;border-top:1px dashed rgba(0,0,0,0.1);">
+                 <div class="ban-scope-group users-ban-reset-group">
                     <div class="scope-options-pills no-indicator">
-                        <div class="scope-pill success" style="width:100%;justify-content:center;" data-scope="all" data-days="unban" data-users-ban-action="select">
-                            <i class="fas fa-shield-alt" style="margin-right:6px;"></i> 解除该用户所有封禁
+                        <div class="scope-pill success users-ban-unban-all" data-scope="all" data-days="unban" data-users-ban-action="select">
+                            <i class="fas fa-shield-alt users-ban-unban-icon"></i> 解除该用户所有封禁
                         </div>
                     </div>
                  </div>
                  
-                 <div class="ban-actions" style="margin-top:24px;display:flex;gap:12px;justify-content:flex-end;">
-                    <button class="modal-btn" type="button" data-users-ban-action="details" style="margin-right:auto;background:transparent;border:1px solid rgba(0,0,0,0.1);color:#64748b;">状态详情</button>
+                 <div class="ban-actions users-ban-actions">
+                    <button class="modal-btn users-ban-details-btn" type="button" data-users-ban-action="details">状态详情</button>
                     <button id="btnBanConfirm" class="modal-btn confirm" type="button" data-users-ban-action="confirm">确认执行</button>
                  </div>
             </div>
@@ -4835,53 +4834,53 @@ function injectClearContentModal() {
         <div id="clearContentModalOverlay" class="custom-modal-overlay">
             <div class="custom-modal ban-user-modal danger-modal">
                 <div class="modal-header">
-                    <h3 class="modal-title" style="color:#ef4444;">⚠️ 危险操作</h3>
+                    <h3 class="modal-title users-danger-modal-title">⚠️ 危险操作</h3>
                     <button class="modal-close-btn" type="button" data-users-clear-action="close"><i class="fas fa-times"></i></button>
                 </div>
                 <div class="modal-body">
-                    <div class="checklist-container" style="background:rgba(0,0,0,0.02); padding:16px; border-radius:8px; margin-bottom:20px; border:1px solid rgba(0,0,0,0.05);">
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckComments" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                    <div class="checklist-container users-danger-checklist">
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckComments">
                                 <span>🖼️ 画廊评论</span>
                         </label>
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckGuestbook" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckGuestbook">
                                 <span>📝 留言板留言</span>
                         </label>
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckPoints" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckPoints">
                                 <span>💰 积分流水</span>
                         </label>
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckBlocks" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckBlocks">
                                 <span>🚫 封禁记录</span>
                         </label>
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckNotes" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckNotes">
                                 <span>🗒️ 内部备注</span>
                         </label>
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckAudit" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckAudit">
                                 <span>🛡️ 审计日志</span>
                         </label>
-                        <div style="height:1px;background:rgba(0,0,0,0.1);margin:8px 0;"></div>
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckResetPoints" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                        <div class="users-danger-divider"></div>
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckResetPoints">
                                 <span>🗑️ 清空剩余积分 (重置为0)</span>
                         </label>
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckPurchases" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckPurchases">
                                 <span>🛒 清空购买记录 (收回商品)</span>
                         </label>
                     </div>
 
                     <div class="form-group">
-                        <input type="text" id="ccConfirmInput" class="modal-input" placeholder="输入密匙" style="border-color: #fca5a5;">
+                        <input type="text" id="ccConfirmInput" class="modal-input users-danger-input" placeholder="输入密匙">
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button class="modal-btn cancel" type="button" data-users-clear-action="close">取消</button>
-                    <button class="modal-btn danger" id="ccConfirmBtn" style="background:#ef4444; color:white; border:none; box-shadow:0 2px 8px rgba(239, 68, 68, 0.4);">确认清空</button>
+                    <button class="modal-btn danger users-clear-confirm-btn" id="ccConfirmBtn">确认清空</button>
                 </div>
             </div>
     </div > `;
@@ -4952,16 +4951,7 @@ async function clearAllUserContent(userId) {
     const validateState = () => {
         const isConfirmed = input.value === '0.0wangyong';
         const hasSelection = checkboxes.some(cb => cb.checked);
-
-        if (isConfirmed && hasSelection) {
-            confirmBtn.disabled = false;
-            confirmBtn.style.opacity = '1';
-            confirmBtn.style.cursor = 'pointer';
-        } else {
-            confirmBtn.disabled = true;
-            confirmBtn.style.opacity = '0.5';
-            confirmBtn.style.cursor = 'not-allowed';
-        }
+        confirmBtn.disabled = !(isConfirmed && hasSelection);
     };
 
     // Bind events

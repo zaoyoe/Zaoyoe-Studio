@@ -1154,7 +1154,23 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         'class="notes-container" style="display:flex',
         'class="audit-list" id="auditList" style="padding:16px',
         'style="margin-right: 8px;"',
-        'style="font-size:0.9rem;color:#94a3b8;margin-left:6px;"'
+        'style="font-size:0.9rem;color:#94a3b8;margin-left:6px;"',
+        'class="modal-content" style="max-width: 400px;"',
+        'class="modal-body" style="padding: 20px;"',
+        'style="display: flex; flex-wrap: wrap; gap: 10px;"',
+        'style="width: 100%; padding: 10px; border-radius: 8px;',
+        'class="modal-title" style="color:#ef4444;"',
+        'class="modal-body" style="padding: 0 24px 24px 24px;"',
+        'class="scope-pill success" style="width:100%;justify-content:center;"',
+        'data-users-ban-action="details" style="margin-right:auto;background:transparent;',
+        'class="checklist-container" style="background:rgba(0,0,0,0.02);',
+        'class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;"',
+        'id="ccConfirmInput" class="modal-input" placeholder="输入密匙" style="border-color: #fca5a5;"',
+        'id="ccConfirmBtn" style="background:#ef4444; color:white; border:none; box-shadow:0 2px 8px rgba(239, 68, 68, 0.4);"',
+        "confirmBtn.style.opacity = '1'",
+        "confirmBtn.style.cursor = 'pointer'",
+        "confirmBtn.style.opacity = '0.5'",
+        "confirmBtn.style.cursor = 'not-allowed'"
     ];
 
     for (const marker of removedInlineMarkers) {
@@ -1196,6 +1212,9 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         'users-audit-item',
         'users-modal-title-count',
         'users-hidden-date-picker',
+        'users-batch-tag-modal',
+        'users-ban-actions',
+        'users-clear-confirm-btn',
         'data-batch-tag-value="',
         'data-batch-tag-close="1"',
         'data-batch-tag-submit="1"',
@@ -1255,7 +1274,10 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         '.users-notes-container',
         '.users-audit-item',
         '.users-modal-title-count',
-        '.users-hidden-date-picker'
+        '.users-hidden-date-picker',
+        '.users-batch-tag-modal',
+        '.users-ban-actions',
+        '.users-clear-confirm-btn'
     ];
 
     for (const marker of styleMarkers) {

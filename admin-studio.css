@@ -9056,6 +9056,48 @@ input:checked+.toggle-slider:before {
     /* Ultra narrower width (was 360px) */
 }
 
+.users-danger-modal-title {
+    color: #ef4444 !important;
+}
+
+.users-danger-checklist {
+    border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.users-danger-checkbox-item {
+    display: flex !important;
+    align-items: center;
+    cursor: pointer;
+}
+
+.users-danger-divider {
+    height: 1px;
+    background: rgba(0, 0, 0, 0.1);
+    margin: 8px 0;
+}
+
+.users-danger-input {
+    border-color: #fca5a5 !important;
+}
+
+.users-clear-confirm-btn {
+    background: #ef4444 !important;
+    color: white !important;
+    border: none !important;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4) !important;
+}
+
+.users-clear-confirm-btn:hover:not(:disabled) {
+    background: #dc2626 !important;
+}
+
+.users-clear-confirm-btn:disabled {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
 /* Compact Header */
 .custom-modal.danger-modal .modal-header {
     padding: 10px 16px !important;
@@ -9603,6 +9645,43 @@ input:checked+.toggle-slider:before {
 
 .modal-body {
     padding: 20px;
+}
+
+.users-batch-tag-modal {
+    max-width: 400px;
+}
+
+.users-batch-tag-body {
+    padding: 20px;
+}
+
+.users-batch-tag-note {
+    margin-bottom: 16px;
+    color: var(--text-dim);
+}
+
+.users-batch-tag-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.users-batch-tag-custom {
+    margin-top: 16px;
+}
+
+.users-batch-tag-input {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-main);
+}
+
+.users-batch-tag-submit {
+    width: 100%;
+    margin-top: 8px;
 }
 
 .btn-primary {
@@ -12314,6 +12393,10 @@ input:checked+.toggle-slider:before {
     scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
+.users-ban-modal-body {
+    padding: 0 24px 24px 24px !important;
+}
+
 .ban-user-modal .modal-body::-webkit-scrollbar {
     width: 6px;
 }
@@ -12462,11 +12545,40 @@ input:checked+.toggle-slider:before {
     box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
 }
 
+.users-ban-reset-group {
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px dashed rgba(0, 0, 0, 0.1);
+}
+
+.users-ban-unban-all {
+    width: 100%;
+    justify-content: center;
+}
+
+.users-ban-unban-icon {
+    margin-right: 6px;
+}
+
 /* --- Action Buttons --- */
 .ban-actions .modal-btn {
     border-radius: 8px;
     padding: 10px 20px;
     font-size: 0.9rem;
+}
+
+.users-ban-actions {
+    margin-top: 24px;
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.users-ban-details-btn {
+    margin-right: auto;
+    background: transparent;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    color: #64748b;
 }
 
 .ban-actions .modal-btn.confirm {
