@@ -4516,15 +4516,17 @@ function clearPromptModalPreLiftCleanupTimer() {
 
 function clearPromptModalLegacyDockLayout(modalInner) {
     if (!modalInner) return;
-    modalInner.style.removeProperty('position');
-    modalInner.style.removeProperty('top');
-    modalInner.style.removeProperty('left');
-    modalInner.style.removeProperty('right');
-    modalInner.style.removeProperty('bottom');
-    modalInner.style.removeProperty('margin');
-    modalInner.style.removeProperty('width');
-    modalInner.style.removeProperty('max-width');
-    modalInner.style.removeProperty('transform');
+    setPromptsCssVars(modalInner, {
+        position: null,
+        top: null,
+        left: null,
+        right: null,
+        bottom: null,
+        margin: null,
+        width: null,
+        'max-width': null,
+        transform: null
+    });
 }
 
 function togglePromptModalSheetAnimation(modalInner, animate, duration = 180) {
@@ -4546,12 +4548,12 @@ function clearPromptModalKeyboardPreLift(restoreTransform = true) {
     clearPromptModalPreLiftCleanupTimer();
     promptModalKeyboardDock.preLiftActive = false;
     if (!modalInner || modalInner.classList.contains('keyboard-docked')) return;
-    modalInner.style.removeProperty('transition');
-    modalInner.style.removeProperty('will-change');
-    if (restoreTransform) {
-        modalInner.style.removeProperty('--prompt-modal-translate-y');
-        modalInner.style.removeProperty('--prompt-modal-scale');
-    }
+    setPromptsCssVars(modalInner, {
+        transition: null,
+        'will-change': null,
+        '--prompt-modal-translate-y': restoreTransform ? null : undefined,
+        '--prompt-modal-scale': restoreTransform ? null : undefined
+    });
 }
 
 function applyPromptModalKeyboardPreLift() {
@@ -4561,10 +4563,12 @@ function applyPromptModalKeyboardPreLift() {
 
     clearPromptModalPreLiftCleanupTimer();
     promptModalKeyboardDock.preLiftActive = true;
-    modalInner.style.willChange = 'transform';
-    modalInner.style.transition = 'transform 120ms cubic-bezier(0.22, 1, 0.36, 1)';
-    modalInner.style.setProperty('--prompt-modal-scale', '1');
-    modalInner.style.setProperty('--prompt-modal-translate-y', '-24px');
+    setPromptsCssVars(modalInner, {
+        'will-change': 'transform',
+        transition: 'transform 120ms cubic-bezier(0.22, 1, 0.36, 1)',
+        '--prompt-modal-scale': '1',
+        '--prompt-modal-translate-y': '-24px'
+    });
     promptModalKeyboardDock.preLiftCleanupTimer = setTimeout(() => {
         promptModalKeyboardDock.preLiftCleanupTimer = null;
         if (!promptModalKeyboardDock.docked) {
@@ -4840,14 +4844,16 @@ function freezePromptModalOverlay() {
     );
     promptModalKeyboardDock.overlayBaseHeight = baseHeight + 64;
 
-    backdrop.style.setProperty('position', 'fixed');
-    backdrop.style.setProperty('top', 'env(safe-area-inset-top, 0px)');
-    backdrop.style.setProperty('left', '0');
-    backdrop.style.setProperty('right', '0');
-    backdrop.style.setProperty('bottom', 'auto');
-    backdrop.style.setProperty('width', '100%');
-    backdrop.style.setProperty('height', `${promptModalKeyboardDock.overlayBaseHeight}px`);
-    backdrop.style.setProperty('max-height', `${promptModalKeyboardDock.overlayBaseHeight}px`);
+    setPromptsCssVars(backdrop, {
+        position: 'fixed',
+        top: 'env(safe-area-inset-top, 0px)',
+        left: '0',
+        right: '0',
+        bottom: 'auto',
+        width: '100%',
+        height: `${promptModalKeyboardDock.overlayBaseHeight}px`,
+        'max-height': `${promptModalKeyboardDock.overlayBaseHeight}px`
+    });
 }
 
 function restorePromptModalOverlay() {
@@ -4855,14 +4861,16 @@ function restorePromptModalOverlay() {
     promptModalKeyboardDock.overlayBaseHeight = 0;
 
     if (!backdrop) return;
-    backdrop.style.removeProperty('position');
-    backdrop.style.removeProperty('top');
-    backdrop.style.removeProperty('left');
-    backdrop.style.removeProperty('right');
-    backdrop.style.removeProperty('bottom');
-    backdrop.style.removeProperty('width');
-    backdrop.style.removeProperty('height');
-    backdrop.style.removeProperty('max-height');
+    setPromptsCssVars(backdrop, {
+        position: null,
+        top: null,
+        left: null,
+        right: null,
+        bottom: null,
+        width: null,
+        height: null,
+        'max-height': null
+    });
 }
 
 function capturePromptModalDockMetrics(force = false) {
@@ -5001,14 +5009,18 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     document.body.classList.add('prompt-modal-keyboard-docked');
     scrollPromptModalPageToBase();
     modal.classList.add('keyboard-docked');
-    modal.style.setProperty('height', `${baseViewportHeight}px`, 'important');
+    setPromptsCssVars(modal, {
+        height: `${baseViewportHeight}px`
+    });
     modalInner.classList.add('keyboard-docked');
     clearPromptModalLegacyDockLayout(modalInner);
-    modalInner.style.setProperty('--prompt-modal-scale', '1');
+    setPromptsCssVars(modalInner, {
+        '--prompt-modal-scale': '1',
+        height: `${dockHeight}px`,
+        'max-height': `${dockHeight}px`,
+        '--prompt-modal-translate-y': `${deltaY}px`
+    });
     togglePromptModalSheetAnimation(modalInner, animate, duration);
-    modalInner.style.height = `${dockHeight}px`;
-    modalInner.style.maxHeight = `${dockHeight}px`;
-    modalInner.style.setProperty('--prompt-modal-translate-y', `${deltaY}px`);
     promptModalKeyboardDock.docked = true;
     promptModalKeyboardDock.lastKeyboardInset = bottomInset;
     promptModalKeyboardDock.animatingUntil = duration ? (now + duration + 24) : 0;
@@ -5024,13 +5036,13 @@ function resetPromptModalKeyboardDock(animate = false) {
     document.body.classList.remove('prompt-modal-keyboard-docked');
     setPromptModalStatusBarShieldExpanded(false);
     clearPromptModalLegacyDockLayout(modalInner);
-    modalInner.style.setProperty('--prompt-modal-scale', '1');
-    if (promptModalKeyboardDock.baseHeight > 0) {
-        modalInner.style.height = `${promptModalKeyboardDock.baseHeight}px`;
-        modalInner.style.maxHeight = `${promptModalKeyboardDock.baseHeight}px`;
-    }
+    setPromptsCssVars(modalInner, {
+        '--prompt-modal-scale': '1',
+        height: promptModalKeyboardDock.baseHeight > 0 ? `${promptModalKeyboardDock.baseHeight}px` : undefined,
+        'max-height': promptModalKeyboardDock.baseHeight > 0 ? `${promptModalKeyboardDock.baseHeight}px` : undefined,
+        '--prompt-modal-translate-y': '0px'
+    });
     togglePromptModalSheetAnimation(modalInner, animate, duration);
-    modalInner.style.setProperty('--prompt-modal-translate-y', '0px');
     promptModalKeyboardDock.docked = false;
     promptModalKeyboardDock.animatingUntil = 0;
     promptModalKeyboardDock.lastKeyboardInset = 0;
@@ -5040,28 +5052,36 @@ function resetPromptModalKeyboardDock(animate = false) {
             const { modal: activeModal, modalInner: activeInner } = getPromptModalDockNodes();
             if (!activeInner || !activeModal) return;
             activeModal.classList.remove('keyboard-docked');
-            activeModal.style.removeProperty('height');
+            setPromptsCssVars(activeModal, {
+                height: null
+            });
             activeInner.classList.remove('keyboard-docked');
             activeInner.classList.remove('prompt-modal-animating');
             clearPromptModalLegacyDockLayout(activeInner);
-            activeInner.style.removeProperty('height');
-            activeInner.style.removeProperty('max-height');
-            activeInner.style.removeProperty('--prompt-modal-translate-y');
-            activeInner.style.removeProperty('--prompt-modal-scale');
-            activeInner.style.removeProperty('will-change');
+            setPromptsCssVars(activeInner, {
+                height: null,
+                'max-height': null,
+                '--prompt-modal-translate-y': null,
+                '--prompt-modal-scale': null,
+                'will-change': null
+            });
             requestAnimationFrame(() => capturePromptModalDockMetrics(true));
         }, duration + 40);
     } else {
         modal.classList.remove('keyboard-docked');
-        modal.style.removeProperty('height');
+        setPromptsCssVars(modal, {
+            height: null
+        });
         modalInner.classList.remove('keyboard-docked');
         modalInner.classList.remove('prompt-modal-animating');
         clearPromptModalLegacyDockLayout(modalInner);
-        modalInner.style.removeProperty('height');
-        modalInner.style.removeProperty('max-height');
-        modalInner.style.removeProperty('--prompt-modal-translate-y');
-        modalInner.style.removeProperty('--prompt-modal-scale');
-        modalInner.style.removeProperty('will-change');
+        setPromptsCssVars(modalInner, {
+            height: null,
+            'max-height': null,
+            '--prompt-modal-translate-y': null,
+            '--prompt-modal-scale': null,
+            'will-change': null
+        });
         requestAnimationFrame(() => capturePromptModalDockMetrics(true));
     }
 }
@@ -6056,15 +6076,23 @@ function resetPromptCommentComposerViewportStyles() {
     }
     if (sheet) {
         sheet.classList.remove('composer-animating');
-        sheet.style.removeProperty('--composer-translate-y');
+        setPromptsCssVars(sheet, {
+            '--composer-translate-y': null
+        });
     }
 
-    overlay.style.setProperty('--composer-keyboard-offset', '0px');
+    setPromptsCssVars(overlay, {
+        '--composer-keyboard-offset': '0px'
+    });
     overlay.classList.remove('keyboard-active');
     overlay.classList.remove('keyboard-docked-active');
-    input?.style.removeProperty('max-height');
-    sheet?.style.removeProperty('height');
-    sheet?.style.removeProperty('max-height');
+    setPromptsCssVars(input, {
+        'max-height': null
+    });
+    setPromptsCssVars(sheet, {
+        height: null,
+        'max-height': null
+    });
     promptCommentComposerDocked = false;
     promptCommentComposerLastBottomInset = 0;
     promptCommentComposerOwnsScrollLock = false;
@@ -6111,24 +6139,28 @@ function capturePromptCommentComposerViewportBase() {
 function freezePromptCommentComposerOverlay() {
     const { overlay } = getPromptCommentComposerElements();
     if (!overlay) return;
-    overlay.style.setProperty('position', 'fixed', 'important');
-    overlay.style.setProperty('top', '0', 'important');
-    overlay.style.setProperty('left', '0', 'important');
-    overlay.style.setProperty('right', '0', 'important');
-    overlay.style.setProperty('bottom', '0', 'important');
-    overlay.style.setProperty('width', '100%', 'important');
+    setPromptsCssVars(overlay, {
+        position: 'fixed',
+        top: '0',
+        left: '0',
+        right: '0',
+        bottom: '0',
+        width: '100%'
+    });
 }
 
 function restorePromptCommentComposerOverlay() {
     const { overlay } = getPromptCommentComposerElements();
     if (!overlay) return;
-    overlay.style.removeProperty('position');
-    overlay.style.removeProperty('top');
-    overlay.style.removeProperty('left');
-    overlay.style.removeProperty('right');
-    overlay.style.removeProperty('bottom');
-    overlay.style.removeProperty('width');
-    overlay.style.removeProperty('height');
+    setPromptsCssVars(overlay, {
+        position: null,
+        top: null,
+        left: null,
+        right: null,
+        bottom: null,
+        width: null,
+        height: null
+    });
 }
 
 function getPromptCommentComposerViewportMetrics() {
@@ -6174,11 +6206,15 @@ function applyPromptCommentComposerDock(bottomInset, animate = false) {
     const desiredTop = Math.max(minTop, keyboardTop - 12 - dockHeight);
     const deltaY = Math.round(desiredTop - centeredTop);
 
-    overlay.style.setProperty('--composer-keyboard-offset', `${bottomInset}px`);
+    setPromptsCssVars(overlay, {
+        '--composer-keyboard-offset': `${bottomInset}px`
+    });
     overlay.classList.toggle('keyboard-active', bottomInset > 0);
     overlay.classList.toggle('keyboard-docked-active', bottomInset > 0);
-    sheet.style.setProperty('height', `${dockHeight}px`);
-    sheet.style.setProperty('max-height', `${dockHeight}px`);
+    setPromptsCssVars(sheet, {
+        height: `${dockHeight}px`,
+        'max-height': `${dockHeight}px`
+    });
 
     if (window.promptCommentComposerAnimRafId) {
         clearTimeout(window.promptCommentComposerAnimRafId);
@@ -6193,7 +6229,9 @@ function applyPromptCommentComposerDock(bottomInset, animate = false) {
         }, 200);
     }
 
-    sheet.style.setProperty('--composer-translate-y', `${deltaY}px`);
+    setPromptsCssVars(sheet, {
+        '--composer-translate-y': `${deltaY}px`
+    });
     promptCommentComposerDocked = bottomInset > 0;
     promptCommentComposerLastBottomInset = Math.max(0, bottomInset);
 }
@@ -6219,11 +6257,15 @@ function releasePromptCommentComposerDock(animate = false) {
     const { overlay, sheet } = getPromptCommentComposerElements();
     if (!overlay || !sheet) return;
 
-    overlay.style.setProperty('--composer-keyboard-offset', '0px');
+    setPromptsCssVars(overlay, {
+        '--composer-keyboard-offset': '0px'
+    });
     overlay.classList.remove('keyboard-active');
     overlay.classList.remove('keyboard-docked-active');
-    sheet.style.removeProperty('height');
-    sheet.style.removeProperty('max-height');
+    setPromptsCssVars(sheet, {
+        height: null,
+        'max-height': null
+    });
 
     if (window.promptCommentComposerAnimRafId) {
         clearTimeout(window.promptCommentComposerAnimRafId);
@@ -6238,7 +6280,9 @@ function releasePromptCommentComposerDock(animate = false) {
         }, 200);
     }
 
-    sheet.style.setProperty('--composer-translate-y', '0px');
+    setPromptsCssVars(sheet, {
+        '--composer-translate-y': '0px'
+    });
     promptCommentComposerDocked = false;
     promptCommentComposerLastBottomInset = 0;
 }
@@ -6326,10 +6370,14 @@ function syncPromptCommentComposerViewport() {
         return;
     }
 
-    sheet.style.removeProperty('height');
-    sheet.style.removeProperty('max-height');
-    sheet.style.setProperty('--composer-translate-y', '0px');
-    overlay.style.setProperty('--composer-keyboard-offset', '0px');
+    setPromptsCssVars(sheet, {
+        height: null,
+        'max-height': null,
+        '--composer-translate-y': '0px'
+    });
+    setPromptsCssVars(overlay, {
+        '--composer-keyboard-offset': '0px'
+    });
     overlay.classList.remove('keyboard-active');
     overlay.classList.remove('keyboard-docked-active');
     promptCommentComposerLastBottomInset = 0;

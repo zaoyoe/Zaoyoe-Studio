@@ -2446,7 +2446,14 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         "probe.style.position = 'fixed'",
         "el.style.width = '4px'",
         "el.style.fontSize = '8px'",
-        "el.style.backgroundColor = CONFIG.color"
+        "el.style.backgroundColor = CONFIG.color",
+        "modalInner.style.setProperty('--prompt-modal-scale', '1')",
+        "modalInner.style.setProperty('--prompt-modal-translate-y', '-24px')",
+        "backdrop.style.setProperty('height',",
+        "modal.style.setProperty('height',",
+        "sheet.style.setProperty('height',",
+        "overlay.style.setProperty('--composer-keyboard-offset',",
+        "sheet.style.removeProperty('max-height')"
     ];
 
     for (const marker of removedRuntimeMarkers) {
@@ -2472,7 +2479,12 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         "probe.className = 'prompt-comment-composer-viewport-probe'",
         "applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--spark'",
         "applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--rain'",
-        "applyPromptsThemeParticleClasses(el, ['prompts-theme-particle--decor', 'prompts-theme-particle--decor-svg']"
+        "applyPromptsThemeParticleClasses(el, ['prompts-theme-particle--decor', 'prompts-theme-particle--decor-svg']",
+        'setPromptsCssVars(modalInner, {',
+        'setPromptsCssVars(backdrop, {',
+        'setPromptsCssVars(modal, {',
+        'setPromptsCssVars(overlay, {',
+        'setPromptsCssVars(sheet, {'
     ];
 
     for (const marker of runtimeMarkers) {
@@ -2512,7 +2524,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260324_PROMPTS_UI_STATE_STYLES_2'),
+        promptsHtml.includes('prompts-poetry.js?v=20260324_PROMPTS_UI_STATE_STYLES_3'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
     );
