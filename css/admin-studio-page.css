@@ -487,6 +487,386 @@ body.admin-access-pending,
                             font-size: 14px;
                         }
 
+                        .shop-order-row {
+                            cursor: pointer;
+                        }
+
+                        .shop-order-user-avatar {
+                            width: 36px;
+                            height: 36px;
+                        }
+
+                        .shop-order-user-info {
+                            line-height: 1.3;
+                        }
+
+                        .shop-order-user-name {
+                            color: #fff;
+                        }
+
+                        .shop-order-user-email {
+                            font-size: 12px;
+                            color: rgba(255, 255, 255, 0.5);
+                        }
+
+                        .shop-order-action-btn {
+                            background: rgba(255, 255, 255, 0.05);
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            color: rgba(255, 255, 255, 0.78);
+                            width: 32px;
+                            height: 32px;
+                            border-radius: 10px;
+                            cursor: pointer;
+                            transition: all 0.2s ease;
+                            display: inline-flex;
+                            align-items: center;
+                            justify-content: center;
+                        }
+
+                        .shop-order-action-btn:hover {
+                            background: rgba(255, 255, 255, 0.12);
+                            color: #fff;
+                        }
+
+                        .shop-order-action-btn--refund {
+                            background: rgba(239, 68, 68, 0.12);
+                            border-color: rgba(239, 68, 68, 0.2);
+                            color: #f87171;
+                        }
+
+                        .shop-order-action-btn--refund:hover {
+                            background: rgba(239, 68, 68, 0.2);
+                            color: #fff;
+                        }
+
+                        .shop-order-empty-action {
+                            color: rgba(255, 255, 255, 0.3);
+                            font-size: 12px;
+                        }
+
+                        .shop-order-content-overlay,
+                        .shop-refund-modal-overlay {
+                            position: fixed;
+                            inset: 0;
+                            display: flex;
+                            justify-content: center;
+                            align-items: center;
+                            padding: 24px;
+                            background: rgba(0, 0, 0, 0.6);
+                            backdrop-filter: blur(12px);
+                            -webkit-backdrop-filter: blur(12px);
+                            z-index: 9999;
+                        }
+
+                        .shop-order-content-overlay {
+                            background: rgba(0, 0, 0, 0.5);
+                            z-index: 1000;
+                        }
+
+                        .shop-order-content-modal {
+                            background: rgba(30, 35, 50, 0.95);
+                            backdrop-filter: blur(20px);
+                            -webkit-backdrop-filter: blur(20px);
+                            border-radius: 20px;
+                            border: 1px solid rgba(255, 255, 255, 0.12);
+                            max-width: 500px;
+                            width: min(500px, 100%);
+                            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+                            overflow: hidden;
+                            animation: shop-modal-fade-in 0.3s ease-out;
+                        }
+
+                        .shop-order-content-header {
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            gap: 16px;
+                            padding: 20px 24px;
+                            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                        }
+
+                        .shop-order-content-title {
+                            margin: 0;
+                            font-size: 18px;
+                            color: #fff;
+                        }
+
+                        .shop-order-content-close {
+                            background: transparent;
+                            border: none;
+                            color: rgba(255, 255, 255, 0.45);
+                            cursor: pointer;
+                            font-size: 24px;
+                            line-height: 1;
+                            transition: color 0.2s ease;
+                        }
+
+                        .shop-order-content-close:hover {
+                            color: #fff;
+                        }
+
+                        .shop-order-content-body {
+                            padding: 24px;
+                        }
+
+                        .shop-order-content-meta {
+                            font-size: 12px;
+                            color: rgba(255, 255, 255, 0.5);
+                            margin-bottom: 8px;
+                        }
+
+                        .shop-order-content-order-id {
+                            color: #60a5fa;
+                            user-select: all;
+                        }
+
+                        .shop-order-content-box {
+                            background: rgba(0, 0, 0, 0.4);
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            border-radius: 12px;
+                            padding: 16px;
+                            font-family: 'Monaco', 'Consolas', monospace;
+                            font-size: 14px;
+                            color: #22c55e;
+                            word-break: break-all;
+                            cursor: pointer;
+                            line-height: 1.6;
+                            max-height: 300px;
+                            overflow-y: auto;
+                        }
+
+                        .shop-order-content-item {
+                            margin-bottom: 15px;
+                            padding-bottom: 10px;
+                            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                        }
+
+                        .shop-order-content-item:last-child {
+                            margin-bottom: 0;
+                            padding-bottom: 0;
+                            border-bottom: none;
+                        }
+
+                        .shop-order-content-item-title {
+                            margin-bottom: 4px;
+                            font-size: 12px;
+                            color: rgba(255, 255, 255, 0.6);
+                        }
+
+                        .shop-order-content-item-value {
+                            background: rgba(0, 0, 0, 0.3);
+                            padding: 10px;
+                            border-radius: 4px;
+                            color: #e2e8f0;
+                        }
+
+                        .shop-order-content-note {
+                            margin-top: 10px;
+                            font-size: 11px;
+                            color: rgba(255, 255, 255, 0.35);
+                            text-align: center;
+                        }
+
+                        .shop-refund-modal {
+                            background: rgba(20, 25, 40, 0.9);
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+                            border-radius: 20px;
+                            padding: 30px;
+                            width: min(480px, 100%);
+                            animation: shop-modal-fade-in 0.3s ease-out;
+                        }
+
+                        .shop-refund-modal-title {
+                            margin: 0 0 25px 0;
+                            color: #fff;
+                            font-size: 18px;
+                            font-weight: 600;
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                        }
+
+                        .shop-refund-modal-title-icon {
+                            background: rgba(239, 68, 68, 0.15);
+                            padding: 8px;
+                            border-radius: 10px;
+                            display: flex;
+                        }
+
+                        .shop-refund-modal-title-icon i {
+                            color: #ef4444;
+                        }
+
+                        .shop-refund-modal-section {
+                            margin-bottom: 25px;
+                        }
+
+                        .shop-refund-modal-section--remark {
+                            margin-bottom: 30px;
+                        }
+
+                        .shop-refund-modal-label {
+                            display: block;
+                            color: #94a3b8;
+                            font-size: 13px;
+                            font-weight: 500;
+                            margin-bottom: 12px;
+                        }
+
+                        .shop-refund-status-grid {
+                            display: grid;
+                            grid-template-columns: repeat(2, minmax(0, 1fr));
+                            gap: 12px;
+                        }
+
+                        .shop-refund-status-option {
+                            background: rgba(255, 255, 255, 0.03);
+                            border: 1px solid rgba(255, 255, 255, 0.05);
+                            padding: 12px;
+                            border-radius: 10px;
+                            cursor: pointer;
+                            display: flex;
+                            align-items: center;
+                            transition: all 0.2s ease;
+                        }
+
+                        .shop-refund-status-option:hover {
+                            background: rgba(255, 255, 255, 0.07);
+                            border-color: rgba(255, 255, 255, 0.12);
+                        }
+
+                        .shop-refund-status-option input {
+                            margin: 0;
+                        }
+
+                        .shop-refund-status-option--frozen input {
+                            accent-color: #f59e0b;
+                        }
+
+                        .shop-refund-status-option--available input {
+                            accent-color: #10b981;
+                        }
+
+                        .shop-refund-status-option--fault input {
+                            accent-color: #d946ef;
+                        }
+
+                        .shop-refund-status-option--reserve input {
+                            accent-color: #3b82f6;
+                        }
+
+                        .shop-refund-status-option-label {
+                            margin-left: 10px;
+                            color: #cbd5e1;
+                            font-size: 13px;
+                            display: flex;
+                            align-items: center;
+                            gap: 6px;
+                        }
+
+                        .shop-refund-status-option input:checked + .shop-refund-status-option-label {
+                            font-weight: 600;
+                            text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+                        }
+
+                        .shop-refund-status-option--frozen .shop-refund-status-option-label i {
+                            color: #f59e0b;
+                        }
+
+                        .shop-refund-status-option--available .shop-refund-status-option-label i {
+                            color: #10b981;
+                        }
+
+                        .shop-refund-status-option--fault .shop-refund-status-option-label i {
+                            color: #d946ef;
+                        }
+
+                        .shop-refund-status-option--reserve .shop-refund-status-option-label i {
+                            color: #3b82f6;
+                        }
+
+                        .shop-refund-modal-textarea {
+                            width: 100%;
+                            box-sizing: border-box;
+                            background: rgba(0, 0, 0, 0.2);
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            color: #e2e8f0;
+                            border-radius: 10px;
+                            padding: 12px;
+                            height: 80px;
+                            resize: none;
+                            font-family: inherit;
+                            font-size: 13px;
+                            line-height: 1.5;
+                            transition: all 0.2s ease;
+                        }
+
+                        .refund-modal-input:focus {
+                            border-color: #6b9ece !important;
+                            box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.25) !important;
+                            outline: none;
+                        }
+
+                        .shop-refund-modal-actions {
+                            display: flex;
+                            justify-content: flex-end;
+                            gap: 12px;
+                        }
+
+                        .refund-btn-cancel {
+                            padding: 10px 20px;
+                            background: rgba(255, 255, 255, 0.05);
+                            border: none;
+                            color: #94a3b8;
+                            border-radius: 8px;
+                            cursor: pointer;
+                            font-size: 13px;
+                            font-weight: 500;
+                            transition: all 0.2s ease;
+                        }
+
+                        .refund-btn-cancel:hover {
+                            background: rgba(255, 255, 255, 0.1);
+                            color: #fff;
+                        }
+
+                        .refund-btn-confirm {
+                            padding: 10px 24px;
+                            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+                            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+                            border: none;
+                            color: #fff;
+                            border-radius: 8px;
+                            cursor: pointer;
+                            font-size: 13px;
+                            font-weight: 600;
+                            transition: all 0.2s ease;
+                        }
+
+                        .refund-btn-confirm:hover {
+                            filter: brightness(1.1);
+                            transform: translateY(-1px);
+                            box-shadow: 0 6px 16px rgba(239, 68, 68, 0.4);
+                        }
+
+                        .refund-btn-confirm:active {
+                            transform: translateY(0);
+                            filter: brightness(0.95);
+                        }
+
+                        @keyframes shop-modal-fade-in {
+                            from {
+                                opacity: 0;
+                                transform: scale(0.95);
+                            }
+
+                            to {
+                                opacity: 1;
+                                transform: scale(1);
+                            }
+                        }
+
                         /* Inventory Subtab Buttons */
                         .subtab-btn {
                             background: rgba(255, 255, 255, 0.05);

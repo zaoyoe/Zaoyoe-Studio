@@ -650,6 +650,9 @@ Example output format:
                 case 'order-show-content':
                     this.showOrderContent(actionEl.dataset.orderId, actionEl.dataset.itemsData);
                     break;
+                case 'order-close-content':
+                    this.closeDynamicModal(actionEl.dataset.modalId || 'orderContentModal');
+                    break;
                 case 'order-actions-stop':
                     break;
                 case 'order-refund':
@@ -7262,11 +7265,11 @@ Example output format:
 
                 // Two-line layout like user management page
                 const userDisplay = `
-                    <div class="user-cell">
-                        <img src="${safeUserAvatar}" class="user-avatar-small" style="width:36px;height:36px;" data-fallback-src="https://api.dicebear.com/7.x/initials/svg?seed=U&backgroundColor=6b9ece">
-                        <div class="user-info" style="line-height:1.3;">
-                            <div class="user-name" style="color:#fff;">${safeUserName}</div>
-                            <div class="user-email" style="font-size:12px;color:rgba(255,255,255,0.5);">${safeUserEmail}</div>
+                    <div class="user-cell shop-order-user-cell">
+                        <img src="${safeUserAvatar}" class="user-avatar-small shop-order-user-avatar" data-fallback-src="https://api.dicebear.com/7.x/initials/svg?seed=U&backgroundColor=6b9ece">
+                        <div class="user-info shop-order-user-info">
+                            <div class="user-name shop-order-user-name">${safeUserName}</div>
+                            <div class="user-email shop-order-user-email">${safeUserEmail}</div>
                         </div>
                     </div>
                 `;
@@ -7307,7 +7310,7 @@ Example output format:
                 const status = this.getOrderDeliveryStatusBadge(order);
 
                 tbody.innerHTML += `
-                <tr data-shop-action="order-show-content" data-order-id="${this.escapeForAttr(order.id)}" data-items-data="${contentData}" style="cursor: pointer;" title="点击查看订单详情">
+                <tr class="shop-order-row" data-shop-action="order-show-content" data-order-id="${this.escapeForAttr(order.id)}" data-items-data="${contentData}" title="点击查看订单详情">
                     <td data-label="用户" title="${safeOrderUserId}">${userDisplay}</td>
                     <td data-label="订单时间">${safeDate}</td>
                     <td data-label="商品">${this.escapeHtml(productName)}</td>
@@ -7315,8 +7318,8 @@ Example output format:
                     <td data-label="发货状态">${status}</td>
                     <td data-label="操作" data-shop-action="order-actions-stop">
                         ${(order.refund_status !== 'refunded' && order.refund_status !== 'full_refund') ?
-                        `<button class="btn-icon danger" data-shop-action="order-refund" data-order-id="${this.escapeForAttr(order.id)}" title="退款"><i class="fas fa-undo"></i></button>`
-                        : '<span style="color: rgba(255,255,255,0.3); font-size: 12px;">-</span>'}
+                        `<button class="shop-order-action-btn shop-order-action-btn--refund" data-shop-action="order-refund" data-order-id="${this.escapeForAttr(order.id)}" title="退款"><i class="fas fa-undo"></i></button>`
+                        : '<span class="shop-order-empty-action">-</span>'}
                     </td>
                 </tr>
                 `;
@@ -7365,61 +7368,38 @@ Example output format:
             items = [{ content: decodeURIComponent(itemsData) || '解析失败' }];
         }
 
-        // Create modal overlay
         const overlay = document.createElement('div');
-        overlay.classList.add('order-content-overlay');
-        overlay.style.position = 'fixed';
-        overlay.style.top = '0';
-        overlay.style.left = '0';
-        overlay.style.width = '100%';
-        overlay.style.height = '100%';
-        overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
-        overlay.style.display = 'flex';
-        overlay.style.justifyContent = 'center';
-        overlay.style.alignItems = 'center';
-        overlay.style.zIndex = '1000';
-        overlay.style.backdropFilter = 'blur(4px)';
+        overlay.id = 'orderContentModal';
+        overlay.dataset.shopOverlayClose = 'dynamic-modal';
+        overlay.dataset.modalId = 'orderContentModal';
+        overlay.className = 'shop-order-content-overlay';
 
         const contentHtml = items.map(item => `
-            <div style="margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
-                <div style="font-size: 12px; color: rgba(255,255,255,0.6); margin-bottom: 4px;">
-                    ${item.product_name || '商品'}
+            <div class="shop-order-content-item">
+                <div class="shop-order-content-item-title">
+                    ${this.escapeHtml(item.product_name || '商品')}
                 </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; font-family: monospace; word-break: break-all; margin-bottom: 5px; color: #e2e8f0;">
+                <div class="shop-order-content-item-value">
                     ${this.escapeHtml(item.content)}
                 </div>
             </div>
         `).join('');
 
-        const allContent = items.map(p => p.content).join('\n');
+        const allContent = items.map((p) => p.content || '').join('\n');
+        const safeOrderId = this.escapeHtml(orderId || '');
 
         overlay.innerHTML = `
-            <div style="
-                background: rgba(30,35,50,0.95);
-                backdrop-filter: blur(20px);
-                border-radius: 20px; border: 1px solid rgba(255,255,255,0.12);
-                max-width: 500px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-                overflow: hidden;
-            ">
-                <div style="
-                    display: flex; justify-content: space-between; align-items: center;
-                    padding: 20px 24px; border-bottom: 1px solid rgba(255,255,255,0.08);
-                ">
-                    <h3 style="margin: 0; font-size: 18px; color: #fff;">📦 订单内容</h3>
+            <div class="shop-order-content-modal">
+                <div class="shop-order-content-header">
+                    <h3 class="shop-order-content-title">📦 订单内容</h3>
+                    <button type="button" class="shop-order-content-close" data-shop-action="order-close-content" data-modal-id="orderContentModal" aria-label="关闭">&times;</button>
                 </div>
-                <div style="padding: 24px;">
-                    <div style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px;">
-                        订单号: <code style="color: #60a5fa; user-select: all;">${orderId}</code>
+                <div class="shop-order-content-body">
+                    <div class="shop-order-content-meta">
+                        订单号: <code class="shop-order-content-order-id">${safeOrderId}</code>
                     </div>
-                    <div id="orderContentBox" style="
-                        background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1);
-                        border-radius: 12px; padding: 16px;
-                        font-family: 'Monaco', 'Consolas', monospace;
-                        font-size: 14px; color: #22c55e; word-break: break-all;
-                        cursor: pointer; line-height: 1.6;
-                        max-height: 300px; overflow-y: auto;
-                    ">${contentHtml}</div>
-                    <div style="font-size: 11px; color: rgba(255,255,255,0.35); text-align: center; margin-top: 10px;">
+                    <div id="orderContentBox" class="shop-order-content-box">${contentHtml}</div>
+                    <div class="shop-order-content-note">
                         点击上方内容框可复制
                     </div>
                 </div>
@@ -7435,103 +7415,50 @@ Example output format:
             });
         });
 
-        // Close on backdrop click
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) overlay.remove();
-        });
-
         document.body.appendChild(overlay);
     },
 
     // Open Enhanced Refund Modal
     openRefundModal: function (orderId) {
         const modalHtml = `
-            <style>
-                @keyframes modalFadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-                .refund-modal-input:focus {
-                    border-color: #6b9ece !important;
-                    box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.25) !important;
-                    outline: none;
-                }
-                .status-option input:checked + span {
-                    font-weight: 600;
-                    text-shadow: 0 0 10px rgba(255,255,255,0.2);
-                }
-                .refund-btn-cancel {
-                    padding: 10px 20px;
-                    background: rgba(255,255,255,0.05);
-                    border: none;
-                    color: #94a3b8;
-                    border-radius: 8px;
-                    cursor: pointer;
-                    font-size: 13px;
-                    font-weight: 500;
-                    transition: all 0.2s;
-                }
-                .refund-btn-cancel:hover {
-                    background: rgba(255,255,255,0.1);
-                    color: #fff;
-                }
-                .refund-btn-confirm {
-                    padding: 10px 24px;
-                    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-                    box-shadow: 0 4px 12px rgba(239,68,68,0.3);
-                    border: none;
-                    color: #fff;
-                    border-radius: 8px;
-                    cursor: pointer;
-                    font-size: 13px;
-                    font-weight: 600;
-                    transition: all 0.2s;
-                }
-                .refund-btn-confirm:hover {
-                    filter: brightness(1.1);
-                    transform: translateY(-1px);
-                    box-shadow: 0 6px 16px rgba(239,68,68,0.4);
-                }
-                .refund-btn-confirm:active {
-                    transform: translateY(0);
-                    filter: brightness(0.95);
-                }
-            </style>
             <div id="refundModal" data-shop-overlay-close="dynamic-modal" data-modal-id="refundModal"
-                style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(12px);z-index:9999;display:flex;justify-content:center;align-items:center;">
-                <div style="background:rgba(20,25,40,0.9);border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 50px rgba(0,0,0,0.5);border-radius:20px;padding:30px;width:480px;animation:modalFadeIn 0.3s ease-out;">
-                    <h3 style="margin:0 0 25px 0;color:#fff;font-size:18px;font-weight:600;display:flex;align-items:center;gap:10px;">
-                        <span style="background:rgba(239,68,68,0.15);padding:8px;border-radius:10px;display:flex;">
-                             <i class="fas fa-undo" style="color:#ef4444;"></i>
+                class="shop-refund-modal-overlay">
+                <div class="shop-refund-modal">
+                    <h3 class="shop-refund-modal-title">
+                        <span class="shop-refund-modal-title-icon">
+                             <i class="fas fa-undo"></i>
                         </span>
                         订单退款处理
                     </h3>
                     
-                    <div style="margin-bottom:25px;">
-                        <label style="display:block;color:#94a3b8;font-size:13px;font-weight:500;margin-bottom:12px;">选择退款后的库存状态</label>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                            <label class="status-option" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);padding:12px;border-radius:10px;cursor:pointer;display:flex;align-items:center;transition:all 0.2s;">
-                                <input type="radio" name="refundTargetStatus" value="frozen" checked style="accent-color:#f59e0b;"> 
-                                <span style="margin-left:10px;color:#cbd5e1;font-size:13px;display:flex;align-items:center;gap:6px;"><i class="fas fa-ban" style="color:#f59e0b;"></i> 冻结问题</span>
+                    <div class="shop-refund-modal-section">
+                        <label class="shop-refund-modal-label">选择退款后的库存状态</label>
+                        <div class="shop-refund-status-grid">
+                            <label class="shop-refund-status-option shop-refund-status-option--frozen">
+                                <input type="radio" name="refundTargetStatus" value="frozen" checked>
+                                <span class="shop-refund-status-option-label"><i class="fas fa-ban"></i> 冻结问题</span>
                             </label>
-                            <label class="status-option" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);padding:12px;border-radius:10px;cursor:pointer;display:flex;align-items:center;transition:all 0.2s;">
-                                <input type="radio" name="refundTargetStatus" value="available" style="accent-color:#10b981;"> 
-                                <span style="margin-left:10px;color:#cbd5e1;font-size:13px;display:flex;align-items:center;gap:6px;"><i class="fas fa-check-circle" style="color:#10b981;"></i> 重新上架</span>
+                            <label class="shop-refund-status-option shop-refund-status-option--available">
+                                <input type="radio" name="refundTargetStatus" value="available">
+                                <span class="shop-refund-status-option-label"><i class="fas fa-check-circle"></i> 重新上架</span>
                             </label>
-                            <label class="status-option" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);padding:12px;border-radius:10px;cursor:pointer;display:flex;align-items:center;transition:all 0.2s;">
-                                <input type="radio" name="refundTargetStatus" value="fault" style="accent-color:#d946ef;"> 
-                                <span style="margin-left:10px;color:#cbd5e1;font-size:13px;display:flex;align-items:center;gap:6px;"><i class="fas fa-exclamation-triangle" style="color:#d946ef;"></i> 故障维修</span>
+                            <label class="shop-refund-status-option shop-refund-status-option--fault">
+                                <input type="radio" name="refundTargetStatus" value="fault">
+                                <span class="shop-refund-status-option-label"><i class="fas fa-exclamation-triangle"></i> 故障维修</span>
                             </label>
-                            <label class="status-option" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);padding:12px;border-radius:10px;cursor:pointer;display:flex;align-items:center;transition:all 0.2s;">
-                                <input type="radio" name="refundTargetStatus" value="reserve" style="accent-color:#3b82f6;"> 
-                                <span style="margin-left:10px;color:#cbd5e1;font-size:13px;display:flex;align-items:center;gap:6px;"><i class="fas fa-box" style="color:#3b82f6;"></i> 保留库存</span>
+                            <label class="shop-refund-status-option shop-refund-status-option--reserve">
+                                <input type="radio" name="refundTargetStatus" value="reserve">
+                                <span class="shop-refund-status-option-label"><i class="fas fa-box"></i> 保留库存</span>
                             </label>
                         </div>
                     </div>
 
-                    <div style="margin-bottom:30px;">
-                        <label style="display:block;color:#94a3b8;font-size:13px;font-weight:500;margin-bottom:12px;">备注说明</label>
-                        <textarea id="refundRemarkInput" class="refund-modal-input" style="width:100%;box-sizing:border-box;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);color:#e2e8f0;border-radius:10px;padding:12px;height:80px;resize:none;font-family:inherit;font-size:13px;line-height:1.5;transition:all 0.2s;" placeholder="请填写退款的具体原因..."></textarea>
+                    <div class="shop-refund-modal-section shop-refund-modal-section--remark">
+                        <label class="shop-refund-modal-label">备注说明</label>
+                        <textarea id="refundRemarkInput" class="shop-refund-modal-textarea refund-modal-input" placeholder="请填写退款的具体原因..."></textarea>
                     </div>
                     
-                    <div style="display:flex;justify-content:flex-end;gap:12px;">
+                    <div class="shop-refund-modal-actions">
                         <button type="button" data-shop-action="refund-close-modal" data-modal-id="refundModal" class="refund-btn-cancel">取消</button>
                         <button type="button" data-shop-action="refund-submit" data-order-id="${this.escapeForAttr(orderId)}" class="refund-btn-confirm">确认退款</button>
                     </div>
