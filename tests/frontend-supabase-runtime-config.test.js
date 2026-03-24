@@ -1513,6 +1513,16 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         'wallet-modal-actions--toolbar',
         'product-dot--info',
         'content-card--warning',
+        'wallet-inline-icon--compact',
+        'wallet-inline-icon--title',
+        'wallet-affiliate-highlight--reward',
+        'wallet-affiliate-highlight--commission',
+        'loading-calendar--error',
+        'today-text--loading',
+        "resultDiv.classList.add('is-visible')",
+        "section.toggleAttribute('hidden', !shouldShowAfdianQuery)",
+        "section.toggleAttribute('hidden', !isFeatureEnabled)",
+        'wallet-toast--leaving',
         'bindOverlayCloseButtons(detailOverlay);'
     ];
 
@@ -1526,7 +1536,16 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         'style="display: flex; align-items: center; justify-content: center; min-height: 200px;"',
         'style="animation: fadeIn 0.2s ease-out;"',
         'style="display: flex; gap: 8px; justify-content: flex-end; padding: 4px 0; margin-top: -8px;"',
-        'style="width:8px;height:8px;background:#6b9ece;border-radius:50%;display:inline-block;margin-left:8px;cursor:pointer;transition:all 0.2s ease;position:relative;"'
+        'style="width:8px;height:8px;background:#6b9ece;border-radius:50%;display:inline-block;margin-left:8px;cursor:pointer;transition:all 0.2s ease;position:relative;"',
+        'style="display:none;"',
+        'style="display: none;"',
+        'style="width: 0%;"',
+        'style="color: #fbbf24;"',
+        'style="color:#10b981;"',
+        'style="font-size: 10px;"',
+        'toast.style.cssText =',
+        'wallet-toast-style',
+        "resultDiv.style.display = 'block'"
     ];
 
     for (const marker of removedInlineMarkers) {
@@ -1543,7 +1562,17 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         '.wallet-modal-actions--toolbar',
         '.product-dot--info',
         '.content-card--warning',
-        '.wallet-affiliate-person-row'
+        '.wallet-affiliate-person-row',
+        '.wallet-inline-icon--compact',
+        '.wallet-inline-icon--title',
+        '.wallet-affiliate-highlight--reward',
+        '.wallet-affiliate-highlight--commission',
+        '.loading-calendar--error',
+        '.today-text--loading',
+        '.afdian-result.is-visible',
+        '.history-details .detail-val.mono',
+        '.wallet-toast',
+        '.wallet-toast--leaving'
     ];
 
     for (const marker of walletCssMarkers) {
