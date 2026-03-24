@@ -1491,7 +1491,7 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=49'),
+        adminStudioHtml.includes('admin-studio.css?v=50'),
         true,
         'admin-studio.html should load the latest admin studio stylesheet version'
     );
@@ -2351,6 +2351,104 @@ test('discount and ticket admin renderers no longer emit inline row or paginatio
     }
 });
 
+test('discount admin runtime renderers externalize table states, copy toast, and modal visibility styling', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioCss = readRepoFile('admin-studio.css');
+    const discountsSource = readRepoFile('admin-discounts.js');
+
+    const removedRuntimeMarkers = [
+        'style="text-align:center;color:var(--text-dim);padding:20px;"',
+        'style="text-align:center;color:#ef4444;padding:20px;"',
+        'style="text-align:center;color:var(--text-dim);height:300px;vertical-align:middle;"',
+        'style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%;"',
+        'style="font-size:32px;margin-bottom:16px;opacity:0.5;"',
+        'style="color:#60a5fa;font-weight:600;"',
+        'style="color:#f59e0b;font-weight:600;"',
+        'style="font-family:\'SF Mono\',Consolas,monospace; font-size:14px;',
+        'style="display:inline-flex; flex-direction:column; align-items:center;"',
+        'style="display: flex; justify-content: center; gap: 8px;"',
+        'style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-top: 20px;"',
+        "toast.style.cssText =",
+        "toast.style.opacity = '1'",
+        "toast.style.transform = 'translateX(-50%) translateY(0)'",
+        "modal.style.display = 'flex'",
+        "modal.style.opacity = '1'",
+        "modal.style.visibility = 'visible'",
+        "modal.style.opacity = '0'",
+        "modal.style.visibility = 'hidden'",
+        "modal.style.display = 'none'",
+        "dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block'",
+        "dropdown.style.display = 'none'",
+        '<span style="font-size:1rem">💰</span> 固定金额立减',
+        '<span style="font-size:1rem">📊</span> 按比例打折'
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(discountsSource.includes(marker), false, `admin-discounts.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'createTableStateRow: function',
+        'setGenerateModalVisible: function',
+        'setTypeDropdownOpen: function',
+        'getDiscountTypeMarkup: function',
+        'admin-discount-type-value admin-discount-type-value--percent',
+        'admin-discount-status-muted',
+        'admin-discount-code-btn',
+        'admin-discount-usage-meta',
+        'admin-discount-status-stack',
+        'admin-discount-action-wrap',
+        'admin-discount-pagination-shell',
+        'admin-discount-copy-toast',
+        "modal.classList.toggle('is-visible', visible)",
+        "dropdown.classList.toggle('is-open', open)",
+        'admin-discount-type-label-icon'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(discountsSource.includes(marker), true, `admin-discounts.js should contain ${marker}`);
+    }
+
+    const expectedCssMarkers = [
+        '.admin-discount-table-state-cell',
+        '.admin-discount-type-value--percent',
+        '.admin-discount-type-value--fixed',
+        '.admin-discount-code-btn',
+        '.admin-discount-status-stack',
+        '.admin-discount-pagination-shell',
+        '.admin-discount-copy-toast',
+        '.admin-discount-copy-toast.is-visible',
+        '.admin-discount-generate-modal.is-visible',
+        '.admin-discount-type-dropdown.is-open',
+        '.admin-discount-type-label-icon'
+    ];
+
+    for (const marker of expectedCssMarkers) {
+        assert.equal(adminStudioCss.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioSource.includes('admin-studio.css?v=50'),
+        true,
+        'admin-studio.html should reference the updated admin stylesheet version'
+    );
+    assert.equal(
+        adminStudioSource.includes('admin-discounts.js?v=20260324_ADMIN_DISCOUNTS_RUNTIME_STYLE_1'),
+        true,
+        'admin-studio.html should reference the updated admin discounts script version'
+    );
+    assert.equal(
+        adminStudioSource.includes('admin-discount-generate-modal'),
+        true,
+        'admin-studio.html should expose the discount generate modal runtime class'
+    );
+    assert.equal(
+        adminStudioSource.includes('admin-discount-type-dropdown'),
+        true,
+        'admin-studio.html should expose the discount type dropdown runtime class'
+    );
+});
+
 test('ticket admin runtime renderers externalize row states, modal visibility, and copy toast styling', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioCss = readRepoFile('admin-studio.css');
@@ -2397,7 +2495,7 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=49'),
+        adminStudioSource.includes('admin-studio.css?v=50'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );

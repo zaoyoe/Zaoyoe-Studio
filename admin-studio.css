@@ -2828,6 +2828,158 @@ body {
     margin-top: 20px;
 }
 
+.admin-discount-table-state-cell {
+    padding: 20px;
+    text-align: center;
+}
+
+.admin-discount-table-state-cell--loading,
+.admin-discount-table-state-cell--empty {
+    color: var(--text-dim);
+}
+
+.admin-discount-table-state-cell--error {
+    color: #ef4444;
+}
+
+.admin-discount-table-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 260px;
+    gap: 8px;
+}
+
+.admin-discount-table-state-icon {
+    margin-bottom: 8px;
+    font-size: 32px;
+    opacity: 0.5;
+}
+
+.admin-discount-type-value {
+    font-weight: 600;
+}
+
+.admin-discount-type-value--percent {
+    color: #60a5fa;
+}
+
+.admin-discount-type-value--fixed {
+    color: #f59e0b;
+}
+
+.admin-discount-status-muted {
+    color: #94a3b8;
+}
+
+.admin-discount-code-btn {
+    padding: 0;
+    border: none;
+    background: none;
+    color: #e8edf4;
+    cursor: pointer;
+    font-family: 'SF Mono', Consolas, monospace;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    transition: color 0.2s ease;
+}
+
+.admin-discount-code-btn:hover {
+    color: #ffffff;
+}
+
+.admin-discount-usage-meta {
+    font-size: 13px;
+}
+
+.admin-discount-usage-count {
+    color: #fff;
+}
+
+.admin-discount-status-stack {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.admin-discount-expiry-meta {
+    margin-top: 4px;
+    color: var(--text-dim);
+    font-size: 11px;
+}
+
+.admin-discount-action-wrap {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+}
+
+.admin-discount-pagination-shell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.admin-discount-copy-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 40px;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 24px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    background: rgba(20, 28, 44, 0.95);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+    color: #e8edf4;
+    font-size: 0.9rem;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(20px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.admin-discount-copy-toast.is-visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.admin-discount-copy-toast-icon {
+    color: #4ade80;
+}
+
+.admin-discount-generate-modal {
+    display: flex;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.admin-discount-generate-modal.is-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.admin-discount-type-dropdown {
+    display: none;
+}
+
+.admin-discount-type-dropdown.is-open {
+    display: block;
+}
+
+.admin-discount-type-label-icon {
+    font-size: 1rem;
+}
+
 .admin-ticket-reply-modal {
     display: none;
     visibility: hidden;

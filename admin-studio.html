@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=49">
+    <link rel="stylesheet" href="admin-studio.css?v=50">
     <link rel="stylesheet" href="admin-sidebar.css?v=10">
     <link rel="stylesheet" href="css/admin-chat.css">
 
@@ -5160,7 +5160,7 @@
                 <div class="pagination" id="discountsPagination"></div>
 
                 <!-- Generate Discount Modal -->
-                <div id="discountGenerateModal" class="modal-overlay admin-studio-inline-style-attr-164" data-admin-overlay-close="discount-generate-modal"
+                <div id="discountGenerateModal" class="modal-overlay admin-studio-inline-style-attr-164 admin-discount-generate-modal" data-admin-overlay-close="discount-generate-modal" aria-hidden="true"
                    >
                     <div
                         class="admin-studio-inline-style-attr-165">
@@ -5204,7 +5204,8 @@
                                            ></i>
                                     </div>
                                     <div id="discountTypeDropdown"
-                                        class="admin-studio-inline-style-attr-182">
+                                        class="admin-studio-inline-style-attr-182 admin-discount-type-dropdown"
+                                        aria-hidden="true">
                                         <div class="discount-type-option admin-studio-inline-style-attr-183" data-admin-action="discounts-select-type" data-discount-type="percent"
                                            >
                                             <span class="admin-studio-inline-style-attr-184">📊</span>
@@ -5701,7 +5702,7 @@
     <script src="js/admin-studio-bootstrap.js?v=20260324_ADMIN_STUDIO_BOOTSTRAP_1"></script>
     <script src="admin-users.js?v=20260324_ADMIN_USERS_RUNTIME_STYLE_BATCH_2"></script>
     <script src="admin-points.js?v=20260323_ADMIN_POINTS_DELEGATION_1"></script>
-    <script src="admin-discounts.js"></script>
+    <script src="admin-discounts.js?v=20260324_ADMIN_DISCOUNTS_RUNTIME_STYLE_1"></script>
     <script src="starry-sky.js"></script>
     <!-- Flatpickr JS -->
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
