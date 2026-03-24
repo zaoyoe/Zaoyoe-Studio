@@ -3996,6 +3996,73 @@ test('payments runtime controls, site filter, and admin chat menu route through 
     }
 });
 
+test('admin chat runtime renderers externalize avatar, loading, and panel visibility styling', () => {
+    const adminChatSource = readRepoFile('js/admin-chat.js');
+    const adminChatStyles = readRepoFile('css/admin-chat.css');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const removedMarkers = [
+        "img.style.cssText = style;",
+        "avatar.style.overflow = 'hidden';",
+        "avatar.style.background = 'transparent';",
+        'id="chatInterface" style="display: none; height: 100%; flex-direction: column;"',
+        'id="adminImageInput" accept="image/*" style="display: none;"',
+        'id="adminEmojiPicker" style="display: none;"',
+        "emojiPicker.style.display = 'none';",
+        "emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'grid' : 'none';",
+        "subEl.style.fontSize = '12px';",
+        "subEl.style.color = '#94a3b8';",
+        "subEl.style.marginBottom = '2px';",
+        "document.getElementById('chatEmptyState').style.display = 'none';",
+        "interfaceEl.style.display = 'flex';",
+        '<div style="text-align:center; padding:20px; color:#64748b;">'
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(adminChatSource.includes(marker), false, `js/admin-chat.js should not contain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'setElementHidden(element, hidden)',
+        "className: 'session-avatar-image'",
+        "avatar.classList.add('session-avatar--media');",
+        'id="chatInterface" class="chat-interface" hidden',
+        'id="adminImageInput" class="admin-chat-file-input" accept="image/*" hidden',
+        'id="adminEmojiPicker" hidden',
+        "this.setElementHidden(emojiPicker, !emojiPicker.hidden);",
+        "subEl.className = 'session-preview session-preview-subtext';",
+        "this.setElementHidden(document.getElementById('chatEmptyState'), true);",
+        "this.setElementHidden(interfaceEl, false);",
+        '<div class="chat-loading-state">'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(adminChatSource.includes(marker), true, `js/admin-chat.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.session-avatar--media',
+        '.session-avatar-image',
+        '.session-preview-subtext',
+        '.chat-interface[hidden]',
+        '.admin-emoji-picker:not([hidden])',
+        '.chat-loading-state'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminChatStyles.includes(marker), true, `css/admin-chat.css should contain ${marker}`);
+    }
+
+    const htmlMarkers = [
+        'css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1',
+        'js/admin-chat.js?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1'
+    ];
+
+    for (const marker of htmlMarkers) {
+        assert.equal(adminStudioHtml.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+});
+
 test('final frontend runtime remnants route through delegated or bound listeners instead of inline attributes', () => {
     const notificationSource = readRepoFile('notification-client.js');
     const announcementSource = readRepoFile('announcement-loader.js');

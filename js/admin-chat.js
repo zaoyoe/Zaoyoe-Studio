@@ -34,7 +34,12 @@ class AdminChat {
         return '';
     }
 
-    createImageElement(url, { alt = '', className = '', style = '' } = {}) {
+    setElementHidden(element, hidden) {
+        if (!element) return;
+        element.hidden = hidden;
+    }
+
+    createImageElement(url, { alt = '', className = '' } = {}) {
         const safeUrl = this.sanitizeImageUrl(url);
         if (!safeUrl) return null;
 
@@ -45,7 +50,6 @@ class AdminChat {
         img.decoding = 'async';
         img.referrerPolicy = 'no-referrer';
         if (className) img.className = className;
-        if (style) img.style.cssText = style;
         img.addEventListener('click', () => window.open(safeUrl, '_blank', 'noopener'));
         return img;
     }
@@ -60,12 +64,11 @@ class AdminChat {
         if (session.profile?.avatar_url) {
             const img = this.createImageElement(session.profile.avatar_url, {
                 alt: `${displayName || this.t('chat.user', '用户')} avatar`,
-                style: 'width:100%;height:100%;object-fit:cover;'
+                className: 'session-avatar-image'
             });
 
             if (img) {
-                avatar.style.overflow = 'hidden';
-                avatar.style.background = 'transparent';
+                avatar.classList.add('session-avatar--media');
                 avatar.appendChild(img);
                 return avatar;
             }
@@ -116,7 +119,7 @@ class AdminChat {
                         <i class="fas fa-comments"></i>
                         <p>${this.t('chat.emptyStateChat', '请从左侧选择一个会话开始聊天')}</p>
                     </div>
-                    <div id="chatInterface" style="display: none; height: 100%; flex-direction: column;">
+                    <div id="chatInterface" class="chat-interface" hidden>
                         <div class="chat-main-header">
                             <div class="mobile-back-btn" id="mobileBackBtn">
                                 <i class="fas fa-arrow-left"></i>
@@ -131,13 +134,13 @@ class AdminChat {
                             <!-- Messages -->
                         </div>
                         <div class="chat-input-wrapper">
-                            <input type="file" id="adminImageInput" accept="image/*" style="display: none;">
+                            <input type="file" id="adminImageInput" class="admin-chat-file-input" accept="image/*" hidden>
                             <button class="chat-action-btn" id="adminUploadBtn"><i class="fas fa-plus"></i></button>
                             <textarea class="admin-chat-input" id="adminChatInput" placeholder="${this.t('chat.inputPlaceholder', '输入回复...')}"></textarea>
                             <button class="chat-action-btn" id="adminEmojiBtn"><i class="far fa-smile"></i></button>
                             <button class="admin-send-btn" id="adminSendBtn"><i class="fas fa-paper-plane"></i></button>
                         </div>
-                        <div class="emoji-picker-popover admin-emoji-picker" id="adminEmojiPicker" style="display: none;"></div>
+                        <div class="emoji-picker-popover admin-emoji-picker" id="adminEmojiPicker" hidden></div>
                     </div>
                 </div>
             </div>
@@ -159,7 +162,7 @@ class AdminChat {
                 if (e.target.classList.contains('emoji-item')) {
                     input.value += e.target.textContent;
                     input.focus();
-                    emojiPicker.style.display = 'none';
+                    this.setElementHidden(emojiPicker, true);
                 }
             });
         }
@@ -185,11 +188,11 @@ class AdminChat {
         if (emojiBtn && emojiPicker) {
             emojiBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'grid' : 'none';
+                this.setElementHidden(emojiPicker, !emojiPicker.hidden);
             });
             // Close emoji picker when clicking outside
             document.addEventListener('click', () => {
-                emojiPicker.style.display = 'none';
+                this.setElementHidden(emojiPicker, true);
             });
         }
     }
@@ -312,10 +315,7 @@ class AdminChat {
                 headerEl.appendChild(timeEl);
 
                 const subEl = document.createElement('div');
-                subEl.className = 'session-preview';
-                subEl.style.fontSize = '12px';
-                subEl.style.color = '#94a3b8';
-                subEl.style.marginBottom = '2px';
+                subEl.className = 'session-preview session-preview-subtext';
                 subEl.textContent = displaySub;
 
                 const previewEl = document.createElement('div');
@@ -339,9 +339,9 @@ class AdminChat {
         const container = document.getElementById('chatMainContainer');
         container.classList.add('mobile-chat-active');
 
-        document.getElementById('chatEmptyState').style.display = 'none';
+        this.setElementHidden(document.getElementById('chatEmptyState'), true);
         const interfaceEl = document.getElementById('chatInterface');
-        interfaceEl.style.display = 'flex';
+        this.setElementHidden(interfaceEl, false);
 
         // Find Session Data for Header
         const session = this.sessions.find(s => s.sessionId === sessionId);
@@ -357,7 +357,7 @@ class AdminChat {
         document.getElementById('currentChatId').textContent = sub;
 
         const area = document.getElementById('adminMessagesArea');
-        area.innerHTML = `<div style="text-align:center; padding:20px; color:#64748b;">${this.t('chat.loading', '加载中...')}</div>`;
+        area.innerHTML = `<div class="chat-loading-state">${this.t('chat.loading', '加载中...')}</div>`;
 
         const { data, error } = await this.supabase
             .from('chat_messages')
@@ -378,6 +378,8 @@ class AdminChat {
         const container = document.getElementById('chatMainContainer');
         container.classList.remove('mobile-chat-active');
         this.currentSessionId = null;
+        this.setElementHidden(document.getElementById('chatEmptyState'), false);
+        this.setElementHidden(document.getElementById('chatInterface'), true);
         this.renderSessionList();
     }
 
