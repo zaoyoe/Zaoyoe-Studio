@@ -24,7 +24,7 @@ const {
     deriveHupijiaoPointBreakdown
 } = require('../../../../api/_lib/payments/hupijiao-points');
 
-const VALID_TARGET_TYPES = new Set(['order', 'event', 'session']);
+const VALID_TARGET_TYPES = new Set(['order', 'event', 'session', 'ops_alert_job']);
 const VALID_ACTIONS = new Set([
     'mark_handled',
     'ignore',
@@ -163,6 +163,140 @@ function getResolutionText(action, note) {
     }
 }
 
+function normalizeStringArray(value) {
+    return Array.isArray(value)
+        ? value.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+}
+
+async function updateOpsAlertJob(supabase, jobId, patch) {
+    const { data, error } = await supabase
+        .from('ops_alert_jobs')
+        .update({
+            ...patch,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', jobId)
+        .select('*')
+        .single();
+
+    if (error) throw error;
+    return data;
+}
+
+async function applyOpsAlertJobAction(supabase, target, action, note) {
+    const status = normalizeText(target?.status).toLowerCase();
+    const payload = normalizeJsonObject(target?.payload);
+    const channels = normalizeStringArray(target?.channels);
+    const remainingChannels = normalizeStringArray(target?.remaining_channels);
+    const nowIso = new Date().toISOString();
+
+    if (!['request_retry', 'mark_handled', 'ignore', 'reopen'].includes(action)) {
+        const error = new Error('该操作不适用于站外告警任务');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (action === 'request_retry') {
+        if (status !== 'dead_letter') {
+            const error = new Error('只有死信状态的站外告警才能人工重试');
+            error.statusCode = 409;
+            throw error;
+        }
+
+        const retryChannels = remainingChannels.length ? remainingChannels : channels;
+        if (!retryChannels.length) {
+            const error = new Error('该站外告警缺少可重试通道，无法重新投递');
+            error.statusCode = 409;
+            throw error;
+        }
+
+        const job = await updateOpsAlertJob(supabase, target.id, {
+            status: 'retry',
+            remaining_channels: retryChannels,
+            next_retry_at: nowIso,
+            delivered_at: null,
+            last_attempt_at: null,
+            last_error: null,
+            worker_name: null,
+            attempt_count: 0
+        });
+
+        return {
+            job,
+            resolution: normalizeText(note) || '已人工重新加入站外告警重试队列。',
+            auditDetails: {
+                queue_previous_status: status,
+                queue_next_status: 'retry',
+                queue_channel_count: retryChannels.length,
+                provider_order_no: normalizeText(payload.provider_order_no) || null,
+                site: normalizeText(payload.site).toLowerCase() || null
+            }
+        };
+    }
+
+    if (action === 'mark_handled') {
+        const job = await updateOpsAlertJob(supabase, target.id, {
+            status: 'handled',
+            next_retry_at: null,
+            worker_name: null
+        });
+
+        return {
+            job,
+            resolution: normalizeText(note) || '已人工确认并结束该站外告警。',
+            auditDetails: {
+                queue_previous_status: status,
+                queue_next_status: 'handled',
+                provider_order_no: normalizeText(payload.provider_order_no) || null,
+                site: normalizeText(payload.site).toLowerCase() || null
+            }
+        };
+    }
+
+    if (action === 'ignore') {
+        const job = await updateOpsAlertJob(supabase, target.id, {
+            status: 'ignored',
+            next_retry_at: null,
+            worker_name: null
+        });
+
+        return {
+            job,
+            resolution: normalizeText(note) || '已人工忽略该站外告警。',
+            auditDetails: {
+                queue_previous_status: status,
+                queue_next_status: 'ignored',
+                provider_order_no: normalizeText(payload.provider_order_no) || null,
+                site: normalizeText(payload.site).toLowerCase() || null
+            }
+        };
+    }
+
+    if (!['handled', 'ignored'].includes(status)) {
+        const error = new Error('只有已处理或已忽略的站外告警才能重新打开');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const job = await updateOpsAlertJob(supabase, target.id, {
+        status: 'dead_letter',
+        next_retry_at: null,
+        worker_name: null
+    });
+
+    return {
+        job,
+        resolution: normalizeText(note) || '已重新打开该站外告警，等待人工决定是否重试。',
+        auditDetails: {
+            queue_previous_status: status,
+            queue_next_status: 'dead_letter',
+            provider_order_no: normalizeText(payload.provider_order_no) || null,
+            site: normalizeText(payload.site).toLowerCase() || null
+        }
+    };
+}
+
 async function fetchTargetRecord(supabase, targetType, targetId) {
     if (targetType === 'order') {
         const { data, error } = await supabase
@@ -178,6 +312,16 @@ async function fetchTargetRecord(supabase, targetType, targetId) {
         const { data, error } = await supabase
             .from('payment_events')
             .select('id, provider, provider_order_no, processing_result, error_message')
+            .eq('id', targetId)
+            .single();
+        if (error) throw error;
+        return data;
+    }
+
+    if (targetType === 'ops_alert_job') {
+        const { data, error } = await supabase
+            .from('ops_alert_jobs')
+            .select('id, alert_type, severity, title, content, payload, channels, remaining_channels, status, attempt_count, max_attempts, next_retry_at, last_attempt_at, delivered_at, last_error, worker_name, created_at, updated_at')
             .eq('id', targetId)
             .single();
         if (error) throw error;
@@ -1007,8 +1151,9 @@ module.exports = async function handler(req, res) {
         }
 
         const target = await fetchTargetRecord(supabase, targetType, targetId);
-        const targetProvider = normalizeText(target?.provider);
-        const targetProviderOrderNo = normalizeText(target?.provider_order_no || target?.session_key);
+        const targetPayload = targetType === 'ops_alert_job' ? normalizeJsonObject(target?.payload) : {};
+        const targetProvider = normalizeText(target?.provider || targetPayload.provider);
+        const targetProviderOrderNo = normalizeText(target?.provider_order_no || targetPayload.provider_order_no || target?.session_key);
 
         if (NOTE_REQUIRED_ACTIONS.has(action) && !note) {
             return sendJson(res, 400, {
@@ -1032,6 +1177,7 @@ module.exports = async function handler(req, res) {
         let resolvedStatus = mapActionToStatus(action);
         let resolvedResolution = getResolutionText(action, note);
         let auditDetails = {};
+        let anomalyCase = null;
 
         if (targetType === 'order' && action === 'refund_hupijiao') {
             const refundDecision = await applyHupijiaoRefundDecision(supabase, target, note, user.id, process.env);
@@ -1041,22 +1187,31 @@ module.exports = async function handler(req, res) {
             auditDetails = refundDecision.auditDetails || {};
         }
 
-        const anomalyCase = await upsertAnomalyCase(supabase, {
-            targetType,
-            targetId,
-            targetProvider: normalizeText(resolvedTarget?.provider || targetProvider),
-            targetProviderOrderNo: normalizeText(resolvedTarget?.provider_order_no || targetProviderOrderNo),
-            status: resolvedStatus,
-            note,
-            resolution: resolvedResolution,
-            action,
-            actorId: user.id
-        });
+        if (targetType === 'ops_alert_job') {
+            const opsAlertDecision = await applyOpsAlertJobAction(supabase, target, action, note, user.id);
+            resolvedTarget = opsAlertDecision.job || target;
+            resolvedStatus = normalizeText(opsAlertDecision.job?.status) || resolvedStatus;
+            resolvedResolution = opsAlertDecision.resolution || resolvedResolution;
+            auditDetails = opsAlertDecision.auditDetails || {};
+        } else {
+            anomalyCase = await upsertAnomalyCase(supabase, {
+                targetType,
+                targetId,
+                targetProvider: normalizeText(resolvedTarget?.provider || targetProvider),
+                targetProviderOrderNo: normalizeText(resolvedTarget?.provider_order_no || targetProviderOrderNo),
+                status: resolvedStatus,
+                note,
+                resolution: resolvedResolution,
+                action,
+                actorId: user.id
+            });
+            resolvedStatus = anomalyCase.status;
+        }
 
         await writeAdminAuditLog({
             supabase: requestSupabase || supabase,
             adminId: user.id,
-            actionType: 'payments.anomaly.action',
+            actionType: targetType === 'ops_alert_job' ? 'payments.ops_alert.action' : 'payments.anomaly.action',
             details: {
                 targetType,
                 targetId,
@@ -1064,14 +1219,15 @@ module.exports = async function handler(req, res) {
                 targetProviderOrderNo,
                 action,
                 note: note || null,
-                status: anomalyCase.status,
+                status: resolvedStatus,
                 ...auditDetails
             }
         });
 
         return sendJson(res, 200, {
             success: true,
-            anomaly_case: anomalyCase
+            anomaly_case: anomalyCase,
+            ops_alert_job: targetType === 'ops_alert_job' ? resolvedTarget : undefined
         });
     } catch (error) {
         return sendJson(res, error?.statusCode || 500, {

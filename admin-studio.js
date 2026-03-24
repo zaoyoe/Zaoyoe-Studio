@@ -477,6 +477,9 @@ function bindAdminStudioDelegatedControls() {
             case 'payments-focus-exception-topic':
                 window.AdminPayments?.focusExceptionTopic?.(actionEl.dataset.paymentsTopicKey);
                 break;
+            case 'payments-focus-ops-alert-queue':
+                window.AdminPayments?.focusOpsAlertQueue?.();
+                break;
             case 'payments-preview-cleanup':
                 window.AdminPayments?.previewCleanup?.();
                 break;

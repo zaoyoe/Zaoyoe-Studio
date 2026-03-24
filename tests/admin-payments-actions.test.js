@@ -99,6 +99,7 @@ function sortRows(rows, order) {
 
 function createSupabaseStub(state = {}) {
     const orders = state.orders || [];
+    const opsAlertJobs = state.opsAlertJobs || [];
     const anomalyCases = state.anomalyCases || [];
     const paymentEvents = state.paymentEvents || [];
     const pointsLedger = state.pointsLedger || [];
@@ -107,6 +108,7 @@ function createSupabaseStub(state = {}) {
     const adminSecretStore = state.adminSecretStore || [];
     const systemNotifications = state.systemNotifications || [];
     state.anomalyCases = anomalyCases;
+    state.opsAlertJobs = opsAlertJobs;
     state.paymentEvents = paymentEvents;
     state.pointsLedger = pointsLedger;
     state.adminRoles = adminRoles;
@@ -315,6 +317,33 @@ function createSupabaseStub(state = {}) {
                     const rows = sortRows(applyFilters(adminSecretStore, query.filters), query.order);
                     return {
                         data: query.single ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'ops_alert_jobs' && query.mode === 'select') {
+                    const rows = sortRows(applyFilters(opsAlertJobs, query.filters), query.order);
+                    return {
+                        data: query.single ? (rows[0] || null) : rows,
+                        error: rows.length ? null : { message: 'Ops alert job not found' }
+                    };
+                }
+
+                if (table === 'ops_alert_jobs' && query.mode === 'update') {
+                    const rows = applyFilters(opsAlertJobs, query.filters);
+                    if (!rows.length) {
+                        return {
+                            data: query.single ? null : [],
+                            error: { message: 'Ops alert job not found' }
+                        };
+                    }
+
+                    rows.forEach((row) => {
+                        Object.assign(row, query.payload || {});
+                    });
+
+                    return {
+                        data: query.single ? rows[0] : rows,
                         error: null
                     };
                 }
@@ -1184,5 +1213,61 @@ test('refund_hupijiao enqueues external ops alerts for critical refund failures'
         assert.equal(state.opsAlertEnqueues[0].severity, 'critical');
         assert.equal(state.opsAlertEnqueues[0].payload.processing_result, 'admin_refund_reclaim_failed');
         assert.equal(state.opsAlertEnqueues[0].payload.provider_order_no, 'HJ_ORDER_6');
+    });
+});
+
+test('ops_alert_job request_retry requeues a dead-letter alert job and records audit details', async () => {
+    const state = {
+        opsAlertJobs: [
+            {
+                id: 'ops-job-1',
+                alert_type: 'payment_refund_ops',
+                severity: 'critical',
+                title: '支付退款积分回滚失败',
+                content: '站点：CN\n订单号：HJ_ALERT_1',
+                payload: {
+                    provider: 'hupijiao',
+                    provider_order_no: 'HJ_ALERT_1',
+                    site: 'cn'
+                },
+                channels: ['telegram', 'feishu'],
+                remaining_channels: ['telegram', 'feishu'],
+                status: 'dead_letter',
+                attempt_count: 6,
+                max_attempts: 6,
+                next_retry_at: null,
+                delivered_at: null,
+                last_error: 'telegram timeout',
+                worker_name: 'worker-a',
+                created_at: '2026-03-24T10:00:00.000Z',
+                updated_at: '2026-03-24T10:10:00.000Z'
+            }
+        ]
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'ops_alert_job',
+                targetId: 'ops-job-1',
+                action: 'request_retry'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.ops_alert_job.status, 'retry');
+        assert.equal(payload.ops_alert_job.attempt_count, 0);
+        assert.equal(payload.ops_alert_job.last_error, null);
+        assert.deepEqual(payload.ops_alert_job.remaining_channels, ['telegram', 'feishu']);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'payments.ops_alert.action');
+        assert.equal(state.auditLogs[0].details.queue_previous_status, 'dead_letter');
+        assert.equal(state.auditLogs[0].details.queue_next_status, 'retry');
     });
 });

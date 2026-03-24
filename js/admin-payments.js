@@ -236,6 +236,14 @@
         return map[String(provider || '').trim().toLowerCase()] || 'fas fa-credit-card';
     }
 
+    function getOpsAlertChannelLabel(channel) {
+        const map = {
+            telegram: 'Telegram',
+            feishu: '飞书'
+        };
+        return map[String(channel || '').trim().toLowerCase()] || String(channel || '未知通道');
+    }
+
     function getRefundTopicIcon(topicKey) {
         const map = {
             refund_compensation_failures: 'fas fa-triangle-exclamation',
@@ -263,10 +271,15 @@
 
     function getAnomalyOpsStatusLabel(status) {
         const map = {
+            pending: '待发送',
+            processing: '发送中',
+            delivered: '已送达',
+            dead_letter: '死信待处理',
             open: '待处理',
             handled: '已处理',
             ignored: '已忽略',
             retry_requested: '已登记重试',
+            retry: '等待重试',
             approved: '已审核通过',
             rejected: '已驳回'
         };
@@ -297,9 +310,11 @@
 
     function getAnomalyOpsTone(status) {
         const normalized = String(status || '').trim().toLowerCase();
-        if (normalized === 'handled' || normalized === 'approved') return 'success';
+        if (normalized === 'dead_letter') return 'danger';
+        if (normalized === 'delivered' || normalized === 'handled' || normalized === 'approved') return 'success';
+        if (normalized === 'retry' || normalized === 'retry_requested') return 'warning';
+        if (normalized === 'pending' || normalized === 'processing') return 'info';
         if (normalized === 'ignored') return 'muted';
-        if (normalized === 'retry_requested') return 'warning';
         if (normalized === 'rejected') return 'danger';
         return 'info';
     }
@@ -379,6 +394,9 @@
         const message = String(item?.message || '');
         const type = String(item?.type || '').trim().toLowerCase();
 
+        if (type === 'ops_alert_job') {
+            return '处理建议：先检查 Telegram / 飞书密钥、目标通道配置和网络连通性，再决定是立即重试还是人工处理。';
+        }
         if (title.includes('退款积分回滚失败')) {
             return '处理建议：立即核对 payment_orders、payment_events 与 points_ledger，确认是否需要人工补回积分并暂停继续退款。';
         }
@@ -419,6 +437,7 @@
     }
 
     function getAnomalyTypeLabel(item) {
+        if (item?.type === 'ops_alert_job') return '站外告警';
         if (item?.type === 'session') return '支付意图';
         if (item?.type === 'event') return '回调事件';
         if (item?.type === 'query') return '查码记录';
@@ -426,10 +445,14 @@
     }
 
     function getAnomalyReferenceLabel(item) {
+        if (item?.type === 'ops_alert_job') return '投递单';
         return item?.type === 'session' ? '会话' : '订单号';
     }
 
     function getAnomalyReferenceValue(item) {
+        if (item?.type === 'ops_alert_job') {
+            return item?.provider_order_no || item?.id || '无投递单号';
+        }
         if (item?.type === 'session') {
             return item.session_key || item.provider_order_no || '无会话号';
         }
@@ -1122,6 +1145,134 @@
         }).join('');
     }
 
+    function renderOpsAlertHealth(data) {
+        const panel = document.getElementById('paymentsOpsAlertHealthPanel');
+        const target = document.getElementById('paymentsOpsAlertHealth');
+        const meta = document.getElementById('paymentsOpsAlertHealthMeta');
+        if (!panel || !target || !meta) return;
+
+        const summary = data?.ops_alert_summary || {};
+        const items = Array.isArray(data?.ops_alert_items) ? data.ops_alert_items : [];
+        const total = Number(summary.total || 0);
+        const actionable = Number(summary.actionable_count || 0);
+        const deadLetter = Number(summary.dead_letter || 0);
+
+        if (!total && !actionable) {
+            panel.hidden = true;
+            target.innerHTML = '';
+            meta.textContent = '';
+            return;
+        }
+
+        panel.hidden = false;
+        meta.textContent = deadLetter > 0
+            ? `当前有 ${formatNumber(deadLetter)} 条站外告警进入死信队列，需要人工决定是否重试。`
+            : `当前范围内共有 ${formatNumber(total)} 条站外告警投递记录。`;
+
+        const highlights = items.slice(0, 3);
+        target.innerHTML = `
+            <div class="payments-provider-row">
+                <div class="payments-provider-copy">
+                    <div class="payments-provider-name"><i class="fas fa-paper-plane"></i>投递状态总览</div>
+                    <div class="payments-provider-meta">
+                        已送达 ${escapeHtml(formatNumber(summary.delivered || 0))} ·
+                        等待重试 ${escapeHtml(formatNumber(summary.retry || 0))} ·
+                        发送中 ${escapeHtml(formatNumber(summary.processing || 0))} ·
+                        死信 ${escapeHtml(formatNumber(summary.dead_letter || 0))}
+                    </div>
+                    <div class="payments-provider-extra">
+                        <span>待发送 ${escapeHtml(formatNumber(summary.pending || 0))}</span>
+                        <span>已处理 ${escapeHtml(formatNumber(summary.handled || 0))}</span>
+                        <span>已忽略 ${escapeHtml(formatNumber(summary.ignored || 0))}</span>
+                        <span>最近死信 ${escapeHtml(formatDateTime(summary.latest_dead_letter_at))}</span>
+                    </div>
+                </div>
+                <div class="payments-provider-badges">
+                    ${deadLetter > 0 ? `<span class="payments-mini-badge danger">${escapeHtml(formatNumber(deadLetter))} 死信</span>` : ''}
+                    ${Number(summary.retry || 0) > 0 ? `<span class="payments-mini-badge warning">${escapeHtml(formatNumber(summary.retry || 0))} 重试中</span>` : ''}
+                    <button
+                        type="button"
+                        class="payments-anomaly-action-btn request_retry"
+                        data-admin-action="payments-focus-ops-alert-queue"
+                    >
+                        查看队列
+                    </button>
+                </div>
+            </div>
+            ${highlights.length ? `
+                <div class="payments-anomaly-items">
+                    ${highlights.map((item) => `
+                        <div class="payments-anomaly-item severity-${escapeHtml(item.severity || 'warning')}">
+                            <div class="payments-anomaly-top">
+                                <div class="payments-anomaly-copy">
+                                    <div class="payments-anomaly-title">${escapeHtml(item.title || '站外告警')}</div>
+                                    <div class="payments-anomaly-message">${escapeHtml(item.message || '')}</div>
+                                </div>
+                                <span class="payments-anomaly-severity">${escapeHtml(getAnomalyOpsStatusLabel(item.queue_status))}</span>
+                            </div>
+                            <div class="payments-anomaly-meta">
+                                <span><small>通道</small><strong>${escapeHtml((Array.isArray(item.channels) ? item.channels : []).map(getOpsAlertChannelLabel).join(' / ') || '未配置')}</strong></span>
+                                <span><small>订单号</small><strong>${escapeHtml(item.provider_order_no || '—')}</strong></span>
+                                <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            ` : ''}
+        `;
+    }
+
+    function renderOpsAlertQueue(data) {
+        const panel = document.getElementById('paymentsOpsAlertQueuePanel');
+        const target = document.getElementById('paymentsOpsAlertQueue');
+        const meta = document.getElementById('paymentsOpsAlertQueueMeta');
+        if (!panel || !target || !meta) return;
+
+        const summary = data?.ops_alert_summary || {};
+        const items = Array.isArray(data?.ops_alert_items) ? data.ops_alert_items : [];
+        const total = Number(summary.total || 0);
+
+        panel.hidden = false;
+        meta.textContent = total
+            ? `当前范围内共 ${formatNumber(total)} 条站外告警任务，其中 ${formatNumber(summary.dead_letter || 0)} 条死信、${formatNumber(summary.retry || 0)} 条等待重试。`
+            : '当前时间范围内还没有站外告警任务。';
+
+        if (!items.length) {
+            target.innerHTML = '<div class="payments-empty-state">当前没有待处理的站外告警任务，后续如有死信或重试任务会在这里展示。</div>';
+            return;
+        }
+
+        target.innerHTML = `
+            <div class="payments-anomaly-items">
+                ${items.map((item) => `
+                    <div class="payments-anomaly-item severity-${escapeHtml(item.severity || 'warning')}">
+                        <div class="payments-anomaly-top">
+                            <div class="payments-anomaly-copy">
+                                <div class="payments-anomaly-title">${escapeHtml(item.title || '站外告警')}</div>
+                                <div class="payments-anomaly-message">${escapeHtml(item.message || '')}</div>
+                            </div>
+                            <span class="payments-anomaly-severity">${escapeHtml(getAnomalyOpsStatusLabel(item.queue_status))}</span>
+                        </div>
+                        ${renderAnomalyOpsState(item)}
+                        <div class="payments-anomaly-suggestion">
+                            <i class="fas fa-lightbulb"></i>
+                            <span>${escapeHtml(getHandlingSuggestion(item))}</span>
+                        </div>
+                        <div class="payments-anomaly-meta">
+                            <span><small>渠道</small><strong>${escapeHtml((Array.isArray(item.channels) ? item.channels : []).map(getOpsAlertChannelLabel).join(' / ') || '未配置')}</strong></span>
+                            <span><small>剩余</small><strong>${escapeHtml((Array.isArray(item.remaining_channels) ? item.remaining_channels : []).map(getOpsAlertChannelLabel).join(' / ') || '无')}</strong></span>
+                            <span><small>尝试</small><strong>${escapeHtml(`${formatNumber(item.attempt_count || 0)} / ${formatNumber(item.max_attempts || 0)}`)}</strong></span>
+                            <span><small>${escapeHtml(getAnomalyReferenceLabel(item))}</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
+                            <span><small>下次重试</small><strong>${escapeHtml(formatDateTime(item.next_retry_at))}</strong></span>
+                            <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
+                        </div>
+                        ${renderAnomalyActions(item)}
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
     function renderProviderStats(data) {
         const target = document.getElementById('paymentsProviderStats');
         if (!target) return;
@@ -1622,11 +1773,13 @@
     function rerenderCurrentView() {
         if (!state.summary) return;
         renderRefundAlerts(state.summary);
+        renderOpsAlertHealth(state.summary);
         renderOverviewCards(state.summary);
         renderSitewideSummary(state.summary);
         renderBusinessBreakdown(state.summary);
         renderPointsBreakdown(state.summary);
         renderTrend(state.summary);
+        renderOpsAlertQueue(state.summary);
         renderExceptionTopics(state.summary);
         renderAnomalies(state.summary);
         renderOrders(state.summary);
@@ -1667,12 +1820,14 @@
         state.viewCache[state.activeTab] = getCurrentCacheKey();
         updateToolbarHighlights(data);
         renderRefundAlerts(data);
+        renderOpsAlertHealth(data);
         renderOverviewCards(data);
         renderProviderStats(data);
         renderSitewideSummary(data);
         renderBusinessBreakdown(data);
         renderPointsBreakdown(data);
         renderTrend(data);
+        renderOpsAlertQueue(data);
         renderExceptionTopics(data);
         renderAnomalies(data);
         renderOrders(data);
@@ -1754,6 +1909,24 @@
         }
 
         const target = document.getElementById('paymentsExceptionTopics');
+        if (target && typeof target.scrollIntoView === 'function') {
+            window.setTimeout(() => {
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 40);
+        }
+    }
+
+    async function focusOpsAlertQueue() {
+        switchTab('ops', { reload: false });
+        if (state.initialized) {
+            if (!hasCachedDataForTab('ops')) {
+                await reload();
+            } else {
+                renderOpsAlertQueue(state.summary || {});
+            }
+        }
+
+        const target = document.getElementById('paymentsOpsAlertQueuePanel');
         if (target && typeof target.scrollIntoView === 'function') {
             window.setTimeout(() => {
                 target.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2010,6 +2183,8 @@
             sitewide_summary: financePayload.sitewide_summary || {},
             business_breakdown: financePayload.business_breakdown || [],
             points_breakdown: financePayload.points_breakdown || [],
+            ops_alert_summary: opsPayload.ops_alert_summary || overviewPayload.ops_alert_summary || {},
+            ops_alert_items: opsPayload.ops_alert_items || overviewPayload.ops_alert_items || [],
             exception_topics: opsPayload.exception_topics || [],
             exception_topic_items: opsPayload.exception_topic_items || [],
             recent_anomalies: opsPayload.recent_anomalies || [],
@@ -2181,6 +2356,7 @@
         goToPage,
         handleAnomalyAction,
         setExceptionTopicFilter,
-        focusExceptionTopic
+        focusExceptionTopic,
+        focusOpsAlertQueue
     };
 })();

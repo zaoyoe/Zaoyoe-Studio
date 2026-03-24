@@ -4553,6 +4553,15 @@
                                     <div class="payments-refund-alerts" id="paymentsRefundAlerts"></div>
                                 </div>
                             </div>
+                            <div class="chart-card glass-panel payments-card" id="paymentsOpsAlertHealthPanel" hidden>
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-paper-plane"></i> 站外告警投递</h3>
+                                    <span id="paymentsOpsAlertHealthMeta">当前暂无站外告警投递数据。</span>
+                                </div>
+                                <div class="chart-body payments-card-body">
+                                    <div class="payments-provider-stats" id="paymentsOpsAlertHealth"></div>
+                                </div>
+                            </div>
                             <div class="kpi-cards-row payments-kpi-grid" id="paymentsOverviewGrid"></div>
                             <div class="charts-grid payments-charts-grid">
                                 <div class="chart-card glass-panel payments-card">
@@ -4614,6 +4623,15 @@
                                 <div class="payments-page-copy">
                                     <h2><i class="fas fa-shield-heart"></i> 异常运维</h2>
                                     <p>集中处理异常队列、最近订单和测试数据清理，适合排查支付链路问题与上线收尾。</p>
+                                </div>
+                            </div>
+                            <div class="chart-card glass-panel payments-card payments-card-wide" id="paymentsOpsAlertQueuePanel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-tower-broadcast"></i> 站外告警队列</h3>
+                                    <span id="paymentsOpsAlertQueueMeta">当前暂无站外告警队列数据。</span>
+                                </div>
+                                <div class="chart-body payments-card-body">
+                                    <div class="payments-provider-stats" id="paymentsOpsAlertQueue"></div>
                                 </div>
                             </div>
                             <div class="chart-card glass-panel payments-card payments-card-wide">
