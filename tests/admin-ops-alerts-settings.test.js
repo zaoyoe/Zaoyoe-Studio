@@ -180,11 +180,14 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
         }
 
         if (request === '../../../../api/_lib/secrets') {
-            return {
-                OPS_ALERT_SECRET_KEYS: {
+            const secretKeyMap = state.omitSecretKeyMap
+                ? undefined
+                : {
                     telegram_bot_token: 'ops_alert_telegram_bot_token',
                     feishu_webhook_url: 'ops_alert_feishu_webhook_url'
-                },
+                };
+            return {
+                OPS_ALERT_SECRET_KEYS: secretKeyMap,
                 async upsertStoredAdminSecret({ secretKey, secretValue }) {
                     state.upsertedSecrets.push({ secretKey, secretValue });
                     if (secretKey === 'ops_alert_telegram_bot_token') {
@@ -339,6 +342,44 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.deepEqual(state.auditLogs[0].details.updated_secrets, ['telegram_bot_token', 'feishu_webhook_url']);
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.feishu_webhook_url.configured, true);
+    });
+});
+
+test('ops alert settings POST falls back to default secret keys when the shared export is missing', async () => {
+    await withOpsAlertsSettingsHandler({
+        omitSecretKeyMap: true
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {
+                    telegram_bot_token: 'telegram-secret-token'
+                }
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.deepEqual(state.upsertedSecrets, [
+            {
+                secretKey: 'ops_alert_telegram_bot_token',
+                secretValue: 'telegram-secret-token'
+            }
+        ]);
     });
 });
 

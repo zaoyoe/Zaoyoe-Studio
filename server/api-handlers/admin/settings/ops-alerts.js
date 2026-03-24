@@ -6,7 +6,7 @@ const {
 } = require('../../../../api/_lib/admin');
 const {
     deleteStoredAdminSecret,
-    OPS_ALERT_SECRET_KEYS,
+    OPS_ALERT_SECRET_KEYS: CONFIGURED_OPS_ALERT_SECRET_KEYS,
     upsertStoredAdminSecret
 } = require('../../../../api/_lib/secrets');
 const {
@@ -16,8 +16,22 @@ const {
     OPS_ALERTS_CONFIG_KEY
 } = require('../../../../api/_lib/ops-alerts');
 
+const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
+    telegram_bot_token: 'ops_alert_telegram_bot_token',
+    feishu_webhook_url: 'ops_alert_feishu_webhook_url'
+});
+
 function sanitizeText(value, maxLength = 4000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
+}
+
+function getOpsAlertSecretKeys() {
+    const secretKeys = CONFIGURED_OPS_ALERT_SECRET_KEYS;
+    if (secretKeys && typeof secretKeys === 'object' && !Array.isArray(secretKeys)) {
+        return secretKeys;
+    }
+
+    return DEFAULT_OPS_ALERT_SECRET_KEYS;
 }
 
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
@@ -54,6 +68,7 @@ module.exports = async (req, res) => {
             const nextConfig = normalizeOpsAlertsConfig(body.config);
             const incomingSecrets = body.secrets && typeof body.secrets === 'object' ? body.secrets : {};
             const updatedSecrets = [];
+            const secretKeys = getOpsAlertSecretKeys();
 
             await upsertSystemConfig(
                 supabase,
@@ -63,7 +78,7 @@ module.exports = async (req, res) => {
                 '站外运维告警配置'
             );
 
-            for (const [secretName, secretKey] of Object.entries(OPS_ALERT_SECRET_KEYS)) {
+            for (const [secretName, secretKey] of Object.entries(secretKeys)) {
                 const secretValue = sanitizeText(incomingSecrets[secretName], 4000);
                 if (!secretValue) continue;
 
@@ -107,7 +122,7 @@ module.exports = async (req, res) => {
         if (req.method === 'DELETE') {
             const body = await parseJsonBody(req);
             const secretName = sanitizeText(body.secretName, 100);
-            const secretKey = OPS_ALERT_SECRET_KEYS[secretName];
+            const secretKey = getOpsAlertSecretKeys()[secretName];
 
             if (!secretKey) {
                 return sendJson(res, 400, {

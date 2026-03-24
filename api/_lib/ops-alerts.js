@@ -1,10 +1,14 @@
 const crypto = require('crypto');
 const {
-    OPS_ALERT_SECRET_KEYS,
+    OPS_ALERT_SECRET_KEYS: CONFIGURED_OPS_ALERT_SECRET_KEYS,
     getStoredAdminSecret
 } = require('./secrets');
 
 const OPS_ALERTS_CONFIG_KEY = 'ops_alerts';
+const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
+    telegram_bot_token: 'ops_alert_telegram_bot_token',
+    feishu_webhook_url: 'ops_alert_feishu_webhook_url'
+});
 const SUPPORTED_CHANNELS = Object.freeze(['telegram', 'feishu']);
 const SEVERITY_RANK = Object.freeze({
     info: 10,
@@ -32,6 +36,15 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         })
     })
 });
+
+function getOpsAlertSecretKeys() {
+    const secretKeys = CONFIGURED_OPS_ALERT_SECRET_KEYS;
+    if (secretKeys && typeof secretKeys === 'object' && !Array.isArray(secretKeys)) {
+        return secretKeys;
+    }
+
+    return DEFAULT_OPS_ALERT_SECRET_KEYS;
+}
 
 function normalizeText(value) {
     return String(value || '').trim();
@@ -231,15 +244,16 @@ async function loadSecretValue(supabase, secretKey, envName, env = process.env) 
 }
 
 async function resolveOpsAlertSecrets(supabase, env = process.env) {
+    const secretKeys = getOpsAlertSecretKeys();
     const telegram = await loadSecretValue(
         supabase,
-        OPS_ALERT_SECRET_KEYS.telegram_bot_token,
+        secretKeys.telegram_bot_token,
         'OPS_ALERTS_TELEGRAM_BOT_TOKEN',
         env
     );
     const feishu = await loadSecretValue(
         supabase,
-        OPS_ALERT_SECRET_KEYS.feishu_webhook_url,
+        secretKeys.feishu_webhook_url,
         'OPS_ALERTS_FEISHU_WEBHOOK_URL',
         env
     );
@@ -797,7 +811,7 @@ async function sweepOpsAlertJobs(supabase, options = {}) {
 module.exports = {
     DEFAULT_OPS_ALERTS_CONFIG,
     OPS_ALERTS_CONFIG_KEY,
-    OPS_ALERT_SECRET_KEYS,
+    OPS_ALERT_SECRET_KEYS: getOpsAlertSecretKeys(),
     buildOpsAlertDedupeKey,
     buildOpsAlertSecretStatus,
     claimOpsAlertJobs,
@@ -809,6 +823,7 @@ module.exports = {
     sweepOpsAlertJobs,
     __testUtils: {
         buildExternalAlertText,
+        getOpsAlertSecretKeys,
         getNextRetryAt,
         getRetryDelayMs,
         hasRecentOpsAlertJob,

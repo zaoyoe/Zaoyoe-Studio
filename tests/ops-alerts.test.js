@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
+const Module = require('node:module');
 
 const {
     enqueueOpsAlertJob,
@@ -216,6 +218,35 @@ function createRuntimeConfig(overrides = {}) {
     };
 }
 
+async function withOpsAlertsModuleWithoutSecretKeyMap(callback) {
+    const modulePath = path.resolve(__dirname, '../api/_lib/ops-alerts.js');
+    const originalLoad = Module._load;
+
+    delete require.cache[modulePath];
+    Module._load = function patchedLoad(request, parent, isMain) {
+        if (request === './secrets') {
+            return {
+                getStoredAdminSecret: async () => null
+            };
+        }
+
+        return originalLoad.call(this, request, parent, isMain);
+    };
+
+    let moduleExports;
+    try {
+        moduleExports = require(modulePath);
+    } finally {
+        Module._load = originalLoad;
+    }
+
+    try {
+        return await callback(moduleExports);
+    } finally {
+        delete require.cache[modulePath];
+    }
+}
+
 test('enqueueOpsAlertJob dedupes repeated refund alerts inside the recent window', async () => {
     const state = { jobs: [] };
     const supabase = createSupabaseStub(state);
@@ -366,4 +397,28 @@ test('sweepOpsAlertJobs keeps failed channels for retry without duplicating deli
     assert.equal(state.attempts.length, 2);
     assert.equal(state.attempts.some((item) => item.channel === 'telegram' && item.status === 'delivered'), true);
     assert.equal(state.attempts.some((item) => item.channel === 'feishu' && item.status === 'failed'), true);
+});
+
+test('ops alerts runtime secret resolution falls back to default secret keys when the shared export is missing', async () => {
+    await withOpsAlertsModuleWithoutSecretKeyMap(async (opsAlertsModule) => {
+        const runtime = await opsAlertsModule.loadOpsAlertsRuntimeConfig({
+            from() {
+                return createQueryBuilder(async (query) => {
+                    if (query.mode === 'select') {
+                        return { data: [], error: null };
+                    }
+
+                    throw new Error(`Unexpected query mode: ${query.mode}`);
+                });
+            }
+        }, {
+            OPS_ALERTS_TELEGRAM_BOT_TOKEN: 'telegram-token-from-env',
+            OPS_ALERTS_FEISHU_WEBHOOK_URL: 'https://open.feishu.example/hook'
+        });
+
+        assert.equal(runtime.secrets.telegram_bot_token, 'telegram-token-from-env');
+        assert.equal(runtime.secrets.telegram_bot_token_source, 'environment');
+        assert.equal(runtime.secrets.feishu_webhook_url, 'https://open.feishu.example/hook');
+        assert.equal(runtime.secrets.feishu_webhook_url_source, 'environment');
+    });
 });
