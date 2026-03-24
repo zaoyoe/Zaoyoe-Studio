@@ -398,6 +398,74 @@ test('critical auth pages consume delegated profile modal and form bindings', ()
     assert.equal(resetPasswordSource.includes('./js/reset-password-page.js'), true, 'reset-password.html should load the reset password bootstrap file');
 });
 
+test('auth runtime renderers centralize avatar, google loading, and profile modal style state', () => {
+    const authSource = readRepoFile('supabase-auth-functions.js');
+    const authSheetStyles = readRepoFile('css/auth-sheet.css');
+    const pageSources = [
+        readRepoFile('index.html'),
+        readRepoFile('guestbook.html'),
+        readRepoFile('verify.html'),
+        readRepoFile('prompts.html'),
+        readRepoFile('shop.html'),
+        readRepoFile('index_old.html')
+    ];
+
+    const removedRuntimeMarkers = [
+        "defaultIcon.style.display = 'inline'",
+        "navAvatar.style.display = 'none'",
+        "btn.style.pointerEvents = 'none'",
+        "btn.style.opacity = '0.75'",
+        "document.body.style.position = 'fixed'",
+        "card.style.maxHeight =",
+        "tabsWrap.style.setProperty('--profile-tab-indicator-width'",
+        'style="margin-right: 8px;"'
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(
+            authSource.includes(marker),
+            false,
+            `supabase-auth-functions.js should not retain ${marker}`
+        );
+    }
+
+    const runtimeMarkers = [
+        'function setAuthStyleState(target, styles = {})',
+        "setAuthAvatarVisualState(navAvatar, true)",
+        "btn.classList.add('is-loading')",
+        "loginModal.hidden = false;",
+        "setAuthStyleState(document.body, {",
+        "setAuthStyleState(tabsWrap, {"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(authSource.includes(marker), true, `supabase-auth-functions.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.google-login-btn.is-loading',
+        '.google-login-btn__spinner',
+        '.auth-admin-badge'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(authSheetStyles.includes(marker), true, `css/auth-sheet.css should contain ${marker}`);
+    }
+
+    for (const source of pageSources) {
+        assert.equal(
+            source.includes('css/auth-sheet.css?v=20260324_AUTH_RUNTIME_STYLE_HELPERS_1'),
+            true,
+            'auth entry pages should load the latest auth sheet stylesheet'
+        );
+        assert.equal(
+            source.includes('supabase-auth-functions.js?v=20260324_AUTH_RUNTIME_STYLE_HELPERS_1'),
+            true,
+            'auth entry pages should load the latest auth runtime script'
+        );
+    }
+});
+
 test('public and debug entry pages no longer ship inline handler attributes', () => {
     const inlineHandlerPattern = /\bon(?:click|change|submit|mousedown|mouseup|input|keydown|mouseover|mouseout|error|load)\s*=\s*["']/i;
     const files = [

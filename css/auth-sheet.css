@@ -770,8 +770,22 @@ body.auth-sheet-open {
     flex: 0 0 18px;
 }
 
+.google-login-btn.is-loading,
+.auth-sheet-google-btn.is-loading {
+    pointer-events: none !important;
+    opacity: 0.75;
+}
+
+.google-login-btn__spinner {
+    margin-right: 8px;
+}
+
 .auth-sheet-google-btn.gsi-hidden {
     display: none;
+}
+
+.auth-admin-badge {
+    color: #fbbf24;
 }
 
 .auth-sheet-divider {
