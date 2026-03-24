@@ -1,0 +1,131 @@
+/* Critical CSS - Nav instant, content fades in */
+html {
+    background-color: #ffffff;
+}
+
+html[data-theme="dark"] {
+    background-color: #000000;
+}
+
+body {
+    background-color: inherit;
+    margin: 0;
+}
+
+/* Content areas start hidden, fade in when ready */
+.featured-banner {
+    display: none;
+    /* Hidden until JS shows it */
+}
+
+.gallery-container {
+    opacity: 0;
+    transition: opacity 0.4s ease 0.1s;
+}
+
+body.loaded .gallery-container {
+    opacity: 1;
+}
+
+.visually-hidden-h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+@media (max-width: 768px) {
+    html {
+        -webkit-text-size-adjust: 100%;
+    }
+
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+    textarea,
+    select {
+        font-size: 16px !important;
+        line-height: 1.35 !important;
+    }
+
+    .login-overlay.active:focus-within .login-card,
+    .modal-overlay.active:focus-within .modal-content {
+        transform: none !important;
+    }
+}
+
+/* Prompts page: keep auth sheet title/tab size aligned with homepage modal */
+#loginModal .auth-sheet-header,
+#loginModal .auth-sheet-overline,
+#loginModal .auth-sheet-title {
+    text-align: center;
+}
+
+#loginModal .auth-sheet-title {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Prompts page: lock white primary action buttons to homepage size */
+#loginModal #loginView .auth-sheet-submit,
+#loginModal #registerView .auth-sheet-submit {
+    width: min(100%, 82%);
+    max-width: 200px;
+    min-height: 44px;
+    padding: 11px 15px;
+    margin-left: auto;
+    margin-right: auto;
+    font-size: 14px;
+    line-height: 1.2;
+    border-radius: 15px;
+}
+
+#loginModal #registerView .auth-sheet-submit {
+    margin-top: auto;
+}
+
+/* Prompts page: longer verify input (left) + get button right aligned */
+#loginModal #registerView .auth-sheet-inline-group--code {
+    width: 100%;
+    grid-template-columns: 168px 104px;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+#loginModal #registerView .auth-sheet-inline-group--code .verify-code-btn {
+    justify-self: end;
+}
+
+/* Prompts page: brighter caret for better visibility */
+#loginModal .auth-sheet-input,
+#loginModal .auth-sheet-input:focus,
+#loginModal .auth-sheet-input.auth-sheet-input--portaled,
+#loginModal .auth-sheet-input.auth-sheet-input--portaled:focus {
+    caret-color: #f4f8ff !important;
+}
+
+/* Prompts page: plain gray rectangular action button (no gradient / no 3D outline) */
+#loginModal #registerView .auth-sheet-inline-group--code .verify-code-btn {
+    border-radius: 13px;
+    background: rgba(216, 224, 234, 0.12) !important;
+    border: 1px solid rgba(216, 224, 234, 0.18) !important;
+    color: #e9eef4 !important;
+    box-shadow: none !important;
+    font-weight: 600;
+}
+
+#loginModal #registerView .auth-sheet-inline-group--code .verify-code-btn:hover {
+    transform: none;
+    background: rgba(226, 233, 242, 0.18) !important;
+    border-color: rgba(226, 233, 242, 0.24) !important;
+    box-shadow: none !important;
+}
+
+#loginModal #registerView .auth-sheet-inline-group--code .verify-code-btn:active {
+    transform: translateY(0);
+    box-shadow: none !important;
+}

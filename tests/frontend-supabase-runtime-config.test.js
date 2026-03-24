@@ -355,6 +355,22 @@ test('privacy page reuses the shared Supabase bootstrap instead of inlining a du
     assert.equal(source.includes("localStorage.getItem('chat_session_id')"), false, 'privacy.html should not duplicate chat session initialization');
 });
 
+test('selected production and preview pages externalize page-specific style blocks into dedicated CSS files', () => {
+    const expectations = new Map([
+        ['verify.html', 'css/verify-page.css?v=20260324_VERIFY_PAGE_STYLES_1'],
+        ['prompts.html', 'css/prompts-page.css?v=20260324_PROMPTS_PAGE_STYLES_1'],
+        ['reset-password.html', 'css/reset-password-page.css?v=20260324_RESET_PASSWORD_STYLES_1'],
+        ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
+        ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1']
+    ]);
+
+    for (const [relativePath, stylesheetMarker] of expectations.entries()) {
+        const source = readRepoFile(relativePath);
+        assert.equal(source.includes(stylesheetMarker), true, `${relativePath} should load ${stylesheetMarker}`);
+        assert.equal(/<style\b/i.test(source), false, `${relativePath} should not retain inline style blocks`);
+    }
+});
+
 test('shared theme preload replaces duplicated inline theme bootstraps on public and admin pages', () => {
     const files = [
         'guestbook.html',
