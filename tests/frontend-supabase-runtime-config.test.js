@@ -458,7 +458,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
-        ['shop.html', 'css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
+        ['shop.html', 'css/shop-page.css?v=20260324_SHOP_RUNTIME_STYLE_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_SHOP_RUNTIME_STYLE_ZERO_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
@@ -547,7 +547,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
+        ['shop.html', 'css/shop-page.css?v=20260324_SHOP_RUNTIME_STYLE_1'],
         ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -838,6 +838,61 @@ test('gallery and shop renderers no longer generate inline handler attributes in
             false,
             `${relativePath} should not generate inline event handler attributes`
         );
+    }
+});
+
+test('shop client runtime renderers externalize product cards, purchase feedback, and order list styling', () => {
+    const shopClientSource = readRepoFile('js/shop-client.js');
+    const shopCssSource = readRepoFile('css/shop-page.css');
+
+    const runtimeMarkers = [
+        'buildShopStatusMessage: function (message',
+        'setDiscountMessage: function (message = \'\'',
+        'renderModalProductName: function (displayName, { wholesale = false } = {})',
+        'buildSuccessToastMarkup: function ()',
+        'buildExpandContentToggleMarkup: function (hiddenCount, expanded = false)',
+        'shop-success-content-shell--plain',
+        'shop-order-history-item',
+        'shop-rich-link',
+        'shop-purchase-height-locked'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(shopClientSource.includes(marker), true, `js/shop-client.js should contain ${marker}`);
+    }
+
+    const removedRuntimeMarkers = [
+        'style="color:#10b981; margin-right:10px;"',
+        'style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,100,100,0.7);"',
+        'style="font-size: 24px; color: var(--accent-purple, #6b9ece);"',
+        'style="position:absolute; bottom:12px; left:12px; z-index: 10;',
+        'style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;',
+        'style="padding:6px 12px; border-radius:12px; background:rgba(255,255,255,0.1); border:none; color:#fff; cursor:pointer;"',
+        'style="color: #6b9ece; text-decoration: underline; text-underline-offset: 2px;"'
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(shopClientSource.includes(marker), false, `js/shop-client.js should not contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '.shop-inline-store-title-icon',
+        '.shop-card-original-price',
+        '.shop-agent-badge',
+        '.shop-card-footer',
+        '.shop-status-message',
+        '.shop-wholesale-badge',
+        '.shop-discount-message',
+        '.shop-success-toast',
+        '.shop-expand-toggle',
+        '.shop-order-history-item',
+        '.shop-rich-link',
+        '.shop-purchase-viewport-probe',
+        '#shopPurchaseModal .modal-content.shop-purchase-height-locked'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(shopCssSource.includes(marker), true, `css/shop-page.css should contain ${marker}`);
     }
 });
 
