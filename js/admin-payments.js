@@ -361,6 +361,15 @@
         const message = String(item?.message || '');
         const type = String(item?.type || '').trim().toLowerCase();
 
+        if (title.includes('退款积分回滚失败')) {
+            return '处理建议：立即核对 payment_orders、payment_events 与 points_ledger，确认是否需要人工补回积分并暂停继续退款。';
+        }
+        if (title.includes('退款积分扣回失败')) {
+            return '处理建议：先检查用户当前余额、扣回 RPC 是否已部署，再决定是否改走人工售后或人工扣回。';
+        }
+        if (title.includes('退款失败')) {
+            return '处理建议：复核通道返回、网关订单状态与后台补回记录，避免重复退款或重复扣回。';
+        }
         if (type === 'query' || title.includes('查码')) {
             return '处理建议：先判断是用户输错订单号，还是 webhook 未落单、订单被拦截或兑换码尚未生成。';
         }
@@ -739,6 +748,9 @@
         const sitewide = data?.sitewide_summary || {};
         const sessionSummary = data?.session_summary || {};
         const providerCount = Array.isArray(data?.provider_stats) ? data.provider_stats.length : 0;
+        const refundIssueCount = Number(anomaly.refund_failures || 0)
+            + Number(anomaly.refund_reclaim_failures || 0)
+            + Number(anomaly.refund_compensation_failures || 0);
         const anomalyCount = Number(anomaly.review_orders || 0)
             + Number(anomaly.failed_orders || 0)
             + Number(anomaly.recent_event_anomalies || 0)
@@ -762,6 +774,12 @@
                 <i class="fas fa-triangle-exclamation"></i>
                 <span>异常 ${escapeHtml(formatNumber(anomalyCount))}</span>
             </div>
+            ${refundIssueCount > 0 ? `
+                <div class="payments-highlight-pill warning">
+                    <i class="fas fa-rotate-left"></i>
+                    <span>退款异常 ${escapeHtml(formatNumber(refundIssueCount))}</span>
+                </div>
+            ` : ''}
             <div class="payments-highlight-pill">
                 <i class="fas fa-wallet"></i>
                 <span>收入 ${escapeHtml(formatCurrency(incomeValue))}</span>
@@ -776,11 +794,23 @@
         }
 
         const anomaly = data?.anomaly_summary || {};
+        const refundIssueCount = Number(anomaly.refund_failures || 0)
+            + Number(anomaly.refund_reclaim_failures || 0)
+            + Number(anomaly.refund_compensation_failures || 0);
         const anomalyCount = Number(anomaly.review_orders || 0)
             + Number(anomaly.failed_orders || 0)
             + Number(anomaly.recent_event_anomalies || 0)
             + Number(anomaly.session_anomalies || 0)
             + Number(anomaly.query_failures || 0);
+
+        if (refundIssueCount > 0) {
+            renderAccessState(
+                `当前有 ${formatNumber(refundIssueCount)} 项退款售后异常，请优先查看退款失败、积分扣回失败与积分回滚失败专题。`,
+                Number(anomaly.refund_compensation_failures || 0) > 0 ? 'error' : 'warning',
+                { preserveBody: true }
+            );
+            return;
+        }
 
         if (anomalyCount > 0) {
             renderAccessState(`当前有 ${formatNumber(anomalyCount)} 项异常需要关注，请优先查看金额异常、待审核、重复回调、查码失败与支付意图回填。`, 'warning', { preserveBody: true });
@@ -911,6 +941,9 @@
         const querySummary = data?.query_summary || {};
         const target = document.getElementById('paymentsOverviewGrid');
         if (!target) return;
+        const refundIssueCount = Number(anomaly.refund_failures || 0)
+            + Number(anomaly.refund_reclaim_failures || 0)
+            + Number(anomaly.refund_compensation_failures || 0);
 
         const cards = [
             {
@@ -967,6 +1000,15 @@
                 value: formatNumber(Number(anomaly.recent_event_anomalies || 0) + Number(anomaly.session_anomalies || 0)),
                 help: `${formatNumber(anomaly.duplicate_webhook_orders)} 个订单出现重复回调 · 会话异常 ${formatNumber(anomaly.session_anomalies)}`,
                 tone: 'warning'
+            },
+            {
+                icon: 'fas fa-rotate-left',
+                label: '退款异常',
+                value: formatNumber(refundIssueCount),
+                help: `退款失败 ${formatNumber(anomaly.refund_failures)} · 扣回失败 ${formatNumber(anomaly.refund_reclaim_failures)} · 回滚失败 ${formatNumber(anomaly.refund_compensation_failures)}`,
+                tone: Number(anomaly.refund_compensation_failures || 0) > 0 || Number(anomaly.refund_reclaim_failures || 0) > 0
+                    ? 'critical'
+                    : (refundIssueCount > 0 ? 'warning' : 'info')
             },
             {
                 icon: 'fas fa-magnifying-glass-chart',
