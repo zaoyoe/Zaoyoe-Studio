@@ -4,6 +4,20 @@
     const { url: SUPABASE_URL, publishableKey: SUPABASE_KEY } = window.requireZaoyoeSupabaseConfig();
     window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+    function resetStatusMessage(statusMsg) {
+        statusMsg.hidden = true;
+        statusMsg.textContent = '';
+        statusMsg.classList.remove('success');
+    }
+
+    function showStatusMessage(statusMsg, message, options = {}) {
+        const { success = false } = options;
+
+        statusMsg.textContent = message;
+        statusMsg.hidden = false;
+        statusMsg.classList.toggle('success', success);
+    }
+
     async function handleNewPasswordSubmit(event) {
         event.preventDefault();
 
@@ -13,18 +27,15 @@
         const submitBtn = document.getElementById('submitBtn');
         const btnSpan = submitBtn.querySelector('span');
 
-        statusMsg.style.display = 'none';
-        statusMsg.className = 'status-message';
+        resetStatusMessage(statusMsg);
 
         if (newPassword !== confirmPassword) {
-            statusMsg.textContent = '❌ 两次输入的密码不一致';
-            statusMsg.style.display = 'block';
+            showStatusMessage(statusMsg, '❌ 两次输入的密码不一致');
             return;
         }
 
         if (newPassword.length < 6) {
-            statusMsg.textContent = '❌ 密码长度不能少于6位';
-            statusMsg.style.display = 'block';
+            showStatusMessage(statusMsg, '❌ 密码长度不能少于6位');
             return;
         }
 
@@ -40,20 +51,20 @@
                 throw error;
             }
 
-            statusMsg.textContent = '✅ 密码修改成功，正在返回主页...';
-            statusMsg.className = 'status-message success';
-            statusMsg.style.display = 'block';
+            showStatusMessage(statusMsg, '✅ 密码修改成功，正在返回主页...', { success: true });
 
             btnSpan.textContent = '修改成功';
             window.location.href = 'index.html';
         } catch (error) {
             console.error('修改密码失败:', error);
             if (error.message.includes('Auth session missing') || error.message.includes('invalid')) {
-                statusMsg.textContent = '❌ 链接已失效或过期，请重新发起密码找回。';
+                showStatusMessage(statusMsg, '❌ 链接已失效或过期，请重新发起密码找回。');
             } else {
-                statusMsg.textContent = `❌ ${error.message || '系统错误，请重试'}`;
+                showStatusMessage(statusMsg, `❌ ${error.message || '系统错误，请重试'}`);
+                submitBtn.disabled = false;
+                btnSpan.textContent = '确认修改';
+                return;
             }
-            statusMsg.style.display = 'block';
             submitBtn.disabled = false;
             btnSpan.textContent = '确认修改';
         }
@@ -69,8 +80,7 @@
         if (!hash && !window.location.search.includes('error')) {
             const { data: { session } } = await window.supabaseClient.auth.getSession();
             if (!session) {
-                statusMsg.textContent = '无效的重置链接，或者链接已过期。请重新获取重置邮件。';
-                statusMsg.style.display = 'block';
+                showStatusMessage(statusMsg, '无效的重置链接，或者链接已过期。请重新获取重置邮件。');
                 submitBtn.disabled = true;
             }
             return;
@@ -78,8 +88,7 @@
 
         if (window.location.search.includes('error=')) {
             const params = new URLSearchParams(window.location.search);
-            statusMsg.textContent = `错误: ${params.get('error_description') || '无效的重置请求'}`;
-            statusMsg.style.display = 'block';
+            showStatusMessage(statusMsg, `错误: ${params.get('error_description') || '无效的重置请求'}`);
             submitBtn.disabled = true;
         }
     });

@@ -144,7 +144,10 @@ IMPORTANT: Return ONLY valid JSON.`;
 
                 completed += 1;
                 const percent = Math.round((completed / needsWork.length) * 100);
-                document.getElementById('progressFill').style.width = `${percent}%`;
+                const progressFill = document.getElementById('progressFill');
+                if (progressFill) {
+                    progressFill.value = percent;
+                }
                 document.getElementById('progressText').textContent = `${completed}/${needsWork.length} (${percent}%)`;
                 document.getElementById('completedCount').textContent = prompts.length - needsWork.length + completed;
 

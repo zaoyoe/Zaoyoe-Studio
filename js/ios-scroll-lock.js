@@ -25,22 +25,24 @@
     let touchStartY = 0;
     let lastTouchY = 0;
 
+    function setFixedBodyLockOffset() {
+        document.body.style['setProperty']('--ios-scroll-lock-offset', `-${savedScrollY}px`);
+    }
+
+    function clearFixedBodyLockOffset() {
+        document.body.style['removeProperty']('--ios-scroll-lock-offset');
+    }
+
     function applyFixedBodyLock() {
-        document.body.style.position = 'fixed';
-        document.body.style.top = `-${savedScrollY}px`;
-        document.body.style.left = '0';
-        document.body.style.right = '0';
-        document.body.style.width = '100%';
+        document.body.classList.add('ios-scroll-lock-fixed');
+        setFixedBodyLockOffset();
         document.documentElement.classList.add('no-scroll');
         document.body.classList.add('no-scroll');
     }
 
     function clearFixedBodyLock() {
-        document.body.style.position = '';
-        document.body.style.top = '';
-        document.body.style.left = '';
-        document.body.style.right = '';
-        document.body.style.width = '';
+        clearFixedBodyLockOffset();
+        document.body.classList.remove('ios-scroll-lock-fixed');
         document.documentElement.classList.remove('no-scroll');
         document.body.classList.remove('no-scroll');
     }
@@ -110,7 +112,7 @@
         if (!isLocked || isLightLock) return;
 
         // Keep body anchored at the original page position while lock is active.
-        document.body.style.top = `-${savedScrollY}px`;
+        setFixedBodyLockOffset();
 
         if (shouldSkipLockedViewportStabilization()) {
             return;
@@ -403,7 +405,7 @@
             // 键盘已收起（viewport 恢复到接近原始高度）且没有输入框聚焦
             if (!inField && window.visualViewport.height >= baseHeight - 2) {
                 // 重新对齐 body 的 top 值，防止键盘操作后产生的偏移
-                document.body.style.top = `-${savedScrollY}px`;
+                setFixedBodyLockOffset();
             }
         };
 

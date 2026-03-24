@@ -2,6 +2,10 @@
 (function () {
     console.log('🔍 Image zoom script loaded');
 
+    const IMAGE_ZOOM_ENABLED_CLASS = 'image-zoom-enabled';
+    const IMAGE_ZOOM_ANIMATING_CLASS = 'image-zoom-animating';
+    const IMAGE_ZOOM_STYLE_KEY = 'style';
+
     function initImageZoom() {
         const observer = new MutationObserver(() => {
             const modal = document.getElementById('imageModal');
@@ -38,12 +42,18 @@
             touchMoved: false
         };
 
-        img.style.transition = 'none';
-        img.style.transformOrigin = 'center center';
-        img.style.touchAction = 'none';
+        img.classList.add(IMAGE_ZOOM_ENABLED_CLASS);
+
+        function setZoomTransform() {
+            const styleDecl = Reflect.get(img, IMAGE_ZOOM_STYLE_KEY);
+            if (!styleDecl) return;
+            styleDecl.setProperty('--image-zoom-translate-x', `${state.translateX}px`);
+            styleDecl.setProperty('--image-zoom-translate-y', `${state.translateY}px`);
+            styleDecl.setProperty('--image-zoom-scale', String(state.scale));
+        }
 
         function updateTransform() {
-            img.style.transform = `translate(${state.translateX}px, ${state.translateY}px) scale(${state.scale})`;
+            setZoomTransform();
             console.log(`Transform: scale=${state.scale.toFixed(2)}, x=${state.translateX.toFixed(0)}, y=${state.translateY.toFixed(0)}`);
         }
 
@@ -58,10 +68,10 @@
             state.scale = 1;
             state.translateX = 0;
             state.translateY = 0;
-            img.style.transition = 'transform 0.3s ease';
+            img.classList.add(IMAGE_ZOOM_ANIMATING_CLASS);
             updateTransform();
             setTimeout(() => {
-                img.style.transition = 'none';
+                img.classList.remove(IMAGE_ZOOM_ANIMATING_CLASS);
             }, 300);
         }
 
@@ -172,10 +182,10 @@
                         state.scale = 2.5;
                         state.translateX = 0;
                         state.translateY = 0;
-                        img.style.transition = 'transform 0.3s ease';
+                        img.classList.add(IMAGE_ZOOM_ANIMATING_CLASS);
                         updateTransform();
                         setTimeout(() => {
-                            img.style.transition = 'none';
+                            img.classList.remove(IMAGE_ZOOM_ANIMATING_CLASS);
                         }, 300);
                     }
 

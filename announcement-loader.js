@@ -54,8 +54,8 @@
 
         announcementOwnsScrollLock = true;
         announcementOverflowRestore = {
-            htmlOverflow: document.documentElement.style.overflow,
-            bodyOverflow: document.body.style.overflow
+            htmlOverflow: document.documentElement.style['overflow'],
+            bodyOverflow: document.body.style['overflow']
         };
 
         setAnnouncementStyleState(document.documentElement, { overflow: 'hidden' });

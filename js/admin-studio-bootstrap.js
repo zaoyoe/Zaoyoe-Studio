@@ -32,13 +32,13 @@
         }
 
         document.querySelectorAll('.module-container').forEach((element) => {
-            element.style.display = 'none';
+            element.hidden = true;
             element.classList.remove('active');
         });
 
         const target = document.getElementById(`module-${moduleId}`);
         if (target) {
-            target.style.display = 'block';
+            target.hidden = false;
             target.classList.add('active');
 
             if (moduleId === 'users') window.initUserModule?.();
@@ -135,7 +135,12 @@
         const dropdown = document.getElementById('discountTypeDropdown');
         const wrapper = document.getElementById('discountTypeWrapper');
         if (dropdown && wrapper && !wrapper.contains(event.target)) {
-            dropdown.style.display = 'none';
+            if (window.AdminDiscounts?.setTypeDropdownOpen) {
+                window.AdminDiscounts.setTypeDropdownOpen(false);
+            } else {
+                dropdown.classList.remove('is-open');
+                dropdown.setAttribute('aria-hidden', 'true');
+            }
         }
     });
 

@@ -360,6 +360,7 @@ test('vercel CSP blocks inline scripts and inline event attributes without hash 
 
 test('shared profile modal template no longer uses inline event handlers', () => {
     const source = readRepoFile('js/profile-modal-template.js');
+    const sharedProfileStyles = readRepoFile('style.css');
     const inlineEventAttributes = [
         'onclick=',
         'onchange=',
@@ -378,6 +379,11 @@ test('shared profile modal template no longer uses inline event handlers', () =>
 
     assert.equal(source.includes('data-profile-action='), true, 'Profile modal template should expose delegated profile actions');
     assert.equal(source.includes('data-modal-dismiss-managed="1"'), true, 'Profile modal template should use managed modal dismissal');
+    assert.equal(source.includes('style="display: none;"'), false, 'Profile modal template should not inline hidden file input styles');
+    assert.equal(source.includes('style="display: flex; gap: 10px;"'), false, 'Profile modal template should not inline mobile code row layout');
+    assert.equal(source.includes('style="flex: 1;"'), false, 'Profile modal template should not inline mobile code input sizing');
+    assert.equal(sharedProfileStyles.includes('.profile-modal-file-input'), true, 'style.css should define the shared profile modal file input class');
+    assert.equal(sharedProfileStyles.includes('#profileModal .profile-mobile-code-row'), true, 'style.css should define the shared profile modal mobile code row layout');
 });
 
 test('critical auth pages consume delegated profile modal and form bindings', () => {
@@ -387,6 +393,8 @@ test('critical auth pages consume delegated profile modal and form bindings', ()
 
     assert.equal(verifySource.includes('profile-modal-template.js'), true, 'verify.html should load the shared profile modal template');
     assert.equal(indexSource.includes('profile-modal-template.js'), true, 'index.html should load the shared profile modal template');
+    assert.equal(indexSource.includes('./js/profile-modal-template.js?v=20260324_PROFILE_MODAL_RUNTIME_STYLE_1'), true, 'index.html should load the latest profile modal runtime version');
+    assert.equal(verifySource.includes('./js/profile-modal-template.js?v=20260324_PROFILE_MODAL_RUNTIME_STYLE_1'), true, 'verify.html should load the latest profile modal runtime version');
     assert.equal(verifySource.includes('id="profileModal"'), false, 'verify.html should not embed a duplicated profile modal');
     assert.equal(indexSource.includes('id="profileModal"'), false, 'index.html should not embed a duplicated profile modal');
     assert.equal(verifySource.includes('onmousedown="closeModal(event)"'), false, 'verify.html should not inline modal close handlers');
@@ -602,7 +610,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
     const expectations = new Map([
         ['verify.html', 'css/verify-page.css?v=20260324_VERIFY_STYLE_ATTRS_1'],
         ['prompts.html', 'css/prompts-page.css?v=20260324_PROMPTS_STYLE_ATTRS_1'],
-        ['reset-password.html', 'css/reset-password-page.css?v=20260324_RESET_PASSWORD_STYLES_1'],
+        ['reset-password.html', 'css/reset-password-page.css?v=20260324_RESET_PASSWORD_RUNTIME_STYLE_1'],
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
@@ -764,6 +772,51 @@ test('auth and verify runtime pages externalize page bootstraps instead of embed
     assert.equal(guestbookSource.includes('scheduleOptionalGuestbookEnhancements'), false, 'guestbook.html should not inline optional guestbook enhancement boot logic');
 });
 
+test('reset password runtime bootstrap externalizes status visibility state', () => {
+    const resetPasswordSource = readRepoFile('reset-password.html');
+    const resetPasswordBootstrap = readRepoFile('js/reset-password-page.js');
+    const resetPasswordStyleSource = readRepoFile('css/reset-password-page.css');
+
+    const removedMarkers = [
+        "statusMsg.style.display = 'none';",
+        "statusMsg.style.display = 'block';",
+        "statusMsg.className = 'status-message';",
+        "statusMsg.className = 'status-message success';"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(resetPasswordBootstrap.includes(marker), false, `js/reset-password-page.js should not contain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'function resetStatusMessage(statusMsg)',
+        'function showStatusMessage(statusMsg, message, options = {})',
+        'statusMsg.hidden = true;',
+        'statusMsg.hidden = false;',
+        "statusMsg.classList.toggle('success', success);"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(resetPasswordBootstrap.includes(marker), true, `js/reset-password-page.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        resetPasswordSource.includes('./js/reset-password-page.js?v=20260324_RESET_PASSWORD_RUNTIME_STYLE_1'),
+        true,
+        'reset-password.html should load the latest reset password runtime-style bootstrap'
+    );
+    assert.equal(
+        resetPasswordSource.includes('class="status-message" hidden'),
+        true,
+        'reset-password.html should initialize the status message in a hidden state'
+    );
+    assert.equal(
+        resetPasswordStyleSource.includes('.status-message[hidden]'),
+        true,
+        'css/reset-password-page.css should hide status messages via the hidden attribute'
+    );
+});
+
 test('home, prompts, and admin studio pages externalize their remaining runtime bootstraps', () => {
     const indexSource = readRepoFile('index.html');
     const promptsSource = readRepoFile('prompts.html');
@@ -823,7 +876,7 @@ test('home, prompts, and admin studio pages externalize their remaining runtime 
     }
 
     assert.equal(
-        adminStudioSource.includes('js/admin-studio-bootstrap.js?v=20260324_ADMIN_STUDIO_BOOTSTRAP_1'),
+        adminStudioSource.includes('js/admin-studio-bootstrap.js?v=20260324_ADMIN_STUDIO_BOOTSTRAP_2'),
         true,
         'admin-studio.html should load the shared admin studio bootstrap file'
     );
@@ -869,12 +922,15 @@ test('non-production utility and preview pages no longer ship inline handler att
     assert.equal(migrateScript.includes("document.getElementById('loadBtn')?.addEventListener('click'"), true, 'js/tools-migrate-prompts-bilingual-page.js should bind load via addEventListener');
     assert.equal(migrateScript.includes("document.getElementById('startBtn')?.addEventListener('click'"), true, 'js/tools-migrate-prompts-bilingual-page.js should bind start via addEventListener');
     assert.equal(migrateScript.includes("document.getElementById('stopBtn')?.addEventListener('click'"), true, 'js/tools-migrate-prompts-bilingual-page.js should bind stop via addEventListener');
+    assert.equal(migrateScript.includes("document.getElementById('progressFill').style.width"), false, 'js/tools-migrate-prompts-bilingual-page.js should not write progress width inline');
+    assert.equal(migrateSource.includes('<progress class="progress-fill" id="progressFill" max="100" value="0"></progress>'), true, 'tools/migrate-prompts-bilingual.html should use a native progress element');
     assert.equal(previewSource.includes('data-demo-id="grid"'), true, 'preview-hero-effects.html should expose delegated demo buttons');
     assert.equal(previewSource.includes('./js/preview-hero-effects-page.js'), true, 'preview-hero-effects.html should load the shared hero preview bootstrap');
     assert.equal(previewHeroScript.includes('function bindDemoNavigation()'), true, 'js/preview-hero-effects-page.js should bind demo navigation centrally');
     assert.equal(profilePreviewSource.includes('./js/profile-mobile-tab-preview.js'), true, 'profile_mobile_tab_preview.html should load the shared profile preview bootstrap');
     assert.equal(langSource.includes('./js/test-lang-toggle-page.js'), true, 'test-lang-toggle.html should load the language toggle bootstrap');
     assert.equal(langScript.includes("document.getElementById('langToggleTest')?.addEventListener('click'"), true, 'js/test-lang-toggle-page.js should bind the language toggle');
+    assert.equal(langScript.includes('<div style='), false, 'js/test-lang-toggle-page.js should not inject inline status styles');
     assert.equal(realtimeSource.includes('./js/test-realtime-simple-page.js'), true, 'test-realtime-simple.html should load the realtime bootstrap');
     assert.equal(realtimeSource.includes('./js/runtime-supabase-config.js'), true, 'test-realtime-simple.html should load the shared runtime Supabase config helper');
     assert.equal(realtimeScript.includes("document.getElementById('testConnectionBtn')?.addEventListener('click'"), true, 'js/test-realtime-simple-page.js should bind the realtime test button');
@@ -1292,7 +1348,7 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_1'),
+        guestbookHtml.includes('style.css?v=20260324_GUESTBOOK_SUPABASE_RUNTIME_STYLE_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
@@ -1301,6 +1357,82 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
         true,
         'guestbook.html should reference the updated guestbook script version'
     );
+});
+
+test('supabase guestbook runtime renderers externalize error, empty state, delete, heart, and preview styling', () => {
+    const guestbookSupabaseSource = readRepoFile('supabase-guestbook-functions.js');
+    const homepageGuestbookSource = readRepoFile('js/homepage-guestbook-modal.js');
+    const styleSource = readRepoFile('style.css');
+    const indexSource = readRepoFile('index.html');
+    const guestbookHtml = readRepoFile('guestbook.html');
+    const archivedIndexSource = readRepoFile('index_old.html');
+
+    const removedMarkers = [
+        '<p style="color: red;">加载留言失败，请刷新重试</p>',
+        "emptyState.style.display = 'flex'",
+        "container.style.opacity = '1'",
+        "emptyState.style.display = 'none'",
+        "msgEl.style.transition = 'opacity 0.3s, transform 0.3s';",
+        "msgEl.style.opacity = '0';",
+        "msgEl.style.transform = 'scale(0.9)';",
+        "const style = document.createElement('style');",
+        "heartIcon.style.animation = 'heartBounce 1.2s ease-in-out';",
+        "heartIcon.style.color = '#ff4757';",
+        "heartIcon.style.animation = 'heartPulse 1s ease-in-out 3';",
+        "imagePreview.style.display = 'block';",
+        "imagePreview.style.display = 'none';"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(guestbookSupabaseSource.includes(marker), false, `supabase-guestbook-functions.js should not contain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'function markGuestbookContainerReady(container)',
+        'function setGuestbookEmptyStateVisible(emptyState, visible)',
+        'function setGuestbookImagePreviewVisible(imagePreview, visible)',
+        "container.innerHTML = '<p class=\"guestbook-message-error\">加载留言失败，请刷新重试</p>';",
+        'markGuestbookContainerReady(container);',
+        "msgEl.classList.add('guestbook-message-removing');",
+        "triggerGuestbookHeartAnimation(heartIcon, 'guestbook-heart-bounce', 1500);",
+        "triggerGuestbookHeartAnimation(heartIcon, 'guestbook-heart-pulse', 3500);",
+        "imagePreview.classList.toggle('guestbook-composer-preview-hidden', !visible);",
+        "imagePreview.classList.toggle('index-guestbook-image-preview-hidden', !visible);"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(guestbookSupabaseSource.includes(marker), true, `supabase-guestbook-functions.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        homepageGuestbookSource.includes("!imagePreview.hidden"),
+        true,
+        'js/homepage-guestbook-modal.js should detect image preview visibility without inline display state'
+    );
+
+    const cssMarkers = [
+        '.guestbook-message-error',
+        'body.guestbook-page .message-item.guestbook-message-removing',
+        '.guestbook-heart-liked',
+        '@keyframes guestbookHeartBounce',
+        '@keyframes guestbookHeartPulse',
+        '.guestbook-composer-preview-hidden'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(styleSource.includes(marker), true, `style.css should contain ${marker}`);
+    }
+
+    const htmlMarkers = [
+        'style.css?v=20260324_GUESTBOOK_SUPABASE_RUNTIME_STYLE_1',
+        'supabase-guestbook-functions.js?v=20260324_GUESTBOOK_SUPABASE_RUNTIME_STYLE_1'
+    ];
+
+    for (const marker of htmlMarkers) {
+        assert.equal(indexSource.includes(marker), true, `index.html should contain ${marker}`);
+        assert.equal(guestbookHtml.includes(marker), true, `guestbook.html should contain ${marker}`);
+        assert.equal(archivedIndexSource.includes(marker), true, `index_old.html should contain ${marker}`);
+    }
 });
 
 test('homepage guestbook modal runtime renderers externalize keyboard dock, viewport probe, and overlay state styling', () => {
@@ -1359,17 +1491,17 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
     }
 
     assert.equal(
-        indexSource.includes('style.css?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_1'),
+        indexSource.includes('style.css?v=20260324_GUESTBOOK_SUPABASE_RUNTIME_STYLE_1'),
         true,
         'index.html should load the latest homepage guestbook modal stylesheet version'
     );
     assert.equal(
-        indexSource.includes('./js/homepage-guestbook-modal.js?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_1'),
+        indexSource.includes('./js/homepage-guestbook-modal.js?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_2'),
         true,
         'index.html should load the latest homepage guestbook modal script version'
     );
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_1'),
+        guestbookHtml.includes('style.css?v=20260324_GUESTBOOK_SUPABASE_RUNTIME_STYLE_1'),
         true,
         'guestbook.html should load the latest shared stylesheet version'
     );
@@ -1523,7 +1655,11 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         "card.style.display = visible ? '' : 'none';",
         "msg.style.cssText = 'grid-column: 1/-1; text-align: center; color: var(--text-dim); padding: 2rem;'",
         '<p style="grid-column: 1/-1; text-align: center; color: var(--text-dim);">No prompts yet. Create your first one!</p>',
-        'style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"'
+        'style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"',
+        'indicator.style.left = `${left}px`;',
+        'indicator.style.width = `${tabRect.width}px`;',
+        'return `<div class="color-swatch" style="background: ${hex}" data-color="${color}"></div>`;',
+        "document.getElementById('batchProgressFill').style.width = `${percent}%`;"
     ];
 
     for (const marker of removedRuntimeMarkers) {
@@ -1539,6 +1675,8 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         "card.classList.add('is-removing');",
         "syncAdminSearchCardVisibility(card, visible);",
         "setAdminStudioVisibility(suggestionsSection, true, 'is-visible');",
+        "document.getElementById('batchProgressFill').value = percent;",
+        "color-swatch--unknown",
         'class="key-actions"',
         'btn-add-config btn-add-config--compact'
     ];
@@ -1554,6 +1692,10 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         '.toast.is-dismissing',
         '.admin-card--hidden-by-search',
         '.admin-card.is-removing',
+        '.admin-tabs .admin-tab.active::after',
+        '.batch-progress-fill::-webkit-progress-value',
+        '.color-swatch--dark-blue',
+        '.color-swatch--unknown',
         '.api-key-row .btn-add-config.btn-add-config--compact',
         '.api-key-row .btn-add-config.btn-add-config--danger'
     ];
@@ -1563,14 +1705,248 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=53'),
+        adminStudioHtml.includes('admin-studio.css?v=55'),
         true,
         'admin-studio.html should load the latest admin studio stylesheet version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-studio.js?v=20260324_ADMIN_RUNTIME_STYLE_HELPERS_1'),
+        adminStudioHtml.includes('admin-studio.js?v=20260324_ADMIN_RUNTIME_STYLE_HELPERS_2'),
         true,
         'admin-studio.html should load the latest admin studio runtime version'
+    );
+});
+
+test('force input background fix externalizes focus styling and avoids repeated inline writes', () => {
+    const forceInputScript = readRepoFile('force-input-bg-fix.js');
+    const forceInputStyles = readRepoFile('css/force-input-bg-fix.css');
+    const guestbookHtml = readRepoFile('guestbook.html');
+    const legacyIndexHtml = readRepoFile('index_old.html');
+
+    const removedMarkers = [
+        "input.style.removeProperty('background');",
+        "input.style.removeProperty('background-color');",
+        "input.style.removeProperty('border');",
+        "input.style.removeProperty('border-color');",
+        "input.style.removeProperty('box-shadow');",
+        "input.style.setProperty('background', 'rgba(0, 0, 0, 0.4)', 'important');",
+        "input.style.setProperty('background-color', 'rgba(0, 0, 0, 0.4)', 'important');",
+        "input.style.setProperty('border', '1px solid rgba(155, 93, 229, 0.7)', 'important');",
+        "input.style.setProperty('border-color', 'rgba(155, 93, 229, 0.7)', 'important');",
+        "input.style.setProperty('box-shadow', '0 0 0 3px rgba(155, 93, 229, 0.15)', 'important');"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(forceInputScript.includes(marker), false, `force-input-bg-fix.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "const FORCE_INPUT_FIX_CLASS = 'force-input-bg-fixed';",
+        "const FORCE_INPUT_FIX_FOCUSED_CLASS = 'force-input-bg-fixed--focused';",
+        "const FORCE_INPUT_FIX_BOUND_ATTR = 'data-force-input-bg-bound';",
+        "input.classList.add(FORCE_INPUT_FIX_CLASS);",
+        "input.classList.toggle(FORCE_INPUT_FIX_FOCUSED_CLASS, input === document.activeElement);",
+        "input.setAttribute(FORCE_INPUT_FIX_BOUND_ATTR, 'true');"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(forceInputScript.includes(marker), true, `force-input-bg-fix.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.force-input-bg-fixed {',
+        '.force-input-bg-fixed.force-input-bg-fixed--focused {'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(forceInputStyles.includes(marker), true, `force-input-bg-fix.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        guestbookHtml.includes('css/force-input-bg-fix.css?v=20260324_FORCE_INPUT_BG_FIX_1'),
+        true,
+        'guestbook.html should load the latest force input fix stylesheet version'
+    );
+    assert.equal(
+        guestbookHtml.includes('./force-input-bg-fix.js?v=20260324_FORCE_INPUT_BG_FIX_1'),
+        true,
+        'guestbook.html should load the latest force input fix runtime version'
+    );
+    assert.equal(
+        legacyIndexHtml.includes('css/force-input-bg-fix.css?v=20260324_FORCE_INPUT_BG_FIX_1'),
+        true,
+        'index_old.html should load the latest force input fix stylesheet version'
+    );
+    assert.equal(
+        legacyIndexHtml.includes('./force-input-bg-fix.js?v=20260324_FORCE_INPUT_BG_FIX_1'),
+        true,
+        'index_old.html should load the latest force input fix runtime version'
+    );
+});
+
+test('ios scroll lock externalizes fixed-body shell styles while keeping dynamic offset centralized', () => {
+    const scrollLockSource = readRepoFile('js/ios-scroll-lock.js');
+    const sharedStyles = readRepoFile('style.css');
+    const indexHtml = readRepoFile('index.html');
+    const guestbookHtml = readRepoFile('guestbook.html');
+    const verifyHtml = readRepoFile('verify.html');
+    const promptsHtml = readRepoFile('prompts.html');
+    const shopHtml = readRepoFile('shop.html');
+
+    const removedMarkers = [
+        "document.body.style.position = 'fixed';",
+        "document.body.style.left = '0';",
+        "document.body.style.right = '0';",
+        "document.body.style.width = '100%';",
+        "document.body.style.position = '';",
+        "document.body.style.left = '';",
+        "document.body.style.right = '';",
+        "document.body.style.width = '';"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(scrollLockSource.includes(marker), false, `js/ios-scroll-lock.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "function setFixedBodyLockOffset() {",
+        "function clearFixedBodyLockOffset() {",
+        "document.body.classList.add('ios-scroll-lock-fixed');",
+        "document.body.classList.remove('ios-scroll-lock-fixed');",
+        "document.body.style['setProperty']('--ios-scroll-lock-offset', `-${savedScrollY}px`);",
+        "document.body.style['removeProperty']('--ios-scroll-lock-offset');"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(scrollLockSource.includes(marker), true, `js/ios-scroll-lock.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        sharedStyles.includes('body.ios-scroll-lock-fixed {'),
+        true,
+        'style.css should contain the fixed-body iOS scroll lock class'
+    );
+    assert.equal(
+        sharedStyles.includes('top: var(--ios-scroll-lock-offset, 0px);'),
+        true,
+        'style.css should source the iOS scroll lock offset from a CSS variable'
+    );
+
+    const expectedVersion = 'js/ios-scroll-lock.js?v=20260324_IOS_SCROLL_LOCK_RUNTIME_STYLE_2';
+    for (const [fileName, html] of Object.entries({
+        'index.html': indexHtml,
+        'guestbook.html': guestbookHtml,
+        'verify.html': verifyHtml,
+        'prompts.html': promptsHtml,
+        'shop.html': shopHtml
+    })) {
+        assert.equal(html.includes(expectedVersion), true, `${fileName} should reference the updated iOS scroll lock runtime version`);
+    }
+});
+
+test('capsule manager externalizes pulse and swipe state styling', () => {
+    const capsuleManagerSource = readRepoFile('capsule-manager.js');
+    const capsuleStyles = readRepoFile('capsule-styles.css');
+    const guestbookHtml = readRepoFile('guestbook.html');
+
+    const removedMarkers = [
+        "el.style.transform = 'translateX(-50%) scale(1.05) translateZ(0)';",
+        "setTimeout(() => el.style.transform = 'translateX(-50%) scale(1) translateZ(0)', 200);",
+        "capsule.style.transition = 'none';",
+        "capsule.style.transform = `translateX(-50%) translateY(${deltaY}px)`;",
+        "capsule.style.transition = '';",
+        "capsule.style.transform = 'translateX(-50%) translateY(0)';",
+        "capsule.style.transform = 'translateX(-50%) translateY(-100px)';"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(capsuleManagerSource.includes(marker), false, `capsule-manager.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "dragOffsetProperty: '--capsule-drag-offset'",
+        "this.pulse(el);",
+        "styleDecl.setProperty(this.runtime.dragOffsetProperty, `${Math.round(Number(value))}px`);",
+        "capsule.classList.add('capsule-wrapper--dragging');",
+        "capsule.classList.add('capsule-wrapper--dismissed');",
+        "capsule.classList.remove('capsule-wrapper--dismissed');"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(capsuleManagerSource.includes(marker), true, `capsule-manager.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '--capsule-drag-offset: 0px;',
+        '--capsule-scale: 1;',
+        '.capsule-wrapper.capsule-wrapper--pulse {',
+        '.capsule-wrapper.capsule-wrapper--dragging {',
+        '.capsule-wrapper.capsule-wrapper--dismissed {'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(capsuleStyles.includes(marker), true, `capsule-styles.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        guestbookHtml.includes('capsule-styles.css?v=20260324_CAPSULE_RUNTIME_STYLE_1'),
+        true,
+        'guestbook.html should reference the updated capsule stylesheet version'
+    );
+    assert.equal(
+        guestbookHtml.includes('capsule-manager.js?v=20260324_CAPSULE_RUNTIME_STYLE_1'),
+        true,
+        'guestbook.html should reference the updated capsule runtime version'
+    );
+});
+
+test('image zoom runtime externalizes modal transform and transition styling', () => {
+    const imageZoomSource = readRepoFile('image-zoom.js');
+    const sharedStyles = readRepoFile('style.css');
+    const guestbookHtml = readRepoFile('guestbook.html');
+
+    const removedMarkers = [
+        "img.style.transition = 'none';",
+        "img.style.transformOrigin = 'center center';",
+        "img.style.touchAction = 'none';",
+        "img.style.transform = `translate(${state.translateX}px, ${state.translateY}px) scale(${state.scale})`;",
+        "img.style.transition = 'transform 0.3s ease';"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(imageZoomSource.includes(marker), false, `image-zoom.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "const IMAGE_ZOOM_ENABLED_CLASS = 'image-zoom-enabled';",
+        "const IMAGE_ZOOM_ANIMATING_CLASS = 'image-zoom-animating';",
+        "styleDecl.setProperty('--image-zoom-translate-x', `${state.translateX}px`);",
+        "styleDecl.setProperty('--image-zoom-translate-y', `${state.translateY}px`);",
+        "styleDecl.setProperty('--image-zoom-scale', String(state.scale));",
+        'img.classList.add(IMAGE_ZOOM_ENABLED_CLASS);',
+        'img.classList.add(IMAGE_ZOOM_ANIMATING_CLASS);',
+        'img.classList.remove(IMAGE_ZOOM_ANIMATING_CLASS);'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(imageZoomSource.includes(marker), true, `image-zoom.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '--image-zoom-translate-x: 0px;',
+        '--image-zoom-translate-y: 0px;',
+        '--image-zoom-scale: 1;',
+        'transform: translate(var(--image-zoom-translate-x), var(--image-zoom-translate-y)) scale(var(--image-zoom-scale));',
+        '.image-modal-content img.image-zoom-animating {'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(sharedStyles.includes(marker), true, `style.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        guestbookHtml.includes('image-zoom.js?v=20260324_IMAGE_ZOOM_RUNTIME_STYLE_1'),
+        true,
+        'guestbook.html should reference the updated image zoom runtime version'
     );
 });
 
@@ -2133,7 +2509,7 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=53'),
+        adminStudioSource.includes('admin-studio.css?v=55'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -2146,6 +2522,8 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
 
 test('admin comments runtime renderers route list items, filters, and block menus through delegated actions', () => {
     const adminCommentsSource = readRepoFile('admin-comments.js');
+    const adminCommentsCss = readRepoFile('admin-sidebar.css');
+    const adminStudioSource = readRepoFile('admin-studio.html');
     const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|blur|error)\s*=\s*["']/i;
 
     assert.equal(
@@ -2179,6 +2557,51 @@ test('admin comments runtime renderers route list items, filters, and block menu
     for (const marker of delegatedMarkers) {
         assert.equal(adminCommentsSource.includes(marker), true, `admin-comments.js should contain ${marker}`);
     }
+
+    const removedMarkers = [
+        '<div class="item-avatar" style="',
+        'fa-thumbtack" style=',
+        '<div class="action-block-wrapper" style="position: relative;">',
+        "item.style.opacity = '0';",
+        "item.style.transform = 'translateY(-20px)';"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(adminCommentsSource.includes(marker), false, `admin-comments.js should not contain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "const avatarMarkup = comment.avatar",
+        "class=\"item-avatar${comment.avatar ? ' item-avatar--image' : ''}\"",
+        "fa-thumbtack${comment.is_pinned ? ' comment-pin-icon--active' : ''}",
+        "item.classList.add('comment-admin-item--removing');"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(adminCommentsSource.includes(marker), true, `admin-comments.js should contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '.item-avatar.item-avatar--image',
+        '.item-avatar-image',
+        '.comment-pin-icon--active',
+        '.comment-admin-item.comment-admin-item--removing'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(adminCommentsCss.includes(marker), true, `admin-sidebar.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioSource.includes('admin-sidebar.css?v=11'),
+        true,
+        'admin-studio.html should reference the updated admin sidebar stylesheet version'
+    );
+    assert.equal(
+        adminStudioSource.includes('admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1'),
+        true,
+        'admin-studio.html should reference the updated admin comments script version'
+    );
 });
 
 test('wallet modal runtime renderers route wallet shell, lists, filters, and order dialogs through delegated actions', () => {
@@ -2740,7 +3163,7 @@ test('discount admin runtime renderers externalize table states, copy toast, and
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=53'),
+        adminStudioSource.includes('admin-studio.css?v=55'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -2807,7 +3230,7 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=53'),
+        adminStudioSource.includes('admin-studio.css?v=55'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -3712,7 +4135,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
     }
 
     const htmlMarkers = [
-        'admin-studio.css?v=53',
+        'admin-studio.css?v=55',
         '<div class="anomaly-alerts-area" id="anomalyAlertsArea" hidden>',
         '<div class="ab-results-chart" id="abResultsChart" hidden>',
         'admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1'
@@ -3782,7 +4205,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=53'),
+        adminStudioHtml.includes('admin-studio.css?v=55'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -3994,6 +4417,65 @@ test('payments runtime controls, site filter, and admin chat menu route through 
     for (const marker of adminScriptMarkers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
+});
+
+test('payments runtime renderers externalize tooltip, tab, and trend styling', () => {
+    const adminPaymentsSource = readRepoFile('js/admin-payments.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const removedMarkers = [
+        'tooltip.style.left = `${left}px`;',
+        'tooltip.style.top = `${top}px`;',
+        "tooltip.style.setProperty('--payments-tooltip-arrow-left', `${arrowLeft}px`);",
+        "tooltip.style.removeProperty('--payments-tooltip-arrow-left');",
+        "module.style.display !== 'none'",
+        'indicator.style.left = `${activeButton.offsetLeft}px`;',
+        'indicator.style.width = `${activeButton.offsetWidth}px`;',
+        "indicator.style.opacity = '1';",
+        '<div class="payments-trend-bar-total" style="height:${totalHeight}%"></div>',
+        '<div class="payments-trend-bar-anomaly" style="height:${anomalyHeight}%"></div>',
+        "data-payments-tooltip="
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(adminPaymentsSource.includes(marker), false, `js/admin-payments.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'class="payments-info-tooltip" role="tooltip"',
+        "window.getComputedStyle(module).display !== 'none'",
+        'class="payments-trend-bar-visual" aria-hidden="true"',
+        'class="payments-trend-bar-svg"',
+        'paymentsTrendTotalGradient-',
+        'paymentsTrendAnomalyGradient-'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(adminPaymentsSource.includes(marker), true, `js/admin-payments.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.payments-info-tooltip {',
+        '.payments-info-chip:hover .payments-info-tooltip',
+        '.payments-trend-bar-visual {',
+        '.payments-trend-bar-svg {'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-studio.css?v=55'),
+        true,
+        'admin-studio.html should reference the updated admin stylesheet version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_1'),
+        true,
+        'admin-studio.html should reference the updated admin payments runtime version'
+    );
 });
 
 test('admin chat runtime renderers externalize avatar, loading, and panel visibility styling', () => {
@@ -4286,7 +4768,7 @@ test('announcement runtime renderers externalize decoration particles and physic
 
     for (const source of [verifySource, shopSource, legacyIndexSource]) {
         assert.equal(
-            source.includes('announcement-loader.js?v=20260324_ANNOUNCEMENT_RUNTIME_STYLE_HELPERS_1'),
+            source.includes('announcement-loader.js?v=20260324_ANNOUNCEMENT_RUNTIME_STYLE_HELPERS_2'),
             true,
             'announcement entry pages should load the latest announcement runtime version'
         );

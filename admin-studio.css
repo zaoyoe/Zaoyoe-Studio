@@ -966,6 +966,18 @@ body {
     color: var(--text-main);
 }
 
+.admin-tabs .admin-tab.active::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--accent-purple);
+    box-shadow: 0 -1px 8px rgba(107, 158, 206, 0.4);
+    border-radius: 999px;
+}
+
 .admin-tab:hover:not(.active) {
     color: var(--text-main);
 }
@@ -2421,11 +2433,30 @@ body {
 }
 
 .batch-progress-fill {
+    appearance: none;
+    -webkit-appearance: none;
     height: 100%;
     background: linear-gradient(90deg, var(--accent-purple), #00d4ff);
     border-radius: 10px;
-    transition: width 0.3s ease;
-    width: 0%;
+    width: 100%;
+    overflow: hidden;
+    display: block;
+    border: none;
+}
+
+.batch-progress-fill::-webkit-progress-bar {
+    background: transparent;
+    border-radius: 10px;
+}
+
+.batch-progress-fill::-webkit-progress-value {
+    background: linear-gradient(90deg, var(--accent-purple), #00d4ff);
+    border-radius: 10px;
+}
+
+.batch-progress-fill::-moz-progress-bar {
+    background: linear-gradient(90deg, var(--accent-purple), #00d4ff);
+    border-radius: 10px;
 }
 
 .batch-progress-text {
@@ -14350,24 +14381,13 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     opacity: 0.92;
 }
 
-.payments-info-glyph {
-    width: 13px;
-    height: 13px;
-    display: block;
-    background:
-        radial-gradient(circle at 50% 50%, rgba(219, 234, 254, 0.98) 0 22%, transparent 24%),
-        linear-gradient(180deg, transparent 0 18%, currentColor 20% 80%, transparent 82%),
-        linear-gradient(90deg, transparent 0 18%, currentColor 20% 80%, transparent 82%);
-    transform: rotate(45deg);
-    border-radius: 2px;
-    filter: drop-shadow(0 0 10px rgba(96, 165, 250, 0.34));
-}
-
-.payments-floating-tooltip {
-    position: fixed;
-    left: 0;
-    top: 0;
+.payments-info-tooltip {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 12px);
+    transform: translate(-50%, 8px);
     max-width: min(320px, calc(100vw - 24px));
+    width: max-content;
     padding: 12px 14px;
     border-radius: 16px;
     border: 1px solid rgba(191, 219, 254, 0.22);
@@ -14383,39 +14403,46 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     line-height: 1.65;
     pointer-events: none;
     opacity: 0;
-    transform: translateY(8px);
     transition: opacity 0.16s ease, transform 0.16s ease;
-    z-index: 9999;
+    z-index: 50;
     white-space: normal;
+    visibility: hidden;
 }
 
-.payments-floating-tooltip.is-visible {
-    opacity: 1;
-    transform: translateY(0);
-}
-
-.payments-floating-tooltip::before {
+.payments-info-tooltip::before {
     content: '';
     position: absolute;
-    top: -7px;
-    left: var(--payments-tooltip-arrow-left, 50%);
+    left: 50%;
+    bottom: -7px;
     width: 14px;
     height: 14px;
-    border-top: 1px solid rgba(191, 219, 254, 0.22);
-    border-left: 1px solid rgba(191, 219, 254, 0.22);
+    border-right: 1px solid rgba(191, 219, 254, 0.22);
+    border-bottom: 1px solid rgba(191, 219, 254, 0.22);
     background: rgba(26, 37, 53, 0.42);
     backdrop-filter: blur(26px) saturate(190%);
     -webkit-backdrop-filter: blur(26px) saturate(190%);
     transform: translateX(-50%) rotate(45deg);
 }
 
-.payments-floating-tooltip.is-above::before {
-    top: auto;
-    bottom: -7px;
-    border-top: none;
-    border-left: none;
-    border-right: 1px solid rgba(191, 219, 254, 0.22);
-    border-bottom: 1px solid rgba(191, 219, 254, 0.22);
+.payments-info-chip:hover .payments-info-tooltip,
+.payments-info-chip:focus-visible .payments-info-tooltip,
+.payments-info-chip:focus-within .payments-info-tooltip {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    visibility: visible;
+}
+
+.payments-info-glyph {
+    width: 13px;
+    height: 13px;
+    display: block;
+    background:
+        radial-gradient(circle at 50% 50%, rgba(219, 234, 254, 0.98) 0 22%, transparent 24%),
+        linear-gradient(180deg, transparent 0 18%, currentColor 20% 80%, transparent 82%),
+        linear-gradient(90deg, transparent 0 18%, currentColor 20% 80%, transparent 82%);
+    transform: rotate(45deg);
+    border-radius: 2px;
+    filter: drop-shadow(0 0 10px rgba(96, 165, 250, 0.34));
 }
 
 .payments-kpi-card,
@@ -14665,6 +14692,20 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     min-height: 220px;
 }
 
+.payments-trend-bar-visual {
+    width: 100%;
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+}
+
+.payments-trend-bar-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    overflow: visible;
+}
+
 .payments-trend-bar-total,
 .payments-trend-bar-anomaly {
     width: 100%;
@@ -14672,12 +14713,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .payments-trend-bar-total {
-    background: linear-gradient(180deg, rgba(96, 165, 250, 0.95), rgba(59, 130, 246, 0.36));
+    shape-rendering: geometricPrecision;
 }
 
 .payments-trend-bar-anomaly {
-    margin-top: -4px;
-    background: linear-gradient(180deg, rgba(248, 113, 113, 0.96), rgba(220, 38, 38, 0.42));
+    shape-rendering: geometricPrecision;
 }
 
 .payments-trend-bar span {
@@ -20745,6 +20785,118 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .color-swatch--blue {
     background: #6b9ece;
+}
+
+.color-swatch--black {
+    background: #000000;
+}
+
+.color-swatch--gray,
+.color-swatch--grey {
+    background: #808080;
+}
+
+.color-swatch--purple {
+    background: #9b59b6;
+}
+
+.color-swatch--pink {
+    background: #e91e63;
+}
+
+.color-swatch--brown {
+    background: #8b4513;
+}
+
+.color-swatch--gold,
+.color-swatch--golden {
+    background: #ffd700;
+}
+
+.color-swatch--silver {
+    background: #c0c0c0;
+}
+
+.color-swatch--bronze {
+    background: #cd7f32;
+}
+
+.color-swatch--cyan {
+    background: #00bcd4;
+}
+
+.color-swatch--teal {
+    background: #008080;
+}
+
+.color-swatch--navy {
+    background: #001f3f;
+}
+
+.color-swatch--maroon {
+    background: #800000;
+}
+
+.color-swatch--beige {
+    background: #f5f5dc;
+}
+
+.color-swatch--cream {
+    background: #fffdd0;
+}
+
+.color-swatch--ivory {
+    background: #fffff0;
+}
+
+.color-swatch--tan {
+    background: #d2b48c;
+}
+
+.color-swatch--coral {
+    background: #ff7f50;
+}
+
+.color-swatch--salmon {
+    background: #fa8072;
+}
+
+.color-swatch--turquoise {
+    background: #40e0d0;
+}
+
+.color-swatch--lavender {
+    background: #e6e6fa;
+}
+
+.color-swatch--dark-blue {
+    background: #00008b;
+}
+
+.color-swatch--dark-green {
+    background: #006400;
+}
+
+.color-swatch--dark-gray,
+.color-swatch--dark-grey {
+    background: #404040;
+}
+
+.color-swatch--light-blue {
+    background: #add8e6;
+}
+
+.color-swatch--light-green {
+    background: #90ee90;
+}
+
+.color-swatch--light-gray,
+.color-swatch--light-grey {
+    background: #d3d3d3;
+}
+
+.color-swatch--unknown {
+    background: #888888;
 }
 
 /* Font size indicator */

@@ -30,7 +30,7 @@
                     test1.innerHTML = `<div class="status">✅ i18n loaded successfully<br>Current language: <strong>${currentLanguage}</strong></div>`;
                     updateLanguageState(currentLanguage);
                 } else {
-                    test1.innerHTML = '<div style="background:rgba(255,0,0,0.1);border-left:3px solid #f00;padding:10px;">❌ i18n not loaded</div>';
+                    test1.innerHTML = '<div class="status status-error">❌ i18n not loaded</div>';
                 }
             }
 

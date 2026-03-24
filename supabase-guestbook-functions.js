@@ -331,7 +331,8 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
 
     } catch (error) {
         console.error('❌ Error loading messages:', error);
-        container.innerHTML = '<p style="color: red;">加载留言失败，请刷新重试</p>';
+        container.innerHTML = '<p class="guestbook-message-error">加载留言失败，请刷新重试</p>';
+        markGuestbookContainerReady(container);
     }
 }
 
@@ -364,6 +365,33 @@ function htmlToElement(html) {
     return template.content.firstChild;
 }
 
+function markGuestbookContainerReady(container) {
+    container?.classList.add('guestbook-message-container-ready');
+}
+
+function setGuestbookEmptyStateVisible(emptyState, visible) {
+    if (!emptyState) return;
+    emptyState.hidden = !visible;
+    emptyState.classList.toggle('guestbook-empty-state-hidden', !visible);
+}
+
+function setGuestbookImagePreviewVisible(imagePreview, visible) {
+    if (!imagePreview) return;
+    imagePreview.hidden = !visible;
+    imagePreview.classList.toggle('guestbook-composer-preview-hidden', !visible);
+    imagePreview.classList.toggle('index-guestbook-image-preview-hidden', !visible);
+}
+
+function triggerGuestbookHeartAnimation(target, className, durationMs) {
+    if (!target) return;
+    target.classList.remove(className);
+    void target.offsetWidth;
+    target.classList.add(className, 'guestbook-heart-liked');
+    setTimeout(() => {
+        target.classList.remove(className);
+    }, durationMs);
+}
+
 function displayMessages(messages) {
     const container = document.getElementById('messageContainer');
     if (!container) return;
@@ -373,14 +401,14 @@ function displayMessages(messages) {
         const skeletonContainer = document.getElementById('skeletonContainer');
         if (skeletonContainer) skeletonContainer.classList.add('hidden');
         const emptyState = document.getElementById('emptyState');
-        if (emptyState) emptyState.style.display = 'flex';
+        setGuestbookEmptyStateVisible(emptyState, true);
         container.innerHTML = '';
-        container.style.opacity = '1';
+        markGuestbookContainerReady(container);
         return;
     }
 
     const emptyState = document.getElementById('emptyState');
-    if (emptyState) emptyState.style.display = 'none';
+    setGuestbookEmptyStateVisible(emptyState, false);
 
     // Format messages for UI and delegate to window.renderMessages
     // which handles masonry layout from guestbook.js
@@ -411,7 +439,7 @@ function displayMessages(messages) {
                 toggleLike('message', button.dataset.guestbookId);
             });
         });
-        container.style.opacity = '1';
+        markGuestbookContainerReady(container);
     }
 }
 
@@ -910,9 +938,7 @@ async function deleteMessage(messageId) {
         const msgEl = document.getElementById(`msg-${messageId}`) ||
             document.querySelector(`[data-message-id="${messageId}"]`);
         if (msgEl) {
-            msgEl.style.transition = 'opacity 0.3s, transform 0.3s';
-            msgEl.style.opacity = '0';
-            msgEl.style.transform = 'scale(0.9)';
+            msgEl.classList.add('guestbook-message-removing');
             setTimeout(() => msgEl.remove(), 300);
         }
 
@@ -1143,32 +1169,7 @@ function updateLikeCountFromRealtime(likeData, isLike) {
         // Add heart animation for likes (not unlikes)
         if (isLike) {
             const heartIcon = likeBtn.querySelector('i, svg') || likeBtn;
-
-            // Ensure animation CSS exists
-            if (!document.getElementById('realtimeHeartStyle')) {
-                const style = document.createElement('style');
-                style.id = 'realtimeHeartStyle';
-                style.textContent = `
-                    @keyframes heartBounce {
-                        0%, 100% { transform: scale(1); }
-                        20% { transform: scale(1.3); color: #ff4757; }
-                        40% { transform: scale(1); }
-                        60% { transform: scale(1.2); color: #ff4757; }
-                        80% { transform: scale(1); }
-                    }
-                `;
-                document.head.appendChild(style);
-            }
-
-            // Apply animation
-            heartIcon.style.animation = 'heartBounce 1.2s ease-in-out';
-            heartIcon.style.color = '#ff4757';
-
-            // Reset after animation
-            setTimeout(() => {
-                heartIcon.style.animation = '';
-                // Keep red color if it was already liked
-            }, 1500);
+            triggerGuestbookHeartAnimation(heartIcon, 'guestbook-heart-bounce', 1500);
 
             console.log('💓 Heart animation triggered');
         }
@@ -1413,31 +1414,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Heart pulse animation - slower, more natural breathing effect
     function pulseHeartAnimation(likeBtn) {
         const heartIcon = likeBtn.querySelector('i, svg') || likeBtn;
-
-        // Add pulse animation - 1s per cycle, 3 times
-        heartIcon.style.animation = 'heartPulse 1s ease-in-out 3';
-        heartIcon.style.color = '#ff4757';
-
-        // Remove animation after it completes
-        setTimeout(() => {
-            heartIcon.style.animation = '';
-        }, 3500);
-    }
-
-    // Add CSS animation if not exists
-    if (!document.getElementById('heartPulseStyle')) {
-        const style = document.createElement('style');
-        style.id = 'heartPulseStyle';
-        style.textContent = `
-            @keyframes heartPulse {
-                0%, 100% { transform: scale(1); }
-                15% { transform: scale(1.25); }
-                30% { transform: scale(1); }
-                45% { transform: scale(1.15); }
-                60% { transform: scale(1); }
-            }
-        `;
-        document.head.appendChild(style);
+        triggerGuestbookHeartAnimation(heartIcon, 'guestbook-heart-pulse', 3500);
     }
 });
 
@@ -1826,7 +1803,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 currentImageData = await compressImage(file);
                 if (previewImg && imagePreview) {
                     previewImg.src = currentImageData;
-                    imagePreview.style.display = 'block';
+                    setGuestbookImagePreviewVisible(imagePreview, true);
                 }
                 if (typeof window.syncGuestbookComposerImageState === 'function') {
                     window.syncGuestbookComposerImageState();
@@ -1846,7 +1823,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function clearImage() {
         if (imageUpload) imageUpload.value = '';
-        if (imagePreview) imagePreview.style.display = 'none';
+        setGuestbookImagePreviewVisible(imagePreview, false);
         if (previewImg) previewImg.src = '';
         currentImageData = null;
         if (typeof window.syncGuestbookComposerImageState === 'function') {

@@ -1,0 +1,15 @@
+.force-input-bg-fixed {
+    background: rgba(0, 0, 0, 0.3) !important;
+    background-color: rgba(0, 0, 0, 0.3) !important;
+    border: 1px solid rgba(155, 93, 229, 0.3) !important;
+    border-color: rgba(155, 93, 229, 0.3) !important;
+    box-shadow: none !important;
+}
+
+.force-input-bg-fixed.force-input-bg-fixed--focused {
+    background: rgba(0, 0, 0, 0.4) !important;
+    background-color: rgba(0, 0, 0, 0.4) !important;
+    border: 1px solid rgba(155, 93, 229, 0.7) !important;
+    border-color: rgba(155, 93, 229, 0.7) !important;
+    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.15) !important;
+}

@@ -16,6 +16,11 @@ window.CapsuleManager = {
         clearQueueOnHide: false // 保留未读
     },
 
+    runtime: {
+        styleKey: 'style',
+        dragOffsetProperty: '--capsule-drag-offset'
+    },
+
     // --- 📥 入口：推入队列（支持向后兼容）---
     queueUpdate(type, objectId, parentMessageId = null) {
         // 🔍 调试日志：追踪调用堆栈
@@ -123,13 +128,33 @@ window.CapsuleManager = {
         } else {
             console.log('ℹ️ 胶囊已可见，只播放抖动动画');
             // 如果已经可见，只播放强调动画
-            el.style.transform = 'translateX(-50%) scale(1.05) translateZ(0)';
-            setTimeout(() => el.style.transform = 'translateX(-50%) scale(1) translateZ(0)', 200);
+            this.pulse(el);
 
             // 可选：稍微延长一点点时间（例如 +2秒），而不是重置整整 8秒
             // 这里为了防止幽灵胶囊，我们选择不重置，或者只在剩余时间极短时重置
             // 简单起见，保持当前计时器，确保它最终会消失
         }
+    },
+
+    setDragOffset(el, value) {
+        if (!el) return;
+        const styleDecl = Reflect.get(el, this.runtime.styleKey);
+        if (!styleDecl) return;
+        if (value === null || value === undefined || value === '' || Number(value) === 0) {
+            styleDecl.removeProperty(this.runtime.dragOffsetProperty);
+        } else {
+            styleDecl.setProperty(this.runtime.dragOffsetProperty, `${Math.round(Number(value))}px`);
+        }
+    },
+
+    pulse(el) {
+        if (!el) return;
+        el.classList.remove('capsule-wrapper--pulse');
+        void el.offsetWidth;
+        el.classList.add('capsule-wrapper--pulse');
+        setTimeout(() => {
+            el.classList.remove('capsule-wrapper--pulse');
+        }, 220);
     },
 
     // --- 🙈 隐藏 ---
@@ -368,7 +393,7 @@ window.CapsuleManager = {
                 if (!isValidSwipe) {
                     // 第一次识别为有效滑动，开始阻止事件
                     isValidSwipe = true;
-                    capsule.style.transition = 'none';
+                    capsule.classList.add('capsule-wrapper--dragging');
                 }
 
                 // 阻止默认滚动和事件冒泡
@@ -379,7 +404,7 @@ window.CapsuleManager = {
                 if (deltaY < 0) {
                     // 使用 requestAnimationFrame 优化性能
                     requestAnimationFrame(() => {
-                        capsule.style.transform = `translateX(-50%) translateY(${deltaY}px)`;
+                        this.setDragOffset(capsule, deltaY);
                     });
                 }
             }
@@ -395,12 +420,12 @@ window.CapsuleManager = {
             const duration = Date.now() - startTime;
 
             isDragging = false;
-            capsule.style.transition = '';
+            capsule.classList.remove('capsule-wrapper--dragging');
 
             // 判断是点击还是滑动
             if (!isValidSwipe || (Math.abs(deltaY) < 10 && duration < 200)) {
                 // 这是一个点击，不干涉，重置状态
-                capsule.style.transform = 'translateX(-50%) translateY(0)';
+                this.setDragOffset(capsule, 0);
                 return;
             }
 
@@ -410,13 +435,15 @@ window.CapsuleManager = {
             // 如果上划距离超过 50px，关闭胶囊
             if (deltaY < -50) {
                 requestAnimationFrame(() => {
-                    capsule.style.transform = 'translateX(-50%) translateY(-100px)';
+                    this.setDragOffset(capsule, -100);
+                    capsule.classList.add('capsule-wrapper--dismissed');
                 });
                 setTimeout(() => {
                     this.hide();
                     setTimeout(() => {
                         requestAnimationFrame(() => {
-                            capsule.style.transform = 'translateX(-50%) translateY(0)';
+                            capsule.classList.remove('capsule-wrapper--dismissed');
+                            this.setDragOffset(capsule, 0);
                         });
                         shouldBlockClick = false;
                     }, 300);
@@ -424,7 +451,7 @@ window.CapsuleManager = {
             } else {
                 // 回弹
                 requestAnimationFrame(() => {
-                    capsule.style.transform = 'translateX(-50%) translateY(0)';
+                    this.setDragOffset(capsule, 0);
                 });
                 setTimeout(() => {
                     shouldBlockClick = false;
@@ -470,4 +497,3 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 console.log('✅ CapsuleManager v5.5 (Triple Insurance - Ghost Fix) 已加载');
-

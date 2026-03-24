@@ -3,7 +3,9 @@
     position: fixed;
     top: -80px;
     left: 50%;
-    transform: translateX(-50%) translateZ(0);
+    --capsule-drag-offset: 0px;
+    --capsule-scale: 1;
+    transform: translateX(-50%) translateY(var(--capsule-drag-offset)) scale(var(--capsule-scale)) translateZ(0);
     z-index: 9999;
 
     /* 🛡️ 终极保险：没有 active 类时强制隐藏，防止幽灵胶囊 */
@@ -39,6 +41,20 @@
     -webkit-user-select: none;
 }
 
+.capsule-wrapper.capsule-wrapper--pulse {
+    --capsule-scale: 1.05;
+}
+
+.capsule-wrapper.capsule-wrapper--dragging {
+    transition: top 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+        transform 0s linear,
+        background 0.3s ease;
+}
+
+.capsule-wrapper.capsule-wrapper--dismissed {
+    --capsule-drag-offset: -100px;
+}
+
 .capsule-wrapper.active {
     top: 90px;
     opacity: 1;
@@ -47,7 +63,7 @@
 
 @media (hover: hover) {
     .capsule-wrapper:hover {
-        transform: translateX(-50%) scale(1.03);
+        --capsule-scale: 1.03;
         box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2),
             0 0 30px rgba(102, 126, 234, 0.6);
     }

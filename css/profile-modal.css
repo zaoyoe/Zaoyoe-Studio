@@ -104,6 +104,10 @@
     overscroll-behavior: contain;
 }
 
+.profile-modal-file-input {
+    display: none;
+}
+
 #profileModal.active .modal-content.profile-modal {
     transform: scale(1);
 }
@@ -727,6 +731,15 @@
 #profileModal .security-mobile-code-btn {
     height: 46px;
     padding: 0 14px;
+}
+
+#profileModal .profile-mobile-code-row {
+    display: flex;
+    gap: 10px;
+}
+
+#profileModal .profile-mobile-code-row .profile-mobile-code-input {
+    flex: 1;
 }
 
 #profileModal .security-mobile-primary-btn,
