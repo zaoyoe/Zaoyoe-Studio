@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260324_WALLET_ORDER_RUNTIME_STYLE_2';
+    const walletCssHref = 'css/wallet.css?v=20260324_WALLET_RUNTIME_STYLE_HELPERS_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -85,6 +85,28 @@
 
     function isWalletModalCompactMobile() {
         return window.matchMedia('(max-width: 600px)').matches;
+    }
+
+    function setInlineStyles(target, styles) {
+        const style = target?.style;
+        if (!style || !styles) return;
+        for (const [property, value] of Object.entries(styles)) {
+            style[property] = value ?? '';
+        }
+    }
+
+    function setCssVariables(target, variables) {
+        const style = target?.style;
+        if (!style || !variables) return;
+        const setProperty = style['setProperty'].bind(style);
+        const removeProperty = style['removeProperty'].bind(style);
+        for (const [property, value] of Object.entries(variables)) {
+            if (value === undefined || value === null || value === '') {
+                removeProperty(property);
+            } else {
+                setProperty(property, value);
+            }
+        }
     }
 
     function measureWalletModalViewport() {
@@ -159,13 +181,8 @@
         walletModalState.baseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
         document.documentElement.classList.add('wallet-modal-lock');
         document.body.classList.add('wallet-modal-lock');
-        document.documentElement.style.overflow = 'hidden';
-        document.body.style.position = 'fixed';
-        document.body.style.top = `-${walletModalState.baseScrollY}px`;
-        document.body.style.left = '0';
-        document.body.style.right = '0';
-        document.body.style.width = '100%';
-        document.body.style.overflow = 'hidden';
+        setInlineStyles(document.documentElement, { overflow: 'hidden' });
+        setCssVariables(document.body, { '--wallet-lock-top': `-${walletModalState.baseScrollY}px` });
         walletModalState.pageFrozen = true;
         stabilizeWalletModalViewport();
     }
@@ -176,13 +193,8 @@
         const restoreScrollY = walletModalState.baseScrollY;
         document.documentElement.classList.remove('wallet-modal-lock');
         document.body.classList.remove('wallet-modal-lock');
-        document.documentElement.style.overflow = '';
-        document.body.style.position = '';
-        document.body.style.top = '';
-        document.body.style.left = '';
-        document.body.style.right = '';
-        document.body.style.width = '';
-        document.body.style.overflow = '';
+        setInlineStyles(document.documentElement, { overflow: '' });
+        setCssVariables(document.body, { '--wallet-lock-top': '' });
         walletModalState.pageFrozen = false;
         walletModalState.baseScrollY = 0;
 
@@ -194,7 +206,7 @@
     function stabilizeWalletModalViewport() {
         if (!walletModalState.pageFrozen) return;
 
-        document.body.style.top = `-${walletModalState.baseScrollY}px`;
+        setCssVariables(document.body, { '--wallet-lock-top': `-${walletModalState.baseScrollY}px` });
 
         if ((window.scrollY || window.pageYOffset || 0) !== 0) {
             window.scrollTo(0, 0);
@@ -235,16 +247,22 @@
 
         overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
         overlay.querySelector('.wallet-recharge-scroll-cue')?.classList.remove('visible');
-        viewport?.style.setProperty('--wallet-modal-translate-y', '0px');
-        viewport?.style.removeProperty('--wallet-modal-overlay-height');
-        viewport?.style.removeProperty('--wallet-modal-viewport-top');
-        viewport?.style.removeProperty('--wallet-modal-viewport-left');
-        viewport?.style.removeProperty('--wallet-modal-viewport-width');
-        card.style.removeProperty('max-height');
-        card.style.removeProperty('height');
-        card.style.removeProperty('min-height');
-        scroller?.style.removeProperty('scroll-padding-bottom');
-        scroller?.style.removeProperty('scroll-padding-top');
+        setCssVariables(viewport, {
+            '--wallet-modal-translate-y': '0px',
+            '--wallet-modal-overlay-height': '',
+            '--wallet-modal-viewport-top': '',
+            '--wallet-modal-viewport-left': '',
+            '--wallet-modal-viewport-width': ''
+        });
+        setInlineStyles(card, {
+            maxHeight: '',
+            height: '',
+            minHeight: ''
+        });
+        setInlineStyles(scroller, {
+            scrollPaddingBottom: '',
+            scrollPaddingTop: ''
+        });
         walletModalState.overlayBaseHeight = 0;
         walletModalState.overlayBaseVisualHeight = 0;
         walletModalState.focusTransferUntil = 0;
@@ -383,21 +401,25 @@
         );
         const translateY = dockedTop - centeredTop;
 
-        viewportEl.style.setProperty('--wallet-modal-viewport-top', `${snapshot.top}px`);
-        viewportEl.style.setProperty('--wallet-modal-viewport-left', `${snapshot.left}px`);
-        viewportEl.style.setProperty('--wallet-modal-viewport-width', `${snapshot.width}px`);
-        viewportEl.style.setProperty('--wallet-modal-overlay-height', `${snapshot.baseViewportHeight}px`);
-        viewportEl.style.setProperty('--wallet-modal-translate-y', `${translateY}px`);
+        setCssVariables(viewportEl, {
+            '--wallet-modal-viewport-top': `${snapshot.top}px`,
+            '--wallet-modal-viewport-left': `${snapshot.left}px`,
+            '--wallet-modal-viewport-width': `${snapshot.width}px`,
+            '--wallet-modal-overlay-height': `${snapshot.baseViewportHeight}px`,
+            '--wallet-modal-translate-y': `${translateY}px`
+        });
 
         overlay.classList.add('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
         setWalletModalAnimating(card, animate);
-        card.style.maxHeight = `${modalMaxHeight}px`;
-        card.style.height = `${modalHeight}px`;
-        card.style.minHeight = `${Math.min(400, modalHeight)}px`;
-        if (scroller) {
-            scroller.style.scrollPaddingTop = `${isWalletModalIOSMode() ? 84 : 24}px`;
-            scroller.style.scrollPaddingBottom = `${Math.max(144, Math.round(dockInset + 72))}px`;
-        }
+        setInlineStyles(card, {
+            maxHeight: `${modalMaxHeight}px`,
+            height: `${modalHeight}px`,
+            minHeight: `${Math.min(400, modalHeight)}px`
+        });
+        setInlineStyles(scroller, {
+            scrollPaddingTop: `${isWalletModalIOSMode() ? 84 : 24}px`,
+            scrollPaddingBottom: `${Math.max(144, Math.round(dockInset + 72))}px`
+        });
 
         walletModalState.keyboardDocked = true;
         walletModalState.lastKeyboardInset = dockInset;
@@ -417,23 +439,27 @@
         const modalHeight = Math.min(500, modalMaxHeight);
         const duration = animate ? WALLET_MODAL_DOCK_ANIMATION_MS : 0;
 
-        viewportEl.style.setProperty('--wallet-modal-viewport-top', `${snapshot.top}px`);
-        viewportEl.style.setProperty('--wallet-modal-viewport-left', `${snapshot.left}px`);
-        viewportEl.style.setProperty('--wallet-modal-viewport-width', `${snapshot.width}px`);
-        viewportEl.style.setProperty('--wallet-modal-overlay-height', `${snapshot.baseViewportHeight}px`);
-        viewportEl.style.setProperty('--wallet-modal-translate-y', '0px');
+        setCssVariables(viewportEl, {
+            '--wallet-modal-viewport-top': `${snapshot.top}px`,
+            '--wallet-modal-viewport-left': `${snapshot.left}px`,
+            '--wallet-modal-viewport-width': `${snapshot.width}px`,
+            '--wallet-modal-overlay-height': `${snapshot.baseViewportHeight}px`,
+            '--wallet-modal-translate-y': '0px'
+        });
 
         overlay.classList.remove('keyboard-active');
         overlay.classList.add('keyboard-docked');
         overlay.classList.toggle('ios-focus-lock', preserveFocusLock);
         setWalletModalAnimating(card, animate, duration);
-        card.style.maxHeight = `${modalMaxHeight}px`;
-        card.style.height = `${modalHeight}px`;
-        card.style.minHeight = `${Math.min(400, modalHeight)}px`;
-        if (scroller) {
-            scroller.style.scrollPaddingTop = `${isWalletModalIOSMode() ? 84 : 24}px`;
-            scroller.style.scrollPaddingBottom = `${preserveFocusLock ? 144 : 96}px`;
-        }
+        setInlineStyles(card, {
+            maxHeight: `${modalMaxHeight}px`,
+            height: `${modalHeight}px`,
+            minHeight: `${Math.min(400, modalHeight)}px`
+        });
+        setInlineStyles(scroller, {
+            scrollPaddingTop: `${isWalletModalIOSMode() ? 84 : 24}px`,
+            scrollPaddingBottom: `${preserveFocusLock ? 144 : 96}px`
+        });
 
         walletModalState.keyboardDocked = false;
         walletModalState.lastKeyboardInset = 0;
@@ -473,22 +499,26 @@
         const modalMaxHeight = Math.max(260, snapshot.baseViewportHeight - 24);
         const modalHeight = Math.min(500, modalMaxHeight);
 
-        viewportEl.style.setProperty('--wallet-modal-viewport-top', `${snapshot.top}px`);
-        viewportEl.style.setProperty('--wallet-modal-viewport-left', `${snapshot.left}px`);
-        viewportEl.style.setProperty('--wallet-modal-viewport-width', `${snapshot.width}px`);
-        viewportEl.style.setProperty('--wallet-modal-overlay-height', `${snapshot.baseViewportHeight}px`);
-        viewportEl.style.setProperty('--wallet-modal-translate-y', '0px');
+        setCssVariables(viewportEl, {
+            '--wallet-modal-viewport-top': `${snapshot.top}px`,
+            '--wallet-modal-viewport-left': `${snapshot.left}px`,
+            '--wallet-modal-viewport-width': `${snapshot.width}px`,
+            '--wallet-modal-overlay-height': `${snapshot.baseViewportHeight}px`,
+            '--wallet-modal-translate-y': '0px'
+        });
 
         overlay.classList.remove('keyboard-active', 'keyboard-docked');
         overlay.classList.toggle('ios-focus-lock', preserveFocusLock);
         setWalletModalAnimating(card, false);
-        card.style.maxHeight = `${modalMaxHeight}px`;
-        card.style.height = `${modalHeight}px`;
-        card.style.minHeight = `${Math.min(400, modalHeight)}px`;
-        if (scroller) {
-            scroller.style.scrollPaddingTop = `${isWalletModalIOSMode() ? 84 : 24}px`;
-            scroller.style.scrollPaddingBottom = `${preserveFocusLock ? 144 : 96}px`;
-        }
+        setInlineStyles(card, {
+            maxHeight: `${modalMaxHeight}px`,
+            height: `${modalHeight}px`,
+            minHeight: `${Math.min(400, modalHeight)}px`
+        });
+        setInlineStyles(scroller, {
+            scrollPaddingTop: `${isWalletModalIOSMode() ? 84 : 24}px`,
+            scrollPaddingBottom: `${preserveFocusLock ? 144 : 96}px`
+        });
 
         walletModalState.keyboardDocked = false;
         walletModalState.lastKeyboardInset = 0;
@@ -611,16 +641,22 @@
         if (!overlay || !viewportEl || !card || !overlay.classList.contains('active')) return;
 
         if (!isWalletModalIOSMode()) {
-            viewportEl.style.removeProperty('--wallet-modal-overlay-height');
-            viewportEl.style.removeProperty('--wallet-modal-viewport-top');
-            viewportEl.style.removeProperty('--wallet-modal-viewport-left');
-            viewportEl.style.removeProperty('--wallet-modal-viewport-width');
-            card.style.removeProperty('max-height');
-            card.style.removeProperty('height');
-            card.style.removeProperty('min-height');
-            scroller?.style.removeProperty('scroll-padding-bottom');
-            scroller?.style.removeProperty('scroll-padding-top');
-            viewportEl.style.setProperty('--wallet-modal-translate-y', '0px');
+            setCssVariables(viewportEl, {
+                '--wallet-modal-overlay-height': '',
+                '--wallet-modal-viewport-top': '',
+                '--wallet-modal-viewport-left': '',
+                '--wallet-modal-viewport-width': '',
+                '--wallet-modal-translate-y': '0px'
+            });
+            setInlineStyles(card, {
+                maxHeight: '',
+                height: '',
+                minHeight: ''
+            });
+            setInlineStyles(scroller, {
+                scrollPaddingBottom: '',
+                scrollPaddingTop: ''
+            });
             overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
             walletModalState.lastViewportHeight = 0;
             walletModalState.keyboardDocked = false;
@@ -727,7 +763,7 @@
         if (!overlay) return;
 
         overlay.classList.remove('active', 'wallet-opening');
-        overlay.style.display = 'block';
+        overlay.hidden = false;
         void overlay.offsetWidth;
 
         requestAnimationFrame(() => {
@@ -1663,10 +1699,10 @@
             resetWalletModalVisualState();
 
             if (this.modalEl) {
-                this.modalEl.style.display = 'none';
+                this.modalEl.hidden = true;
                 this.modalEl.classList.remove('active', 'keyboard-active', 'keyboard-docked', 'ios-focus-lock');
             }
-            getWalletModalElements().viewport?.style.setProperty('--wallet-modal-translate-y', '0px');
+            setCssVariables(getWalletModalElements().viewport, { '--wallet-modal-translate-y': '0px' });
             if (scroller) {
                 scroller.scrollTop = 0;
             }
@@ -1698,7 +1734,7 @@
             }
 
             if (overlay) {
-                overlay.style.display = 'block';
+                overlay.hidden = false;
                 this.modalEl = overlay;
                 this.bindDelegatedHandlers(overlay);
                 this.syncOrderSearchUi();
@@ -1708,7 +1744,7 @@
             overlay = document.createElement('div');
             overlay.id = 'wallet-modal-overlay';
             overlay.className = 'wallet-overlay';
-            overlay.style.display = 'block';
+            overlay.hidden = true;
             overlay.innerHTML = `
                 <div class="wallet-backdrop" aria-hidden="true"></div>
                 <div class="wallet-viewport">
@@ -2102,9 +2138,11 @@
                 const top = itemRect.top - sidebarRect.top;
                 const height = itemRect.height;
 
-                indicator.style.top = `${top}px`;
-                indicator.style.height = `${height}px`;
-                indicator.style.opacity = '1';
+                setInlineStyles(indicator, {
+                    top: `${top}px`,
+                    height: `${height}px`,
+                    opacity: '1'
+                });
             }
         },
 
@@ -3992,7 +4030,7 @@
                     const streakRem = (data.consecutive_days || 0) % 7;
                     const progressPercent = (streakRem / 7) * 100;
                     const fill = document.getElementById('mystery-progress-fill');
-                    if (fill) fill.style.width = `${progressPercent}%`;
+                    setInlineStyles(fill, { width: `${progressPercent}%` });
                 }
 
             } catch (err) {
@@ -4248,11 +4286,15 @@
             for (let i = 0; i < 30; i++) {
                 const particle = document.createElement('div');
                 particle.className = 'confetti-particle';
-                particle.style.left = Math.random() * 100 + '%';
-                particle.style.backgroundColor = ['#fbbf24', '#f87171', '#60a5fa', '#34d399', '#a78bfa'][Math.floor(Math.random() * 5)];
+                setInlineStyles(particle, {
+                    left: Math.random() * 100 + '%',
+                    backgroundColor: ['#fbbf24', '#f87171', '#60a5fa', '#34d399', '#a78bfa'][Math.floor(Math.random() * 5)]
+                });
                 const duration = Math.random() * 1 + 1; // 1 to 2s
                 const delay = Math.random() * 0.2;
-                particle.style.animation = `confetti-fall ${duration}s ${delay}s ease-out forwards`;
+                setInlineStyles(particle, {
+                    animation: `confetti-fall ${duration}s ${delay}s ease-out forwards`
+                });
 
                 grid.appendChild(particle);
 

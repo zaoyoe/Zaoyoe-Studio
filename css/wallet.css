@@ -26,6 +26,14 @@ body.wallet-modal-lock {
     overscroll-behavior: none !important;
 }
 
+body.wallet-modal-lock {
+    position: fixed;
+    top: var(--wallet-lock-top, 0px);
+    left: 0;
+    right: 0;
+    width: 100%;
+}
+
 /* Overlay */
 .wallet-overlay {
     position: fixed;
@@ -36,6 +44,10 @@ body.wallet-modal-lock {
     visibility: hidden;
     pointer-events: none;
     transition: visibility 0s linear 0.28s;
+}
+
+.wallet-overlay[hidden] {
+    display: none !important;
 }
 
 #wallet-modal-overlay.wallet-overlay {

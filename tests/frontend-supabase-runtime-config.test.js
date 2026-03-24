@@ -1556,6 +1556,8 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
     const delegatedMarkers = [
         'bindDelegatedHandlers(overlay = this.modalEl)',
         'handleOpenOrderDetailAction(actionEl)',
+        'setInlineStyles(target, styles)',
+        'setCssVariables(target, variables)',
         "'wallet-action': 'switch-view'",
         "'wallet-enter-action': 'redeem-code'",
         "'wallet-enter-action': 'custom-recharge'",
@@ -1598,6 +1600,8 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         "section.toggleAttribute('hidden', !shouldShowAfdianQuery)",
         "section.toggleAttribute('hidden', !isFeatureEnabled)",
         'wallet-toast--leaving',
+        'overlay.hidden = false',
+        'this.modalEl.hidden = true',
         'bindOverlayCloseButtons(detailOverlay);'
     ];
 
@@ -1620,7 +1624,14 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         'style="font-size: 10px;"',
         'toast.style.cssText =',
         'wallet-toast-style',
-        "resultDiv.style.display = 'block'"
+        "resultDiv.style.display = 'block'",
+        'document.documentElement.style.overflow =',
+        'document.body.style.position =',
+        'viewport?.style.setProperty(',
+        'card.style.maxHeight =',
+        'indicator.style.top =',
+        'fill.style.width =',
+        'particle.style.animation ='
     ];
 
     for (const marker of removedInlineMarkers) {
@@ -1647,7 +1658,9 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         '.afdian-result.is-visible',
         '.history-details .detail-val.mono',
         '.wallet-toast',
-        '.wallet-toast--leaving'
+        '.wallet-toast--leaving',
+        'body.wallet-modal-lock',
+        '.wallet-overlay[hidden]'
     ];
 
     for (const marker of walletCssMarkers) {
