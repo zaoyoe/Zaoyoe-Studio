@@ -4032,55 +4032,20 @@ Example output format:
     },
 
     // ==================== Orders (Fix FK Issue) ====================
-    getDeliveryToneStyles: function (tone = 'neutral') {
-        const tones = {
-            success: {
-                text: '#4ade80',
-                bg: 'rgba(74, 222, 128, 0.12)',
-                border: 'rgba(74, 222, 128, 0.26)'
-            },
-            processing: {
-                text: '#60a5fa',
-                bg: 'rgba(96, 165, 250, 0.12)',
-                border: 'rgba(96, 165, 250, 0.24)'
-            },
-            waiting: {
-                text: '#fbbf24',
-                bg: 'rgba(251, 191, 36, 0.12)',
-                border: 'rgba(251, 191, 36, 0.24)'
-            },
-            warn: {
-                text: '#fbbf24',
-                bg: 'rgba(251, 191, 36, 0.12)',
-                border: 'rgba(251, 191, 36, 0.24)'
-            },
-            danger: {
-                text: '#fda4af',
-                bg: 'rgba(248, 113, 113, 0.12)',
-                border: 'rgba(248, 113, 113, 0.24)'
-            },
-            muted: {
-                text: '#cbd5f5',
-                bg: 'rgba(148, 163, 184, 0.14)',
-                border: 'rgba(148, 163, 184, 0.2)'
-            },
-            neutral: {
-                text: '#e2e8f0',
-                bg: 'rgba(255, 255, 255, 0.06)',
-                border: 'rgba(255, 255, 255, 0.1)'
-            }
-        };
-        return tones[tone] || tones.neutral;
+    getDeliveryToneClass: function (tone = 'neutral') {
+        const tones = new Set(['success', 'processing', 'waiting', 'warn', 'danger', 'muted', 'neutral']);
+        const normalizedTone = tones.has(String(tone || 'neutral')) ? String(tone || 'neutral') : 'neutral';
+        return `shop-delivery-tone--${normalizedTone}`;
     },
 
     renderDeliveryBadge: function (label, tone = 'neutral') {
-        const colors = this.getDeliveryToneStyles(tone);
-        return `<span class="status-badge" style="display:inline-flex;align-items:center;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:600;color:${colors.text};background:${colors.bg};border:1px solid ${colors.border};white-space:nowrap;">${this.escapeHtml(label)}</span>`;
+        const toneClass = this.getDeliveryToneClass(tone);
+        return `<span class="status-badge shop-delivery-badge ${toneClass}">${this.escapeHtml(label)}</span>`;
     },
 
     renderDeliveryMetaBadge: function (label, tone = 'neutral') {
-        const colors = this.getDeliveryToneStyles(tone);
-        return `<span class="shop-delivery-meta-badge" style="color:${colors.text};background:${colors.bg};border-color:${colors.border};">${this.escapeHtml(label)}</span>`;
+        const toneClass = this.getDeliveryToneClass(tone);
+        return `<span class="shop-delivery-meta-badge ${toneClass}">${this.escapeHtml(label)}</span>`;
     },
 
     buildDeliveryDataAttributes: function (attributes = {}) {
@@ -4091,7 +4056,7 @@ Example output format:
     },
 
     renderDeliveryFilterBreadcrumb: function ({ label, tone = 'neutral', title = '', preview = '', removeAction = '', removeAttrs = {} } = {}) {
-        const colors = this.getDeliveryToneStyles(tone);
+        const toneClass = this.getDeliveryToneClass(tone);
         const titleAttr = title ? ` title="${this.escapeHtml(title)}"` : '';
         const previewAttr = preview ? ` data-preview="${this.escapeHtml(preview)}"` : '';
         const actionAttrs = removeAction
@@ -4103,8 +4068,7 @@ Example output format:
         return `
             <button
                 type="button"
-                class="shop-delivery-filter-crumb"
-                style="color:${colors.text};background:${colors.bg};border-color:${colors.border};"
+                class="shop-delivery-filter-crumb ${toneClass}"
                 ${titleAttr}${previewAttr}${actionAttrs}
             >
                 <span>${this.escapeHtml(label)}</span>
@@ -4114,10 +4078,7 @@ Example output format:
     },
 
     renderDeliveryQuickFilterChip: function ({ label, tone = 'neutral', active = false, title = '', action = '', actionAttrs = {} } = {}) {
-        const colors = this.getDeliveryToneStyles(tone);
-        const textColor = active ? colors.text : 'rgba(226, 232, 240, 0.82)';
-        const background = active ? colors.bg : 'rgba(255, 255, 255, 0.05)';
-        const borderColor = active ? colors.border : 'rgba(255, 255, 255, 0.08)';
+        const toneClass = this.getDeliveryToneClass(tone);
         const titleAttr = title ? ` title="${this.escapeHtml(title)}"` : '';
         const delegatedAttrs = action
             ? this.buildDeliveryDataAttributes({
@@ -4126,14 +4087,11 @@ Example output format:
             })
             : '';
         const activeClass = active ? ' shop-delivery-meta-chip--active' : '';
-        return `<button type="button" class="shop-delivery-meta-chip shop-delivery-meta-chip--action${activeClass}"${titleAttr}${delegatedAttrs} style="color:${textColor};background:${background};border-color:${borderColor};">${this.escapeHtml(label)}</button>`;
+        return `<button type="button" class="shop-delivery-meta-chip shop-delivery-meta-chip--action ${toneClass}${activeClass}"${titleAttr}${delegatedAttrs}>${this.escapeHtml(label)}</button>`;
     },
 
     renderDeliveryTrendLegendButton: function ({ label, tone = 'neutral', active = false, title = '', action = '', actionAttrs = {} } = {}) {
-        const colors = this.getDeliveryToneStyles(tone);
-        const textColor = active ? colors.text : 'rgba(226, 232, 240, 0.72)';
-        const background = active ? colors.bg : 'rgba(255, 255, 255, 0.04)';
-        const borderColor = active ? colors.border : 'rgba(255, 255, 255, 0.08)';
+        const toneClass = this.getDeliveryToneClass(tone);
         const titleAttr = title ? ` title="${this.escapeHtml(title)}"` : '';
         const delegatedAttrs = action
             ? this.buildDeliveryDataAttributes({
@@ -4145,11 +4103,10 @@ Example output format:
         return `
             <button
                 type="button"
-                class="shop-delivery-trend-legend-item${activeClass}"
+                class="shop-delivery-trend-legend-item ${toneClass}${activeClass}"
                ${titleAttr}${delegatedAttrs}
-                style="color:${textColor};background:${background};border-color:${borderColor};"
             >
-                <i class="fas fa-circle" style="color:${colors.text};"></i>
+                <i class="fas fa-circle shop-delivery-trend-legend-dot ${toneClass}"></i>
                 <span>${this.escapeHtml(label)}</span>
             </button>
         `;
@@ -5206,7 +5163,7 @@ Example output format:
             const productName = this.escapeHtml(order.snapshot_product_name || '—');
             const latestError = task.last_error
                 ? `<span title="${this.escapeHtml(task.last_error)}">${this.escapeHtml(this.truncateText(task.last_error, 68))}</span>`
-                : '<span style="color:rgba(226,232,240,0.45);">—</span>';
+                : '<span class="shop-delivery-placeholder">—</span>';
             const executeTimeline = `
                 <div class="shop-delivery-attempt-stack">
                     <div class="shop-delivery-attempt-line"><strong>上次</strong> <span>${this.formatDeliveryTime(task.last_attempt_at || task.updated_at || task.created_at)}</span></div>
@@ -5225,26 +5182,26 @@ Example output format:
                     data-order-id="${this.escapeHtml(task.order_id || '')}"
                 >
                     <td data-label="订单号">
-                        <div style="font-weight:600;color:#fff;">${this.escapeHtml(task.order_id || '—')}</div>
-                        <div style="font-size:12px;color:rgba(226,232,240,0.58);">${task.dedupe_key ? this.escapeHtml(this.truncateText(task.dedupe_key, 36)) : '无去重键'}</div>
+                        <div class="shop-delivery-value">${this.escapeHtml(task.order_id || '—')}</div>
+                        <div class="shop-delivery-table-note">${task.dedupe_key ? this.escapeHtml(this.truncateText(task.dedupe_key, 36)) : '无去重键'}</div>
                     </td>
                     <td data-label="商品">
-                        <div style="font-weight:600;color:#fff;">${productName}</div>
-                        <div style="font-size:12px;color:rgba(226,232,240,0.58);">${this.escapeHtml(order.user_id || '未知用户')}</div>
+                        <div class="shop-delivery-value">${productName}</div>
+                        <div class="shop-delivery-table-note">${this.escapeHtml(order.user_id || '未知用户')}</div>
                     </td>
                     <td data-label="任务状态">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${taskBadges}</div>
+                        <div class="shop-delivery-meta shop-delivery-meta--stacked">${taskBadges}</div>
                         ${this.renderDeliveryObserveChips(task)}
                     </td>
                     <td data-label="尝试次数">
-                        <div style="font-weight:700;color:#fff;margin-bottom:8px;">${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</div>
+                        <div class="shop-delivery-value shop-delivery-value--strong shop-delivery-value--spaced">${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</div>
                         ${this.renderDeliveryAttemptLines(task)}
                     </td>
                     <td data-label="目标地址">
                         <div class="shop-delivery-target" title="${this.escapeHtml(task.target_url || '')}">${this.formatDeliveryTaskTarget(task.target_url)}</div>
                     </td>
-                    <td data-label="最近执行 / 下次重试" style="white-space:normal;line-height:1.5;">${executeTimeline}</td>
-                    <td data-label="最近错误" style="white-space:normal;line-height:1.55;">
+                    <td data-label="最近执行 / 下次重试" class="shop-delivery-table-cell--timeline">${executeTimeline}</td>
+                    <td data-label="最近错误" class="shop-delivery-table-cell--relaxed">
                         ${latestError}
                     </td>
                     <td data-label="操作">${this.renderDeliveryActionButtons(task)}</td>
@@ -5515,23 +5472,23 @@ Example output format:
                     title="${isActive ? '再次点击可取消任务锁定' : '点击锁定该任务、对应时间桶和热点上下文'}"
                 >
                     <td data-label="时间">
-                        <div style="font-weight:600;color:#fff;">${this.formatDeliveryTime(record.created_at)}</div>
+                        <div class="shop-delivery-value">${this.formatDeliveryTime(record.created_at)}</div>
                         <div class="shop-delivery-table-note">${record.worker_name ? `Worker ${this.escapeHtml(record.worker_name)}` : '无 worker'}</div>
                     </td>
                     <td data-label="冲突类型">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${reasonFilterChip}</div>
+                        <div class="shop-delivery-meta shop-delivery-meta--stacked">${reasonFilterChip}</div>
                         <div class="shop-delivery-table-note">${detail}</div>
                     </td>
                     <td data-label="任务 / 订单">
-                        <div style="font-weight:600;color:#fff;">任务 ${taskId}</div>
+                        <div class="shop-delivery-value">任务 ${taskId}</div>
                         <div class="shop-delivery-table-note">${order.snapshot_product_name ? this.escapeHtml(order.snapshot_product_name) : '无商品'} · 订单 ${orderId}</div>
                     </td>
                     <td data-label="目标 / 通道">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${targetFilterChip}</div>
+                        <div class="shop-delivery-meta shop-delivery-meta--stacked">${targetFilterChip}</div>
                         <div class="shop-delivery-meta">${channelFilterChip}</div>
                     </td>
                     <td data-label="结果">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${resultBadge}</div>
+                        <div class="shop-delivery-meta shop-delivery-meta--stacked">${resultBadge}</div>
                         <div class="shop-delivery-table-note">${record.next_attempt_at ? `下次 ${this.formatDeliveryTime(record.next_attempt_at)}` : '无重试时间'}${isActive ? ' · 已锁定上下文' : ' · 点击联动'}</div>
                     </td>
                 </tr>
@@ -5556,8 +5513,8 @@ Example output format:
             const productName = this.escapeHtml(order.snapshot_product_name || '—');
             const userId = this.escapeHtml(order.user_id || '未知用户');
             const reason = task.last_error
-                ? `<div style="font-weight:600;color:#fff;">${this.escapeHtml(this.truncateText(task.last_error, 54))}</div>`
-                : '<div style="font-weight:600;color:#fff;">人工标记死信</div>';
+                ? `<div class="shop-delivery-value">${this.escapeHtml(this.truncateText(task.last_error, 54))}</div>`
+                : '<div class="shop-delivery-value">人工标记死信</div>';
             const responseMeta = [
                 task.last_response_status ? `HTTP ${Number(task.last_response_status)}` : '',
                 task.dead_lettered_at ? `死信于 ${this.formatDeliveryTime(task.dead_lettered_at)}` : ''
@@ -5569,17 +5526,17 @@ Example output format:
             return `
                 <tr class="${isFocused ? 'shop-delivery-linked-row--focused' : ''}">
                     <td data-label="订单号">
-                        <div style="font-weight:600;color:#fff;">${orderId}</div>
+                        <div class="shop-delivery-value">${orderId}</div>
                         <div class="shop-delivery-table-note">${task.target_url ? this.formatDeliveryTaskTarget(task.target_url) : '无目标地址'}</div>
                     </td>
                     <td data-label="商品 / 用户">
-                        <div style="font-weight:600;color:#fff;">${productName}</div>
+                        <div class="shop-delivery-value">${productName}</div>
                         <div class="shop-delivery-table-note">${userId}</div>
                     </td>
-                    <td data-label="死信原因" style="white-space:normal;line-height:1.55;">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${deadLetterReason}</div>
+                    <td data-label="死信原因" class="shop-delivery-table-cell--relaxed">
+                        <div class="shop-delivery-meta shop-delivery-meta--stacked">${deadLetterReason}</div>
                         ${reason}
-                        <div class="shop-delivery-table-note" style="margin-top:8px;">${this.escapeHtml(responseMeta || '无额外响应信息')}</div>
+                        <div class="shop-delivery-table-note shop-delivery-table-note--spaced">${this.escapeHtml(responseMeta || '无额外响应信息')}</div>
                     </td>
                     <td data-label="锁与幂等">${this.renderDeliveryObserveChips(task)}</td>
                     <td data-label="最近尝试">${this.renderDeliveryAttemptLines(task)}</td>
@@ -5622,15 +5579,15 @@ Example output format:
             return `
                 <tr class="${isFocused ? 'shop-delivery-linked-row--focused' : ''}">
                     <td data-label="订单号">
-                        <div style="font-weight:600;color:#fff;">${orderId}</div>
+                        <div class="shop-delivery-value">${orderId}</div>
                         <div class="shop-delivery-table-note">${task.target_url ? this.formatDeliveryTaskTarget(task.target_url) : '无目标地址'}</div>
                     </td>
                     <td data-label="商品 / 用户">
-                        <div style="font-weight:600;color:#fff;">${productName}</div>
+                        <div class="shop-delivery-value">${productName}</div>
                         <div class="shop-delivery-table-note">${userId}</div>
                     </td>
                     <td data-label="锁状态">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">
+                        <div class="shop-delivery-meta shop-delivery-meta--stacked">
                             ${this.getDeliveryTaskStatusBadge(task.status)}
                             ${this.getDeliveryLockBadge(task)}
                         </div>
@@ -5639,10 +5596,10 @@ Example output format:
                     <td data-label="锁与幂等">
                         ${this.renderDeliveryObserveChips(task)}
                     </td>
-                    <td data-label="最近错误 / 尝试" style="white-space:normal;line-height:1.55;">
-                        <div style="font-weight:600;color:#fff;">${errorLabel}</div>
-                        <div class="shop-delivery-table-note" style="margin-top:8px;">尝试 ${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</div>
-                        <div style="margin-top:8px;">${this.renderDeliveryAttemptLines(task)}</div>
+                    <td data-label="最近错误 / 尝试" class="shop-delivery-table-cell--relaxed">
+                        <div class="shop-delivery-value">${errorLabel}</div>
+                        <div class="shop-delivery-table-note shop-delivery-table-note--spaced">尝试 ${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</div>
+                        <div class="shop-delivery-observe-wrap">${this.renderDeliveryAttemptLines(task)}</div>
                     </td>
                     <td data-label="操作">
                         ${this.renderDeliveryConflictAuditJumpButton(task)}
@@ -5717,25 +5674,25 @@ Example output format:
             return `
                 <tr class="${isFocused ? 'shop-delivery-linked-row--focused' : ''}">
                     <td data-label="状态">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${stateBadges}</div>
+                        <div class="shop-delivery-meta shop-delivery-meta--stacked">${stateBadges}</div>
                         <div class="shop-delivery-table-note">${task.last_conflict_reason ? this.escapeHtml(task.last_conflict_reason) : '无最近冲突原因'}</div>
                     </td>
                     <td data-label="任务 / 订单">
-                        <div style="font-weight:600;color:#fff;">任务 ${this.escapeHtml(this.truncateText(task.id || '—', 18))}</div>
+                        <div class="shop-delivery-value">任务 ${this.escapeHtml(this.truncateText(task.id || '—', 18))}</div>
                         <div class="shop-delivery-table-note">订单 ${orderId}</div>
                     </td>
                     <td data-label="商品 / 用户">
-                        <div style="font-weight:600;color:#fff;">${productName}</div>
+                        <div class="shop-delivery-value">${productName}</div>
                         <div class="shop-delivery-table-note">${userId}</div>
                     </td>
                     <td data-label="目标 / 通道">
-                        <div style="font-weight:600;color:#fff;">${this.escapeHtml(this.truncateText(task.target_key || task.target_url || '—', 34))}</div>
+                        <div class="shop-delivery-value">${this.escapeHtml(this.truncateText(task.target_key || task.target_url || '—', 34))}</div>
                         <div class="shop-delivery-table-note">${this.escapeHtml(this.truncateText(task.channel_key || '—', 26))}</div>
                     </td>
-                    <td data-label="占位 / 当前锁" style="white-space:normal;line-height:1.55;">
-                        <div style="font-weight:600;color:#fff;">${this.escapeHtml(reservationMeta || '无占位快照')}</div>
-                        <div class="shop-delivery-table-note" style="margin-top:8px;">${this.escapeHtml(currentLockMeta || '当前无活跃锁信息')}</div>
-                        <div style="margin-top:8px;">${this.renderDeliveryObserveChips(task)}</div>
+                    <td data-label="占位 / 当前锁" class="shop-delivery-table-cell--relaxed">
+                        <div class="shop-delivery-value">${this.escapeHtml(reservationMeta || '无占位快照')}</div>
+                        <div class="shop-delivery-table-note shop-delivery-table-note--spaced">${this.escapeHtml(currentLockMeta || '当前无活跃锁信息')}</div>
+                        <div class="shop-delivery-observe-wrap">${this.renderDeliveryObserveChips(task)}</div>
                     </td>
                     <td data-label="操作">
                         ${this.renderDeliveryConflictAuditJumpButton(task)}
@@ -6030,40 +5987,40 @@ Example output format:
             const transition = [record.previous_status, record.next_status]
                 .filter(Boolean)
                 .map((value) => this.getDeliveryTaskStatusBadge(value))
-                .join('<span style="color:rgba(226,232,240,0.55);">→</span>');
+                .join('<span class="shop-delivery-transition-separator">→</span>');
             const currentState = [
                 task.status ? this.getDeliveryTaskStatusBadge(task.status) : this.renderDeliveryBadge('任务缺失', 'danger'),
                 order.delivery_status ? this.getOrderDeliveryStatusBadge(order) : ''
             ].filter(Boolean).join('');
             const noteText = record.note
-                ? `<div class="shop-delivery-table-note" style="margin-top:8px;">备注：${this.escapeHtml(this.truncateText(record.note, 48))}</div>`
+                ? `<div class="shop-delivery-table-note shop-delivery-table-note--spaced">备注：${this.escapeHtml(this.truncateText(record.note, 48))}</div>`
                 : '';
 
             return `
                 <tr>
                     <td data-label="时间">
-                        <div style="font-weight:600;color:#fff;">${this.formatDeliveryTime(record.created_at)}</div>
+                        <div class="shop-delivery-value">${this.formatDeliveryTime(record.created_at)}</div>
                         <div class="shop-delivery-table-note">${record.task_id ? `任务 ${this.escapeHtml(this.truncateText(record.task_id, 18))}` : '无任务 ID'}</div>
                     </td>
                     <td data-label="管理员">
-                        <div style="font-weight:600;color:#fff;">${adminIdentity}</div>
+                        <div class="shop-delivery-value">${adminIdentity}</div>
                     </td>
                     <td data-label="订单 / 商品">
-                        <div style="font-weight:600;color:#fff;">${productName}</div>
+                        <div class="shop-delivery-value">${productName}</div>
                         <div class="shop-delivery-table-note">${orderId}</div>
                     </td>
                     <td data-label="状态流转">
                         <div class="shop-delivery-meta">${transition || this.renderDeliveryBadge('状态未知', 'muted')}</div>
-                        <div class="shop-delivery-table-note" style="margin-top:8px;">${record.previous_status && record.next_status ? '人工重放触发了一次状态迁移' : '仅记录了重放动作，状态可能已被后续 worker 覆盖'}</div>
+                        <div class="shop-delivery-table-note shop-delivery-table-note--spaced">${record.previous_status && record.next_status ? '人工重放触发了一次状态迁移' : '仅记录了重放动作，状态可能已被后续 worker 覆盖'}</div>
                         ${noteText}
                     </td>
                     <td data-label="重放次数">
-                        <div style="font-weight:700;color:#fff;">${Number(record.manual_replay_count || task.manual_replay_count || 0)}</div>
+                        <div class="shop-delivery-value shop-delivery-value--strong">${Number(record.manual_replay_count || task.manual_replay_count || 0)}</div>
                         <div class="shop-delivery-table-note">累计人工触发次数</div>
                     </td>
                     <td data-label="当前状态">
                         <div class="shop-delivery-meta">${currentState}</div>
-                        <div style="margin-top:8px;">${this.renderDeliveryCompactObserveChips(record)}</div>
+                        <div class="shop-delivery-observe-wrap">${this.renderDeliveryCompactObserveChips(record)}</div>
                     </td>
                 </tr>
             `;

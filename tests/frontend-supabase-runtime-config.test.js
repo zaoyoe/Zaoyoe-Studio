@@ -378,7 +378,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
         ['shop.html', 'css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_INVENTORY_RUNTIME_STYLES_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_DELIVERY_RUNTIME_STYLES_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -486,7 +486,7 @@ test('admin studio page no longer embeds inline style attributes', () => {
     const source = readRepoFile('admin-studio.html');
 
     assert.equal(
-        source.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_INVENTORY_RUNTIME_STYLES_1'),
+        source.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_DELIVERY_RUNTIME_STYLES_1'),
         true,
         'admin-studio.html should load the updated admin studio page stylesheet'
     );
@@ -1910,6 +1910,56 @@ test('shop admin inventory workflows externalize runtime table and modal styling
         '.shop-inventory-detail-inline-btn',
         '.shop-inventory-detail-entry',
         '.shop-inventory-copy-feedback'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
+    }
+});
+
+test('shop admin delivery dashboards externalize tone and table-row styling', () => {
+    const shopSource = readRepoFile('js/admin-shop.js');
+    const shopStyles = readRepoFile('css/admin-studio-page.css');
+
+    const removedRuntimeMarkers = [
+        'class="status-badge" style="display:inline-flex;align-items:center;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:600;color:${colors.text};background:${colors.bg};border:1px solid ${colors.border};white-space:nowrap;"',
+        'class="shop-delivery-meta-badge" style="color:${colors.text};background:${colors.bg};border-color:${colors.border};"',
+        'class="shop-delivery-meta-chip shop-delivery-meta-chip--action${activeClass}"${titleAttr}${delegatedAttrs} style="color:${textColor};background:${background};border-color:${borderColor};"',
+        'class="shop-delivery-trend-legend-item${activeClass}"',
+        '<span style="color:rgba(226,232,240,0.45);">—</span>',
+        `.join('<span style="color:rgba(226,232,240,0.55);">→</span>')`,
+        'class="shop-delivery-meta" style="margin-bottom:8px;"',
+        'style="white-space:normal;line-height:1.55;"'
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(shopSource.includes(marker), false, `js/admin-shop.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'shop-delivery-badge',
+        'shop-delivery-tone--',
+        'shop-delivery-meta--stacked',
+        'shop-delivery-value',
+        'shop-delivery-table-cell--relaxed',
+        'shop-delivery-table-note--spaced',
+        'shop-delivery-transition-separator',
+        'shop-delivery-trend-legend-dot'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.shop-delivery-badge',
+        '.shop-delivery-tone--success',
+        '.shop-delivery-meta--stacked',
+        '.shop-delivery-value',
+        '.shop-delivery-table-cell--relaxed',
+        '.shop-delivery-table-note--spaced',
+        '.shop-delivery-transition-separator',
+        '.shop-delivery-trend-legend-dot'
     ];
 
     for (const marker of styleMarkers) {
