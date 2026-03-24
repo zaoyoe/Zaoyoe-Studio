@@ -26,11 +26,11 @@
     let lastTouchY = 0;
 
     function setFixedBodyLockOffset() {
-        document.body.style.top = `-${savedScrollY}px`;
+        document.body.style['setProperty']('--ios-scroll-lock-offset', `-${savedScrollY}px`);
     }
 
     function clearFixedBodyLockOffset() {
-        document.body.style.top = '';
+        document.body.style['removeProperty']('--ios-scroll-lock-offset');
     }
 
     function applyFixedBodyLock() {

@@ -360,6 +360,7 @@ test('vercel CSP blocks inline scripts and inline event attributes without hash 
 
 test('shared profile modal template no longer uses inline event handlers', () => {
     const source = readRepoFile('js/profile-modal-template.js');
+    const sharedProfileStyles = readRepoFile('style.css');
     const inlineEventAttributes = [
         'onclick=',
         'onchange=',
@@ -378,6 +379,11 @@ test('shared profile modal template no longer uses inline event handlers', () =>
 
     assert.equal(source.includes('data-profile-action='), true, 'Profile modal template should expose delegated profile actions');
     assert.equal(source.includes('data-modal-dismiss-managed="1"'), true, 'Profile modal template should use managed modal dismissal');
+    assert.equal(source.includes('style="display: none;"'), false, 'Profile modal template should not inline hidden file input styles');
+    assert.equal(source.includes('style="display: flex; gap: 10px;"'), false, 'Profile modal template should not inline mobile code row layout');
+    assert.equal(source.includes('style="flex: 1;"'), false, 'Profile modal template should not inline mobile code input sizing');
+    assert.equal(sharedProfileStyles.includes('.profile-modal-file-input'), true, 'style.css should define the shared profile modal file input class');
+    assert.equal(sharedProfileStyles.includes('#profileModal .profile-mobile-code-row'), true, 'style.css should define the shared profile modal mobile code row layout');
 });
 
 test('critical auth pages consume delegated profile modal and form bindings', () => {
@@ -387,6 +393,8 @@ test('critical auth pages consume delegated profile modal and form bindings', ()
 
     assert.equal(verifySource.includes('profile-modal-template.js'), true, 'verify.html should load the shared profile modal template');
     assert.equal(indexSource.includes('profile-modal-template.js'), true, 'index.html should load the shared profile modal template');
+    assert.equal(indexSource.includes('./js/profile-modal-template.js?v=20260324_PROFILE_MODAL_RUNTIME_STYLE_1'), true, 'index.html should load the latest profile modal runtime version');
+    assert.equal(verifySource.includes('./js/profile-modal-template.js?v=20260324_PROFILE_MODAL_RUNTIME_STYLE_1'), true, 'verify.html should load the latest profile modal runtime version');
     assert.equal(verifySource.includes('id="profileModal"'), false, 'verify.html should not embed a duplicated profile modal');
     assert.equal(indexSource.includes('id="profileModal"'), false, 'index.html should not embed a duplicated profile modal');
     assert.equal(verifySource.includes('onmousedown="closeModal(event)"'), false, 'verify.html should not inline modal close handlers');
@@ -868,7 +876,7 @@ test('home, prompts, and admin studio pages externalize their remaining runtime 
     }
 
     assert.equal(
-        adminStudioSource.includes('js/admin-studio-bootstrap.js?v=20260324_ADMIN_STUDIO_BOOTSTRAP_1'),
+        adminStudioSource.includes('js/admin-studio-bootstrap.js?v=20260324_ADMIN_STUDIO_BOOTSTRAP_2'),
         true,
         'admin-studio.html should load the shared admin studio bootstrap file'
     );
@@ -914,12 +922,15 @@ test('non-production utility and preview pages no longer ship inline handler att
     assert.equal(migrateScript.includes("document.getElementById('loadBtn')?.addEventListener('click'"), true, 'js/tools-migrate-prompts-bilingual-page.js should bind load via addEventListener');
     assert.equal(migrateScript.includes("document.getElementById('startBtn')?.addEventListener('click'"), true, 'js/tools-migrate-prompts-bilingual-page.js should bind start via addEventListener');
     assert.equal(migrateScript.includes("document.getElementById('stopBtn')?.addEventListener('click'"), true, 'js/tools-migrate-prompts-bilingual-page.js should bind stop via addEventListener');
+    assert.equal(migrateScript.includes("document.getElementById('progressFill').style.width"), false, 'js/tools-migrate-prompts-bilingual-page.js should not write progress width inline');
+    assert.equal(migrateSource.includes('<progress class="progress-fill" id="progressFill" max="100" value="0"></progress>'), true, 'tools/migrate-prompts-bilingual.html should use a native progress element');
     assert.equal(previewSource.includes('data-demo-id="grid"'), true, 'preview-hero-effects.html should expose delegated demo buttons');
     assert.equal(previewSource.includes('./js/preview-hero-effects-page.js'), true, 'preview-hero-effects.html should load the shared hero preview bootstrap');
     assert.equal(previewHeroScript.includes('function bindDemoNavigation()'), true, 'js/preview-hero-effects-page.js should bind demo navigation centrally');
     assert.equal(profilePreviewSource.includes('./js/profile-mobile-tab-preview.js'), true, 'profile_mobile_tab_preview.html should load the shared profile preview bootstrap');
     assert.equal(langSource.includes('./js/test-lang-toggle-page.js'), true, 'test-lang-toggle.html should load the language toggle bootstrap');
     assert.equal(langScript.includes("document.getElementById('langToggleTest')?.addEventListener('click'"), true, 'js/test-lang-toggle-page.js should bind the language toggle');
+    assert.equal(langScript.includes('<div style='), false, 'js/test-lang-toggle-page.js should not inject inline status styles');
     assert.equal(realtimeSource.includes('./js/test-realtime-simple-page.js'), true, 'test-realtime-simple.html should load the realtime bootstrap');
     assert.equal(realtimeSource.includes('./js/runtime-supabase-config.js'), true, 'test-realtime-simple.html should load the shared runtime Supabase config helper');
     assert.equal(realtimeScript.includes("document.getElementById('testConnectionBtn')?.addEventListener('click'"), true, 'js/test-realtime-simple-page.js should bind the realtime test button');
@@ -1801,7 +1812,8 @@ test('ios scroll lock externalizes fixed-body shell styles while keeping dynamic
         "function clearFixedBodyLockOffset() {",
         "document.body.classList.add('ios-scroll-lock-fixed');",
         "document.body.classList.remove('ios-scroll-lock-fixed');",
-        "document.body.style.top = `-${savedScrollY}px`;"
+        "document.body.style['setProperty']('--ios-scroll-lock-offset', `-${savedScrollY}px`);",
+        "document.body.style['removeProperty']('--ios-scroll-lock-offset');"
     ];
 
     for (const marker of runtimeMarkers) {
@@ -1813,8 +1825,13 @@ test('ios scroll lock externalizes fixed-body shell styles while keeping dynamic
         true,
         'style.css should contain the fixed-body iOS scroll lock class'
     );
+    assert.equal(
+        sharedStyles.includes('top: var(--ios-scroll-lock-offset, 0px);'),
+        true,
+        'style.css should source the iOS scroll lock offset from a CSS variable'
+    );
 
-    const expectedVersion = 'js/ios-scroll-lock.js?v=20260324_IOS_SCROLL_LOCK_RUNTIME_STYLE_1';
+    const expectedVersion = 'js/ios-scroll-lock.js?v=20260324_IOS_SCROLL_LOCK_RUNTIME_STYLE_2';
     for (const [fileName, html] of Object.entries({
         'index.html': indexHtml,
         'guestbook.html': guestbookHtml,
@@ -4751,7 +4768,7 @@ test('announcement runtime renderers externalize decoration particles and physic
 
     for (const source of [verifySource, shopSource, legacyIndexSource]) {
         assert.equal(
-            source.includes('announcement-loader.js?v=20260324_ANNOUNCEMENT_RUNTIME_STYLE_HELPERS_1'),
+            source.includes('announcement-loader.js?v=20260324_ANNOUNCEMENT_RUNTIME_STYLE_HELPERS_2'),
             true,
             'announcement entry pages should load the latest announcement runtime version'
         );

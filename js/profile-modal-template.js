@@ -20,7 +20,7 @@
                 <div class="profile-flip-container">
                     <div class="profile-flip-inner">
                         <div id="view-profile" class="profile-view profile-front">
-                            <input type="file" id="avatarUpload" accept="image/*" style="display: none;"
+                            <input type="file" id="avatarUpload" accept="image/*" class="profile-modal-file-input"
                                 data-profile-change="avatar-upload">
 
                             <div class="profile-mobile-sheet">
@@ -222,9 +222,9 @@
                                             placeholder="输入手机号" maxlength="11"
                                             data-i18n-placeholder="security.enterPhone">
                                     </div>
-                                    <div class="input-group" style="display: flex; gap: 10px;">
-                                        <input type="text" id="mobile_phoneCodeInput" class="security-input glass-input"
-                                            placeholder="输入6位验证码" style="flex: 1;"
+                                    <div class="input-group profile-mobile-code-row">
+                                        <input type="text" id="mobile_phoneCodeInput" class="security-input glass-input profile-mobile-code-input"
+                                            placeholder="输入6位验证码"
                                             data-i18n-placeholder="security.enterVerifyCode">
                                         <button class="security-mobile-code-btn" id="mobile_sendPhoneCodeBtn"
                                             type="button" data-profile-action="send-phone-code"

@@ -1749,6 +1749,7 @@ body.ios-scroll-lock-fixed {
     left: 0;
     right: 0;
     width: 100%;
+    top: var(--ios-scroll-lock-offset, 0px);
 }
 
 /* Prevent scroll chaining */
@@ -4763,6 +4764,10 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     /* Remove width transition to prevent layout shifts */
 }
 
+.profile-modal-file-input {
+    display: none;
+}
+
 #profileModal {
     --profile-modal-shift-y: 0px;
     --profile-modal-overlay-height: 100dvh;
@@ -5356,6 +5361,15 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     color: rgba(255, 255, 255, 0.9);
     height: 46px;
     padding: 0 14px;
+}
+
+#profileModal .profile-mobile-code-row {
+    display: flex;
+    gap: 10px;
+}
+
+#profileModal .profile-mobile-code-row .profile-mobile-code-input {
+    flex: 1;
 }
 
 #profileModal .mobile-security-layout .security-mobile-primary-btn,
