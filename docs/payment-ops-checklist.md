@@ -1,7 +1,8 @@
 # 测试数据清理 + 安全收尾清单
 
 这份清单按“先验收，再清理，再轮换密钥”的顺序执行。  
-所有正式链路都建议统一使用 [https://www.zaoyoe.com](https://www.zaoyoe.com)。
+所有正式链路都建议统一使用 [https://www.zaoyoe.com](https://www.zaoyoe.com)。  
+如果你现在处理的是一次完整发布，而不只是支付专项收尾，先看 [vercel-release-checklist.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/vercel-release-checklist.md)。
 
 ## 1. 支付后台验收
 
