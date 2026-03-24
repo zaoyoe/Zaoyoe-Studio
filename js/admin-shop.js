@@ -136,15 +136,12 @@ const ShopAdmin = {
 
         // Show site hint
         if (hint) {
-            if (filter === 'all') {
-                hint.style.display = 'block';
-                hint.innerHTML = '⚠️ 当前为“全部”模式，默认编辑 <strong>CN</strong> 商品信息。切换站点可编辑对应站点的名称/价格/描述。';
-            } else {
-                hint.style.display = 'block';
-                hint.innerHTML = isCN
+            hint.classList.add('shop-product-site-hint--visible');
+            hint.innerHTML = filter === 'all'
+                ? '⚠️ 当前为“全部”模式，默认编辑 <strong>CN</strong> 商品信息。切换站点可编辑对应站点的名称/价格/描述。'
+                : (isCN
                     ? '🇨🇳 正在编辑 <strong>CN</strong> 商品信息'
-                    : '🌍 Editing <strong>EN</strong> product info';
-            }
+                    : '🌍 Editing <strong>EN</strong> product info');
         }
     },
 
@@ -217,14 +214,8 @@ const ShopAdmin = {
     refreshFormSectionHeight(wrapperId) {
         const wrapper = document.getElementById(wrapperId);
         if (!wrapper) return;
-
-        const currentMaxHeight = Number.parseFloat(wrapper.style.maxHeight || '0');
-        if (currentMaxHeight <= 0 && wrapper.style.opacity !== '1') return;
-
-        requestAnimationFrame(() => {
-            const nextHeight = Math.max(wrapper.scrollHeight + 12, 220);
-            wrapper.style.maxHeight = `${nextHeight}px`;
-        });
+        if (!wrapper.classList.contains('shop-form-section--expanded')) return;
+        wrapper.classList.add('shop-form-section--expanded');
     },
 
     // Translate Chinese text to English using Gemini API
@@ -371,7 +362,6 @@ Example output format:
     hideProductModal: function () {
         const modal = document.getElementById('productModal');
         if (modal) {
-            modal.style.display = 'none';
             modal.classList.remove('active');
         }
     },
@@ -2568,9 +2558,7 @@ Example output format:
         const helper = document.createElement('textarea');
         helper.value = text;
         helper.setAttribute('readonly', '');
-        helper.style.position = 'fixed';
-        helper.style.opacity = '0';
-        helper.style.pointerEvents = 'none';
+        helper.className = 'shop-admin-clipboard-helper';
         document.body.appendChild(helper);
         helper.select();
         helper.setSelectionRange(0, helper.value.length);
@@ -3063,7 +3051,7 @@ Example output format:
         // Icon Logic
         const iconBox = document.getElementById('previewIconBox');
         if (iconInput.startsWith('http') || iconInput.startsWith('data:image')) {
-            iconBox.innerHTML = `<img src="${iconInput}" style="width:100%; height:100%; object-fit:cover; border-radius:12px;">`;
+            iconBox.innerHTML = `<img src="${iconInput}" class="shop-admin-preview-icon-image" alt="商品封面预览">`;
         } else {
             // Assume FontAwesome class
             iconBox.innerHTML = `<i class="${iconInput}"></i>`;
@@ -3078,7 +3066,7 @@ Example output format:
         const iconBox = document.querySelector('.upload-box');
 
         uploadText.textContent = '⏳ 压缩上传中...';
-        iconBox.style.opacity = '0.7';
+        iconBox.classList.add('upload-box--busy');
 
         try {
             // 1. Compress Image
@@ -3134,7 +3122,7 @@ Example output format:
             uploadText.textContent = '✅ 上传成功';
             setTimeout(() => {
                 uploadText.textContent = '点击更换图片 (支持 JPG, PNG, WebP)';
-                iconBox.style.opacity = '1';
+                iconBox.classList.remove('upload-box--busy');
             }, 2000);
 
             console.log('✅ Product image uploaded to R2:', imageUrl);
@@ -3143,7 +3131,7 @@ Example output format:
             console.error('Upload failed:', err);
             alert('上传失败: ' + err.message);
             uploadText.textContent = '❌ 上传失败';
-            iconBox.style.opacity = '1';
+            iconBox.classList.remove('upload-box--busy');
         }
     },
 
@@ -3211,7 +3199,7 @@ Example output format:
             let optionsHtml = categories.map(cat => {
                 const color = cat.color || '#6b9ece';
                 return `<div class="custom-category-option" data-shop-action="product-select-category" data-category-name="${this.escapeForAttr(cat.name)}" data-category-color="${this.escapeForAttr(color)}">
-                    <span class="option-dot" style="background: ${color}"></span>
+                    <span class="option-dot ${this.buildCategoryColorClass(color)}"></span>
                     <span>${cat.name}</span>
                 </div>`;
             }).join('');
@@ -3219,25 +3207,25 @@ Example output format:
             // If no categories, add default
             if (categories.length === 0) {
                 optionsHtml = `<div class="custom-category-option" data-shop-action="product-select-category" data-category-name="other" data-category-color="#9aa0a6">
-                    <span class="option-dot" style="background: #9aa0a6"></span>
+                    <span class="option-dot ${this.buildCategoryColorClass('#9aa0a6')}"></span>
                     <span>其他</span>
                 </div>`;
             }
 
             // Add "Create new category" option at the bottom
-            optionsHtml += `<div class="custom-category-option add-new-category" data-shop-action="product-show-add-category-input" style="border-top: 1px solid rgba(255,255,255,0.1); margin-top: 6px; padding-top: 12px; color: #6b9ece;">
-                <i class="fas fa-plus" style="width: 10px; text-align: center; font-size: 10px;"></i>
+            optionsHtml += `<div class="custom-category-option add-new-category custom-category-option--create" data-shop-action="product-show-add-category-input">
+                <i class="fas fa-plus custom-category-option__create-icon"></i>
                 <span>添加新分类</span>
             </div>`;
 
             // Add input container (hidden by default)
-            optionsHtml += `<div id="newCategoryInputContainer" style="display: none; padding: 12px; border-top: 1px solid rgba(255,255,255,0.1); margin-top: 6px; box-sizing: border-box;">
+            optionsHtml += `<div id="newCategoryInputContainer" class="custom-category-create-panel admin-studio-inline-style-attr-3">
                 <input type="text" id="newCategoryName" placeholder="输入分类名称" 
-                    style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08); color: #fff; font-size: 13px; outline: none; box-sizing: border-box;"
+                    class="custom-category-create-panel__input"
                     data-shop-keydown="product-save-new-category">
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button type="button" data-shop-action="product-cancel-add-category" style="flex:1; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.7); cursor: pointer; font-size: 13px; transition: all 0.2s;">取消</button>
-                    <button type="button" data-shop-action="product-save-new-category" style="flex:1; padding: 8px 12px; border-radius: 8px; border: none; background: linear-gradient(135deg, #6b9ece 0%, #5a8fc0 100%); color: #fff; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s;">确定</button>
+                <div class="custom-category-create-panel__actions">
+                    <button type="button" data-shop-action="product-cancel-add-category" class="custom-category-create-panel__btn custom-category-create-panel__btn--cancel">取消</button>
+                    <button type="button" data-shop-action="product-save-new-category" class="custom-category-create-panel__btn custom-category-create-panel__btn--confirm">确定</button>
                 </div>
             </div>`;
 
@@ -3252,8 +3240,8 @@ Example output format:
         const inputContainer = document.getElementById('newCategoryInputContainer');
         const addBtn = document.querySelector('.add-new-category');
         if (inputContainer) {
-            inputContainer.style.display = 'block';
-            addBtn.style.display = 'none';
+            inputContainer.classList.remove('admin-studio-inline-style-attr-3');
+            addBtn?.classList.add('admin-studio-inline-style-attr-3');
             document.getElementById('newCategoryName').focus();
         }
     },
@@ -3263,8 +3251,8 @@ Example output format:
         const inputContainer = document.getElementById('newCategoryInputContainer');
         const addBtn = document.querySelector('.add-new-category');
         if (inputContainer) {
-            inputContainer.style.display = 'none';
-            addBtn.style.display = 'flex';
+            inputContainer.classList.add('admin-studio-inline-style-attr-3');
+            addBtn?.classList.remove('admin-studio-inline-style-attr-3');
             document.getElementById('newCategoryName').value = '';
         }
     },
@@ -3302,9 +3290,9 @@ Example output format:
 
         // Insert new option before the "add new" button
         const newOptionHtml = `<div class="custom-category-option pending-category" data-shop-action="product-select-category" data-category-name="${this.escapeForAttr(name)}" data-category-color="${this.escapeForAttr(color)}">
-            <span class="option-dot" style="background: ${color}"></span>
+            <span class="option-dot ${this.buildCategoryColorClass(color)}"></span>
             <span>${name}</span>
-            <span style="font-size: 10px; color: rgba(255,255,255,0.4); margin-left: auto;">(新)</span>
+            <span class="custom-category-option__pending">(新)</span>
         </div>`;
         addNewBtn.insertAdjacentHTML('beforebegin', newOptionHtml);
 
@@ -3336,7 +3324,7 @@ Example output format:
         const colorDot = dropdown.querySelector('.category-color-dot');
 
         nameSpan.textContent = categoryName;
-        colorDot.style.background = categoryColor || '#6b9ece';
+        this.setCategoryColorClasses(colorDot, categoryColor || '#6b9ece');
 
         // Update selected state on options
         document.querySelectorAll('.custom-category-option').forEach(opt => {
@@ -3353,15 +3341,7 @@ Example output format:
     toggleFormSection: function (wrapperId, show) {
         const wrapper = document.getElementById(wrapperId);
         if (!wrapper) return;
-        if (show) {
-            wrapper.style.opacity = '1';
-            wrapper.style.marginTop = '8px';
-            requestAnimationFrame(() => this.refreshFormSectionHeight(wrapperId));
-        } else {
-            wrapper.style.maxHeight = '0';
-            wrapper.style.opacity = '0';
-            wrapper.style.marginTop = '0';
-        }
+        wrapper.classList.toggle('shop-form-section--expanded', Boolean(show));
     },
 
     // Toggle purchase notes textarea visibility with animation
@@ -3510,13 +3490,7 @@ Example output format:
         const title = document.getElementById('productModalTitle');
         const siteEmoji = this.getEditSite() === 'intl' ? ' 🌍' : ' 🇨🇳';
         title.textContent = (isEdit ? '编辑商品' : '新建商品') + siteEmoji;
-        modal.style.display = 'flex'; // Ensure Flex is set to center it
-
-        // Force visibility properties
-        modal.style.opacity = '1';
-        modal.style.visibility = 'visible';
         modal.classList.add('active'); // In case CSS uses .active for transition
-        modal.style.zIndex = '9999';
 
         if (!isEdit) {
             this.editingProductSnapshot = null;
@@ -3822,7 +3796,7 @@ Example output format:
                 // Clear pending category after successful save
                 this.pendingCategory = null;
 
-                document.getElementById('productModal').style.display = 'none';
+                this.hideProductModal();
                 alert('保存成功' + (name_en ? ' (已自动翻译)' : ''));
 
                 // Refresh products and category filters
@@ -5779,7 +5753,7 @@ Example output format:
                             <div class="shop-delivery-hotspot-key" title="${this.escapeHtml(item.key || '')}">${keyText}</div>
                             <div class="shop-delivery-hotspot-rank">#${index + 1}</div>
                         </div>
-                        <div class="shop-delivery-hotspot-bar"><span style="width:${width}%"></span></div>
+                        <progress class="shop-delivery-hotspot-progress" max="100" value="${width}"></progress>
                     </button>
                     <div class="shop-delivery-hotspot-meta">${meta.join('')}</div>
                 </div>
@@ -5833,7 +5807,7 @@ Example output format:
                 legend.innerHTML = '';
             } else {
                 chart.innerHTML = `
-                    <div class="shop-delivery-trend-bars" style="grid-template-columns:repeat(${Math.max(buckets.length, 1)}, minmax(0, 1fr));">
+                    <div class="shop-delivery-trend-bars">
                         ${buckets.map((bucket, index) => {
                             const totalHeight = Math.max(8, Math.round((Number(bucket.total || 0) / maxValue) * 100));
                             const deadHeight = Number(bucket.dead_letter || 0)
@@ -5853,8 +5827,7 @@ Example output format:
                                     <div class="shop-delivery-trend-bar" title="${this.escapeHtml(titleText)}">
                                         <div class="shop-delivery-trend-bar-stack">
                                             <div class="shop-delivery-trend-bar-column">
-                                                <div class="shop-delivery-trend-bar-fill" style="height:${totalHeight}%"></div>
-                                                ${deadHeight ? `<div class="shop-delivery-trend-bar-fill shop-delivery-trend-bar-fill--dead" style="height:${deadHeight}%"></div>` : ''}
+                                                ${this.renderDeliveryTrendBarSvg(totalHeight, deadHeight)}
                                             </div>
                                         </div>
                                         <span>${showLabel ? bucketLabelHtml : ''}</span>
@@ -5874,21 +5847,31 @@ Example output format:
                                             title="${this.escapeHtml(titleText)}"
                                         >
                                             <div class="shop-delivery-trend-bar-column">
-                                                <div class="shop-delivery-trend-bar-fill" style="height:${totalHeight}%"></div>
-                                                ${deadHeight ? `<div class="shop-delivery-trend-bar-fill shop-delivery-trend-bar-fill--dead" style="height:${deadHeight}%"></div>` : ''}
+                                                ${this.renderDeliveryTrendBarSvg(totalHeight, deadHeight)}
                                             </div>
                                         </button>
                                         ${deadHeight ? `
-                                            <button
-                                                type="button"
+                                            <svg
                                                 class="shop-delivery-trend-bar-dead-hitarea${isDeadActive ? ' shop-delivery-trend-bar-dead-hitarea--active' : ''}"
-                                                style="height:${deadHeight}%"
-                                                data-shop-action="delivery-conflict-bucket-dead-letter-focus"
-                                                data-delivery-bucket-start="${this.escapeForAttr(encodeURIComponent(bucket.bucket_at || ''))}"
-                                                data-delivery-bucket-end="${this.escapeForAttr(encodeURIComponent(bucket.bucket_end_at || ''))}"
-                                                data-delivery-bucket-label="${this.escapeForAttr(encodeURIComponent(bucket.label || ''))}"
-                                                title="${this.escapeHtml(`${bucket.label || ''} · 冲突死信 ${Number(bucket.dead_letter || 0)} · 点击联动死信任务与冲突策略`)}"
-                                            ></button>
+                                                viewBox="0 0 14 100"
+                                                preserveAspectRatio="none"
+                                                aria-hidden="true"
+                                            >
+                                                <rect
+                                                    class="shop-delivery-trend-bar-dead-fill"
+                                                    x="0"
+                                                    y="${100 - deadHeight}"
+                                                    width="14"
+                                                    height="${deadHeight}"
+                                                    rx="7"
+                                                    ry="7"
+                                                    data-shop-action="delivery-conflict-bucket-dead-letter-focus"
+                                                    data-delivery-bucket-start="${this.escapeForAttr(encodeURIComponent(bucket.bucket_at || ''))}"
+                                                    data-delivery-bucket-end="${this.escapeForAttr(encodeURIComponent(bucket.bucket_end_at || ''))}"
+                                                    data-delivery-bucket-label="${this.escapeForAttr(encodeURIComponent(bucket.label || ''))}"
+                                                    title="${this.escapeHtml(`${bucket.label || ''} · 冲突死信 ${Number(bucket.dead_letter || 0)} · 点击联动死信任务与冲突策略`)}"
+                                                ></rect>
+                                            </svg>
                                         ` : ''}
                                     </div>
                                     <span>${showLabel ? bucketLabelHtml : ''}</span>
@@ -8386,15 +8369,15 @@ Example output format:
 
         document.getElementById('releaseCount').value = '';
         document.getElementById('releaseBeforeDate').value = '';
-        modal.style.display = 'flex';
+        modal.classList.add('active');
     },
 
     closeReleaseModal: function () {
-        document.getElementById('releaseReserveModal').style.display = 'none';
+        document.getElementById('releaseReserveModal')?.classList.remove('active');
     },
 
     closeImportModal: function () {
-        document.getElementById('importInventoryModal')?.style.setProperty('display', 'none');
+        document.getElementById('importInventoryModal')?.classList.remove('active');
     },
 
     doImport: async function () {
@@ -8715,7 +8698,7 @@ Example output format:
 
             header.innerHTML = `
                 <i class="fas fa-chevron-right tree-chevron"></i>
-                <i class="fas fa-folder tree-folder-icon" style="color: ${folderColor};"></i>
+                <i class="fas fa-folder tree-folder-icon ${this.buildCategoryColorClass(folderColor)}"></i>
                 <span class="tree-category-name">${cat.name}</span>
                 <span class="tree-category-count">${cat.products.length}</span>
             `;
@@ -9011,6 +8994,67 @@ Example output format:
         return colors[key] || '#6b9ece';
     },
 
+    getCategoryColorToken: function (color) {
+        const normalized = String(color || '').trim().toLowerCase();
+        const tokenMap = {
+            '#6b9ece': 'blue',
+            '#f4b400': 'yellow',
+            '#0f9d58': 'green',
+            '#4ade80': 'green-bright',
+            '#e57373': 'red-soft',
+            '#ea4335': 'red',
+            '#9c27b0': 'purple',
+            '#a78bfa': 'purple-soft',
+            '#f472b6': 'pink',
+            '#fb923c': 'orange',
+            '#22d3d8': 'cyan',
+            '#74aa9c': 'teal',
+            '#9aa0a6': 'gray',
+            '#ffffff': 'white',
+            '#ffeb3b': 'lemon',
+            '#ff9800': 'amber',
+            '#4caf50': 'green-soft'
+        };
+        return tokenMap[normalized] || 'blue';
+    },
+
+    buildCategoryColorClass: function (color) {
+        return `category-color--${this.getCategoryColorToken(color)}`;
+    },
+
+    setCategoryColorClasses: function (element, color) {
+        if (!element) return;
+        const colorClasses = Array.from(element.classList).filter((className) => className.startsWith('category-color--'));
+        colorClasses.forEach((className) => element.classList.remove(className));
+        element.classList.add(this.buildCategoryColorClass(color));
+    },
+
+    renderDeliveryTrendBarSvg: function (totalHeight, deadHeight = 0) {
+        const safeTotalHeight = Math.max(0, Math.min(100, Number(totalHeight || 0)));
+        const safeDeadHeight = Math.max(0, Math.min(100, Number(deadHeight || 0)));
+        return `
+            <svg class="shop-delivery-trend-bar-svg" viewBox="0 0 24 100" preserveAspectRatio="none" aria-hidden="true">
+                <rect class="shop-delivery-trend-bar-svg-fill" x="0" y="${100 - safeTotalHeight}" width="24" height="${safeTotalHeight}" rx="7" ry="7"></rect>
+                ${safeDeadHeight ? `<rect class="shop-delivery-trend-bar-svg-fill shop-delivery-trend-bar-svg-fill--dead" x="5" y="${100 - safeDeadHeight}" width="14" height="${safeDeadHeight}" rx="7" ry="7"></rect>` : ''}
+            </svg>
+        `;
+    },
+
+    closeCategoryContextMenu: function () {
+        const menu = document.getElementById('categoryContextMenu');
+        if (!menu) return;
+        menu.classList.remove(
+            'show',
+            'tree-context-menu--anchor-left',
+            'tree-context-menu--anchor-right',
+            'tree-context-menu--anchor-up',
+            'tree-context-menu--anchor-down'
+        );
+        if (menu.parentElement !== document.body) {
+            document.body.appendChild(menu);
+        }
+    },
+
     toggleTreeCategory: function (catDiv) {
         catDiv.classList.toggle('expanded');
     },
@@ -9023,46 +9067,36 @@ Example output format:
         this.contextMenuCategory = categoryKey;
         const menu = document.getElementById('categoryContextMenu');
         if (!menu) return;
+        const anchor = e.currentTarget
+            || Array.from(document.querySelectorAll('.tree-category-header')).find((element) => element.dataset.category === categoryKey)
+            || null;
+        if (!anchor) return;
 
-        // Show menu first to measure its dimensions
+        this.closeCategoryContextMenu();
+        anchor.appendChild(menu);
         menu.classList.add('show');
 
-        // Get viewport dimensions
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
         const menuRect = menu.getBoundingClientRect();
-
-        // Calculate position, ensuring menu stays within viewport
-        let left = e.clientX;
-        let top = e.clientY;
-
-        // Adjust horizontal position if menu would overflow right edge
-        if (left + menuRect.width > viewportWidth - 10) {
-            left = viewportWidth - menuRect.width - 10;
-        }
-
-        // Adjust vertical position if menu would overflow bottom edge
-        if (top + menuRect.height > viewportHeight - 10) {
-            top = viewportHeight - menuRect.height - 10;
-        }
-
-        // Ensure minimum position
-        left = Math.max(10, left);
-        top = Math.max(10, top);
-
-        menu.style.left = left + 'px';
-        menu.style.top = top + 'px';
+        const anchorRect = anchor.getBoundingClientRect();
+        const alignRight = anchorRect.left + menuRect.width > viewportWidth - 10;
+        const alignUp = anchorRect.bottom + menuRect.height > viewportHeight - 10 && anchorRect.top > menuRect.height + 10;
+        menu.classList.toggle('tree-context-menu--anchor-left', !alignRight);
+        menu.classList.toggle('tree-context-menu--anchor-right', alignRight);
+        menu.classList.toggle('tree-context-menu--anchor-down', !alignUp);
+        menu.classList.toggle('tree-context-menu--anchor-up', alignUp);
 
         // Highlight current color
         const currentColor = this.getCategoryColor(categoryKey);
         menu.querySelectorAll('.color-option').forEach(opt => {
-            opt.classList.toggle('selected', opt.style.background === currentColor);
+            opt.classList.toggle('selected', String(opt.dataset.categoryColor || '').toLowerCase() === String(currentColor || '').toLowerCase());
         });
 
         // Close on click or touch outside
         const closeHandler = (evt) => {
             if (!menu.contains(evt.target)) {
-                menu.classList.remove('show');
+                this.closeCategoryContextMenu();
                 document.removeEventListener('click', closeHandler);
                 document.removeEventListener('touchstart', closeHandler);
             }
@@ -9109,12 +9143,12 @@ Example output format:
 
         const newName = prompt('重命名分类:', currentName);
         if (!newName || !newName.trim() || newName.trim() === currentName) {
-            document.getElementById('categoryContextMenu')?.classList.remove('show');
+            this.closeCategoryContextMenu();
             return;
         }
 
         this.renameCategory(key, newName.trim());
-        document.getElementById('categoryContextMenu')?.classList.remove('show');
+        this.closeCategoryContextMenu();
     },
 
     renameCategory: async function (oldKey, newName) {
@@ -9158,6 +9192,7 @@ Example output format:
 
         const cat = this.categoryData.find(c => c.name === key || c.id === key);
         if (!cat) return;
+        this.closeCategoryContextMenu();
 
         try {
             const { error } = await supabaseClient
@@ -9172,8 +9207,6 @@ Example output format:
         } catch (e) {
             console.error('Failed to set color:', e);
         }
-
-        document.getElementById('categoryContextMenu')?.classList.remove('show');
     },
 
     // Delete category
@@ -9190,12 +9223,12 @@ Example output format:
             : `确定删除分类"${cat.name}"吗？`;
 
         if (!confirm(msg)) {
-            document.getElementById('categoryContextMenu')?.classList.remove('show');
+            this.closeCategoryContextMenu();
             return;
         }
 
         this.deleteCategory(cat);
-        document.getElementById('categoryContextMenu')?.classList.remove('show');
+        this.closeCategoryContextMenu();
     },
 
     deleteCategory: async function (cat) {
@@ -9270,7 +9303,7 @@ Example output format:
         // Update UI Badge
         const badge = document.getElementById('selectedProductBadge');
         badge.textContent = name;
-        badge.style.display = 'inline-block';
+        badge.classList.remove('admin-studio-inline-style-attr-3');
 
         // Update Tree UI
         document.querySelectorAll('.tree-product-item').forEach(item => {
@@ -9352,7 +9385,7 @@ Example output format:
 
                 // Close menu
                 const menu = document.getElementById('batchActionMenu');
-                if (menu) menu.style.display = 'none';
+                if (menu) menu.classList.remove('is-open');
 
             } else {
                 const productId = document.getElementById('invFilterProduct')?.value || null;

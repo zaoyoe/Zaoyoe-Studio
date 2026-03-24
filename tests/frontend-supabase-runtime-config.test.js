@@ -378,7 +378,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
         ['shop.html', 'css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_IMPORT_RUNTIME_STYLES_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_SHOP_RUNTIME_STYLE_ZERO_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -486,7 +486,7 @@ test('admin studio page no longer embeds inline style attributes', () => {
     const source = readRepoFile('admin-studio.html');
 
     assert.equal(
-        source.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_IMPORT_RUNTIME_STYLES_1'),
+        source.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_SHOP_RUNTIME_STYLE_ZERO_1'),
         true,
         'admin-studio.html should load the updated admin studio page stylesheet'
     );
@@ -1976,15 +1976,86 @@ test('shop admin import and editor helpers externalize runtime layout styling', 
     }
 
     assert.equal(
-        adminStudioSource.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_IMPORT_RUNTIME_STYLES_1'),
+        adminStudioSource.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_SHOP_RUNTIME_STYLE_ZERO_1'),
         true,
         'admin-studio.html should load the latest import/runtime stylesheet version'
     );
     assert.equal(
-        adminStudioSource.includes('js/admin-shop.js?v=20260324_SHOP_IMPORT_RUNTIME_STYLES_1'),
+        adminStudioSource.includes('js/admin-shop.js?v=20260324_SHOP_RUNTIME_STYLE_ZERO_1'),
         true,
         'admin-studio.html should load the latest shop admin runtime script version'
     );
+});
+
+test('shop admin final runtime style remnants are fully externalized from scripts', () => {
+    const shopSource = readRepoFile('js/admin-shop.js');
+    const shopStyles = readRepoFile('css/admin-studio-page.css');
+
+    const removedRuntimeMarkers = [
+        "hint.style.display = 'block'",
+        "helper.style.position = 'fixed'",
+        "helper.style.opacity = '0'",
+        "helper.style.pointerEvents = 'none'",
+        "iconBox.style.opacity = '0.7'",
+        "wrapper.style.maxHeight =",
+        "wrapper.style.opacity =",
+        "wrapper.style.marginTop =",
+        'style="width:100%; height:100%; object-fit:cover; border-radius:12px;"',
+        '<div class="shop-delivery-hotspot-bar"><span style="width:${width}%"></span></div>',
+        'style="grid-template-columns:repeat(${Math.max(buckets.length, 1)}, minmax(0, 1fr));"',
+        'style="height:${totalHeight}%"',
+        'style="color: ${folderColor};"',
+        "menu.style.left = left + 'px'",
+        "menu.style.top = top + 'px'"
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(shopSource.includes(marker), false, `js/admin-shop.js should not retain ${marker}`);
+    }
+
+    const inlineAttrCount = (shopSource.match(/style=\"/g) || []).length;
+    const cssTextCount = (shopSource.match(/\.style\.cssText/g) || []).length;
+    const styleWriteCount = (shopSource.match(/\.style\.[A-Za-z_$][\w$]*/g) || []).filter((token) => token !== '.style.cssText').length;
+
+    assert.equal(inlineAttrCount, 0, 'js/admin-shop.js should not emit inline style attributes');
+    assert.equal(cssTextCount, 0, 'js/admin-shop.js should not use style.cssText');
+    assert.equal(styleWriteCount, 0, 'js/admin-shop.js should not write runtime style properties directly');
+
+    const runtimeMarkers = [
+        'shop-product-site-hint--visible',
+        'shop-form-section--expanded',
+        'shop-admin-clipboard-helper',
+        'shop-admin-preview-icon-image',
+        'upload-box--busy',
+        'shop-delivery-hotspot-progress',
+        'renderDeliveryTrendBarSvg: function',
+        'shop-delivery-trend-bar-svg',
+        'shop-delivery-trend-bar-dead-fill',
+        'closeCategoryContextMenu: function ()',
+        'tree-folder-icon ${this.buildCategoryColorClass(folderColor)}',
+        "anchor.appendChild(menu)"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.shop-product-site-hint--visible',
+        '.shop-form-section--expanded',
+        '.shop-admin-clipboard-helper',
+        '.shop-admin-preview-icon-image',
+        '.upload-box--busy',
+        '.shop-delivery-hotspot-progress',
+        '.shop-delivery-trend-bar-svg',
+        '.shop-delivery-trend-bar-dead-fill',
+        '.tree-context-menu--anchor-left',
+        '.tree-folder-icon.category-color--blue'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
+    }
 });
 
 test('shop admin delivery dashboards externalize tone and table-row styling', () => {
