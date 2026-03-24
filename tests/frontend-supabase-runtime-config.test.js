@@ -3164,3 +3164,59 @@ test('final frontend runtime remnants route through delegated or bound listeners
     assert.equal(adminStudioScript.includes(delegatedMarkers[6]), true, 'admin-studio.js should render delegated preview removal controls');
     assert.equal(adminStudioScript.includes(delegatedMarkers[7]), true, 'admin-studio.js should handle delegated preview removal controls');
 });
+
+test('announcement runtime renderers externalize decoration particles and physics style state', () => {
+    const announcementSource = readRepoFile('announcement-loader.js');
+    const verifySource = readRepoFile('verify.html');
+    const shopSource = readRepoFile('shop.html');
+    const legacyIndexSource = readRepoFile('index_old.html');
+
+    const removedRuntimeMarkers = [
+        'style="left:${left}%; top:${top}%; width:${size}px; height:${size}px;',
+        'style="width:100%;height:100%;display:block;"',
+        'style="left:${left}%;animation-delay:${delay.toFixed(2)}s;',
+        'style="position:relative;z-index:10;"',
+        "container.style.position = 'absolute'",
+        "el.style.width = '4px'",
+        'p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`',
+        "p.el.style.opacity = p.opacity",
+        "toast.querySelector('.announcement-ack-btn').onclick = () => {"
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(
+            announcementSource.includes(marker),
+            false,
+            `announcement-loader.js should not retain ${marker}`
+        );
+    }
+
+    const runtimeMarkers = [
+        'function setAnnouncementStyleState(target, styles = {})',
+        'data-announcement-dust="1"',
+        'data-announcement-particle="1"',
+        'hydrateDecorationParticleStyles(root)',
+        "bindAnnouncementActions(overlay, ackKey, { dismissOnBackdrop: true });",
+        "container.classList.add('announcement-particle-host');",
+        "setAnnouncementTransformState(p.el, p.x, p.y);",
+        '.announcement-banner-icon',
+        '.announcement-particle-layer--rain-streak',
+        '.announcement-particle-svg'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(
+            announcementSource.includes(marker),
+            true,
+            `announcement-loader.js should contain ${marker}`
+        );
+    }
+
+    for (const source of [verifySource, shopSource, legacyIndexSource]) {
+        assert.equal(
+            source.includes('announcement-loader.js?v=20260324_ANNOUNCEMENT_RUNTIME_STYLE_HELPERS_1'),
+            true,
+            'announcement entry pages should load the latest announcement runtime version'
+        );
+    }
+});

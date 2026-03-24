@@ -11,6 +11,43 @@
     let announcementOwnsScrollLock = false;
     let announcementOverflowRestore = null;
 
+    function toAnnouncementCssPropertyName(name) {
+        if (typeof name !== 'string' || !name) return '';
+        if (name.startsWith('--')) return name;
+        return name.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
+    }
+
+    function setAnnouncementStyleState(target, styles = {}) {
+        const style = target?.style;
+        if (!style) return;
+
+        const setProperty = style['setProperty'].bind(style);
+        const removeProperty = style['removeProperty'].bind(style);
+
+        Object.entries(styles).forEach(([name, value]) => {
+            const cssName = toAnnouncementCssPropertyName(name);
+            if (!cssName) return;
+            if (value === null || value === undefined || value === '') {
+                removeProperty(cssName);
+                return;
+            }
+            setProperty(cssName, String(value));
+        });
+    }
+
+    function setAnnouncementTransformState(target, x, y) {
+        setAnnouncementStyleState(target, {
+            '--announcement-x': `${x}px`,
+            '--announcement-y': `${y}px`
+        });
+    }
+
+    function setAnnouncementOpacityState(target, opacity) {
+        setAnnouncementStyleState(target, {
+            '--announcement-opacity': opacity
+        });
+    }
+
     function lockAnnouncementBackground(lockTarget) {
         if (announcementOwnsScrollLock) return;
         if (window.iOSScrollLock?.isLocked) return;
@@ -21,8 +58,8 @@
             bodyOverflow: document.body.style.overflow
         };
 
-        document.documentElement.style.overflow = 'hidden';
-        document.body.style.overflow = 'hidden';
+        setAnnouncementStyleState(document.documentElement, { overflow: 'hidden' });
+        setAnnouncementStyleState(document.body, { overflow: 'hidden' });
 
         if (window.iOSScrollLock) {
             window.iOSScrollLock.lockLight(lockTarget);
@@ -37,11 +74,11 @@
         }
 
         if (announcementOverflowRestore) {
-            document.documentElement.style.overflow = announcementOverflowRestore.htmlOverflow;
-            document.body.style.overflow = announcementOverflowRestore.bodyOverflow;
+            setAnnouncementStyleState(document.documentElement, { overflow: announcementOverflowRestore.htmlOverflow });
+            setAnnouncementStyleState(document.body, { overflow: announcementOverflowRestore.bodyOverflow });
         } else {
-            document.documentElement.style.overflow = '';
-            document.body.style.overflow = '';
+            setAnnouncementStyleState(document.documentElement, { overflow: '' });
+            setAnnouncementStyleState(document.body, { overflow: '' });
         }
 
         announcementOverflowRestore = null;
@@ -319,6 +356,11 @@
                 position: relative;
                 z-index: 10;
             }
+
+            .announcement-banner-icon {
+                position: relative;
+                z-index: 10;
+            }
             
             /* Toast Style */
             .announcement-toast {
@@ -335,6 +377,66 @@
                 z-index: 99997;
                 animation: slideUp 0.4s ease;
                 overflow: hidden;
+            }
+
+            .announcement-particle-host {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+                pointer-events: none;
+                z-index: 1;
+            }
+
+            .announcement-particle-layer {
+                position: absolute;
+                left: 0;
+                top: 0;
+                pointer-events: none;
+                will-change: transform, opacity;
+                transform: translate3d(var(--announcement-x, 0px), var(--announcement-y, 0px), 0);
+                opacity: var(--announcement-opacity, 1);
+            }
+
+            .announcement-particle-layer--firework-rocket {
+                font-size: 8px;
+                color: var(--announcement-particle-color, rgba(255, 255, 255, 0.9));
+            }
+
+            .announcement-particle-layer--rain-streak {
+                width: var(--announcement-rain-width, 1.5px);
+                height: var(--announcement-rain-height, 90px);
+                background: linear-gradient(to bottom, transparent, rgba(70, 130, 180, 0.6));
+                filter: blur(0.5px);
+            }
+
+            .announcement-particle-layer--splash {
+                width: 2px;
+                height: 2px;
+                border-radius: 50%;
+                background-color: rgba(70, 130, 180, 0.8);
+            }
+
+            .announcement-particle-layer--spark {
+                width: 4px;
+                height: 4px;
+                border-radius: 50%;
+                background-color: var(--announcement-particle-color, rgba(255, 255, 255, 0.9));
+                box-shadow: 0 0 6px 1px var(--announcement-particle-color, rgba(255, 255, 255, 0.9));
+            }
+
+            .announcement-particle-svg {
+                width: 100%;
+                height: 100%;
+                display: block;
+            }
+
+            .announcement-particle-svg--stroke {
+                stroke: currentColor;
+                stroke-width: 2;
+                stroke-linecap: round;
+                fill: none;
             }
             
             @keyframes fadeIn {
@@ -421,6 +523,15 @@
                 position: absolute;
                 display: block;
                 line-height: 1;
+                left: var(--announcement-particle-left, 0%);
+                width: var(--announcement-particle-size, 12px);
+                height: var(--announcement-particle-size, 12px);
+                font-size: var(--announcement-particle-size, 12px);
+                opacity: var(--announcement-particle-opacity, 1);
+                color: var(--announcement-particle-color, currentColor);
+                filter: blur(var(--announcement-particle-blur, 0px));
+                animation-delay: var(--announcement-particle-delay, 0s);
+                animation-duration: var(--announcement-particle-duration, 10s);
                 pointer-events: none !important;
                 animation-iteration-count: infinite;
                 animation-timing-function: linear;
@@ -604,9 +715,16 @@
             
             .dust-mote {
                 position: absolute;
+                left: var(--announcement-dust-left, 0%);
+                top: var(--announcement-dust-top, 0%);
+                width: var(--announcement-dust-size, 1px);
+                height: var(--announcement-dust-size, 1px);
+                opacity: var(--announcement-dust-opacity, 0.5);
                 background: var(--dust-bg);
                 box-shadow: 0 0 1px var(--dust-shadow);
                 border-radius: 50%;
+                animation-duration: var(--announcement-dust-duration, 20s);
+                animation-delay: var(--announcement-dust-delay, 0s);
                 animation-name: dustFloat;
                 animation-timing-function: ease-in-out;
                 animation-iteration-count: infinite;
@@ -740,7 +858,7 @@
                 // Random Trajectory vars
                 const tx = Math.random() * 100 - 50; // -50px to +50px drift
                 const ty = Math.random() * -70 - 30; // -30px to -100px rise
-                dustParticles += `<div class="dust-mote" style="left:${left}%; top:${top}%; width:${size}px; height:${size}px; opacity:${opacity}; --tx:${tx}px; --ty:${ty}px; animation-duration:${duration}s; animation-delay:${delay}s"></div>`;
+                dustParticles += `<div class="dust-mote" data-announcement-dust="1" data-left="${left.toFixed(2)}" data-top="${top.toFixed(2)}" data-size="${size.toFixed(2)}" data-opacity="${opacity.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-delay="${delay.toFixed(2)}" data-tx="${tx.toFixed(2)}" data-ty="${ty.toFixed(2)}"></div>`;
             }
             return `<div class="decoration-container sunlight">
                 <div class="sunlight-glow"></div>
@@ -803,19 +921,70 @@
             if (theme === 'sakura') {
                 const colors = ['#fecdd3', '#fca5a5', '#fda4af', '#f43f5e'];
                 const color = colors[Math.floor(Math.random() * colors.length)];
-                content = `<svg viewBox="0 0 100 100" fill="${color}" style="width:100%;height:100%;display:block;"><path d="M50 90 C50 90 20 60 20 40 C20 25 30 10 45 20 C48 22 50 25 50 25 C50 25 52 22 55 20 C70 10 80 25 80 40 C80 60 50 90 50 90 Z" opacity="0.8"/></svg>`;
+                content = `<svg viewBox="0 0 100 100" fill="currentColor" class="announcement-particle-svg"><path d="M50 90 C50 90 20 60 20 40 C20 25 30 10 45 20 C48 22 50 25 50 25 C50 25 52 22 55 20 C70 10 80 25 80 40 C80 60 50 90 50 90 Z" opacity="0.8"/></svg>`;
+                particles += `<span class="decoration-particle" data-announcement-particle="1" data-left="${left.toFixed(2)}" data-delay="${delay.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-drift-x="${driftOffset.toFixed(2)}" data-size="${finalFontSize.toFixed(0)}" data-opacity="${opacity.toFixed(2)}" data-blur="${blur.toFixed(1)}" data-color="${color}">${content}</span>`;
+                continue;
             } else if (theme === 'leaves') {
                 const colors = ['#e06c75', '#d19a66', '#e5c07b', '#c678dd', '#be5046'];
                 const color = colors[Math.floor(Math.random() * colors.length)];
-                content = `<svg viewBox="0 0 24 24" fill="${color}" style="width:100%;height:100%;display:block;"><path d="M12.5,2C12.5,2 12.8,4.5 11,6C9,7.5 7,6 7,6L6,8C6,8 3,7.5 2,9C1,10.5 4,11 4,11L3,13C3,13 1,12.5 0,14C-1,15.5 2,16 2,16L3,18C3,18 2,19.5 4,20.5C6,21.5 7,19.5 7,19.5L9,21C9,21 10,22 13,22C16,22 16,19 16,19L17,20.5C17,20.5 19,20.5 20,19C21,17.5 19,16 19,16L21,14.5C21,14.5 23,14 22,12C21,10 19,10.5 19,10.5L20,8C20,8 19,6 17,6C15,6 14.5,8 14.5,8L12.5,2Z"/></svg>`;
+                content = `<svg viewBox="0 0 24 24" fill="currentColor" class="announcement-particle-svg"><path d="M12.5,2C12.5,2 12.8,4.5 11,6C9,7.5 7,6 7,6L6,8C6,8 3,7.5 2,9C1,10.5 4,11 4,11L3,13C3,13 1,12.5 0,14C-1,15.5 2,16 2,16L3,18C3,18 2,19.5 4,20.5C6,21.5 7,19.5 7,19.5L9,21C9,21 10,22 13,22C16,22 16,19 16,19L17,20.5C17,20.5 19,20.5 20,19C21,17.5 19,16 19,16L21,14.5C21,14.5 23,14 22,12C21,10 19,10.5 19,10.5L20,8C20,8 19,6 17,6C15,6 14.5,8 14.5,8L12.5,2Z"/></svg>`;
+                particles += `<span class="decoration-particle" data-announcement-particle="1" data-left="${left.toFixed(2)}" data-delay="${delay.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-drift-x="${driftOffset.toFixed(2)}" data-size="${finalFontSize.toFixed(0)}" data-opacity="${opacity.toFixed(2)}" data-blur="${blur.toFixed(1)}" data-color="${color}">${content}</span>`;
+                continue;
             } else if (theme === 'snow') {
-                content = `<svg viewBox="0 0 24 24" fill="rgba(255,255,255,0.9)" style="width:100%;height:100%;display:block;"><path d="M12,2L12,22 M2,12L22,12 M19.07,4.93L4.93,19.07 M19.07,19.07L4.93,4.93" stroke="rgba(255,255,255,0.9)" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`;
+                content = `<svg viewBox="0 0 24 24" fill="none" class="announcement-particle-svg"><path d="M12,2L12,22 M2,12L22,12 M19.07,4.93L4.93,19.07 M19.07,19.07L4.93,4.93" class="announcement-particle-svg--stroke"/></svg>`;
+                particles += `<span class="decoration-particle" data-announcement-particle="1" data-left="${left.toFixed(2)}" data-delay="${delay.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-drift-x="${driftOffset.toFixed(2)}" data-size="${finalFontSize.toFixed(0)}" data-opacity="${opacity.toFixed(2)}" data-blur="${blur.toFixed(1)}" data-color="rgba(255,255,255,0.9)">${content}</span>`;
+                continue;
             }
 
-            particles += `<span class="decoration-particle" style="left:${left}%;animation-delay:${delay.toFixed(2)}s;animation-duration:${duration.toFixed(2)}s;--drift-x:${driftOffset}px;font-size:${finalFontSize.toFixed(0)}px;width:${finalFontSize.toFixed(0)}px;height:${finalFontSize.toFixed(0)}px;opacity:${opacity.toFixed(2)};filter:blur(${blur.toFixed(1)}px);">${content}</span>`;
+            particles += `<span class="decoration-particle" data-announcement-particle="1" data-left="${left.toFixed(2)}" data-delay="${delay.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-drift-x="${driftOffset.toFixed(2)}" data-size="${finalFontSize.toFixed(0)}" data-opacity="${opacity.toFixed(2)}" data-blur="${blur.toFixed(1)}">${content}</span>`;
         }
 
         return `<div class="decoration-particles ${theme}">${particles}</div>`;
+    }
+
+    function hydrateDecorationParticleStyles(root) {
+        if (!root) return;
+
+        root.querySelectorAll('[data-announcement-dust="1"]').forEach((node) => {
+            setAnnouncementStyleState(node, {
+                '--announcement-dust-left': `${node.dataset.left || 0}%`,
+                '--announcement-dust-top': `${node.dataset.top || 0}%`,
+                '--announcement-dust-size': `${node.dataset.size || 1}px`,
+                '--announcement-dust-opacity': node.dataset.opacity || 0.5,
+                '--announcement-dust-duration': `${node.dataset.duration || 20}s`,
+                '--announcement-dust-delay': `${node.dataset.delay || 0}s`,
+                '--tx': `${node.dataset.tx || 0}px`,
+                '--ty': `${node.dataset.ty || 0}px`
+            });
+        });
+
+        root.querySelectorAll('[data-announcement-particle="1"]').forEach((node) => {
+            setAnnouncementStyleState(node, {
+                '--announcement-particle-left': `${node.dataset.left || 0}%`,
+                '--announcement-particle-delay': `${node.dataset.delay || 0}s`,
+                '--announcement-particle-duration': `${node.dataset.duration || 10}s`,
+                '--drift-x': `${node.dataset.driftX || 0}px`,
+                '--announcement-particle-size': `${node.dataset.size || 12}px`,
+                '--announcement-particle-opacity': node.dataset.opacity || 1,
+                '--announcement-particle-blur': `${node.dataset.blur || 0}px`,
+                '--announcement-particle-color': node.dataset.color || ''
+            });
+        });
+    }
+
+    function bindAnnouncementActions(element, ackKey, options = {}) {
+        const { dismissOnBackdrop = false } = options;
+        element.querySelector('[data-announcement-action="acknowledge"]')?.addEventListener('click', () => {
+            dismissAnnouncement(element, ackKey, true);
+        });
+
+        if (dismissOnBackdrop) {
+            element.addEventListener('click', (event) => {
+                if (event.target === element) {
+                    dismissAnnouncement(element, ackKey, true);
+                }
+            });
+        }
     }
 
     function showBannerAnnouncement(color, size, content, ackKey, decoration) {
@@ -826,13 +995,12 @@
         banner.className = 'announcement-banner';
         banner.innerHTML = `
             ${decorationHTML}
-            <i class="fas fa-bullhorn" style="position:relative;z-index:10;"></i>
+            <i class="fas fa-bullhorn announcement-banner-icon"></i>
             <span class="announcement-text">${content}</span>
             <button class="announcement-close" data-announcement-action="acknowledge">已读</button>
         `;
-        banner.querySelector('[data-announcement-action="acknowledge"]')?.addEventListener('click', () => {
-            dismissAnnouncement(banner, ackKey, true);
-        });
+        hydrateDecorationParticleStyles(banner);
+        bindAnnouncementActions(banner, ackKey);
         document.body.appendChild(banner);
         currentAnnouncementElement = banner;
 
@@ -857,19 +1025,12 @@
                     <div class="announcement-text">${content}</div>
                 </div>
                 <div class="announcement-footer">
-                    <button class="announcement-ack-btn">已读</button>
+                    <button class="announcement-ack-btn" data-announcement-action="acknowledge">已读</button>
                 </div>
             </div>
         `;
-
-        overlay.querySelector('.announcement-ack-btn').onclick = () => {
-            dismissAnnouncement(overlay, ackKey, true);
-        };
-        overlay.onclick = (e) => {
-            if (e.target === overlay) {
-                dismissAnnouncement(overlay, ackKey, true);
-            }
-        };
+        hydrateDecorationParticleStyles(overlay);
+        bindAnnouncementActions(overlay, ackKey, { dismissOnBackdrop: true });
 
         document.body.appendChild(overlay);
         currentAnnouncementElement = overlay;
@@ -898,13 +1059,11 @@
                 <div class="announcement-text">${content}</div>
             </div>
             <div class="announcement-footer">
-                <button class="announcement-ack-btn">已读</button>
+                <button class="announcement-ack-btn" data-announcement-action="acknowledge">已读</button>
             </div>
         `;
-
-        toast.querySelector('.announcement-ack-btn').onclick = () => {
-            dismissAnnouncement(toast, ackKey, true);
-        };
+        hydrateDecorationParticleStyles(toast);
+        bindAnnouncementActions(toast, ackKey);
 
         document.body.appendChild(toast);
         currentAnnouncementElement = toast;
@@ -936,14 +1095,7 @@
             this.particles = [];
 
             // 强制容器样式，确保动画环境稳定
-            container.style.position = 'absolute';
-            container.style.top = '0';
-            container.style.left = '0';
-            container.style.width = '100%';
-            container.style.height = '100%';
-            container.style.overflow = 'hidden';
-            container.style.pointerEvents = 'none';
-            container.style.zIndex = '1';
+            container.classList.add('announcement-particle-host');
 
             // 更新尺寸
             this.updateDimensions();
@@ -1046,15 +1198,12 @@
             // --- 烟花火箭逻辑 ---
             if (this.theme === 'fireworks') {
                 const el = document.createElement('div');
+                const color = `hsl(${Math.random() * 360}, 100%, 70%)`;
+                el.className = 'announcement-particle-layer announcement-particle-layer--firework-rocket';
                 el.textContent = '✦';
-                el.style.position = 'absolute';
-                el.style.left = '0';
-                el.style.top = '0';
-                el.style.fontSize = '8px';
-                el.style.color = `hsl(${Math.random() * 360}, 100%, 70%)`;
-                el.style.willChange = 'transform, opacity';
-                el.style.pointerEvents = 'none';
-                el.style.transform = `translate3d(0, 0, 0)`;
+                setAnnouncementStyleState(el, {
+                    '--announcement-particle-color': color
+                });
 
                 this.container.appendChild(el);
 
@@ -1069,7 +1218,7 @@
                     vy: -4 - Math.random() * 3,
                     state: 'rising',
                     opacity: 1,
-                    color: el.style.color
+                    color
                 };
                 this.particles.push(p);
                 return;
@@ -1078,14 +1227,12 @@
             // --- 雨滴逻辑 (CSS Streaks) ---
             if (this.theme === 'rain') {
                 const el = document.createElement('div');
-                el.style.position = 'absolute';
-                el.style.width = (1 + Math.random()) + 'px';
-                el.style.height = (60 + Math.random() * 60) + 'px';
-                el.style.background = 'linear-gradient(to bottom, transparent, rgba(70, 130, 180, 0.6))';
-                el.style.filter = 'blur(0.5px)';
-                el.style.willChange = 'transform, opacity';
-                el.style.pointerEvents = 'none';
-                el.style.opacity = 0.4 + Math.random() * 0.4;
+                el.className = 'announcement-particle-layer announcement-particle-layer--rain-streak';
+                setAnnouncementStyleState(el, {
+                    '--announcement-rain-width': `${1 + Math.random()}px`,
+                    '--announcement-rain-height': `${60 + Math.random() * 60}px`,
+                    '--announcement-opacity': 0.4 + Math.random() * 0.4
+                });
 
                 this.container.appendChild(el);
 
@@ -1107,14 +1254,8 @@
             const splashCount = 3 + Math.floor(Math.random() * 4);
             for (let i = 0; i < splashCount; i++) {
                 const el = document.createElement('div');
-                el.style.position = 'absolute';
-                el.style.width = '2px';
-                el.style.height = '2px';
-                el.style.borderRadius = '50%';
-                el.style.backgroundColor = 'rgba(70, 130, 180, 0.8)';
-                el.style.willChange = 'transform, opacity';
-                el.style.pointerEvents = 'none';
-                el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+                el.className = 'announcement-particle-layer announcement-particle-layer--splash';
+                setAnnouncementTransformState(el, x, y);
 
                 this.container.appendChild(el);
 
@@ -1181,14 +1322,10 @@
 
         createSpark(rocket, cfg) {
             const el = document.createElement('div');
-            el.style.position = 'absolute';
-            el.style.width = '4px';
-            el.style.height = '4px';
-            el.style.borderRadius = '50%';
-            el.style.backgroundColor = cfg.color;
-            el.style.boxShadow = `0 0 6px 1px ${cfg.color}`;
-            el.style.pointerEvents = 'none';
-            el.style.willChange = 'transform, opacity';
+            el.className = 'announcement-particle-layer announcement-particle-layer--spark';
+            setAnnouncementStyleState(el, {
+                '--announcement-particle-color': cfg.color
+            });
 
             this.container.appendChild(el);
 
@@ -1231,7 +1368,7 @@
                     if (deltaTime < 10) hzDampener = 0.6;
 
                     p.y += p.speed * timeScale * hzDampener;
-                    p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+                    setAnnouncementTransformState(p.el, p.x, p.y);
 
                     if (p.y > this.height) {
                         this.createSplash(p.x, this.height);
@@ -1245,7 +1382,7 @@
                 if (p.type === 'rocket') {
                     p.x += p.vx * timeScale;
                     p.y += p.vy * timeScale;
-                    p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+                    setAnnouncementTransformState(p.el, p.x, p.y);
 
                     if (p.y <= p.targetY) {
                         this.explode(p);
@@ -1264,8 +1401,8 @@
                     p.y += p.vy * timeScale;
                     p.opacity -= p.decay * timeScale;
 
-                    p.el.style.opacity = p.opacity;
-                    p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+                    setAnnouncementOpacityState(p.el, p.opacity);
+                    setAnnouncementTransformState(p.el, p.x, p.y);
 
                     if (p.opacity <= 0) {
                         this.particles.splice(i, 1);
@@ -1281,8 +1418,8 @@
                     p.y += p.vy * timeScale;
                     p.opacity -= 0.05 * timeScale;
 
-                    p.el.style.opacity = p.opacity;
-                    p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+                    setAnnouncementOpacityState(p.el, p.opacity);
+                    setAnnouncementTransformState(p.el, p.x, p.y);
 
                     if (p.opacity <= 0) {
                         this.particles.splice(i, 1);
