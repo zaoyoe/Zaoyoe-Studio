@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260316_AUTH_CHAT_MATCH_38';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260324_AUTH_INJECT_RUNTIME_STYLE_HELPERS_2';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -64,6 +64,35 @@
         return window.i18n?.t(key, fallback) || fallback;
     }
 
+    function toInjectedAuthCssPropertyName(name) {
+        if (typeof name !== 'string' || !name) return '';
+        if (name.startsWith('--')) return name;
+        return name.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
+    }
+
+    function setInjectedAuthStyleProperty(target, name, value, priority = '') {
+        const style = target?.style;
+        if (!style) return;
+
+        const setProperty = style['setProperty'].bind(style);
+        const removeProperty = style['removeProperty'].bind(style);
+        const cssName = toInjectedAuthCssPropertyName(name);
+        if (!cssName) return;
+
+        if (value === null || value === undefined || value === '') {
+            removeProperty(cssName);
+            return;
+        }
+
+        setProperty(cssName, String(value), priority);
+    }
+
+    function setInjectedAuthStyleState(target, styles = {}, priority = '') {
+        Object.entries(styles).forEach(([name, value]) => {
+            setInjectedAuthStyleProperty(target, name, value, priority);
+        });
+    }
+
     function isGeneratedAvatarUrl(url) {
         return /ui-avatars\.com|dicebear\.com/i.test(String(url || ''));
     }
@@ -95,28 +124,26 @@
     function buildAuthButtonHTML(profile) {
         const isLoggedIn = !!profile;
         const avatarUrl = profile?.avatarUrl || '';
-        const defaultIconDisplay = (isLoggedIn && avatarUrl) ? 'none' : 'inline';
-        const avatarDisplay = (isLoggedIn && avatarUrl) ? 'inline-block' : 'none';
-        const avatarOpacity = (isLoggedIn && avatarUrl) ? '1' : '0';
+        const hasAvatar = !!(isLoggedIn && avatarUrl);
         const label = isLoggedIn ? 'Open account menu' : 'Open sign in panel';
 
         return `
             <button id="authBtn" class="login-trigger-btn${isLoggedIn ? ' logged-in' : ''}" type="button" aria-label="${label}">
-                <i id="defaultAuthIcon" class="fas fa-user-circle" style="display: ${defaultIconDisplay};"></i>
-                <img id="navUserAvatar" class="nav-user-avatar show" src="${avatarUrl}" alt="Avatar" style="display: ${avatarDisplay}; opacity: ${avatarOpacity};">
-                <span id="authBtnText" style="display: none;">Sign In</span>
-                <span id="avatarUnreadBadge" class="avatar-unread-badge" style="display: none;"></span>
+                <i id="defaultAuthIcon" class="fas fa-user-circle${hasAvatar ? ' auth-display-none' : ''}"></i>
+                <img id="navUserAvatar" class="nav-user-avatar${hasAvatar ? ' show' : ' auth-display-none'}" src="${avatarUrl}" alt="Avatar">
+                <span id="authBtnText" class="auth-display-none">Sign In</span>
+                <span id="avatarUnreadBadge" class="avatar-unread-badge"></span>
             </button>
         `;
     }
 
     function buildDropdownHTML() {
         return `
-            <div id="userDropdown" class="avatar-dropdown" style="z-index: 2100;" aria-hidden="true">
+            <div id="userDropdown" class="avatar-dropdown auth-dropdown-layer" aria-hidden="true">
                 <div class="dropdown-header">
                     <button type="button" class="dropdown-notif-btn" id="dropdownNotifBtn" data-auth-action="notifications">
                         <i class="far fa-bell"></i>
-                        <span id="dropdownNotifBadge" class="dropdown-notif-badge" style="display: none;"></span>
+                        <span id="dropdownNotifBadge" class="dropdown-notif-badge"></span>
                     </button>
                     <button type="button" class="dropdown-lang-btn" id="dropdownLangBtn" data-auth-action="language">
                         <span class="lang-icon lang-zh">中</span>
@@ -145,7 +172,7 @@
                         <i class="fas fa-exchange-alt"></i>
                         <span data-i18n="auth.switchAccount">切换账户</span>
                     </button>
-                    <button type="button" class="dropdown-action" id="enterStudioBtn" style="display: none;" data-auth-action="studio">
+                    <button type="button" class="dropdown-action auth-display-none" id="enterStudioBtn" data-auth-action="studio">
                         <i class="fas fa-palette"></i>
                         <span data-i18n="admin.enterStudio">Enter Studio</span>
                     </button>
@@ -588,16 +615,18 @@
 
     function resetPortaledInputStyles(input) {
         if (!input) return;
-        input.style.removeProperty('position');
-        input.style.removeProperty('left');
-        input.style.removeProperty('top');
-        input.style.removeProperty('width');
-        input.style.removeProperty('height');
-        input.style.removeProperty('margin');
-        input.style.removeProperty('z-index');
-        input.style.removeProperty('pointer-events');
-        input.style.removeProperty('right');
-        input.style.removeProperty('bottom');
+        setInjectedAuthStyleState(input, {
+            position: '',
+            left: '',
+            top: '',
+            width: '',
+            height: '',
+            margin: '',
+            zIndex: '',
+            pointerEvents: '',
+            right: '',
+            bottom: ''
+        });
     }
 
     function focusPortaledInput(input) {
@@ -638,14 +667,16 @@
             plane?.classList.remove('is-active');
             plane?.setAttribute('aria-hidden', 'true');
 
-            input.style.position = 'absolute';
-            input.style.left = `${rect.left - offsetParentRect.left}px`;
-            input.style.top = `${rect.top - offsetParentRect.top}px`;
-            input.style.width = `${rect.width}px`;
-            input.style.height = `${rect.height}px`;
-            input.style.margin = '0';
-            input.style.zIndex = '2';
-            input.style.pointerEvents = 'auto';
+            setInjectedAuthStyleState(input, {
+                position: 'absolute',
+                left: `${rect.left - offsetParentRect.left}px`,
+                top: `${rect.top - offsetParentRect.top}px`,
+                width: `${rect.width}px`,
+                height: `${rect.height}px`,
+                margin: '0',
+                zIndex: '2',
+                pointerEvents: 'auto'
+            });
             setPortaledInputVisibility(input, portalState.proxy, true);
             return;
         }
@@ -666,14 +697,16 @@
             isVisible = fullyInsideVertical && fullyInsideHorizontal && rect.width > 16 && rect.height > 20;
         }
 
-        input.style.position = 'fixed';
-        input.style.left = `${rect.left}px`;
-        input.style.top = `${rect.top}px`;
-        input.style.width = `${rect.width}px`;
-        input.style.height = `${rect.height}px`;
-        input.style.margin = '0';
-        input.style.zIndex = '12091';
-        input.style.pointerEvents = isVisible ? 'auto' : 'none';
+        setInjectedAuthStyleState(input, {
+            position: 'fixed',
+            left: `${rect.left}px`,
+            top: `${rect.top}px`,
+            width: `${rect.width}px`,
+            height: `${rect.height}px`,
+            margin: '0',
+            zIndex: '12091',
+            pointerEvents: isVisible ? 'auto' : 'none'
+        });
         setPortaledInputVisibility(input, portalState.proxy, isVisible);
     }
 
@@ -819,8 +852,10 @@
         if (!tabs || !indicator || !activeButton || tabs.hidden) return;
 
         const applyPosition = () => {
-            indicator.style.width = `${activeButton.offsetWidth}px`;
-            indicator.style.transform = `translateX(${activeButton.offsetLeft}px)`;
+            setInjectedAuthStyleState(indicator, {
+                width: `${activeButton.offsetWidth}px`,
+                transform: `translateX(${activeButton.offsetLeft}px)`
+            });
         };
 
         if (immediate) {
@@ -842,15 +877,7 @@
         primaryViews.forEach((view) => {
             const clone = view.cloneNode(true);
             clone.hidden = false;
-            clone.classList.add('is-active');
-            clone.style.position = 'absolute';
-            clone.style.left = '0';
-            clone.style.top = '0';
-            clone.style.width = '100%';
-            clone.style.visibility = 'hidden';
-            clone.style.pointerEvents = 'none';
-            clone.style.display = 'flex';
-            clone.style.minHeight = '0';
+            clone.classList.add('is-active', 'auth-sheet-view-measure');
             clone.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
             body.appendChild(clone);
             maxHeight = Math.max(maxHeight, Math.ceil(clone.getBoundingClientRect().height));
@@ -858,7 +885,7 @@
         });
 
         if (maxHeight > 0) {
-            body.style.setProperty('--auth-primary-view-min-height', `${maxHeight + 12}px`);
+            setInjectedAuthStyleProperty(body, '--auth-primary-view-min-height', `${maxHeight + 12}px`);
         }
     }
 
@@ -1010,8 +1037,10 @@
         ) || 1;
         const rightOffset = Math.max(10, window.innerWidth - rect.right);
 
-        dropdown.style.setProperty('right', `${rightOffset}px`, 'important');
-        dropdown.style.setProperty('top', `${navBottom - navOverlap}px`, 'important');
+        setInjectedAuthStyleState(dropdown, {
+            right: `${rightOffset}px`,
+            top: `${navBottom - navOverlap}px`
+        }, 'important');
         dropdown.classList.add('active');
         dropdown.setAttribute('aria-hidden', 'false');
         overlay?.classList.add('active');
@@ -1048,9 +1077,6 @@
         resetAuthSheetFields({ preserveView: true });
 
         overlay.hidden = false;
-        overlay.style.removeProperty('display');
-        overlay.style.removeProperty('visibility');
-        overlay.style.removeProperty('opacity');
         overlay.classList.remove('auth-sheet-input-active');
         await setAuthView(viewId, { clearMessage: true });
         syncAllInputProxyDisplays();
@@ -1097,7 +1123,7 @@
         dragState.active = false;
         dragState.startY = 0;
         dragState.deltaY = 0;
-        sheet?.style.removeProperty('transform');
+        setInjectedAuthStyleProperty(sheet, 'transform', null);
 
         overlay.classList.remove('active');
         overlay.setAttribute('aria-hidden', 'true');
@@ -1254,7 +1280,7 @@
         };
         const resetDragState = () => {
             const { sheet } = getSheetElements();
-            sheet?.style.removeProperty('transform');
+            setInjectedAuthStyleProperty(sheet, 'transform', null);
             setDragHandleActive(false);
             dragState.active = false;
             dragState.startY = 0;
@@ -1283,12 +1309,12 @@
 
             dragState.deltaY = Math.max(0, event.touches[0].clientY - dragState.startY);
             if (dragState.deltaY <= 0) {
-                sheet.style.removeProperty('transform');
+                setInjectedAuthStyleProperty(sheet, 'transform', null);
                 return;
             }
 
             const translate = Math.min(112, dragState.deltaY);
-            sheet.style.transform = `translateY(${translate}px) scale(${1 - translate * 0.00045})`;
+            setInjectedAuthStyleProperty(sheet, 'transform', `translateY(${translate}px) scale(${1 - translate * 0.00045})`);
         };
 
         const handleDragEnd = () => {
@@ -1467,8 +1493,8 @@
     window.updateNotificationBadges = function (hasUnread) {
         const avatarBadge = document.getElementById('avatarUnreadBadge');
         const dropdownBadge = document.getElementById('dropdownNotifBadge');
-        if (avatarBadge) avatarBadge.style.display = hasUnread ? 'block' : 'none';
-        if (dropdownBadge) dropdownBadge.style.display = hasUnread ? 'inline-block' : 'none';
+        if (avatarBadge) avatarBadge.classList.toggle('is-visible', !!hasUnread);
+        if (dropdownBadge) dropdownBadge.classList.toggle('is-visible', !!hasUnread);
     };
 
     function initTheme() {

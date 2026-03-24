@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260324_WALLET_ORDER_RUNTIME_STYLE_1';
+    const walletCssHref = 'css/wallet.css?v=20260324_WALLET_RUNTIME_STYLE_HELPERS_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -85,6 +85,28 @@
 
     function isWalletModalCompactMobile() {
         return window.matchMedia('(max-width: 600px)').matches;
+    }
+
+    function setInlineStyles(target, styles) {
+        const style = target?.style;
+        if (!style || !styles) return;
+        for (const [property, value] of Object.entries(styles)) {
+            style[property] = value ?? '';
+        }
+    }
+
+    function setCssVariables(target, variables) {
+        const style = target?.style;
+        if (!style || !variables) return;
+        const setProperty = style['setProperty'].bind(style);
+        const removeProperty = style['removeProperty'].bind(style);
+        for (const [property, value] of Object.entries(variables)) {
+            if (value === undefined || value === null || value === '') {
+                removeProperty(property);
+            } else {
+                setProperty(property, value);
+            }
+        }
     }
 
     function measureWalletModalViewport() {
@@ -159,13 +181,8 @@
         walletModalState.baseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
         document.documentElement.classList.add('wallet-modal-lock');
         document.body.classList.add('wallet-modal-lock');
-        document.documentElement.style.overflow = 'hidden';
-        document.body.style.position = 'fixed';
-        document.body.style.top = `-${walletModalState.baseScrollY}px`;
-        document.body.style.left = '0';
-        document.body.style.right = '0';
-        document.body.style.width = '100%';
-        document.body.style.overflow = 'hidden';
+        setInlineStyles(document.documentElement, { overflow: 'hidden' });
+        setCssVariables(document.body, { '--wallet-lock-top': `-${walletModalState.baseScrollY}px` });
         walletModalState.pageFrozen = true;
         stabilizeWalletModalViewport();
     }
@@ -176,13 +193,8 @@
         const restoreScrollY = walletModalState.baseScrollY;
         document.documentElement.classList.remove('wallet-modal-lock');
         document.body.classList.remove('wallet-modal-lock');
-        document.documentElement.style.overflow = '';
-        document.body.style.position = '';
-        document.body.style.top = '';
-        document.body.style.left = '';
-        document.body.style.right = '';
-        document.body.style.width = '';
-        document.body.style.overflow = '';
+        setInlineStyles(document.documentElement, { overflow: '' });
+        setCssVariables(document.body, { '--wallet-lock-top': '' });
         walletModalState.pageFrozen = false;
         walletModalState.baseScrollY = 0;
 
@@ -194,7 +206,7 @@
     function stabilizeWalletModalViewport() {
         if (!walletModalState.pageFrozen) return;
 
-        document.body.style.top = `-${walletModalState.baseScrollY}px`;
+        setCssVariables(document.body, { '--wallet-lock-top': `-${walletModalState.baseScrollY}px` });
 
         if ((window.scrollY || window.pageYOffset || 0) !== 0) {
             window.scrollTo(0, 0);
@@ -235,16 +247,22 @@
 
         overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
         overlay.querySelector('.wallet-recharge-scroll-cue')?.classList.remove('visible');
-        viewport?.style.setProperty('--wallet-modal-translate-y', '0px');
-        viewport?.style.removeProperty('--wallet-modal-overlay-height');
-        viewport?.style.removeProperty('--wallet-modal-viewport-top');
-        viewport?.style.removeProperty('--wallet-modal-viewport-left');
-        viewport?.style.removeProperty('--wallet-modal-viewport-width');
-        card.style.removeProperty('max-height');
-        card.style.removeProperty('height');
-        card.style.removeProperty('min-height');
-        scroller?.style.removeProperty('scroll-padding-bottom');
-        scroller?.style.removeProperty('scroll-padding-top');
+        setCssVariables(viewport, {
+            '--wallet-modal-translate-y': '0px',
+            '--wallet-modal-overlay-height': '',
+            '--wallet-modal-viewport-top': '',
+            '--wallet-modal-viewport-left': '',
+            '--wallet-modal-viewport-width': ''
+        });
+        setInlineStyles(card, {
+            maxHeight: '',
+            height: '',
+            minHeight: ''
+        });
+        setInlineStyles(scroller, {
+            scrollPaddingBottom: '',
+            scrollPaddingTop: ''
+        });
         walletModalState.overlayBaseHeight = 0;
         walletModalState.overlayBaseVisualHeight = 0;
         walletModalState.focusTransferUntil = 0;
@@ -383,21 +401,25 @@
         );
         const translateY = dockedTop - centeredTop;
 
-        viewportEl.style.setProperty('--wallet-modal-viewport-top', `${snapshot.top}px`);
-        viewportEl.style.setProperty('--wallet-modal-viewport-left', `${snapshot.left}px`);
-        viewportEl.style.setProperty('--wallet-modal-viewport-width', `${snapshot.width}px`);
-        viewportEl.style.setProperty('--wallet-modal-overlay-height', `${snapshot.baseViewportHeight}px`);
-        viewportEl.style.setProperty('--wallet-modal-translate-y', `${translateY}px`);
+        setCssVariables(viewportEl, {
+            '--wallet-modal-viewport-top': `${snapshot.top}px`,
+            '--wallet-modal-viewport-left': `${snapshot.left}px`,
+            '--wallet-modal-viewport-width': `${snapshot.width}px`,
+            '--wallet-modal-overlay-height': `${snapshot.baseViewportHeight}px`,
+            '--wallet-modal-translate-y': `${translateY}px`
+        });
 
         overlay.classList.add('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
         setWalletModalAnimating(card, animate);
-        card.style.maxHeight = `${modalMaxHeight}px`;
-        card.style.height = `${modalHeight}px`;
-        card.style.minHeight = `${Math.min(400, modalHeight)}px`;
-        if (scroller) {
-            scroller.style.scrollPaddingTop = `${isWalletModalIOSMode() ? 84 : 24}px`;
-            scroller.style.scrollPaddingBottom = `${Math.max(144, Math.round(dockInset + 72))}px`;
-        }
+        setInlineStyles(card, {
+            maxHeight: `${modalMaxHeight}px`,
+            height: `${modalHeight}px`,
+            minHeight: `${Math.min(400, modalHeight)}px`
+        });
+        setInlineStyles(scroller, {
+            scrollPaddingTop: `${isWalletModalIOSMode() ? 84 : 24}px`,
+            scrollPaddingBottom: `${Math.max(144, Math.round(dockInset + 72))}px`
+        });
 
         walletModalState.keyboardDocked = true;
         walletModalState.lastKeyboardInset = dockInset;
@@ -417,23 +439,27 @@
         const modalHeight = Math.min(500, modalMaxHeight);
         const duration = animate ? WALLET_MODAL_DOCK_ANIMATION_MS : 0;
 
-        viewportEl.style.setProperty('--wallet-modal-viewport-top', `${snapshot.top}px`);
-        viewportEl.style.setProperty('--wallet-modal-viewport-left', `${snapshot.left}px`);
-        viewportEl.style.setProperty('--wallet-modal-viewport-width', `${snapshot.width}px`);
-        viewportEl.style.setProperty('--wallet-modal-overlay-height', `${snapshot.baseViewportHeight}px`);
-        viewportEl.style.setProperty('--wallet-modal-translate-y', '0px');
+        setCssVariables(viewportEl, {
+            '--wallet-modal-viewport-top': `${snapshot.top}px`,
+            '--wallet-modal-viewport-left': `${snapshot.left}px`,
+            '--wallet-modal-viewport-width': `${snapshot.width}px`,
+            '--wallet-modal-overlay-height': `${snapshot.baseViewportHeight}px`,
+            '--wallet-modal-translate-y': '0px'
+        });
 
         overlay.classList.remove('keyboard-active');
         overlay.classList.add('keyboard-docked');
         overlay.classList.toggle('ios-focus-lock', preserveFocusLock);
         setWalletModalAnimating(card, animate, duration);
-        card.style.maxHeight = `${modalMaxHeight}px`;
-        card.style.height = `${modalHeight}px`;
-        card.style.minHeight = `${Math.min(400, modalHeight)}px`;
-        if (scroller) {
-            scroller.style.scrollPaddingTop = `${isWalletModalIOSMode() ? 84 : 24}px`;
-            scroller.style.scrollPaddingBottom = `${preserveFocusLock ? 144 : 96}px`;
-        }
+        setInlineStyles(card, {
+            maxHeight: `${modalMaxHeight}px`,
+            height: `${modalHeight}px`,
+            minHeight: `${Math.min(400, modalHeight)}px`
+        });
+        setInlineStyles(scroller, {
+            scrollPaddingTop: `${isWalletModalIOSMode() ? 84 : 24}px`,
+            scrollPaddingBottom: `${preserveFocusLock ? 144 : 96}px`
+        });
 
         walletModalState.keyboardDocked = false;
         walletModalState.lastKeyboardInset = 0;
@@ -473,22 +499,26 @@
         const modalMaxHeight = Math.max(260, snapshot.baseViewportHeight - 24);
         const modalHeight = Math.min(500, modalMaxHeight);
 
-        viewportEl.style.setProperty('--wallet-modal-viewport-top', `${snapshot.top}px`);
-        viewportEl.style.setProperty('--wallet-modal-viewport-left', `${snapshot.left}px`);
-        viewportEl.style.setProperty('--wallet-modal-viewport-width', `${snapshot.width}px`);
-        viewportEl.style.setProperty('--wallet-modal-overlay-height', `${snapshot.baseViewportHeight}px`);
-        viewportEl.style.setProperty('--wallet-modal-translate-y', '0px');
+        setCssVariables(viewportEl, {
+            '--wallet-modal-viewport-top': `${snapshot.top}px`,
+            '--wallet-modal-viewport-left': `${snapshot.left}px`,
+            '--wallet-modal-viewport-width': `${snapshot.width}px`,
+            '--wallet-modal-overlay-height': `${snapshot.baseViewportHeight}px`,
+            '--wallet-modal-translate-y': '0px'
+        });
 
         overlay.classList.remove('keyboard-active', 'keyboard-docked');
         overlay.classList.toggle('ios-focus-lock', preserveFocusLock);
         setWalletModalAnimating(card, false);
-        card.style.maxHeight = `${modalMaxHeight}px`;
-        card.style.height = `${modalHeight}px`;
-        card.style.minHeight = `${Math.min(400, modalHeight)}px`;
-        if (scroller) {
-            scroller.style.scrollPaddingTop = `${isWalletModalIOSMode() ? 84 : 24}px`;
-            scroller.style.scrollPaddingBottom = `${preserveFocusLock ? 144 : 96}px`;
-        }
+        setInlineStyles(card, {
+            maxHeight: `${modalMaxHeight}px`,
+            height: `${modalHeight}px`,
+            minHeight: `${Math.min(400, modalHeight)}px`
+        });
+        setInlineStyles(scroller, {
+            scrollPaddingTop: `${isWalletModalIOSMode() ? 84 : 24}px`,
+            scrollPaddingBottom: `${preserveFocusLock ? 144 : 96}px`
+        });
 
         walletModalState.keyboardDocked = false;
         walletModalState.lastKeyboardInset = 0;
@@ -611,16 +641,22 @@
         if (!overlay || !viewportEl || !card || !overlay.classList.contains('active')) return;
 
         if (!isWalletModalIOSMode()) {
-            viewportEl.style.removeProperty('--wallet-modal-overlay-height');
-            viewportEl.style.removeProperty('--wallet-modal-viewport-top');
-            viewportEl.style.removeProperty('--wallet-modal-viewport-left');
-            viewportEl.style.removeProperty('--wallet-modal-viewport-width');
-            card.style.removeProperty('max-height');
-            card.style.removeProperty('height');
-            card.style.removeProperty('min-height');
-            scroller?.style.removeProperty('scroll-padding-bottom');
-            scroller?.style.removeProperty('scroll-padding-top');
-            viewportEl.style.setProperty('--wallet-modal-translate-y', '0px');
+            setCssVariables(viewportEl, {
+                '--wallet-modal-overlay-height': '',
+                '--wallet-modal-viewport-top': '',
+                '--wallet-modal-viewport-left': '',
+                '--wallet-modal-viewport-width': '',
+                '--wallet-modal-translate-y': '0px'
+            });
+            setInlineStyles(card, {
+                maxHeight: '',
+                height: '',
+                minHeight: ''
+            });
+            setInlineStyles(scroller, {
+                scrollPaddingBottom: '',
+                scrollPaddingTop: ''
+            });
             overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
             walletModalState.lastViewportHeight = 0;
             walletModalState.keyboardDocked = false;
@@ -727,7 +763,7 @@
         if (!overlay) return;
 
         overlay.classList.remove('active', 'wallet-opening');
-        overlay.style.display = 'block';
+        overlay.hidden = false;
         void overlay.offsetWidth;
 
         requestAnimationFrame(() => {
@@ -1663,10 +1699,10 @@
             resetWalletModalVisualState();
 
             if (this.modalEl) {
-                this.modalEl.style.display = 'none';
+                this.modalEl.hidden = true;
                 this.modalEl.classList.remove('active', 'keyboard-active', 'keyboard-docked', 'ios-focus-lock');
             }
-            getWalletModalElements().viewport?.style.setProperty('--wallet-modal-translate-y', '0px');
+            setCssVariables(getWalletModalElements().viewport, { '--wallet-modal-translate-y': '0px' });
             if (scroller) {
                 scroller.scrollTop = 0;
             }
@@ -1698,7 +1734,7 @@
             }
 
             if (overlay) {
-                overlay.style.display = 'block';
+                overlay.hidden = false;
                 this.modalEl = overlay;
                 this.bindDelegatedHandlers(overlay);
                 this.syncOrderSearchUi();
@@ -1708,7 +1744,7 @@
             overlay = document.createElement('div');
             overlay.id = 'wallet-modal-overlay';
             overlay.className = 'wallet-overlay';
-            overlay.style.display = 'block';
+            overlay.hidden = true;
             overlay.innerHTML = `
                 <div class="wallet-backdrop" aria-hidden="true"></div>
                 <div class="wallet-viewport">
@@ -1726,7 +1762,7 @@
                                     <span class="menu-text">${window.i18n?.t('wallet.balance') || '余额'}</span>
                                 </div>
                                 <div class="wallet-menu-item" data-view="recharge"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'recharge' })}>
-                                    <span class="menu-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="boltGradientSidebar" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#fbbf24"/><stop offset="100%" style="stop-color:#f97316"/></linearGradient></defs><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="url(#boltGradientSidebar)"/></svg></span>
+                                    <span class="menu-icon">${this.renderWalletInlineIcon('fa-bolt', '#fbbf24', 'wallet-inline-icon--compact')}</span>
                                     <span class="menu-text">${window.i18n?.t('wallet.recharge') || '充值'}</span>
                                 </div>
 
@@ -1736,7 +1772,7 @@
                                 </div>
 
                                 <div class="wallet-menu-item" data-view="affiliate"${this.buildDataAttributes({ 'wallet-action': 'switch-view', 'wallet-view-id': 'affiliate' })}>
-                                    <span class="menu-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #10b981;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>
+                                    <span class="menu-icon">${this.renderWalletInlineIcon('fa-share-alt', '#10b981', 'wallet-inline-icon--compact')}</span>
                                     <span class="menu-text">${window.i18n?.t('wallet.affiliate') || '推广'}</span>
                                 </div>
 
@@ -1785,12 +1821,12 @@
                             
                             <!-- Recharge View -->
                             <div class="wallet-view" id="view-recharge">
-                                <h3 class="view-title"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: -3px; margin-right: 4px;"><defs><linearGradient id="boltGradientTitle" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#fbbf24"/><stop offset="100%" style="stop-color:#f97316"/></linearGradient></defs><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="url(#boltGradientTitle)"/></svg>${window.i18n?.t('wallet.rechargePackages') || '充值套餐'}</h3>
+                                <h3 class="view-title">${this.renderWalletInlineIcon('fa-bolt', '#fbbf24', 'wallet-inline-icon--title')}${window.i18n?.t('wallet.rechargePackages') || '充值套餐'}</h3>
                                 <div class="packages-container" id="wallet-packages">
                                     <div class="loading-text">${window.i18n?.t('common.loading') || '加载中...'}</div>
                                 </div>
 
-                                <div class="custom-recharge-section" id="wallet-custom-recharge-section" style="display:none;">
+                                <div class="custom-recharge-section" id="wallet-custom-recharge-section" hidden>
                                     <div class="custom-recharge-header">
                                         <div>
                                             <div class="custom-recharge-title">自定义充值</div>
@@ -1852,10 +1888,10 @@
                                     </div>
                                     
                                     <!-- Mystery Rewards Progress -->
-                                    <div class="mystery-progress-wrapper" style="display: none;" id="mystery-progress-box">
+                                    <div class="mystery-progress-wrapper" id="mystery-progress-box" hidden>
                                         <div class="mystery-progress-label">本周神秘盲盒进度</div>
                                         <div class="mystery-progress-bar">
-                                            <div class="mystery-progress-fill" id="mystery-progress-fill" style="width: 0%;"></div>
+                                            <div class="mystery-progress-fill" id="mystery-progress-fill"></div>
                                         </div>
                                     </div>
                                     
@@ -1919,11 +1955,11 @@
                                             </div>
                                             <div class="filter-popup" id="order-filter-popup">
                                                 <div class="filter-option active" data-value="all"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'all', 'wallet-filter-label': window.i18n?.t('wallet.all') || '全部' })}>${window.i18n?.t('wallet.all') || '全部'}</div>
-                                                <div class="filter-option" data-value="recharge"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'recharge', 'wallet-filter-label': window.i18n?.t('wallet.rechargeType') || '充值' })}><i class="fas fa-bolt" style="color: #fbbf24;"></i> ${window.i18n?.t('wallet.rechargeType') || '充值'}</div>
-                                                <div class="filter-option" data-value="redeem"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'redeem', 'wallet-filter-label': window.i18n?.t('wallet.redeemCode') || '兑换码' })}><i class="fas fa-ticket-alt" style="color: #f472b6;"></i> ${window.i18n?.t('wallet.redeemCode') || '兑换码'}</div>
-                                                <div class="filter-option" data-value="shop"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'shop', 'wallet-filter-label': window.i18n?.t('wallet.shopPurchase') || '商品' })}><i class="fas fa-shopping-bag" style="color: #22c55e;"></i> ${window.i18n?.t('wallet.shopPurchase') || '商品'}</div>
-                                                <div class="filter-option" data-value="verify"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'verify', 'wallet-filter-label': window.i18n?.t('wallet.verifyPurchase') || '认证' })}><i class="fas fa-shield-alt" style="color: #60a5fa;"></i> ${window.i18n?.t('wallet.verifyPurchase') || '认证'}</div>
-                                                <div class="filter-option" data-value="prompt"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'prompt', 'wallet-filter-label': window.i18n?.t('wallet.promptPurchase') || '提示词' })}><i class="fas fa-lightbulb" style="color: #fde68a;"></i> ${window.i18n?.t('wallet.promptPurchase') || '提示词'}</div>
+                                                <div class="filter-option" data-value="recharge"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'recharge', 'wallet-filter-label': window.i18n?.t('wallet.rechargeType') || '充值' })}>${this.renderWalletInlineIcon('fa-bolt', '#fbbf24')}${window.i18n?.t('wallet.rechargeType') || '充值'}</div>
+                                                <div class="filter-option" data-value="redeem"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'redeem', 'wallet-filter-label': window.i18n?.t('wallet.redeemCode') || '兑换码' })}>${this.renderWalletInlineIcon('fa-ticket-alt', '#f472b6')}${window.i18n?.t('wallet.redeemCode') || '兑换码'}</div>
+                                                <div class="filter-option" data-value="shop"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'shop', 'wallet-filter-label': window.i18n?.t('wallet.shopPurchase') || '商品' })}>${this.renderWalletInlineIcon('fa-shopping-bag', '#22c55e')}${window.i18n?.t('wallet.shopPurchase') || '商品'}</div>
+                                                <div class="filter-option" data-value="verify"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'verify', 'wallet-filter-label': window.i18n?.t('wallet.verifyPurchase') || '认证' })}>${this.renderWalletInlineIcon('fa-shield-alt', '#60a5fa')}${window.i18n?.t('wallet.verifyPurchase') || '认证'}</div>
+                                                <div class="filter-option" data-value="prompt"${this.buildDataAttributes({ 'wallet-action': 'select-order-filter', 'wallet-filter-value': 'prompt', 'wallet-filter-label': window.i18n?.t('wallet.promptPurchase') || '提示词' })}>${this.renderWalletInlineIcon('fa-lightbulb', '#fde68a')}${window.i18n?.t('wallet.promptPurchase') || '提示词'}</div>
                                             </div>
                                         </div>
                                         <div class="clear-chip"${this.buildDataAttributes({ 'wallet-action': 'clear-orders' })}>🗑</div>
@@ -1964,7 +2000,7 @@
                                             <div class="wallet-affiliate-panel-head wallet-affiliate-panel-head-link">
                                                 <div>
                                                     <h3>
-                                                        <i class="fas fa-link" style="color:#10b981;"></i>
+                                                        ${this.renderWalletInlineIcon('fa-link', '#10b981')}
                                                         ${window.i18n?.t('wallet.getInviteLink') || '获取专属推广链接'}
                                                     </h3>
                                                     <p id="affiliate-desc-text" class="wallet-affiliate-desc">
@@ -1990,7 +2026,7 @@
                                             <div class="wallet-affiliate-panel-head wallet-affiliate-panel-head-compact">
                                                 <div>
                                                     <h3>
-                                                        <i class="fas fa-road" style="color:#8ab4ff;"></i>
+                                                        ${this.renderWalletInlineIcon('fa-road', '#8ab4ff')}
                                                         邀请旅程
                                                     </h3>
                                                 </div>
@@ -2102,9 +2138,11 @@
                 const top = itemRect.top - sidebarRect.top;
                 const height = itemRect.height;
 
-                indicator.style.top = `${top}px`;
-                indicator.style.height = `${height}px`;
-                indicator.style.opacity = '1';
+                setInlineStyles(indicator, {
+                    top: `${top}px`,
+                    height: `${height}px`,
+                    opacity: '1'
+                });
             }
         },
 
@@ -2436,7 +2474,7 @@
             if (!section) return;
 
             const shouldShowAfdianQuery = activeProvider === 'afdian';
-            section.style.display = shouldShowAfdianQuery ? '' : 'none';
+            section.toggleAttribute('hidden', !shouldShowAfdianQuery);
 
             if (!shouldShowAfdianQuery) {
                 requestWalletRechargeScrollCueUpdate();
@@ -2483,7 +2521,7 @@
             const pointsPerCny = Math.max(0.01, Number(normalizedConfig.custom_amount_points_per_cny) || 50);
             const quoteMinutes = Math.max(1, Math.round((Number(normalizedConfig.custom_amount_quote_ttl_seconds) || 1800) / 60));
 
-            section.style.display = isFeatureEnabled ? '' : 'none';
+            section.toggleAttribute('hidden', !isFeatureEnabled);
 
             if (input) {
                 input.disabled = !isFeatureEnabled || isSimulationBlocked;
@@ -2988,11 +3026,11 @@
             }
 
             if (safeRegistrationReward > 0) {
-                descEl.innerHTML = `分享专属链接邀请新用户。当好友注册并<strong>${rewardTriggerText}</strong>后，您将获得 <strong style="color:#10b981; font-weight:600;">${rewardPointsText} 积分</strong> 专属拉新奖励；此外，好友后续所有商城订单还会持续按 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 自动返佣。<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
+                descEl.innerHTML = `分享专属链接邀请新用户。当好友注册并<strong>${rewardTriggerText}</strong>后，您将获得 <strong class="wallet-affiliate-highlight wallet-affiliate-highlight--reward">${rewardPointsText} 积分</strong> 专属拉新奖励；此外，好友后续所有商城订单还会持续按 <strong class="wallet-affiliate-highlight wallet-affiliate-highlight--commission">${ratePercent}</strong> 自动返佣。<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
                 return;
             }
 
-            descEl.innerHTML = `分享下方链接给好友。当好友注册并在商城完成消费时，系统会自动将订单金额的 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 作为奖励发放至您的积分钱包。<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
+            descEl.innerHTML = `分享下方链接给好友。当好友注册并在商城完成消费时，系统会自动将订单金额的 <strong class="wallet-affiliate-highlight wallet-affiliate-highlight--commission">${ratePercent}</strong> 作为奖励发放至您的积分钱包。<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
         },
 
         /**
@@ -3992,13 +4030,13 @@
                     const streakRem = (data.consecutive_days || 0) % 7;
                     const progressPercent = (streakRem / 7) * 100;
                     const fill = document.getElementById('mystery-progress-fill');
-                    if (fill) fill.style.width = `${progressPercent}%`;
+                    setInlineStyles(fill, { width: `${progressPercent}%` });
                 }
 
             } catch (err) {
                 console.error('[WalletModal] Error loading check-in data:', err);
                 const grid = document.getElementById('calendar-grid');
-                if (grid) grid.innerHTML = `<div class="loading-calendar" style="color:#ef4444;">加载失败</div>`;
+                if (grid) grid.innerHTML = `<div class="loading-calendar loading-calendar--error">加载失败</div>`;
             }
         },
 
@@ -4114,7 +4152,7 @@
 
             const gridToday = document.querySelector('.calendar-day.today');
             if (gridToday) {
-                gridToday.innerHTML = `<span class="today-text" style="font-size: 10px;">...</span>`;
+                gridToday.innerHTML = `<span class="today-text today-text--loading">...</span>`;
             }
 
             try {
@@ -4248,11 +4286,15 @@
             for (let i = 0; i < 30; i++) {
                 const particle = document.createElement('div');
                 particle.className = 'confetti-particle';
-                particle.style.left = Math.random() * 100 + '%';
-                particle.style.backgroundColor = ['#fbbf24', '#f87171', '#60a5fa', '#34d399', '#a78bfa'][Math.floor(Math.random() * 5)];
+                setInlineStyles(particle, {
+                    left: Math.random() * 100 + '%',
+                    backgroundColor: ['#fbbf24', '#f87171', '#60a5fa', '#34d399', '#a78bfa'][Math.floor(Math.random() * 5)]
+                });
                 const duration = Math.random() * 1 + 1; // 1 to 2s
                 const delay = Math.random() * 0.2;
-                particle.style.animation = `confetti-fall ${duration}s ${delay}s ease-out forwards`;
+                setInlineStyles(particle, {
+                    animation: `confetti-fall ${duration}s ${delay}s ease-out forwards`
+                });
 
                 grid.appendChild(particle);
 
@@ -4409,7 +4451,7 @@
                 }
 
                 resultDiv.appendChild(wrapper);
-                resultDiv.style.display = 'block';
+                resultDiv.classList.add('is-visible');
 
             } catch (err) {
                 console.error('[WalletModal] Afdian query failed:', err);
@@ -4418,7 +4460,7 @@
                 errorDiv.className = 'afdian-error';
                 errorDiv.textContent = err.message || '查询失败，请稍后重试';
                 resultDiv.appendChild(errorDiv);
-                resultDiv.style.display = 'block';
+                resultDiv.classList.add('is-visible');
             } finally {
                 if (queryBtn) {
                     queryBtn.textContent = originalText;
@@ -4445,81 +4487,26 @@
             const toast = document.createElement('div');
             toast.className = `wallet-toast wallet-toast-${type}`;
 
-            // Replace ✅ emoji with custom CSS checkmark icon
-            const checkmarkIcon = `<span style="
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 18px;
-                height: 18px;
-                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-                border-radius: 50%;
-                margin-right: 2px;
-            "><svg width="10" height="10" viewBox="0 0 12 12" fill="none" style="display:block;">
-                <path d="M2 6.5L4.5 9L10 3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg></span>`;
-
             // Replace emoji with custom icon
             const processedMessage = message.replace(/✅\s*/g, '');
 
             if (type === 'success') {
-                toast.innerHTML = checkmarkIcon + processedMessage;
-            } else {
-                toast.innerHTML = message;
-            }
-
-            const borderColor = type === 'success'
-                ? '#10b981'
-                : type === 'error'
-                    ? '#ef4444'
-                    : '#ffffff';
-
-            toast.style.cssText = `
-                position: fixed;
-                bottom: 80px;
-                left: 50%;
-                transform: translateX(-50%) translateY(20px);
-                padding: 12px 24px;
-                border-radius: 50px;
-                background: rgba(20, 20, 20, 0.9);
-                border: 1px solid ${borderColor};
-                backdrop-filter: blur(12px);
-                -webkit-backdrop-filter: blur(12px);
-                color: white;
-                font-size: 14px;
-                font-weight: 500;
-                letter-spacing: 0.5px;
-                z-index: 300000;
-                box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-                opacity: 0;
-                animation: toastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-                white-space: nowrap;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            `;
-
-            // Add animation keyframes if not exists
-            if (!document.getElementById('wallet-toast-style')) {
-                const style = document.createElement('style');
-                style.id = 'wallet-toast-style';
-                style.textContent = `
-                    @keyframes toastSlideIn {
-                        from { opacity: 0; transform: translateX(-50%) translateY(20px); }
-                        to { opacity: 1; transform: translateX(-50%) translateY(0); }
-                    }
-                    @keyframes toastSlideOut {
-                        from { opacity: 1; transform: translateX(-50%) translateY(0); }
-                        to { opacity: 0; transform: translateX(-50%) translateY(-10px); }
-                    }
+                toast.innerHTML = `
+                    <span class="wallet-toast-icon" aria-hidden="true">
+                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                            <path d="M2 6.5L4.5 9L10 3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </span>
+                    <span class="wallet-toast-message">${this.escapeHtml(processedMessage)}</span>
                 `;
-                document.head.appendChild(style);
+            } else {
+                toast.textContent = message;
             }
 
             document.body.appendChild(toast);
 
             setTimeout(() => {
-                toast.style.animation = 'toastSlideOut 0.3s ease forwards';
+                toast.classList.add('wallet-toast--leaving');
                 setTimeout(() => toast.remove(), 300);
             }, 2000);
         },
@@ -4623,14 +4610,14 @@
                         <div class="history-details"${this.buildDataAttributes({ 'wallet-action': 'history-details' })}>
                              <div class="detail-row">
                                 <span>订单号</span>
-                                <span class="detail-val copyable"${this.buildDataAttributes({
+                                <span class="detail-val mono copyable"${this.buildDataAttributes({
                                     'wallet-action': 'copy-value',
                                     'wallet-copy-value': this.encodeActionValue(item.id)
-                                })} title="点击复制订单号" style="font-family:monospace;color:#fff;">${item.id}</span>
+                                })} title="点击复制订单号">${item.id}</span>
                              </div>
                              <div class="detail-row">
                                 <span>业务关联</span>
-                                <span style="font-family:monospace;color:#fff;">${item.reference_id || '无'}</span>
+                                <span class="detail-val mono">${item.reference_id || '无'}</span>
                              </div>
                         </div>
                     </div>

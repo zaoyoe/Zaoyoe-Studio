@@ -147,8 +147,70 @@ class ChatWidget {
         if (!this.chatWindow) return;
         const normalizedBase = typeof baseTranslateY === 'number' ? `${Math.round(baseTranslateY)}px` : String(baseTranslateY);
         const normalizedShift = typeof shiftY === 'number' ? `${Math.round(shiftY)}px` : String(shiftY);
-        this.chatWindow.style.setProperty('--chat-base-translate-y', normalizedBase);
-        this.chatWindow.style.setProperty('--chat-shift-y', normalizedShift);
+        this._setRuntimeStyle(this.chatWindow, '--chat-base-translate-y', normalizedBase);
+        this._setRuntimeStyle(this.chatWindow, '--chat-shift-y', normalizedShift);
+    }
+
+    _setRuntimeStyle(target, prop, value, priority = '') {
+        const style = target?.style;
+        if (!style) return;
+        const removeProperty = style['removeProperty'].bind(style);
+        const setProperty = style['setProperty'].bind(style);
+        if (value === null || value === undefined || value === '') {
+            removeProperty(prop);
+            return;
+        }
+        setProperty(prop, String(value), priority);
+    }
+
+    _toggleElementClass(target, className, enabled) {
+        if (!target) return;
+        target.classList.toggle(className, enabled);
+    }
+
+    _setChatWindowKeyboardAnimating(enabled, durationMs = 120) {
+        if (!this.chatWindow) return;
+        this._toggleElementClass(this.chatWindow, 'chat-window--keyboard-animating', enabled);
+        this._setRuntimeStyle(
+            this.chatWindow,
+            '--chat-keyboard-motion-duration',
+            enabled ? `${Math.max(0, Math.round(durationMs))}ms` : null
+        );
+    }
+
+    _setChatWindowDockHeight(heightPx) {
+        if (!this.chatWindow) return;
+        const hasHeight = Number.isFinite(heightPx) && heightPx > 0;
+        this._toggleElementClass(this.chatWindow, 'chat-window--keyboard-height-locked', hasHeight);
+        this._setRuntimeStyle(
+            this.chatWindow,
+            '--chat-keyboard-dock-height',
+            hasHeight ? `${Math.round(heightPx)}px` : null,
+            'important'
+        );
+    }
+
+    _setChatWindowDockBottom(bottomPx) {
+        if (!this.chatWindow) return;
+        const hasBottom = Number.isFinite(bottomPx);
+        this._toggleElementClass(this.chatWindow, 'chat-window--keyboard-bottom-docked', hasBottom);
+        this._setRuntimeStyle(
+            this.chatWindow,
+            '--chat-keyboard-bottom',
+            hasBottom ? `${Math.max(0, Math.round(bottomPx))}px` : null,
+            'important'
+        );
+    }
+
+    _setMessagesContainerMinHeight(heightPx) {
+        if (!this.messagesContainer) return;
+        const hasHeight = Number.isFinite(heightPx) && heightPx > 0;
+        this._toggleElementClass(this.messagesContainer, 'chat-messages--height-locked', hasHeight);
+        this._setRuntimeStyle(
+            this.messagesContainer,
+            '--chat-messages-runtime-min-height',
+            hasHeight ? `${Math.round(heightPx)}px` : null
+        );
     }
 
     _ensureThemeColorMeta() {
@@ -1663,7 +1725,7 @@ class ChatWidget {
         const cachedMessages = this.sessionMessagesCache.get(cacheKey);
         if (Array.isArray(cachedMessages) && cachedMessages.length) {
             this.renderSessionMessages(cachedMessages);
-            this.messagesContainer.style.minHeight = '';
+            this._setMessagesContainerMinHeight(null);
             this.unlockScroll();
         } else {
             // PRELOAD STRATEGY: Lock scroll during message loading
@@ -1673,7 +1735,7 @@ class ChatWidget {
             const currentHeight = this.messagesContainer.offsetHeight;
 
             // Set min-height to preserve layout during content swap
-            this.messagesContainer.style.minHeight = currentHeight + 'px';
+            this._setMessagesContainerMinHeight(currentHeight);
 
             // Only show the blocking overlay when the request is actually slow.
             this.clearSessionLoadingOverlayTimer();
@@ -1698,7 +1760,7 @@ class ChatWidget {
             this.renderSessionMessages(normalizedData);
 
             // Remove min-height constraint after content is loaded
-            this.messagesContainer.style.minHeight = '';
+            this._setMessagesContainerMinHeight(null);
 
             // Scroll to bottom (new conversation loaded)
             this.scrollToBottom();
@@ -1710,7 +1772,7 @@ class ChatWidget {
             console.error('Failed to load messages:', err);
             if (requestId !== this._sessionLoadRequestId) return;
             this.removeSessionLoadingOverlay();
-            this.messagesContainer.style.minHeight = '';
+            this._setMessagesContainerMinHeight(null);
             this.messagesContainer.innerHTML = '<div class="message admin">加载失败</div>';
             // Unlock scroll even on error
             this.unlockScroll();
@@ -2740,13 +2802,8 @@ class ChatWidget {
         );
         this._overlayBaseHeight = initialViewportHeight + 64;
 
-        // 固定定位 + 高度基线，避免 body.no-scroll 裁切导致底部漏层
-        this.overlay.style.setProperty('position', 'fixed', 'important');
-        this.overlay.style.setProperty('top', '0', 'important');
-        this.overlay.style.setProperty('left', '0', 'important');
-        this.overlay.style.setProperty('right', '0', 'important');
-        this.overlay.style.setProperty('bottom', 'auto', 'important');
-        this.overlay.style.setProperty('width', '100%', 'important');
+        // 高度基线，避免 body.no-scroll 裁切导致底部漏层
+        this._toggleElementClass(this.overlay, 'chat-overlay--frozen', true);
         this._syncOverlayFrame = () => {
             if (!this.overlay) return;
             const vv = window.visualViewport;
@@ -2757,7 +2814,7 @@ class ChatWidget {
                 vv ? ((vv.height || 0) + (vv.offsetTop || 0) + 64) : 0,
                 window.screen?.height || 0
             );
-            this.overlay.style.setProperty('height', `${overlayHeight}px`, 'important');
+            this._setRuntimeStyle(this.overlay, '--chat-overlay-frozen-height', `${overlayHeight}px`, 'important');
         };
         this._syncOverlayFrame();
 
@@ -2778,13 +2835,8 @@ class ChatWidget {
             }
             this._syncOverlayFrame = null;
         }
-        this.overlay.style.removeProperty('position');
-        this.overlay.style.removeProperty('top');
-        this.overlay.style.removeProperty('left');
-        this.overlay.style.removeProperty('right');
-        this.overlay.style.removeProperty('bottom');
-        this.overlay.style.removeProperty('width');
-        this.overlay.style.removeProperty('height');
+        this._toggleElementClass(this.overlay, 'chat-overlay--frozen', false);
+        this._setRuntimeStyle(this.overlay, '--chat-overlay-frozen-height', null);
         this._overlayBaseHeight = null;
     }
 
@@ -2797,19 +2849,17 @@ class ChatWidget {
         if (animate) {
             this._applyMotionVisualLock(dockDuration + 40);
             this._keyboardDockAnimatingUntil = performance.now() + dockDuration + 24;
-            this.chatWindow.style.setProperty(
-                'transition',
-                `transform ${dockDuration}ms cubic-bezier(0.22, 1, 0.36, 1), bottom ${dockDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`,
-                'important'
-            );
+            this._setChatWindowTransitionless(false);
+            this._setChatWindowKeyboardAnimating(true, dockDuration);
             this._transitionCleanupTimer = setTimeout(() => {
                 this._transitionCleanupTimer = null;
                 if (this.chatWindow && this.chatWindow.classList.contains('keyboard-docked')) {
-                    this.chatWindow.style.removeProperty('transition');
+                    this._setChatWindowKeyboardAnimating(false);
                 }
             }, dockDuration + 40);
         } else {
-            this.chatWindow.style.setProperty('transition', 'none', 'important');
+            this._setChatWindowKeyboardAnimating(false);
+            this._setChatWindowTransitionless(true);
         }
 
         const isIOS = this._isIOSMobile();
@@ -2822,33 +2872,21 @@ class ChatWidget {
             );
             const fallbackHeight = Math.min(600, Math.max(420, Math.round(baseViewportHeight * 0.7)));
             const dockHeight = Math.max(320, Math.round(this._stableDockHeight || fallbackHeight));
-
-            this.chatWindow.style.setProperty('position', 'fixed', 'important');
-            this.chatWindow.style.setProperty('top', '50%', 'important');
-            this.chatWindow.style.setProperty('left', '50%', 'important');
-            this.chatWindow.style.setProperty('right', 'auto', 'important');
-            this.chatWindow.style.setProperty('bottom', 'auto', 'important');
-            this.chatWindow.style.setProperty('height', `${dockHeight}px`, 'important');
-            this.chatWindow.style.setProperty('max-height', `${dockHeight}px`, 'important');
             // Compute the docked offset directly so Safari never paints an intermediate centered state.
             const centeredBottom = (baseViewportHeight * 0.5) + (dockHeight * 0.5);
             const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
             const targetBottom = Math.max(40, keyboardTop - 12);
             const deltaY = Math.max(-520, Math.min(520, targetBottom - centeredBottom));
+            this._setChatWindowDockBottom(null);
+            this._setChatWindowDockHeight(dockHeight);
             this._setChatTranslateVars('-50%', deltaY);
             return;
         }
         const dockBottom = Math.max(0, bottomInset);
         // 覆盖移动端居中定位，改为贴近键盘上沿
-        this.chatWindow.style.setProperty('top', 'auto', 'important');
-        this.chatWindow.style.setProperty('left', '50%', 'important');
-        this.chatWindow.style.setProperty('right', 'auto', 'important');
-        this.chatWindow.style.setProperty('bottom', `${dockBottom}px`, 'important');
+        this._setChatWindowDockHeight(null);
+        this._setChatWindowDockBottom(dockBottom);
         this._setChatTranslateVars('0px', 0);
-
-        // 不再在键盘期间改高度，避免“上下压缩后弹开”
-        this.chatWindow.style.removeProperty('height');
-        this.chatWindow.style.removeProperty('max-height');
     }
 
     _scheduleUndock() {
@@ -2942,25 +2980,25 @@ class ChatWidget {
     _primeOpeningAnimationFromFab() {
         const motion = this._getFabMotionMetrics();
         if (!motion || !this.chatWindow) {
-            this.chatWindow?.style.setProperty('--chat-open-offset-x', '0px');
-            this.chatWindow?.style.setProperty('--chat-open-offset-y', '0px');
-            this.chatWindow?.style.setProperty('--chat-open-scale', '0.2');
-            this.chatWindow?.style.setProperty('--chat-close-scale', '0.11');
+            this._setRuntimeStyle(this.chatWindow, '--chat-open-offset-x', '0px');
+            this._setRuntimeStyle(this.chatWindow, '--chat-open-offset-y', '0px');
+            this._setRuntimeStyle(this.chatWindow, '--chat-open-scale', '0.2');
+            this._setRuntimeStyle(this.chatWindow, '--chat-close-scale', '0.11');
             return;
         }
 
-        this.chatWindow.style.setProperty('--chat-open-offset-x', `${motion.offsetX}px`);
-        this.chatWindow.style.setProperty('--chat-open-offset-y', `${motion.offsetY}px`);
-        this.chatWindow.style.setProperty('--chat-open-scale', motion.startScale.toFixed(3));
-        this.chatWindow.style.setProperty('--chat-close-scale', motion.closeScale.toFixed(3));
+        this._setRuntimeStyle(this.chatWindow, '--chat-open-offset-x', `${motion.offsetX}px`);
+        this._setRuntimeStyle(this.chatWindow, '--chat-open-offset-y', `${motion.offsetY}px`);
+        this._setRuntimeStyle(this.chatWindow, '--chat-open-scale', motion.startScale.toFixed(3));
+        this._setRuntimeStyle(this.chatWindow, '--chat-close-scale', motion.closeScale.toFixed(3));
     }
 
     _clearOpeningAnimationState() {
         if (!this.chatWindow) return;
-        this.chatWindow.style.removeProperty('--chat-open-offset-x');
-        this.chatWindow.style.removeProperty('--chat-open-offset-y');
-        this.chatWindow.style.removeProperty('--chat-open-scale');
-        this.chatWindow.style.removeProperty('--chat-close-scale');
+        this._setRuntimeStyle(this.chatWindow, '--chat-open-offset-x', null);
+        this._setRuntimeStyle(this.chatWindow, '--chat-open-offset-y', null);
+        this._setRuntimeStyle(this.chatWindow, '--chat-open-scale', null);
+        this._setRuntimeStyle(this.chatWindow, '--chat-close-scale', null);
     }
 
     _finalizeChatClose() {
@@ -3058,14 +3096,7 @@ class ChatWidget {
 
         const container = document.querySelector('.poetry-nav-container');
         if (!container) return;
-
-        if (suspended) {
-            container.style.setProperty('--cursor-x', '50%');
-            container.style.setProperty('--cursor-y', '0px');
-        } else {
-            container.style.removeProperty('--cursor-x');
-            container.style.removeProperty('--cursor-y');
-        }
+        this._toggleElementClass(container, 'chat-prompt-spotlight-suspended', suspended);
     }
 
     _clearTransitionCleanupTimer() {
@@ -3126,23 +3157,7 @@ class ChatWidget {
 
     _applyStableVisualStyles() {
         if (!this.chatWindow) return;
-        this.chatWindow.style.setProperty('will-change', 'transform', 'important');
-        this.chatWindow.style.setProperty('backface-visibility', 'hidden', 'important');
-        this.chatWindow.style.setProperty('-webkit-backface-visibility', 'hidden', 'important');
-        this.chatWindow.style.setProperty('transform-style', 'preserve-3d', 'important');
-        this.chatWindow.style.setProperty('contain', 'layout paint style', 'important');
-        this.chatWindow.style.setProperty('isolation', 'isolate', 'important');
-        this.chatWindow.style.setProperty('-webkit-mask-image', '-webkit-radial-gradient(white, black)', 'important');
-        this.chatWindow.style.setProperty('backdrop-filter', 'none', 'important');
-        this.chatWindow.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
-        this.chatWindow.style.setProperty('background', 'var(--chat-shell-bg, rgba(11, 14, 20, 0.94))', 'important');
-        this.chatWindow.style.setProperty('border', '1px solid var(--chat-shell-border, rgba(255, 255, 255, 0.08))', 'important');
-        this.chatWindow.style.removeProperty('border-top');
-        this.chatWindow.style.setProperty(
-            'box-shadow',
-            '0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
-            'important'
-        );
+        this._toggleElementClass(this.chatWindow, 'chat-window--stable-visuals', true);
     }
 
     _enableSessionVisualLock() {
@@ -3169,17 +3184,7 @@ class ChatWidget {
             this._applyStableVisualStyles();
             return;
         }
-        this.chatWindow.style.removeProperty('backdrop-filter');
-        this.chatWindow.style.removeProperty('-webkit-backdrop-filter');
-        this.chatWindow.style.removeProperty('background');
-        this.chatWindow.style.removeProperty('box-shadow');
-        this.chatWindow.style.removeProperty('will-change');
-        this.chatWindow.style.removeProperty('backface-visibility');
-        this.chatWindow.style.removeProperty('-webkit-backface-visibility');
-        this.chatWindow.style.removeProperty('transform-style');
-        this.chatWindow.style.removeProperty('contain');
-        this.chatWindow.style.removeProperty('isolation');
-        this.chatWindow.style.removeProperty('-webkit-mask-image');
+        this._toggleElementClass(this.chatWindow, 'chat-window--stable-visuals', false);
     }
 
     _applyMotionVisualLock(duration = 180) {
@@ -3203,17 +3208,13 @@ class ChatWidget {
         this._keyboardPreLiftActive = true;
         this._clearTransitionCleanupTimer();
         this._applyMotionVisualLock(160);
-        this.chatWindow.style.setProperty('position', 'fixed', 'important');
-        this.chatWindow.style.setProperty('top', '50%', 'important');
-        this.chatWindow.style.setProperty('left', '50%', 'important');
-        this.chatWindow.style.setProperty('right', 'auto', 'important');
-        this.chatWindow.style.setProperty('bottom', 'auto', 'important');
-        this.chatWindow.style.setProperty('transition', 'transform 120ms cubic-bezier(0.22, 1, 0.36, 1)', 'important');
+        this._setChatWindowTransitionless(false);
+        this._setChatWindowKeyboardAnimating(true, 120);
         this._setChatTranslateVars('-50%', -24);
         this._transitionCleanupTimer = setTimeout(() => {
             this._transitionCleanupTimer = null;
             if (this.chatWindow && !this.chatWindow.classList.contains('keyboard-docked')) {
-                this.chatWindow.style.removeProperty('transition');
+                this._setChatWindowKeyboardAnimating(false);
             }
         }, 150);
     }
@@ -3229,47 +3230,36 @@ class ChatWidget {
             if (animate) {
                 this._applyMotionVisualLock(resetDuration + 40);
                 this._keyboardDockAnimatingUntil = performance.now() + resetDuration + 24;
-                this.chatWindow.style.setProperty(
-                    'transition',
-                    `transform ${resetDuration}ms cubic-bezier(0.22, 1, 0.36, 1), bottom ${resetDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`,
-                    'important'
-                );
+                this._setChatWindowTransitionless(false);
+                this._setChatWindowKeyboardAnimating(true, resetDuration);
             } else {
-                this.chatWindow.style.setProperty('transition', 'none', 'important');
+                this._setChatWindowKeyboardAnimating(false);
+                this._setChatWindowTransitionless(true);
                 this._restoreMotionVisuals();
             }
-            this.chatWindow.style.removeProperty('height');
-            this.chatWindow.style.removeProperty('max-height');
+            this._setChatWindowDockHeight(null);
 
             if (this.isOpen && this._isNarrowViewport()) {
-                this.chatWindow.style.setProperty('position', 'fixed', 'important');
-                this.chatWindow.style.setProperty('top', '50%', 'important');
-                this.chatWindow.style.setProperty('left', '50%', 'important');
-                this.chatWindow.style.setProperty('right', 'auto', 'important');
-                this.chatWindow.style.setProperty('bottom', 'auto', 'important');
+                this._setChatWindowDockBottom(null);
                 this._setChatTranslateVars('-50%', 0);
             } else {
-                this.chatWindow.style.removeProperty('top');
-                this.chatWindow.style.removeProperty('left');
-                this.chatWindow.style.removeProperty('right');
-                this.chatWindow.style.removeProperty('bottom');
-                this.chatWindow.style.removeProperty('position');
-                this.chatWindow.style.removeProperty('--chat-base-translate-y');
-                this.chatWindow.style.removeProperty('--chat-shift-y');
-                this.chatWindow.style.removeProperty('transform');
+                this._setChatWindowDockBottom(null);
+                this._setRuntimeStyle(this.chatWindow, '--chat-base-translate-y', null);
+                this._setRuntimeStyle(this.chatWindow, '--chat-shift-y', null);
+                this._setRuntimeStyle(this.chatWindow, 'transform', null);
             }
 
             if (animate) {
                 this._transitionCleanupTimer = setTimeout(() => {
                     this._transitionCleanupTimer = null;
                     if (this.chatWindow && !this.chatWindow.classList.contains('keyboard-docked')) {
-                        this.chatWindow.style.removeProperty('transition');
+                        this._setChatWindowKeyboardAnimating(false);
                     }
                 }, resetDuration + 40);
             } else {
                 requestAnimationFrame(() => {
                     if (this.chatWindow && !this.chatWindow.classList.contains('keyboard-docked')) {
-                        this.chatWindow.style.removeProperty('transition');
+                        this._setChatWindowTransitionless(false);
                     }
                 });
             }

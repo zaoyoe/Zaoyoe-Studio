@@ -13,9 +13,39 @@ const AdminTickets = {
         await this.loadTickets();
     },
 
+    createTableStateRow: function ({ message, icon = 'fa-inbox', variant = 'empty', spinning = false }) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        const wrapper = document.createElement('div');
+        const iconNode = document.createElement('i');
+        const textNode = document.createElement('span');
+
+        cell.colSpan = 6;
+        cell.className = `empty-state admin-ticket-table-state-cell admin-ticket-table-state-cell--${variant}`;
+
+        wrapper.className = 'admin-ticket-table-state';
+        iconNode.className = `fas ${icon}${spinning ? ' fa-spin' : ''} admin-ticket-table-state-icon`;
+        textNode.className = 'admin-ticket-table-state-text';
+        textNode.textContent = this.safeText(message, '暂无数据');
+
+        wrapper.appendChild(iconNode);
+        wrapper.appendChild(textNode);
+        cell.appendChild(wrapper);
+        row.appendChild(cell);
+        return row;
+    },
+
     loadTickets: async function () {
         try {
-            document.getElementById('ticketsTableBody').innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 20px;">加载中...</td></tr>';
+            const tbody = document.getElementById('ticketsTableBody');
+            if (tbody) {
+                tbody.replaceChildren(this.createTableStateRow({
+                    message: '加载中...',
+                    icon: 'fa-spinner',
+                    variant: 'loading',
+                    spinning: true
+                }));
+            }
 
             const { data, error } = await window.supabaseClient
                 .from('shop_tickets')
@@ -30,14 +60,11 @@ const AdminTickets = {
             console.error('[AdminTickets] load error:', err);
             const tbody = document.getElementById('ticketsTableBody');
             if (tbody) {
-                const row = document.createElement('tr');
-                const cell = document.createElement('td');
-                cell.colSpan = 6;
-                cell.style.textAlign = 'center';
-                cell.style.color = '#ef4444';
-                cell.textContent = `加载失败: ${this.safeText(err?.message, '未知错误')}`;
-                row.appendChild(cell);
-                tbody.replaceChildren(row);
+                tbody.replaceChildren(this.createTableStateRow({
+                    message: `加载失败: ${this.safeText(err?.message, '未知错误')}`,
+                    icon: 'fa-circle-exclamation',
+                    variant: 'error'
+                }));
             }
         }
     },
@@ -87,64 +114,30 @@ const AdminTickets = {
 
     createStatusBadge: function (status) {
         const badge = document.createElement('span');
-        badge.className = 'status-badge';
-        badge.style.display = 'inline-flex';
-        badge.style.alignItems = 'center';
-        badge.style.justifyContent = 'center';
+        const normalizedStatus = this.safeText(status, 'UNKNOWN').toUpperCase();
+        badge.className = `status-badge admin-ticket-status-badge admin-ticket-status-badge--${normalizedStatus.toLowerCase()}`;
 
-        if (status === 'PENDING') {
-            badge.style.background = 'rgba(234, 179, 8, 0.2)';
-            badge.style.color = '#eab308';
-            badge.style.borderColor = 'rgba(234, 179, 8, 0.5)';
+        if (normalizedStatus === 'PENDING') {
             badge.textContent = '待处理';
-        } else if (status === 'RESOLVED') {
-            badge.style.background = 'rgba(74, 222, 128, 0.2)';
-            badge.style.color = '#4ade80';
-            badge.style.borderColor = 'rgba(74, 222, 128, 0.5)';
+        } else if (normalizedStatus === 'RESOLVED') {
             badge.textContent = '已解决';
-        } else if (status === 'REJECTED') {
-            badge.style.background = 'rgba(239, 68, 68, 0.2)';
-            badge.style.color = '#ef4444';
-            badge.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+        } else if (normalizedStatus === 'REJECTED') {
             badge.textContent = '已拒绝';
         } else {
-            badge.textContent = status;
+            badge.textContent = normalizedStatus;
         }
 
         return badge;
     },
 
-    createActionButton: function ({ icon, title, color, background, borderColor, hoverBackground, hoverShadow, hoverBorderColor, onClick }) {
+    createActionButton: function ({ icon, title, variant, onClick }) {
         const button = document.createElement('button');
-        button.className = 'action-btn';
+        button.className = `action-btn admin-ticket-action-btn admin-ticket-action-btn--${variant}`;
         button.type = 'button';
         button.title = title;
         button.innerHTML = `<i class="fas ${icon}"></i>`;
-        button.style.color = color;
-        button.style.background = background;
-        button.style.border = `1px solid ${borderColor}`;
-        button.style.width = '34px';
-        button.style.height = '34px';
-        button.style.borderRadius = '10px';
-        button.style.cursor = 'pointer';
-        button.style.display = 'flex';
-        button.style.alignItems = 'center';
-        button.style.justifyContent = 'center';
-        button.style.fontSize = '14px';
-        button.style.transition = 'all 0.25s ease';
+        button.setAttribute('aria-label', title);
         button.addEventListener('click', onClick);
-        button.addEventListener('mouseenter', () => {
-            button.style.transform = 'scale(1.15)';
-            button.style.background = hoverBackground;
-            button.style.boxShadow = hoverShadow;
-            button.style.borderColor = hoverBorderColor;
-        });
-        button.addEventListener('mouseleave', () => {
-            button.style.transform = 'scale(1)';
-            button.style.background = background;
-            button.style.boxShadow = 'none';
-            button.style.borderColor = borderColor;
-        });
         return button;
     },
 
@@ -175,12 +168,11 @@ const AdminTickets = {
         const currentData = this.filteredTickets.slice(startIdx, endIdx);
 
         if (currentData.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; height:300px; vertical-align:middle; color:rgba(255,255,255,0.4);">
-                <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%;">
-                    <i class="fas fa-inbox" style="font-size:32px;margin-bottom:16px;opacity:0.5;"></i>
-                    <span>暂无符合条件的工单</span>
-                </div>
-            </td></tr>`;
+            tbody.replaceChildren(this.createTableStateRow({
+                message: '暂无符合条件的工单',
+                icon: 'fa-inbox',
+                variant: 'empty'
+            }));
             this.renderPagination(totalPages);
             return;
         }
@@ -202,29 +194,23 @@ const AdminTickets = {
             const adminNotesPreview = this.truncateText(adminNotesText, 20);
 
             const row = document.createElement('tr');
+            row.className = 'admin-ticket-row';
 
             const metaCell = document.createElement('td');
-            metaCell.style.whiteSpace = 'nowrap';
+            metaCell.className = 'admin-ticket-nowrap-cell';
             const idDiv = document.createElement('div');
-            idDiv.style.fontFamily = 'monospace';
-            idDiv.style.fontSize = '12px';
-            idDiv.style.color = 'rgba(255,255,255,0.8)';
+            idDiv.className = 'admin-ticket-meta-id';
             idDiv.textContent = `${this.safeText(ticket.id).substring(0, 8)}...`;
             const dateDiv = document.createElement('div');
-            dateDiv.style.fontSize = '11px';
-            dateDiv.style.color = 'rgba(255,255,255,0.4)';
-            dateDiv.style.marginTop = '4px';
+            dateDiv.className = 'admin-ticket-meta-date';
             dateDiv.textContent = dateStr;
             metaCell.appendChild(idDiv);
             metaCell.appendChild(dateDiv);
 
             const orderCell = document.createElement('td');
-            orderCell.style.whiteSpace = 'nowrap';
+            orderCell.className = 'admin-ticket-nowrap-cell';
             const orderDiv = document.createElement('div');
-            orderDiv.style.fontFamily = 'monospace';
-            orderDiv.style.fontSize = '12px';
-            orderDiv.style.cursor = 'pointer';
-            orderDiv.style.color = '#60a5fa';
+            orderDiv.className = 'admin-ticket-copyable admin-ticket-copyable--order';
             orderDiv.title = '点击复制';
             const orderId = this.safeText(ticket.order_id);
             orderDiv.textContent = orderId ? `${orderId.substring(0, 18)}...` : '-';
@@ -232,11 +218,9 @@ const AdminTickets = {
             orderCell.appendChild(orderDiv);
 
             const userCell = document.createElement('td');
-            userCell.style.whiteSpace = 'nowrap';
+            userCell.className = 'admin-ticket-nowrap-cell';
             const userDiv = document.createElement('div');
-            userDiv.style.fontFamily = 'monospace';
-            userDiv.style.fontSize = '12px';
-            userDiv.style.cursor = 'pointer';
+            userDiv.className = 'admin-ticket-copyable admin-ticket-copyable--user';
             userDiv.title = '点击复制';
             const userId = this.safeText(ticket.user_id);
             userDiv.textContent = userId ? `${userId.substring(0, 8)}...` : '-';
@@ -245,26 +229,14 @@ const AdminTickets = {
 
             const reasonCell = document.createElement('td');
             const reasonDiv = document.createElement('div');
-            reasonDiv.style.maxWidth = '220px';
-            reasonDiv.style.overflow = 'hidden';
-            reasonDiv.style.textOverflow = 'ellipsis';
-            reasonDiv.style.whiteSpace = 'nowrap';
+            reasonDiv.className = 'admin-ticket-reason-preview';
             reasonDiv.title = reasonText;
             reasonDiv.textContent = reasonPreview;
             reasonCell.appendChild(reasonDiv);
 
             if (adminNotesText) {
                 const notesDiv = document.createElement('div');
-                notesDiv.style.fontSize = '11px';
-                notesDiv.style.color = '#4ade80';
-                notesDiv.style.marginTop = '4px';
-                notesDiv.style.borderLeft = '2px solid #4ade80';
-                notesDiv.style.paddingLeft = '4px';
-                notesDiv.style.maxWidth = '220px';
-                notesDiv.style.overflow = 'hidden';
-                notesDiv.style.textOverflow = 'ellipsis';
-                notesDiv.style.whiteSpace = 'nowrap';
-                notesDiv.style.cursor = 'pointer';
+                notesDiv.className = 'admin-ticket-notes-preview';
                 notesDiv.title = `点击复制回复: ${adminNotesText}`;
                 notesDiv.textContent = `回复: ${adminNotesPreview}`;
                 notesDiv.addEventListener('click', () => this.copyText(adminNotesText));
@@ -277,36 +249,24 @@ const AdminTickets = {
 
             const actionCell = document.createElement('td');
             const actionWrap = document.createElement('div');
-            actionWrap.style.display = 'flex';
-            actionWrap.style.gap = '8px';
+            actionWrap.className = 'admin-ticket-action-wrap';
 
             if (status === 'PENDING') {
                 actionWrap.appendChild(this.createActionButton({
                     icon: 'fa-check',
                     title: '解决工单',
-                    color: '#4ade80',
-                    background: 'rgba(74, 222, 128, 0.1)',
-                    borderColor: 'rgba(74, 222, 128, 0.15)',
-                    hoverBackground: 'rgba(74, 222, 128, 0.25)',
-                    hoverShadow: '0 0 12px rgba(74, 222, 128, 0.3)',
-                    hoverBorderColor: 'rgba(74, 222, 128, 0.4)',
+                    variant: 'resolve',
                     onClick: () => this.openReplyModal(ticket.id, 'RESOLVED')
                 }));
                 actionWrap.appendChild(this.createActionButton({
                     icon: 'fa-times',
                     title: '拒绝/关闭',
-                    color: '#ef4444',
-                    background: 'rgba(239, 68, 68, 0.1)',
-                    borderColor: 'rgba(239, 68, 68, 0.15)',
-                    hoverBackground: 'rgba(239, 68, 68, 0.25)',
-                    hoverShadow: '0 0 12px rgba(239, 68, 68, 0.3)',
-                    hoverBorderColor: 'rgba(239, 68, 68, 0.4)',
+                    variant: 'reject',
                     onClick: () => this.openReplyModal(ticket.id, 'REJECTED')
                 }));
             } else {
                 const processedText = document.createElement('span');
-                processedText.style.fontSize = '12px';
-                processedText.style.color = 'rgba(255,255,255,0.3)';
+                processedText.className = 'admin-ticket-processed-text';
                 processedText.textContent = '已处理';
                 actionWrap.appendChild(processedText);
             }
@@ -330,7 +290,7 @@ const AdminTickets = {
         if (!container) return;
 
         container.innerHTML = `
-            <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-top: 20px;">
+            <div class="admin-ticket-pagination-shell">
                 <div class="pagination-control">
                     <button class="pagination-btn"
                         type="button"
@@ -345,7 +305,7 @@ const AdminTickets = {
                         data-ticket-page="${Math.min(this.currentPage + 1, totalPages)}"
                         ${this.currentPage >= totalPages ? 'disabled' : ''}>+</button>
                 </div>
-                <div class="pagination-total" style="margin:0;">共 ${totalPages} 页 / ${this.filteredTickets.length} 条</div>
+                <div class="pagination-total pagination-total--compact">共 ${totalPages} 页 / ${this.filteredTickets.length} 条</div>
             </div>
         `;
     },
@@ -362,18 +322,16 @@ const AdminTickets = {
         document.getElementById('ticketRefundCheckbox').checked = false;
 
         const modal = document.getElementById('ticketReplyModal');
-        modal.style.display = 'flex';
-        modal.style.visibility = 'visible';
-        modal.style.opacity = '1';
+        modal.classList.add('is-visible');
+        modal.setAttribute('aria-hidden', 'false');
         modal.querySelector('.modal-title').textContent = newStatus === 'RESOLVED' ? '解决工单' : '拒绝工单';
     },
 
     closeReplyModal: function () {
         const modal = document.getElementById('ticketReplyModal');
         if (!modal) return;
-        modal.style.display = 'none';
-        modal.style.visibility = 'hidden';
-        modal.style.opacity = '0';
+        modal.classList.remove('is-visible');
+        modal.setAttribute('aria-hidden', 'true');
     },
 
     getAdminAuthHeaders: async function () {
@@ -443,8 +401,8 @@ const AdminTickets = {
                 window.showToast('已复制', 'success');
             } else {
                 const toast = document.createElement('div');
+                toast.className = 'admin-ticket-copy-toast';
                 toast.textContent = '已复制';
-                toast.style.cssText = 'position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.8); color:#fff; padding:8px 16px; border-radius:4px; z-index:10000;';
                 document.body.appendChild(toast);
                 setTimeout(() => toast.remove(), 2000);
             }

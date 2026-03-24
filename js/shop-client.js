@@ -56,7 +56,7 @@ const ShopClient = {
                     document.title = `${this.currentAgentName} ${window.i18n?.t('shop.agentStore') || '的专属福利商店'}`;
                     const heroTitle = document.querySelector('.hero-title');
                     if (heroTitle) {
-                        heroTitle.innerHTML = `<i class="fas fa-store" style="color:#10b981; margin-right:10px;"></i>${this.currentAgentName} ${window.i18n?.t('shop.agentStore') || '的专属福利商店'}`;
+                        heroTitle.innerHTML = `<span class="shop-inline-store-title-icon"><i class="fas fa-store" aria-hidden="true"></i></span>${this.escapeHtml(this.currentAgentName)} ${window.i18n?.t('shop.agentStore') || '的专属福利商店'}`;
                     }
                 }
             } catch (err) {
@@ -78,7 +78,10 @@ const ShopClient = {
             // Fallback timeout - show error after 5 seconds if loading fails
             const fallbackTimer = setTimeout(() => {
                 console.warn('🛍️ Shop loading timeout');
-                container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,100,100,0.7);">${window.i18n?.t('common.error') || '加载超时，请刷新重试'}</div>`;
+                container.innerHTML = this.buildShopStatusMessage(
+                    window.i18n?.t('common.error') || '加载超时，请刷新重试',
+                    { variant: 'error', fullSpan: true }
+                );
             }, 5000);
 
             try {
@@ -120,7 +123,10 @@ const ShopClient = {
             } catch (err) {
                 console.error('🛍️ Shop loading error:', err);
                 clearTimeout(fallbackTimer);
-                container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,100,100,0.7);">${window.i18n?.t('common.error') || '加载失败，请刷新重试'}</div>`;
+                container.innerHTML = this.buildShopStatusMessage(
+                    window.i18n?.t('common.error') || '加载失败，请刷新重试',
+                    { variant: 'error', fullSpan: true }
+                );
             }
         }
 
@@ -276,6 +282,100 @@ const ShopClient = {
         });
 
         this.staticUiBindingsBound = true;
+    },
+
+    escapeAttribute: function (text) {
+        return String(text ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    },
+
+    buildShopStatusMessage: function (message, { variant = 'muted', fullSpan = false, iconClass = '' } = {}) {
+        const classes = ['shop-status-message', `shop-status-message--${variant}`];
+        if (fullSpan) classes.push('shop-status-message--full');
+        const iconHtml = iconClass ? `<i class="${iconClass}" aria-hidden="true"></i>` : '';
+        return `<div class="${classes.join(' ')}">${iconHtml}<span>${this.escapeHtml(message || '')}</span></div>`;
+    },
+
+    setElementHidden: function (element, hidden) {
+        if (!element) return;
+        element.hidden = !!hidden;
+    },
+
+    setCssVariables: function (element, variables = {}) {
+        const style = element?.style;
+        if (!style) return;
+        const setProperty = style['setProperty'].bind(style);
+        const removeProperty = style['removeProperty'].bind(style);
+        for (const [property, value] of Object.entries(variables)) {
+            if (value === undefined || value === null || value === '') {
+                removeProperty(property);
+            } else {
+                setProperty(property, value);
+            }
+        }
+    },
+
+    setDiscountMessage: function (message = '', { variant = 'error', html = false } = {}) {
+        const msgBox = document.getElementById('discountMessage');
+        if (!msgBox) return;
+
+        msgBox.classList.add('shop-discount-message');
+        msgBox.classList.remove('shop-discount-message--error', 'shop-discount-message--success');
+
+        if (!message) {
+            msgBox.hidden = true;
+            msgBox.textContent = '';
+            return;
+        }
+
+        msgBox.hidden = false;
+        msgBox.classList.add(`shop-discount-message--${variant}`);
+        if (html) {
+            msgBox.innerHTML = message;
+        } else {
+            msgBox.textContent = message;
+        }
+    },
+
+    renderModalProductName: function (displayName, { wholesale = false } = {}) {
+        const modalProductName = document.getElementById('modalProductName');
+        if (!modalProductName) return;
+
+        if (!wholesale) {
+            modalProductName.textContent = displayName;
+            return;
+        }
+
+        modalProductName.innerHTML = `${this.escapeHtml(displayName)} <span class="shop-wholesale-badge"><i class="fas fa-tags shop-wholesale-badge__icon"></i>${window.i18n?.t('shop.wholesalePrice') || '批发价'}</span>`;
+    },
+
+    setShopButtonFeedbackState: function (button, active) {
+        if (!button) return;
+        button.classList.toggle('shop-btn-feedback-success', !!active);
+    },
+
+    buildSuccessToastMarkup: function () {
+        return '<div id="shopSuccessToast" class="shop-success-toast" aria-live="polite"></div>';
+    },
+
+    buildExpandContentToggleMarkup: function (hiddenCount, expanded = false) {
+        const safeHiddenCount = Number(hiddenCount || 0);
+        const label = expanded
+            ? (window.i18n?.t('shop.collapse') || '收起')
+            : `${window.i18n?.t('shop.expandMore') || '展开其余'} ${safeHiddenCount} ${window.i18n?.t('shop.items') || '个'}`;
+        const icon = expanded ? 'fa-chevron-up' : 'fa-chevron-down';
+
+        return `
+                <div class="shop-expand-toggle-row">
+                    <span id="expandContentBtn" class="shop-expand-toggle" data-hidden-count="${safeHiddenCount}" data-expanded="${expanded ? 'true' : 'false'}">
+                        <span>${label}</span>
+                        <i class="fas ${icon} shop-expand-toggle-icon" aria-hidden="true"></i>
+                    </span>
+                </div>`;
     },
 
     currentCategory: 'all',
@@ -669,12 +769,14 @@ const ShopClient = {
                 el.className = 'shop-card user-product-card breathing';
                 // Randomize breathing delay for wave effect (-4s to 0s)
                 const delay = -(Math.random() * 4).toFixed(2);
-                el.style.setProperty('--breathe-delay', `${delay}s`);
+                this.setCssVariables(el, { '--breathe-delay': `${delay}s` });
                 // Styles moved to CSS (shop.html or style.css)
 
+                const safeIconUrl = this.escapeAttribute(p.icon_url || '');
+                const safeIconClass = this.escapeAttribute(p.icon_url || '');
                 const iconHtml = p.icon_url?.startsWith('fa')
-                    ? `<i class="${p.icon_url}" style="font-size: 24px; color: var(--accent-purple, #6b9ece);"></i>`
-                    : (p.icon_url ? `<img src="${p.icon_url}" width="40" style="border-radius:8px;">` : '<i class="fas fa-box" style="font-size: 24px; color: var(--text-dim);"></i>');
+                    ? `<i class="${safeIconClass} shop-card-icon shop-card-icon--font" aria-hidden="true"></i>`
+                    : (p.icon_url ? `<img src="${safeIconUrl}" width="40" class="shop-card-thumb" alt="">` : '<i class="fas fa-box shop-card-icon shop-card-icon--fallback" aria-hidden="true"></i>');
 
                 const stockCount = p.stock_count || 0;
                 const noStock = stockCount <= 0;
@@ -690,8 +792,10 @@ const ShopClient = {
 
                 // Cover Image Logic
                 const displayHtml = p.icon_url?.startsWith('http')
-                    ? `<img src="${p.icon_url}" style="width:100%; height:100%; object-fit:cover;">`
-                    : `<div class="shop-icon-wrapper">${iconHtml.replace('font-size: 24px', 'font-size: 3rem;')}</div>`;
+                    ? `<img src="${safeIconUrl}" class="shop-card-image-cover" alt="">`
+                    : `<div class="shop-icon-wrapper">${p.icon_url?.startsWith('fa')
+                        ? `<i class="${safeIconClass} shop-card-icon shop-card-icon--cover" aria-hidden="true"></i>`
+                        : iconHtml}</div>`;
 
                 // Select language-appropriate content
                 const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
@@ -714,16 +818,16 @@ const ShopClient = {
 
                 // Agent override highest priority if > base price
                 if (this.currentAgentId && agentPrices[p.id] && agentPrices[p.id] > currentPrice) {
-                    originalPriceHtml = `<span style="text-decoration: line-through; color: rgba(255,255,255,0.4); font-size: 0.8em; margin-right: 6px;">${currentPrice}</span>`;
+                    originalPriceHtml = `<span class="shop-card-original-price">${currentPrice}</span>`;
                     currentPrice = agentPrices[p.id];
-                    agentBadgeHtml = `<div style="position:absolute; bottom:12px; left:12px; z-index: 10; font-size: 11px; background: rgba(16, 185, 129, 0.2); color: #10b981; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.4);">${window.i18n?.t('shop.exclusiveBuff') || '专属加持'}</div>`;
+                    agentBadgeHtml = `<div class="shop-agent-badge">${window.i18n?.t('shop.exclusiveBuff') || '专属加持'}</div>`;
                 }
 
                 // Check flash sale (only if no agent custom price overriding it)
                 const now = new Date();
                 if (p.flash_sale_price != null && p.flash_sale_end && new Date(p.flash_sale_end) > now && agentBadgeHtml === '') {
                     isFlashSale = true;
-                    originalPriceHtml = `<span style="text-decoration: line-through; color: rgba(255,255,255,0.4); font-size: 0.8em; margin-right: 6px;">${currentPrice}</span>`;
+                    originalPriceHtml = `<span class="shop-card-original-price">${currentPrice}</span>`;
                     currentPrice = p.flash_sale_price;
                     flashSaleBadge = `<div class="flash-sale-badge flash-badge-glass" data-endtime="${p.flash_sale_end}"><i class="fas fa-bolt"></i> <span class="countdown-timer">${window.i18n?.t('shop.calculating') || '计算中...'}</span></div>`;
                     flashShadowClass = 'flash-sale-card';
@@ -732,20 +836,20 @@ const ShopClient = {
                 el.className = `shop-card user-product-card breathing ${flashShadowClass}`;
 
                 el.innerHTML = `
-                    <div class="shop-card-image" style="position:relative;">
+                    <div class="shop-card-image">
                         ${flashSaleBadge}
                         ${displayHtml}
                         ${agentBadgeHtml}
-                        <div class="shop-stock-badge ${noStock ? 'out-of-stock' : 'in-stock'}" style="position:absolute; top:12px; right:12px; z-index: 10;">
+                        <div class="shop-stock-badge shop-stock-badge--floating ${noStock ? 'out-of-stock' : 'in-stock'}">
                             ${stockLabel}
                         </div>
                     </div>
                     
                     <div class="shop-content-padding">
-                        <h3 class="shop-card-title">${displayName}</h3>
-                        <p class="shop-card-desc">${displayDesc}</p>
+                        <h3 class="shop-card-title">${this.escapeHtml(displayName)}</h3>
+                        <p class="shop-card-desc">${this.escapeHtml(displayDesc)}</p>
                         
-                        <div style="margin-top:auto; padding-top:20px; display:flex; justify-content:space-between; align-items:center;">
+                        <div class="shop-card-footer">
                             <div class="shop-card-price">${originalPriceHtml}${window.SiteConfig?.formatPrice(currentPrice) || currentPrice} <span data-i18n="shop.points">${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span></div>
                             <button type="button" ${noStock ? 'disabled' : ''} class="shop-buy-btn ${buyBtnClass}">
                                 ${buyBtnText}
@@ -773,7 +877,10 @@ const ShopClient = {
         } catch (err) {
             if (requestToken !== this.productsRequestToken) return;
             container.classList.remove('is-empty');
-            container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:20px;color:#ff4d4f;">${window.i18n?.t('common.error') || '加载失败'}: ${err.message}</div>`;
+            container.innerHTML = this.buildShopStatusMessage(
+                `${window.i18n?.t('common.error') || '加载失败'}: ${err.message || ''}`,
+                { variant: 'error', fullSpan: true }
+            );
         }
 
         this.startFlashSaleTimer();
@@ -868,15 +975,7 @@ const ShopClient = {
 
         const probe = document.createElement('div');
         probe.setAttribute('aria-hidden', 'true');
-        probe.style.position = 'fixed';
-        probe.style.top = '0';
-        probe.style.left = '0';
-        probe.style.width = '0';
-        probe.style.height = '100svh';
-        probe.style.pointerEvents = 'none';
-        probe.style.visibility = 'hidden';
-        probe.style.opacity = '0';
-        probe.style.zIndex = '-1';
+        probe.className = 'shop-purchase-viewport-probe';
         document.body.appendChild(probe);
         this.purchaseModalKeyboardStableViewportProbe = probe;
         return probe;
@@ -999,9 +1098,9 @@ const ShopClient = {
         const translateY = Math.round(desiredTop - centeredTop);
 
         overlay.classList.add('keyboard-docked');
-        overlay.style.setProperty('--shop-purchase-translate-y', `${translateY}px`);
-        card.style.height = `${dockHeight}px`;
-        card.style.maxHeight = `${dockHeight}px`;
+        this.setCssVariables(overlay, { '--shop-purchase-translate-y': `${translateY}px` });
+        card.classList.add('shop-purchase-height-locked');
+        this.setCssVariables(card, { '--shop-purchase-dock-height': `${dockHeight}px` });
         this.togglePurchaseModalSheetAnimation(card, animate);
         this.purchaseModalKeyboardDocked = bottomInset > 0;
         this.purchaseModalKeyboardLastBottomInset = Math.max(0, bottomInset);
@@ -1012,9 +1111,9 @@ const ShopClient = {
         if (!overlay || !card) return;
 
         overlay.classList.remove('keyboard-docked');
-        overlay.style.setProperty('--shop-purchase-translate-y', '0px');
-        card.style.removeProperty('height');
-        card.style.removeProperty('max-height');
+        this.setCssVariables(overlay, { '--shop-purchase-translate-y': '0px' });
+        card.classList.remove('shop-purchase-height-locked');
+        this.setCssVariables(card, { '--shop-purchase-dock-height': '' });
         this.togglePurchaseModalSheetAnimation(card, animate);
         this.purchaseModalKeyboardDocked = false;
         this.purchaseModalKeyboardLastBottomInset = 0;
@@ -1198,17 +1297,16 @@ const ShopClient = {
         // Update UI - show name based on current language
         const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
         const displayName = (currentLang === 'en' && productNameEn) ? productNameEn : productName;
-        document.getElementById('modalProductName').textContent = displayName;
+        this.renderModalProductName(displayName);
         document.getElementById('modalUnitPrice').textContent = price;
         document.getElementById('modalTotalPrice').textContent = price;
         document.getElementById('purchaseQuantity').value = 1;
 
         // Reset Discount UI
         const discountInput = document.getElementById('purchaseDiscountCode');
-        const discountMsg = document.getElementById('discountMessage');
         const applyBtn = document.getElementById('applyDiscountBtn');
         if (discountInput) discountInput.value = '';
-        if (discountMsg) discountMsg.style.display = 'none';
+        this.setDiscountMessage('');
         if (applyBtn) {
             applyBtn.innerHTML = window.i18n?.t('shop.verify') || '验证';
             applyBtn.disabled = false;
@@ -1263,15 +1361,10 @@ const ShopClient = {
         this.currentPurchase.unitPrice = unitPrice;
 
         // Show wholesale UI feedback dynamically
-        const modalProductName = document.getElementById('modalProductName');
         const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
         const displayName = (currentLang === 'en' && this.currentPurchase.productNameEn) ? this.currentPurchase.productNameEn : this.currentPurchase.productName;
 
-        if (unitPrice < this.currentPurchase.basePrice) {
-            modalProductName.innerHTML = `${displayName} <span style="font-size:12px; color:#10b981; background:rgba(16,185,129,0.1); padding:2px 6px; border-radius:4px; margin-left:6px; display:inline-flex; align-items:center; gap:4px; vertical-align:middle; line-height:1;"><i class="fas fa-tags" style="font-size:10px;"></i> ${window.i18n?.t('shop.wholesalePrice') || '批发价'}</span>`;
-        } else {
-            modalProductName.textContent = displayName;
-        }
+        this.renderModalProductName(displayName, { wholesale: unitPrice < this.currentPurchase.basePrice });
 
         document.getElementById('modalUnitPrice').textContent = unitPrice;
 
@@ -1290,14 +1383,11 @@ const ShopClient = {
     applyDiscount: async function (silent = false) {
         const codeInputElem = document.getElementById('purchaseDiscountCode');
         const codeInput = codeInputElem ? codeInputElem.value.trim() : '';
-        const msgBox = document.getElementById('discountMessage');
         const applyBtn = document.getElementById('applyDiscountBtn');
 
         if (!codeInput) {
-            if (!silent && msgBox) {
-                msgBox.style.color = '#ef4444';
-                msgBox.textContent = window.i18n?.t('shop.enterDiscountCode') || '请输入优惠码';
-                msgBox.style.display = 'block';
+            if (!silent) {
+                this.setDiscountMessage(window.i18n?.t('shop.enterDiscountCode') || '请输入优惠码', { variant: 'error' });
             }
             this.currentPurchase.discountCode = null;
             this.currentPurchase.discountAmount = 0;
@@ -1343,17 +1433,17 @@ const ShopClient = {
             const finalTotal = Math.max(0, subtotal - this.currentPurchase.discountAmount);
             document.getElementById('modalTotalPrice').textContent = finalTotal;
 
-            if (msgBox) {
-                msgBox.style.color = '#10b981';
-                msgBox.innerHTML = `<i class="fas fa-check-circle"></i> ${window.i18n?.t('shop.discountApplied') || '已抵扣'} ${this.currentPurchase.discountAmount} ${window.i18n?.t('shop.points') || '积分'}`;
-                msgBox.style.display = 'block';
-            }
+            this.setDiscountMessage(
+                `<i class="fas fa-check-circle" aria-hidden="true"></i><span>${window.i18n?.t('shop.discountApplied') || '已抵扣'} ${this.currentPurchase.discountAmount} ${window.i18n?.t('shop.points') || '积分'}</span>`,
+                { variant: 'success', html: true }
+            );
 
         } catch (err) {
-            if (!silent && msgBox) {
-                msgBox.style.color = '#ef4444';
-                msgBox.innerHTML = `<i class="fas fa-times-circle"></i> ${err.message || (window.i18n?.t('shop.verifyFailed') || '验证失败')}`;
-                msgBox.style.display = 'block';
+            if (!silent) {
+                this.setDiscountMessage(
+                    `<i class="fas fa-times-circle" aria-hidden="true"></i><span>${this.escapeHtml(err.message || (window.i18n?.t('shop.verifyFailed') || '验证失败'))}</span>`,
+                    { variant: 'error', html: true }
+                );
             }
             this.currentPurchase.discountCode = null;
             this.currentPurchase.discountAmount = 0;
@@ -1593,10 +1683,10 @@ const ShopClient = {
 
         if (hasPurchaseNotes) {
             notesContent.innerHTML = this.renderStoredRichText(normalizedPurchaseNotes);
-            notesBox.style.display = 'block';
+            this.setElementHidden(notesBox, false);
             this.bindPurchaseNotesWheelIsolation();
         } else {
-            notesBox.style.display = 'none';
+            this.setElementHidden(notesBox, true);
             notesContent.innerHTML = '';
         }
     },
@@ -1630,9 +1720,9 @@ const ShopClient = {
         if (!toast) return;
 
         toast.textContent = message;
-        toast.style.opacity = '1';
+        toast.classList.add('is-visible');
         setTimeout(() => {
-            toast.style.opacity = '0';
+            toast.classList.remove('is-visible');
         }, 1500);
     },
 
@@ -1682,12 +1772,9 @@ const ShopClient = {
 
         // Reset parent box styles to be cleaner (remove padding if we want cards to flush, but padding is fine)
         // Ensure parent box is transparent to let cards stand out
-        if (parentBox && parentBox.classList.contains('glass-box')) {
-            parentBox.classList.remove('glass-box'); // Completely remove class to kill all hover effects
-            parentBox.style.background = 'transparent';
-            parentBox.style.border = 'none';
-            parentBox.style.boxShadow = 'none';
-            parentBox.style.padding = '0'; // Let cards handle spacing
+        if (parentBox) {
+            parentBox.classList.remove('glass-box');
+            parentBox.classList.add('shop-success-content-shell--plain');
         }
 
         if (modal && contentBox) {
@@ -1713,57 +1800,42 @@ const ShopClient = {
             }
 
             const isShortKeys = items.every(t => t.length <= 40 && !t.includes('\n'));
-            const gridStyle = items.length > 1 && isShortKeys
-                ? 'display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%;'
-                : 'display: flex; flex-direction: column; gap: 8px; width: 100%;';
 
             const createCardMsg = (text, hidden = false) => {
                 const encodedText = encodeURIComponent(text);
-                const hiddenStyle = hidden ? 'display: none;' : '';
-                const hiddenAttr = hidden ? 'data-expandable-item="1"' : '';
                 return `
-                <div class="content-card" ${hiddenAttr} data-shop-copy-content="${encodedText}" style="margin-bottom: 0 !important; padding: 10px 6px !important; display: flex; align-items: center; justify-content: center; border-radius: 10px !important; ${hiddenStyle}" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">
-                    <div class="item-content-box" style="padding: 0 !important; width: 100%; background: transparent !important; border-radius: 0 !important;">
-                        <div class="item-text" style="text-align: center; font-size: 13px; letter-spacing: 0.5px; line-height: 1.3;">${this.escapeHtml(text)}</div>
+                <div class="content-card content-card--shop-copy" ${hidden ? 'data-expandable-item="1" hidden' : ''} data-shop-copy-content="${encodedText}" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">
+                    <div class="item-content-box item-content-box--plain">
+                        <div class="item-text item-text--centered">${this.escapeHtml(text)}</div>
                     </div>
                 </div>`;
             };
 
-            // Clear previous content style that might conflict
-            contentBox.style.whiteSpace = 'normal';
-            contentBox.style.fontFamily = 'inherit';
-            // Add toast element for copy feedback
-            const toastEl = '<div id="shopSuccessToast" style="position:fixed;top:20%;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:#fff;padding:8px 20px;border-radius:20px;font-size:13px;pointer-events:none;opacity:0;transition:opacity 0.3s;z-index:999999;"></div>';
+            contentBox.classList.add('shop-success-content');
+            const toastEl = this.buildSuccessToastMarkup();
+            const gridClass = items.length > 1 && isShortKeys
+                ? 'shop-success-content-grid shop-success-content-grid--double'
+                : 'shop-success-content-grid shop-success-content-grid--stacked';
 
             if (totalItems <= 2) {
                 // 2 or fewer items: show directly in grid
-                contentBox.innerHTML = `<div style="${gridStyle}">${items.map(item => createCardMsg(item)).join('')}</div>${toastEl}`;
+                contentBox.innerHTML = `<div class="${gridClass}">${items.map(item => createCardMsg(item)).join('')}</div>${toastEl}`;
             } else {
                 // More than 2 items: show first 2, collapse rest
                 const visibleHTML = items.slice(0, 2).map(item => createCardMsg(item)).join('');
                 const hiddenHTML = items.slice(2).map(item => createCardMsg(item, true)).join('');
                 const hiddenCount = totalItems - 2;
+                const expandBtn = this.buildExpandContentToggleMarkup(hiddenCount, false);
 
-                const expandBtn = `
-                <div style="margin-top:12px;text-align:center;">
-                    <span id="expandContentBtn" data-hidden-count="${hiddenCount}"
-                        style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;
-                               font-size:12px;color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.1);
-                               padding:8px 16px;border-radius:20px;transition:all 0.2s;">
-                        <span>${window.i18n?.t('shop.expandMore') || '展开其余'} ${hiddenCount} ${window.i18n?.t('shop.items') || '个'}</span>
-                        <i class="fas fa-chevron-down" style="font-size:10px;"></i>
-                    </span>
-                </div>`;
-
-                contentBox.innerHTML = `<div id="expandedContentGrid" style="${gridStyle}">${visibleHTML}${hiddenHTML}</div>${expandBtn}${toastEl}`;
+                contentBox.innerHTML = `<div id="expandedContentGrid" class="${gridClass}">${visibleHTML}${hiddenHTML}</div>${expandBtn}${toastEl}`;
             }
 
             // Handle Warning
             if (warning && warningBox && warningText) {
                 warningText.textContent = warning;
-                warningBox.style.display = 'block';
+                this.setElementHidden(warningBox, false);
             } else if (warningBox) {
-                warningBox.style.display = 'none';
+                this.setElementHidden(warningBox, true);
             }
 
             setTimeout(() => {
@@ -1779,10 +1851,10 @@ const ShopClient = {
         if (uiBox && uiContent) {
             if (hasUsageInstructions) {
                 uiContent.innerHTML = this.renderStoredRichText(normalizedUsageInstructions);
-                uiBox.style.display = 'block';
+                this.setElementHidden(uiBox, false);
                 this.bindSuccessUsageWheelIsolation();
             } else {
-                uiBox.style.display = 'none';
+                this.setElementHidden(uiBox, true);
                 uiContent.innerHTML = '';
             }
         }
@@ -1898,7 +1970,7 @@ const ShopClient = {
                     child.setAttribute('href', safeHref);
                     child.setAttribute('target', '_blank');
                     child.setAttribute('rel', 'noopener noreferrer');
-                    child.setAttribute('style', 'color: #6b9ece; text-decoration: underline; text-underline-offset: 2px;');
+                    child.classList.add('shop-rich-link');
                 }
 
                 sanitizeChildren(child);
@@ -1912,7 +1984,7 @@ const ShopClient = {
     // Convert URLs in text to clickable links
     linkifyText: function (text) {
         const urlRegex = /(https?:\/\/[^\s<]+)/g;
-        return text.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: #6b9ece; text-decoration: underline; text-underline-offset: 2px;">$1</a>');
+        return text.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer" class="shop-rich-link">$1</a>');
     },
 
     escapeHtml: function (text) {
@@ -1926,15 +1998,16 @@ const ShopClient = {
         const expandableItems = Array.from(document.querySelectorAll('#expandedContentGrid [data-expandable-item="1"]'));
 
         if (expandBtn && expandableItems.length > 0) {
-            const isHidden = expandableItems[0].style.display === 'none';
+            const isHidden = expandableItems[0].hidden;
             expandableItems.forEach((item) => {
-                item.style.display = isHidden ? 'flex' : 'none';
+                item.hidden = !isHidden;
             });
 
             const hiddenCount = expandBtn.dataset.hiddenCount || expandableItems.length;
+            expandBtn.dataset.expanded = isHidden ? 'true' : 'false';
             expandBtn.innerHTML = isHidden
-                ? `<span>${window.i18n?.t('shop.collapse') || '收起'}</span><i class="fas fa-chevron-up" style="font-size: 10px;"></i>`
-                : `<span>${window.i18n?.t('shop.expandMore') || '展开其余'} ${hiddenCount} ${window.i18n?.t('shop.items') || '个'}</span><i class="fas fa-chevron-down" style="font-size: 10px;"></i>`;
+                ? `<span>${window.i18n?.t('shop.collapse') || '收起'}</span><i class="fas fa-chevron-up shop-expand-toggle-icon" aria-hidden="true"></i>`
+                : `<span>${window.i18n?.t('shop.expandMore') || '展开其余'} ${hiddenCount} ${window.i18n?.t('shop.items') || '个'}</span><i class="fas fa-chevron-down shop-expand-toggle-icon" aria-hidden="true"></i>`;
         }
     },
 
@@ -1942,11 +2015,14 @@ const ShopClient = {
         const list = document.getElementById('ordersList');
         if (!list) return;
 
-        list.innerHTML = `<div style="text-align:center; color:rgba(255,255,255,0.4); padding:20px;"><i class="fas fa-spinner fa-spin"></i> ${window.i18n?.t('common.loading') || '加载中...'}</div>`;
+        list.innerHTML = this.buildShopStatusMessage(
+            window.i18n?.t('common.loading') || '加载中...',
+            { variant: 'muted', iconClass: 'fas fa-spinner fa-spin' }
+        );
 
         const { data: { user } } = await supabaseClient.auth.getUser();
         if (!user) {
-            list.innerHTML = `<div style="text-align:center; padding:20px;">${window.i18n?.t('shop.loginRequired') || '请先登录'}</div>`;
+            list.innerHTML = this.buildShopStatusMessage(window.i18n?.t('shop.loginRequired') || '请先登录');
             return;
         }
 
@@ -1965,35 +2041,33 @@ const ShopClient = {
 
             list.innerHTML = '';
             if (!data || data.length === 0) {
-                list.innerHTML = `<div style="text-align:center; color:rgba(255,255,255,0.3); padding:40px;">${window.i18n?.t('shop.noOrders') || '暂无订单记录'}</div>`;
+                list.innerHTML = this.buildShopStatusMessage(window.i18n?.t('shop.noOrders') || '暂无订单记录', { variant: 'muted' });
                 return;
             }
 
             data.forEach(order => {
                 const item = document.createElement('div');
-                item.className = 'glass-box';
-                item.style.padding = '12px 16px';
-                item.style.marginBottom = '8px';
-                item.style.display = 'flex';
-                item.style.justifyContent = 'space-between';
-                item.style.alignItems = 'center';
+                item.className = 'glass-box shop-order-history-item';
 
                 const date = new Date(order.created_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                 const icon = order.shop_products?.icon_url || 'fas fa-box';
-                const iconHtml = icon.startsWith('http') ? `<img src="${icon}" style="width:24px;height:24px;border-radius:4px;margin-right:8px;">` : `<i class="${icon}" style="margin-right:8px;color:#6b9ece;"></i>`;
+                const safeIcon = this.escapeAttribute(icon);
+                const iconHtml = icon.startsWith('http')
+                    ? `<img src="${safeIcon}" class="shop-order-history-icon shop-order-history-icon--image" alt="">`
+                    : `<i class="${safeIcon} shop-order-history-icon shop-order-history-icon--font" aria-hidden="true"></i>`;
 
                 item.innerHTML = `
-                    <div style="flex:1;">
-                        <div style="display:flex; align-items:center; margin-bottom:4px;">
+                    <div class="shop-order-history-main">
+                        <div class="shop-order-history-header">
                             ${iconHtml}
-                            <span style="font-weight:600; font-size:14px; color:#fff;">${order.shop_products?.name || (window.i18n?.t('shop.unknownProduct') || '未知商品')}</span>
+                            <span class="shop-order-history-name">${this.escapeHtml(order.shop_products?.name || (window.i18n?.t('shop.unknownProduct') || '未知商品'))}</span>
                         </div>
-                        <div style="font-size:12px; color:rgba(255,255,255,0.4);">
-                            ${date} · <span style="color:#fbbf24;">-${order.price_paid} ${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span>
+                        <div class="shop-order-history-meta">
+                            ${date} · <span class="shop-order-history-points">-${order.price_paid} ${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span>
                         </div>
                     </div>
                     <button type="button" data-shop-order-id="${order.id}" data-shop-order-content="${encodeURIComponent(order.content_delivered || '')}"
-                        style="padding:6px 12px; border-radius:12px; background:rgba(255,255,255,0.1); border:none; color:#fff; cursor:pointer;">
+                        class="shop-order-history-view">
                         ${window.i18n?.t('shop.view') || '查看'}
                     </button>
                 `;
@@ -2001,7 +2075,7 @@ const ShopClient = {
             });
         } catch (err) {
             console.error(err);
-            list.innerHTML = `<div style="text-align:center; color:#ff4d4f;">${window.i18n?.t('common.error') || '加载失败'}</div>`;
+            list.innerHTML = this.buildShopStatusMessage(window.i18n?.t('common.error') || '加载失败', { variant: 'error' });
         }
     },
 
@@ -2033,12 +2107,10 @@ const ShopClient = {
             const btn = document.getElementById('copyContentBtn');
             const originalHTML = btn.innerHTML;
             btn.innerHTML = `<i class="fas fa-check"></i> ${window.i18n?.t('common.copied') || '已复制'}`;
-            btn.style.background = '#4ade80';
-            btn.style.color = '#fff';
+            this.setShopButtonFeedbackState(btn, true);
             setTimeout(() => {
                 btn.innerHTML = originalHTML;
-                btn.style.background = ''; // reset to class style
-                btn.style.color = '';
+                this.setShopButtonFeedbackState(btn, false);
             }, 2000);
 
             // Also trigger the elegant success toast
@@ -2083,12 +2155,10 @@ const ShopClient = {
         const btn = document.getElementById('exportContentBtn');
         const originalHTML = btn.innerHTML;
         btn.innerHTML = `<i class="fas fa-check"></i> ${window.i18n?.t('common.exported') || '已导出'}`;
-        btn.style.background = '#4ade80';
-        btn.style.color = '#fff';
+        this.setShopButtonFeedbackState(btn, true);
         setTimeout(() => {
             btn.innerHTML = originalHTML;
-            btn.style.background = '';
-            btn.style.color = '';
+            this.setShopButtonFeedbackState(btn, false);
         }, 2000);
     }
 };

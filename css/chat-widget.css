@@ -448,10 +448,42 @@
     transition: none !important;
 }
 
+.chat-window.chat-window--keyboard-animating {
+    transition:
+        transform var(--chat-keyboard-motion-duration, 120ms) cubic-bezier(0.22, 1, 0.36, 1),
+        bottom var(--chat-keyboard-motion-duration, 120ms) cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
 .chat-window.chat-window--force-hidden {
     opacity: 0 !important;
     visibility: hidden !important;
     pointer-events: none !important;
+}
+
+.chat-window.chat-window--stable-visuals {
+    will-change: transform !important;
+    backface-visibility: hidden !important;
+    -webkit-backface-visibility: hidden !important;
+    transform-style: preserve-3d !important;
+    contain: layout paint style !important;
+    isolation: isolate !important;
+    -webkit-mask-image: -webkit-radial-gradient(white, black) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--chat-shell-bg, rgba(11, 14, 20, 0.94)) !important;
+    border: 1px solid var(--chat-shell-border, rgba(255, 255, 255, 0.08)) !important;
+    border-top: none !important;
+    box-shadow: 0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+.chat-window.chat-window--keyboard-bottom-docked {
+    top: auto !important;
+    bottom: var(--chat-keyboard-bottom, 0px) !important;
+}
+
+.chat-window.chat-window--keyboard-height-locked {
+    height: var(--chat-keyboard-dock-height) !important;
+    max-height: var(--chat-keyboard-dock-height) !important;
 }
 
 .chat-window.active {
@@ -595,6 +627,10 @@
     background: rgba(0, 0, 0, 0.1);
     cursor: wait;
     z-index: 5;
+}
+
+.chat-messages.chat-messages--height-locked {
+    min-height: var(--chat-messages-runtime-min-height, auto);
 }
 
 .loading-overlay {
@@ -863,6 +899,17 @@
 
 .session-item.session-item--hidden {
     display: none !important;
+}
+
+.chat-overlay.chat-overlay--frozen {
+    right: 0 !important;
+    bottom: auto !important;
+    height: var(--chat-overlay-frozen-height, 100%) !important;
+}
+
+.poetry-nav-container.chat-prompt-spotlight-suspended {
+    --cursor-x: 50%;
+    --cursor-y: 0px;
 }
 
 /* Mobile Responsiveness */

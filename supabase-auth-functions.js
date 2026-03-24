@@ -45,6 +45,51 @@ function setAuthLoading(formName, isLoading, label) {
     }
 }
 
+function toAuthCssPropertyName(name) {
+    if (typeof name !== 'string' || !name) return '';
+    if (name.startsWith('--')) return name;
+    return name.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
+}
+
+function setAuthStyleState(target, styles = {}) {
+    const style = target?.style;
+    if (!style) return;
+
+    const setProperty = style['setProperty'].bind(style);
+    const removeProperty = style['removeProperty'].bind(style);
+
+    Object.entries(styles).forEach(([name, value]) => {
+        const cssName = toAuthCssPropertyName(name);
+        if (!cssName) return;
+        if (value === null || value === undefined || value === '') {
+            removeProperty(cssName);
+            return;
+        }
+        setProperty(cssName, String(value));
+    });
+}
+
+function setAuthDisplayState(target, hidden, visibleDisplay = 'block') {
+    setAuthStyleState(target, {
+        display: hidden ? 'none' : visibleDisplay
+    });
+}
+
+function setAuthAvatarVisualState(target, visible) {
+    if (!target) return;
+    target.classList.toggle('show', !!visible);
+    setAuthStyleState(target, {
+        display: visible ? 'inline-block' : 'none',
+        visibility: visible ? 'visible' : 'hidden',
+        opacity: visible ? '1' : '0'
+    });
+}
+
+function isAuthAvatarVisible(target) {
+    if (!target) return false;
+    return window.getComputedStyle(target).display !== 'none' && target.classList.contains('show');
+}
+
 function setUserDropdownOpen(isOpen) {
     const dropdown = document.getElementById('userDropdown');
     const overlay = document.getElementById('dropdownOverlay');
@@ -829,8 +874,8 @@ async function handleLogout(event) {
     const navAvatar = document.getElementById('navUserAvatar');
     const btnText = document.getElementById('authBtnText');
 
-    if (defaultIcon) defaultIcon.style.display = 'inline';
-    if (navAvatar) navAvatar.style.display = 'none';
+    setAuthDisplayState(defaultIcon, false, 'inline');
+    setAuthAvatarVisualState(navAvatar, false);
     if (btnText) btnText.textContent = 'Sign In';
 
     const authBtn = document.getElementById('authBtn');
@@ -883,9 +928,13 @@ async function handleAuthClick(event) {
                         getComputedStyle(document.documentElement).getPropertyValue('--nav-dropdown-overlap')
                     ) || 1;
                     // Use setProperty with !important to guarantee JS wins over any CSS rules
-                    dropdown.style.setProperty('right', Math.max(10, rightOffset) + 'px', 'important');
+                    setAuthStyleState(dropdown, {
+                        right: `${Math.max(10, rightOffset)}px`
+                    });
                     // Shift up slightly to fuse seamlessly with the nav border.
-                    dropdown.style.setProperty('top', (anchorBottom - navOverlap) + 'px', 'important');
+                    setAuthStyleState(dropdown, {
+                        top: `${anchorBottom - navOverlap}px`
+                    });
                 }
                 setUserDropdownOpen(true);
 
@@ -905,9 +954,9 @@ async function handleAuthClick(event) {
         } else {
             const loginModal = document.getElementById('loginModal');
             if (loginModal) {
+                loginModal.hidden = false;
+                loginModal.setAttribute('aria-hidden', 'false');
                 loginModal.classList.add('active');
-                loginModal.style.visibility = 'visible';
-                loginModal.style.opacity = '1';
             }
         }
     }
@@ -1265,12 +1314,8 @@ function setProfileModalAvatar(avatarUrl, fallbackSeed = 'User', options = {}) {
 
     const syncMobileAvatarVisibility = (showImage) => {
         const mobileAvatar = document.getElementById('profileModalAvatarMobile');
-        if (mobileAvatar) {
-            mobileAvatar.style.display = showImage ? 'block' : 'none';
-        }
-        if (avatarFallback) {
-            avatarFallback.style.display = showImage ? 'none' : 'grid';
-        }
+        setAuthDisplayState(mobileAvatar, !showImage, 'block');
+        setAuthDisplayState(avatarFallback, showImage, 'grid');
     };
 
     if (!incomingUrl) {
@@ -1344,15 +1389,13 @@ function applyAdminEntryUiState(displayName, isAdmin) {
         dropdownUsername.textContent = displayName || 'User';
         if (isAdmin) {
             const badge = document.createElement('span');
-            badge.style.color = '#fbbf24';
+            badge.className = 'auth-admin-badge';
             badge.textContent = ' ✨';
             dropdownUsername.appendChild(badge);
         }
     }
 
-    if (enterStudioBtn) {
-        enterStudioBtn.style.display = isAdmin ? 'flex' : 'none';
-    }
+    setAuthDisplayState(enterStudioBtn, !isAdmin, 'flex');
 }
 
 async function resolveAdminEntryAccess(user, options = {}) {
@@ -1416,7 +1459,7 @@ function updateUserUI(user, options = {}) {
                 ? cachedAvatarUrl
                 : (incomingAvatarUrl || cachedAvatarUrl || fallbackUrl);
 
-            const hasVisibleAvatar = navAvatar.style.display !== 'none' && navAvatar.classList.contains('show');
+            const hasVisibleAvatar = isAuthAvatarVisible(navAvatar);
 
             // If we already have the exact same image showing, do nothing
             const currentRaw = navAvatar.getAttribute('src') || navAvatar.src || '';
@@ -1428,11 +1471,8 @@ function updateUserUI(user, options = {}) {
                 const preloader = new Image();
                 preloader.onload = () => {
                     navAvatar.src = preferredAvatarUrl;
-                    navAvatar.style.display = 'inline-block';
-                    navAvatar.style.visibility = 'visible';
-                    navAvatar.style.opacity = '1';
-                    navAvatar.classList.add('show');
-                    if (defaultIcon) defaultIcon.style.display = 'none';
+                    setAuthAvatarVisualState(navAvatar, true);
+                    setAuthDisplayState(defaultIcon, true, 'inline');
 
                     if (animateAvatar) {
                         navAvatar.classList.remove('animate-in');
@@ -1445,17 +1485,14 @@ function updateUserUI(user, options = {}) {
                     // Only fallback to generator if it's not a google URL failure, or we must
                     if (!/googleusercontent\.com/i.test(preferredAvatarUrl) || !hasVisibleAvatar) {
                         navAvatar.src = fallbackUrl;
-                        navAvatar.style.display = 'inline-block';
-                        navAvatar.style.visibility = 'visible';
-                        navAvatar.style.opacity = '1';
-                        navAvatar.classList.add('show');
-                        if (defaultIcon) defaultIcon.style.display = 'none';
+                        setAuthAvatarVisualState(navAvatar, true);
+                        setAuthDisplayState(defaultIcon, true, 'inline');
                     }
                 };
                 preloader.src = preferredAvatarUrl;
             }
         } else if (defaultIcon) {
-            defaultIcon.style.display = 'none';
+            setAuthDisplayState(defaultIcon, true, 'inline');
         }
 
         if (btnText) {
@@ -1477,8 +1514,6 @@ function updateUserUI(user, options = {}) {
             user.avatarUrl,
             user.email || user.username || user.nickname || 'User'
         );
-        if (userDropdown) userDropdown.style.display = '';
-
         const userForCache = { ...user };
         const cacheAvatar = isUsableAvatarUrl(userForCache.avatarUrl) ? String(userForCache.avatarUrl).trim() : '';
         if (!cacheAvatar) {
@@ -1531,16 +1566,15 @@ function updateUserUI(user, options = {}) {
     } else {
         if (defaultIcon) {
             defaultIcon.className = 'fas fa-user-circle'; // Ensure spinner is cleared
-            defaultIcon.style.display = 'inline';
+            setAuthDisplayState(defaultIcon, false, 'inline');
         }
         if (navAvatar) {
-            navAvatar.style.display = 'none';
-            navAvatar.style.opacity = '0';
-            navAvatar.classList.remove('show', 'animate-in');
+            navAvatar.classList.remove('animate-in');
+            setAuthAvatarVisualState(navAvatar, false);
         }
         if (btnText) btnText.textContent = 'Sign In';
         closeUserDropdown();
-        if (enterStudioBtn) enterStudioBtn.style.display = 'none';
+        setAuthDisplayState(enterStudioBtn, true, 'flex');
         if (authBtn) {
             authBtn.classList.remove('logged-in');
         }
@@ -1688,15 +1722,13 @@ function setGoogleButtonsLoading(isLoading, text = authT('auth.signingIn', '正�
         if (isLoading) {
             if (!btn.dataset.originalHtml) btn.dataset.originalHtml = btn.innerHTML;
             btn.dataset.googleBusy = '1';
-            btn.innerHTML = `<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i><span>${text}</span>`;
-            btn.style.pointerEvents = 'none';
-            btn.style.opacity = '0.75';
+            btn.classList.add('is-loading');
+            btn.innerHTML = `<i class="fas fa-spinner fa-spin google-login-btn__spinner" aria-hidden="true"></i><span>${text}</span>`;
         } else {
             if (btn.dataset.originalHtml) btn.innerHTML = btn.dataset.originalHtml;
             delete btn.dataset.originalHtml;
             delete btn.dataset.googleBusy;
-            btn.style.pointerEvents = '';
-            btn.style.opacity = '';
+            btn.classList.remove('is-loading');
         }
     });
 }
@@ -1872,7 +1904,7 @@ function ensureGooglePopupMessageBridge() {
             if (typeof closeAdminLoginModal === 'function') closeAdminLoginModal();
             if (typeof toggleLoginModal === 'function') {
                 const loginModal = document.getElementById('loginModal');
-                if (loginModal && (loginModal.classList.contains('active') || loginModal.style.visibility === 'visible')) {
+                if (loginModal && loginModal.classList.contains('active')) {
                     toggleLoginModal();
                 }
             }
@@ -2222,7 +2254,7 @@ async function handleGoogleCredentialResponse(response, options = {}) {
         if (typeof closeAdminLoginModal === 'function') closeAdminLoginModal();
         if (typeof toggleLoginModal === 'function') {
             const loginModal = document.getElementById('loginModal');
-            if (loginModal && (loginModal.classList.contains('active') || loginModal.style.visibility === 'visible')) {
+            if (loginModal && loginModal.classList.contains('active')) {
                 toggleLoginModal();
             }
         }
@@ -2456,9 +2488,6 @@ function closeManagedModalOverlay(overlay) {
     }
 
     overlay.classList.remove('active');
-    overlay.style.removeProperty('visibility');
-    overlay.style.removeProperty('opacity');
-    overlay.style.removeProperty('display');
 
     if (window.iOSScrollLock) {
         window.iOSScrollLock.unlock();
@@ -2756,6 +2785,8 @@ async function initializeAuthPageBoot() {
             } else {
                 const loginModal = document.getElementById('loginModal');
                 if (loginModal) {
+                    loginModal.hidden = false;
+                    loginModal.setAttribute('aria-hidden', 'false');
                     loginModal.classList.add('active');
                 }
             }
@@ -2916,13 +2947,17 @@ function freezeProfileModalPage() {
     profileModalState.baseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
     document.documentElement.classList.add('profile-modal-lock');
     document.body.classList.add('profile-modal-lock');
-    document.documentElement.style.overflow = 'hidden';
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${profileModalState.baseScrollY}px`;
-    document.body.style.left = '0';
-    document.body.style.right = '0';
-    document.body.style.width = '100%';
-    document.body.style.overflow = 'hidden';
+    setAuthStyleState(document.documentElement, {
+        overflow: 'hidden'
+    });
+    setAuthStyleState(document.body, {
+        position: 'fixed',
+        top: `-${profileModalState.baseScrollY}px`,
+        left: '0',
+        right: '0',
+        width: '100%',
+        overflow: 'hidden'
+    });
     profileModalState.pageFrozen = true;
     stabilizeProfileModalViewport();
 }
@@ -2933,13 +2968,17 @@ function unfreezeProfileModalPage() {
     const restoreScrollY = profileModalState.baseScrollY;
     document.documentElement.classList.remove('profile-modal-lock');
     document.body.classList.remove('profile-modal-lock');
-    document.documentElement.style.overflow = '';
-    document.body.style.position = '';
-    document.body.style.top = '';
-    document.body.style.left = '';
-    document.body.style.right = '';
-    document.body.style.width = '';
-    document.body.style.overflow = '';
+    setAuthStyleState(document.documentElement, {
+        overflow: ''
+    });
+    setAuthStyleState(document.body, {
+        position: '',
+        top: '',
+        left: '',
+        right: '',
+        width: '',
+        overflow: ''
+    });
     profileModalState.pageFrozen = false;
 
     requestAnimationFrame(() => {
@@ -2952,10 +2991,16 @@ function resetProfileModalVisualState() {
     if (!overlay || !card) return;
 
     overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
-    overlay.style.setProperty('--profile-modal-shift-y', '0px');
-    overlay.style.removeProperty('--profile-modal-overlay-height');
-    card.style.removeProperty('max-height');
-    scroller?.style.removeProperty('scroll-padding-bottom');
+    setAuthStyleState(overlay, {
+        '--profile-modal-shift-y': '0px',
+        '--profile-modal-overlay-height': ''
+    });
+    setAuthStyleState(card, {
+        maxHeight: ''
+    });
+    setAuthStyleState(scroller, {
+        scrollPaddingBottom: ''
+    });
     profileModalState.overlayBaseHeight = 0;
     profileModalState.focusTransferUntil = 0;
     profileModalState.lastFocusAnchor = null;
@@ -2976,13 +3021,17 @@ function captureProfileModalOverlayBaseHeight(force = false) {
     if (!force && profileModalState.overlayBaseHeight >= measuredHeight) return;
 
     profileModalState.overlayBaseHeight = measuredHeight;
-    overlay.style.setProperty('--profile-modal-overlay-height', `${measuredHeight}px`);
+    setAuthStyleState(overlay, {
+        '--profile-modal-overlay-height': `${measuredHeight}px`
+    });
 }
 
 function stabilizeProfileModalViewport() {
     if (!profileModalState.pageFrozen) return;
 
-    document.body.style.top = `-${profileModalState.baseScrollY}px`;
+    setAuthStyleState(document.body, {
+        top: `-${profileModalState.baseScrollY}px`
+    });
 
     if ((window.scrollY || window.pageYOffset || 0) !== 0) {
         window.scrollTo(0, 0);
@@ -3128,11 +3177,15 @@ function applyProfileModalLayout() {
     if (!overlay || !card || !overlay.classList.contains('active')) return;
 
     if (!isProfileModalIOSMode()) {
-        card.style.removeProperty('max-height');
-        if (scroller) {
-            scroller.style.removeProperty('scroll-padding-bottom');
-        }
-        overlay.style.setProperty('--profile-modal-shift-y', '0px');
+        setAuthStyleState(card, {
+            maxHeight: ''
+        });
+        setAuthStyleState(scroller, {
+            scrollPaddingBottom: ''
+        });
+        setAuthStyleState(overlay, {
+            '--profile-modal-shift-y': '0px'
+        });
         overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
         profileModalState.lastFocusAnchor = getProfileModalFocusAnchor(getActiveProfileModalInput()) || null;
         profileModalState.preserveLayoutDuringFocusTransfer = false;
@@ -3147,11 +3200,15 @@ function applyProfileModalLayout() {
     const activeAnchor = getProfileModalFocusAnchor(activeInput);
     const holdDuringFocusTransfer = !activeInput && profileModalState.focusTransferUntil > Date.now();
 
-    card.style.maxHeight = `${Math.max(320, visibleHeight - 24)}px`;
-    if (scroller) {
-        scroller.style.scrollPaddingBottom = `${activeInput || holdDuringFocusTransfer ? 144 : 96}px`;
-    }
-    overlay.style.setProperty('--profile-modal-shift-y', '0px');
+    setAuthStyleState(card, {
+        maxHeight: `${Math.max(320, visibleHeight - 24)}px`
+    });
+    setAuthStyleState(scroller, {
+        scrollPaddingBottom: `${activeInput || holdDuringFocusTransfer ? 144 : 96}px`
+    });
+    setAuthStyleState(overlay, {
+        '--profile-modal-shift-y': '0px'
+    });
     overlay.classList.toggle('keyboard-active', !!activeInput || holdDuringFocusTransfer);
 
     if (!activeInput) {
@@ -3432,7 +3489,9 @@ function resetProfileModalViewState() {
 
     if (overlay) {
         overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
-        overlay.style.setProperty('--profile-modal-shift-y', '0px');
+        setAuthStyleState(overlay, {
+            '--profile-modal-shift-y': '0px'
+        });
         overlay.dataset.profileTab = 'profile';
         overlay.dataset.securityPanel = 'change-password';
     }
@@ -3451,14 +3510,12 @@ function syncProfileModalViewLayers(activeTab = 'profile', providedViews = {}) {
     [
         { node: profileFront, visible: showFront, zIndex: 3 },
         { node: profileBack, visible: !showFront, zIndex: 4 }
-    ].forEach(({ node, visible, zIndex }) => {
+    ].forEach(({ node, visible }) => {
         if (!node) return;
 
         node.hidden = !visible;
         node.toggleAttribute('inert', !visible);
         node.setAttribute('aria-hidden', visible ? 'false' : 'true');
-        node.style.pointerEvents = visible ? 'auto' : 'none';
-        node.style.zIndex = visible ? String(zIndex) : '1';
     });
 }
 
@@ -3472,12 +3529,14 @@ function cleanupProfileModalAfterClose(options = {}) {
 
     if (overlay) {
         overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
-        overlay.style.setProperty('--profile-modal-shift-y', '0px');
+        setAuthStyleState(overlay, {
+            '--profile-modal-shift-y': '0px'
+        });
     }
 
-    if (card) {
-        card.style.removeProperty('max-height');
-    }
+    setAuthStyleState(card, {
+        maxHeight: ''
+    });
     if (scroller) {
         scroller.scrollTop = 0;
     }
@@ -3493,9 +3552,6 @@ function closeProfileModal() {
 
     cleanupProfileModalAfterClose();
     overlay.classList.remove('active');
-    overlay.style.removeProperty('visibility');
-    overlay.style.removeProperty('opacity');
-    overlay.style.removeProperty('display');
 
     profileModalOpenLock = false;
 }
@@ -3540,17 +3596,12 @@ async function openProfileModal(event) {
     bindProfileModalInputs();
 
     modal.classList.remove('active');
-    modal.style.display = 'flex';
-    modal.style.visibility = 'hidden';
-    modal.style.opacity = '0';
 
     void modal.offsetHeight;
     modal.classList.add('active');
     attachProfileModalViewportHandlers();
 
     requestAnimationFrame(() => {
-        modal.style.removeProperty('visibility');
-        modal.style.removeProperty('opacity');
         scheduleProfileModalLayout({ settled: true });
 
         if (profileFront && !wasActive) {
@@ -3662,6 +3713,8 @@ async function handleSwitchAccount(event) {
         } else {
             const loginModal = document.getElementById('loginModal');
             if (loginModal) {
+                loginModal.hidden = false;
+                loginModal.setAttribute('aria-hidden', 'false');
                 loginModal.classList.add('active');
             }
         }
@@ -3721,8 +3774,10 @@ function syncProfileMobileTabIndicator() {
     const activeTab = tabsWrap.querySelector('.tab-item.active');
     if (!activeTab) return;
 
-    tabsWrap.style.setProperty('--profile-tab-indicator-width', `${activeTab.offsetWidth}px`);
-    tabsWrap.style.setProperty('--profile-tab-indicator-x', `${activeTab.offsetLeft}px`);
+    setAuthStyleState(tabsWrap, {
+        '--profile-tab-indicator-width': `${activeTab.offsetWidth}px`,
+        '--profile-tab-indicator-x': `${activeTab.offsetLeft}px`
+    });
 }
 
 window.syncProfileMobileTabIndicator = syncProfileMobileTabIndicator;

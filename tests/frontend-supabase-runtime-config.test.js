@@ -206,11 +206,21 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '_setFabTransitionless(enabled)',
         '_setChatWindowForceHidden(hidden)',
         '_setChatWindowTransitionless(enabled)',
+        '_setRuntimeStyle(target, prop, value, priority = \'\')',
+        "const removeProperty = style['removeProperty'].bind(style);",
+        "const setProperty = style['setProperty'].bind(style);",
+        '_setChatWindowKeyboardAnimating(enabled, durationMs = 120)',
+        '_setChatWindowDockHeight(heightPx)',
+        '_setChatWindowDockBottom(bottomPx)',
+        '_setMessagesContainerMinHeight(heightPx)',
         '_setSessionItemHidden(item, hidden)',
         'chat-file-input',
         'mascot-wrapper mascot-wrapper--compact',
         "loadingOverlay.className = 'loading-overlay';",
-        "shield.className = 'chat-status-bar-shield';"
+        "shield.className = 'chat-status-bar-shield';",
+        "_toggleElementClass(this.overlay, 'chat-overlay--frozen', true)",
+        "_toggleElementClass(this.chatWindow, 'chat-window--stable-visuals', true)",
+        "_toggleElementClass(container, 'chat-prompt-spotlight-suspended', suspended)"
     ];
 
     for (const marker of runtimeMarkers) {
@@ -231,7 +241,14 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         'style="transform: scale(0.8);"',
         "this.fab.style.opacity = '0';",
         "this.fab.style.visibility = 'hidden';",
-        "this.fab.style.pointerEvents = 'none';"
+        "this.fab.style.pointerEvents = 'none';",
+        'target.style.removeProperty(prop);',
+        "target.style.setProperty(prop, String(value), priority);",
+        "this.overlay.style.setProperty('position', 'fixed', 'important');",
+        "this.chatWindow.style.setProperty('transition', 'transform 120ms cubic-bezier(0.22, 1, 0.36, 1)', 'important');",
+        "this.chatWindow.style.setProperty('height', `${dockHeight}px`, 'important');",
+        "container.style.setProperty('--cursor-x', '50%');",
+        "this.chatWindow.style.setProperty('will-change', 'transform', 'important');"
     ];
 
     for (const marker of removedRuntimeMarkers) {
@@ -246,10 +263,17 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '.chat-widget-fab.chat-widget-fab--transitionless',
         '.chat-window.chat-window--transitionless',
         '.chat-window.chat-window--force-hidden',
+        '.chat-window.chat-window--keyboard-animating',
+        '.chat-window.chat-window--stable-visuals',
+        '.chat-window.chat-window--keyboard-bottom-docked',
+        '.chat-window.chat-window--keyboard-height-locked',
         '.loading-overlay',
         '.chat-file-input',
         '.session-item.session-item--hidden',
-        '.mascot-wrapper--compact'
+        '.mascot-wrapper--compact',
+        '.chat-messages.chat-messages--height-locked',
+        '.chat-overlay.chat-overlay--frozen',
+        '.poetry-nav-container.chat-prompt-spotlight-suspended'
     ];
 
     for (const marker of cssMarkers) {
@@ -374,6 +398,150 @@ test('critical auth pages consume delegated profile modal and form bindings', ()
     assert.equal(resetPasswordSource.includes('./js/reset-password-page.js'), true, 'reset-password.html should load the reset password bootstrap file');
 });
 
+test('auth runtime renderers centralize avatar, google loading, and profile modal style state', () => {
+    const authSource = readRepoFile('supabase-auth-functions.js');
+    const authSheetStyles = readRepoFile('css/auth-sheet.css');
+    const pageSources = [
+        readRepoFile('index.html'),
+        readRepoFile('guestbook.html'),
+        readRepoFile('verify.html'),
+        readRepoFile('prompts.html'),
+        readRepoFile('shop.html'),
+        readRepoFile('index_old.html')
+    ];
+
+    const removedRuntimeMarkers = [
+        "defaultIcon.style.display = 'inline'",
+        "navAvatar.style.display = 'none'",
+        "btn.style.pointerEvents = 'none'",
+        "btn.style.opacity = '0.75'",
+        "document.body.style.position = 'fixed'",
+        "card.style.maxHeight =",
+        "tabsWrap.style.setProperty('--profile-tab-indicator-width'",
+        'style="margin-right: 8px;"'
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(
+            authSource.includes(marker),
+            false,
+            `supabase-auth-functions.js should not retain ${marker}`
+        );
+    }
+
+    const runtimeMarkers = [
+        'function setAuthStyleState(target, styles = {})',
+        "setAuthAvatarVisualState(navAvatar, true)",
+        "btn.classList.add('is-loading')",
+        "loginModal.hidden = false;",
+        "setAuthStyleState(document.body, {",
+        "setAuthStyleState(tabsWrap, {"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(authSource.includes(marker), true, `supabase-auth-functions.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.google-login-btn.is-loading',
+        '.google-login-btn__spinner',
+        '.auth-admin-badge'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(authSheetStyles.includes(marker), true, `css/auth-sheet.css should contain ${marker}`);
+    }
+
+    for (const source of pageSources) {
+        assert.equal(
+            source.includes('css/auth-sheet.css?v=20260324_AUTH_INJECT_RUNTIME_STYLE_HELPERS_2'),
+            true,
+            'auth entry pages should load the latest auth sheet stylesheet'
+        );
+        assert.equal(
+            source.includes('supabase-auth-functions.js?v=20260324_AUTH_RUNTIME_STYLE_HELPERS_1'),
+            true,
+            'auth entry pages should load the latest auth runtime script'
+        );
+    }
+});
+
+test('injected auth runtime centralizes dropdown, drag, and badge style state', () => {
+    const injectSource = readRepoFile('inject-auth.js');
+    const authSheetStyles = readRepoFile('css/auth-sheet.css');
+    const pageSources = [
+        readRepoFile('index.html'),
+        readRepoFile('guestbook.html'),
+        readRepoFile('verify.html'),
+        readRepoFile('prompts.html'),
+        readRepoFile('shop.html'),
+        readRepoFile('index_old.html')
+    ];
+
+    const removedRuntimeMarkers = [
+        'indicator.style.width =',
+        "clone.style.position = 'absolute'",
+        "body.style.setProperty('--auth-primary-view-min-height'",
+        "dropdown.style.setProperty('right'",
+        "overlay.style.removeProperty('display');",
+        "sheet.style.transform = `translateY(${translate}px) scale(${1 - translate * 0.00045})`",
+        "avatarBadge.style.display = hasUnread ? 'block' : 'none'",
+        "dropdownBadge.style.display = hasUnread ? 'inline-block' : 'none'"
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(
+            injectSource.includes(marker),
+            false,
+            `inject-auth.js should not retain ${marker}`
+        );
+    }
+
+    const runtimeMarkers = [
+        "function setInjectedAuthStyleProperty(target, name, value, priority = '')",
+        "function setInjectedAuthStyleState(target, styles = {}, priority = '')",
+        `class="fas fa-user-circle\${hasAvatar ? ' auth-display-none' : ''}"`,
+        `class="nav-user-avatar\${hasAvatar ? ' show' : ' auth-display-none'}"`,
+        'class="avatar-dropdown auth-dropdown-layer"',
+        "clone.classList.add('is-active', 'auth-sheet-view-measure');",
+        "setInjectedAuthStyleState(indicator, {",
+        "setInjectedAuthStyleProperty(body, '--auth-primary-view-min-height'",
+        "setInjectedAuthStyleState(dropdown, {",
+        "setInjectedAuthStyleProperty(sheet, 'transform', null);",
+        "avatarBadge.classList.toggle('is-visible', !!hasUnread);",
+        "dropdownBadge.classList.toggle('is-visible', !!hasUnread);"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(injectSource.includes(marker), true, `inject-auth.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.auth-display-none',
+        '.auth-dropdown-layer',
+        '.avatar-unread-badge',
+        '.dropdown-notif-badge.is-visible',
+        '.auth-sheet-view-measure'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(authSheetStyles.includes(marker), true, `css/auth-sheet.css should contain ${marker}`);
+    }
+
+    for (const source of pageSources) {
+        assert.equal(
+            source.includes('css/auth-sheet.css?v=20260324_AUTH_INJECT_RUNTIME_STYLE_HELPERS_2'),
+            true,
+            'auth entry pages should load the latest injected auth stylesheet'
+        );
+        assert.equal(
+            source.includes('inject-auth.js?v=20260324_INJECT_AUTH_RUNTIME_STYLE_HELPERS_1'),
+            true,
+            'auth entry pages should load the latest injected auth runtime version'
+        );
+    }
+});
+
 test('public and debug entry pages no longer ship inline handler attributes', () => {
     const inlineHandlerPattern = /\bon(?:click|change|submit|mousedown|mouseup|input|keydown|mouseover|mouseout|error|load)\s*=\s*["']/i;
     const files = [
@@ -438,7 +606,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
-        ['shop.html', 'css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
+        ['shop.html', 'css/shop-page.css?v=20260324_SHOP_RUNTIME_STYLE_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_SHOP_RUNTIME_STYLE_ZERO_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
@@ -527,7 +695,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
+        ['shop.html', 'css/shop-page.css?v=20260324_SHOP_RUNTIME_STYLE_1'],
         ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -821,6 +989,66 @@ test('gallery and shop renderers no longer generate inline handler attributes in
     }
 });
 
+test('shop client runtime renderers externalize product cards, purchase feedback, and order list styling', () => {
+    const shopClientSource = readRepoFile('js/shop-client.js');
+    const shopCssSource = readRepoFile('css/shop-page.css');
+
+    const runtimeMarkers = [
+        'buildShopStatusMessage: function (message',
+        'setCssVariables: function (element, variables = {})',
+        'setDiscountMessage: function (message = \'\'',
+        'renderModalProductName: function (displayName, { wholesale = false } = {})',
+        'buildSuccessToastMarkup: function ()',
+        'buildExpandContentToggleMarkup: function (hiddenCount, expanded = false)',
+        'shop-success-content-shell--plain',
+        'shop-order-history-item',
+        'shop-rich-link',
+        'shop-purchase-height-locked'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(shopClientSource.includes(marker), true, `js/shop-client.js should contain ${marker}`);
+    }
+
+    const removedRuntimeMarkers = [
+        'style="color:#10b981; margin-right:10px;"',
+        'style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,100,100,0.7);"',
+        'style="font-size: 24px; color: var(--accent-purple, #6b9ece);"',
+        'style="position:absolute; bottom:12px; left:12px; z-index: 10;',
+        'style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;',
+        'style="padding:6px 12px; border-radius:12px; background:rgba(255,255,255,0.1); border:none; color:#fff; cursor:pointer;"',
+        'style="color: #6b9ece; text-decoration: underline; text-underline-offset: 2px;"',
+        "el.style.setProperty('--breathe-delay'",
+        "overlay.style.setProperty('--shop-purchase-translate-y'",
+        "card.style.setProperty('--shop-purchase-dock-height'",
+        "card.style.removeProperty('--shop-purchase-dock-height'"
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(shopClientSource.includes(marker), false, `js/shop-client.js should not contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '.shop-inline-store-title-icon',
+        '.shop-card-original-price',
+        '.shop-agent-badge',
+        '.shop-card-footer',
+        '.shop-status-message',
+        '.shop-wholesale-badge',
+        '.shop-discount-message',
+        '.shop-success-toast',
+        '.shop-expand-toggle',
+        '.shop-order-history-item',
+        '.shop-rich-link',
+        '.shop-purchase-viewport-probe',
+        '#shopPurchaseModal .modal-content.shop-purchase-height-locked'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(shopCssSource.includes(marker), true, `css/shop-page.css should contain ${marker}`);
+    }
+});
+
 test('homepage entry points expose delegated guestbook triggers instead of inline handlers', () => {
     const indexSource = readRepoFile('index.html');
     const framerHomeSource = readRepoFile('js/framer_home.js');
@@ -829,6 +1057,70 @@ test('homepage entry points expose delegated guestbook triggers instead of inlin
     assert.equal(indexSource.includes('data-home-trigger-upload="1"'), true, 'index.html should expose delegated upload triggers');
     assert.equal(framerHomeSource.includes("closest('[data-home-open-guestbook=\"1\"]')"), true, 'js/framer_home.js should delegate homepage guestbook triggers');
     assert.equal(framerHomeSource.includes("closest('[data-home-trigger-upload=\"1\"]')"), true, 'js/framer_home.js should delegate homepage upload triggers');
+});
+
+test('guestbook runtime renderers externalize loading, modal, and interaction styling', () => {
+    const guestbookSource = readRepoFile('guestbook.js');
+    const guestbookHtml = readRepoFile('guestbook.html');
+    const styleSource = readRepoFile('style.css');
+
+    const removedMarkers = [
+        `sentinel.style.cssText =`,
+        `loadingIndicator.style.cssText =`,
+        `messageContainer.style.display = 'flex'`,
+        `messageContainer.style.opacity = '1'`,
+        `btn.style.opacity = '0.6'`,
+        `modal.style.visibility = 'hidden'`,
+        `messageCard.style.background = 'rgba(155, 93, 229, 0.15)'`,
+        `icon.style.transform = 'scale(1.2)'`
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(guestbookSource.includes(marker), false, `guestbook.js should not contain ${marker}`);
+    }
+
+    const delegatedMarkers = [
+        'setInlineStyles(target, styles)',
+        'setCssVariables(target, variables)',
+        "messageContainer.classList.add('message-container--masonry')",
+        "loadingIndicator.classList.add('is-visible')",
+        'comment-item--depth-',
+        "messageCard.classList.add('comment-post-highlight')",
+        "overlay.classList.toggle('comment-modal-interactive', interactive)",
+        "btn.classList.add('is-processing')",
+        "icon.classList.add('like-icon-bounce')",
+        "messageContainer.classList.add('guestbook-message-container-ready')"
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(guestbookSource.includes(marker), true, `guestbook.js should contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '.guestbook-loading-state',
+        '.message-container.message-container--masonry',
+        '.comment-item--depth-1',
+        '.guestbook-loading-indicator',
+        '#commentModal.comment-modal-interactive .comment-composer-sheet',
+        'body.guestbook-page .message-item.comment-post-highlight',
+        '.message-item .action-btn.is-processing',
+        '.message-item .action-btn i.like-icon-bounce'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(styleSource.includes(marker), true, `style.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        guestbookHtml.includes('style.css?v=20260324_GUESTBOOK_RUNTIME_STYLE_HELPERS_1'),
+        true,
+        'guestbook.html should reference the updated guestbook stylesheet version'
+    );
+    assert.equal(
+        guestbookHtml.includes('guestbook.js?v=20260324_GUESTBOOK_RUNTIME_STYLE_HELPERS_1'),
+        true,
+        'guestbook.html should reference the updated guestbook script version'
+    );
 });
 
 test('admin studio shell tabs and dashboards route core controls through delegated actions', () => {
@@ -1481,6 +1773,8 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
     const delegatedMarkers = [
         'bindDelegatedHandlers(overlay = this.modalEl)',
         'handleOpenOrderDetailAction(actionEl)',
+        'setInlineStyles(target, styles)',
+        'setCssVariables(target, variables)',
         "'wallet-action': 'switch-view'",
         "'wallet-enter-action': 'redeem-code'",
         "'wallet-enter-action': 'custom-recharge'",
@@ -1513,6 +1807,18 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         'wallet-modal-actions--toolbar',
         'product-dot--info',
         'content-card--warning',
+        'wallet-inline-icon--compact',
+        'wallet-inline-icon--title',
+        'wallet-affiliate-highlight--reward',
+        'wallet-affiliate-highlight--commission',
+        'loading-calendar--error',
+        'today-text--loading',
+        "resultDiv.classList.add('is-visible')",
+        "section.toggleAttribute('hidden', !shouldShowAfdianQuery)",
+        "section.toggleAttribute('hidden', !isFeatureEnabled)",
+        'wallet-toast--leaving',
+        'overlay.hidden = false',
+        'this.modalEl.hidden = true',
         'bindOverlayCloseButtons(detailOverlay);'
     ];
 
@@ -1526,7 +1832,23 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         'style="display: flex; align-items: center; justify-content: center; min-height: 200px;"',
         'style="animation: fadeIn 0.2s ease-out;"',
         'style="display: flex; gap: 8px; justify-content: flex-end; padding: 4px 0; margin-top: -8px;"',
-        'style="width:8px;height:8px;background:#6b9ece;border-radius:50%;display:inline-block;margin-left:8px;cursor:pointer;transition:all 0.2s ease;position:relative;"'
+        'style="width:8px;height:8px;background:#6b9ece;border-radius:50%;display:inline-block;margin-left:8px;cursor:pointer;transition:all 0.2s ease;position:relative;"',
+        'style="display:none;"',
+        'style="display: none;"',
+        'style="width: 0%;"',
+        'style="color: #fbbf24;"',
+        'style="color:#10b981;"',
+        'style="font-size: 10px;"',
+        'toast.style.cssText =',
+        'wallet-toast-style',
+        "resultDiv.style.display = 'block'",
+        'document.documentElement.style.overflow =',
+        'document.body.style.position =',
+        'viewport?.style.setProperty(',
+        'card.style.maxHeight =',
+        'indicator.style.top =',
+        'fill.style.width =',
+        'particle.style.animation ='
     ];
 
     for (const marker of removedInlineMarkers) {
@@ -1543,7 +1865,19 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         '.wallet-modal-actions--toolbar',
         '.product-dot--info',
         '.content-card--warning',
-        '.wallet-affiliate-person-row'
+        '.wallet-affiliate-person-row',
+        '.wallet-inline-icon--compact',
+        '.wallet-inline-icon--title',
+        '.wallet-affiliate-highlight--reward',
+        '.wallet-affiliate-highlight--commission',
+        '.loading-calendar--error',
+        '.today-text--loading',
+        '.afdian-result.is-visible',
+        '.history-details .detail-val.mono',
+        '.wallet-toast',
+        '.wallet-toast--leaving',
+        'body.wallet-modal-lock',
+        '.wallet-overlay[hidden]'
     ];
 
     for (const marker of walletCssMarkers) {
@@ -1764,6 +2098,63 @@ test('discount and ticket admin renderers no longer emit inline row or paginatio
     for (const marker of adminDelegationMarkers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should delegate ${marker}`);
     }
+});
+
+test('ticket admin runtime renderers externalize row states, modal visibility, and copy toast styling', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioCss = readRepoFile('admin-studio.css');
+    const ticketsSource = readRepoFile('js/admin-tickets.js');
+
+    const removedRuntimeMarkers = [
+        `style="text-align:center; padding: 20px;"`,
+        `badge.style.background =`,
+        `button.style.color =`,
+        `actionWrap.style.display = 'flex'`,
+        `modal.style.display = 'flex'`,
+        `toast.style.cssText =`
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(ticketsSource.includes(marker), false, `js/admin-tickets.js should not contain ${marker}`);
+    }
+
+    const delegatedRuntimeMarkers = [
+        'createTableStateRow: function',
+        "variant: 'loading'",
+        'admin-ticket-status-badge admin-ticket-status-badge--${normalizedStatus.toLowerCase()}',
+        'admin-ticket-action-btn admin-ticket-action-btn--${variant}',
+        'admin-ticket-pagination-shell',
+        "modal.classList.add('is-visible')",
+        "modal.classList.remove('is-visible')",
+        'admin-ticket-copy-toast'
+    ];
+
+    for (const marker of delegatedRuntimeMarkers) {
+        assert.equal(ticketsSource.includes(marker), true, `js/admin-tickets.js should contain ${marker}`);
+    }
+
+    const expectedCssMarkers = [
+        '.admin-ticket-table-state-cell',
+        '.admin-ticket-status-badge--pending',
+        '.admin-ticket-action-btn--resolve',
+        '.admin-ticket-reply-modal.is-visible',
+        '.admin-ticket-copy-toast'
+    ];
+
+    for (const marker of expectedCssMarkers) {
+        assert.equal(adminStudioCss.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioSource.includes('admin-studio.css?v=48'),
+        true,
+        'admin-studio.html should reference the updated admin stylesheet version'
+    );
+    assert.equal(
+        adminStudioSource.includes('js/admin-tickets.js?v=20260324_ADMIN_TICKETS_RUNTIME_STYLE_1'),
+        true,
+        'admin-studio.html should reference the updated admin tickets script version'
+    );
 });
 
 test('admin studio security, verify, affiliate, and experiment controls route through delegated actions', () => {
@@ -2848,4 +3239,60 @@ test('final frontend runtime remnants route through delegated or bound listeners
     assert.equal(guestbookSource.includes(delegatedMarkers[5]), true, 'supabase-guestbook-functions.js should bind fallback like actions');
     assert.equal(adminStudioScript.includes(delegatedMarkers[6]), true, 'admin-studio.js should render delegated preview removal controls');
     assert.equal(adminStudioScript.includes(delegatedMarkers[7]), true, 'admin-studio.js should handle delegated preview removal controls');
+});
+
+test('announcement runtime renderers externalize decoration particles and physics style state', () => {
+    const announcementSource = readRepoFile('announcement-loader.js');
+    const verifySource = readRepoFile('verify.html');
+    const shopSource = readRepoFile('shop.html');
+    const legacyIndexSource = readRepoFile('index_old.html');
+
+    const removedRuntimeMarkers = [
+        'style="left:${left}%; top:${top}%; width:${size}px; height:${size}px;',
+        'style="width:100%;height:100%;display:block;"',
+        'style="left:${left}%;animation-delay:${delay.toFixed(2)}s;',
+        'style="position:relative;z-index:10;"',
+        "container.style.position = 'absolute'",
+        "el.style.width = '4px'",
+        'p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`',
+        "p.el.style.opacity = p.opacity",
+        "toast.querySelector('.announcement-ack-btn').onclick = () => {"
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(
+            announcementSource.includes(marker),
+            false,
+            `announcement-loader.js should not retain ${marker}`
+        );
+    }
+
+    const runtimeMarkers = [
+        'function setAnnouncementStyleState(target, styles = {})',
+        'data-announcement-dust="1"',
+        'data-announcement-particle="1"',
+        'hydrateDecorationParticleStyles(root)',
+        "bindAnnouncementActions(overlay, ackKey, { dismissOnBackdrop: true });",
+        "container.classList.add('announcement-particle-host');",
+        "setAnnouncementTransformState(p.el, p.x, p.y);",
+        '.announcement-banner-icon',
+        '.announcement-particle-layer--rain-streak',
+        '.announcement-particle-svg'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(
+            announcementSource.includes(marker),
+            true,
+            `announcement-loader.js should contain ${marker}`
+        );
+    }
+
+    for (const source of [verifySource, shopSource, legacyIndexSource]) {
+        assert.equal(
+            source.includes('announcement-loader.js?v=20260324_ANNOUNCEMENT_RUNTIME_STYLE_HELPERS_1'),
+            true,
+            'announcement entry pages should load the latest announcement runtime version'
+        );
+    }
 });
