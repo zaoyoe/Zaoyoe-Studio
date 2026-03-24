@@ -3939,6 +3939,13 @@ test('final frontend runtime remnants route through delegated or bound listeners
     const guestbookSource = readRepoFile('supabase-guestbook-functions.js');
     const adminStudioScript = readRepoFile('admin-studio.js');
     const shopSource = readRepoFile('js/admin-shop.js');
+    const notificationStyles = readRepoFile('css/notification-client.css');
+    const indexSource = readRepoFile('index.html');
+    const guestbookHtml = readRepoFile('guestbook.html');
+    const verifySource = readRepoFile('verify.html');
+    const promptsSource = readRepoFile('prompts.html');
+    const shopHtml = readRepoFile('shop.html');
+    const legacyIndexSource = readRepoFile('index_old.html');
 
     const removedInlineMarkers = [
         'onclick="clearAllNotifications(event)"',
@@ -3980,6 +3987,57 @@ test('final frontend runtime remnants route through delegated or bound listeners
     assert.equal(guestbookSource.includes(delegatedMarkers[5]), true, 'supabase-guestbook-functions.js should bind fallback like actions');
     assert.equal(adminStudioScript.includes(delegatedMarkers[6]), true, 'admin-studio.js should render delegated preview removal controls');
     assert.equal(adminStudioScript.includes(delegatedMarkers[7]), true, 'admin-studio.js should handle delegated preview removal controls');
+
+    const notificationRuntimeMarkers = [
+        'wrapper.hidden = true;',
+        'wrapper.hidden = false;',
+        'badge.hidden = unreadCount <= 0;',
+        'class="notif-expand-wrapper"',
+        "document.documentElement.classList.add('notif-scroll-locked');",
+        "document.body.classList.add('notif-scroll-locked');"
+    ];
+
+    for (const marker of notificationRuntimeMarkers) {
+        assert.equal(notificationSource.includes(marker), true, `notification-client.js should contain ${marker}`);
+    }
+
+    const removedNotificationRuntimeMarkers = [
+        "const style = document.createElement('style');",
+        "wrapper.style.display = 'none';",
+        "wrapper.style.display = 'block';",
+        "badge.style.display = unreadCount > 0 ? 'block' : 'none';",
+        'style="text-align: center; padding: 8px 0;"'
+    ];
+
+    for (const marker of removedNotificationRuntimeMarkers) {
+        assert.equal(notificationSource.includes(marker), false, `notification-client.js should not retain ${marker}`);
+    }
+
+    const notificationStyleMarkers = [
+        '.notif-expand-wrapper',
+        '#navNotifWrapper[hidden]',
+        '.notif-drawer',
+        '.notif-card.exit',
+        '.notif-scroll-locked'
+    ];
+
+    for (const marker of notificationStyleMarkers) {
+        assert.equal(notificationStyles.includes(marker), true, `css/notification-client.css should contain ${marker}`);
+    }
+
+    const notificationAssetMarkers = [
+        'css/notification-client.css?v=20260324_NOTIFICATION_RUNTIME_STYLE_1',
+        'notification-client.js?v=20260324_NOTIFICATION_RUNTIME_STYLE_1'
+    ];
+
+    for (const marker of notificationAssetMarkers) {
+        assert.equal(indexSource.includes(marker), true, `index.html should contain ${marker}`);
+        assert.equal(guestbookHtml.includes(marker), true, `guestbook.html should contain ${marker}`);
+        assert.equal(verifySource.includes(marker), true, `verify.html should contain ${marker}`);
+        assert.equal(promptsSource.includes(marker), true, `prompts.html should contain ${marker}`);
+        assert.equal(shopHtml.includes(marker), true, `shop.html should contain ${marker}`);
+        assert.equal(legacyIndexSource.includes(marker), true, `index_old.html should contain ${marker}`);
+    }
 });
 
 test('announcement runtime renderers externalize decoration particles and physics style state', () => {
