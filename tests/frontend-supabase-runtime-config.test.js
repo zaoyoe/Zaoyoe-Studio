@@ -2413,6 +2413,83 @@ test('analytics calendar and config poster/editor templates route through delega
     }
 });
 
+test('prompts gallery UI state renderers externalize toast, banner, nav, and comment visibility styling', () => {
+    const promptsSource = readRepoFile('prompts-poetry.js');
+    const promptsStyles = readRepoFile('prompts-poetry.css');
+    const promptsHtml = readRepoFile('prompts.html');
+
+    const removedRuntimeMarkers = [
+        'style="color: ${color.icon}; font-size: 1.2rem;"',
+        'Object.assign(toast.style',
+        "toast.style.opacity = '1'",
+        "loginBtn.style.display = 'none'",
+        "unifiedModal.style.setProperty('z-index', '12060', 'important')",
+        "banner.style.display = 'flex'",
+        'msg.style.cssText =',
+        'style="--delay: ${i * 0.03}s"',
+        'style="color:#fca5a5;"',
+        'style="display:none;"',
+        "icon.style.color = '#e74c3c'",
+        "icon.style.color = ''",
+        "leftArrow.style.display = 'flex'",
+        "modal.style.display = 'flex'",
+        "if (modal) modal.style.display = 'none'",
+        "title.style.cursor = 'pointer'",
+        "comment.style.display = 'none'"
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(promptsSource.includes(marker), false, `prompts-poetry.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'gallery-toast--visible',
+        "setPromptsDisplayState(loginBtn, false, 'prompts-display-flex')",
+        'buildPromptsStaggerClass(i)',
+        'featured-banner--revealed',
+        'search-cooldown-msg',
+        'comment-empty-subtitle comment-empty-subtitle--error',
+        "button.classList.add('liked')",
+        "leftArrow.classList.add('is-visible')",
+        "modal.classList.add('poetry-modal--visible')",
+        "comment.classList.toggle('hidden-collapsed', shouldHide)",
+        'class="prompts-comment-image-upload-hidden"'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(promptsSource.includes(marker), true, `prompts-poetry.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.gallery-toast',
+        '.gallery-toast--visible',
+        '.prompts-display-flex',
+        '.prompts-nav-transition',
+        '.featured-banner--revealed',
+        '.prompts-pagination-nav',
+        '.search-cooldown-msg',
+        '.comment-header-title--expandable',
+        '.comment-empty-subtitle--error',
+        '.modal-img-nav.is-visible',
+        '.poetry-modal.poetry-modal--visible'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(promptsStyles.includes(marker), true, `prompts-poetry.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        promptsHtml.includes('prompts-poetry.css?v=20260324_PROMPTS_UI_STATE_STYLES_1'),
+        true,
+        'prompts.html should load the latest prompts gallery stylesheet version'
+    );
+    assert.equal(
+        promptsHtml.includes('prompts-poetry.js?v=20260324_PROMPTS_UI_STATE_STYLES_1'),
+        true,
+        'prompts.html should load the latest prompts gallery runtime version'
+    );
+});
+
 test('payments runtime controls, site filter, and admin chat menu route through delegated actions', () => {
     const adminStudioScript = readRepoFile('admin-studio.js');
     const adminPaymentsSource = readRepoFile('js/admin-payments.js');

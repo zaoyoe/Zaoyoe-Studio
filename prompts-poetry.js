@@ -224,69 +224,82 @@ function showGalleryToast(message, type = 'warning', duration = 3000) {
         info: 'fas fa-info-circle'
     };
 
-    // Color mapping
-    const colors = {
-        warning: { bg: 'rgba(245, 158, 11, 0.15)', border: 'rgba(245, 158, 11, 0.5)', icon: '#f59e0b' },
-        error: { bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.5)', icon: '#ef4444' },
-        success: { bg: 'rgba(34, 197, 94, 0.15)', border: 'rgba(34, 197, 94, 0.5)', icon: '#22c55e' },
-        info: { bg: 'rgba(59, 130, 246, 0.15)', border: 'rgba(59, 130, 246, 0.5)', icon: '#3b82f6' }
-    };
-
-    const color = colors[type] || colors.info;
-
     // Create toast element
     const toast = document.createElement('div');
-    toast.className = 'gallery-toast';
+    toast.className = `gallery-toast gallery-toast--${type}`;
     toast.innerHTML = `
-        <i class="${icons[type] || icons.info}" style="color: ${color.icon}; font-size: 1.2rem;"></i>
+        <i class="gallery-toast__icon ${icons[type] || icons.info}"></i>
         <span>${message}</span>
     `;
-
-    // Apply styles
-    Object.assign(toast.style, {
-        position: 'fixed',
-        bottom: '24px',
-        left: '50%',
-        transform: 'translateX(-50%) translateY(100px)',
-        background: 'rgba(255, 255, 255, 0.85)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: `1px solid ${color.border}`,
-        borderRadius: '16px',
-        padding: '16px 24px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
-        zIndex: '10000',
-        fontFamily: 'var(--font-sans, sans-serif)',
-        fontSize: '0.95rem',
-        color: '#1e293b',
-        opacity: '0',
-        transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)'
-    });
-
-    // Dark mode styles
-    if (document.documentElement.getAttribute('data-theme') === 'dark') {
-        toast.style.background = 'rgba(30, 41, 59, 0.85)';
-        toast.style.color = '#e2e8f0';
-        toast.style.borderColor = color.border;
-    }
 
     document.body.appendChild(toast);
 
     // Animate in
     requestAnimationFrame(() => {
-        toast.style.opacity = '1';
-        toast.style.transform = 'translateX(-50%) translateY(0)';
+        toast.classList.add('gallery-toast--visible');
     });
 
     // Auto dismiss
     setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateX(-50%) translateY(20px)';
+        toast.classList.remove('gallery-toast--visible');
+        toast.classList.add('gallery-toast--exiting');
         setTimeout(() => toast.remove(), 400);
     }, duration);
+}
+
+function setPromptsHidden(element, hidden) {
+    if (!element) return;
+    element.classList.toggle('prompts-hidden', Boolean(hidden));
+}
+
+function setPromptsDisplayState(element, visible, displayClass) {
+    if (!element) return;
+    element.classList.toggle('prompts-hidden', !visible);
+    if (displayClass) {
+        element.classList.toggle(displayClass, Boolean(visible));
+    }
+}
+
+function buildPromptsStaggerClass(index) {
+    return `prompts-stagger-${Math.min(Math.max(Number(index) || 0, 0), 5)}`;
+}
+
+function beginPromptsNavTransition(navContainer, hiddenClass) {
+    if (!navContainer) return;
+    navContainer.classList.add('prompts-nav-transition');
+    navContainer.classList.remove('prompts-nav-hidden-up', 'prompts-nav-hidden-down');
+    if (hiddenClass) {
+        navContainer.classList.add(hiddenClass);
+    }
+}
+
+function finishPromptsNavTransition(navContainer, hiddenClass) {
+    if (!navContainer) return;
+    navContainer.classList.remove('prompts-nav-hidden-up', 'prompts-nav-hidden-down');
+    if (hiddenClass) {
+        navContainer.classList.add(hiddenClass);
+    }
+    requestAnimationFrame(() => {
+        navContainer.classList.remove('prompts-nav-hidden-up', 'prompts-nav-hidden-down');
+    });
+}
+
+function setCommentCollapseVisibility(allComments, collapsed) {
+    let shownParents = 0;
+
+    allComments.forEach((comment) => {
+        const isParent = !comment.classList.contains('comment-reply');
+        let shouldHide = false;
+
+        if (collapsed) {
+            shouldHide = isParent ? shownParents >= COLLAPSE_SHOW_COUNT : true;
+            if (isParent && !shouldHide) {
+                shownParents++;
+            }
+        }
+
+        comment.classList.toggle('hidden-collapsed', shouldHide);
+    });
 }
 
 // Inverted search index for O(1) tag lookups (built on init)
@@ -641,23 +654,23 @@ async function checkAuthState() {
             }
 
             // Hide login button, show other buttons for logged-in users
-            if (loginBtn) loginBtn.style.display = 'none';
-            if (profileBtn) profileBtn.style.display = 'flex';
-            if (walletBtn) walletBtn.style.display = 'flex';
-            if (switchAccountBtn) switchAccountBtn.style.display = 'flex';
-            if (logoutBtn) logoutBtn.style.display = 'flex';
+            setPromptsDisplayState(loginBtn, false, 'prompts-display-flex');
+            setPromptsDisplayState(profileBtn, true, 'prompts-display-flex');
+            setPromptsDisplayState(walletBtn, true, 'prompts-display-flex');
+            setPromptsDisplayState(switchAccountBtn, true, 'prompts-display-flex');
+            setPromptsDisplayState(logoutBtn, true, 'prompts-display-flex');
 
             // Only show Enter Studio for admin
-            if (adminStudioBtn) adminStudioBtn.style.display = isAdmin ? 'flex' : 'none';
+            setPromptsDisplayState(adminStudioBtn, isAdmin, 'prompts-display-flex');
         } else {
             // Guest - show login button, hide all user controls
             if (identityName) identityName.textContent = 'Guest';
-            if (loginBtn) loginBtn.style.display = 'flex';
-            if (profileBtn) profileBtn.style.display = 'none';
-            if (walletBtn) walletBtn.style.display = 'none';
-            if (switchAccountBtn) switchAccountBtn.style.display = 'none';
-            if (logoutBtn) logoutBtn.style.display = 'none';
-            if (adminStudioBtn) adminStudioBtn.style.display = 'none';
+            setPromptsDisplayState(loginBtn, true, 'prompts-display-flex');
+            setPromptsDisplayState(profileBtn, false, 'prompts-display-flex');
+            setPromptsDisplayState(walletBtn, false, 'prompts-display-flex');
+            setPromptsDisplayState(switchAccountBtn, false, 'prompts-display-flex');
+            setPromptsDisplayState(logoutBtn, false, 'prompts-display-flex');
+            setPromptsDisplayState(adminStudioBtn, false, 'prompts-display-flex');
         }
     } catch (error) {
         console.error('Auth check failed:', error);
@@ -670,7 +683,7 @@ function showLoginModal() {
     if (typeof window.openLoginModal === 'function') {
         const unifiedModal = document.getElementById('loginModal');
         if (unifiedModal) {
-            unifiedModal.style.setProperty('z-index', '12060', 'important');
+            unifiedModal.classList.add('prompts-auth-modal-promoted');
         }
         window.openLoginModal();
         return;
@@ -2086,7 +2099,7 @@ function showBannerAnnouncement(color, size, content, ackKey, decoration) {
     if (banner && textEl) {
         textEl.innerHTML = content;
         banner.className = 'announcement-banner color-' + color + ' size-' + size;
-        banner.style.display = 'flex';
+        banner.classList.remove('prompts-announcement-banner-hidden');
         banner.dataset.ackKey = ackKey;
         currentAnnouncementElement = banner;
 
@@ -3152,18 +3165,16 @@ function renderFeaturedBanner() {
 
     // Hide banner if no data
     if (!PROMPTS || PROMPTS.length === 0) {
-        banner.style.display = 'none';
+        banner.classList.remove('featured-banner--visible', 'featured-banner--revealed', 'featured-banner--interactive');
+        banner.onclick = null;
         return;
     }
 
     // Show banner with fade-in + float-up animation
-    banner.style.display = 'flex';
-    banner.style.opacity = '0';
-    banner.style.transform = 'translateY(20px)';
+    banner.classList.add('featured-banner--visible', 'featured-banner--interactive');
+    banner.classList.remove('featured-banner--revealed');
     requestAnimationFrame(() => {
-        banner.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
-        banner.style.opacity = '1';
-        banner.style.transform = 'translateY(0)';
+        banner.classList.add('featured-banner--revealed');
         forcePromptPageTop();
     });
 
@@ -3200,7 +3211,6 @@ function renderFeaturedBanner() {
     }
 
     // Click to open modal
-    banner.style.cursor = 'pointer';
     banner.onclick = () => openPromptModal(featured.id);
 }
 
@@ -3577,15 +3587,7 @@ function renderPaginationControls(totalPages) {
     if (!grid || totalPages <= 1) return;
 
     const nav = document.createElement('div');
-    nav.className = 'pagination-nav';
-    nav.style.cssText = `
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 10px;
-        margin: 40px auto 60px;
-        padding-bottom: 40px;
-    `;
+    nav.className = 'pagination-nav prompts-pagination-nav';
 
     // Helper to create button
     const createBtn = (text, page, isActive = false, isDisabled = false) => {
@@ -3595,10 +3597,10 @@ function renderPaginationControls(totalPages) {
         if (isDisabled) btn.disabled = true;
 
         if (!isDisabled && !isActive) {
-            btn.onclick = () => {
+            btn.addEventListener('click', () => {
                 currentPage = page;
                 renderCurrentPage();
-            };
+            });
         }
         return btn;
     };
@@ -3633,7 +3635,7 @@ function renderPaginationControls(totalPages) {
         if (p === '...') {
             const span = document.createElement('span');
             span.textContent = '...';
-            span.style.color = 'var(--text-dim)';
+            span.className = 'pagination-ellipsis';
             nav.appendChild(span);
         } else {
             nav.appendChild(createBtn(String(p), p, p === currentPage));
@@ -3787,11 +3789,7 @@ function showAISubTags(category, navContainer) {
 
     isInSubNav = true;
 
-    // Elegant Lift Out (Up + Blur)
-    navContainer.style.transition = 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), filter 0.3s ease';
-    navContainer.style.opacity = '0';
-    navContainer.style.transform = 'translateY(-10px)';
-    navContainer.style.filter = 'blur(2px)';
+    beginPromptsNavTransition(navContainer, 'prompts-nav-hidden-up');
 
     setTimeout(() => {
         // Build new sub-nav
@@ -3806,7 +3804,7 @@ function showAISubTags(category, navContainer) {
             // Use zh from aiTags data, fallback to TAG_TRANSLATIONS, then empty
             const cnTranslation = tagObj.zh || TAG_TRANSLATIONS[tagObj.en] || TAG_TRANSLATIONS[tagObj.en.toLowerCase()] || '';
             subNavHTML += `
-                <div class="nav-item sub-tag" data-filter="${tagObj.en.toLowerCase()}" style="animation-delay: ${i * 0.05}s">
+                <div class="nav-item sub-tag ${buildPromptsStaggerClass(i)}" data-filter="${tagObj.en.toLowerCase()}">
                     <span class="en">${tagObj.en}</span>
                     ${cnTranslation ? `<span class="cn">${cnTranslation}</span>` : ''}
                 </div>
@@ -3823,17 +3821,7 @@ function showAISubTags(category, navContainer) {
             });
         });
 
-        // Set initial state for entrance (From Down)
-        navContainer.style.opacity = '0';
-        navContainer.style.transform = 'translateY(10px)';
-        navContainer.style.filter = 'blur(2px)';
-
-        // Elegant Lift In (Focus)
-        requestAnimationFrame(() => {
-            navContainer.style.opacity = '1';
-            navContainer.style.transform = 'translateY(0)';
-            navContainer.style.filter = 'blur(0)';
-        });
+        finishPromptsNavTransition(navContainer, 'prompts-nav-hidden-down');
     }, 250);
 }
 
@@ -3843,11 +3831,7 @@ function returnToMainNav() {
 
     isInSubNav = false;
 
-    // Elegant Drop Out (Down + Blur)
-    navContainer.style.transition = 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), filter 0.3s ease';
-    navContainer.style.opacity = '0';
-    navContainer.style.transform = 'translateY(10px)';
-    navContainer.style.filter = 'blur(2px)';
+    beginPromptsNavTransition(navContainer, 'prompts-nav-hidden-down');
 
     setTimeout(() => {
         navContainer.innerHTML = originalNavHTML;
@@ -3870,17 +3854,7 @@ function returnToMainNav() {
             renderGallery('all');
         }
 
-        // Set initial state for entrance (From Up)
-        navContainer.style.opacity = '0';
-        navContainer.style.transform = 'translateY(-10px)';
-        navContainer.style.filter = 'blur(2px)';
-
-        // Elegant Drop In
-        requestAnimationFrame(() => {
-            navContainer.style.opacity = '1';
-            navContainer.style.transform = 'translateY(0)';
-            navContainer.style.filter = 'blur(0)';
-        });
+        finishPromptsNavTransition(navContainer, 'prompts-nav-hidden-up');
     }, 250);
 }
 
@@ -3941,7 +3915,7 @@ function setupSearch() {
     // Render hot tags helper function
     function renderHotTags(topTags, container, searchInput) {
         container.innerHTML = topTags.map((tag, i) =>
-            `<span class="hot-tag" data-tag="${tag}" style="--delay: ${i * 0.03}s">${tag}</span>`
+            `<span class="hot-tag ${buildPromptsStaggerClass(i)}" data-tag="${tag}">${tag}</span>`
         ).join('');
 
         // Add mousedown handlers to hot tags (mousedown fires before document mousedown)
@@ -3984,8 +3958,8 @@ function setupSearch() {
 
         // If no query, hide dropdown entirely (no more hot tags panel on focus)
         if (!query) {
-            if (hotTagsSection) hotTagsSection.style.display = 'none';
-            suggestionsSection.style.display = 'none';
+            setPromptsHidden(hotTagsSection, true);
+            setPromptsHidden(suggestionsSection, true);
             hideDropdown();
             return;
         }
@@ -4018,8 +3992,8 @@ function setupSearch() {
         const suggestionArray = Array.from(suggestions).slice(0, 5); // Reduced to 5 for inline tags
 
         // Always hide the old hot tags section
-        if (hotTagsSection) hotTagsSection.style.display = 'none';
-        suggestionsSection.style.display = 'flex';
+        setPromptsHidden(hotTagsSection, true);
+        setPromptsHidden(suggestionsSection, false);
 
         // Build suggestions HTML
         let html = suggestionArray.map(s =>
@@ -4342,20 +4316,6 @@ function showSearchCooldownMessage() {
         const msg = document.createElement('div');
         msg.className = 'search-cooldown-msg';
         msg.innerHTML = '<i class="fas fa-clock"></i> AI 搜索冷却中，请稍后再试';
-        msg.style.cssText = `
-            position: absolute;
-            bottom: -30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(239, 68, 68, 0.9);
-            color: white;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            white-space: nowrap;
-            z-index: 100;
-            animation: fadeIn 0.3s ease;
-        `;
         searchWrapper.appendChild(msg);
 
         setTimeout(() => msg.remove(), 3000);
@@ -5411,14 +5371,14 @@ function openPromptModal(id) {
     const counter = document.getElementById('modalImgCounter');
 
     if (hasMultipleImages) {
-        leftArrow.style.display = 'flex';
-        rightArrow.style.display = 'flex';
-        counter.style.display = 'block';
+        leftArrow.classList.add('is-visible');
+        rightArrow.classList.add('is-visible');
+        counter.classList.add('is-visible');
         updateModalCounter();
     } else {
-        leftArrow.style.display = 'none';
-        rightArrow.style.display = 'none';
-        counter.style.display = 'none';
+        leftArrow.classList.remove('is-visible');
+        rightArrow.classList.remove('is-visible');
+        counter.classList.remove('is-visible');
     }
 
     // Reset Comments
@@ -5441,7 +5401,7 @@ function openPromptModal(id) {
     // Physical modal mounting
     document.body.classList.add('modal-open');
 
-    modal.style.display = 'flex';
+    modal.classList.add('poetry-modal--visible');
     // Clear any stale closing state (clip-path, etc.) from previous close
     modal.classList.remove('closing');
     if (backdrop) backdrop.classList.remove('closing');
@@ -6450,7 +6410,7 @@ function ensurePromptCommentComposer() {
                     <i class="fas fa-image"></i>
                 </button>
             </div>
-            <input type="file" id="promptCommentComposerImageUpload" accept="image/*" style="display:none;">
+            <input type="file" id="promptCommentComposerImageUpload" accept="image/*" class="prompts-comment-image-upload-hidden">
             <div class="prompt-comment-composer-actions">
                 <button type="button" class="prompt-comment-composer-send" id="promptCommentComposerSendBtn" data-i18n="gallery.send">
                     ${copy.send}
@@ -7180,7 +7140,7 @@ async function fetchComments(promptId, forceRefresh = false) {
     if (error) {
         console.error("Comment Load Error:", error);
         list.classList.add('comment-list-empty');
-        list.innerHTML = `<div class="comment-empty-state" data-state="error"><div class="comment-empty-subtitle" style="color:#fca5a5;">${window.i18n?.t('common.error') || 'Failed to load comments'}</div></div>`;
+        list.innerHTML = `<div class="comment-empty-state" data-state="error"><div class="comment-empty-subtitle comment-empty-subtitle--error">${window.i18n?.t('common.error') || 'Failed to load comments'}</div></div>`;
         return;
     }
 
@@ -7316,11 +7276,15 @@ function initCommentCollapse() {
 
     if (isPromptModalExpandedCommentView()) {
         updateCommentSectionHeading(parentCount);
-        title.style.cursor = 'default';
+        title.classList.remove('comment-header-title--expandable');
+        title.classList.add('comment-header-title--static');
         title.removeAttribute('data-expandable');
-        title.onclick = null;
-        list.removeAttribute('data-collapsed');
-        allComments.forEach(c => c.style.display = '');
+        list.classList.remove('collapsed');
+        allComments.forEach((comment) => comment.classList.remove('hidden-collapsed'));
+        if (!title.dataset.collapseBound) {
+            title.addEventListener('click', handleCollapseToggle);
+            title.dataset.collapseBound = '1';
+        }
         return;
     }
 
@@ -7328,40 +7292,30 @@ function initCommentCollapse() {
 
     // If 3 or fewer parent comments, no collapse needed
     if (parentCount <= COLLAPSE_SHOW_COUNT) {
-        title.style.cursor = 'default';
+        title.classList.remove('comment-header-title--expandable');
+        title.classList.add('comment-header-title--static');
         title.removeAttribute('data-expandable');
-        title.onclick = null;
-        list.removeAttribute('data-collapsed');
+        list.classList.remove('collapsed');
         // Make sure all are visible
-        allComments.forEach(c => c.style.display = '');
+        allComments.forEach((comment) => comment.classList.remove('hidden-collapsed'));
+        if (!title.dataset.collapseBound) {
+            title.addEventListener('click', handleCollapseToggle);
+            title.dataset.collapseBound = '1';
+        }
         return;
     }
 
     // Mark as expandable and collapsed
-    title.style.cursor = 'pointer';
+    title.classList.add('comment-header-title--expandable');
+    title.classList.remove('comment-header-title--static');
     title.setAttribute('data-expandable', 'true');
-    list.setAttribute('data-collapsed', 'true');
+    list.classList.add('collapsed');
+    setCommentCollapseVisibility(allComments, true);
 
-    // Show only first 3 PARENT comments (hide everything else including their replies)
-    let shownParents = 0;
-    allComments.forEach(comment => {
-        const isParent = !comment.classList.contains('comment-reply');
-
-        if (isParent) {
-            if (shownParents < COLLAPSE_SHOW_COUNT) {
-                comment.style.display = '';
-                shownParents++;
-            } else {
-                comment.style.display = 'none';
-            }
-        } else {
-            // Hide all replies when collapsed
-            comment.style.display = 'none';
-        }
-    });
-
-    // Bind click event
-    title.onclick = handleCollapseToggle;
+    if (!title.dataset.collapseBound) {
+        title.addEventListener('click', handleCollapseToggle);
+        title.dataset.collapseBound = '1';
+    }
 }
 
 /**
@@ -7374,7 +7328,7 @@ function handleCollapseToggle() {
     if (!list || !title) return;
     if (title.getAttribute('data-expandable') !== 'true') return;
 
-    const isCollapsed = list.getAttribute('data-collapsed') === 'true';
+    const isCollapsed = list.classList.contains('collapsed');
     const allComments = Array.from(list.children);
     const total = allComments.length;
 
@@ -7382,33 +7336,16 @@ function handleCollapseToggle() {
 
     if (isCollapsed) {
         // EXPAND: Show all comments
-        allComments.forEach(c => c.style.display = '');
-        list.setAttribute('data-collapsed', 'false');
+        setCommentCollapseVisibility(allComments, false);
+        list.classList.remove('collapsed');
         title.textContent = window.i18n?.t('gallery.hideComments') || 'Hide comments';
 
         // Ensure list is scrollable and scroll to top
-        list.style.overflowY = 'auto';
         list.scrollTop = 0;
     } else {
         // COLLAPSE: Show only first 3 PARENT comments
-        let shownParents = 0;
-        allComments.forEach(comment => {
-            const isParent = !comment.classList.contains('comment-reply');
-
-            if (isParent) {
-                if (shownParents < COLLAPSE_SHOW_COUNT) {
-                    comment.style.display = '';
-                    shownParents++;
-                } else {
-                    comment.style.display = 'none';
-                }
-            } else {
-                // Hide all replies when collapsed
-                comment.style.display = 'none';
-            }
-        });
-
-        list.setAttribute('data-collapsed', 'true');
+        setCommentCollapseVisibility(allComments, true);
+        list.classList.add('collapsed');
         updateCommentSectionHeading(allComments.filter(c => !c.classList.contains('comment-reply')).length);
 
         // Scroll to top when collapsed
@@ -7458,7 +7395,6 @@ function renderComment(comment, overrideAvatar = null, replyToProfile = null, ha
 
     // Determine heart icon class and style based on isLiked
     const heartIconClass = isLiked ? 'fas fa-heart' : 'far fa-heart';
-    const heartStyle = isLiked ? 'style="color: #e74c3c;"' : '';
 
     const div = document.createElement('div');
     div.className = 'comment-item' +
@@ -7482,8 +7418,8 @@ function renderComment(comment, overrideAvatar = null, replyToProfile = null, ha
             </div>
             <div class="comment-content">${formatMentions(displayContent)}</div>
             <div class="comment-actions">
-                <button class="comment-action-btn like-btn" data-liked="${isLiked}">
-                    <i class="${heartIconClass}" ${heartStyle}></i> <span class="like-count">${likeCount}</span>
+                <button class="comment-action-btn like-btn${isLiked ? ' liked' : ''}" data-liked="${isLiked}">
+                    <i class="${heartIconClass}"></i> <span class="like-count">${likeCount}</span>
                 </button>
                 <button class="comment-action-btn reply-btn">${window.i18n?.t('gallery.reply') || 'Reply'}</button>
                 ${comment.image_url ? `
@@ -7534,13 +7470,13 @@ async function handleLikeComment(commentId, button) {
     if (isLiked) {
         // Unlike
         icon.className = 'far fa-heart';
-        icon.style.color = '';
+        button.classList.remove('liked');
         countSpan.textContent = Math.max(0, currentCount - 1);
         button.dataset.liked = 'false';
     } else {
         // Like
         icon.className = 'fas fa-heart';
-        icon.style.color = '#e74c3c';
+        button.classList.add('liked');
         countSpan.textContent = currentCount + 1;
         button.dataset.liked = 'true';
     }
@@ -7566,7 +7502,7 @@ async function handleLikeComment(commentId, button) {
         countSpan.textContent = currentCount;
         button.dataset.liked = isLiked ? 'true' : 'false';
         icon.className = isLiked ? 'fas fa-heart' : 'far fa-heart';
-        icon.style.color = isLiked ? '#e74c3c' : '';
+        button.classList.toggle('liked', isLiked);
     }
 }
 
@@ -8359,7 +8295,7 @@ function closePromptModal() {
         hidePromptModalStatusBarShield();
 
         // Physically detach modal from Safe Area render tree, skipping layout breakage of `visibility`
-        if (modal) modal.style.display = 'none';
+        if (modal) modal.classList.remove('poetry-modal--visible');
 
         // Force Safari iOS 15+ to acknowledge the detached modal by micro-tickling the theme color layer
         forceSafariSafeAreaJiggle();
