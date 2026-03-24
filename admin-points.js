@@ -7,6 +7,48 @@ function getSupabase() {
     return window.supabaseClient || window.supabase;
 }
 
+const ADMIN_POINTS_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';
+const ADMIN_POINTS_PANEL_VISIBLE_CLASS = 'admin-points-panel-visible';
+
+function setAdminPointsVisibility(target, visible) {
+    if (!target) return;
+    target.classList.toggle(ADMIN_POINTS_HIDDEN_CLASS, !visible);
+}
+
+function setAdminPointsPanelVisible(target, visible) {
+    if (!target) return;
+    target.classList.toggle(ADMIN_POINTS_PANEL_VISIBLE_CLASS, visible);
+}
+
+function setAdminPointsRuntimeStyles(target, styles = {}, priority = '') {
+    const style = target?.style;
+    const setProperty = style?.['setProperty']?.bind(style);
+    if (typeof setProperty !== 'function') {
+        return;
+    }
+
+    Object.entries(styles).forEach(([name, value]) => {
+        setProperty(name, String(value), priority);
+    });
+}
+
+function syncPointsTabIndicator(indicator, activeTab) {
+    if (!indicator || !activeTab) return;
+
+    setAdminPointsRuntimeStyles(indicator, {
+        '--admin-tab-indicator-width': `${activeTab.offsetWidth}px`,
+        '--admin-tab-indicator-left': `${activeTab.offsetLeft}px`
+    });
+}
+
+function hydratePointsUsageFills(scope = document) {
+    scope.querySelectorAll('.usage-fill[data-usage-fill-width]').forEach((fill) => {
+        setAdminPointsRuntimeStyles(fill, {
+            '--points-usage-fill-width': fill.dataset.usageFillWidth || '0%'
+        });
+    });
+}
+
 // ========================================
 // GLOBAL UTILITY: Enable horizontal scroll with mouse wheel
 // ========================================
@@ -48,10 +90,7 @@ function switchPointsView(viewName) {
     // Update tab indicator position
     const activeTab = document.querySelector('#module-points .admin-tab.active');
     const indicator = document.querySelector('#module-points .admin-tab-indicator');
-    if (activeTab && indicator) {
-        indicator.style.width = `${activeTab.offsetWidth}px`;
-        indicator.style.left = `${activeTab.offsetLeft}px`;
-    }
+    syncPointsTabIndicator(indicator, activeTab);
 
     // Load data for specific views
     if (viewName === 'batches') loadBatches();
@@ -234,7 +273,7 @@ function renderBatches() {
         ` : '';
 
         return `
-            <tr data-batch-id="${batch.id}" class="${isSelected ? 'selected' : ''}" data-points-action="view-batch-codes" style="cursor:pointer;">
+            <tr data-batch-id="${batch.id}" class="points-batch-row ${isSelected ? 'selected' : ''}" data-points-action="view-batch-codes">
                 ${checkboxCell}
                 <td><strong>${batch.name}</strong></td>
                 <td>${pkg?.name || '-'}</td>
@@ -243,7 +282,7 @@ function renderBatches() {
                 <td>
                     <div class="usage-cell">
                         <span>${batch.used_count}</span>
-                        <div class="usage-bar"><div class="usage-fill" style="width: ${usedPercent}%"></div></div>
+                        <div class="usage-bar"><div class="usage-fill" data-usage-fill-width="${usedPercent}%"></div></div>
                     </div>
                 </td>
                 <td>${createdAt}</td>
@@ -259,6 +298,7 @@ function renderBatches() {
         `;
     }).join('');
 
+    hydratePointsUsageFills(tbody);
     updatePaginationUI();
     updateSelectAllCheckbox();
 }
@@ -312,7 +352,7 @@ async function loadPackagesForSelect() {
 
         // Hide custom input initially
         const customInputWrapper = document.getElementById('customPointsWrapper');
-        if (customInputWrapper) customInputWrapper.style.display = 'none';
+        setAdminPointsVisibility(customInputWrapper, false);
 
         // Initialize dropdown handlers
         initPointsDropdowns();
@@ -364,13 +404,13 @@ function initPointsDropdowns() {
                 const customWrapper = document.getElementById('customPointsWrapper');
                 if (dropdown.id === 'packageSelectDropdown' && customWrapper) {
                     if (value === 'custom') {
-                        customWrapper.style.display = 'block';
+                        setAdminPointsVisibility(customWrapper, true);
                         // Focus the input
                         setTimeout(() => {
                             document.getElementById('customPointsAmount')?.focus();
                         }, 100);
                     } else {
-                        customWrapper.style.display = 'none';
+                        setAdminPointsVisibility(customWrapper, false);
                     }
                 }
 
@@ -476,9 +516,9 @@ function displayGeneratedCodes() {
 
     // Update display logic for 2-column layout
     const placeholder = document.getElementById('generatePlaceholder');
-    if (placeholder) placeholder.style.display = 'none';
+    setAdminPointsVisibility(placeholder, false);
 
-    resultDiv.style.display = 'block';
+    setAdminPointsPanelVisible(resultDiv, true);
 }
 
 // Copy single code to clipboard
@@ -692,16 +732,19 @@ function positionMobilePopup(filterElement) {
     const popup = filterElement.querySelector('.filter-popup') || filterElement.querySelector('.glass-popup');
     if (btn && popup) {
         const rect = btn.getBoundingClientRect();
-        // Set vertical position - place popup directly below button with small gap
-        filterElement.style.setProperty('--popup-top', `${rect.bottom + 4}px`);
-        // Set horizontal position - align to button's right edge for better fit
+        const parentRect = filterElement.getBoundingClientRect();
         const popupWidth = popup.offsetWidth || 180; // use actual width or estimate
-        let left = rect.right - popupWidth; // align right edge of popup with right edge of button
+        let left = rect.right - parentRect.left - popupWidth; // align right edge of popup with right edge of button
         if (left < 12) left = 12;
-        if (left + popupWidth > window.innerWidth - 12) {
-            left = window.innerWidth - popupWidth - 12;
+        const maxLeft = Math.max(parentRect.width - popupWidth - 12, 12);
+        if (left > maxLeft) {
+            left = maxLeft;
         }
-        filterElement.style.setProperty('--popup-left', `${left}px`);
+
+        setAdminPointsRuntimeStyles(filterElement, {
+            '--popup-top': `${btn.offsetTop + btn.offsetHeight + 4}px`,
+            '--popup-left': `${left}px`
+        });
     }
 }
 
@@ -1028,14 +1071,14 @@ function toggleBatchSelectMode() {
     const selectBtn = document.getElementById('batchSelectToggle');
 
     if (batchSelectMode) {
-        checkboxHeader.style.display = '';
-        menuContainer.style.display = 'flex';
-        countWrapper.style.display = 'flex';
+        setAdminPointsVisibility(checkboxHeader, true);
+        setAdminPointsVisibility(menuContainer, true);
+        setAdminPointsVisibility(countWrapper, true);
         selectBtn.classList.add('active');
     } else {
-        checkboxHeader.style.display = 'none';
-        menuContainer.style.display = 'none';
-        countWrapper.style.display = 'none';
+        setAdminPointsVisibility(checkboxHeader, false);
+        setAdminPointsVisibility(menuContainer, false);
+        setAdminPointsVisibility(countWrapper, false);
         selectBtn.classList.remove('active');
         selectedBatchIds.clear();
         updateSelectedCount();
@@ -1170,12 +1213,12 @@ function showDeleteOptionsModal(batchIds, usedCount, totalCount) {
 
     const modalHtml = `
         <div class="codes-modal-overlay delete-options-modal-overlay" data-points-overlay-close="delete-options">
-            <div class="codes-modal delete-options-modal" style="max-width: 520px; height: auto;">
+            <div class="codes-modal delete-options-modal points-delete-options-modal">
                 <div class="codes-modal-header">
                     <h3>⚠️ 删除批次确认</h3>
                     <button class="modal-close-btn" type="button" data-points-action="close-delete-options">✕</button>
                 </div>
-                <div class="codes-modal-body" style="padding: 24px;">
+                <div class="codes-modal-body points-delete-options-modal-body">
                     <div class="delete-summary">
                         <p>即将删除 <strong>${batchCount}</strong> 个批次，共 <strong>${totalCount}</strong> 个兑换码</p>
                         ${hasUsedCodes ? `<p class="warning-text">⚠️ 其中 <strong>${usedCount}</strong> 个已被用户使用</p>` : '<p class="success-text">✅ 所有兑换码均未使用</p>'}
@@ -1535,7 +1578,7 @@ async function viewBatchCodes(batchId) {
     } catch (err) {
         const modalBody = document.querySelector('.codes-modal-body');
         if (modalBody) {
-            modalBody.innerHTML = `<div class="error-text" style="text-align:center;padding:40px;color:#dc2626;">❌ 加载失败: ${err.message}</div>`;
+            modalBody.innerHTML = `<div class="error-text points-codes-error">❌ 加载失败: ${err.message}</div>`;
         }
     }
 }
@@ -1666,7 +1709,7 @@ function toggleBatchExportMenu() {
     // Show/hide "export selected" option based on selection
     const exportSelectedOption = document.getElementById('exportSelectedOption');
     if (exportSelectedOption) {
-        exportSelectedOption.style.display = selectedBatchIds.size > 0 ? 'flex' : 'none';
+        setAdminPointsVisibility(exportSelectedOption, selectedBatchIds.size > 0);
     }
 }
 
@@ -2080,7 +2123,7 @@ async function lookupCode() {
 
     // Show loading state
     resultDiv.innerHTML = '<div class="lookup-card"><div class="lookup-status">🔍 查询中...</div></div>';
-    resultDiv.style.display = 'block';
+    setAdminPointsPanelVisible(resultDiv, true);
 
     try {
         // 1. Try Redeem Code RPC first
@@ -2130,7 +2173,7 @@ async function lookupCode() {
 
     } catch (err) {
         resultDiv.innerHTML = `<div class="lookup-card invalid"><div class="lookup-status">❌ 查询失败</div><p>${err.message}</p></div>`;
-        resultDiv.style.display = 'block';
+        setAdminPointsPanelVisible(resultDiv, true);
     }
 }
 
@@ -2158,13 +2201,13 @@ function renderLookupResult(data, type) {
                 <div class="lookup-detail">
                     <span class="label">关联ID:</span>
                     <span class="value">
-                        <span class="code-value" style="font-size: 0.9rem;">${data.reference_id || '-'}</span>
+                        <span class="code-value admin-points-reference-id">${data.reference_id || '-'}</span>
                         ${data.prompt_title ? `<div class="lookup-prompt-title">Prompt: ${data.prompt_title}</div>` : ''}
                     </span>
                 </div>
                 <div class="lookup-detail">
                     <span class="label">变动金额:</span>
-                    <span class="value ${data.amount >= 0 ? 'text-success' : 'text-danger'}" style="font-size:18px;font-weight:bold;">
+                    <span class="value admin-points-ledger-amount ${data.amount >= 0 ? 'text-success' : 'text-danger'}">
                         ${data.amount >= 0 ? '+' : ''}${data.amount}
                     </span>
                 </div>
@@ -2174,11 +2217,11 @@ function renderLookupResult(data, type) {
                 </div>
                 <div class="lookup-detail">
                     <span class="label">创建时间:</span>
-                    <span class="value" style="font-family:var(--font-sans);">${new Date(data.created_at).toLocaleString('zh-CN')}</span>
+                    <span class="value admin-points-lookup-value-sans">${new Date(data.created_at).toLocaleString('zh-CN')}</span>
                 </div>
             </div>
         `;
-        resultDiv.style.display = 'block';
+        setAdminPointsPanelVisible(resultDiv, true);
         return;
     }
 
@@ -2241,7 +2284,7 @@ function renderLookupResult(data, type) {
                 ${data.revoke_reason ? `
                 <div class="lookup-detail">
                     <span class="label">撤销原因:</span>
-                    <span class="value" style="color:#dc2626;">📝 ${data.revoke_reason}</span>
+                    <span class="value admin-points-lookup-value-danger">📝 ${data.revoke_reason}</span>
                 </div>
                 ` : ''}
                 ${data.revoked_by ? `
@@ -2264,7 +2307,7 @@ function renderLookupResult(data, type) {
                 ` : ''}
             </div>
             `;
-    resultDiv.style.display = 'block';
+    setAdminPointsPanelVisible(resultDiv, true);
 }
 
 // Navigate to batch management and open specific batch
@@ -2291,10 +2334,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => {
             const activeTab = document.querySelector('#module-points .admin-tab.active');
             const indicator = document.querySelector('#module-points .admin-tab-indicator');
-            if (activeTab && indicator) {
-                indicator.style.width = `${activeTab.offsetWidth} px`;
-                indicator.style.left = `${activeTab.offsetLeft} px`;
-            }
+            syncPointsTabIndicator(indicator, activeTab);
         }, 100);
     };
 

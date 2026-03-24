@@ -1491,7 +1491,7 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=50'),
+        adminStudioHtml.includes('admin-studio.css?v=51'),
         true,
         'admin-studio.html should load the latest admin studio stylesheet version'
     );
@@ -1973,6 +1973,105 @@ test('admin points runtime renderers route batch tables and modals through deleg
     }
 });
 
+test('admin points runtime renderers externalize tab state, panel visibility, and lookup styling', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioCss = readRepoFile('admin-studio.css');
+    const adminPointsSource = readRepoFile('admin-points.js');
+
+    const removedRuntimeMarkers = [
+        "indicator.style.width = `${activeTab.offsetWidth}px`",
+        "indicator.style.left = `${activeTab.offsetLeft}px`",
+        "indicator.style.width = `${activeTab.offsetWidth} px`",
+        "indicator.style.left = `${activeTab.offsetLeft} px`",
+        'style="cursor:pointer;"',
+        'style="width: ${usedPercent}%"',
+        "customInputWrapper.style.display = 'none'",
+        "customWrapper.style.display = 'block'",
+        "customWrapper.style.display = 'none'",
+        "placeholder.style.display = 'none'",
+        "resultDiv.style.display = 'block'",
+        "filterElement.style.setProperty('--popup-top',",
+        "filterElement.style.setProperty('--popup-left',",
+        "checkboxHeader.style.display = ''",
+        "menuContainer.style.display = 'flex'",
+        "countWrapper.style.display = 'flex'",
+        "checkboxHeader.style.display = 'none'",
+        "menuContainer.style.display = 'none'",
+        "countWrapper.style.display = 'none'",
+        "exportSelectedOption.style.display = selectedBatchIds.size > 0 ? 'flex' : 'none'",
+        'style="max-width: 520px; height: auto;"',
+        'style="padding: 24px;"',
+        'style="text-align:center;padding:40px;color:#dc2626;"',
+        'style="font-size: 0.9rem;"',
+        'style="font-size:18px;font-weight:bold;"',
+        'style="font-family:var(--font-sans);"',
+        'style="color:#dc2626;"'
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(adminPointsSource.includes(marker), false, `admin-points.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "const ADMIN_POINTS_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';",
+        "const ADMIN_POINTS_PANEL_VISIBLE_CLASS = 'admin-points-panel-visible';",
+        'function setAdminPointsVisibility(target, visible)',
+        'function setAdminPointsPanelVisible(target, visible)',
+        "function setAdminPointsRuntimeStyles(target, styles = {}, priority = '')",
+        'function syncPointsTabIndicator(indicator, activeTab)',
+        'function hydratePointsUsageFills(scope = document)',
+        'class="points-batch-row',
+        'data-usage-fill-width="${usedPercent}%"',
+        'setAdminPointsVisibility(customInputWrapper, false);',
+        'setAdminPointsVisibility(customWrapper, true);',
+        'setAdminPointsPanelVisible(resultDiv, true);',
+        "setAdminPointsVisibility(checkboxHeader, true);",
+        "setAdminPointsVisibility(exportSelectedOption, selectedBatchIds.size > 0);",
+        'class="codes-modal delete-options-modal points-delete-options-modal"',
+        'class="codes-modal-body points-delete-options-modal-body"',
+        'class="error-text points-codes-error"',
+        'class="code-value admin-points-reference-id"',
+        'class="value admin-points-ledger-amount',
+        'class="value admin-points-lookup-value-sans"',
+        'class="value admin-points-lookup-value-danger"'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(adminPointsSource.includes(marker), true, `admin-points.js should contain ${marker}`);
+    }
+
+    const expectedCssMarkers = [
+        'left: var(--admin-tab-indicator-left, 0px);',
+        'width: var(--admin-tab-indicator-width, 0px);',
+        'width: var(--points-usage-fill-width, 0%);',
+        '.points-batch-row',
+        '#generatedCodesResult.admin-studio-inline-style-attr-35.admin-points-panel-visible',
+        '#lookupResult.admin-studio-inline-style-attr-41.admin-points-panel-visible',
+        '.admin-points-reference-id',
+        '.admin-points-ledger-amount',
+        '.admin-points-lookup-value-sans',
+        '.admin-points-lookup-value-danger',
+        '.points-delete-options-modal',
+        '.points-delete-options-modal-body',
+        '.points-codes-error'
+    ];
+
+    for (const marker of expectedCssMarkers) {
+        assert.equal(adminStudioCss.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioSource.includes('admin-studio.css?v=51'),
+        true,
+        'admin-studio.html should reference the updated admin stylesheet version'
+    );
+    assert.equal(
+        adminStudioSource.includes('admin-points.js?v=20260324_ADMIN_POINTS_RUNTIME_STYLE_1'),
+        true,
+        'admin-studio.html should reference the updated admin points script version'
+    );
+});
+
 test('admin comments runtime renderers route list items, filters, and block menus through delegated actions', () => {
     const adminCommentsSource = readRepoFile('admin-comments.js');
     const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|blur|error)\s*=\s*["']/i;
@@ -2428,7 +2527,7 @@ test('discount admin runtime renderers externalize table states, copy toast, and
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=50'),
+        adminStudioSource.includes('admin-studio.css?v=51'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -2495,7 +2594,7 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=50'),
+        adminStudioSource.includes('admin-studio.css?v=51'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );

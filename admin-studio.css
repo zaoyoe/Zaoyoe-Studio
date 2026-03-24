@@ -933,7 +933,9 @@ body {
 /* Sliding Indicator */
 .admin-tab-indicator {
     position: absolute;
+    left: var(--admin-tab-indicator-left, 0px);
     bottom: 0px;
+    width: var(--admin-tab-indicator-width, 0px);
     height: 2px;
     /* Thinner line */
     background: var(--accent-purple);
@@ -10388,10 +10390,15 @@ input:checked+.toggle-slider:before {
 }
 
 .usage-fill {
+    width: var(--points-usage-fill-width, 0%);
     height: 100%;
     background: linear-gradient(90deg, #22c55e, #16a34a);
     border-radius: 3px;
     transition: width 0.3s;
+}
+
+.points-batch-row {
+    cursor: pointer;
 }
 
 /* Actions Cell */
@@ -10452,6 +10459,11 @@ input:checked+.toggle-slider:before {
     margin-top: 24px;
     padding-top: 24px;
     border-top: 1px solid var(--card-border);
+}
+
+#generatedCodesResult.admin-studio-inline-style-attr-35.admin-points-panel-visible,
+#lookupResult.admin-studio-inline-style-attr-41.admin-points-panel-visible {
+    display: block;
 }
 
 #generatedCodesResult h4 {
@@ -10603,6 +10615,23 @@ input:checked+.toggle-slider:before {
     color: var(--accent-starry, #6b9ece);
     letter-spacing: 0.5px;
     font-size: 0.85rem;
+}
+
+.admin-points-reference-id {
+    font-size: 0.9rem !important;
+}
+
+.admin-points-ledger-amount {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.admin-points-lookup-value-sans {
+    font-family: var(--font-sans);
+}
+
+.admin-points-lookup-value-danger {
+    color: #dc2626;
 }
 
 .batch-link {
@@ -11474,8 +11503,8 @@ input:checked+.toggle-slider:before {
     #points-view-batches .filter-dropdown .glass-popup,
     #points-view-batches #batchExportPopup {
         position: absolute;
-        top: calc(100% + 4px);
-        left: 0;
+        top: var(--popup-top, calc(100% + 4px));
+        left: var(--popup-left, 0px);
         right: auto;
         width: auto;
         min-width: 100px;
@@ -12685,6 +12714,15 @@ input:checked+.toggle-slider:before {
     height: auto !important;
 }
 
+.points-delete-options-modal {
+    max-width: 520px;
+    height: auto;
+}
+
+.points-delete-options-modal-body {
+    padding: 24px;
+}
+
 .delete-summary {
     margin-bottom: 20px;
     padding: 16px;
@@ -12707,6 +12745,12 @@ input:checked+.toggle-slider:before {
 
 .delete-summary .success-text {
     color: #16a34a;
+}
+
+.points-codes-error {
+    padding: 40px;
+    color: #dc2626;
+    text-align: center;
 }
 
 .delete-options {
