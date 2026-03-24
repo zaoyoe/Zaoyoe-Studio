@@ -16,8 +16,6 @@
         cleanupPreview: null,
         requestToken: 0,
         viewCache: {},
-        tooltipElement: null,
-        tooltipTarget: null,
         lastSyncedAt: null,
         autoRefreshEnabled: true,
         autoRefreshIntervalMs: 5 * 60 * 1000,
@@ -93,83 +91,11 @@
     function renderInfoChip(help) {
         if (!help) return '';
         return `
-            <button type="button" class="payments-info-chip" data-payments-tooltip="${escapeHtml(help)}" aria-label="查看说明">
+            <button type="button" class="payments-info-chip" aria-label="查看说明">
                 <span class="payments-info-glyph" aria-hidden="true"></span>
+                <span class="payments-info-tooltip" role="tooltip">${escapeHtml(help)}</span>
             </button>
         `;
-    }
-
-    function ensureTooltipElement() {
-        const existingElements = Array.from(document.querySelectorAll('.payments-floating-tooltip'));
-        if (existingElements.length > 1) {
-            existingElements.slice(1).forEach((el) => el.remove());
-        }
-
-        const existing = existingElements[0];
-        if (existing && document.body.contains(existing)) {
-            state.tooltipElement = existing;
-            return existing;
-        }
-
-        const element = document.createElement('div');
-        element.className = 'payments-floating-tooltip';
-        element.hidden = true;
-        document.body.appendChild(element);
-        state.tooltipElement = element;
-        return element;
-    }
-
-    function positionTooltip(target, tooltip) {
-        if (!target || !tooltip) return;
-
-        const rect = target.getBoundingClientRect();
-        const width = tooltip.offsetWidth || 260;
-        const height = tooltip.offsetHeight || 64;
-        const viewportWidth = window.innerWidth;
-        const viewportHeight = window.innerHeight;
-        const gutter = 14;
-
-        let left = rect.left + rect.width / 2 - width / 2;
-        left = Math.max(gutter, Math.min(left, viewportWidth - width - gutter));
-
-        let top = rect.bottom + 14;
-        let placeAbove = false;
-        if (top + height + gutter > viewportHeight) {
-            placeAbove = true;
-            top = rect.top - height - 14;
-        }
-        top = Math.max(gutter, top);
-
-        const targetCenter = rect.left + rect.width / 2;
-        const arrowLeft = Math.max(20, Math.min(width - 20, targetCenter - left));
-
-        tooltip.style.left = `${left}px`;
-        tooltip.style.top = `${top}px`;
-        tooltip.style.setProperty('--payments-tooltip-arrow-left', `${arrowLeft}px`);
-        tooltip.classList.toggle('is-above', placeAbove);
-    }
-
-    function showInfoTooltip(target) {
-        const help = String(target?.dataset?.paymentsTooltip || '').trim();
-        if (!help) return;
-
-        const tooltip = ensureTooltipElement();
-        tooltip.textContent = help;
-        tooltip.hidden = false;
-        tooltip.classList.add('is-visible');
-        positionTooltip(target, tooltip);
-        state.tooltipTarget = target;
-    }
-
-    function hideInfoTooltip() {
-        const tooltip = state.tooltipElement;
-        if (!tooltip) return;
-        tooltip.hidden = true;
-        tooltip.classList.remove('is-visible', 'is-above');
-        tooltip.style.left = '';
-        tooltip.style.top = '';
-        tooltip.style.removeProperty('--payments-tooltip-arrow-left');
-        state.tooltipTarget = null;
     }
 
     function formatDateTime(value) {
@@ -679,7 +605,7 @@
 
     function isPaymentsModuleActive() {
         const module = document.getElementById('module-payments');
-        return Boolean(module && module.classList.contains('active') && module.style.display !== 'none');
+        return Boolean(module && module.classList.contains('active') && window.getComputedStyle(module).display !== 'none');
     }
 
     function syncAutoRefreshToggle() {
@@ -834,18 +760,6 @@
         if (!nav) return;
         const activeButton = nav.querySelector('.admin-tab.active');
         if (!activeButton) return;
-
-        if (typeof window.updateAdminTabIndicator === 'function') {
-            window.updateAdminTabIndicator(activeButton);
-            return;
-        }
-
-        const indicator = nav.querySelector('.admin-tab-indicator');
-        if (indicator) {
-            indicator.style.left = `${activeButton.offsetLeft}px`;
-            indicator.style.width = `${activeButton.offsetWidth}px`;
-            indicator.style.opacity = '1';
-        }
     }
 
     function switchTab(tabId, options = {}) {
@@ -1212,8 +1126,22 @@
                     const showLabel = labelStep === 1 || index % labelStep === 0 || index === items.length - 1;
                     return `
                         <div class="payments-trend-bar ${showLabel ? 'show-label' : ''}" title="${escapeHtml(item.label)} · 总回调 ${escapeHtml(formatNumber(item.total_events))} · 异常 ${escapeHtml(formatNumber(item.anomaly_events))}">
-                            <div class="payments-trend-bar-total" style="height:${totalHeight}%"></div>
-                            <div class="payments-trend-bar-anomaly" style="height:${anomalyHeight}%"></div>
+                            <div class="payments-trend-bar-visual" aria-hidden="true">
+                                <svg class="payments-trend-bar-svg" viewBox="0 0 24 100" preserveAspectRatio="none">
+                                    <defs>
+                                        <linearGradient id="paymentsTrendTotalGradient-${index}" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stop-color="#60a5fa" stop-opacity="0.95"></stop>
+                                            <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.36"></stop>
+                                        </linearGradient>
+                                        <linearGradient id="paymentsTrendAnomalyGradient-${index}" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stop-color="#f87171" stop-opacity="0.96"></stop>
+                                            <stop offset="100%" stop-color="#dc2626" stop-opacity="0.42"></stop>
+                                        </linearGradient>
+                                    </defs>
+                                    <rect class="payments-trend-bar-total" x="0" y="${100 - totalHeight}" width="24" height="${totalHeight}" rx="12" fill="url(#paymentsTrendTotalGradient-${index})"></rect>
+                                    <rect class="payments-trend-bar-anomaly" x="0" y="${100 - anomalyHeight}" width="24" height="${anomalyHeight}" rx="12" fill="url(#paymentsTrendAnomalyGradient-${index})"></rect>
+                                </svg>
+                            </div>
                             <span>${showLabel ? escapeHtml(shortLabel) : ''}</span>
                         </div>
                     `;
@@ -1667,31 +1595,9 @@
                         setAutoRefreshEnabled(Boolean(event.target.checked));
                     });
                 }
-                document.addEventListener('mouseover', (event) => {
-                    const chip = event.target.closest('.payments-info-chip[data-payments-tooltip]');
-                    if (!chip) return;
-                    showInfoTooltip(chip);
-                });
-                document.addEventListener('mouseout', (event) => {
-                    const chip = event.target.closest('.payments-info-chip[data-payments-tooltip]');
-                    if (!chip) return;
-                    hideInfoTooltip();
-                });
-                document.addEventListener('focusin', (event) => {
-                    const chip = event.target.closest('.payments-info-chip[data-payments-tooltip]');
-                    if (!chip) return;
-                    showInfoTooltip(chip);
-                });
-                document.addEventListener('focusout', (event) => {
-                    const chip = event.target.closest('.payments-info-chip[data-payments-tooltip]');
-                    if (!chip) return;
-                    hideInfoTooltip();
-                });
                 let resizeTimer = null;
-                window.addEventListener('scroll', hideInfoTooltip, true);
                 window.addEventListener('resize', () => {
                     syncTabIndicator();
-                    hideInfoTooltip();
                     window.clearTimeout(resizeTimer);
                     resizeTimer = window.setTimeout(() => {
                         rerenderCurrentView();

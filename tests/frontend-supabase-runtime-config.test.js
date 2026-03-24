@@ -1649,7 +1649,7 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=54'),
+        adminStudioHtml.includes('admin-studio.css?v=55'),
         true,
         'admin-studio.html should load the latest admin studio stylesheet version'
     );
@@ -2286,7 +2286,7 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=54'),
+        adminStudioSource.includes('admin-studio.css?v=55'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -2893,7 +2893,7 @@ test('discount admin runtime renderers externalize table states, copy toast, and
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=54'),
+        adminStudioSource.includes('admin-studio.css?v=55'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -2960,7 +2960,7 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=54'),
+        adminStudioSource.includes('admin-studio.css?v=55'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -3865,7 +3865,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
     }
 
     const htmlMarkers = [
-        'admin-studio.css?v=54',
+        'admin-studio.css?v=55',
         '<div class="anomaly-alerts-area" id="anomalyAlertsArea" hidden>',
         '<div class="ab-results-chart" id="abResultsChart" hidden>',
         'admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1'
@@ -3935,7 +3935,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=54'),
+        adminStudioHtml.includes('admin-studio.css?v=55'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -4147,6 +4147,65 @@ test('payments runtime controls, site filter, and admin chat menu route through 
     for (const marker of adminScriptMarkers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
+});
+
+test('payments runtime renderers externalize tooltip, tab, and trend styling', () => {
+    const adminPaymentsSource = readRepoFile('js/admin-payments.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const removedMarkers = [
+        'tooltip.style.left = `${left}px`;',
+        'tooltip.style.top = `${top}px`;',
+        "tooltip.style.setProperty('--payments-tooltip-arrow-left', `${arrowLeft}px`);",
+        "tooltip.style.removeProperty('--payments-tooltip-arrow-left');",
+        "module.style.display !== 'none'",
+        'indicator.style.left = `${activeButton.offsetLeft}px`;',
+        'indicator.style.width = `${activeButton.offsetWidth}px`;',
+        "indicator.style.opacity = '1';",
+        '<div class="payments-trend-bar-total" style="height:${totalHeight}%"></div>',
+        '<div class="payments-trend-bar-anomaly" style="height:${anomalyHeight}%"></div>',
+        "data-payments-tooltip="
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(adminPaymentsSource.includes(marker), false, `js/admin-payments.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'class="payments-info-tooltip" role="tooltip"',
+        "window.getComputedStyle(module).display !== 'none'",
+        'class="payments-trend-bar-visual" aria-hidden="true"',
+        'class="payments-trend-bar-svg"',
+        'paymentsTrendTotalGradient-',
+        'paymentsTrendAnomalyGradient-'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(adminPaymentsSource.includes(marker), true, `js/admin-payments.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.payments-info-tooltip {',
+        '.payments-info-chip:hover .payments-info-tooltip',
+        '.payments-trend-bar-visual {',
+        '.payments-trend-bar-svg {'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-studio.css?v=55'),
+        true,
+        'admin-studio.html should reference the updated admin stylesheet version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_1'),
+        true,
+        'admin-studio.html should reference the updated admin payments runtime version'
+    );
 });
 
 test('admin chat runtime renderers externalize avatar, loading, and panel visibility styling', () => {
