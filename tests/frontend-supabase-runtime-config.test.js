@@ -148,6 +148,14 @@ test('active frontend runtime files no longer hardcode the production Supabase h
     assert.deepEqual(violations, [], violations.join('\n'));
 });
 
+test('vercel config disables automatic preview deployments for codex work branches', () => {
+    const vercelConfig = readVercelConfig();
+
+    assert.equal(vercelConfig.$schema, 'https://openapi.vercel.sh/vercel.json');
+    assert.equal(vercelConfig.git?.deploymentEnabled?.bot, false);
+    assert.equal(vercelConfig.git?.deploymentEnabled?.['codex/*'], false);
+});
+
 test('frontend entry pages load the shared Supabase runtime config before initialization', () => {
     const missing = [];
 
