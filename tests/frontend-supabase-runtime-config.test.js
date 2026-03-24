@@ -2505,6 +2505,8 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
 
 test('admin comments runtime renderers route list items, filters, and block menus through delegated actions', () => {
     const adminCommentsSource = readRepoFile('admin-comments.js');
+    const adminCommentsCss = readRepoFile('admin-sidebar.css');
+    const adminStudioSource = readRepoFile('admin-studio.html');
     const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|blur|error)\s*=\s*["']/i;
 
     assert.equal(
@@ -2538,6 +2540,51 @@ test('admin comments runtime renderers route list items, filters, and block menu
     for (const marker of delegatedMarkers) {
         assert.equal(adminCommentsSource.includes(marker), true, `admin-comments.js should contain ${marker}`);
     }
+
+    const removedMarkers = [
+        '<div class="item-avatar" style="',
+        'fa-thumbtack" style=',
+        '<div class="action-block-wrapper" style="position: relative;">',
+        "item.style.opacity = '0';",
+        "item.style.transform = 'translateY(-20px)';"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(adminCommentsSource.includes(marker), false, `admin-comments.js should not contain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "const avatarMarkup = comment.avatar",
+        "class=\"item-avatar${comment.avatar ? ' item-avatar--image' : ''}\"",
+        "fa-thumbtack${comment.is_pinned ? ' comment-pin-icon--active' : ''}",
+        "item.classList.add('comment-admin-item--removing');"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(adminCommentsSource.includes(marker), true, `admin-comments.js should contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '.item-avatar.item-avatar--image',
+        '.item-avatar-image',
+        '.comment-pin-icon--active',
+        '.comment-admin-item.comment-admin-item--removing'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(adminCommentsCss.includes(marker), true, `admin-sidebar.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioSource.includes('admin-sidebar.css?v=11'),
+        true,
+        'admin-studio.html should reference the updated admin sidebar stylesheet version'
+    );
+    assert.equal(
+        adminStudioSource.includes('admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1'),
+        true,
+        'admin-studio.html should reference the updated admin comments script version'
+    );
 });
 
 test('wallet modal runtime renderers route wallet shell, lists, filters, and order dialogs through delegated actions', () => {

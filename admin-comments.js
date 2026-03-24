@@ -746,6 +746,9 @@ function renderCommentList(comments) {
     // Render comments with new structure
     container.innerHTML = comments.map(comment => {
         const avatarInitial = comment.author.charAt(0).toUpperCase();
+        const avatarMarkup = comment.avatar
+            ? `<img class="item-avatar-image" src="${escapeHtml(comment.avatar)}" alt="" loading="lazy" decoding="async">`
+            : avatarInitial;
         const timeStr = formatTimeAgo(comment.created_at);
         // Reply badge (English) - shown at bottom-left if this is a reply
         const isReply = comment.parent_id ? true : false;
@@ -767,8 +770,8 @@ function renderCommentList(comments) {
 
                 <!-- 2. Header: Avatar + Meta (Name, Time) -->
                 <div class="item-header">
-                    <div class="item-avatar" style="${comment.avatar ? `background-image: url(${comment.avatar});` : ''}">
-                        ${comment.avatar ? '' : avatarInitial}
+                    <div class="item-avatar${comment.avatar ? ' item-avatar--image' : ''}">
+                        ${avatarMarkup}
                     </div>
                     <div class="item-meta">
                         <span class="item-name" title="${escapeHtml(comment.author)}">${escapeHtml(comment.author)}</span>
@@ -797,12 +800,12 @@ function renderCommentList(comments) {
                         data-comment-pinned="${comment.is_pinned ? '1' : '0'}"
                         data-prompt-id="${encodeURIComponent(comment.context || '')}"
                         title="${comment.is_pinned ? '取消置顶' : '置顶评论'}">
-                        <i class="fas fa-thumbtack" style="${comment.is_pinned ? 'color: #9b5de5;' : ''}"></i>
+                        <i class="fas fa-thumbtack${comment.is_pinned ? ' comment-pin-icon--active' : ''}"></i>
                     </button>
                     ` : ''}
 
                     ${window.hasPermission && window.hasPermission('users.manage') ? `
-                    <div class="action-block-wrapper" style="position: relative;">
+                    <div class="action-block-wrapper">
                         <button class="action-btn action-block" type="button" data-comments-action="toggle-block-dropdown" data-user-id="${encodeURIComponent(comment.user_id || '')}" title="用户管理">
                             <i class="fas fa-ban"></i>
                         </button>
@@ -1099,8 +1102,7 @@ async function deleteComment(id, type) {
         // Remove from UI
         const item = document.querySelector(`.comment-admin-item[data-id="${id}"]`);
         if (item) {
-            item.style.opacity = '0';
-            item.style.transform = 'translateY(-20px)';
+            item.classList.add('comment-admin-item--removing');
             setTimeout(() => item.remove(), 200);
         }
 
