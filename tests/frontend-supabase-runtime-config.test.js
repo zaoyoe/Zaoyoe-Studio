@@ -607,7 +607,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
         ['shop.html', 'css/shop-page.css?v=20260324_SHOP_RUNTIME_STYLE_1'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_SHOP_RUNTIME_STYLE_ZERO_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_HOMEPAGE_RUNTIME_STYLE_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -715,7 +715,7 @@ test('admin studio page no longer embeds inline style attributes', () => {
     const source = readRepoFile('admin-studio.html');
 
     assert.equal(
-        source.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_SHOP_RUNTIME_STYLE_ZERO_1'),
+        source.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_HOMEPAGE_RUNTIME_STYLE_1'),
         true,
         'admin-studio.html should load the updated admin studio page stylesheet'
     );
@@ -2433,8 +2433,10 @@ test('verify widget runtime renderers externalize progress, visibility, history 
     );
 });
 
-test('homepage admin runtime renderers route retry and section visibility controls through bound listeners', () => {
+test('homepage admin runtime renderers externalize retry, visibility, tab indicator, and preview style state', () => {
     const homepageAdminSource = readRepoFile('admin-homepage.js');
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioPageStyles = readRepoFile('css/admin-studio-page.css');
     const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|keyup|mouseover|mouseout|error|load)\s*=\s*["']/i;
 
     assert.equal(
@@ -2443,20 +2445,68 @@ test('homepage admin runtime renderers route retry and section visibility contro
         'admin-homepage.js should not emit inline event handler attributes'
     );
 
+    const removedRuntimeMarkers = [
+        "if (loading) loading.style.display = 'none';",
+        "if (content) content.style.display = 'block';",
+        'style="font-size: 24px; margin-bottom: 12px; color: #f59e0b;"',
+        'style="margin-top: 16px;"',
+        "indicator.style.opacity = '1';",
+        "setTimeout(() => indicator.style.opacity = '0', 2000);",
+        "indicator.style.left = activeTab.offsetLeft + 'px';",
+        "indicator.style.width = activeTab.offsetWidth + 'px';",
+        "view.style.display = isActive ? 'block' : 'none';",
+        "previewImg.style.display = 'block';",
+        "placeholder.style.display = 'none';",
+        "img.style.display = 'none';",
+        "placeholder.style.display = 'flex';"
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(homepageAdminSource.includes(marker), false, `admin-homepage.js should not retain ${marker}`);
+    }
+
     const delegatedMarkers = [
         'data-homepage-retry="1"',
         'js-homepage-retry-btn',
         'data-homepage-visibility="${visSection}"',
         'data-homepage-visibility="footer"',
         'function bindSectionVisibilityToggle(input, section)',
+        'function setHomepageAdminHiddenState(target, hidden, hiddenClass = HOMEPAGE_ADMIN_HIDDEN_CLASS)',
+        'function showHomepageSaveIndicator(indicator, durationMs = 2000)',
+        'function setHomepageSectionViewState(view, isActive)',
+        'function setHomepagePreviewState(previewImg, placeholder, hasPreview)',
+        "window.updateAdminTabIndicator(activeTab)",
         "input.dataset.homepageVisibilityBound === '1'",
         "input.addEventListener('change', () => {",
-        "loading.querySelector('[data-homepage-retry=\"1\"]')?.addEventListener('click'"
+        "loading.querySelector('[data-homepage-retry=\"1\"]')?.addEventListener('click'",
+        'class="btn-sm btn-primary js-homepage-retry-btn hp-loading-retry-btn"',
+        "placeholder.hidden = !!hasPreview;"
     ];
 
     for (const marker of delegatedMarkers) {
         assert.equal(homepageAdminSource.includes(marker), true, `admin-homepage.js should contain ${marker}`);
     }
+
+    const styleMarkers = [
+        '.hp-loading-error-icon',
+        '.hp-loading-retry-btn',
+        '#module-homepage .hp-section-view[hidden]'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminStudioPageStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioSource.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_HOMEPAGE_RUNTIME_STYLE_1'),
+        true,
+        'admin-studio.html should load the latest admin studio page stylesheet version'
+    );
+    assert.equal(
+        adminStudioSource.includes('admin-homepage.js?v=20260324_HOMEPAGE_RUNTIME_STYLE_2'),
+        true,
+        'admin-studio.html should load the latest homepage admin runtime version'
+    );
 });
 
 test('admin studio settings, discounts, and tickets controls route through delegated actions', () => {
@@ -3173,7 +3223,7 @@ test('shop admin import and editor helpers externalize runtime layout styling', 
     }
 
     assert.equal(
-        adminStudioSource.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_SHOP_RUNTIME_STYLE_ZERO_1'),
+        adminStudioSource.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_HOMEPAGE_RUNTIME_STYLE_1'),
         true,
         'admin-studio.html should load the latest import/runtime stylesheet version'
     );
