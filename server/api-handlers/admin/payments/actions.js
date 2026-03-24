@@ -471,6 +471,56 @@ function buildRefundAlertContent(target = {}, topicLabel = '', detail = '') {
     ].join('\n');
 }
 
+function normalizeCurrencyAmount(value) {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function buildRefundOpsAlertPayload(target = {}, config = {}, processingResult = '', context = {}) {
+    const snapshot = getHupijiaoRefundSnapshot(target);
+    const metadata = snapshot.metadata;
+    const reclaimDetails = normalizeJsonObject(context.reclaimSummary || context.reclaimDetails);
+    const compensation = normalizeJsonObject(context.compensation);
+    const liveOrder = normalizeJsonObject(context.liveOrder);
+    const response = normalizeJsonObject(context.response);
+    const failureMessage = normalizeText(context.failureMessage || context.message);
+
+    return {
+        processing_result: normalizeText(processingResult),
+        target_type: 'order',
+        target_id: normalizeText(target.id) || null,
+        provider: normalizeText(target.provider) || null,
+        provider_order_no: normalizeText(snapshot.providerOrderNo || target.provider_order_no) || null,
+        site: normalizeText(target.site).toLowerCase() || 'cn',
+        topic_label: normalizeText(config.topicLabel) || null,
+        detail: normalizeText(config.detail) || null,
+        entry_path: `支付对账 -> 异常运维 -> ${normalizeText(config.topicLabel) || '退款专题'}`,
+        order_status: normalizeText(target.status).toLowerCase() || null,
+        refund_status: normalizeText(snapshot.refundStatus || metadata.refund_status) || null,
+        user_id: normalizeText(target.user_id) || null,
+        checkout_session_id: normalizeText(target.checkout_session_id) || null,
+        expected_amount: normalizeCurrencyAmount(target.expected_amount),
+        paid_amount: normalizeCurrencyAmount(target.paid_amount),
+        points_amount: normalizePointAmount(target.points_amount, 0),
+        credited: snapshot.credited === true,
+        claimed_at: normalizeText(target.claimed_at) || null,
+        paid_at: normalizeText(target.paid_at) || null,
+        verified_at: normalizeText(target.verified_at) || null,
+        gateway_open_order_id: normalizeText(snapshot.openOrderId) || null,
+        note: normalizeText(context.note) || null,
+        last_error: failureMessage || normalizeText(target.last_error) || null,
+        response_status: Number.isFinite(Number(context.responseStatus)) ? Number(context.responseStatus) : null,
+        query_status: normalizeText(liveOrder.status) || null,
+        query_status_raw: normalizeText(liveOrder.statusRaw) || null,
+        gateway_message: normalizeText(response.message || liveOrder.message) || null,
+        refund_reclaimed_points: normalizePointAmount(reclaimDetails.reclaimedPoints, 0),
+        refund_reclaimed_paid_points: normalizePointAmount(reclaimDetails.reclaimedPaidPoints, 0),
+        refund_reclaimed_bonus_points: normalizePointAmount(reclaimDetails.reclaimedBonusPoints, 0),
+        compensation_restored_paid_points: normalizePointAmount(compensation.restoredPaidPoints, 0),
+        compensation_restored_bonus_points: normalizePointAmount(compensation.restoredBonusPoints, 0)
+    };
+}
+
 function extractRefundReclaimSummary(payload = {}) {
     return {
         reclaimedPoints: normalizePointAmount(payload?.deducted, 0),
@@ -546,7 +596,7 @@ async function compensateRefundReclaim(supabase, target, reclaimSummary, attempt
     };
 }
 
-async function tryNotifyRefundOpsAlert(supabase, target, processingResult) {
+async function tryNotifyRefundOpsAlert(supabase, target, processingResult, context = {}) {
     const config = REFUND_ALERT_CONFIG[String(processingResult || '').trim()];
     if (!config || !supabase) {
         return;
@@ -569,15 +619,7 @@ async function tryNotifyRefundOpsAlert(supabase, target, processingResult) {
             severity: config.severity || 'warning',
             title: config.title,
             content: buildRefundAlertContent(target, config.topicLabel, config.detail),
-            payload: {
-                processing_result: normalizeText(processingResult),
-                target_type: 'order',
-                target_id: normalizeText(target?.id),
-                provider: normalizeText(target?.provider),
-                provider_order_no: normalizeText(target?.provider_order_no),
-                site: normalizeText(target?.site).toLowerCase() || 'cn',
-                topic_label: config.topicLabel
-            },
+            payload: buildRefundOpsAlertPayload(target, config, processingResult, context),
             source: 'admin_refund_ops',
             dedupeWindowMinutes: 45
         });
@@ -737,7 +779,16 @@ async function failHupijiaoRefundAfterReclaim({
     await tryNotifyRefundOpsAlert(
         supabase,
         target,
-        compensation.success ? 'admin_refund_failed' : 'admin_refund_compensation_failed'
+        compensation.success ? 'admin_refund_failed' : 'admin_refund_compensation_failed',
+        {
+            note,
+            failureMessage: message,
+            responseStatus,
+            liveOrder,
+            reclaimSummary,
+            compensation,
+            response
+        }
     );
 
     const error = new Error(
@@ -928,7 +979,13 @@ async function applyHupijiaoRefundDecision(supabase, target, note, actorId, env 
                         response_status: reclaimError?.statusCode || 409,
                         processed_at: new Date().toISOString()
                     });
-                    await tryNotifyRefundOpsAlert(supabase, target, 'admin_refund_reclaim_failed');
+                    await tryNotifyRefundOpsAlert(supabase, target, 'admin_refund_reclaim_failed', {
+                        note,
+                        failureMessage: reclaimError.message,
+                        responseStatus: reclaimError?.statusCode || 409,
+                        liveOrder,
+                        reclaimDetails: reclaimError?.reclaimDetails || null
+                    });
                     throw reclaimError;
                 }
             }
@@ -1010,7 +1067,13 @@ async function applyHupijiaoRefundDecision(supabase, target, note, actorId, env 
                 response_status: reclaimError?.statusCode || 409,
                 processed_at: new Date().toISOString()
             });
-            await tryNotifyRefundOpsAlert(supabase, target, 'admin_refund_reclaim_failed');
+            await tryNotifyRefundOpsAlert(supabase, target, 'admin_refund_reclaim_failed', {
+                note,
+                failureMessage: reclaimError.message,
+                responseStatus: reclaimError?.statusCode || 409,
+                liveOrder,
+                reclaimDetails: reclaimError?.reclaimDetails || null
+            });
             throw reclaimError;
         }
     }

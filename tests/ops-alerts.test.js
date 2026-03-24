@@ -4,6 +4,7 @@ const path = require('node:path');
 const Module = require('node:module');
 
 const {
+    __testUtils,
     enqueueOpsAlertJob,
     normalizeOpsAlertsConfig,
     sweepOpsAlertJobs
@@ -281,6 +282,49 @@ test('enqueueOpsAlertJob dedupes repeated refund alerts inside the recent window
     assert.equal(state.jobs.length, 1);
     assert.deepEqual(state.jobs[0].channels, ['telegram', 'feishu']);
     assert.deepEqual(state.jobs[0].remaining_channels, ['telegram', 'feishu']);
+});
+
+test('buildExternalAlertText renders rich refund details for payment refund ops alerts', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'payment_refund_ops',
+        severity: 'critical',
+        title: '支付退款积分回滚失败',
+        payload: {
+            topic_label: '回滚失败',
+            processing_result: 'admin_refund_compensation_failed',
+            site: 'cn',
+            provider: 'hupijiao',
+            provider_order_no: 'HJ_ORDER_88',
+            target_id: 'order-hj-88',
+            user_id: 'user-88',
+            order_status: 'redeemed',
+            refund_status: 'paid',
+            expected_amount: 30,
+            paid_amount: 30,
+            points_amount: 1000,
+            credited: true,
+            refund_reclaimed_points: 1000,
+            refund_reclaimed_paid_points: 800,
+            refund_reclaimed_bonus_points: 200,
+            compensation_restored_paid_points: 800,
+            compensation_restored_bonus_points: 200,
+            note: '人工备注：网关异常',
+            last_error: '网关退款失败',
+            detail: '网关退款失败后，系统自动补回积分也失败了，需要立即人工核对账务并修复。',
+            entry_path: '支付对账 -> 异常运维 -> 回滚失败'
+        }
+    });
+
+    assert.match(text, /专题：回滚失败/);
+    assert.match(text, /异常类型：退款失败后积分回滚失败/);
+    assert.match(text, /支付通道：虎皮椒/);
+    assert.match(text, /订单号：HJ_ORDER_88/);
+    assert.match(text, /金额：应付 30\.00 元 \/ 实付 30\.00 元/);
+    assert.match(text, /积分：1000 点（已入账：是）/);
+    assert.match(text, /扣回积分：总 1000 点 \/ 本金 800 点 \/ 赠送 200 点/);
+    assert.match(text, /补回积分：本金 800 点 \/ 赠送 200 点/);
+    assert.match(text, /最近错误：网关退款失败/);
+    assert.match(text, /处理入口：支付对账 -> 异常运维 -> 回滚失败/);
 });
 
 test('sweepOpsAlertJobs delivers queued alerts and records per-channel attempts', async () => {
