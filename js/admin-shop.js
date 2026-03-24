@@ -475,6 +475,9 @@ Example output format:
                 case 'shop-switch-tab':
                     this.switchTab(actionEl.dataset.shopTab);
                     break;
+                case 'product-open-create-modal':
+                    this.openProductModal();
+                    break;
                 case 'product-filter-category':
                     this.filterCategory(actionEl.dataset.category, actionEl);
                     break;
@@ -646,6 +649,9 @@ Example output format:
                     break;
                 case 'order-show-content':
                     this.showOrderContent(actionEl.dataset.orderId, actionEl.dataset.itemsData);
+                    break;
+                case 'order-close-content':
+                    this.closeDynamicModal(actionEl.dataset.modalId || 'orderContentModal');
                     break;
                 case 'order-actions-stop':
                     break;
@@ -2682,24 +2688,7 @@ Example output format:
         this.ensureDeliveryWorkspaceMounted();
         this.syncShopUrlState();
 
-        // Update Tab UI
-        document.querySelectorAll('.shop-tab').forEach(el => {
-            el.classList.remove('active');
-            el.style.borderBottom = 'none';
-            el.style.color = 'rgba(255,255,255,0.6)';
-
-            if (el.dataset.shopTab === tabName) {
-                el.classList.add('active');
-                el.style.borderBottom = '2px solid #6b9ece';
-                el.style.color = '#fff';
-            }
-        });
-
-        // Hide all views
-        document.querySelectorAll('.shop-view').forEach(el => el.style.display = 'none');
-
-        // Show target view
-        document.getElementById(`shop-view-${tabName}`).style.display = 'block';
+        this.applyShopTabState(tabName);
 
         // Load Data
         if (tabName === 'products') {
@@ -2712,18 +2701,52 @@ Example output format:
         if (tabName === 'fulfillment') this.loadDeliveryTasks(this.deliveryTaskPage || 1);
     },
 
+    applyShopTabState: function (tabName) {
+        document.querySelectorAll('.shop-tab').forEach((el) => {
+            const isActive = el.dataset.shopTab === tabName;
+            el.classList.toggle('active', isActive);
+            el.classList.toggle('admin-studio-inline-style-attr-44', isActive);
+            el.classList.toggle('admin-studio-inline-style-attr-45', !isActive);
+        });
+
+        document.querySelectorAll('.shop-view').forEach((el) => {
+            const isActive = el.id === `shop-view-${tabName}`;
+            el.classList.toggle('shop-view--active', isActive);
+            el.classList.toggle('admin-studio-inline-style-attr-3', !isActive);
+        });
+    },
+
+    syncProductSelectionModeUi: function () {
+        const toggleBtn = document.getElementById('toggleProductSelectionBtn');
+        const batchBtn = document.getElementById('productBatchActionsBtn');
+        const grid = document.getElementById('productsGrid');
+
+        if (toggleBtn) {
+            toggleBtn.classList.toggle('active', this.isProductSelectionMode);
+        }
+        if (batchBtn) {
+            batchBtn.classList.toggle('admin-studio-inline-style-attr-3', !this.isProductSelectionMode);
+        }
+        if (grid) {
+            grid.classList.toggle('shop-admin-products-grid--selection-mode', this.isProductSelectionMode);
+        }
+
+        if (!this.isProductSelectionMode) {
+            document.querySelectorAll('.product-select-checkbox').forEach((input) => {
+                input.checked = false;
+            });
+            this.closeProductBatchMenu();
+            this.updateProductSelectionCount();
+        }
+    },
+
     // ==================== Products (Grid View) ====================
     loadProducts: async function () {
         const container = document.getElementById('productsGrid');
         if (!container) return; // Grid container might be missing if HTML update failed
 
+        container.classList.add('shop-grid', 'shop-admin-products-grid');
         container.innerHTML = '<div class="loading-spinner">Loading...</div>';
-
-        // Add Grid Style dynamically if not in CSS
-        container.style.display = 'grid';
-        container.style.gridTemplateColumns = 'repeat(auto-fill, minmax(280px, 1fr))';
-        container.style.gap = '20px';
-        container.style.padding = '10px 0';
 
         try {
             let query = supabaseClient
@@ -2751,129 +2774,92 @@ Example output format:
 
             // Add "New Product" Card
             const addCard = document.createElement('div');
-            addCard.className = 'shop-card add-new-card';
-            addCard.style.cssText = `
-                display: flex; flex-direction: column; align-items: center; justify-content: center;
-                background: rgba(255, 255, 255, 0.05); border: 2px dashed rgba(255, 255, 255, 0.2);
-                border-radius: 12px; min-height: 200px; cursor: pointer; transition: all 0.3s ease;
-            `;
+            addCard.className = 'shop-card shop-admin-product-card shop-admin-product-card--create';
+            addCard.dataset.shopAction = 'product-open-create-modal';
             addCard.innerHTML = `
-                <div style="font-size: 40px; color: rgba(255,255,255,0.3); margin-bottom: 10px;">+</div>
-                <div style="color: rgba(255,255,255,0.6);">新建商品</div>
+                <div class="shop-admin-product-create-icon" aria-hidden="true">+</div>
+                <div class="shop-admin-product-create-label">新建商品</div>
             `;
-            addCard.onclick = () => ShopAdmin.openProductModal();
-            addCard.onmouseover = () => { addCard.style.background = 'rgba(255,255,255,0.1)'; addCard.style.borderColor = '#6b9ece'; };
-            addCard.onmouseout = () => { addCard.style.background = 'rgba(255,255,255,0.05)'; addCard.style.borderColor = 'rgba(255,255,255,0.2)'; };
             container.appendChild(addCard);
 
-            if (!data || data.length === 0) return;
+            if (!data || data.length === 0) {
+                this.syncProductSelectionModeUi();
+                return;
+            }
 
             data.forEach(p => {
-                const iconHtml = p.icon_url?.startsWith('fa')
-                    ? `<i class="${p.icon_url}" style="font-size: 24px; color: #6b9ece;"></i>`
-                    : (p.icon_url ? `<img src="${p.icon_url}" width="40" style="border-radius:8px;">` : '<i class="fas fa-box" style="font-size: 24px;"></i>');
-
                 const statusBadge = p.is_active
-                    ? '<span class="status-badge status-active" style="display:inline-block; padding:4px 10px; border-radius:20px; font-size:12px; font-weight:500; color:#4ade80; background:rgba(40, 40, 40, 0.6); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); border:1px solid rgba(74, 222, 128, 0.3); box-shadow:0 2px 10px rgba(0, 0, 0, 0.2); min-width:auto;">上架中</span>'
-                    : '<span class="status-badge status-inactive" style="display:inline-block; padding:4px 10px; border-radius:20px; font-size:12px; font-weight:500; color:#94a3b8; background:rgba(40, 40, 40, 0.6); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); border:1px solid rgba(148, 163, 184, 0.3); box-shadow:0 2px 10px rgba(0, 0, 0, 0.2); min-width:auto;">已下架</span>';
+                    ? '<span class="shop-admin-status-badge shop-admin-status-badge--active">上架中</span>'
+                    : '<span class="shop-admin-status-badge shop-admin-status-badge--inactive">已下架</span>';
 
                 const stock = p.stock_count || 0;
-                const stockColor = stock < 5 ? '#ff4d4f' : '#389e0d';
+                const stockClassName = stock < 5 ? 'shop-admin-product-stock shop-admin-product-stock--low' : 'shop-admin-product-stock shop-admin-product-stock--healthy';
+                const safeProductId = this.escapeForAttr(String(p.id || ''));
+                const safeProductName = this.escapeHtml(p.name || '未命名商品');
+                const safeProductDescription = this.escapeHtml(p.description || '暂无描述');
+                const safeProductIconUrl = this.escapeForAttr(String(p.icon_url || ''));
+                const safeProductIconClass = this.escapeForAttr(String(p.icon_url || 'fas fa-box'));
+                const safeProductNameAttr = this.escapeForAttr(p.name || '');
+                const productAltText = this.escapeForAttr(p.name || '商品封面');
+                const priceHtml = (() => {
+                    const editSite = ShopAdmin.getEditSite();
+                    if (editSite === 'intl') {
+                        const intlPrice = p.price_points_intl;
+                        return intlPrice != null
+                            ? `<div class="shop-admin-product-price shop-admin-product-price--intl">${intlPrice} <span>Points</span></div>`
+                            : '<div class="shop-admin-product-price shop-admin-product-price--unset">未设置国际价格</div>';
+                    }
+                    return `<div class="shop-admin-product-price shop-admin-product-price--cn">${p.price_points} <span>积分</span></div>`;
+                })();
 
                 const card = document.createElement('div');
-                card.className = 'shop-card' + (p.is_active ? '' : ' inactive-product');
-                card.style.cssText = `
-                    background: rgba(30, 35, 50, 0.6); 
-                    border: 1px solid rgba(255, 255, 255, 0.08);
-                    border-radius: 16px; 
-                    padding: 0; 
-                    display: flex;
-                    flex-direction: column;
-                    overflow: hidden; 
-                    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
-                    backdrop-filter: blur(10px);
-                `;
-                // ... (skip mouseover/out as they are fine)
-
-                const imageContainerStyle = `
-                    width: 100%;
-                    height: 160px;
-                    background: rgba(56, 189, 248, 0.1);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    position: relative;
-                    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-                `;
+                card.className = 'shop-card shop-admin-product-card' + (p.is_active ? '' : ' inactive-product');
 
                 // If it's an image, make it cover. If icon, keep it centered.
                 const displayHtml = p.icon_url?.startsWith('http')
-                    ? `<img src="${p.icon_url}" style="width:100%; height:100%; object-fit:cover;">`
-                    : iconHtml.replace('font-size: 24px', 'font-size: 48px');
-
-                // Checkbox display based on selection mode
-                const checkboxDisplay = this.isProductSelectionMode ? 'block' : 'none';
+                    ? `<img src="${safeProductIconUrl}" class="shop-admin-product-cover-image" alt="${productAltText}">`
+                    : p.icon_url?.startsWith('fa')
+                        ? `<i class="${safeProductIconClass} shop-admin-product-cover-icon" aria-hidden="true"></i>`
+                        : (p.icon_url
+                            ? `<img src="${safeProductIconUrl}" class="shop-admin-product-cover-icon-image" alt="${productAltText}">`
+                            : '<i class="fas fa-box shop-admin-product-cover-icon shop-admin-product-cover-icon--fallback" aria-hidden="true"></i>');
 
                 card.innerHTML = `
-                    <div style="${imageContainerStyle}">
+                    <div class="shop-admin-product-cover">
                         ${displayHtml}
-                        <div style="position:absolute; top:12px; left:12px; display:${checkboxDisplay};" class="product-checkbox-wrapper">
-                            <input type="checkbox" class="inv-checkbox product-select-checkbox" data-product-id="${p.id}" 
+                        <div class="product-checkbox-wrapper">
+                            <input type="checkbox" class="inv-checkbox product-select-checkbox" data-product-id="${safeProductId}" 
                                 data-shop-change="product-selection-count">
                         </div>
-                        <div style="position:absolute; top:12px; right:12px;">${statusBadge}</div>
+                        <div class="shop-admin-product-status-slot">${statusBadge}</div>
                     </div>
                     
-                    <div style="padding: 24px; padding-bottom: 12px; flex: 1; display: flex; flex-direction: column;">
-                        <h3 style="margin:0 0 6px 0; font-size:16px; font-weight:600; color:#fff; line-height:1.4;">${p.name}</h3>
-                        <p style="margin:0; font-size:13px; color:rgba(255,255,255,0.5); line-height:1.5; height:40px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">${p.description || '暂无描述'}</p>
+                    <div class="shop-admin-product-body">
+                        <h3 class="shop-admin-product-title">${safeProductName}</h3>
+                        <p class="shop-admin-product-description">${safeProductDescription}</p>
                     </div>
                     
-                    <div style="margin-top:0; padding:15px 24px 20px; border-top:1px solid rgba(255,255,255,0.08); display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            ${(() => {
-                        const editSite = ShopAdmin.getEditSite();
-                        if (editSite === 'intl') {
-                            const intlPrice = p.price_points_intl;
-                            return intlPrice != null
-                                ? `<div style="font-weight:700; color:#60a5fa; font-size:16px;">${intlPrice} <span style="font-size:12px; font-weight:normal; opacity:0.8;">Points</span></div>`
-                                : `<div style="font-weight:700; color:rgba(255,255,255,0.3); font-size:14px;">未设置国际价格</div>`;
-                        } else {
-                            return `<div style="font-weight:700; color:#fbbf24; font-size:16px;">${p.price_points} <span style="font-size:12px; font-weight:normal; opacity:0.8;">积分</span></div>`;
-                        }
-                    })()}
-                            <div style="font-size:12px; color:${stockColor}; margin-top:2px; font-weight:500;">库存: ${stock}</div>
+                    <div class="shop-admin-product-footer">
+                        <div class="shop-admin-product-meta">
+                            ${priceHtml}
+                            <div class="${stockClassName}">库存: ${stock}</div>
                         </div>
                         
-                        <div style="display:flex; gap:8px;">
-                           <button class="action-btn" data-shop-action="product-edit" data-product-id="${p.id}" title="编辑"
-                                style="width:32px; height:32px; border-radius:8px; border:none; background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.7); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s;">
-                                <i class="fas fa-edit" style="font-size:14px;"></i>
+                        <div class="shop-admin-product-actions">
+                           <button class="shop-admin-product-action-btn" data-shop-action="product-edit" data-product-id="${safeProductId}" title="编辑">
+                                <i class="fas fa-edit shop-admin-product-action-icon" aria-hidden="true"></i>
                            </button>
-                           <button class="action-btn" data-shop-action="product-toggle-status" data-product-id="${p.id}" data-new-status="${!p.is_active}" title="${p.is_active ? '下架' : '上架'}"
-                                style="width:32px; height:32px; border-radius:8px; border:none; background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.7); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s;">
-                                <i class="fas fa-${p.is_active ? 'eye-slash' : 'eye'}" style="font-size:14px;"></i>
+                           <button class="shop-admin-product-action-btn" data-shop-action="product-toggle-status" data-product-id="${safeProductId}" data-new-status="${!p.is_active}" title="${p.is_active ? '下架' : '上架'}">
+                                <i class="fas fa-${p.is_active ? 'eye-slash' : 'eye'} shop-admin-product-action-icon" aria-hidden="true"></i>
                            </button>
-                           <button class="action-btn" data-shop-action="product-delete" data-product-id="${p.id}" data-product-name="${this.escapeForAttr(p.name)}" title="删除"
-                                style="width:32px; height:32px; border-radius:8px; border:none; background:rgba(255,80,80,0.1); color:#ff6b6b; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s;">
-                                <i class="fas fa-trash" style="font-size:14px;"></i>
+                           <button class="shop-admin-product-action-btn shop-admin-product-action-btn--danger" data-shop-action="product-delete" data-product-id="${safeProductId}" data-product-name="${safeProductNameAttr}" title="删除">
+                                <i class="fas fa-trash shop-admin-product-action-icon" aria-hidden="true"></i>
                            </button>
                         </div>
                     </div>
 `;
-                // Add hover effect via JS since inline styles are tricky for pseudo-classes
-                const btns = card.querySelectorAll('.action-btn');
-                btns.forEach(btn => {
-                    btn.onmouseover = () => {
-                        if (btn.title === '删除') { btn.style.background = 'rgba(255,80,80,0.2)'; }
-                        else { btn.style.background = 'rgba(255,255,255,0.15)'; btn.style.color = '#fff'; }
-                    };
-                    btn.onmouseout = () => {
-                        if (btn.title === '删除') { btn.style.background = 'rgba(255,80,80,0.1)'; }
-                        else { btn.style.background = 'rgba(255,255,255,0.05)'; btn.style.color = 'rgba(255,255,255,0.7)'; }
-                    };
-                    // Stop propagation on buttons to prevent triggering card selection
-                    // Use addEventListener instead of onclick to avoid overwriting HTML onclick attribute
+
+                card.querySelectorAll('.shop-admin-product-action-btn').forEach((btn) => {
                     btn.addEventListener('click', (e) => e.stopPropagation());
                 });
 
@@ -2884,10 +2870,10 @@ Example output format:
                 }
 
                 // Card Click Selection
-                card.onclick = (e) => {
+                card.addEventListener('click', (e) => {
                     if (this.isProductSelectionMode) {
                         // Avoid triggering if clicking on buttons (though stopPropagation above helps)
-                        if (e.target.closest('.action-btn') || e.target.closest('.product-select-checkbox')) return;
+                        if (e.target.closest('.shop-admin-product-action-btn') || e.target.closest('.product-select-checkbox')) return;
 
                         const cardCheckbox = card.querySelector('.product-select-checkbox');
                         if (cardCheckbox) {
@@ -2895,52 +2881,26 @@ Example output format:
                             this.updateProductSelectionCount();
                         }
                     }
-                };
-
-                // Add pointer cursor in selection mode
-                if (this.isProductSelectionMode) {
-                    card.style.cursor = 'pointer';
-                }
+                });
 
                 container.appendChild(card);
             });
+
+            this.syncProductSelectionModeUi();
 
             // Refresh sidebar list
             this.loadInventoryProductList(data);
 
         } catch (err) {
             console.error(err);
-            container.innerHTML = `<div style="color:red;">Error: ${err.message}</div>`;
+            container.innerHTML = `<div class="shop-admin-grid-error">Error: ${this.escapeHtml(err.message || 'Unknown error')}</div>`;
         }
     },
 
     // ==================== Product Selection Mode ====================
     toggleProductSelectionMode: function () {
         this.isProductSelectionMode = !this.isProductSelectionMode;
-        const btn = document.getElementById('toggleProductSelectionBtn');
-        const batchBtn = document.getElementById('productBatchActionsBtn');
-        const batchMenu = document.getElementById('productBatchActionMenu');
-        const checkboxes = document.querySelectorAll('.product-checkbox-wrapper');
-        // Find product cards by excluding the first one (Add New) which has class 'add-new-card'
-        // Or better, select parent of checkboxes
-        const productCards = Array.from(checkboxes).map(cb => cb.closest('.shop-card'));
-
-        if (this.isProductSelectionMode) {
-            btn.classList.add('active');
-            if (batchBtn) batchBtn.style.display = 'flex';
-            checkboxes.forEach(el => el.style.display = 'block');
-            productCards.forEach(card => card.style.cursor = 'pointer');
-        } else {
-            btn.classList.remove('active');
-            if (batchBtn) batchBtn.style.display = 'none';
-            if (batchMenu) batchMenu.style.display = 'none';
-            checkboxes.forEach(el => {
-                el.style.display = 'none';
-                el.querySelector('input').checked = false;
-            });
-            productCards.forEach(card => card.style.cursor = 'default');
-            this.updateProductSelectionCount();
-        }
+        this.syncProductSelectionModeUi();
     },
 
     /* Dynamic Batch Menu Handling */
@@ -2948,7 +2908,7 @@ Example output format:
 
     closeProductBatchMenu: function () {
         const menu = document.getElementById('productBatchActionMenu');
-        if (menu) menu.style.display = 'none';
+        if (menu) menu.classList.remove('is-open');
         if (this._batchMenuCloseHandler) {
             document.removeEventListener('click', this._batchMenuCloseHandler);
             this._batchMenuCloseHandler = null;
@@ -2960,12 +2920,12 @@ Example output format:
         const btn = document.getElementById('productBatchActionsBtn');
         if (!menu) return;
 
-        const isVisible = menu.style.display === 'block';
+        const isVisible = menu.classList.contains('is-open');
 
         if (isVisible) {
             this.closeProductBatchMenu();
         } else {
-            menu.style.display = 'block';
+            menu.classList.add('is-open');
             this.updateProductSelectionCount();
 
             // Cleanup existing if any (edge case)
@@ -3004,7 +2964,9 @@ Example output format:
 
         // Keep menu open
         const menu = document.getElementById('productBatchActionMenu');
-        if (menu) menu.style.display = 'block';
+        if (menu) {
+            menu.classList.add('is-open');
+        }
     },
 
     batchDeleteProducts: async function () {
@@ -3094,8 +3056,7 @@ Example output format:
             URL.revokeObjectURL(url);
 
             // Close menu
-            const menu = document.getElementById('productBatchActionMenu');
-            if (menu) menu.style.display = 'none';
+            this.closeProductBatchMenu();
         } catch (err) {
             console.error('Export failed:', err);
             alert('导出失败: ' + err.message);
@@ -7304,11 +7265,11 @@ Example output format:
 
                 // Two-line layout like user management page
                 const userDisplay = `
-                    <div class="user-cell">
-                        <img src="${safeUserAvatar}" class="user-avatar-small" style="width:36px;height:36px;" data-fallback-src="https://api.dicebear.com/7.x/initials/svg?seed=U&backgroundColor=6b9ece">
-                        <div class="user-info" style="line-height:1.3;">
-                            <div class="user-name" style="color:#fff;">${safeUserName}</div>
-                            <div class="user-email" style="font-size:12px;color:rgba(255,255,255,0.5);">${safeUserEmail}</div>
+                    <div class="user-cell shop-order-user-cell">
+                        <img src="${safeUserAvatar}" class="user-avatar-small shop-order-user-avatar" data-fallback-src="https://api.dicebear.com/7.x/initials/svg?seed=U&backgroundColor=6b9ece">
+                        <div class="user-info shop-order-user-info">
+                            <div class="user-name shop-order-user-name">${safeUserName}</div>
+                            <div class="user-email shop-order-user-email">${safeUserEmail}</div>
                         </div>
                     </div>
                 `;
@@ -7349,7 +7310,7 @@ Example output format:
                 const status = this.getOrderDeliveryStatusBadge(order);
 
                 tbody.innerHTML += `
-                <tr data-shop-action="order-show-content" data-order-id="${this.escapeForAttr(order.id)}" data-items-data="${contentData}" style="cursor: pointer;" title="点击查看订单详情">
+                <tr class="shop-order-row" data-shop-action="order-show-content" data-order-id="${this.escapeForAttr(order.id)}" data-items-data="${contentData}" title="点击查看订单详情">
                     <td data-label="用户" title="${safeOrderUserId}">${userDisplay}</td>
                     <td data-label="订单时间">${safeDate}</td>
                     <td data-label="商品">${this.escapeHtml(productName)}</td>
@@ -7357,8 +7318,8 @@ Example output format:
                     <td data-label="发货状态">${status}</td>
                     <td data-label="操作" data-shop-action="order-actions-stop">
                         ${(order.refund_status !== 'refunded' && order.refund_status !== 'full_refund') ?
-                        `<button class="btn-icon danger" data-shop-action="order-refund" data-order-id="${this.escapeForAttr(order.id)}" title="退款"><i class="fas fa-undo"></i></button>`
-                        : '<span style="color: rgba(255,255,255,0.3); font-size: 12px;">-</span>'}
+                        `<button class="shop-order-action-btn shop-order-action-btn--refund" data-shop-action="order-refund" data-order-id="${this.escapeForAttr(order.id)}" title="退款"><i class="fas fa-undo"></i></button>`
+                        : '<span class="shop-order-empty-action">-</span>'}
                     </td>
                 </tr>
                 `;
@@ -7407,61 +7368,38 @@ Example output format:
             items = [{ content: decodeURIComponent(itemsData) || '解析失败' }];
         }
 
-        // Create modal overlay
         const overlay = document.createElement('div');
-        overlay.classList.add('order-content-overlay');
-        overlay.style.position = 'fixed';
-        overlay.style.top = '0';
-        overlay.style.left = '0';
-        overlay.style.width = '100%';
-        overlay.style.height = '100%';
-        overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
-        overlay.style.display = 'flex';
-        overlay.style.justifyContent = 'center';
-        overlay.style.alignItems = 'center';
-        overlay.style.zIndex = '1000';
-        overlay.style.backdropFilter = 'blur(4px)';
+        overlay.id = 'orderContentModal';
+        overlay.dataset.shopOverlayClose = 'dynamic-modal';
+        overlay.dataset.modalId = 'orderContentModal';
+        overlay.className = 'shop-order-content-overlay';
 
         const contentHtml = items.map(item => `
-            <div style="margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
-                <div style="font-size: 12px; color: rgba(255,255,255,0.6); margin-bottom: 4px;">
-                    ${item.product_name || '商品'}
+            <div class="shop-order-content-item">
+                <div class="shop-order-content-item-title">
+                    ${this.escapeHtml(item.product_name || '商品')}
                 </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; font-family: monospace; word-break: break-all; margin-bottom: 5px; color: #e2e8f0;">
+                <div class="shop-order-content-item-value">
                     ${this.escapeHtml(item.content)}
                 </div>
             </div>
         `).join('');
 
-        const allContent = items.map(p => p.content).join('\n');
+        const allContent = items.map((p) => p.content || '').join('\n');
+        const safeOrderId = this.escapeHtml(orderId || '');
 
         overlay.innerHTML = `
-            <div style="
-                background: rgba(30,35,50,0.95);
-                backdrop-filter: blur(20px);
-                border-radius: 20px; border: 1px solid rgba(255,255,255,0.12);
-                max-width: 500px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-                overflow: hidden;
-            ">
-                <div style="
-                    display: flex; justify-content: space-between; align-items: center;
-                    padding: 20px 24px; border-bottom: 1px solid rgba(255,255,255,0.08);
-                ">
-                    <h3 style="margin: 0; font-size: 18px; color: #fff;">📦 订单内容</h3>
+            <div class="shop-order-content-modal">
+                <div class="shop-order-content-header">
+                    <h3 class="shop-order-content-title">📦 订单内容</h3>
+                    <button type="button" class="shop-order-content-close" data-shop-action="order-close-content" data-modal-id="orderContentModal" aria-label="关闭">&times;</button>
                 </div>
-                <div style="padding: 24px;">
-                    <div style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px;">
-                        订单号: <code style="color: #60a5fa; user-select: all;">${orderId}</code>
+                <div class="shop-order-content-body">
+                    <div class="shop-order-content-meta">
+                        订单号: <code class="shop-order-content-order-id">${safeOrderId}</code>
                     </div>
-                    <div id="orderContentBox" style="
-                        background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1);
-                        border-radius: 12px; padding: 16px;
-                        font-family: 'Monaco', 'Consolas', monospace;
-                        font-size: 14px; color: #22c55e; word-break: break-all;
-                        cursor: pointer; line-height: 1.6;
-                        max-height: 300px; overflow-y: auto;
-                    ">${contentHtml}</div>
-                    <div style="font-size: 11px; color: rgba(255,255,255,0.35); text-align: center; margin-top: 10px;">
+                    <div id="orderContentBox" class="shop-order-content-box">${contentHtml}</div>
+                    <div class="shop-order-content-note">
                         点击上方内容框可复制
                     </div>
                 </div>
@@ -7477,103 +7415,50 @@ Example output format:
             });
         });
 
-        // Close on backdrop click
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) overlay.remove();
-        });
-
         document.body.appendChild(overlay);
     },
 
     // Open Enhanced Refund Modal
     openRefundModal: function (orderId) {
         const modalHtml = `
-            <style>
-                @keyframes modalFadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-                .refund-modal-input:focus {
-                    border-color: #6b9ece !important;
-                    box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.25) !important;
-                    outline: none;
-                }
-                .status-option input:checked + span {
-                    font-weight: 600;
-                    text-shadow: 0 0 10px rgba(255,255,255,0.2);
-                }
-                .refund-btn-cancel {
-                    padding: 10px 20px;
-                    background: rgba(255,255,255,0.05);
-                    border: none;
-                    color: #94a3b8;
-                    border-radius: 8px;
-                    cursor: pointer;
-                    font-size: 13px;
-                    font-weight: 500;
-                    transition: all 0.2s;
-                }
-                .refund-btn-cancel:hover {
-                    background: rgba(255,255,255,0.1);
-                    color: #fff;
-                }
-                .refund-btn-confirm {
-                    padding: 10px 24px;
-                    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-                    box-shadow: 0 4px 12px rgba(239,68,68,0.3);
-                    border: none;
-                    color: #fff;
-                    border-radius: 8px;
-                    cursor: pointer;
-                    font-size: 13px;
-                    font-weight: 600;
-                    transition: all 0.2s;
-                }
-                .refund-btn-confirm:hover {
-                    filter: brightness(1.1);
-                    transform: translateY(-1px);
-                    box-shadow: 0 6px 16px rgba(239,68,68,0.4);
-                }
-                .refund-btn-confirm:active {
-                    transform: translateY(0);
-                    filter: brightness(0.95);
-                }
-            </style>
             <div id="refundModal" data-shop-overlay-close="dynamic-modal" data-modal-id="refundModal"
-                style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(12px);z-index:9999;display:flex;justify-content:center;align-items:center;">
-                <div style="background:rgba(20,25,40,0.9);border:1px solid rgba(255,255,255,0.08);box-shadow:0 20px 50px rgba(0,0,0,0.5);border-radius:20px;padding:30px;width:480px;animation:modalFadeIn 0.3s ease-out;">
-                    <h3 style="margin:0 0 25px 0;color:#fff;font-size:18px;font-weight:600;display:flex;align-items:center;gap:10px;">
-                        <span style="background:rgba(239,68,68,0.15);padding:8px;border-radius:10px;display:flex;">
-                             <i class="fas fa-undo" style="color:#ef4444;"></i>
+                class="shop-refund-modal-overlay">
+                <div class="shop-refund-modal">
+                    <h3 class="shop-refund-modal-title">
+                        <span class="shop-refund-modal-title-icon">
+                             <i class="fas fa-undo"></i>
                         </span>
                         订单退款处理
                     </h3>
                     
-                    <div style="margin-bottom:25px;">
-                        <label style="display:block;color:#94a3b8;font-size:13px;font-weight:500;margin-bottom:12px;">选择退款后的库存状态</label>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                            <label class="status-option" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);padding:12px;border-radius:10px;cursor:pointer;display:flex;align-items:center;transition:all 0.2s;">
-                                <input type="radio" name="refundTargetStatus" value="frozen" checked style="accent-color:#f59e0b;"> 
-                                <span style="margin-left:10px;color:#cbd5e1;font-size:13px;display:flex;align-items:center;gap:6px;"><i class="fas fa-ban" style="color:#f59e0b;"></i> 冻结问题</span>
+                    <div class="shop-refund-modal-section">
+                        <label class="shop-refund-modal-label">选择退款后的库存状态</label>
+                        <div class="shop-refund-status-grid">
+                            <label class="shop-refund-status-option shop-refund-status-option--frozen">
+                                <input type="radio" name="refundTargetStatus" value="frozen" checked>
+                                <span class="shop-refund-status-option-label"><i class="fas fa-ban"></i> 冻结问题</span>
                             </label>
-                            <label class="status-option" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);padding:12px;border-radius:10px;cursor:pointer;display:flex;align-items:center;transition:all 0.2s;">
-                                <input type="radio" name="refundTargetStatus" value="available" style="accent-color:#10b981;"> 
-                                <span style="margin-left:10px;color:#cbd5e1;font-size:13px;display:flex;align-items:center;gap:6px;"><i class="fas fa-check-circle" style="color:#10b981;"></i> 重新上架</span>
+                            <label class="shop-refund-status-option shop-refund-status-option--available">
+                                <input type="radio" name="refundTargetStatus" value="available">
+                                <span class="shop-refund-status-option-label"><i class="fas fa-check-circle"></i> 重新上架</span>
                             </label>
-                            <label class="status-option" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);padding:12px;border-radius:10px;cursor:pointer;display:flex;align-items:center;transition:all 0.2s;">
-                                <input type="radio" name="refundTargetStatus" value="fault" style="accent-color:#d946ef;"> 
-                                <span style="margin-left:10px;color:#cbd5e1;font-size:13px;display:flex;align-items:center;gap:6px;"><i class="fas fa-exclamation-triangle" style="color:#d946ef;"></i> 故障维修</span>
+                            <label class="shop-refund-status-option shop-refund-status-option--fault">
+                                <input type="radio" name="refundTargetStatus" value="fault">
+                                <span class="shop-refund-status-option-label"><i class="fas fa-exclamation-triangle"></i> 故障维修</span>
                             </label>
-                            <label class="status-option" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.05);padding:12px;border-radius:10px;cursor:pointer;display:flex;align-items:center;transition:all 0.2s;">
-                                <input type="radio" name="refundTargetStatus" value="reserve" style="accent-color:#3b82f6;"> 
-                                <span style="margin-left:10px;color:#cbd5e1;font-size:13px;display:flex;align-items:center;gap:6px;"><i class="fas fa-box" style="color:#3b82f6;"></i> 保留库存</span>
+                            <label class="shop-refund-status-option shop-refund-status-option--reserve">
+                                <input type="radio" name="refundTargetStatus" value="reserve">
+                                <span class="shop-refund-status-option-label"><i class="fas fa-box"></i> 保留库存</span>
                             </label>
                         </div>
                     </div>
 
-                    <div style="margin-bottom:30px;">
-                        <label style="display:block;color:#94a3b8;font-size:13px;font-weight:500;margin-bottom:12px;">备注说明</label>
-                        <textarea id="refundRemarkInput" class="refund-modal-input" style="width:100%;box-sizing:border-box;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);color:#e2e8f0;border-radius:10px;padding:12px;height:80px;resize:none;font-family:inherit;font-size:13px;line-height:1.5;transition:all 0.2s;" placeholder="请填写退款的具体原因..."></textarea>
+                    <div class="shop-refund-modal-section shop-refund-modal-section--remark">
+                        <label class="shop-refund-modal-label">备注说明</label>
+                        <textarea id="refundRemarkInput" class="shop-refund-modal-textarea refund-modal-input" placeholder="请填写退款的具体原因..."></textarea>
                     </div>
                     
-                    <div style="display:flex;justify-content:flex-end;gap:12px;">
+                    <div class="shop-refund-modal-actions">
                         <button type="button" data-shop-action="refund-close-modal" data-modal-id="refundModal" class="refund-btn-cancel">取消</button>
                         <button type="button" data-shop-action="refund-submit" data-order-id="${this.escapeForAttr(orderId)}" class="refund-btn-confirm">确认退款</button>
                     </div>

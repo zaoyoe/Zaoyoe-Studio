@@ -4,53 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>快速测试 Realtime</title>
-    <style>
-        body {
-            font-family: system-ui;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-
-        .status {
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 8px;
-            font-weight: bold;
-        }
-
-        .success {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .error {
-            background: #f8d7da;
-            color: #721c24;
-        }
-
-        .log {
-            background: #000;
-            color: #0f0;
-            padding: 15px;
-            border-radius: 8px;
-            font-family: monospace;
-            max-height: 300px;
-            overflow-y: auto;
-            margin-top: 20px;
-        }
-
-        button {
-            background: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            margin: 5px;
-        }
-    </style>
+    <link rel="stylesheet" href="css/test-realtime-simple-page.css?v=20260324_TEST_REALTIME_SIMPLE_PAGE_STYLES_1">
 </head>
 
 <body>
@@ -62,85 +16,8 @@
     <!-- Supabase CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="/api/runtime/supabase-config"></script>
-
-    <script>
-        const runtimeConfig = window.__PUBLIC_RUNTIME_CONFIG__ || {};
-        const SUPABASE_URL = runtimeConfig.supabaseUrl || '<your-supabase-url>';
-        const SUPABASE_KEY = runtimeConfig.supabasePublishableKey || '<your-supabase-publishable-key>';
-
-        let client, channel;
-
-        function hasConfiguredSupabase() {
-            return Boolean(runtimeConfig.supabaseUrl && runtimeConfig.supabasePublishableKey);
-        }
-
-        function log(msg, isError = false) {
-            const logDiv = document.getElementById('log');
-            const time = new Date().toLocaleTimeString();
-            logDiv.innerHTML = `[${time}] ${msg}<br>` + logDiv.innerHTML;
-        }
-
-        function showStatus(msg, success = true) {
-            const statusDiv = document.getElementById('status');
-            statusDiv.className = `status ${success ? 'success' : 'error'}`;
-            statusDiv.textContent = msg;
-        }
-
-        async function testConnection() {
-            try {
-                if (!hasConfiguredSupabase()) {
-                    showStatus('缺少 Supabase runtime config，请先加载 /api/runtime/supabase-config 或手动替换占位值', false);
-                    log('❌ 缺少 Supabase runtime config');
-                    return;
-                }
-                log('初始化 Supabase Client...');
-                client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-                log('✅ Client 创建成功');
-
-                // Test auth
-                const { data: { user } } = await client.auth.getUser();
-                log(user ? `当前用户: ${user.email}` : '未登录（游客模式）');
-
-                // Create channel
-                log('创建 Realtime Channel...');
-                channel = client
-                    .channel('test-comments')
-                    .on('postgres_changes',
-                        { event: 'INSERT', schema: 'public', table: 'prompt_comments' },
-                        (payload) => {
-                            log(`🎉 收到新评论事件！ID: ${payload.new.id}`, false);
-                            log(`内容: ${payload.new.content}`);
-                            showStatus('✅ Realtime 工作正常！收到了新评论通知', true);
-                        }
-                    )
-                    .subscribe((status) => {
-                        log(`订阅状态: ${status}`);
-
-                        if (status === 'SUBSCRIBED') {
-                            showStatus('✅ 成功订阅！现在在其他浏览器发送评论测试', true);
-                            log('✅ 订阅成功！等待新评论...');
-                        } else if (status === 'CHANNEL_ERROR') {
-                            showStatus('❌ 订阅失败！请检查配置', false);
-                            log('❌ Channel 错误', true);
-                        }
-                    });
-
-                log('测试启动完成。请在其他浏览器窗口发送评论。');
-
-            } catch (err) {
-                log(`❌ 错误: ${err.message}`, true);
-                showStatus(`❌ 测试失败: ${err.message}`, false);
-            }
-        }
-
-        // Auto-test on load
-        window.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('testConnectionBtn')?.addEventListener('click', () => {
-                void testConnection();
-            });
-            log('页面已加载，点击按钮开始测试');
-        });
-    </script>
+    <script src="./js/runtime-supabase-config.js"></script>
+    <script src="./js/test-realtime-simple-page.js"></script>
 </body>
 
 </html>

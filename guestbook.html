@@ -34,7 +34,7 @@
     <link rel="stylesheet" href="avatar-fix.css?v=20260316_AVATAR_NAV_STABLE_2">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="capsule-styles.css?v=20260302_G_AUTH">
-    <link rel="stylesheet" href="style.css?v=20260317_GUESTBOOK_MODAL_SUBMIT_FIX_1">
+    <link rel="stylesheet" href="style.css?v=20260324_GUESTBOOK_STYLE_ATTRS_1">
     <!-- Unified Navigation CSS -->
     <link rel="stylesheet" href="css/framer_home.css?v=NAV_UNIFIED_V9">
     <!-- Prevent flash of wrong theme -->
@@ -193,10 +193,10 @@
             </div>
 
             <!-- Real Content (Hidden initially to prevent FOUC) -->
-            <div id="messageContainer" class="message-container" style="opacity: 0; transition: opacity 0.3s ease;">
+            <div id="messageContainer" class="message-container guestbook-message-container-initial">
                 <!-- Messages will be inserted here by JavaScript -->
             </div>
-            <div id="emptyState" class="empty-state-large" style="display: none;"><i class="fas fa-comments"></i>
+            <div id="emptyState" class="empty-state-large guestbook-empty-state-hidden"><i class="fas fa-comments"></i>
                 <p data-i18n="guestbook.noMessages">还没有留言哦</p>
                 <p class="empty-hint" data-i18n="guestbook.leaveFirstMessage">快去首页留下你的第一条留言吧 !</p>
             </div>

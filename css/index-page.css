@@ -1,0 +1,50 @@
+.login-trigger-btn:hover,
+button.login-trigger-btn:hover,
+.login-trigger-btn.logged-in:hover {
+    transform: none !important;
+}
+
+.nav-user-avatar,
+#navUserAvatar {
+    transform: scale(1) !important;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.nav-user-avatar:hover,
+#navUserAvatar:hover,
+.login-trigger-btn:hover .nav-user-avatar,
+.login-trigger-btn:hover #navUserAvatar,
+button.login-trigger-btn:hover .nav-user-avatar,
+button.login-trigger-btn:hover #navUserAvatar,
+.login-trigger-btn.logged-in:hover .nav-user-avatar,
+.login-trigger-btn.logged-in:hover #navUserAvatar {
+    transform: scale(0.85) !important;
+}
+
+.visually-hidden-h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.index-footer-tagline {
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+    font-size: 14px;
+}
+
+.index-footer-email {
+    color: rgba(255,255,255,0.6);
+    font-size: 14px;
+}
+
+.index-guestbook-image-preview-hidden,
+.index-guestbook-image-upload-hidden {
+    display: none;
+}

@@ -20827,3 +20827,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         line-height: 1.35 !important;
     }
 }
+
+.admin-studio-backup-hidden {
+    display: none;
+}

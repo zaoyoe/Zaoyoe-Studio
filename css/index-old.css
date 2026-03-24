@@ -1,0 +1,145 @@
+/* index_old.html inline style block 1 (from line 48) */
+/* Homepage entrance animation - Subtle */
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(15px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .glass-box {
+            opacity: 0;
+            /* Start hidden to prevent flash */
+            animation: fadeInUpElastic 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+            /* Elastic entrance */
+            /* Transition for magnetic effect - separate from animation */
+            transition: transform 0.1s ease-out, background 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        /* Subtle stagger animation for each card */
+        .glass-box:nth-child(1) {
+            animation-delay: 0.1s;
+        }
+
+        .glass-box:nth-child(2) {
+            animation-delay: 0.15s;
+        }
+
+        .glass-box:nth-child(3) {
+            animation-delay: 0.2s;
+        }
+
+        .glass-box:nth-child(4) {
+            animation-delay: 0.25s;
+        }
+
+        .glass-box:nth-child(5) {
+            animation-delay: 0.3s;
+        }
+
+        .glass-box:nth-child(6) {
+            animation-delay: 0.35s;
+        }
+
+        .glass-box:nth-child(7) {
+            animation-delay: 0.4s;
+        }
+
+        .glass-box:nth-child(8) {
+            animation-delay: 0.45s;
+        }
+
+        .glass-box:nth-child(9) {
+            animation-delay: 0.5s;
+        }
+
+        .glass-box:nth-child(10) {
+            animation-delay: 0.55s;
+        }
+
+
+/* index_old.html inline style block 2 (from line 112) */
+/* FORCE FIX: Input Visibility - Show Background on Focus */
+        .guestbook-form input,
+        .guestbook-form textarea,
+        .modal-content input,
+        .modal-content textarea,
+        .modal-content select,
+        .login-card input,
+        .login-card textarea,
+        .nickname-edit input,
+        .security-input {
+            background: rgba(0, 0, 0, 0.3) !important;
+            border: 1.5px solid rgba(155, 93, 229, 0.3) !important;
+            color: #ffffff !important;
+            caret-color: #ffffff !important;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) !important;
+        }
+
+        .guestbook-form input:focus,
+        .guestbook-form textarea:focus,
+        .modal-content input:focus,
+        .modal-content textarea:focus,
+        .login-card input:focus,
+        .nickname-edit input:focus,
+        .security-input:focus {
+            background: rgba(0, 0, 0, 0.5) !important;
+            border-color: rgba(155, 93, 229, 0.7) !important;
+            box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.15) !important;
+        }
+
+        /* FORCE FIX: Placeholder Color */
+        ::placeholder {
+            color: rgba(255, 255, 255, 0.4) !important;
+            opacity: 1 !important;
+        }
+
+        /* FORCE FIX: Auth Button Children */
+        #authBtn * {
+            pointer-events: none !important;
+        }
+
+/* BEGIN 20260324_INLINE_STYLE_ATTRS_BATCH_1 index_old.html */
+/* Extracted inline style attributes from index_old.html. */
+.index-old-inline-style-attr-1 { display: flex; justify-content: center; align-items: center; height: 100%; }
+.index-old-inline-style-attr-2 { cursor: pointer; text-decoration: none; color: inherit; }
+.index-old-inline-style-attr-3 { color: #4ade80; }
+.index-old-inline-style-attr-4 { color: #f472b6; }
+.index-old-inline-style-attr-5 { color: #667eea; }
+.index-old-inline-style-attr-6 { color: #f59e0b; }
+.index-old-inline-style-attr-7 { color: #d946ef; }
+.index-old-inline-style-attr-8 { position: absolute; bottom: 0; width: 100%; text-align: center; padding-top: 30px; padding-bottom: 30px; border-top: 1px solid rgba(255, 255, 255, 0.1); opacity: 0.6; }
+.index-old-inline-style-attr-9 { font-size: 13px; color: rgba(255, 255, 255, 0.8); }
+.index-old-inline-style-attr-10 { color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4); }
+.index-old-inline-style-attr-11 { margin: 0 10px; opacity: 0.4; }
+.index-old-inline-style-attr-12 { position: relative; }
+.index-old-inline-style-attr-13 { display: none; }
+.index-old-inline-style-attr-14 { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.index-old-inline-style-attr-15 { z-index: 3000; }
+.index-old-inline-style-attr-16 { position: relative; max-width: 400px; text-align: center; }
+.index-old-inline-style-attr-17 { font-size: 48px; color: #4ade80; margin-bottom: 10px; }
+.index-old-inline-style-attr-18 { font-size: 20px; }
+.index-old-inline-style-attr-19 { margin-bottom: 20px; }
+.index-old-inline-style-attr-20 { background: rgba(0,0,0,0.3); padding: 15px; border-radius: 12px; margin-bottom: 20px; text-align: left; max-height: 300px; overflow-y: auto; }
+.index-old-inline-style-attr-21 { font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 4px; }
+.index-old-inline-style-attr-22 { font-family: monospace; font-size: 14px; color: #fff; word-break: break-all; user-select: text; }
+.index-old-inline-style-attr-23 { width: 100%; margin-bottom: 10px; }
+.index-old-inline-style-attr-24 { width: 100%; background: transparent; border: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.5); }
+.index-old-inline-style-attr-25 { cursor: pointer; }
+.index-old-inline-style-attr-26 { display: block; }
+.index-old-inline-style-attr-27 { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
+.index-old-inline-style-attr-28 { width: 80px; height: 80px; background: rgba(155, 93, 229, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 24px; box-shadow: 0 0 30px rgba(155, 93, 229, 0.2); }
+.index-old-inline-style-attr-29 { font-size: 36px; color: #9b5de5; }
+.index-old-inline-style-attr-30 { margin-top: 20px; padding: 12px 20px; background: rgba(255, 255, 255, 0.05); border-radius: 12px; font-size: 13px; color: rgba(255, 255, 255, 0.5); display: flex; align-items: center; gap: 8px; }
+.index-old-inline-style-attr-31 { max-width: 100%; margin-bottom: 12px; }
+.index-old-inline-style-attr-32 { display: flex; gap: 10px; }
+.index-old-inline-style-attr-33 { flex: 1; }
+.index-old-inline-style-attr-34 { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px; }
+.index-old-inline-style-attr-35 { position: absolute; top: 20px; left: 20px; }
+.index-old-inline-style-attr-36 { font-size: 4rem; color: #8b5cf6; margin-bottom: 20px; }
+/* END 20260324_INLINE_STYLE_ATTRS_BATCH_1 index_old.html */

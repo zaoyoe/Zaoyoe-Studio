@@ -1,1128 +1,276 @@
 <!DOCTYPE html>
+
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>个人资料局部磨砂预览</title>
-  <style>
-    :root {
-      --bg: #090c10;
-      --shell: #05070a;
-      --panel: rgba(12, 15, 19, 0.9);
-      --panel-2: rgba(15, 19, 24, 0.96);
-      --panel-soft: rgba(20, 24, 30, 0.92);
-      --frost: rgba(255, 255, 255, 0.055);
-      --frost-strong: rgba(255, 255, 255, 0.075);
-      --line: rgba(255, 255, 255, 0.08);
-      --line-soft: rgba(255, 255, 255, 0.05);
-      --text-main: #eef3f8;
-      --text-sub: rgba(227, 234, 242, 0.72);
-      --text-soft: rgba(212, 220, 228, 0.42);
-      --white-btn: rgba(229, 235, 241, 0.94);
-      --white-btn-text: #0f141a;
-      --auth-focus-blue: #9fcaff;
-      --auth-focus-fill: rgba(255, 255, 255, 0.042);
-      --safe: rgba(160, 189, 173, 0.16);
-      --warn: rgba(191, 171, 145, 0.16);
-      --danger: rgba(193, 149, 149, 0.16);
-      --shadow-lg: 0 28px 72px rgba(0, 0, 0, 0.48);
-      --shadow-md: 0 14px 30px rgba(0, 0, 0, 0.18);
-      --radius-xl: 34px;
-      --radius-lg: 24px;
-      --radius-md: 18px;
-      --radius-sm: 14px;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    html,
-    body {
-      margin: 0;
-      min-height: 100dvh;
-      background: var(--bg);
-      color: var(--text-main);
-      font-family: "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
-      overflow-x: hidden;
-    }
-
-    body::before,
-    body::after {
-      content: "";
-      position: fixed;
-      border-radius: 999px;
-      filter: blur(120px);
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    body::before {
-      width: 340px;
-      height: 340px;
-      top: -80px;
-      left: -130px;
-      background: rgba(53, 162, 217, 0.14);
-    }
-
-    body::after {
-      width: 360px;
-      height: 360px;
-      right: -150px;
-      bottom: -40px;
-      background: rgba(232, 103, 80, 0.11);
-    }
-
-    .stage {
-      position: relative;
-      z-index: 1;
-      width: min(1420px, calc(100vw - 24px));
-      margin: 0 auto;
-      padding: 28px 0 44px;
-    }
-
-    .intro {
-      max-width: 780px;
-      margin: 0 auto 22px;
-      padding: 18px 22px;
-      border-radius: 22px;
-      background: rgba(16, 20, 25, 0.66);
-      border: 1px solid var(--line);
-      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.14);
-      backdrop-filter: blur(18px) saturate(114%);
-      -webkit-backdrop-filter: blur(18px) saturate(114%);
-      text-align: center;
-    }
-
-    .intro-kicker {
-      font-size: 12px;
-      letter-spacing: 0.28em;
-      color: var(--text-soft);
-      text-transform: uppercase;
-      margin-bottom: 10px;
-    }
-
-    .intro-title {
-      font-size: 28px;
-      font-weight: 600;
-      letter-spacing: -0.7px;
-      margin-bottom: 8px;
-    }
-
-    .intro-copy {
-      font-size: 14px;
-      line-height: 1.65;
-      color: var(--text-sub);
-    }
-
-    .phones {
-      display: flex;
-      gap: 24px;
-      align-items: flex-start;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-
-    .phone-wrap {
-      width: min(400px, 100%);
-    }
-
-    .phone-label {
-      margin: 0 0 12px;
-      padding-left: 10px;
-      color: var(--text-sub);
-      font-size: 13px;
-      letter-spacing: 0.2px;
-    }
-
-    .phone {
-      padding: 10px;
-      border-radius: 38px;
-      background: rgba(5, 7, 10, 0.95);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      box-shadow:
-        0 28px 72px rgba(0, 0, 0, 0.52),
-        inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    }
-
-    .screen {
-      position: relative;
-      height: 852px;
-      border-radius: 28px;
-      overflow: hidden;
-      background: #0b1015;
-    }
-
-    .status {
-      position: absolute;
-      top: 10px;
-      left: 0;
-      right: 0;
-      z-index: 4;
-      text-align: center;
-      color: rgba(255, 255, 255, 0.42);
-      font-size: 11px;
-      letter-spacing: 0.4px;
-    }
-
-    .scene {
-      position: absolute;
-      inset: 0;
-      z-index: 0;
-      background: #10161c;
-      overflow: hidden;
-    }
-
-    .scene::before {
-      content: "";
-      position: absolute;
-      inset: 40px 18px 26px;
-      border-radius: 34px;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      background: rgba(255, 255, 255, 0.02);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    }
-
-    .art {
-      position: absolute;
-      inset: 92px 30px 122px;
-      border-radius: 36px;
-      overflow: hidden;
-      transform: rotate(-5deg) scale(1.05);
-      box-shadow: 0 34px 68px rgba(0, 0, 0, 0.34);
-    }
-
-    .phone-wrap:nth-child(2) .art {
-      transform: rotate(4deg) scale(1.03);
-    }
-
-    .block {
-      position: absolute;
-      border-radius: 30px;
-      filter: saturate(118%);
-    }
-
-    .block.a {
-      left: 0;
-      top: 0;
-      width: 72%;
-      height: 44%;
-      background: #ff6153;
-    }
-
-    .block.b {
-      right: 0;
-      top: 0;
-      width: 38%;
-      height: 100%;
-      background: #1db7de;
-    }
-
-    .block.c {
-      left: 12%;
-      bottom: 0;
-      width: 54%;
-      height: 34%;
-      background: #f0b550;
-    }
-
-    .block.d {
-      right: 8%;
-      bottom: 8%;
-      width: 30%;
-      height: 28%;
-      background: #6861c7;
-    }
-
-    .block.e {
-      left: 35%;
-      top: 36%;
-      width: 26%;
-      height: 18%;
-      border-radius: 999px;
-      background: #87b76d;
-    }
-
-    .block.f {
-      left: 16%;
-      top: 42%;
-      width: 56px;
-      height: 56px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.32);
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-    }
-
-    .art-line {
-      position: absolute;
-      left: 28px;
-      right: 28px;
-      height: 1px;
-      background: rgba(255, 255, 255, 0.15);
-    }
-
-    .art-line.a {
-      bottom: 124px;
-    }
-
-    .art-line.b {
-      bottom: 94px;
-      opacity: 0.72;
-    }
-
-    .art-label {
-      position: absolute;
-      left: 30px;
-      bottom: 42px;
-      font-size: 12px;
-      letter-spacing: 0.34em;
-      text-transform: uppercase;
-      color: rgba(255, 255, 255, 0.9);
-    }
-
-    .sheet {
-      --sheet-top-overlay-clearance: 146px;
-      position: absolute;
-      inset: 50px 14px 16px;
-      z-index: 2;
-      display: flex;
-      flex-direction: column;
-      border-radius: var(--radius-xl);
-      background: var(--panel);
-      border: 1px solid var(--line);
-      box-shadow:
-        0 26px 56px rgba(0, 0, 0, 0.24),
-        inset 0 1px 0 rgba(255, 255, 255, 0.06);
-      overflow: hidden;
-    }
-
-    .sheet::before {
-      content: "";
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: 0;
-      height: 1px;
-      background: rgba(255, 255, 255, 0.12);
-      opacity: 0.85;
-      pointer-events: none;
-    }
-
-    .frost-strip {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      z-index: 3;
-      padding: 18px 20px 12px;
-      background: rgba(255, 255, 255, 0.04);
-      border-bottom: 1px solid var(--line-soft);
-      backdrop-filter: blur(20px) saturate(132%);
-      -webkit-backdrop-filter: blur(20px) saturate(132%);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    }
-
-    .head-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-    }
-
-    .title {
-      font-size: 18px;
-      font-weight: 600;
-      letter-spacing: -0.25px;
-    }
-
-    .subtitle {
-      margin-top: 4px;
-      font-size: 12px;
-      color: var(--text-soft);
-    }
-
-    .settings {
-      width: 36px;
-      height: 36px;
-      display: grid;
-      place-items: center;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-      color: rgba(255, 255, 255, 0.72);
-      backdrop-filter: blur(20px) saturate(132%);
-      -webkit-backdrop-filter: blur(20px) saturate(132%);
-    }
-
-    .tabs {
-      display: flex;
-      gap: 18px;
-      align-items: center;
-      padding-top: 4px;
-    }
-
-    .tab {
-      position: relative;
-      padding: 0 0 8px;
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--text-soft);
-      letter-spacing: 0.1px;
-    }
-
-    .tab.active {
-      color: rgba(255, 255, 255, 0.96);
-    }
-
-    .tab.active::after {
-      content: "";
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 2px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.8);
-    }
-
-    .body {
-      position: absolute;
-      inset: 0;
-      z-index: 1;
-      overflow: auto;
-      padding: var(--sheet-top-overlay-clearance) 20px 108px;
-    }
-
-    .hero {
-      display: flex;
-      gap: 14px;
-      align-items: center;
-      padding-bottom: 18px;
-      border-bottom: 1px solid var(--line-soft);
-    }
-
-    .avatar {
-      width: 72px;
-      height: 72px;
-      display: grid;
-      place-items: center;
-      border-radius: 24px;
-      background: var(--panel-soft);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      color: rgba(236, 241, 247, 0.96);
-      font-size: 30px;
-      font-weight: 600;
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.06),
-        0 12px 20px rgba(0, 0, 0, 0.14);
-      flex-shrink: 0;
-    }
-
-    .hero-main {
-      min-width: 0;
-      flex: 1;
-    }
-
-    .hero-kicker {
-      margin-bottom: 6px;
-      color: rgba(255, 255, 255, 0.42);
-      font-size: 12px;
-      letter-spacing: 0.24px;
-      text-transform: uppercase;
-    }
-
-    .hero-name {
-      font-size: 22px;
-      font-weight: 600;
-      line-height: 1.1;
-      letter-spacing: -0.4px;
-    }
-
-    .hero-meta {
-      margin-top: 6px;
-      font-size: 14px;
-      color: var(--text-sub);
-      line-height: 1.48;
-    }
-
-    .hero-tags {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 16px;
-    }
-
-    .glass-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 7px 10px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      color: rgba(255, 255, 255, 0.84);
-      font-size: 12px;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
-    }
-
-    .glass-tag.safe {
-      background: rgba(160, 189, 173, 0.12);
-      border-color: rgba(160, 189, 173, 0.14);
-      color: #dce8e1;
-    }
-
-    .section {
-      padding: 18px 0;
-      border-bottom: 1px solid var(--line-soft);
-    }
-
-    .section-card {
-      padding: 18px 16px;
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      border-radius: 22px;
-      background: rgba(16, 20, 25, 0.94);
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.04),
-        0 10px 24px rgba(0, 0, 0, 0.08);
-    }
-
-    .section-card + .section-card {
-      margin-top: 14px;
-    }
-
-    .section-card + .action-card,
-    .action-card + .section-card,
-    .action-card + .action-card {
-      margin-top: 14px;
-    }
-
-    .section-card:last-child {
-      padding-bottom: 18px;
-    }
-
-    .section-card .section-head {
-      margin-bottom: 14px;
-    }
-
-    .section:last-child {
-      border-bottom: 0;
-      padding-bottom: 6px;
-    }
-
-    .section-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-
-    .section-title {
-      font-size: 15px;
-      font-weight: 600;
-      letter-spacing: -0.12px;
-    }
-
-    .section-note {
-      font-size: 12px;
-      color: var(--text-soft);
-      text-align: right;
-    }
-
-    .rows {
-      display: grid;
-    }
-
-    .row {
-      min-height: 54px;
-      display: grid;
-      grid-template-columns: 92px 1fr;
-      gap: 12px;
-      align-items: center;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    }
-
-    .row:last-child {
-      border-bottom: 0;
-    }
-
-    .row-key {
-      font-size: 13px;
-      color: var(--text-soft);
-    }
-
-    .row-val {
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 8px;
-      font-size: 14px;
-      color: rgba(255, 255, 255, 0.94);
-      text-align: right;
-      line-height: 1.45;
-    }
-
-    .pill {
-      padding: 5px 9px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      color: rgba(255, 255, 255, 0.84);
-      font-size: 11px;
-      flex-shrink: 0;
-    }
-
-    .pill.safe {
-      background: var(--safe);
-      border-color: rgba(160, 189, 173, 0.12);
-      color: #dce8e1;
-    }
-
-    .pill.warn {
-      background: var(--warn);
-      border-color: rgba(191, 171, 145, 0.12);
-      color: #e8ddd2;
-    }
-
-    .list {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
-    }
-
-    .list-item {
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0;
-      min-height: 126px;
-      padding: 14px;
-      border-radius: 18px;
-      background: var(--panel-soft);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    }
-
-    .list-item:last-child {
-      border-bottom: 0;
-    }
-
-    .list-icon {
-      width: 38px;
-      height: 38px;
-      display: grid;
-      place-items: center;
-      border-radius: 12px;
-      background: var(--panel-soft);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      color: rgba(236, 241, 247, 0.84);
-      flex-shrink: 0;
-      margin-bottom: 22px;
-    }
-
-    .list-main {
-      min-width: 0;
-      width: 100%;
-    }
-
-    .list-title {
-      margin-bottom: 6px;
-      font-size: 14px;
-      font-weight: 600;
-      line-height: 1.35;
-    }
-
-    .list-desc {
-      font-size: 12px;
-      color: var(--text-sub);
-      line-height: 1.46;
-    }
-
-    .list-arrow {
-      position: absolute;
-      top: 14px;
-      right: 14px;
-      color: var(--text-soft);
-      font-size: 16px;
-    }
-
-    .overview {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-    }
-
-    .metric {
-      padding: 12px;
-      border-radius: 16px;
-      background: var(--panel-soft);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    }
-
-    .metric-label {
-      margin-bottom: 6px;
-      font-size: 11px;
-      color: var(--text-soft);
-      line-height: 1.4;
-    }
-
-    .metric-value {
-      font-size: 14px;
-      font-weight: 600;
-      line-height: 1.35;
-    }
-
-    .action {
-      padding: 18px 0;
-      border-bottom: 1px solid var(--line-soft);
-    }
-
-    .action:last-child {
-      border-bottom: 0;
-      padding-bottom: 0;
-    }
-
-    .action-card {
-      padding: 18px 16px;
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      border-radius: 22px;
-      background: rgba(16, 20, 25, 0.94);
-      border-bottom: 0;
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.04),
-        0 10px 24px rgba(0, 0, 0, 0.08);
-    }
-
-    .danger-card {
-      border-color: rgba(193, 149, 149, 0.12);
-      background: rgba(26, 18, 19, 0.94);
-    }
-
-    .action-head {
-      display: flex;
-      gap: 12px;
-      align-items: flex-start;
-      margin-bottom: 12px;
-    }
-
-    .action-icon {
-      width: 40px;
-      height: 40px;
-      display: grid;
-      place-items: center;
-      border-radius: 12px;
-      background: var(--panel-soft);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      color: rgba(236, 241, 247, 0.86);
-      flex-shrink: 0;
-    }
-
-    .action-title {
-      margin-bottom: 4px;
-      font-size: 16px;
-      font-weight: 600;
-      letter-spacing: -0.2px;
-    }
-
-    .action-desc {
-      font-size: 13px;
-      color: var(--text-sub);
-      line-height: 1.58;
-    }
-
-    .action-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-
-    .mini-note {
-      font-size: 12px;
-      color: var(--text-soft);
-    }
-
-    .input-stack {
-      display: grid;
-      gap: 10px;
-    }
-
-    .input-inline {
-      display: grid;
-      grid-template-columns: 1fr 102px;
-      gap: 10px;
-    }
-
-    .glass-input {
-      width: 100%;
-      height: 46px;
-      padding: 0 14px;
-      border-radius: 14px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background: var(--panel-soft);
-      color: rgba(255, 255, 255, 0.94);
-      font-size: 14px;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-      caret-color: var(--auth-focus-blue);
-      transition: border-color 0.22s ease, background 0.22s ease, box-shadow 0.22s ease;
-    }
-
-    .glass-input::placeholder {
-      color: rgba(214, 221, 230, 0.34);
-    }
-
-    .glass-input:focus,
-    .glass-input:focus-visible {
-      outline: none;
-      border-color: var(--auth-focus-blue);
-      background: var(--auth-focus-fill);
-      box-shadow: none;
-    }
-
-    .footer {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 3;
-      padding: 12px 20px calc(14px + env(safe-area-inset-bottom));
-      border-top: 1px solid var(--line-soft);
-      background: rgba(255, 255, 255, 0.04);
-      backdrop-filter: blur(20px) saturate(132%);
-      -webkit-backdrop-filter: blur(20px) saturate(132%);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    }
-
-    .footer-grid {
-      display: grid;
-      grid-template-columns: 1fr 1.15fr;
-      gap: 10px;
-    }
-
-    .btn {
-      height: 48px;
-      border-radius: 15px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      font-size: 14px;
-      font-weight: 600;
-      letter-spacing: 0.1px;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    }
-
-    .btn.primary {
-      background: var(--white-btn);
-      color: var(--white-btn-text);
-      border-color: rgba(255, 255, 255, 0.18);
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.46),
-        0 8px 16px rgba(0, 0, 0, 0.08);
-    }
-
-    .btn.ghost {
-      background: rgba(255, 255, 255, 0.04);
-      color: rgba(255, 255, 255, 0.9);
-    }
-
-    .btn.subtle {
-      background: rgba(255, 255, 255, 0.06);
-      color: rgba(255, 255, 255, 0.86);
-    }
-
-    .btn.danger {
-      background: var(--danger);
-      color: #ead7d7;
-      border-color: rgba(193, 149, 149, 0.12);
-    }
-  </style>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport"/>
+<title>个人资料局部磨砂预览</title>
+<link href="css/profile-security-selective-frost-preview.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1" rel="stylesheet"/>
 </head>
 <body>
-  <main class="stage">
-    <div class="intro">
-      <div class="intro-kicker">Selective Frost</div>
-      <div class="intro-title">主体不透明，磨砂只做点缀</div>
-      <div class="intro-copy">这版重新基于 `profile_security_frosted_board_glass.html` 的背景和氛围，但把满屏磨砂收掉。现在只有顶部条、隐私标签、状态徽标和底部操作条是磨砂，主要内容都回到不透明的深色面板里。</div>
-    </div>
-
-    <section class="phones">
-      <div class="phone-wrap">
-        <p class="phone-label">资料 Tab：内容回到不透明主板，磨砂只保留在点缀层</p>
-        <div class="phone">
-          <div class="screen">
-            <div class="scene" aria-hidden="true">
-              <div class="art">
-                <div class="block a"></div>
-                <div class="block b"></div>
-                <div class="block c"></div>
-                <div class="block d"></div>
-                <div class="block e"></div>
-                <div class="block f"></div>
-                <div class="art-line a"></div>
-                <div class="art-line b"></div>
-                <div class="art-label">Studio Issue 04</div>
-              </div>
-            </div>
-
-            <div class="status">iPhone 17 Safari · 9:41</div>
-
-            <div class="sheet">
-              <div class="frost-strip">
-                <div class="head-row">
-                  <div>
-                    <div class="title">我的账户</div>
-                    <div class="subtitle">仅自己可见</div>
-                  </div>
-                  <div class="settings">⚙</div>
-                </div>
-                <div class="tabs">
-                  <div class="tab active">资料</div>
-                  <div class="tab">安全</div>
-                </div>
-              </div>
-
-              <div class="body">
-                <section class="hero">
-                  <div class="avatar">林</div>
-                  <div class="hero-main">
-                    <div class="hero-kicker">Account</div>
-                    <div class="hero-name">林晚青</div>
-                    <div class="hero-meta">lin@example.com<br />ID 103294</div>
-                    <div class="hero-tags">
-                      <span class="glass-tag safe">资料仅自己可见</span>
-                      <span class="glass-tag">账户设置入口</span>
-                    </div>
-                  </div>
-                </section>
-
-                <section class="section section-card">
-                  <div class="section-head">
-                    <div class="section-title">必要资料</div>
-                    <div class="section-note">只保留需要确认和编辑的字段</div>
-                  </div>
-                  <div class="rows">
-                    <div class="row">
-                      <div class="row-key">昵称</div>
-                      <div class="row-val">林晚青</div>
-                    </div>
-                    <div class="row">
-                      <div class="row-key">邮箱</div>
-                      <div class="row-val">lin@example.com</div>
-                    </div>
-                    <div class="row">
-                      <div class="row-key">注册时间</div>
-                      <div class="row-val">2025-10-22</div>
-                    </div>
-                    <div class="row">
-                      <div class="row-key">手机号</div>
-                      <div class="row-val">
-                        <span class="pill warn">未绑定</span>
-                        <span>前往安全页</span>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                <section class="section section-card">
-                  <div class="section-head">
-                    <div class="section-title">快捷入口</div>
-                    <div class="section-note">详情不重复展示</div>
-                  </div>
-                  <div class="list">
-                    <div class="list-item">
-                      <div class="list-icon">◎</div>
-                      <div class="list-main">
-                        <div class="list-title">积分钱包</div>
-                        <div class="list-desc">余额、充值与兑换</div>
-                      </div>
-                      <div class="list-arrow">›</div>
-                    </div>
-                    <div class="list-item">
-                      <div class="list-icon">◫</div>
-                      <div class="list-main">
-                        <div class="list-title">交易记录</div>
-                        <div class="list-desc">订单与提示词解锁</div>
-                      </div>
-                      <div class="list-arrow">›</div>
-                    </div>
-                    <div class="list-item">
-                      <div class="list-icon">↗</div>
-                      <div class="list-main">
-                        <div class="list-title">推广中心</div>
-                        <div class="list-desc">邀请人数与佣金</div>
-                      </div>
-                      <div class="list-arrow">›</div>
-                    </div>
-                    <div class="list-item">
-                      <div class="list-icon">◌</div>
-                      <div class="list-main">
-                        <div class="list-title">每日签到</div>
-                        <div class="list-desc">连续天数与补签</div>
-                      </div>
-                      <div class="list-arrow">›</div>
-                    </div>
-                  </div>
-                </section>
-              </div>
-
-              <div class="footer">
-                <div class="footer-grid">
-                  <button class="btn ghost">前往钱包</button>
-                  <button class="btn primary">编辑资料</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="phone-wrap">
-        <p class="phone-label">安全 Tab：内容也不透明，只有状态和操作条保留磨砂</p>
-        <div class="phone">
-          <div class="screen">
-            <div class="scene" aria-hidden="true">
-              <div class="art">
-                <div class="block a"></div>
-                <div class="block b"></div>
-                <div class="block c"></div>
-                <div class="block d"></div>
-                <div class="block e"></div>
-                <div class="block f"></div>
-                <div class="art-line a"></div>
-                <div class="art-line b"></div>
-                <div class="art-label">Color Archive</div>
-              </div>
-            </div>
-
-            <div class="status">iPhone 17 Safari · 9:41</div>
-
-            <div class="sheet">
-              <div class="frost-strip">
-                <div class="head-row">
-                  <div>
-                    <div class="title">账户安全</div>
-                    <div class="subtitle">状态概览与关键操作</div>
-                  </div>
-                  <div class="settings">🛡</div>
-                </div>
-                <div class="tabs">
-                  <div class="tab">资料</div>
-                  <div class="tab active">安全</div>
-                </div>
-              </div>
-
-              <div class="body">
-                <section class="section section-card">
-                  <div class="section-head">
-                    <div class="section-title">安全概览</div>
-                    <div class="glass-tag safe">整体状态良好</div>
-                  </div>
-                  <div class="overview">
-                    <div class="metric">
-                      <div class="metric-label">邮箱验证</div>
-                      <div class="metric-value">已验证</div>
-                    </div>
-                    <div class="metric">
-                      <div class="metric-label">手机号</div>
-                      <div class="metric-value">未绑定</div>
-                    </div>
-                    <div class="metric">
-                      <div class="metric-label">最近改密</div>
-                      <div class="metric-value">32 天前</div>
-                    </div>
-                  </div>
-                </section>
-
-                <section class="action action-card">
-                  <div class="action-head">
-                    <div class="action-icon">✦</div>
-                    <div>
-                      <div class="action-title">修改密码</div>
-                      <div class="action-desc">操作区回到不透明深色面板，减少“满屏都在发光”的杂乱感。</div>
-                    </div>
-                  </div>
-                  <div class="input-stack">
-                    <input class="glass-input" type="password" placeholder="当前密码" />
-                    <input class="glass-input" type="password" placeholder="新密码（至少 6 位）" />
-                    <button class="btn primary">更新密码</button>
-                  </div>
-                </section>
-
-                <section class="action action-card">
-                  <div class="action-head">
-                    <div class="action-icon">☎</div>
-                    <div>
-                      <div class="action-title">绑定手机号</div>
-                      <div class="action-desc">只保留状态标签为磨砂点缀，输入和按钮都回到稳定的不透明层。</div>
-                    </div>
-                  </div>
-                  <div class="action-top">
-                    <div class="mini-note">建议优先完成</div>
-                    <div class="pill warn">未绑定</div>
-                  </div>
-                  <div class="input-stack">
-                    <input class="glass-input" type="text" placeholder="输入手机号" />
-                    <div class="input-inline">
-                      <input class="glass-input" type="text" placeholder="输入验证码" />
-                      <button class="btn subtle">获取</button>
-                    </div>
-                    <button class="btn ghost">绑定手机号</button>
-                  </div>
-                </section>
-
-                <section class="action action-card">
-                  <div class="action-head">
-                    <div class="action-icon">⎋</div>
-                    <div>
-                      <div class="action-title">最近登录</div>
-                      <div class="action-desc">继续保持信息清晰，背景不抢，磨砂只在必要层出现。</div>
-                    </div>
-                  </div>
-                  <div class="rows">
-                    <div class="row">
-                      <div class="row-key">最近设备</div>
-                      <div class="row-val">iPhone Safari</div>
-                    </div>
-                    <div class="row">
-                      <div class="row-key">登录位置</div>
-                      <div class="row-val">上海</div>
-                    </div>
-                    <div class="row">
-                      <div class="row-key">登录时间</div>
-                      <div class="row-val">今天 09:12</div>
-                    </div>
-                  </div>
-                </section>
-
-                <section class="action action-card danger-card">
-                  <div class="action-head">
-                    <div class="action-icon">!</div>
-                    <div>
-                      <div class="action-title">危险区</div>
-                      <div class="action-desc">风险区也保持克制，只用低饱和危险色，不额外叠加大面积磨砂效果。</div>
-                    </div>
-                  </div>
-                  <button class="btn danger" style="width: 100%;">确认注销账号</button>
-                </section>
-              </div>
-
-              <div class="footer">
-                <div class="footer-grid">
-                  <button class="btn ghost">返回资料</button>
-                  <button class="btn primary">保存安全设置</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  </main>
+<main class="stage">
+<div class="intro">
+<div class="intro-kicker">Selective Frost</div>
+<div class="intro-title">主体不透明，磨砂只做点缀</div>
+<div class="intro-copy">这版重新基于 `profile_security_frosted_board_glass.html` 的背景和氛围，但把满屏磨砂收掉。现在只有顶部条、隐私标签、状态徽标和底部操作条是磨砂，主要内容都回到不透明的深色面板里。</div>
+</div>
+<section class="phones">
+<div class="phone-wrap">
+<p class="phone-label">资料 Tab：内容回到不透明主板，磨砂只保留在点缀层</p>
+<div class="phone">
+<div class="screen">
+<div aria-hidden="true" class="scene">
+<div class="art">
+<div class="block a"></div>
+<div class="block b"></div>
+<div class="block c"></div>
+<div class="block d"></div>
+<div class="block e"></div>
+<div class="block f"></div>
+<div class="art-line a"></div>
+<div class="art-line b"></div>
+<div class="art-label">Studio Issue 04</div>
+</div>
+</div>
+<div class="status">iPhone 17 Safari · 9:41</div>
+<div class="sheet">
+<div class="frost-strip">
+<div class="head-row">
+<div>
+<div class="title">我的账户</div>
+<div class="subtitle">仅自己可见</div>
+</div>
+<div class="settings">⚙</div>
+</div>
+<div class="tabs">
+<div class="tab active">资料</div>
+<div class="tab">安全</div>
+</div>
+</div>
+<div class="body">
+<section class="hero">
+<div class="avatar">林</div>
+<div class="hero-main">
+<div class="hero-kicker">Account</div>
+<div class="hero-name">林晚青</div>
+<div class="hero-meta">lin@example.com<br/>ID 103294</div>
+<div class="hero-tags">
+<span class="glass-tag safe">资料仅自己可见</span>
+<span class="glass-tag">账户设置入口</span>
+</div>
+</div>
+</section>
+<section class="section section-card">
+<div class="section-head">
+<div class="section-title">必要资料</div>
+<div class="section-note">只保留需要确认和编辑的字段</div>
+</div>
+<div class="rows">
+<div class="row">
+<div class="row-key">昵称</div>
+<div class="row-val">林晚青</div>
+</div>
+<div class="row">
+<div class="row-key">邮箱</div>
+<div class="row-val">lin@example.com</div>
+</div>
+<div class="row">
+<div class="row-key">注册时间</div>
+<div class="row-val">2025-10-22</div>
+</div>
+<div class="row">
+<div class="row-key">手机号</div>
+<div class="row-val">
+<span class="pill warn">未绑定</span>
+<span>前往安全页</span>
+</div>
+</div>
+</div>
+</section>
+<section class="section section-card">
+<div class="section-head">
+<div class="section-title">快捷入口</div>
+<div class="section-note">详情不重复展示</div>
+</div>
+<div class="list">
+<div class="list-item">
+<div class="list-icon">◎</div>
+<div class="list-main">
+<div class="list-title">积分钱包</div>
+<div class="list-desc">余额、充值与兑换</div>
+</div>
+<div class="list-arrow">›</div>
+</div>
+<div class="list-item">
+<div class="list-icon">◫</div>
+<div class="list-main">
+<div class="list-title">交易记录</div>
+<div class="list-desc">订单与提示词解锁</div>
+</div>
+<div class="list-arrow">›</div>
+</div>
+<div class="list-item">
+<div class="list-icon">↗</div>
+<div class="list-main">
+<div class="list-title">推广中心</div>
+<div class="list-desc">邀请人数与佣金</div>
+</div>
+<div class="list-arrow">›</div>
+</div>
+<div class="list-item">
+<div class="list-icon">◌</div>
+<div class="list-main">
+<div class="list-title">每日签到</div>
+<div class="list-desc">连续天数与补签</div>
+</div>
+<div class="list-arrow">›</div>
+</div>
+</div>
+</section>
+</div>
+<div class="footer">
+<div class="footer-grid">
+<button class="btn ghost">前往钱包</button>
+<button class="btn primary">编辑资料</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="phone-wrap">
+<p class="phone-label">安全 Tab：内容也不透明，只有状态和操作条保留磨砂</p>
+<div class="phone">
+<div class="screen">
+<div aria-hidden="true" class="scene">
+<div class="art">
+<div class="block a"></div>
+<div class="block b"></div>
+<div class="block c"></div>
+<div class="block d"></div>
+<div class="block e"></div>
+<div class="block f"></div>
+<div class="art-line a"></div>
+<div class="art-line b"></div>
+<div class="art-label">Color Archive</div>
+</div>
+</div>
+<div class="status">iPhone 17 Safari · 9:41</div>
+<div class="sheet">
+<div class="frost-strip">
+<div class="head-row">
+<div>
+<div class="title">账户安全</div>
+<div class="subtitle">状态概览与关键操作</div>
+</div>
+<div class="settings">🛡</div>
+</div>
+<div class="tabs">
+<div class="tab">资料</div>
+<div class="tab active">安全</div>
+</div>
+</div>
+<div class="body">
+<section class="section section-card">
+<div class="section-head">
+<div class="section-title">安全概览</div>
+<div class="glass-tag safe">整体状态良好</div>
+</div>
+<div class="overview">
+<div class="metric">
+<div class="metric-label">邮箱验证</div>
+<div class="metric-value">已验证</div>
+</div>
+<div class="metric">
+<div class="metric-label">手机号</div>
+<div class="metric-value">未绑定</div>
+</div>
+<div class="metric">
+<div class="metric-label">最近改密</div>
+<div class="metric-value">32 天前</div>
+</div>
+</div>
+</section>
+<section class="action action-card">
+<div class="action-head">
+<div class="action-icon">✦</div>
+<div>
+<div class="action-title">修改密码</div>
+<div class="action-desc">操作区回到不透明深色面板，减少“满屏都在发光”的杂乱感。</div>
+</div>
+</div>
+<div class="input-stack">
+<input class="glass-input" placeholder="当前密码" type="password"/>
+<input class="glass-input" placeholder="新密码（至少 6 位）" type="password"/>
+<button class="btn primary">更新密码</button>
+</div>
+</section>
+<section class="action action-card">
+<div class="action-head">
+<div class="action-icon">☎</div>
+<div>
+<div class="action-title">绑定手机号</div>
+<div class="action-desc">只保留状态标签为磨砂点缀，输入和按钮都回到稳定的不透明层。</div>
+</div>
+</div>
+<div class="action-top">
+<div class="mini-note">建议优先完成</div>
+<div class="pill warn">未绑定</div>
+</div>
+<div class="input-stack">
+<input class="glass-input" placeholder="输入手机号" type="text"/>
+<div class="input-inline">
+<input class="glass-input" placeholder="输入验证码" type="text"/>
+<button class="btn subtle">获取</button>
+</div>
+<button class="btn ghost">绑定手机号</button>
+</div>
+</section>
+<section class="action action-card">
+<div class="action-head">
+<div class="action-icon">⎋</div>
+<div>
+<div class="action-title">最近登录</div>
+<div class="action-desc">继续保持信息清晰，背景不抢，磨砂只在必要层出现。</div>
+</div>
+</div>
+<div class="rows">
+<div class="row">
+<div class="row-key">最近设备</div>
+<div class="row-val">iPhone Safari</div>
+</div>
+<div class="row">
+<div class="row-key">登录位置</div>
+<div class="row-val">上海</div>
+</div>
+<div class="row">
+<div class="row-key">登录时间</div>
+<div class="row-val">今天 09:12</div>
+</div>
+</div>
+</section>
+<section class="action action-card danger-card">
+<div class="action-head">
+<div class="action-icon">!</div>
+<div>
+<div class="action-title">危险区</div>
+<div class="action-desc">风险区也保持克制，只用低饱和危险色，不额外叠加大面积磨砂效果。</div>
+</div>
+</div>
+<button class="btn danger profile-security-selective-frost-preview-inline-style-1">确认注销账号</button>
+</section>
+</div>
+<div class="footer">
+<div class="footer-grid">
+<button class="btn ghost">返回资料</button>
+<button class="btn primary">保存安全设置</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
 </body>
 </html>

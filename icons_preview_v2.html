@@ -1,526 +1,177 @@
 <!DOCTYPE html>
+
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Icons Set 2: Borderless & Interactive</title>
-    <style>
-        body {
-            background-color: #050505;
-            color: #fff;
-            font-family: 'Inter', sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 50px;
-            gap: 80px;
-        }
-
-        h1 {
-            margin-bottom: 10px;
-            font-weight: 300;
-            letter-spacing: 1px;
-        }
-
-        p.subtitle {
-            color: #666;
-            margin-bottom: 40px;
-            font-size: 14px;
-        }
-
-        .set-container {
-            width: 100%;
-            max-width: 900px;
-        }
-
-        h2 {
-            font-size: 14px;
-            color: #444;
-            margin-bottom: 30px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            border-bottom: 1px solid #222;
-            padding-bottom: 10px;
-        }
-
-        .icons-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0 40px;
-        }
-
-        .icon-wrapper {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 15px;
-            cursor: pointer;
-            position: relative;
-            /* No border, no background */
-        }
-
-        .icon-label {
-            font-size: 12px;
-            color: #666;
-            transition: 0.3s;
-        }
-
-        .icon-wrapper:hover .icon-label {
-            color: #fff;
-        }
-
-        svg {
-            overflow: visible;
-        }
-
-        /* --- Set 2A: Fluid Line (Stroke Animation) --- */
-        .set-fluid .icon-wrapper svg path {
-            position: relative;
-        }
-
-        .set-fluid .icon-wrapper.active svg {
-            animation: popScale 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-
-        .set-fluid .icon-wrapper.active svg path {
-            animation: drawLine 0.8s ease forwards;
-            stroke-dasharray: 100;
-            stroke-dashoffset: 100;
-        }
-
-        @keyframes drawLine {
-            to {
-                stroke-dashoffset: 0;
-            }
-        }
-
-        @keyframes popScale {
-            0% {
-                transform: scale(1);
-            }
-
-            50% {
-                transform: scale(0.8);
-            }
-
-            100% {
-                transform: scale(1);
-            }
-        }
-
-        /* --- Set 2B: Elastic Fill (Bouncy) --- */
-        .set-elastic .icon-wrapper svg {
-            fill: #333;
-            transition: fill 0.3s;
-        }
-
-        .set-elastic .icon-wrapper:hover svg {
-            fill: #555;
-        }
-
-        .set-elastic .icon-wrapper.active svg {
-            animation: elasticBounce 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-            fill: var(--active-color);
-        }
-
-        @keyframes elasticBounce {
-            0% {
-                transform: scale(1);
-            }
-
-            30% {
-                transform: scale(1.25, 0.75);
-            }
-
-            40% {
-                transform: scale(0.75, 1.25);
-            }
-
-            50% {
-                transform: scale(1.15, 0.85);
-            }
-
-            65% {
-                transform: scale(0.95, 1.05);
-            }
-
-            75% {
-                transform: scale(1.05, 0.95);
-            }
-
-            100% {
-                transform: scale(1);
-            }
-        }
-
-        /* --- Set 2C: Neon Pulse (Glow Burst) --- */
-        .set-neon svg path {
-            stroke: #444;
-            transition: 0.3s;
-        }
-
-        .set-neon .icon-wrapper:hover svg path {
-            stroke: #fff;
-        }
-
-        .set-neon .icon-wrapper.active svg path {
-            stroke: var(--active-color);
-            filter: drop-shadow(0 0 8px var(--active-color));
-            animation: neonFlicker 0.2s steps(2) 2 alternate;
-        }
-
-        .set-neon .icon-wrapper.active::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 10px;
-            height: 10px;
-            background: var(--active-color);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            animation: ringRipple 0.6s ease-out forwards;
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        @keyframes neonFlicker {
-            0% {
-                opacity: 1;
-            }
-
-            100% {
-                opacity: 0.5;
-            }
-        }
-
-        @keyframes ringRipple {
-            0% {
-                width: 0;
-                height: 0;
-                opacity: 0.8;
-            }
-
-            100% {
-                width: 80px;
-                height: 80px;
-                opacity: 0;
-            }
-        }
-
-        /* --- Set 2D: Micro-Rotation (Smart) --- */
-        .set-micro svg {
-            color: #888;
-        }
-
-        /* Specific animations per icon type */
-        .set-micro .icon-wrapper[data-type="prompts"].active svg {
-            animation: wave 0.6s ease-in-out;
-        }
-
-        .set-micro .icon-wrapper[data-type="shop"].active svg {
-            animation: cartRoll 0.6s ease-out;
-        }
-
-        .set-micro .icon-wrapper[data-type="verify"].active svg {
-            animation: shieldPulse 0.6s ease;
-        }
-
-        .set-micro .icon-wrapper[data-type="guestbook"].active svg {
-            animation: bookFlip 0.6s ease;
-        }
-
-        @keyframes wave {
-
-            0%,
-            100% {
-                transform: rotate(0deg);
-            }
-
-            25% {
-                transform: rotate(-15deg);
-            }
-
-            75% {
-                transform: rotate(15deg);
-            }
-        }
-
-        @keyframes cartRoll {
-            0% {
-                transform: translateX(0) rotate(0);
-            }
-
-            20% {
-                transform: translateX(-5px) rotate(-5deg);
-            }
-
-            100% {
-                transform: translateX(0) rotate(0);
-            }
-        }
-
-        @keyframes shieldPulse {
-            0% {
-                transform: scale(1);
-            }
-
-            50% {
-                transform: scale(1.2);
-            }
-
-            100% {
-                transform: scale(1);
-            }
-        }
-
-        @keyframes bookFlip {
-            0% {
-                transform: rotateY(0);
-            }
-
-            100% {
-                transform: rotateY(360deg);
-            }
-        }
-    </style>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Icons Set 2: Borderless & Interactive</title>
+<link href="css/icons-preview-v2.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1" rel="stylesheet"/>
 </head>
-
 <body>
-
-    <h1 data-preview-trigger-all="1">Borderless Interactive Icons</h1>
-    <p class="subtitle">Click any icon to trigger its animation</p>
-
-    <!-- Set 2A: Fluid Line -->
-    <div class="set-container set-fluid">
-        <h2>Set A: Fluid Line (流体线条 - 点击重绘)</h2>
-        <div class="icons-row">
-            <!-- Prompts -->
-            <div class="icon-wrapper">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="12" y1="2" x2="12" y2="6"></line>
-                    <line x1="12" y1="18" x2="12" y2="22"></line>
-                    <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
-                    <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
-                    <line x1="2" y1="12" x2="6" y2="12"></line>
-                    <line x1="18" y1="12" x2="22" y2="12"></line>
-                    <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
-                    <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
-                </svg>
-                <div class="icon-label">Prompts</div>
-            </div>
-            <!-- Shop -->
-            <div class="icon-wrapper">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="9" cy="21" r="1"></circle>
-                    <circle cx="20" cy="21" r="1"></circle>
-                    <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
-                </svg>
-                <div class="icon-label">Shop</div>
-            </div>
-            <!-- Verify -->
-            <div class="icon-wrapper">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                    <circle cx="12" cy="11" r="3"></circle>
-                </svg>
-                <div class="icon-label">Verify</div>
-            </div>
-            <!-- Guestbook -->
-            <div class="icon-wrapper">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path
-                        d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z">
-                    </path>
-                </svg>
-                <div class="icon-label">Guestbook</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Set 2B: Elastic Fill -->
-    <div class="set-container set-elastic">
-        <h2>Set B: Elastic Fill (弹性填充 - 点击Q弹)</h2>
-        <div class="icons-row">
-            <!-- Prompts -->
-            <div class="icon-wrapper" style="--active-color: #f472b6;">
-                <svg width="48" height="48" viewBox="0 0 24 24">
-                    <path d="M12,2L15,8L21,9L17,14L18,20L12,17L6,20L7,14L3,9L9,8L12,2Z"></path>
-                </svg>
-                <div class="icon-label">Prompts</div>
-            </div>
-            <!-- Shop -->
-            <div class="icon-wrapper" style="--active-color: #4ade80;">
-                <svg width="48" height="48" viewBox="0 0 24 24">
-                    <path d="M12,18H6V14H12M21,14V12L20,7H4L3,12V14H4V20H14V14H15V20H20V14H21Z"></path>
-                </svg>
-                <div class="icon-label">Shop</div>
-            </div>
-            <!-- Verify -->
-            <div class="icon-wrapper" style="--active-color: #667eea;">
-                <svg width="48" height="48" viewBox="0 0 24 24">
-                    <path
-                        d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M12,11A3,3 0 0,1 9,8A3,3 0 0,1 12,5A3,3 0 0,1 15,8A3,3 0 0,1 12,11Z">
-                    </path>
-                </svg>
-                <div class="icon-label">Verify</div>
-            </div>
-            <!-- Guestbook -->
-            <div class="icon-wrapper" style="--active-color: #f59e0b;">
-                <svg width="48" height="48" viewBox="0 0 24 24">
-                    <path
-                        d="M20,2H4A2,2 0 0,0 2,4V22L6,18H20A2,2 0 0,0 22,16V4A2,2 0 0,0 20,2M15,13H12V16H11V13H8V12H11V9H12V12H15V13Z">
-                    </path>
-                </svg>
-                <div class="icon-label">Guestbook</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Set 2C: Neon Pulse -->
-    <div class="set-container set-neon">
-        <h2>Set C: Neon Pulse (霓虹脉冲 - 点击发光)</h2>
-        <div class="icons-row">
-            <!-- Prompts -->
-            <div class="icon-wrapper" style="--active-color: #ff00ff;">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"
-                    stroke-linejoin="round">
-                    <path
-                        d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z">
-                    </path>
-                </svg>
-                <div class="icon-label">Prompts</div>
-            </div>
-            <!-- Shop -->
-            <div class="icon-wrapper" style="--active-color: #00ff00;">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"
-                    stroke-linejoin="round">
-                    <circle cx="9" cy="21" r="1"></circle>
-                    <circle cx="20" cy="21" r="1"></circle>
-                    <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
-                </svg>
-                <div class="icon-label">Shop</div>
-            </div>
-            <!-- Verify -->
-            <div class="icon-wrapper" style="--active-color: #00ffff;">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"
-                    stroke-linejoin="round">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                </svg>
-                <div class="icon-label">Verify</div>
-            </div>
-            <!-- Guestbook -->
-            <div class="icon-wrapper" style="--active-color: #ffff00;">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"
-                    stroke-linejoin="round">
-                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-                </svg>
-                <div class="icon-label">Guestbook</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Set 2D: Micro-Rotation -->
-    <div class="set-container set-micro">
-        <h2>Set D: Smart Motion (灵动微交互)</h2>
-        <div class="icons-row">
-            <!-- Prompts: Waving Hand / Magic -->
-            <div class="icon-wrapper" data-type="prompts">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M20 16a4 4 0 0 1-8 0"></path>
-                    <path d="M14.5 12.5l-2.5 2.5"></path>
-                    <path d="M16 10a4 4 0 1 0-8 0"></path>
-                    <path d="M10 21v-1a4 4 0 0 1 4-4v0"></path>
-                    <path d="M16 4.63a4 4 0 0 1 .42 6.87"></path>
-                    <path d="M19.16 8.53a4 4 0 0 1 1.76 2.07"></path>
-                </svg>
-                <div class="icon-label">Prompts</div>
-            </div>
-            <!-- Shop: Rolling Cart -->
-            <div class="icon-wrapper" data-type="shop">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
-                    <line x1="3" y1="6" x2="21" y2="6"></line>
-                    <path d="M16 10a4 4 0 0 1-8 0"></path>
-                </svg>
-                <div class="icon-label">Shop</div>
-            </div>
-            <!-- Verify: Pulsing Shield -->
-            <div class="icon-wrapper" data-type="verify">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                </svg>
-                <div class="icon-label">Verify</div>
-            </div>
-            <!-- Guestbook: Flipping Book -->
-            <div class="icon-wrapper" data-type="guestbook">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
-                    <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
-                </svg>
-                <div class="icon-label">Guestbook</div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        function animateIcon(element) {
-            // Remove active class to reset animation
-            element.classList.remove('active');
-
-            // Force reflow
-            void element.offsetWidth;
-
-            // Add active class to start animation
-            element.classList.add('active');
-
-            // Optional: remove after animation completes
-            setTimeout(() => {
-                element.classList.remove('active');
-            }, 1000);
-        }
-
-        function triggerAll() {
-            const icons = document.querySelectorAll('.icon-wrapper');
-            icons.forEach((icon, index) => {
-                setTimeout(() => animateIcon(icon), index * 100);
-            });
-        }
-
-        function bindPreviewInteractions() {
-            if (document.body.dataset.previewInteractionsBound === '1') {
-                return;
-            }
-
-            document.body.dataset.previewInteractionsBound = '1';
-            document.addEventListener('click', (event) => {
-                const trigger = event.target.closest('[data-preview-trigger-all="1"]');
-                if (trigger) {
-                    triggerAll();
-                    return;
-                }
-
-                const icon = event.target.closest('.icon-wrapper');
-                if (icon) {
-                    animateIcon(icon);
-                }
-            });
-        }
-
-        bindPreviewInteractions();
-    </script>
+<h1 data-preview-trigger-all="1">Borderless Interactive Icons</h1>
+<p class="subtitle">Click any icon to trigger its animation</p>
+<!-- Set 2A: Fluid Line -->
+<div class="set-container set-fluid">
+<h2>Set A: Fluid Line (流体线条 - 点击重绘)</h2>
+<div class="icons-row">
+<!-- Prompts -->
+<div class="icon-wrapper">
+<svg fill="none" height="48" stroke="white" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewbox="0 0 24 24" width="48">
+<line x1="12" x2="12" y1="2" y2="6"></line>
+<line x1="12" x2="12" y1="18" y2="22"></line>
+<line x1="4.93" x2="7.76" y1="4.93" y2="7.76"></line>
+<line x1="16.24" x2="19.07" y1="16.24" y2="19.07"></line>
+<line x1="2" x2="6" y1="12" y2="12"></line>
+<line x1="18" x2="22" y1="12" y2="12"></line>
+<line x1="4.93" x2="7.76" y1="19.07" y2="16.24"></line>
+<line x1="16.24" x2="19.07" y1="7.76" y2="4.93"></line>
+</svg>
+<div class="icon-label">Prompts</div>
+</div>
+<!-- Shop -->
+<div class="icon-wrapper">
+<svg fill="none" height="48" stroke="white" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewbox="0 0 24 24" width="48">
+<circle cx="9" cy="21" r="1"></circle>
+<circle cx="20" cy="21" r="1"></circle>
+<path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+</svg>
+<div class="icon-label">Shop</div>
+</div>
+<!-- Verify -->
+<div class="icon-wrapper">
+<svg fill="none" height="48" stroke="white" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewbox="0 0 24 24" width="48">
+<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+<circle cx="12" cy="11" r="3"></circle>
+</svg>
+<div class="icon-label">Verify</div>
+</div>
+<!-- Guestbook -->
+<div class="icon-wrapper">
+<svg fill="none" height="48" stroke="white" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" viewbox="0 0 24 24" width="48">
+<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z">
+</path>
+</svg>
+<div class="icon-label">Guestbook</div>
+</div>
+</div>
+</div>
+<!-- Set 2B: Elastic Fill -->
+<div class="set-container set-elastic">
+<h2>Set B: Elastic Fill (弹性填充 - 点击Q弹)</h2>
+<div class="icons-row">
+<!-- Prompts -->
+<div class="icon-wrapper icons-preview-v2-inline-style-1">
+<svg height="48" viewbox="0 0 24 24" width="48">
+<path d="M12,2L15,8L21,9L17,14L18,20L12,17L6,20L7,14L3,9L9,8L12,2Z"></path>
+</svg>
+<div class="icon-label">Prompts</div>
+</div>
+<!-- Shop -->
+<div class="icon-wrapper icons-preview-v2-inline-style-2">
+<svg height="48" viewbox="0 0 24 24" width="48">
+<path d="M12,18H6V14H12M21,14V12L20,7H4L3,12V14H4V20H14V14H15V20H20V14H21Z"></path>
+</svg>
+<div class="icon-label">Shop</div>
+</div>
+<!-- Verify -->
+<div class="icon-wrapper icons-preview-v2-inline-style-3">
+<svg height="48" viewbox="0 0 24 24" width="48">
+<path d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M12,11A3,3 0 0,1 9,8A3,3 0 0,1 12,5A3,3 0 0,1 15,8A3,3 0 0,1 12,11Z">
+</path>
+</svg>
+<div class="icon-label">Verify</div>
+</div>
+<!-- Guestbook -->
+<div class="icon-wrapper icons-preview-v2-inline-style-4">
+<svg height="48" viewbox="0 0 24 24" width="48">
+<path d="M20,2H4A2,2 0 0,0 2,4V22L6,18H20A2,2 0 0,0 22,16V4A2,2 0 0,0 20,2M15,13H12V16H11V13H8V12H11V9H12V12H15V13Z">
+</path>
+</svg>
+<div class="icon-label">Guestbook</div>
+</div>
+</div>
+</div>
+<!-- Set 2C: Neon Pulse -->
+<div class="set-container set-neon">
+<h2>Set C: Neon Pulse (霓虹脉冲 - 点击发光)</h2>
+<div class="icons-row">
+<!-- Prompts -->
+<div class="icon-wrapper icons-preview-v2-inline-style-5">
+<svg fill="none" height="48" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="48">
+<path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z">
+</path>
+</svg>
+<div class="icon-label">Prompts</div>
+</div>
+<!-- Shop -->
+<div class="icon-wrapper icons-preview-v2-inline-style-6">
+<svg fill="none" height="48" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="48">
+<circle cx="9" cy="21" r="1"></circle>
+<circle cx="20" cy="21" r="1"></circle>
+<path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+</svg>
+<div class="icon-label">Shop</div>
+</div>
+<!-- Verify -->
+<div class="icon-wrapper icons-preview-v2-inline-style-7">
+<svg fill="none" height="48" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="48">
+<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+</svg>
+<div class="icon-label">Verify</div>
+</div>
+<!-- Guestbook -->
+<div class="icon-wrapper icons-preview-v2-inline-style-8">
+<svg fill="none" height="48" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="48">
+<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+</svg>
+<div class="icon-label">Guestbook</div>
+</div>
+</div>
+</div>
+<!-- Set 2D: Micro-Rotation -->
+<div class="set-container set-micro">
+<h2>Set D: Smart Motion (灵动微交互)</h2>
+<div class="icons-row">
+<!-- Prompts: Waving Hand / Magic -->
+<div class="icon-wrapper" data-type="prompts">
+<svg fill="none" height="48" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="48">
+<path d="M20 16a4 4 0 0 1-8 0"></path>
+<path d="M14.5 12.5l-2.5 2.5"></path>
+<path d="M16 10a4 4 0 1 0-8 0"></path>
+<path d="M10 21v-1a4 4 0 0 1 4-4v0"></path>
+<path d="M16 4.63a4 4 0 0 1 .42 6.87"></path>
+<path d="M19.16 8.53a4 4 0 0 1 1.76 2.07"></path>
+</svg>
+<div class="icon-label">Prompts</div>
+</div>
+<!-- Shop: Rolling Cart -->
+<div class="icon-wrapper" data-type="shop">
+<svg fill="none" height="48" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="48">
+<path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+<line x1="3" x2="21" y1="6" y2="6"></line>
+<path d="M16 10a4 4 0 0 1-8 0"></path>
+</svg>
+<div class="icon-label">Shop</div>
+</div>
+<!-- Verify: Pulsing Shield -->
+<div class="icon-wrapper" data-type="verify">
+<svg fill="none" height="48" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="48">
+<rect height="11" rx="2" ry="2" width="18" x="3" y="11"></rect>
+<path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+</svg>
+<div class="icon-label">Verify</div>
+</div>
+<!-- Guestbook: Flipping Book -->
+<div class="icon-wrapper" data-type="guestbook">
+<svg fill="none" height="48" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="48">
+<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+<path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+</svg>
+<div class="icon-label">Guestbook</div>
+</div>
+</div>
+</div>
+<script src="./js/preview-icons-page.js"></script>
 </body>
-
 </html>

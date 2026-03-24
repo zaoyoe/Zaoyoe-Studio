@@ -1,0 +1,52 @@
+body {
+    font-family: system-ui;
+    padding: 40px;
+    background: #1a1a1a;
+    color: white;
+}
+
+.test-section {
+    margin: 20px 0;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+}
+
+.lang-toggle-simple {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-radius: 8px;
+}
+
+.lang-toggle-simple:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.lang-text {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: color 0.2s ease;
+}
+
+.lang-text.active {
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.lang-separator {
+    color: rgba(255, 255, 255, 0.3);
+}
+
+.status {
+    margin-top: 10px;
+    padding: 10px;
+    background: rgba(0, 255, 0, 0.1);
+    border-left: 3px solid #0f0;
+    border-radius: 4px;
+}

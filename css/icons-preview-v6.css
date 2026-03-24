@@ -1,0 +1,168 @@
+/* icons_preview_v6.html inline style block 1 (from line 8) */
+body {
+            background-color: #0F0F0F;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 50px;
+            gap: 100px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+
+        p.subtitle {
+            color: #888;
+            margin-bottom: 40px;
+            font-size: 14px;
+        }
+
+        .set-container {
+            width: 100%;
+            max-width: 900px;
+        }
+
+        h2 {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 40px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+
+        .icons-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 40px;
+        }
+
+        .icon-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            cursor: pointer;
+            position: relative;
+            /* CRITICAL: No background, no border */
+        }
+
+        .icon-label {
+            font-size: 14px;
+            color: #666;
+            transition: 0.3s;
+            font-weight: 500;
+            opacity: 0.8;
+        }
+
+        .icon-wrapper:hover .icon-label {
+            color: #fff;
+            opacity: 1;
+            transform: translateY(2px);
+        }
+
+        svg {
+            overflow: visible;
+        }
+
+        /* --- Shared Float Animation (Lively Idle) --- */
+        .float-anim {
+            animation: floatIdle 3s ease-in-out infinite;
+        }
+
+        @keyframes floatIdle {
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-8px);
+            }
+        }
+
+        /* --- Set 6A: Vivid 3D Objects (Gradient Depth) --- */
+        /* Vibrant gradients, squash & stretch interaction */
+        .set-vivid .icon-wrapper:hover svg {
+            filter: drop-shadow(0 10px 15px rgba(0, 0, 0, 0.5));
+            transform: scale(1.1);
+        }
+
+        .set-vivid .icon-wrapper.active svg {
+            animation: jellyJump 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
+        @keyframes jellyJump {
+            0% {
+                transform: scale(1, 1) translateY(0);
+            }
+
+            30% {
+                transform: scale(1.25, 0.75) translateY(10px);
+            }
+
+            /* Squash down */
+            40% {
+                transform: scale(0.75, 1.25) translateY(-20px);
+            }
+
+            /* Jump up stretching */
+            50% {
+                transform: scale(1.15, 0.85) translateY(-10px);
+            }
+
+            65% {
+                transform: scale(0.95, 1.05) translateY(0);
+            }
+
+            75% {
+                transform: scale(1.05, 0.95) translateY(0);
+            }
+
+            100% {
+                transform: scale(1, 1) translateY(0);
+            }
+        }
+
+        /* --- Set 6B: Energetic Pop (Cartoon) --- */
+        /* Thick outlines, high contrast, rapid movement */
+        .set-pop svg {
+            filter: drop-shadow(4px 4px 0px rgba(0, 0, 0, 0.5));
+        }
+
+        .set-pop .icon-wrapper:hover svg {
+            transform: rotate(-10deg) scale(1.1);
+            filter: drop-shadow(6px 6px 0px rgba(0, 0, 0, 0.5));
+        }
+
+        .set-pop .icon-wrapper.active svg {
+            animation: popSpin 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popSpin {
+            0% {
+                transform: rotate(0);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+/* icons_preview_v6.html inline style attribute classes */
+.icons-preview-v6-inline-style-1 { animation-delay: 0s; }
+.icons-preview-v6-inline-style-2 { animation-delay: 0.5s; }
+.icons-preview-v6-inline-style-3 { animation-delay: 1s; }
+.icons-preview-v6-inline-style-4 { animation-delay: 1.5s; }
+.icons-preview-v6-inline-style-5 { animation-delay: 0.3s; }
+.icons-preview-v6-inline-style-6 { animation-delay: 0.6s; }
+.icons-preview-v6-inline-style-7 { animation-delay: 0.9s; }
+/* end icons_preview_v6.html inline style attribute classes */

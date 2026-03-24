@@ -1,129 +1,71 @@
 <!DOCTYPE html>
+
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Z Logo Concepts - Speed & Space</title>
-    <style>
-        body {
-            background-color: #000;
-            color: #fff;
-            font-family: 'Playfair Display', serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            gap: 50px;
-        }
-
-        h1 {
-            margin-bottom: 10px;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 60px;
-            text-align: center;
-        }
-
-        .logo-item {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 20px;
-            padding: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            transition: 0.3s ease;
-        }
-
-        .logo-item:hover {
-            border-color: rgba(255, 255, 255, 0.4);
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .label {
-            font-family: 'Inter', sans-serif;
-            color: #888;
-            font-size: 14px;
-            margin-top: 10px;
-        }
-
-        svg {
-            width: 80px;
-            height: 80px;
-        }
-    </style>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400&display=swap"
-        rel="stylesheet">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Z Logo Concepts - Speed & Space</title>
+<link href="css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400&display=swap" rel="stylesheet"/>
 </head>
-
 <body>
-    <h1>Speed & Space Variants (Set 15)</h1>
-    <div class="grid">
-        <!-- Variant 53: Warp Drive (Extreme Slant + Trails) -->
-        <div class="logo-item">
-            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <!-- Main Z Shape (Highly Skewed) -->
-                <path d="M40 20 H90 L70 40 H20 L40 20 Z" fill="white" />
-                <path d="M30 40 H80 L60 60 H10 L30 40 Z" fill="white" opacity="0.8" />
-                <path d="M20 60 H70 L50 80 H0 L20 60 Z" fill="white" opacity="0.6" />
-                <!-- Motion Trails -->
-                <path d="M90 20 H100" stroke="white" stroke-width="2" stroke-linecap="round" />
-                <path d="M80 40 H95" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.8" />
-                <path d="M70 60 H90" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.6" />
-            </svg>
-            <div class="label">Variant 53: Warp Drive<br>(曲速引擎)</div>
-        </div>
-
-        <!-- Variant 54: Aero-Dynamic (Curved 3D) -->
-        <div class="logo-item">
-            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                    <linearGradient id="aeroGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" style="stop-color:#fff;stop-opacity:1" />
-                        <stop offset="100%" style="stop-color:#888;stop-opacity:1" />
-                    </linearGradient>
-                </defs>
-                <!-- Smoothed Z with depth -->
-                <path d="M30 25 H80 L60 45 H30 C20 45, 20 25, 30 25 Z" fill="url(#aeroGrad)" />
-                <path d="M50 45 H80 L60 65 H30 L50 45 Z" fill="#aaa" />
-                <path d="M30 65 H80 C90 65, 90 85, 80 85 H30 L50 65 Z" fill="url(#aeroGrad)" />
-            </svg>
-            <div class="label">Variant 54: Aero-Dynamic<br>(流线体)</div>
-        </div>
-
-        <!-- Variant 55: Dimensional Dash (Perspective Blocks) -->
-        <div class="logo-item">
-            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <!-- Front Face (White) -->
-                <path d="M40 30 H80 L70 45 H30 Z" fill="white" />
-                <path d="M30 45 H70 L60 60 H20 Z" fill="white" />
-                <path d="M20 60 H60 L50 75 H10 Z" fill="white" />
-
-                <!-- 3D Depth Sides (Darker) -->
-                <path d="M80 30 L85 35 L75 50 L70 45 Z" fill="#666" />
-                <path d="M70 45 L75 50 L65 65 L60 60 Z" fill="#666" />
-                <path d="M60 60 L65 65 L55 80 L50 75 Z" fill="#666" />
-            </svg>
-            <div class="label">Variant 55: 3D Velocity<br>(立体极速)</div>
-        </div>
-
-        <!-- Variant 56: Hyper-Tunnel (Converging Lines) -->
-        <div class="logo-item">
-            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <!-- Outer Z -->
-                <path d="M20 20 H90 L60 80 H10 L40 20 Z" fill="none" stroke="white" stroke-width="4" />
-                <!-- Inner Zs creating tunnel effect -->
-                <path d="M35 30 H80 L55 70 H25 L35 30 Z" fill="none" stroke="white" stroke-width="2" opacity="0.6" />
-                <path d="M45 38 H70 L52 62 H35 L45 38 Z" fill="white" opacity="0.8" />
-            </svg>
-            <div class="label">Variant 56: Hyper-Tunnel<br>(时空隧道)</div>
-        </div>
-    </div>
+<h1>Speed & Space Variants (Set 15)</h1>
+<div class="grid">
+<!-- Variant 53: Warp Drive (Extreme Slant + Trails) -->
+<div class="logo-item">
+<svg fill="none" viewbox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+<!-- Main Z Shape (Highly Skewed) -->
+<path d="M40 20 H90 L70 40 H20 L40 20 Z" fill="white"></path>
+<path d="M30 40 H80 L60 60 H10 L30 40 Z" fill="white" opacity="0.8"></path>
+<path d="M20 60 H70 L50 80 H0 L20 60 Z" fill="white" opacity="0.6"></path>
+<!-- Motion Trails -->
+<path d="M90 20 H100" stroke="white" stroke-linecap="round" stroke-width="2"></path>
+<path d="M80 40 H95" opacity="0.8" stroke="white" stroke-linecap="round" stroke-width="2"></path>
+<path d="M70 60 H90" opacity="0.6" stroke="white" stroke-linecap="round" stroke-width="2"></path>
+</svg>
+<div class="label">Variant 53: Warp Drive<br/>(曲速引擎)</div>
+</div>
+<!-- Variant 54: Aero-Dynamic (Curved 3D) -->
+<div class="logo-item">
+<svg fill="none" viewbox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<lineargradient id="aeroGrad" x1="0%" x2="100%" y1="0%" y2="0%">
+<stop class="logo-preview-v15-inline-style-1" offset="0%"></stop>
+<stop class="logo-preview-v15-inline-style-2" offset="100%"></stop>
+</lineargradient>
+</defs>
+<!-- Smoothed Z with depth -->
+<path d="M30 25 H80 L60 45 H30 C20 45, 20 25, 30 25 Z" fill="url(#aeroGrad)"></path>
+<path d="M50 45 H80 L60 65 H30 L50 45 Z" fill="#aaa"></path>
+<path d="M30 65 H80 C90 65, 90 85, 80 85 H30 L50 65 Z" fill="url(#aeroGrad)"></path>
+</svg>
+<div class="label">Variant 54: Aero-Dynamic<br/>(流线体)</div>
+</div>
+<!-- Variant 55: Dimensional Dash (Perspective Blocks) -->
+<div class="logo-item">
+<svg fill="none" viewbox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+<!-- Front Face (White) -->
+<path d="M40 30 H80 L70 45 H30 Z" fill="white"></path>
+<path d="M30 45 H70 L60 60 H20 Z" fill="white"></path>
+<path d="M20 60 H60 L50 75 H10 Z" fill="white"></path>
+<!-- 3D Depth Sides (Darker) -->
+<path d="M80 30 L85 35 L75 50 L70 45 Z" fill="#666"></path>
+<path d="M70 45 L75 50 L65 65 L60 60 Z" fill="#666"></path>
+<path d="M60 60 L65 65 L55 80 L50 75 Z" fill="#666"></path>
+</svg>
+<div class="label">Variant 55: 3D Velocity<br/>(立体极速)</div>
+</div>
+<!-- Variant 56: Hyper-Tunnel (Converging Lines) -->
+<div class="logo-item">
+<svg fill="none" viewbox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+<!-- Outer Z -->
+<path d="M20 20 H90 L60 80 H10 L40 20 Z" fill="none" stroke="white" stroke-width="4"></path>
+<!-- Inner Zs creating tunnel effect -->
+<path d="M35 30 H80 L55 70 H25 L35 30 Z" fill="none" opacity="0.6" stroke="white" stroke-width="2"></path>
+<path d="M45 38 H70 L52 62 H35 L45 38 Z" fill="white" opacity="0.8"></path>
+</svg>
+<div class="label">Variant 56: Hyper-Tunnel<br/>(时空隧道)</div>
+</div>
+</div>
 </body>
-
 </html>

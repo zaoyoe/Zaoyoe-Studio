@@ -1,0 +1,291 @@
+/* icons_preview_v2.html inline style block 1 (from line 8) */
+body {
+            background-color: #050505;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 50px;
+            gap: 80px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+
+        p.subtitle {
+            color: #666;
+            margin-bottom: 40px;
+            font-size: 14px;
+        }
+
+        .set-container {
+            width: 100%;
+            max-width: 900px;
+        }
+
+        h2 {
+            font-size: 14px;
+            color: #444;
+            margin-bottom: 30px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-bottom: 1px solid #222;
+            padding-bottom: 10px;
+        }
+
+        .icons-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 40px;
+        }
+
+        .icon-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            cursor: pointer;
+            position: relative;
+            /* No border, no background */
+        }
+
+        .icon-label {
+            font-size: 12px;
+            color: #666;
+            transition: 0.3s;
+        }
+
+        .icon-wrapper:hover .icon-label {
+            color: #fff;
+        }
+
+        svg {
+            overflow: visible;
+        }
+
+        /* --- Set 2A: Fluid Line (Stroke Animation) --- */
+        .set-fluid .icon-wrapper svg path {
+            position: relative;
+        }
+
+        .set-fluid .icon-wrapper.active svg {
+            animation: popScale 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .set-fluid .icon-wrapper.active svg path {
+            animation: drawLine 0.8s ease forwards;
+            stroke-dasharray: 100;
+            stroke-dashoffset: 100;
+        }
+
+        @keyframes drawLine {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        @keyframes popScale {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(0.8);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        /* --- Set 2B: Elastic Fill (Bouncy) --- */
+        .set-elastic .icon-wrapper svg {
+            fill: #333;
+            transition: fill 0.3s;
+        }
+
+        .set-elastic .icon-wrapper:hover svg {
+            fill: #555;
+        }
+
+        .set-elastic .icon-wrapper.active svg {
+            animation: elasticBounce 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            fill: var(--active-color);
+        }
+
+        @keyframes elasticBounce {
+            0% {
+                transform: scale(1);
+            }
+
+            30% {
+                transform: scale(1.25, 0.75);
+            }
+
+            40% {
+                transform: scale(0.75, 1.25);
+            }
+
+            50% {
+                transform: scale(1.15, 0.85);
+            }
+
+            65% {
+                transform: scale(0.95, 1.05);
+            }
+
+            75% {
+                transform: scale(1.05, 0.95);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        /* --- Set 2C: Neon Pulse (Glow Burst) --- */
+        .set-neon svg path {
+            stroke: #444;
+            transition: 0.3s;
+        }
+
+        .set-neon .icon-wrapper:hover svg path {
+            stroke: #fff;
+        }
+
+        .set-neon .icon-wrapper.active svg path {
+            stroke: var(--active-color);
+            filter: drop-shadow(0 0 8px var(--active-color));
+            animation: neonFlicker 0.2s steps(2) 2 alternate;
+        }
+
+        .set-neon .icon-wrapper.active::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            background: var(--active-color);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            animation: ringRipple 0.6s ease-out forwards;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        @keyframes neonFlicker {
+            0% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0.5;
+            }
+        }
+
+        @keyframes ringRipple {
+            0% {
+                width: 0;
+                height: 0;
+                opacity: 0.8;
+            }
+
+            100% {
+                width: 80px;
+                height: 80px;
+                opacity: 0;
+            }
+        }
+
+        /* --- Set 2D: Micro-Rotation (Smart) --- */
+        .set-micro svg {
+            color: #888;
+        }
+
+        /* Specific animations per icon type */
+        .set-micro .icon-wrapper[data-type="prompts"].active svg {
+            animation: wave 0.6s ease-in-out;
+        }
+
+        .set-micro .icon-wrapper[data-type="shop"].active svg {
+            animation: cartRoll 0.6s ease-out;
+        }
+
+        .set-micro .icon-wrapper[data-type="verify"].active svg {
+            animation: shieldPulse 0.6s ease;
+        }
+
+        .set-micro .icon-wrapper[data-type="guestbook"].active svg {
+            animation: bookFlip 0.6s ease;
+        }
+
+        @keyframes wave {
+
+            0%,
+            100% {
+                transform: rotate(0deg);
+            }
+
+            25% {
+                transform: rotate(-15deg);
+            }
+
+            75% {
+                transform: rotate(15deg);
+            }
+        }
+
+        @keyframes cartRoll {
+            0% {
+                transform: translateX(0) rotate(0);
+            }
+
+            20% {
+                transform: translateX(-5px) rotate(-5deg);
+            }
+
+            100% {
+                transform: translateX(0) rotate(0);
+            }
+        }
+
+        @keyframes shieldPulse {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.2);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        @keyframes bookFlip {
+            0% {
+                transform: rotateY(0);
+            }
+
+            100% {
+                transform: rotateY(360deg);
+            }
+        }
+
+/* icons_preview_v2.html inline style attribute classes */
+.icons-preview-v2-inline-style-1 { --active-color: #f472b6; }
+.icons-preview-v2-inline-style-2 { --active-color: #4ade80; }
+.icons-preview-v2-inline-style-3 { --active-color: #667eea; }
+.icons-preview-v2-inline-style-4 { --active-color: #f59e0b; }
+.icons-preview-v2-inline-style-5 { --active-color: #ff00ff; }
+.icons-preview-v2-inline-style-6 { --active-color: #00ff00; }
+.icons-preview-v2-inline-style-7 { --active-color: #00ffff; }
+.icons-preview-v2-inline-style-8 { --active-color: #ffff00; }
+/* end icons_preview_v2.html inline style attribute classes */

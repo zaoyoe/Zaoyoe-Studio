@@ -42,260 +42,15 @@
     <!-- Prevent flash of wrong theme - Critical CSS -->
     <script src="./js/theme-preload.js"></script>
 
-    <script>
-        (function () {
-            const THEME_COLOR = '#000000';
+    <script src="./js/prompts-head-bootstrap.js"></script>
 
-            const ensureThemeColorBlack = () => {
-                let meta = document.querySelector('meta[name="theme-color"]');
-                if (!meta) {
-                    meta = document.createElement('meta');
-                    meta.setAttribute('name', 'theme-color');
-                    document.head.appendChild(meta);
-                }
-
-                if (meta.getAttribute('content') !== THEME_COLOR) {
-                    meta.setAttribute('content', THEME_COLOR);
-                }
-
-                return meta;
-            };
-
-            const observeThemeColor = () => {
-                const meta = ensureThemeColorBlack();
-                if (!meta || meta.__promptThemeObserverBound) return;
-
-                const attributeObserver = new MutationObserver(() => {
-                    if (meta.getAttribute('content') !== THEME_COLOR) {
-                        meta.setAttribute('content', THEME_COLOR);
-                    }
-                });
-                attributeObserver.observe(meta, { attributes: true, attributeFilter: ['content'] });
-                meta.__promptThemeObserverBound = true;
-
-                const headObserver = new MutationObserver(() => {
-                    ensureThemeColorBlack();
-                });
-                headObserver.observe(document.head, { childList: true, subtree: true });
-            };
-
-            window.__forcePromptThemeColorBlack = ensureThemeColorBlack;
-            ensureThemeColorBlack();
-
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', observeThemeColor, { once: true });
-            } else {
-                observeThemeColor();
-            }
-
-            window.addEventListener('pageshow', ensureThemeColorBlack);
-            window.addEventListener('focus', ensureThemeColorBlack);
-            document.addEventListener('visibilitychange', () => {
-                if (!document.hidden) ensureThemeColorBlack();
-            });
-        })();
-    </script>
-
-    <script>
-        (function () {
-            const navEntry = performance.getEntriesByType?.('navigation')?.[0];
-            const navigationType = navEntry?.type
-                || (performance.navigation?.type === 2
-                    ? 'back_forward'
-                    : performance.navigation?.type === 1
-                        ? 'reload'
-                        : 'navigate');
-            const shouldLockToTop = navigationType !== 'back_forward';
-            const forceTop = () => {
-                window.scrollTo(0, 0);
-                document.documentElement.scrollTop = 0;
-                document.body.scrollTop = 0;
-            };
-            const releaseTopLock = () => {
-                if (!window.__PROMPTS_TOP_LOCK_ACTIVE__) return;
-
-                window.__PROMPTS_TOP_LOCK_ACTIVE__ = false;
-                window.__PROMPTS_FORCE_SCROLL_TOP__ = false;
-
-                window.removeEventListener('scroll', clampTop);
-                window.removeEventListener('touchstart', releaseTopLock);
-                window.removeEventListener('wheel', releaseTopLock);
-                window.removeEventListener('keydown', releaseTopLock);
-            };
-            const clampTop = () => {
-                if (!window.__PROMPTS_TOP_LOCK_ACTIVE__) return;
-
-                if ((window.scrollY || window.pageYOffset || 0) !== 0 || window.scrollX !== 0) {
-                    forceTop();
-                }
-            };
-
-            window.__PROMPTS_FORCE_SCROLL_TOP__ = Boolean(shouldLockToTop);
-            window.__PROMPTS_FORCE_SCROLL_TOP_FN__ = forceTop;
-            window.__PROMPTS_TOP_LOCK_ACTIVE__ = Boolean(shouldLockToTop);
-
-            if (!shouldLockToTop) return;
-
-            if ('scrollRestoration' in history) {
-                history.scrollRestoration = 'manual';
-            }
-
-            forceTop();
-
-            window.addEventListener('scroll', clampTop, { passive: true });
-            window.addEventListener('touchstart', releaseTopLock, { passive: true });
-            window.addEventListener('wheel', releaseTopLock, { passive: true });
-            window.addEventListener('keydown', releaseTopLock);
-
-            window.addEventListener('load', () => {
-                forceTop();
-                requestAnimationFrame(forceTop);
-                setTimeout(forceTop, 250);
-                setTimeout(forceTop, 800);
-                setTimeout(releaseTopLock, 2200);
-            }, { once: true });
-        })();
-    </script>
-
-    <style>
-        /* Critical CSS - Nav instant, content fades in */
-        html {
-            background-color: #ffffff;
-        }
-
-        html[data-theme="dark"] {
-            background-color: #000000;
-        }
-
-        body {
-            background-color: inherit;
-            margin: 0;
-        }
-
-        /* Content areas start hidden, fade in when ready */
-        .featured-banner {
-            display: none;
-            /* Hidden until JS shows it */
-        }
-
-        .gallery-container {
-            opacity: 0;
-            transition: opacity 0.4s ease 0.1s;
-        }
-
-        body.loaded .gallery-container {
-            opacity: 1;
-        }
-
-        .visually-hidden-h1 {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            padding: 0;
-            margin: -1px;
-            overflow: hidden;
-            clip: rect(0, 0, 0, 0);
-            white-space: nowrap;
-            border: 0;
-        }
-
-        @media (max-width: 768px) {
-            html {
-                -webkit-text-size-adjust: 100%;
-            }
-
-            input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
-            textarea,
-            select {
-                font-size: 16px !important;
-                line-height: 1.35 !important;
-            }
-
-            .login-overlay.active:focus-within .login-card,
-            .modal-overlay.active:focus-within .modal-content {
-                transform: none !important;
-            }
-        }
-
-        /* Prompts page: keep auth sheet title/tab size aligned with homepage modal */
-        #loginModal .auth-sheet-header,
-        #loginModal .auth-sheet-overline,
-        #loginModal .auth-sheet-title {
-            text-align: center;
-        }
-
-        #loginModal .auth-sheet-title {
-            width: 100%;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        /* Prompts page: lock white primary action buttons to homepage size */
-        #loginModal #loginView .auth-sheet-submit,
-        #loginModal #registerView .auth-sheet-submit {
-            width: min(100%, 82%);
-            max-width: 200px;
-            min-height: 44px;
-            padding: 11px 15px;
-            margin-left: auto;
-            margin-right: auto;
-            font-size: 14px;
-            line-height: 1.2;
-            border-radius: 15px;
-        }
-
-        #loginModal #registerView .auth-sheet-submit {
-            margin-top: auto;
-        }
-
-        /* Prompts page: longer verify input (left) + get button right aligned */
-        #loginModal #registerView .auth-sheet-inline-group--code {
-            width: 100%;
-            grid-template-columns: 168px 104px;
-            justify-content: space-between;
-            gap: 6px;
-        }
-
-        #loginModal #registerView .auth-sheet-inline-group--code .verify-code-btn {
-            justify-self: end;
-        }
-
-        /* Prompts page: brighter caret for better visibility */
-        #loginModal .auth-sheet-input,
-        #loginModal .auth-sheet-input:focus,
-        #loginModal .auth-sheet-input.auth-sheet-input--portaled,
-        #loginModal .auth-sheet-input.auth-sheet-input--portaled:focus {
-            caret-color: #f4f8ff !important;
-        }
-
-        /* Prompts page: plain gray rectangular action button (no gradient / no 3D outline) */
-        #loginModal #registerView .auth-sheet-inline-group--code .verify-code-btn {
-            border-radius: 13px;
-            background: rgba(216, 224, 234, 0.12) !important;
-            border: 1px solid rgba(216, 224, 234, 0.18) !important;
-            color: #e9eef4 !important;
-            box-shadow: none !important;
-            font-weight: 600;
-        }
-
-        #loginModal #registerView .auth-sheet-inline-group--code .verify-code-btn:hover {
-            transform: none;
-            background: rgba(226, 233, 242, 0.18) !important;
-            border-color: rgba(226, 233, 242, 0.24) !important;
-            box-shadow: none !important;
-        }
-
-        #loginModal #registerView .auth-sheet-inline-group--code .verify-code-btn:active {
-            transform: translateY(0);
-            box-shadow: none !important;
-        }
-    </style>
+    <link rel="stylesheet" href="css/prompts-page.css?v=20260324_PROMPTS_STYLE_ATTRS_1">
 </head>
 
 <body class="prompts-page">
 
     <!-- System Announcement Banner (页面最顶部) -->
-    <div id="announcementBanner" class="announcement-banner" style="display: none;">
+    <div id="announcementBanner" class="announcement-banner prompts-announcement-banner-hidden">
         <div class="announcement-content">
             <i class="fas fa-bullhorn"></i>
             <span id="announcementText"></span>
@@ -420,7 +175,7 @@
                     </div>
 
                     <!-- Autocomplete Suggestions (shown when typing) -->
-                    <div class="search-suggestions" id="searchSuggestions" style="display: none;">
+                    <div class="search-suggestions prompts-search-suggestions-hidden" id="searchSuggestions">
                         <!-- Dynamically generated -->
                     </div>
                 </div>
@@ -458,14 +213,14 @@
                 <p class="disclaimer-text" data-i18n="gallery.disclaimer">
                     所展示的图片及提示词均由 AI 生成，创作灵感来自于互联网公开分享
                 </p>
-                <p class="support-link" style="margin-top: 12px; font-size: 12px; opacity: 0.6;">
+                <p class="support-link prompts-support-link">
                     <span data-i18n="gallery.supportUs">支持我们</span>: <a href="https://afdian.com/a/zaoyoe"
                         target="_blank" rel="noopener noreferrer"
-                        style="color: inherit; text-decoration: none; border-bottom: 1px dashed rgba(255,255,255,0.4);">afdian.com/a/zaoyoe</a>
-                    <span style="margin: 0 10px; opacity: 0.4;">|</span>
+                        class="prompts-support-link-anchor">afdian.com/a/zaoyoe</a>
+                    <span class="prompts-support-link-divider">|</span>
                     <span data-i18n="gallery.joinGroup">交流群</span>: <a href="https://t.me/+I86eX5sPF1c0OTc1"
                         target="_blank" rel="noopener noreferrer"
-                        style="color: inherit; text-decoration: none; border-bottom: 1px dashed rgba(255,255,255,0.4);"
+                        class="prompts-support-link-anchor"
                         data-i18n="common.clickToJoin">点击加入</a>
                 </p>
             </div>
@@ -575,7 +330,7 @@
                             data-i18n-placeholder="gallery.addComment" rows="1"></textarea>
 
                         <!-- Hidden file input -->
-                        <input type="file" id="commentImageUpload" accept="image/*" style="display: none;">
+                        <input type="file" id="commentImageUpload" accept="image/*" class="prompts-comment-image-upload-hidden">
 
                         <!-- Upload button -->
                         <button id="commentUploadBtn" class="comment-upload-btn" title="Attach image"
@@ -607,18 +362,10 @@
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/relativeTime.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1/locale/zh-cn.js"></script>
 
-    <script>
-        // Initialize Supabase client via shared config
-    </script>
     <script src="/api/runtime/supabase-config"></script>
     <script src="./js/runtime-supabase-config.js"></script>
     <script src="./supabase-client.js"></script>
-    <script>
-        // Initialize Day.js
-        dayjs.extend(dayjs_plugin_relativeTime);
-        dayjs.locale('zh-cn');
-        console.log('Day.js initialized with zh-cn locale');
-    </script>
+    <script src="./js/prompts-runtime-bootstrap.js"></script>
     <!-- Site Config (dual-site detection) -->
     <script src="./js/site-config.js"></script>
     <script src="./js/prefetch-home.js" defer></script>
@@ -638,11 +385,6 @@
     <script src="notification-client.js?v=20260314_NOTIF_SCROLL_LOCK_1"></script>
     <script src="js/heartbeat.js"></script>
     <script src="js/framer_home.js?v=NAV_UNIFIED_V7"></script>
-    <script>
-        // Reveal page after content is ready
-        document.body.classList.add('loaded');
-    </script>
-
     <!-- Chat Widget -->
     <link rel="stylesheet" href="css/chat-widget.css?v=20260317_CHAT_BUBBLE_AVATAR_FIX_13">
     <script src="js/components/ChatWidget.js?v=20260317_CHAT_BUBBLE_AVATAR_FIX_13"></script>

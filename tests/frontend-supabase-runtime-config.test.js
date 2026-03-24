@@ -126,6 +126,10 @@ function collectRepositorySourceFiles(rootDir = REPO_ROOT) {
     return files.sort();
 }
 
+function collectRepositoryHtmlFiles(rootDir = REPO_ROOT) {
+    return collectRepositorySourceFiles(rootDir).filter((relativePath) => /\.(html)(\.bak)?$/i.test(relativePath));
+}
+
 test('active frontend runtime files no longer hardcode the production Supabase host or publishable key', () => {
     const violations = [];
 
@@ -219,29 +223,54 @@ test('vercel CSP does not allow unsafe-eval in frontend script execution', () =>
     assert.equal(cspValue.includes("'unsafe-eval'"), false);
 });
 
-test('vercel CSP restricts inline script elements to hashed runtime pages while blocking inline event attributes', () => {
+test('runtime entry pages no longer embed inline script blocks', () => {
+    const runtimeInlineHashes = collectInlineScriptHashes(RUNTIME_PAGES);
+    assert.deepEqual(runtimeInlineHashes, [], 'Runtime pages should not retain inline script blocks');
+});
+
+test('repository HTML pages no longer embed inline script blocks outside the test suite', () => {
+    const htmlFiles = collectRepositoryHtmlFiles();
+    const violations = htmlFiles.filter((relativePath) => collectInlineScriptHashes([relativePath]).length > 0);
+
+    assert.deepEqual(violations, [], `Repository HTML pages should not contain inline script blocks:\n${violations.join('\n')}`);
+});
+
+test('repository HTML pages no longer embed inline style blocks outside the test suite', () => {
+    const htmlFiles = collectRepositoryHtmlFiles();
+    const violations = htmlFiles.filter((relativePath) => /<style\b/i.test(readRepoFile(relativePath)));
+
+    assert.deepEqual(violations, [], `Repository HTML pages should not contain inline style blocks:\n${violations.join('\n')}`);
+});
+
+test('repository HTML pages no longer embed inline style attributes outside the test suite', () => {
+    const htmlFiles = collectRepositoryHtmlFiles();
+    const violations = htmlFiles.filter((relativePath) => /\sstyle\s*=\s*["']/i.test(readRepoFile(relativePath)));
+
+    assert.deepEqual(violations, [], `Repository HTML pages should not contain inline style attributes:\n${violations.join('\n')}`);
+});
+
+test('vercel CSP blocks inline scripts and inline event attributes without hash exceptions', () => {
     const cspValue = getGlobalCspHeaderValue();
     const directives = parseCspDirectives(cspValue);
     const scriptSrc = directives.get('script-src') || [];
     const scriptSrcElem = directives.get('script-src-elem') || [];
     const scriptSrcAttr = directives.get('script-src-attr') || [];
-    const expectedHashes = collectInlineScriptHashes(RUNTIME_PAGES);
 
     assert.notEqual(scriptSrc.length, 0, 'Missing script-src directive');
     assert.notEqual(scriptSrcElem.length, 0, 'Missing script-src-elem directive');
     assert.deepEqual(scriptSrcAttr, ["'none'"], 'script-src-attr should explicitly block inline event handlers');
     assert.equal(scriptSrc.includes("'unsafe-inline'"), false, 'script-src should no longer broadly allow unsafe-inline');
     assert.equal(scriptSrcElem.includes("'unsafe-inline'"), false, 'script-src-elem should no longer broadly allow unsafe-inline');
-
-    const missingFromScriptSrc = expectedHashes.filter((hash) => !scriptSrc.includes(hash));
-    const missingFromScriptSrcElem = expectedHashes.filter((hash) => !scriptSrcElem.includes(hash));
-    const unexpectedInScriptSrc = scriptSrc.filter((value) => value.startsWith("'sha256-") && !expectedHashes.includes(value));
-    const unexpectedInScriptSrcElem = scriptSrcElem.filter((value) => value.startsWith("'sha256-") && !expectedHashes.includes(value));
-
-    assert.deepEqual(missingFromScriptSrc, [], `script-src is missing inline script hashes:\n${missingFromScriptSrc.join('\n')}`);
-    assert.deepEqual(missingFromScriptSrcElem, [], `script-src-elem is missing inline script hashes:\n${missingFromScriptSrcElem.join('\n')}`);
-    assert.deepEqual(unexpectedInScriptSrc, [], `script-src contains stale inline script hashes:\n${unexpectedInScriptSrc.join('\n')}`);
-    assert.deepEqual(unexpectedInScriptSrcElem, [], `script-src-elem contains stale inline script hashes:\n${unexpectedInScriptSrcElem.join('\n')}`);
+    assert.deepEqual(
+        scriptSrc.filter((value) => value.startsWith("'sha256-")),
+        [],
+        'script-src should not carry inline script hashes once HTML inline scripts are gone'
+    );
+    assert.deepEqual(
+        scriptSrcElem.filter((value) => value.startsWith("'sha256-")),
+        [],
+        'script-src-elem should not carry inline script hashes once HTML inline scripts are gone'
+    );
 });
 
 test('shared profile modal template no longer uses inline event handlers', () => {
@@ -340,13 +369,142 @@ test('privacy page reuses the shared Supabase bootstrap instead of inlining a du
     assert.equal(source.includes("localStorage.getItem('chat_session_id')"), false, 'privacy.html should not duplicate chat session initialization');
 });
 
+test('selected runtime, preview, and tooling pages externalize page-specific style blocks into dedicated CSS files', () => {
+    const expectations = new Map([
+        ['verify.html', 'css/verify-page.css?v=20260324_VERIFY_STYLE_ATTRS_1'],
+        ['prompts.html', 'css/prompts-page.css?v=20260324_PROMPTS_STYLE_ATTRS_1'],
+        ['reset-password.html', 'css/reset-password-page.css?v=20260324_RESET_PASSWORD_STYLES_1'],
+        ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
+        ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
+        ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
+        ['shop.html', 'css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_ORDER_RUNTIME_STYLES_1'],
+        ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
+        ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
+        ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
+        ['test-lang-toggle.html', 'css/test-lang-toggle-page.css?v=20260324_TEST_LANG_TOGGLE_PAGE_STYLES_1'],
+        ['test-realtime-simple.html', 'css/test-realtime-simple-page.css?v=20260324_TEST_REALTIME_SIMPLE_PAGE_STYLES_1'],
+        ['tools/migrate-prompts-bilingual.html', '../css/migrate-prompts-bilingual-page.css?v=20260324_MIGRATE_PROMPTS_BILINGUAL_STYLE_ATTRS_1'],
+        ['logo_preview.html', 'css/logo-preview-page.css?v=20260324_LOGO_PREVIEW_PAGE_STYLES_1'],
+        ['logo_preview_v2.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v3.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v4.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v5.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v6.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v7.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v8.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v9.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v10.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v11.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v12.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v13.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v14.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v15.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v16.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['logo_preview_v17.html', 'css/logo-preview-grid-page.css?v=20260324_LOGO_PREVIEW_GRID_PAGE_STYLES_1'],
+        ['avatar_dropdown_preview.html', 'css/avatar-dropdown-preview.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['icons_preview_v1.html', 'css/icons-preview-v1.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['icons_preview_v2.html', 'css/icons-preview-v2.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['icons_preview_v3.html', 'css/icons-preview-v3.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['icons_preview_v4.html', 'css/icons-preview-v4.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['icons_preview_v5.html', 'css/icons-preview-v5.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['icons_preview_v6.html', 'css/icons-preview-v6.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['icons_preview_v7.html', 'css/icons-preview-v7.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['icons_preview_v8.html', 'css/icons-preview-v8.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
+        ['preview-hero-effects.html', 'css/preview-hero-effects.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['profile_mobile_tab_minimal_preview.html', 'css/profile-mobile-tab-minimal-preview.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['profile_security_frosted_board.html', 'css/profile-security-frosted-board.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['profile_security_frosted_board_glass.html', 'css/profile-security-frosted-board-glass.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['profile_security_frosted_board_mono.html', 'css/profile-security-frosted-board-mono.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['profile_security_glass_redesign_preview.html', 'css/profile-security-glass-redesign-preview.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['profile_security_glass_reset_preview.html', 'css/profile-security-glass-reset-preview.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['profile_security_selective_frost_preview.html', 'css/profile-security-selective-frost-preview.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['profile_security_unified_sheet_preview.html', 'css/profile-security-unified-sheet-preview.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1']
+    ]);
+
+    for (const [relativePath, stylesheetMarker] of expectations.entries()) {
+        const source = readRepoFile(relativePath);
+        assert.equal(source.includes(stylesheetMarker), true, `${relativePath} should load ${stylesheetMarker}`);
+        assert.equal(/<style\b/i.test(source), false, `${relativePath} should not retain inline style blocks`);
+    }
+});
+
+test('selected preview showcase pages no longer embed inline style attributes', () => {
+    const previewFiles = [
+        'avatar_dropdown_preview.html',
+        'icons_preview_v1.html',
+        'icons_preview_v2.html',
+        'icons_preview_v3.html',
+        'icons_preview_v6.html',
+        'icons_preview_v7.html',
+        'icons_preview_v8.html',
+        'logo_preview_v6.html',
+        'logo_preview_v7.html',
+        'logo_preview_v15.html',
+        'logo_preview_v16.html',
+        'logo_preview_v17.html',
+        'profile_security_frosted_board.html',
+        'profile_security_frosted_board_glass.html',
+        'profile_security_frosted_board_mono.html',
+        'profile_security_glass_redesign_preview.html',
+        'profile_security_glass_reset_preview.html',
+        'profile_security_selective_frost_preview.html',
+        'profile_security_unified_sheet_preview.html'
+    ];
+    const inlineStyleAttrPattern = /\sstyle\s*=/i;
+
+    for (const relativePath of previewFiles) {
+        const source = readRepoFile(relativePath);
+        assert.equal(
+            inlineStyleAttrPattern.test(source),
+            false,
+            `${relativePath} should not contain inline style attributes`
+        );
+    }
+});
+
+test('shop and archived index pages no longer embed inline style attributes', () => {
+    const expectations = new Map([
+        ['shop.html', 'css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
+        ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
+    ]);
+    const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
+
+    for (const [relativePath, stylesheetMarker] of expectations.entries()) {
+        const source = readRepoFile(relativePath);
+        assert.equal(source.includes(stylesheetMarker), true, `${relativePath} should load ${stylesheetMarker}`);
+        assert.equal(
+            inlineStyleAttributePattern.test(source),
+            false,
+            `${relativePath} should not contain inline style attributes`
+        );
+    }
+});
+
+test('admin studio page no longer embeds inline style attributes', () => {
+    const source = readRepoFile('admin-studio.html');
+
+    assert.equal(
+        source.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_ORDER_RUNTIME_STYLES_1'),
+        true,
+        'admin-studio.html should load the updated admin studio page stylesheet'
+    );
+    assert.equal(
+        /\sstyle\s*=\s*["']/i.test(source),
+        false,
+        'admin-studio.html should not contain inline style attributes'
+    );
+});
+
 test('shared theme preload replaces duplicated inline theme bootstraps on public and admin pages', () => {
     const files = [
         'guestbook.html',
         'shop.html',
         'reset-password.html',
         'prompts.html',
-        'admin-studio.html'
+        'admin-studio.html',
+        'admin-studio.html.bak'
     ];
 
     for (const relativePath of files) {
@@ -377,6 +535,71 @@ test('auth and verify runtime pages externalize page bootstraps instead of embed
     assert.equal(guestbookSource.includes('scheduleOptionalGuestbookEnhancements'), false, 'guestbook.html should not inline optional guestbook enhancement boot logic');
 });
 
+test('home, prompts, and admin studio pages externalize their remaining runtime bootstraps', () => {
+    const indexSource = readRepoFile('index.html');
+    const promptsSource = readRepoFile('prompts.html');
+    const adminStudioSource = readRepoFile('admin-studio.html');
+
+    const indexRemovedMarkers = [
+        "if ('scrollRestoration' in history)",
+        'const checkAuth = setInterval(() => {',
+        "window._prefetchGuestbook = () => handleHover('guestbook');",
+        'const guestbookModalKeyboardState = {'
+    ];
+
+    for (const marker of indexRemovedMarkers) {
+        assert.equal(indexSource.includes(marker), false, `index.html should not contain ${marker}`);
+    }
+
+    const indexBootstrapMarkers = [
+        './js/index-scroll-bootstrap.js',
+        './js/index-home-bootstrap.js',
+        './js/homepage-guestbook-modal.js'
+    ];
+
+    for (const marker of indexBootstrapMarkers) {
+        assert.equal(indexSource.includes(marker), true, `index.html should contain ${marker}`);
+    }
+
+    const promptsRemovedMarkers = [
+        'window.__forcePromptThemeColorBlack = ensureThemeColorBlack;',
+        'window.__PROMPTS_FORCE_SCROLL_TOP__ = Boolean(shouldLockToTop);',
+        "dayjs.extend(dayjs_plugin_relativeTime);",
+        "document.body.classList.add('loaded');"
+    ];
+
+    for (const marker of promptsRemovedMarkers) {
+        assert.equal(promptsSource.includes(marker), false, `prompts.html should not contain ${marker}`);
+    }
+
+    const promptsBootstrapMarkers = [
+        './js/prompts-head-bootstrap.js',
+        './js/prompts-runtime-bootstrap.js'
+    ];
+
+    for (const marker of promptsBootstrapMarkers) {
+        assert.equal(promptsSource.includes(marker), true, `prompts.html should contain ${marker}`);
+    }
+
+    const adminRemovedMarkers = [
+        'window.supabaseClient = supabase.createClient',
+        'function toggleMobileSidebar()',
+        'function syncAdminStudioModuleUrl(moduleName)',
+        "document.addEventListener('click', function (e) {",
+        "const dropdown = document.getElementById('discountTypeDropdown');"
+    ];
+
+    for (const marker of adminRemovedMarkers) {
+        assert.equal(adminStudioSource.includes(marker), false, `admin-studio.html should not contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioSource.includes('js/admin-studio-bootstrap.js?v=20260324_ADMIN_STUDIO_BOOTSTRAP_1'),
+        true,
+        'admin-studio.html should load the shared admin studio bootstrap file'
+    );
+});
+
 test('non-production utility and preview pages no longer ship inline handler attributes', () => {
     const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|keyup|mouseover|mouseout|error|load|mousedown|mouseup|blur|focus)\s*=\s*["']/i;
     const files = [
@@ -404,16 +627,28 @@ test('non-production utility and preview pages no longer ship inline handler att
 
     const migrateSource = readRepoFile('tools/migrate-prompts-bilingual.html');
     const previewSource = readRepoFile('preview-hero-effects.html');
+    const profilePreviewSource = readRepoFile('profile_mobile_tab_preview.html');
     const langSource = readRepoFile('test-lang-toggle.html');
     const realtimeSource = readRepoFile('test-realtime-simple.html');
+    const previewBootstrapSource = readRepoFile('js/preview-icons-page.js');
+    const previewHeroScript = readRepoFile('js/preview-hero-effects-page.js');
+    const langScript = readRepoFile('js/test-lang-toggle-page.js');
+    const realtimeScript = readRepoFile('js/test-realtime-simple-page.js');
+    const migrateScript = readRepoFile('js/tools-migrate-prompts-bilingual-page.js');
 
-    assert.equal(migrateSource.includes("document.getElementById('loadBtn')?.addEventListener('click'"), true, 'tools/migrate-prompts-bilingual.html should bind load via addEventListener');
-    assert.equal(migrateSource.includes("document.getElementById('startBtn')?.addEventListener('click'"), true, 'tools/migrate-prompts-bilingual.html should bind start via addEventListener');
-    assert.equal(migrateSource.includes("document.getElementById('stopBtn')?.addEventListener('click'"), true, 'tools/migrate-prompts-bilingual.html should bind stop via addEventListener');
+    assert.equal(migrateSource.includes('../js/tools-migrate-prompts-bilingual-page.js'), true, 'tools/migrate-prompts-bilingual.html should load the shared migration bootstrap');
+    assert.equal(migrateScript.includes("document.getElementById('loadBtn')?.addEventListener('click'"), true, 'js/tools-migrate-prompts-bilingual-page.js should bind load via addEventListener');
+    assert.equal(migrateScript.includes("document.getElementById('startBtn')?.addEventListener('click'"), true, 'js/tools-migrate-prompts-bilingual-page.js should bind start via addEventListener');
+    assert.equal(migrateScript.includes("document.getElementById('stopBtn')?.addEventListener('click'"), true, 'js/tools-migrate-prompts-bilingual-page.js should bind stop via addEventListener');
     assert.equal(previewSource.includes('data-demo-id="grid"'), true, 'preview-hero-effects.html should expose delegated demo buttons');
-    assert.equal(previewSource.includes('function bindDemoNavigation()'), true, 'preview-hero-effects.html should bind demo navigation centrally');
-    assert.equal(langSource.includes("document.getElementById('langToggleTest')?.addEventListener('click'"), true, 'test-lang-toggle.html should bind the language toggle');
-    assert.equal(realtimeSource.includes("document.getElementById('testConnectionBtn')?.addEventListener('click'"), true, 'test-realtime-simple.html should bind the realtime test button');
+    assert.equal(previewSource.includes('./js/preview-hero-effects-page.js'), true, 'preview-hero-effects.html should load the shared hero preview bootstrap');
+    assert.equal(previewHeroScript.includes('function bindDemoNavigation()'), true, 'js/preview-hero-effects-page.js should bind demo navigation centrally');
+    assert.equal(profilePreviewSource.includes('./js/profile-mobile-tab-preview.js'), true, 'profile_mobile_tab_preview.html should load the shared profile preview bootstrap');
+    assert.equal(langSource.includes('./js/test-lang-toggle-page.js'), true, 'test-lang-toggle.html should load the language toggle bootstrap');
+    assert.equal(langScript.includes("document.getElementById('langToggleTest')?.addEventListener('click'"), true, 'js/test-lang-toggle-page.js should bind the language toggle');
+    assert.equal(realtimeSource.includes('./js/test-realtime-simple-page.js'), true, 'test-realtime-simple.html should load the realtime bootstrap');
+    assert.equal(realtimeSource.includes('./js/runtime-supabase-config.js'), true, 'test-realtime-simple.html should load the shared runtime Supabase config helper');
+    assert.equal(realtimeScript.includes("document.getElementById('testConnectionBtn')?.addEventListener('click'"), true, 'js/test-realtime-simple-page.js should bind the realtime test button');
 
     const previewFiles = [
         'icons_preview_v2.html',
@@ -428,8 +663,68 @@ test('non-production utility and preview pages no longer ship inline handler att
     for (const relativePath of previewFiles) {
         const source = readRepoFile(relativePath);
         assert.equal(source.includes('data-preview-trigger-all="1"'), true, `${relativePath} should expose a delegated preview trigger`);
-        assert.equal(source.includes('function bindPreviewInteractions()'), true, `${relativePath} should bind preview interactions centrally`);
+        assert.equal(source.includes('./js/preview-icons-page.js'), true, `${relativePath} should load the shared preview interactions bootstrap`);
     }
+
+    assert.equal(previewBootstrapSource.includes('function bindPreviewInteractions()'), true, 'js/preview-icons-page.js should bind preview interactions centrally');
+});
+
+test('archived legacy pages externalize their bootstraps instead of embedding inline scripts', () => {
+    const archivedIndexSource = readRepoFile('index_old.html');
+    const archivedAdminSource = readRepoFile('admin-studio.html.bak');
+    const archivedIndexScript = readRepoFile('js/index-old-page.js');
+    const archivedRuntimeScript = readRepoFile('js/index-old-runtime-bootstrap.js');
+    const archivedEmailScript = readRepoFile('js/index-old-emailjs-init.js');
+    const archivedAdminBootstrap = readRepoFile('js/admin-studio-backup-bootstrap.js');
+
+    const removedIndexMarkers = [
+        'emailjs.init("vawaxLVEzJMAVbut0");',
+        'const runtimeConfig = window.__PUBLIC_RUNTIME_CONFIG__ || {};',
+        "document.addEventListener('DOMContentLoaded', function () {",
+        'document.addEventListener(\'DOMContentLoaded\', () => {',
+        '(function bindArchivedIndexHandlers() {'
+    ];
+
+    for (const marker of removedIndexMarkers) {
+        assert.equal(archivedIndexSource.includes(marker), false, `index_old.html should not contain ${marker}`);
+    }
+
+    const indexBootstrapMarkers = [
+        './js/index-old-emailjs-init.js',
+        './js/runtime-supabase-config.js',
+        './js/index-old-runtime-bootstrap.js',
+        './js/index-old-page.js'
+    ];
+
+    for (const marker of indexBootstrapMarkers) {
+        assert.equal(archivedIndexSource.includes(marker), true, `index_old.html should contain ${marker}`);
+    }
+
+    assert.equal(archivedEmailScript.includes("window.emailjs.init('vawaxLVEzJMAVbut0')"), true, 'js/index-old-emailjs-init.js should initialize EmailJS');
+    assert.equal(archivedRuntimeScript.includes('window.supabaseClient = supabase.createClient'), true, 'js/index-old-runtime-bootstrap.js should initialize the archived Supabase client');
+    assert.equal(archivedIndexScript.includes('function bindArchivedIndexHandlers()'), true, 'js/index-old-page.js should bind archived page actions centrally');
+
+    const removedAdminMarkers = [
+        "const savedTheme = localStorage.getItem('theme');",
+        'const runtimeConfig = window.__PUBLIC_RUNTIME_CONFIG__ || {};',
+        'window.supabaseClient = supabase.createClient'
+    ];
+
+    for (const marker of removedAdminMarkers) {
+        assert.equal(archivedAdminSource.includes(marker), false, `admin-studio.html.bak should not contain ${marker}`);
+    }
+
+    const adminBootstrapMarkers = [
+        'js/theme-preload.js',
+        'js/runtime-supabase-config.js',
+        'js/admin-studio-backup-bootstrap.js'
+    ];
+
+    for (const marker of adminBootstrapMarkers) {
+        assert.equal(archivedAdminSource.includes(marker), true, `admin-studio.html.bak should contain ${marker}`);
+    }
+
+    assert.equal(archivedAdminBootstrap.includes('window.supabaseClient = supabase.createClient'), true, 'js/admin-studio-backup-bootstrap.js should initialize the backup admin Supabase client');
 });
 
 test('repository source files no longer ship inline handler attributes outside the test suite', () => {
@@ -1465,6 +1760,112 @@ test('shop admin pagination and inventory/product workflows no longer emit targe
 
     assert.equal(shopSource.includes('bindDelegatedHandlers: function'), true, 'js/admin-shop.js should bind delegated handlers');
     assert.equal(shopSource.includes('data-shop-overlay-close="dynamic-modal"'), true, 'js/admin-shop.js should render delegated dynamic modal overlays');
+});
+
+test('shop admin product grid runtime templates externalize card styling and visibility state', () => {
+    const shopSource = readRepoFile('js/admin-shop.js');
+    const shopStyles = readRepoFile('css/admin-studio-page.css');
+
+    const removedRuntimeMarkers = [
+        'container.style.gridTemplateColumns',
+        'container.style.gap =',
+        'container.style.padding =',
+        'addCard.style.cssText =',
+        'card.style.cssText =',
+        'addCard.onmouseover = () =>',
+        'addCard.onmouseout = () =>',
+        'btn.onmouseover = () =>',
+        'btn.onmouseout = () =>',
+        '<div style="${imageContainerStyle}">',
+        'class="action-btn" data-shop-action="product-edit"',
+        "card.style.cursor = 'pointer'",
+        "const checkboxDisplay = this.isProductSelectionMode ? 'block' : 'none';",
+        '<div style="position:absolute; top:12px; left:12px; display:${checkboxDisplay};" class="product-checkbox-wrapper">'
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(shopSource.includes(marker), false, `js/admin-shop.js should not retain ${marker}`);
+    }
+
+    const delegatedMarkers = [
+        "container.classList.add('shop-grid', 'shop-admin-products-grid')",
+        "addCard.dataset.shopAction = 'product-open-create-modal'",
+        'shop-admin-product-card shop-admin-product-card--create',
+        'shop-admin-product-cover',
+        'shop-admin-product-action-btn',
+        'shop-admin-status-badge',
+        "grid.classList.toggle('shop-admin-products-grid--selection-mode'",
+        "menu.classList.contains('is-open')",
+        "menu.classList.add('is-open')",
+        "menu.classList.remove('is-open')"
+    ];
+
+    for (const marker of delegatedMarkers) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.shop-view--active',
+        '.batch-menu.is-open',
+        '.shop-admin-products-grid',
+        '.shop-admin-product-card--create',
+        '.shop-admin-product-cover',
+        '.shop-admin-status-badge',
+        '.shop-admin-product-action-btn'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
+    }
+});
+
+test('shop admin order workflows externalize runtime table-row and modal styling', () => {
+    const shopSource = readRepoFile('js/admin-shop.js');
+    const shopStyles = readRepoFile('css/admin-studio-page.css');
+
+    const removedRuntimeMarkers = [
+        'style="cursor: pointer;" title="点击查看订单详情"',
+        'overlay.style.position = \'fixed\'',
+        '<style>',
+        '<div style="margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">',
+        'style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(12px);z-index:9999;display:flex;justify-content:center;align-items:center;"',
+        'style="width:36px;height:36px;"',
+        'class="btn-icon danger"'
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(shopSource.includes(marker), false, `js/admin-shop.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'class="shop-order-row"',
+        'shop-order-user-avatar',
+        'shop-order-content-overlay',
+        'shop-order-content-box',
+        'data-shop-action="order-close-content"',
+        'shop-refund-modal-overlay',
+        'shop-refund-status-grid',
+        'shop-refund-modal-textarea refund-modal-input',
+        'shop-order-action-btn shop-order-action-btn--refund'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.shop-order-row',
+        '.shop-order-content-overlay',
+        '.shop-order-content-box',
+        '.shop-refund-modal-overlay',
+        '.shop-refund-status-grid',
+        '.shop-refund-modal-textarea',
+        '.shop-order-action-btn--refund'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
+    }
 });
 
 test('admin studio create form and shop import/orders/fulfillment controls route through delegated actions', () => {
