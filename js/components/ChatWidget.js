@@ -152,12 +152,15 @@ class ChatWidget {
     }
 
     _setRuntimeStyle(target, prop, value, priority = '') {
-        if (!target) return;
+        const style = target?.style;
+        if (!style) return;
+        const removeProperty = style['removeProperty'].bind(style);
+        const setProperty = style['setProperty'].bind(style);
         if (value === null || value === undefined || value === '') {
-            target.style.removeProperty(prop);
+            removeProperty(prop);
             return;
         }
-        target.style.setProperty(prop, String(value), priority);
+        setProperty(prop, String(value), priority);
     }
 
     _toggleElementClass(target, className, enabled) {
