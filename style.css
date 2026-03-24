@@ -1744,6 +1744,13 @@ body.no-scroll {
     /* remove height: 100vh restriction which causes scroll jump on mobile */
 }
 
+body.ios-scroll-lock-fixed {
+    position: fixed;
+    left: 0;
+    right: 0;
+    width: 100%;
+}
+
 /* Prevent scroll chaining */
 .modal-overlay {
     overscroll-behavior: contain;

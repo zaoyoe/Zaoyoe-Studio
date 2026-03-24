@@ -1727,6 +1727,60 @@ test('force input background fix externalizes focus styling and avoids repeated 
     );
 });
 
+test('ios scroll lock externalizes fixed-body shell styles while keeping dynamic offset centralized', () => {
+    const scrollLockSource = readRepoFile('js/ios-scroll-lock.js');
+    const sharedStyles = readRepoFile('style.css');
+    const indexHtml = readRepoFile('index.html');
+    const guestbookHtml = readRepoFile('guestbook.html');
+    const verifyHtml = readRepoFile('verify.html');
+    const promptsHtml = readRepoFile('prompts.html');
+    const shopHtml = readRepoFile('shop.html');
+
+    const removedMarkers = [
+        "document.body.style.position = 'fixed';",
+        "document.body.style.left = '0';",
+        "document.body.style.right = '0';",
+        "document.body.style.width = '100%';",
+        "document.body.style.position = '';",
+        "document.body.style.left = '';",
+        "document.body.style.right = '';",
+        "document.body.style.width = '';"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(scrollLockSource.includes(marker), false, `js/ios-scroll-lock.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "function setFixedBodyLockOffset() {",
+        "function clearFixedBodyLockOffset() {",
+        "document.body.classList.add('ios-scroll-lock-fixed');",
+        "document.body.classList.remove('ios-scroll-lock-fixed');",
+        "document.body.style.top = `-${savedScrollY}px`;"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(scrollLockSource.includes(marker), true, `js/ios-scroll-lock.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        sharedStyles.includes('body.ios-scroll-lock-fixed {'),
+        true,
+        'style.css should contain the fixed-body iOS scroll lock class'
+    );
+
+    const expectedVersion = 'js/ios-scroll-lock.js?v=20260324_IOS_SCROLL_LOCK_RUNTIME_STYLE_1';
+    for (const [fileName, html] of Object.entries({
+        'index.html': indexHtml,
+        'guestbook.html': guestbookHtml,
+        'verify.html': verifyHtml,
+        'prompts.html': promptsHtml,
+        'shop.html': shopHtml
+    })) {
+        assert.equal(html.includes(expectedVersion), true, `${fileName} should reference the updated iOS scroll lock runtime version`);
+    }
+});
+
 test('admin pricing package controls no longer emit inline handlers in static or dynamic settings markup', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
