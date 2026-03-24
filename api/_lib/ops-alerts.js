@@ -50,6 +50,12 @@ function normalizeText(value) {
     return String(value || '').trim();
 }
 
+function normalizeJsonObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value
+        : {};
+}
+
 function normalizeBoolean(value, fallback = false) {
     if (typeof value === 'boolean') return value;
     const normalized = normalizeText(value).toLowerCase();
@@ -477,11 +483,150 @@ function getNextRetryAt(attemptCount, config = {}) {
 }
 
 function buildExternalAlertText(job = {}) {
+    const refundOpsText = buildRefundOpsAlertText(job);
+    if (refundOpsText) {
+        return refundOpsText;
+    }
+
     const lines = [
         `[支付退款告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '退款异常'}`,
         normalizeText(job.content)
     ].filter(Boolean);
     return lines.join('\n\n');
+}
+
+function getProviderLabel(value) {
+    const normalized = normalizeText(value).toLowerCase();
+    if (!normalized) return '';
+    const providerMap = {
+        hupijiao: '虎皮椒',
+        afdian: '爱发电',
+        mock: '模拟支付'
+    };
+    return providerMap[normalized] || normalized;
+}
+
+function getRefundProcessingLabel(value) {
+    const normalized = normalizeText(value).toLowerCase();
+    if (!normalized) return '';
+    const labelMap = {
+        admin_refund_failed: '退款失败（积分已补回）',
+        admin_refund_reclaim_failed: '退款前积分扣回失败',
+        admin_refund_compensation_failed: '退款失败后积分回滚失败'
+    };
+    return labelMap[normalized] || normalized;
+}
+
+function getOrderStatusLabel(value) {
+    const normalized = normalizeText(value).toLowerCase();
+    if (!normalized) return '';
+    const statusMap = {
+        pending_review: '待复核',
+        amount_mismatch: '金额异常',
+        paid: '已支付',
+        redeemed: '已入账',
+        refunded: '已退款',
+        refund_pending: '退款处理中'
+    };
+    return statusMap[normalized] || normalized;
+}
+
+function formatCurrencyAmount(value) {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? `${numericValue.toFixed(2)} 元` : '';
+}
+
+function formatPointsAmount(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return '';
+    return `${Math.max(0, Math.round(numericValue))} 点`;
+}
+
+function formatBooleanLabel(value) {
+    if (value === true) return '是';
+    if (value === false) return '否';
+    return '';
+}
+
+function formatTimestamp(value) {
+    const normalized = normalizeText(value);
+    if (!normalized) return '';
+    const parsed = Date.parse(normalized);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : normalized;
+}
+
+function buildRefundOpsAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'payment_refund_ops') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    if (!Object.keys(payload).length) {
+        return '';
+    }
+
+    const lines = [
+        `[支付退款告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '退款异常'}`
+    ];
+    const topicLabel = normalizeText(payload.topic_label);
+    const processingLabel = getRefundProcessingLabel(payload.processing_result);
+    const site = normalizeText(payload.site).toUpperCase();
+    const providerLabel = getProviderLabel(payload.provider);
+    const orderStatusLabel = getOrderStatusLabel(payload.order_status);
+    const refundStatusLabel = getOrderStatusLabel(payload.refund_status);
+    const amountLine = [formatCurrencyAmount(payload.expected_amount), formatCurrencyAmount(payload.paid_amount)]
+        .filter(Boolean);
+    const reclaimTotal = Number(payload.refund_reclaimed_points || 0);
+    const compensationPaid = Number(payload.compensation_restored_paid_points || 0);
+    const compensationBonus = Number(payload.compensation_restored_bonus_points || 0);
+
+    if (topicLabel) lines.push(`专题：${topicLabel}`);
+    if (processingLabel) lines.push(`异常类型：${processingLabel}`);
+    if (site) lines.push(`站点：${site}`);
+    if (providerLabel) lines.push(`支付通道：${providerLabel}`);
+    if (normalizeText(payload.provider_order_no)) lines.push(`订单号：${normalizeText(payload.provider_order_no)}`);
+    if (normalizeText(payload.target_id)) lines.push(`订单ID：${normalizeText(payload.target_id)}`);
+    if (normalizeText(payload.user_id)) lines.push(`用户ID：${normalizeText(payload.user_id)}`);
+    if (orderStatusLabel) lines.push(`订单状态：${orderStatusLabel}`);
+    if (refundStatusLabel) lines.push(`退款状态：${refundStatusLabel}`);
+    if (amountLine.length === 2) {
+        lines.push(`金额：应付 ${amountLine[0]} / 实付 ${amountLine[1]}`);
+    } else if (amountLine.length === 1) {
+        lines.push(`金额：${amountLine[0]}`);
+    }
+    if (Number(payload.points_amount || 0) > 0) {
+        const creditedLabel = formatBooleanLabel(payload.credited);
+        lines.push(`积分：${formatPointsAmount(payload.points_amount)}${creditedLabel ? `（已入账：${creditedLabel}）` : ''}`);
+    }
+    if (reclaimTotal > 0) {
+        const reclaimParts = [
+            `总 ${formatPointsAmount(payload.refund_reclaimed_points)}`,
+            Number(payload.refund_reclaimed_paid_points || 0) > 0 ? `本金 ${formatPointsAmount(payload.refund_reclaimed_paid_points)}` : '',
+            Number(payload.refund_reclaimed_bonus_points || 0) > 0 ? `赠送 ${formatPointsAmount(payload.refund_reclaimed_bonus_points)}` : ''
+        ].filter(Boolean);
+        lines.push(`扣回积分：${reclaimParts.join(' / ')}`);
+    }
+    if (compensationPaid > 0 || compensationBonus > 0) {
+        const compensationParts = [
+            compensationPaid > 0 ? `本金 ${formatPointsAmount(compensationPaid)}` : '',
+            compensationBonus > 0 ? `赠送 ${formatPointsAmount(compensationBonus)}` : ''
+        ].filter(Boolean);
+        lines.push(`补回积分：${compensationParts.join(' / ')}`);
+    }
+    if (normalizeText(payload.gateway_open_order_id)) lines.push(`网关单号：${normalizeText(payload.gateway_open_order_id)}`);
+    if (normalizeText(payload.query_status)) lines.push(`查单状态：${getOrderStatusLabel(payload.query_status)}`);
+    if (normalizeText(payload.note)) lines.push(`操作备注：${normalizeText(payload.note)}`);
+    if (normalizeText(payload.last_error)) lines.push(`最近错误：${normalizeText(payload.last_error)}`);
+    if (normalizeText(payload.gateway_message) && normalizeText(payload.gateway_message) !== normalizeText(payload.last_error)) {
+        lines.push(`网关提示：${normalizeText(payload.gateway_message)}`);
+    }
+    if (Number.isFinite(Number(payload.response_status))) lines.push(`响应状态：${Number(payload.response_status)}`);
+    if (normalizeText(payload.detail)) lines.push(`告警说明：${normalizeText(payload.detail)}`);
+    if (normalizeText(payload.claimed_at)) lines.push(`入账时间：${formatTimestamp(payload.claimed_at)}`);
+    if (normalizeText(payload.paid_at)) lines.push(`支付时间：${formatTimestamp(payload.paid_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
 }
 
 async function postJson(url, body, {

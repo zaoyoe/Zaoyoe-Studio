@@ -1213,6 +1213,11 @@ test('refund_hupijiao enqueues external ops alerts for critical refund failures'
         assert.equal(state.opsAlertEnqueues[0].severity, 'critical');
         assert.equal(state.opsAlertEnqueues[0].payload.processing_result, 'admin_refund_reclaim_failed');
         assert.equal(state.opsAlertEnqueues[0].payload.provider_order_no, 'HJ_ORDER_6');
+        assert.equal(state.opsAlertEnqueues[0].payload.topic_label, '扣回失败');
+        assert.equal(state.opsAlertEnqueues[0].payload.order_status, 'redeemed');
+        assert.equal(state.opsAlertEnqueues[0].payload.points_amount, 1000);
+        assert.equal(state.opsAlertEnqueues[0].payload.note, '扣回失败应进入站外告警');
+        assert.match(state.opsAlertEnqueues[0].payload.last_error, /无法原子扣回这笔订单的 1000 点积分/);
     });
 });
 
