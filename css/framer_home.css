@@ -679,6 +679,11 @@ body.mobile-menu-open .chat-widget-fab {
     background-color: rgba(255, 255, 255, 0.05);
 }
 
+.home-hover-lift-active {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(255, 255, 255, 0.08);
+}
+
 .btn-hero-primary {
     background-color: var(--text-primary);
     color: var(--bg-black);
@@ -873,6 +878,10 @@ body.mobile-menu-open .chat-widget-fab {
     flex-shrink: 0;
 }
 
+.progress-tick--covered {
+    opacity: 0;
+}
+
 .hero-progress-thumb {
     position: absolute;
     left: 0;
@@ -979,6 +988,10 @@ body.mobile-menu-open .chat-widget-fab {
 .entry-card-ui>i {
     font-size: 40px;
     margin-bottom: var(--spacing-sm);
+}
+
+.home-entry-card-icon {
+    color: var(--accent-blue);
 }
 
 .entry-card-ui>span {
@@ -1221,6 +1234,7 @@ body.mobile-menu-open .chat-widget-fab {
     display: flex;
     gap: var(--spacing-md);
     white-space: nowrap;
+    animation-duration: var(--home-animation-duration, 30s);
 }
 
 .ticker-left .ticker-track {
@@ -1580,6 +1594,23 @@ body.mobile-menu-open .chat-widget-fab {
     gap: 80px;
 }
 
+.verify-features {
+    margin-top: 32px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.verify-feature-chip {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.verify-actions {
+    margin-top: 48px;
+}
+
 @media (max-width: 900px) {
     .verify-grid {
         grid-template-columns: 1fr;
@@ -1646,6 +1677,11 @@ body.mobile-menu-open .chat-widget-fab {
     height: auto;
     display: block;
     border-radius: 20px;
+}
+
+.verify-screenshot {
+    width: 100%;
+    border-radius: 12px;
 }
 
 /* Base state class applied by JS after load */
@@ -1820,6 +1856,7 @@ body.mobile-menu-open .chat-widget-fab {
     gap: 24px;
     animation: shopScroll 30s linear infinite;
     width: fit-content;
+    animation-duration: var(--home-animation-duration, 30s);
 }
 
 .shop-carousel-track:hover {
@@ -1873,6 +1910,15 @@ body.mobile-menu-open .chat-widget-fab {
     object-fit: cover;
 }
 
+.shop-card-icon {
+    font-size: 48px;
+    color: var(--accent-blue);
+}
+
+.shop-card-icon--fallback {
+    color: var(--text-secondary, #888);
+}
+
 .shop-card-info h3 {
     font-size: 14px;
     font-weight: 600;
@@ -1891,6 +1937,59 @@ body.mobile-menu-open .chat-widget-fab {
     -webkit-box-orient: vertical;
     overflow: hidden;
     margin: 0;
+}
+
+.guestbook-list {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0 20px;
+    align-items: center;
+}
+
+.guestbook-card {
+    display: flex;
+    gap: 16px;
+    width: 100%;
+    max-width: 600px;
+}
+
+.guestbook-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 2px solid var(--border-subtle);
+    object-fit: cover;
+}
+
+.guestbook-card-body {
+    flex: 1;
+}
+
+.guestbook-author {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.guestbook-content {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.guestbook-actions {
+    text-align: center;
+    margin-top: 48px;
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.guestbook-action-btn {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ========== Avatar Dropdown (Match Nav Glass Effect) =========== */

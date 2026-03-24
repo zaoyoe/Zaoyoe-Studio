@@ -177,6 +177,35 @@ function bindHomepageStaticDelegates() {
   });
 }
 
+function toHomeCssPropertyName(name) {
+  if (typeof name !== 'string' || !name) return '';
+  if (name.startsWith('--')) return name;
+  return name.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
+}
+
+function setHomeRuntimeStyle(target, styles = {}, priority = '') {
+  const style = target?.style;
+  if (!style) return;
+
+  const setProperty = style['setProperty'].bind(style);
+  const removeProperty = style['removeProperty'].bind(style);
+
+  Object.entries(styles).forEach(([name, value]) => {
+    const cssName = toHomeCssPropertyName(name);
+    if (!cssName) return;
+    if (value === null || value === undefined || value === '') {
+      removeProperty(cssName);
+      return;
+    }
+    setProperty(cssName, String(value), priority);
+  });
+}
+
+function setHomeSectionVisibility(section, visible) {
+  if (!section) return;
+  section.hidden = !visible;
+}
+
 function bindHoverLiftTargets(root) {
   root?.querySelectorAll('[data-home-hover-lift="1"]').forEach((element) => {
     if (element.dataset.homeHoverLiftBound === '1') {
@@ -186,8 +215,7 @@ function bindHoverLiftTargets(root) {
     element.dataset.homeHoverLiftBound = '1';
 
     const applyHoverState = (isHovered) => {
-      element.style.transform = isHovered ? 'translateY(-2px)' : 'translateY(0)';
-      element.style.boxShadow = isHovered ? '0 8px 32px rgba(255,255,255,0.08)' : 'none';
+      element.classList.toggle('home-hover-lift-active', isHovered);
     };
 
     element.addEventListener('mouseenter', () => applyHoverState(true));
@@ -787,42 +815,42 @@ const FramerHome = {
 
     // Hero
     if (!sv || sv.isVisible('hero')) {
+      setHomeSectionVisibility(document.getElementById('hero-section'), true);
       this.renderHero();
     } else {
-      const el = document.getElementById('hero-section');
-      if (el) el.style.display = 'none';
+      setHomeSectionVisibility(document.getElementById('hero-section'), false);
     }
 
     // Prompts / Gallery
     if (!sv || sv.isVisible('gallery')) {
+      setHomeSectionVisibility(document.getElementById('prompts-section'), true);
       this.renderPrompts();
     } else {
-      const el = document.getElementById('prompts-section');
-      if (el) el.style.display = 'none';
+      setHomeSectionVisibility(document.getElementById('prompts-section'), false);
     }
 
     // Shop
     if (!sv || sv.isVisible('shop')) {
+      setHomeSectionVisibility(document.getElementById('shop-section'), true);
       this.renderShop();
     } else {
-      const el = document.getElementById('shop-section');
-      if (el) el.style.display = 'none';
+      setHomeSectionVisibility(document.getElementById('shop-section'), false);
     }
 
     // Verify
     if (!sv || sv.isVisible('verify')) {
+      setHomeSectionVisibility(document.getElementById('verify-section'), true);
       this.renderVerify();
     } else {
-      const el = document.getElementById('verify-section');
-      if (el) el.style.display = 'none';
+      setHomeSectionVisibility(document.getElementById('verify-section'), false);
     }
 
     // Guestbook
     if (!sv || sv.isVisible('guestbook')) {
+      setHomeSectionVisibility(document.getElementById('guestbook-section'), true);
       this.renderGuestbook();
     } else {
-      const el = document.getElementById('guestbook-section');
-      if (el) el.style.display = 'none';
+      setHomeSectionVisibility(document.getElementById('guestbook-section'), false);
     }
 
     // Ticker always renders
@@ -1035,14 +1063,18 @@ const FramerHome = {
         const nav = document.querySelector('.framer-nav');
         const navRect = nav.getBoundingClientRect();
         const triggerRect = trigger.getBoundingClientRect();
-        dropdown.style.left = `${triggerRect.left + triggerRect.width / 2}px`;
+        setHomeRuntimeStyle(dropdown, {
+          left: `${triggerRect.left + triggerRect.width / 2}px`
+        });
 
         const navOverlap = parseFloat(
           getComputedStyle(document.documentElement).getPropertyValue('--nav-dropdown-overlap')
         ) || 1;
 
         // Shift up slightly to override the nav border so the glass panels stay fused.
-        dropdown.style.top = `${navRect.bottom - navOverlap}px`;
+        setHomeRuntimeStyle(dropdown, {
+          top: `${navRect.bottom - navOverlap}px`
+        });
 
         // Highlight only this trigger
         trigger.classList.add('active');
@@ -1118,6 +1150,7 @@ const FramerHome = {
     const data = this.cachedData.hero;
     const section = document.getElementById('hero-section');
     if (!data || !section) return;
+    setHomeSectionVisibility(section, true);
 
     // Filter out entries for disabled sections
     const sv = window.SectionVisibility;
@@ -1167,7 +1200,7 @@ const FramerHome = {
           ${visibleEntries.map((entry, index) => `
             <a href="${entry.link}" class="entry-card" data-index="${index}" ${entry.action ? `data-action="${entry.action}"` : ''}>
               <span class="entry-card-ui">
-                <i class="fas ${entry.icon}" style="color: ${entry.color}"></i>
+                <i class="fas ${entry.icon} home-entry-card-icon" data-home-entry-color="${entry.color}"></i>
                 <span>${entry.text}</span>
               </span>
             </a>
@@ -1181,6 +1214,11 @@ const FramerHome = {
     // Hero is above-the-fold; reveal immediately instead of waiting for observer.
     section.querySelectorAll('.fade-in-up').forEach(el => {
       el.classList.add('visible');
+    });
+    section.querySelectorAll('[data-home-entry-color]').forEach((icon) => {
+      setHomeRuntimeStyle(icon, {
+        color: icon.dataset.homeEntryColor || ''
+      });
     });
 
     // Initialize carousel interactions
@@ -1326,9 +1364,10 @@ const FramerHome = {
     const section = document.getElementById('shop-section');
 
     if (!products || products.length === 0) {
-      section.style.display = 'none';
+      setHomeSectionVisibility(section, false);
       return;
     }
+    setHomeSectionVisibility(section, true);
 
     // Duplicate products for seamless infinite scroll
     const duplicatedProducts = [...products, ...products];
@@ -1344,13 +1383,13 @@ const FramerHome = {
       </div>
       
       <div class="shop-carousel-wrapper">
-        <div class="shop-carousel-track" style="animation-duration: ${shopDuration}s">
+        <div class="shop-carousel-track" data-home-animation-duration="${shopDuration}s">
           ${duplicatedProducts.map(product => `
             <a href="/shop.html" class="shop-carousel-card">
               <div class="shop-card-image">
                 ${product.icon_url && (product.icon_url.startsWith('http') || product.icon_url.startsWith('/') || product.icon_url.startsWith('data:'))
         ? `<img src="${product.icon_url}" alt="${this.getLocalizedField(product, 'name')}" loading="lazy" data-home-replace-parent-icon="1">`
-        : (product.icon_url && product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url}" style="font-size: 48px; color: var(--accent-blue);"></i>` : `<i class="fas fa-box-open" style="font-size: 48px; color: var(--text-secondary, #888);"></i>`)}
+        : (product.icon_url && product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url} shop-card-icon"></i>` : `<i class="fas fa-box-open shop-card-icon shop-card-icon--fallback"></i>`)}
               </div>
               <div class="shop-card-info">
                 <h3>${this.getLocalizedField(product, 'name')}</h3>
@@ -1369,8 +1408,13 @@ const FramerHome = {
 
       image.dataset.homeFallbackApplied = '1';
       if (image.parentElement) {
-        image.parentElement.innerHTML = '<i class="fas fa-box-open" style="font-size:48px;color:var(--text-secondary,#888)"></i>';
+        image.parentElement.innerHTML = '<i class="fas fa-box-open shop-card-icon shop-card-icon--fallback"></i>';
       }
+    });
+    section.querySelectorAll('[data-home-animation-duration]').forEach((track) => {
+      setHomeRuntimeStyle(track, {
+        '--home-animation-duration': track.dataset.homeAnimationDuration || ''
+      });
     });
   },
 
@@ -1380,6 +1424,7 @@ const FramerHome = {
   renderVerify() {
     const data = this.cachedData.verify;
     const section = document.getElementById('verify-section');
+    setHomeSectionVisibility(section, true);
 
     section.innerHTML = `
       <div class="verify-grid fade-in-up">
@@ -1387,22 +1432,22 @@ const FramerHome = {
           <h2 class="section-title">${data.title || window.i18n?.t('home.verify.title') || 'Gemini 验证'}</h2>
           <p class="section-subtitle">${data.subtitle || window.i18n?.t('home.verify.subtitle') || '快速验证您的 API 密钥，实时返回结果'}</p>
           
-          <div style="margin-top: 32px; display: flex; gap: 12px; flex-wrap: wrap;">
+          <div class="verify-features">
             ${data.features.map(feature => `
-              <span style="font-size: 14px; font-weight: 500; color: var(--text-secondary);">
+              <span class="verify-feature-chip">
                 ${feature}
               </span>
             `).join('')}
           </div>
           
-          <div style="margin-top: 48px;">
+          <div class="verify-actions">
             <a href="${data.link}" class="btn btn-primary">${window.i18n?.t('home.verify.cta') || '立即验证'}</a>
           </div>
         </div>
         
         <div class="verify-3d-container">
           <div class="verify-card-3d">
-            <img src="${data.screenshot}" alt="Gemini Verify" style="width: 100%; border-radius: 12px;">
+            <img src="${data.screenshot}" alt="Gemini Verify" class="verify-screenshot">
             <div class="verify-card-shine"></div>
           </div>
         </div>
@@ -1458,7 +1503,9 @@ const FramerHome = {
             const targetScale = 1.02 - (Math.abs(dist) * 0.2);
 
             // Apply transform (maintain rotation)
-            card.style.transform = `rotateY(-12deg) rotateX(6deg) scale(${Math.max(0.9, targetScale)})`;
+            setHomeRuntimeStyle(card, {
+              transform: `rotateY(-12deg) rotateX(6deg) scale(${Math.max(0.9, targetScale)})`
+            });
           }
           ticking = false;
         });
@@ -1476,9 +1523,10 @@ const FramerHome = {
     const section = document.getElementById('guestbook-section');
 
     if (!messages || messages.length === 0) {
-      section.style.display = 'none';
+      setHomeSectionVisibility(section, false);
       return;
     }
+    setHomeSectionVisibility(section, true);
 
     section.innerHTML = `
       <div class="section-header fade-in-up">
@@ -1486,32 +1534,30 @@ const FramerHome = {
         <p class="section-subtitle">${this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.guestbook.subtitle') || '用户的声音'}</p>
       </div>
       
-      <div style="display: flex; flex-direction: column; gap: 24px; max-width: 800px; margin: 0 auto; padding: 0 20px; align-items: center;">
+      <div class="guestbook-list">
         ${messages.map(msg => `
-          <div class="glass-card fade-in-up" style="display: flex; gap: 16px; width: 100%; max-width: 600px;">
+          <div class="glass-card fade-in-up guestbook-card">
             <img src="${msg.profiles?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(msg.profiles?.username || 'U')}&backgroundColor=6b9ece`}" 
                  data-home-avatar-fallback="${encodeURIComponent(`https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(msg.profiles?.username || 'U')}&backgroundColor=6b9ece`)}"
-                 style="width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--border-subtle); object-fit: cover;">
-            <div style="flex: 1;">
-              <div style="font-weight: 600; margin-bottom: 4px;">${msg.profiles?.username || '匿名用户'}</div>
-              <p style="color: var(--text-secondary); font-size: 14px; line-height: 1.6;">${msg.content}</p>
+                 class="guestbook-avatar">
+            <div class="guestbook-card-body">
+              <div class="guestbook-author">${msg.profiles?.username || '匿名用户'}</div>
+              <p class="guestbook-content">${msg.content}</p>
             </div>
           </div>
         `).join('')}
       </div>
       
-      <div style="text-align: center; margin-top: 48px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+      <div class="guestbook-actions">
         <a href="/guestbook.html"
           data-home-open-guestbook="1"
           data-home-hover-lift="1"
-          class="btn btn-secondary"
-          style="transition: all 0.3s cubic-bezier(0.4,0,0.2,1);">
+          class="btn btn-secondary guestbook-action-btn">
           <i class="fas fa-pen-fancy"></i>
           ${window.i18n?.t('home.guestbook.writeMessage') || '写留言'}
         </a>
-        <a href="/guestbook.html" class="btn btn-secondary"
-          data-home-hover-lift="1"
-          style="transition: all 0.3s cubic-bezier(0.4,0,0.2,1);">
+        <a href="/guestbook.html" class="btn btn-secondary guestbook-action-btn"
+          data-home-hover-lift="1">
           ${window.i18n?.t('home.guestbook.viewAll') || '查看全部留言'}
         </a>
       </div>
@@ -1542,9 +1588,10 @@ const FramerHome = {
 
     // If both rows hidden, hide entire ticker
     if (!showTopRow && !showBottomRow) {
-      section.style.display = 'none';
+      setHomeSectionVisibility(section, false);
       return;
     }
+    setHomeSectionVisibility(section, true);
 
     // Duplicate data for seamless loop
     const topItems = [...data.top, ...data.top];
@@ -1559,7 +1606,7 @@ const FramerHome = {
       ${showTopRow ? `
       <div class="ticker-row">
         <div class="ticker ticker-left">
-          <div class="ticker-track" style="animation-duration: ${duration}s">
+          <div class="ticker-track" data-home-animation-duration="${duration}s">
             ${topItems.map(tag => `<div class="ticker-item">${tag}</div>`).join('')}
           </div>
         </div>
@@ -1569,13 +1616,18 @@ const FramerHome = {
       ${showBottomRow ? `
       <div class="ticker-row">
         <div class="ticker ticker-right">
-          <div class="ticker-track" style="animation-duration: ${duration}s">
+          <div class="ticker-track" data-home-animation-duration="${duration}s">
             ${bottomItems.map(name => `<div class="ticker-item">${name}</div>`).join('')}
           </div>
         </div>
       </div>
       ` : ''}
     `;
+    section.querySelectorAll('[data-home-animation-duration]').forEach((track) => {
+      setHomeRuntimeStyle(track, {
+        '--home-animation-duration': track.dataset.homeAnimationDuration || ''
+      });
+    });
   },
 
   /**
@@ -1653,7 +1705,9 @@ const FramerHome = {
           // Move thumb from 0 to (trackWidth - thumbWidth)
           const maxOffset = trackWidth - thumbWidth;
           const thumbLeft = progress * maxOffset;
-          thumb.style.left = `${thumbLeft}px`;
+          setHomeRuntimeStyle(thumb, {
+            left: `${thumbLeft}px`
+          });
 
           // Hide ticks overlapping with thumb
           const ticks = track.querySelectorAll('.progress-tick');
@@ -1662,9 +1716,9 @@ const FramerHome = {
             const tickLeft = tick.offsetLeft;
             const tickRight = tickLeft + tick.offsetWidth;
             if (tickLeft >= thumbLeft - 4 && tickRight <= thumbRight + 4) {
-              tick.style.opacity = '0';
+              tick.classList.add('progress-tick--covered');
             } else {
-              tick.style.opacity = '1';
+              tick.classList.remove('progress-tick--covered');
             }
           });
         }
@@ -1675,8 +1729,10 @@ const FramerHome = {
         // Initial state: all cards same size and dimmer opacity
         cards.forEach((card) => {
           const cardUi = card.querySelector('.entry-card-ui') || card;
-          cardUi.style.transform = 'scale(1)';
-          cardUi.style.opacity = '0.7';
+          setHomeRuntimeStyle(cardUi, {
+            transform: 'scale(1)',
+            opacity: '0.7'
+          });
         });
         return;
       }
@@ -1696,8 +1752,10 @@ const FramerHome = {
         // Opacity: 1.0 when centered, 0.5 when far
         const opacity = Math.max(0.5, 1 - (distanceFromCenter / maxDistance) * 0.5);
 
-        cardUi.style.transform = `scale(${scale})`;
-        cardUi.style.opacity = opacity;
+        setHomeRuntimeStyle(cardUi, {
+          transform: `scale(${scale})`,
+          opacity
+        });
       });
     };
 
@@ -1971,7 +2029,9 @@ const FramerHome = {
           // They will only slide UP (negative y) as you scroll down.
           if (offset > 0) offset = 0;
 
-          column.style.transform = `translate3d(0, ${offset}px, 0)`;
+          setHomeRuntimeStyle(column, {
+            transform: `translate3d(0, ${offset}px, 0)`
+          });
         });
       }
 

@@ -1059,6 +1059,99 @@ test('homepage entry points expose delegated guestbook triggers instead of inlin
     assert.equal(framerHomeSource.includes("closest('[data-home-trigger-upload=\"1\"]')"), true, 'js/framer_home.js should delegate homepage upload triggers');
 });
 
+test('framer home runtime renderers externalize homepage section visibility, template styles, and runtime helpers', () => {
+    const framerHomeSource = readRepoFile('js/framer_home.js');
+    const framerHomeCss = readRepoFile('css/framer_home.css');
+    const pageSources = [
+        readRepoFile('index.html'),
+        readRepoFile('guestbook.html'),
+        readRepoFile('verify.html'),
+        readRepoFile('shop.html'),
+        readRepoFile('prompts.html')
+    ];
+
+    const removedMarkers = [
+        "element.style.transform = isHovered ? 'translateY(-2px)' : 'translateY(0)'",
+        "element.style.boxShadow = isHovered ? '0 8px 32px rgba(255,255,255,0.08)' : 'none'",
+        "if (el) el.style.display = 'none';",
+        "section.style.display = 'none';",
+        "style=\"color: ${entry.color}\"",
+        'style="animation-duration: ${shopDuration}s"',
+        'style="font-size: 48px; color: var(--accent-blue);"',
+        'style="font-size:48px;color:var(--text-secondary,#888)"',
+        'style="margin-top: 32px; display: flex; gap: 12px; flex-wrap: wrap;"',
+        'style="width: 100%; border-radius: 12px;"',
+        'style="display: flex; flex-direction: column; gap: 24px; max-width: 800px; margin: 0 auto; padding: 0 20px; align-items: center;"',
+        'style="transition: all 0.3s cubic-bezier(0.4,0,0.2,1);"',
+        'style="animation-duration: ${duration}s"',
+        "thumb.style.left = `${thumbLeft}px`",
+        "tick.style.opacity = '0'",
+        "cardUi.style.transform = `scale(${scale})`",
+        "column.style.transform = `translate3d(0, ${offset}px, 0)`"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(framerHomeSource.includes(marker), false, `js/framer_home.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'function setHomeRuntimeStyle(target, styles = {}, priority = \'\')',
+        'function setHomeSectionVisibility(section, visible)',
+        "element.classList.toggle('home-hover-lift-active', isHovered)",
+        "setHomeSectionVisibility(document.getElementById('hero-section'), true);",
+        'data-home-entry-color="${entry.color}"',
+        "setHomeRuntimeStyle(icon, {",
+        'data-home-animation-duration="${shopDuration}s"',
+        'class="verify-features"',
+        'class="guestbook-list"',
+        'guestbook-action-btn',
+        "tick.classList.add('progress-tick--covered')",
+        "setHomeRuntimeStyle(cardUi, {",
+        "setHomeRuntimeStyle(column, {"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(framerHomeSource.includes(marker), true, `js/framer_home.js should contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '.home-hover-lift-active',
+        '.progress-tick--covered',
+        '.home-entry-card-icon',
+        '.verify-features',
+        '.verify-feature-chip',
+        '.verify-actions',
+        '.verify-screenshot',
+        '.shop-card-icon',
+        '.shop-card-icon--fallback',
+        '.guestbook-list',
+        '.guestbook-card',
+        '.guestbook-avatar',
+        '.guestbook-card-body',
+        '.guestbook-author',
+        '.guestbook-content',
+        '.guestbook-actions',
+        '.guestbook-action-btn'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(framerHomeCss.includes(marker), true, `css/framer_home.css should contain ${marker}`);
+    }
+
+    for (const source of pageSources) {
+        assert.equal(
+            source.includes('css/framer_home.css?v=20260324_HOME_RUNTIME_STYLE_HELPERS_1'),
+            true,
+            'home-nav entry pages should load the latest framer_home stylesheet version'
+        );
+        assert.equal(
+            source.includes('js/framer_home.js?v=20260324_HOME_RUNTIME_STYLE_HELPERS_1'),
+            true,
+            'home-nav entry pages should load the latest framer_home script version'
+        );
+    }
+});
+
 test('guestbook runtime renderers externalize loading, modal, and interaction styling', () => {
     const guestbookSource = readRepoFile('guestbook.js');
     const guestbookHtml = readRepoFile('guestbook.html');
