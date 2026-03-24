@@ -1563,7 +1563,7 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=52'),
+        adminStudioHtml.includes('admin-studio.css?v=53'),
         true,
         'admin-studio.html should load the latest admin studio stylesheet version'
     );
@@ -2133,7 +2133,7 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=52'),
+        adminStudioSource.includes('admin-studio.css?v=53'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -2740,7 +2740,7 @@ test('discount admin runtime renderers externalize table states, copy toast, and
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=52'),
+        adminStudioSource.includes('admin-studio.css?v=53'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -2807,7 +2807,7 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=52'),
+        adminStudioSource.includes('admin-studio.css?v=53'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -3660,6 +3660,69 @@ test('analytics calendar and config poster/editor templates route through delega
     }
 });
 
+test('analytics runtime renderers externalize heatmap, cohort, flow, and panel visibility styles', () => {
+    const analyticsSource = readRepoFile('admin-analytics.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const removedMarkers = [
+        "indicator.style.left = activeTab.offsetLeft + 'px';",
+        '<div class="heatmap-cell" style="background: ${cellColor}"',
+        'class="cohort-cell" style="--intensity:',
+        'fa-arrow-right" style="color:#22c55e"',
+        'fa-arrow-left" style="color:#ef4444"',
+        "chartContainer.style.display = 'block';",
+        "chartContainer.style.display = 'none';",
+        "area.style.display = 'none';",
+        "area.style.display = 'block';"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(analyticsSource.includes(marker), false, `admin-analytics.js should not contain ${marker}`);
+    }
+
+    const analyticsMarkers = [
+        'window.updateAdminTabIndicator(activeTab);',
+        'function getHeatmapToneClass(count, intensity)',
+        'heatmap-cell--level-${getAnalyticsToneLevel',
+        'function getCohortToneClass(percent)',
+        'cohort-cell--level-${getAnalyticsToneLevel',
+        'flow-section-icon flow-section-icon--inflow',
+        'flow-section-icon flow-section-icon--outflow',
+        'setAnalyticsVisibility(chartContainer, false);',
+        'setAnalyticsVisibility(chartContainer, true);',
+        'setAnalyticsVisibility(area, true);',
+        'setAnalyticsVisibility(area, false);'
+    ];
+
+    for (const marker of analyticsMarkers) {
+        assert.equal(analyticsSource.includes(marker), true, `admin-analytics.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.heatmap-cell--level-4',
+        '[data-theme="dark"] .heatmap-cell--level-4',
+        '.cohort-cell--level-4',
+        '.flow-section-icon--inflow',
+        '.flow-section-icon--outflow'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    const htmlMarkers = [
+        'admin-studio.css?v=53',
+        '<div class="anomaly-alerts-area" id="anomalyAlertsArea" hidden>',
+        '<div class="ab-results-chart" id="abResultsChart" hidden>',
+        'admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1'
+    ];
+
+    for (const marker of htmlMarkers) {
+        assert.equal(adminStudioHtml.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+});
+
 test('admin config runtime renderers externalize poster preview, toggle pulse, save indicator, and verify quota styling', () => {
     const adminConfigSource = readRepoFile('admin-config.js');
     const adminStudioStyles = readRepoFile('admin-studio.css');
@@ -3719,7 +3782,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=52'),
+        adminStudioHtml.includes('admin-studio.css?v=53'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );

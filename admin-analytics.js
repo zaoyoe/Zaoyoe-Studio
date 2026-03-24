@@ -1347,10 +1347,8 @@ function switchAnalyticsTab(tabId) {
 
     // Update indicator position
     const activeTab = nav.querySelector('.admin-tab.active');
-    const indicator = nav.querySelector('.admin-tab-indicator');
-    if (activeTab && indicator) {
-        indicator.style.left = activeTab.offsetLeft + 'px';
-        indicator.style.width = activeTab.offsetWidth + 'px';
+    if (activeTab) {
+        window.updateAdminTabIndicator(activeTab);
     }
 
     // Update tab content
@@ -1373,11 +1371,31 @@ function initAnalyticsTabIndicator() {
     if (!nav) return;
 
     const activeTab = nav.querySelector('.admin-tab.active');
-    const indicator = nav.querySelector('.admin-tab-indicator');
-    if (activeTab && indicator) {
-        indicator.style.left = activeTab.offsetLeft + 'px';
-        indicator.style.width = activeTab.offsetWidth + 'px';
+    if (activeTab) {
+        window.updateAdminTabIndicator(activeTab);
     }
+}
+
+function getAnalyticsToneLevel(intensity) {
+    const normalized = Number.isFinite(intensity) ? intensity : 0;
+    if (normalized <= 0) return 0;
+    if (normalized < 0.25) return 1;
+    if (normalized < 0.5) return 2;
+    if (normalized < 0.75) return 3;
+    return 4;
+}
+
+function getHeatmapToneClass(count, intensity) {
+    return `heatmap-cell--level-${getAnalyticsToneLevel(count > 0 ? intensity : 0)}`;
+}
+
+function getCohortToneClass(percent) {
+    return `cohort-cell cohort-cell--level-${getAnalyticsToneLevel((Number(percent) || 0) / 100)}`;
+}
+
+function setAnalyticsVisibility(element, hidden) {
+    if (!element) return;
+    element.hidden = hidden;
 }
 
 // Export for global access
@@ -1439,24 +1457,7 @@ async function loadActivityHeatmap() {
             for (let h = 0; h < 24; h++) {
                 const count = matrix[d][h];
                 const intensity = maxCount > 0 ? count / maxCount : 0;
-
-                // GitHub-style green gradient (theme-aware)
-                const isDark = document.documentElement.dataset.theme === 'dark';
-                let cellColor;
-
-                if (count === 0) {
-                    cellColor = isDark ? '#161b22' : '#ebedf0'; // Empty cells
-                } else if (intensity < 0.25) {
-                    cellColor = isDark ? '#0e4429' : '#9be9a8'; // Light green
-                } else if (intensity < 0.5) {
-                    cellColor = isDark ? '#006d32' : '#40c463'; // Medium green
-                } else if (intensity < 0.75) {
-                    cellColor = isDark ? '#26a641' : '#30a14e'; // Dark green
-                } else {
-                    cellColor = isDark ? '#39d353' : '#216e39'; // Darkest green
-                }
-
-                html += `<div class="heatmap-cell" style="background: ${cellColor}" title="${dayNames[d]} ${h}:00 - ${count} 次活动"></div>`;
+                html += `<div class="heatmap-cell ${getHeatmapToneClass(count, intensity)}" title="${dayNames[d]} ${h}:00 - ${count} 次活动"></div>`;
             }
             html += '</div>';
         }
@@ -1710,11 +1711,11 @@ async function loadRetentionCohort() {
         data.forEach(row => {
             html += `<tr>
                 <td>${row.cohort_week}</td>
-                <td class="cohort-cell" style="--intensity: ${(row.week_0 || 0) / 100}">${row.week_0 || 0}%</td>
-                <td class="cohort-cell" style="--intensity: ${(row.week_1 || 0) / 100}">${row.week_1 || 0}%</td>
-                <td class="cohort-cell" style="--intensity: ${(row.week_2 || 0) / 100}">${row.week_2 || 0}%</td>
-                <td class="cohort-cell" style="--intensity: ${(row.week_3 || 0) / 100}">${row.week_3 || 0}%</td>
-                <td class="cohort-cell" style="--intensity: ${(row.week_4 || 0) / 100}">${row.week_4 || 0}%</td>
+                <td class="${getCohortToneClass(row.week_0)}">${row.week_0 || 0}%</td>
+                <td class="${getCohortToneClass(row.week_1)}">${row.week_1 || 0}%</td>
+                <td class="${getCohortToneClass(row.week_2)}">${row.week_2 || 0}%</td>
+                <td class="${getCohortToneClass(row.week_3)}">${row.week_3 || 0}%</td>
+                <td class="${getCohortToneClass(row.week_4)}">${row.week_4 || 0}%</td>
             </tr>`;
         });
 
@@ -1745,7 +1746,7 @@ async function loadPointsFlow() {
         let html = '<div class="points-flow-container">';
 
         // Inflows
-        html += '<div class="flow-section"><h4><i class="fas fa-arrow-right" style="color:#22c55e"></i> 收入来源</h4>';
+        html += '<div class="flow-section"><h4><i class="fas fa-arrow-right flow-section-icon flow-section-icon--inflow"></i> 收入来源</h4>';
         inflows.forEach(item => {
             html += `<div class="flow-item inflow">
                 <span class="flow-label">${item.source_node}</span>
@@ -1755,7 +1756,7 @@ async function loadPointsFlow() {
         html += '</div>';
 
         // Outflows
-        html += '<div class="flow-section"><h4><i class="fas fa-arrow-left" style="color:#ef4444"></i> 消费去向</h4>';
+        html += '<div class="flow-section"><h4><i class="fas fa-arrow-left flow-section-icon flow-section-icon--outflow"></i> 消费去向</h4>';
         outflows.forEach(item => {
             html += `<div class="flow-item outflow">
                 <span class="flow-label">${item.target_node}</span>
@@ -2152,7 +2153,7 @@ async function showABResults(experimentId, experimentName, variants) {
     if (!chartContainer || !canvas) return;
 
     // Show chart area
-    chartContainer.style.display = 'block';
+    setAnalyticsVisibility(chartContainer, false);
     if (chartTitle) chartTitle.textContent = `${experimentName} - 结果对比`;
 
     try {
@@ -2272,7 +2273,7 @@ async function showABResults(experimentId, experimentName, variants) {
 function closeABResultsChart() {
     const chartContainer = document.getElementById('abResultsChart');
     if (chartContainer) {
-        chartContainer.style.display = 'none';
+        setAnalyticsVisibility(chartContainer, true);
     }
     if (abCompareChartInstance) {
         abCompareChartInstance.destroy();
@@ -3768,11 +3769,11 @@ function displayAlerts(alerts) {
     if (!area || !list) return;
 
     if (alerts.length === 0) {
-        area.style.display = 'none';
+        setAnalyticsVisibility(area, true);
         return;
     }
 
-    area.style.display = 'block';
+    setAnalyticsVisibility(area, false);
     list.innerHTML = alerts.map(alert => `
         <div class="alert-item">
             <i class="fas fa-exclamation-circle"></i>
@@ -3786,7 +3787,7 @@ function displayAlerts(alerts) {
 function dismissAllAlerts() {
     const area = document.getElementById('anomalyAlertsArea');
     if (area) {
-        area.style.display = 'none';
+        setAnalyticsVisibility(area, true);
     }
 }
 

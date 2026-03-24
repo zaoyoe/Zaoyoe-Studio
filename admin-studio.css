@@ -16632,6 +16632,46 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     cursor: pointer;
 }
 
+.heatmap-cell--level-0 {
+    background: #ebedf0;
+}
+
+.heatmap-cell--level-1 {
+    background: #9be9a8;
+}
+
+.heatmap-cell--level-2 {
+    background: #40c463;
+}
+
+.heatmap-cell--level-3 {
+    background: #30a14e;
+}
+
+.heatmap-cell--level-4 {
+    background: #216e39;
+}
+
+[data-theme="dark"] .heatmap-cell--level-0 {
+    background: #161b22;
+}
+
+[data-theme="dark"] .heatmap-cell--level-1 {
+    background: #0e4429;
+}
+
+[data-theme="dark"] .heatmap-cell--level-2 {
+    background: #006d32;
+}
+
+[data-theme="dark"] .heatmap-cell--level-3 {
+    background: #26a641;
+}
+
+[data-theme="dark"] .heatmap-cell--level-4 {
+    background: #39d353;
+}
+
 .heatmap-cell:hover {
     transform: scale(1.2);
     box-shadow: 0 2px 8px rgba(107, 158, 206, 0.4);
@@ -16919,14 +16959,49 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .cohort-cell {
-    background: rgba(34, 197, 94, calc(var(--intensity, 0) * 0.6));
     color: var(--text-main);
     font-weight: 500;
     transition: background 0.2s;
 }
 
-[data-theme="dark"] .cohort-cell {
-    background: rgba(34, 197, 94, calc(var(--intensity, 0) * 0.4));
+.cohort-cell--level-0 {
+    background: rgba(34, 197, 94, 0.04);
+}
+
+.cohort-cell--level-1 {
+    background: rgba(34, 197, 94, 0.15);
+}
+
+.cohort-cell--level-2 {
+    background: rgba(34, 197, 94, 0.28);
+}
+
+.cohort-cell--level-3 {
+    background: rgba(34, 197, 94, 0.42);
+}
+
+.cohort-cell--level-4 {
+    background: rgba(34, 197, 94, 0.56);
+}
+
+[data-theme="dark"] .cohort-cell--level-0 {
+    background: rgba(34, 197, 94, 0.03);
+}
+
+[data-theme="dark"] .cohort-cell--level-1 {
+    background: rgba(34, 197, 94, 0.1);
+}
+
+[data-theme="dark"] .cohort-cell--level-2 {
+    background: rgba(34, 197, 94, 0.18);
+}
+
+[data-theme="dark"] .cohort-cell--level-3 {
+    background: rgba(34, 197, 94, 0.28);
+}
+
+[data-theme="dark"] .cohort-cell--level-4 {
+    background: rgba(34, 197, 94, 0.4);
 }
 
 /* ---- Points Flow ---- */
@@ -16946,6 +17021,14 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+.flow-section-icon--inflow {
+    color: #22c55e;
+}
+
+.flow-section-icon--outflow {
+    color: #ef4444;
 }
 
 .flow-item {
