@@ -3452,6 +3452,12 @@ input.login-submit-btn {
     max-height: 90vh;
     border-radius: 12px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    --image-zoom-translate-x: 0px;
+    --image-zoom-translate-y: 0px;
+    --image-zoom-scale: 1;
+    transform: translate(var(--image-zoom-translate-x), var(--image-zoom-translate-y)) scale(var(--image-zoom-scale));
+    transform-origin: center center;
+    transition: none;
     touch-action: none;
     /* 完全禁止触摸手势 */
     user-select: none;
@@ -3459,6 +3465,10 @@ input.login-submit-btn {
     -webkit-user-select: none;
     -webkit-touch-callout: none;
     /* Disable iOS callout */
+}
+
+.image-modal-content img.image-zoom-animating {
+    transition: transform 0.3s ease;
 }
 
 .image-modal-close {

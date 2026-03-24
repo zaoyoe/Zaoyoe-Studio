@@ -1837,6 +1837,57 @@ test('capsule manager externalizes pulse and swipe state styling', () => {
     );
 });
 
+test('image zoom runtime externalizes modal transform and transition styling', () => {
+    const imageZoomSource = readRepoFile('image-zoom.js');
+    const sharedStyles = readRepoFile('style.css');
+    const guestbookHtml = readRepoFile('guestbook.html');
+
+    const removedMarkers = [
+        "img.style.transition = 'none';",
+        "img.style.transformOrigin = 'center center';",
+        "img.style.touchAction = 'none';",
+        "img.style.transform = `translate(${state.translateX}px, ${state.translateY}px) scale(${state.scale})`;",
+        "img.style.transition = 'transform 0.3s ease';"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(imageZoomSource.includes(marker), false, `image-zoom.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "const IMAGE_ZOOM_ENABLED_CLASS = 'image-zoom-enabled';",
+        "const IMAGE_ZOOM_ANIMATING_CLASS = 'image-zoom-animating';",
+        "styleDecl.setProperty('--image-zoom-translate-x', `${state.translateX}px`);",
+        "styleDecl.setProperty('--image-zoom-translate-y', `${state.translateY}px`);",
+        "styleDecl.setProperty('--image-zoom-scale', String(state.scale));",
+        'img.classList.add(IMAGE_ZOOM_ENABLED_CLASS);',
+        'img.classList.add(IMAGE_ZOOM_ANIMATING_CLASS);',
+        'img.classList.remove(IMAGE_ZOOM_ANIMATING_CLASS);'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(imageZoomSource.includes(marker), true, `image-zoom.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '--image-zoom-translate-x: 0px;',
+        '--image-zoom-translate-y: 0px;',
+        '--image-zoom-scale: 1;',
+        'transform: translate(var(--image-zoom-translate-x), var(--image-zoom-translate-y)) scale(var(--image-zoom-scale));',
+        '.image-modal-content img.image-zoom-animating {'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(sharedStyles.includes(marker), true, `style.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        guestbookHtml.includes('image-zoom.js?v=20260324_IMAGE_ZOOM_RUNTIME_STYLE_1'),
+        true,
+        'guestbook.html should reference the updated image zoom runtime version'
+    );
+});
+
 test('admin pricing package controls no longer emit inline handlers in static or dynamic settings markup', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
