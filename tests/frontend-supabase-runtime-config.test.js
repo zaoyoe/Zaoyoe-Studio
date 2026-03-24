@@ -1781,6 +1781,62 @@ test('ios scroll lock externalizes fixed-body shell styles while keeping dynamic
     }
 });
 
+test('capsule manager externalizes pulse and swipe state styling', () => {
+    const capsuleManagerSource = readRepoFile('capsule-manager.js');
+    const capsuleStyles = readRepoFile('capsule-styles.css');
+    const guestbookHtml = readRepoFile('guestbook.html');
+
+    const removedMarkers = [
+        "el.style.transform = 'translateX(-50%) scale(1.05) translateZ(0)';",
+        "setTimeout(() => el.style.transform = 'translateX(-50%) scale(1) translateZ(0)', 200);",
+        "capsule.style.transition = 'none';",
+        "capsule.style.transform = `translateX(-50%) translateY(${deltaY}px)`;",
+        "capsule.style.transition = '';",
+        "capsule.style.transform = 'translateX(-50%) translateY(0)';",
+        "capsule.style.transform = 'translateX(-50%) translateY(-100px)';"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(capsuleManagerSource.includes(marker), false, `capsule-manager.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "dragOffsetProperty: '--capsule-drag-offset'",
+        "this.pulse(el);",
+        "styleDecl.setProperty(this.runtime.dragOffsetProperty, `${Math.round(Number(value))}px`);",
+        "capsule.classList.add('capsule-wrapper--dragging');",
+        "capsule.classList.add('capsule-wrapper--dismissed');",
+        "capsule.classList.remove('capsule-wrapper--dismissed');"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(capsuleManagerSource.includes(marker), true, `capsule-manager.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '--capsule-drag-offset: 0px;',
+        '--capsule-scale: 1;',
+        '.capsule-wrapper.capsule-wrapper--pulse {',
+        '.capsule-wrapper.capsule-wrapper--dragging {',
+        '.capsule-wrapper.capsule-wrapper--dismissed {'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(capsuleStyles.includes(marker), true, `capsule-styles.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        guestbookHtml.includes('capsule-styles.css?v=20260324_CAPSULE_RUNTIME_STYLE_1'),
+        true,
+        'guestbook.html should reference the updated capsule stylesheet version'
+    );
+    assert.equal(
+        guestbookHtml.includes('capsule-manager.js?v=20260324_CAPSULE_RUNTIME_STYLE_1'),
+        true,
+        'guestbook.html should reference the updated capsule runtime version'
+    );
+});
+
 test('admin pricing package controls no longer emit inline handlers in static or dynamic settings markup', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
