@@ -370,7 +370,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260324_PRIVACY_STYLES_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_PAGE_STYLES_1'],
-        ['shop.html', 'css/shop-page.css?v=20260324_SHOP_PAGE_STYLES_1'],
+        ['shop.html', 'css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_PAGE_STYLES_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
@@ -404,7 +404,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['icons_preview_v6.html', 'css/icons-preview-v6.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
         ['icons_preview_v7.html', 'css/icons-preview-v7.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
         ['icons_preview_v8.html', 'css/icons-preview-v8.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
-        ['index_old.html', 'css/index-old.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
+        ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
         ['preview-hero-effects.html', 'css/preview-hero-effects.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
         ['profile_mobile_tab_minimal_preview.html', 'css/profile-mobile-tab-minimal-preview.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
         ['profile_security_frosted_board.html', 'css/profile-security-frosted-board.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
@@ -451,6 +451,24 @@ test('selected preview showcase pages no longer embed inline style attributes', 
         const source = readRepoFile(relativePath);
         assert.equal(
             inlineStyleAttrPattern.test(source),
+            false,
+            `${relativePath} should not contain inline style attributes`
+        );
+    }
+});
+
+test('shop and archived index pages no longer embed inline style attributes', () => {
+    const expectations = new Map([
+        ['shop.html', 'css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
+        ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
+    ]);
+    const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
+
+    for (const [relativePath, stylesheetMarker] of expectations.entries()) {
+        const source = readRepoFile(relativePath);
+        assert.equal(source.includes(stylesheetMarker), true, `${relativePath} should load ${stylesheetMarker}`);
+        assert.equal(
+            inlineStyleAttributePattern.test(source),
             false,
             `${relativePath} should not contain inline style attributes`
         );

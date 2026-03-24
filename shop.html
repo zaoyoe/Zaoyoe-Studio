@@ -37,7 +37,7 @@
     <!-- Unified Navigation CSS -->
     <link rel="stylesheet" href="css/framer_home.css?v=NAV_UNIFIED_V9">
     <!-- Prevent flash of wrong theme -->
-    <link rel="stylesheet" href="css/shop-page.css?v=20260324_SHOP_PAGE_STYLES_1">
+    <link rel="stylesheet" href="css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1">
     <script src="./js/theme-preload.js"></script>
 
 </head>
@@ -137,16 +137,16 @@
 
         <!-- Main Content -->
         <div class="shop-main">
-            <div class="shop-header" style="margin-bottom: 20px;">
+            <div class="shop-header shop-inline-style-attr-1">
                 <!-- Title removed per request -->
             </div>
 
             <div id="shopCategoryFilters" class="category-filters">
                 <!-- Skeleton filters shown initially -->
                 <div class="skeleton skeleton-filter"></div>
-                <div class="skeleton skeleton-filter" style="width:50px"></div>
-                <div class="skeleton skeleton-filter" style="width:70px"></div>
-                <div class="skeleton skeleton-filter" style="width:55px"></div>
+                <div class="skeleton skeleton-filter shop-inline-style-attr-2"></div>
+                <div class="skeleton skeleton-filter shop-inline-style-attr-3"></div>
+                <div class="skeleton skeleton-filter shop-inline-style-attr-4"></div>
                 <!-- Real filters loaded by JS -->
             </div>
 
@@ -203,11 +203,11 @@
                     </div>
                 </div>
 
-                <div class="shop-purchase-stage shop-purchase-stage-header" style="text-align: center; margin-bottom: 20px;">
-                    <h3 class="card-title" style="font-size: 1.2rem; margin-bottom: 5px;"
+                <div class="shop-purchase-stage shop-purchase-stage-header shop-inline-style-attr-5">
+                    <h3 class="card-title shop-inline-style-attr-6"
                         data-i18n="shop.confirmRedeem">
                         确认兑换</h3>
-                    <p id="modalProductName" style="color: rgba(255,255,255,0.6); font-size: 0.9rem;">Product Name</p>
+                    <p id="modalProductName" class="shop-inline-style-attr-7">Product Name</p>
                 </div>
 
                 <!-- Quantity Selector -->
@@ -220,107 +220,107 @@
                 </div>
 
                 <!-- Add Discount Code Input Here -->
-                <div class="shop-purchase-stage shop-purchase-stage-discount" style="margin: 15px 10px; text-align: left;">
-                    <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 5px;"
-                        data-i18n="shop.discountCode">优惠码 (选填)</div>
-                    <div style="display: flex; gap: 8px;">
+                <div class="shop-purchase-stage shop-purchase-stage-discount shop-inline-style-attr-8">
+                    <div
+                        data-i18n="shop.discountCode" class="shop-inline-style-attr-9">优惠码 (选填)</div>
+                    <div class="shop-inline-style-attr-10">
                         <input type="text" id="purchaseDiscountCode" placeholder="输入优惠码"
                             data-i18n-placeholder="shop.enterDiscountCode"
-                            style="flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: #fff; outline: none; transition: border-color 0.2s;">
+                            class="shop-inline-style-attr-11">
                         <button id="applyDiscountBtn" type="button" data-i18n="shop.verify"
-                            style="padding: 0 16px; border-radius: 8px; background: rgba(107, 158, 206, 0.2); color: #6b9ece; border: 1px solid rgba(107, 158, 206, 0.3); cursor: pointer; font-weight: 500; transition: all 0.2s; white-space: nowrap;">验证</button>
+                            class="shop-inline-style-attr-12">验证</button>
                     </div>
-                    <div id="discountMessage" style="font-size: 12px; margin-top: 6px; display: none;"></div>
+                    <div id="discountMessage" class="shop-inline-style-attr-13"></div>
                 </div>
 
                 <!-- Price Summary -->
-                <div class="shop-purchase-stage shop-purchase-stage-summary"
-                    style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 25px; padding: 0 10px;">
-                    <div style="text-align: left;">
-                        <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 2px;"
-                            data-i18n="shop.unitPrice">单价</div>
-                        <div style="font-family: 'Outfit'; color: #fbbf24;"><span id="modalUnitPrice">0</span> <span
+                <div class="shop-purchase-stage shop-purchase-stage-summary shop-inline-style-attr-14"
+                   >
+                    <div class="shop-inline-style-attr-15">
+                        <div
+                            data-i18n="shop.unitPrice" class="shop-inline-style-attr-16">单价</div>
+                        <div class="shop-inline-style-attr-17"><span id="modalUnitPrice">0</span> <span
                                 data-i18n="shop.points">积分</span></div>
                     </div>
-                    <div style="text-align: right;">
-                        <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 2px;"
-                            data-i18n="shop.total">总计</div>
-                        <div style="font-family: 'Outfit'; font-size: 1.4rem; color: #4ade80; font-weight: 700;">
-                            <span id="modalTotalPrice">0</span> <span style="font-size: 0.9rem; font-weight: 500;"
-                                data-i18n="shop.points">积分</span>
+                    <div class="shop-inline-style-attr-18">
+                        <div
+                            data-i18n="shop.total" class="shop-inline-style-attr-16">总计</div>
+                        <div class="shop-inline-style-attr-19">
+                            <span id="modalTotalPrice">0</span> <span
+                                data-i18n="shop.points" class="shop-inline-style-attr-20">积分</span>
                         </div>
                     </div>
                 </div>
 
-                <div id="purchaseNotesBox" class="shop-purchase-stage shop-purchase-stage-notes" style="display: none; margin: 0 10px 20px;">
+                <div id="purchaseNotesBox" class="shop-purchase-stage shop-purchase-stage-notes shop-inline-style-attr-21">
                     <div
-                        style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: rgba(255,255,255,0.68); font-size: 0.96rem; text-align: left;">
-                        <i class="fas fa-triangle-exclamation" style="color: #fbbf24;"></i>
+                        class="shop-inline-style-attr-22">
+                        <i class="fas fa-triangle-exclamation shop-inline-style-attr-23"></i>
                         <span>注意事项</span>
                     </div>
                     <div id="purchaseNotesCard" class="glass-box shop-success-usage-card">
                         <div id="purchaseNotesContent"
-                            style="white-space: pre-wrap; font-size: 13px; color: rgba(255,255,255,0.85); line-height: 1.75;">
+                            class="shop-inline-style-attr-24">
                         </div>
                     </div>
                 </div>
 
                 <!-- Actions -->
-                <button id="confirmPurchaseBtn" type="button" class="shop-btn shop-btn-primary shop-purchase-stage shop-purchase-stage-action"
-                    style="width: 100%;">
+                <button id="confirmPurchaseBtn" type="button" class="shop-btn shop-btn-primary shop-purchase-stage shop-purchase-stage-action shop-inline-style-attr-25"
+                   >
                     <i class="fas fa-shopping-cart"></i> <span data-i18n="shop.confirmRedeem">确认兑换</span>
                 </button>
             </div>
         </div>
 
         <!-- Success Modal (Re-used structure) -->
-        <div class="modal-overlay" id="shopSuccessModal" style="z-index: 99999;">
+        <div class="modal-overlay shop-inline-style-attr-26" id="shopSuccessModal">
             <div class="modal-content premium-modal shop-success-modal">
-                <div class="shop-success-stage shop-success-stage-icon"
-                    style="width: 60px; height: 60px; background: rgba(56, 158, 13, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
-                    <i class="fas fa-check" style="font-size: 30px; color: #389e0d;"></i>
+                <div class="shop-success-stage shop-success-stage-icon shop-inline-style-attr-27"
+                   >
+                    <i class="fas fa-check shop-inline-style-attr-28"></i>
                 </div>
                 <h2 class="card-title shop-success-stage shop-success-stage-title" data-i18n="shop.redeemSuccess">兑换成功!</h2>
 
                 <div class="shop-success-scroll">
                     <!-- Product content header with tooltip dot (outside overflow container) -->
-                    <div class="shop-success-scroll-stage shop-success-scroll-stage-meta"
-                        style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <div class="shop-success-scroll-stage shop-success-scroll-stage-meta shop-inline-style-attr-29"
+                       >
                         <span data-i18n="shop.productContent">商品内容:</span>
                         <span id="productNameDot" class="product-name-dot" data-tooltip="">
-                            <i class="fas fa-circle" style="font-size: 8px; color: #60a5fa;"></i>
+                            <i class="fas fa-circle shop-inline-style-attr-30"></i>
                         </span>
                     </div>
 
-                    <div class="glass-box shop-success-content-shell shop-success-scroll-stage shop-success-scroll-stage-content"
-                        style="margin-bottom: 20px; padding: 15px; word-break: break-all; user-select: text; text-align: left; max-height: 280px; overflow-y: auto;">
+                    <div class="glass-box shop-success-content-shell shop-success-scroll-stage shop-success-scroll-stage-content shop-inline-style-attr-31"
+                       >
                         <div id="purchasedContent"
-                            style="font-family: monospace; font-size: 14px; color: #fff; white-space: pre-wrap; overflow-x: auto;">
+                            class="shop-inline-style-attr-32">
                             <!-- Content Here -->
                         </div>
                     </div>
 
                     <!-- Usage Instructions Box (Conditionally shown) -->
-                    <div id="usageInstructionsBox" class="shop-success-scroll-stage shop-success-scroll-stage-usage" style="display: none; margin-bottom: 20px;">
+                    <div id="usageInstructionsBox" class="shop-success-scroll-stage shop-success-scroll-stage-usage shop-inline-style-attr-33">
                         <div
-                            style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-                            <i class="fas fa-info-circle" style="color: #60a5fa;"></i>
+                            class="shop-inline-style-attr-34">
+                            <i class="fas fa-info-circle shop-inline-style-attr-35"></i>
                             <span data-i18n="shop.usageInstructions">使用说明</span>
                         </div>
                         <div class="glass-box shop-success-usage-card">
                             <div id="usageInstructionsContent"
-                                style="font-size: 13px; color: rgba(255,255,255,0.85); white-space: pre-wrap; word-break: break-word;">
+                                class="shop-inline-style-attr-36">
                             </div>
                         </div>
                     </div>
 
                     <!-- Warning Box (Initially Hidden) -->
-                    <div id="purchasedWarning" class="glass-box shop-success-scroll-stage shop-success-scroll-stage-warning"
-                        style="margin-bottom: 20px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); text-align: left; display: none;">
-                        <div style="display: flex; gap: 10px; align-items: flex-start;">
-                            <i class="fas fa-exclamation-triangle" style="color: #fbbf24; margin-top: 3px;"></i>
-                            <div style="color: #fbbf24; font-size: 13px; line-height: 1.4;">
-                                <div style="font-weight: 600; margin-bottom: 2px;" data-i18n="shop.specialTip">特别提示</div>
+                    <div id="purchasedWarning" class="glass-box shop-success-scroll-stage shop-success-scroll-stage-warning shop-inline-style-attr-37"
+                       >
+                        <div class="shop-inline-style-attr-38">
+                            <i class="fas fa-exclamation-triangle shop-inline-style-attr-39"></i>
+                            <div class="shop-inline-style-attr-40">
+                                <div data-i18n="shop.specialTip" class="shop-inline-style-attr-41">特别提示</div>
                                 <div id="purchasedWarningText"></div>
                             </div>
                         </div>
@@ -328,12 +328,12 @@
                 </div>
 
                 <div class="shop-success-actions shop-success-stage shop-success-stage-actions">
-                    <button id="copyContentBtn" type="button" class="shop-btn shop-btn-primary"
-                        style="flex: 1;">
+                    <button id="copyContentBtn" type="button" class="shop-btn shop-btn-primary shop-inline-style-attr-42"
+                       >
                         <i class="fas fa-copy"></i> <span data-i18n="common.copy">复制</span>
                     </button>
                     <button id="exportContentBtn" type="button"
-                        class="shop-btn shop-btn-secondary" style="flex: 1;">
+                        class="shop-btn shop-btn-secondary shop-inline-style-attr-42">
                         <i class="fas fa-download"></i> <span data-i18n="common.export">导出</span>
                     </button>
                 </div>

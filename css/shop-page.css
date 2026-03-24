@@ -1488,3 +1488,49 @@
                         box-shadow: 0 4px 12px rgba(107, 158, 206, 0.24);
                     }
                 }
+
+/* BEGIN 20260324_INLINE_STYLE_ATTRS_BATCH_1 shop.html */
+/* Extracted inline style attributes from shop.html. */
+.shop-inline-style-attr-1 { margin-bottom: 20px; }
+.shop-inline-style-attr-2 { width:50px; }
+.shop-inline-style-attr-3 { width:70px; }
+.shop-inline-style-attr-4 { width:55px; }
+.shop-inline-style-attr-5 { text-align: center; margin-bottom: 20px; }
+.shop-inline-style-attr-6 { font-size: 1.2rem; margin-bottom: 5px; }
+.shop-inline-style-attr-7 { color: rgba(255,255,255,0.6); font-size: 0.9rem; }
+.shop-inline-style-attr-8 { margin: 15px 10px; text-align: left; }
+.shop-inline-style-attr-9 { font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 5px; }
+.shop-inline-style-attr-10 { display: flex; gap: 8px; }
+.shop-inline-style-attr-11 { flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: #fff; outline: none; transition: border-color 0.2s; }
+.shop-inline-style-attr-12 { padding: 0 16px; border-radius: 8px; background: rgba(107, 158, 206, 0.2); color: #6b9ece; border: 1px solid rgba(107, 158, 206, 0.3); cursor: pointer; font-weight: 500; transition: all 0.2s; white-space: nowrap; }
+.shop-inline-style-attr-13 { font-size: 12px; margin-top: 6px; display: none; }
+.shop-inline-style-attr-14 { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 25px; padding: 0 10px; }
+.shop-inline-style-attr-15 { text-align: left; }
+.shop-inline-style-attr-16 { font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 2px; }
+.shop-inline-style-attr-17 { font-family: 'Outfit'; color: #fbbf24; }
+.shop-inline-style-attr-18 { text-align: right; }
+.shop-inline-style-attr-19 { font-family: 'Outfit'; font-size: 1.4rem; color: #4ade80; font-weight: 700; }
+.shop-inline-style-attr-20 { font-size: 0.9rem; font-weight: 500; }
+.shop-inline-style-attr-21 { display: none; margin: 0 10px 20px; }
+.shop-inline-style-attr-22 { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: rgba(255,255,255,0.68); font-size: 0.96rem; text-align: left; }
+.shop-inline-style-attr-23 { color: #fbbf24; }
+.shop-inline-style-attr-24 { white-space: pre-wrap; font-size: 13px; color: rgba(255,255,255,0.85); line-height: 1.75; }
+.shop-inline-style-attr-25 { width: 100%; }
+.shop-inline-style-attr-26 { z-index: 99999; }
+.shop-inline-style-attr-27 { width: 60px; height: 60px; background: rgba(56, 158, 13, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; }
+.shop-inline-style-attr-28 { font-size: 30px; color: #389e0d; }
+.shop-inline-style-attr-29 { font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+.shop-inline-style-attr-30 { font-size: 8px; color: #60a5fa; }
+.shop-inline-style-attr-31 { margin-bottom: 20px; padding: 15px; word-break: break-all; user-select: text; text-align: left; max-height: 280px; overflow-y: auto; }
+.shop-inline-style-attr-32 { font-family: monospace; font-size: 14px; color: #fff; white-space: pre-wrap; overflow-x: auto; }
+.shop-inline-style-attr-33 { display: none; margin-bottom: 20px; }
+.shop-inline-style-attr-34 { font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.shop-inline-style-attr-35 { color: #60a5fa; }
+.shop-inline-style-attr-36 { font-size: 13px; color: rgba(255,255,255,0.85); white-space: pre-wrap; word-break: break-word; }
+.shop-inline-style-attr-37 { margin-bottom: 20px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); text-align: left; display: none; }
+.shop-inline-style-attr-38 { display: flex; gap: 10px; align-items: flex-start; }
+.shop-inline-style-attr-39 { color: #fbbf24; margin-top: 3px; }
+.shop-inline-style-attr-40 { color: #fbbf24; font-size: 13px; line-height: 1.4; }
+.shop-inline-style-attr-41 { font-weight: 600; margin-bottom: 2px; }
+.shop-inline-style-attr-42 { flex: 1; }
+/* END 20260324_INLINE_STYLE_ATTRS_BATCH_1 shop.html */
