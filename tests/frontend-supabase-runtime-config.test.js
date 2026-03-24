@@ -206,11 +206,19 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '_setFabTransitionless(enabled)',
         '_setChatWindowForceHidden(hidden)',
         '_setChatWindowTransitionless(enabled)',
+        '_setRuntimeStyle(target, prop, value, priority = \'\')',
+        '_setChatWindowKeyboardAnimating(enabled, durationMs = 120)',
+        '_setChatWindowDockHeight(heightPx)',
+        '_setChatWindowDockBottom(bottomPx)',
+        '_setMessagesContainerMinHeight(heightPx)',
         '_setSessionItemHidden(item, hidden)',
         'chat-file-input',
         'mascot-wrapper mascot-wrapper--compact',
         "loadingOverlay.className = 'loading-overlay';",
-        "shield.className = 'chat-status-bar-shield';"
+        "shield.className = 'chat-status-bar-shield';",
+        "_toggleElementClass(this.overlay, 'chat-overlay--frozen', true)",
+        "_toggleElementClass(this.chatWindow, 'chat-window--stable-visuals', true)",
+        "_toggleElementClass(container, 'chat-prompt-spotlight-suspended', suspended)"
     ];
 
     for (const marker of runtimeMarkers) {
@@ -231,7 +239,12 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         'style="transform: scale(0.8);"',
         "this.fab.style.opacity = '0';",
         "this.fab.style.visibility = 'hidden';",
-        "this.fab.style.pointerEvents = 'none';"
+        "this.fab.style.pointerEvents = 'none';",
+        "this.overlay.style.setProperty('position', 'fixed', 'important');",
+        "this.chatWindow.style.setProperty('transition', 'transform 120ms cubic-bezier(0.22, 1, 0.36, 1)', 'important');",
+        "this.chatWindow.style.setProperty('height', `${dockHeight}px`, 'important');",
+        "container.style.setProperty('--cursor-x', '50%');",
+        "this.chatWindow.style.setProperty('will-change', 'transform', 'important');"
     ];
 
     for (const marker of removedRuntimeMarkers) {
@@ -246,10 +259,17 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '.chat-widget-fab.chat-widget-fab--transitionless',
         '.chat-window.chat-window--transitionless',
         '.chat-window.chat-window--force-hidden',
+        '.chat-window.chat-window--keyboard-animating',
+        '.chat-window.chat-window--stable-visuals',
+        '.chat-window.chat-window--keyboard-bottom-docked',
+        '.chat-window.chat-window--keyboard-height-locked',
         '.loading-overlay',
         '.chat-file-input',
         '.session-item.session-item--hidden',
-        '.mascot-wrapper--compact'
+        '.mascot-wrapper--compact',
+        '.chat-messages.chat-messages--height-locked',
+        '.chat-overlay.chat-overlay--frozen',
+        '.poetry-nav-container.chat-prompt-spotlight-suspended'
     ];
 
     for (const marker of cssMarkers) {

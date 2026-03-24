@@ -75,8 +75,8 @@
         }, 1800);
 
         scheduleOptionalTask(2200, () => {
-            loadStylesheet('css/chat-widget.css?v=20260324_CHAT_RUNTIME_STYLE_1');
-            loadScript('js/components/ChatWidget.js?v=20260324_CHAT_RUNTIME_STYLE_1', initChatWidgetIfReady);
+            loadStylesheet('css/chat-widget.css?v=20260324_CHAT_RUNTIME_STYLE_2');
+            loadScript('js/components/ChatWidget.js?v=20260324_CHAT_RUNTIME_STYLE_2', initChatWidgetIfReady);
         }, 2200);
     }
 
