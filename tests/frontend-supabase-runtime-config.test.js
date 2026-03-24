@@ -1251,6 +1251,77 @@ test('admin general settings and export controls route through delegated binding
     }
 });
 
+test('admin studio runtime prompt workflows externalize visibility, empty-state, and overlay style state', () => {
+    const adminStudioSource = readRepoFile('admin-studio.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const removedRuntimeMarkers = [
+        "primaryAction.style.display = '';",
+        "secondaryAction.style.display = 'none';",
+        "manageTab.style.display = 'none';",
+        "promptForm.style.display = 'flex';",
+        "lastEditedInfo.style.display = 'inline-flex';",
+        "loadingEl.style.display = 'flex';",
+        "toast.style.animation = 'slideIn 0.3s ease reverse';",
+        "batchMenuContainer.style.display = 'block';",
+        "document.getElementById('deleteConfirmOverlay').style.display = 'flex';",
+        "document.getElementById('lightboxOverlay').style.display = 'flex';",
+        "suggestionsSection.style.display = 'flex';",
+        "card.style.display = visible ? '' : 'none';",
+        "msg.style.cssText = 'grid-column: 1/-1; text-align: center; color: var(--text-dim); padding: 2rem;'",
+        '<p style="grid-column: 1/-1; text-align: center; color: var(--text-dim);">No prompts yet. Create your first one!</p>',
+        'style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"'
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(adminStudioSource.includes(marker), false, `admin-studio.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "const ADMIN_STUDIO_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';",
+        "function setAdminStudioVisibility(target, visible, visibleClass = '')",
+        "function createAdminStudioEmptyElement(text, className = 'admin-empty-message', tagName = 'p')",
+        "setAdminStudioVisibility(promptForm, true);",
+        "setAdminStudioVisibility(loadingEl, true);",
+        "card.classList.add('is-removing');",
+        "syncAdminSearchCardVisibility(card, visible);",
+        "setAdminStudioVisibility(suggestionsSection, true, 'is-visible');",
+        'class="key-actions"',
+        'btn-add-config btn-add-config--compact'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(adminStudioSource.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.search-suggestions.is-visible',
+        '.admin-empty-message',
+        '.admin-empty-tag',
+        '.toast.is-dismissing',
+        '.admin-card--hidden-by-search',
+        '.admin-card.is-removing',
+        '.api-key-row .btn-add-config.btn-add-config--compact',
+        '.api-key-row .btn-add-config.btn-add-config--danger'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-studio.css?v=49'),
+        true,
+        'admin-studio.html should load the latest admin studio stylesheet version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('admin-studio.js?v=20260324_ADMIN_RUNTIME_STYLE_HELPERS_1'),
+        true,
+        'admin-studio.html should load the latest admin studio runtime version'
+    );
+});
+
 test('admin pricing package controls no longer emit inline handlers in static or dynamic settings markup', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
@@ -2146,7 +2217,7 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=48'),
+        adminStudioSource.includes('admin-studio.css?v=49'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );

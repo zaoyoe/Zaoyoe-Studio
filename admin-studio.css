@@ -1120,8 +1120,13 @@ body {
 
 /* Suggestions List */
 .search-suggestions {
+    display: none;
     flex-direction: column;
     gap: 0;
+}
+
+.search-suggestions.is-visible {
+    display: flex;
 }
 
 .suggestion-item {
@@ -1313,6 +1318,14 @@ body {
     font-weight: 600;
 }
 
+.admin-empty-message,
+.no-results-message {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--text-dim);
+    padding: 2rem;
+}
+
 .users-table-empty-state {
     display: flex;
     align-items: center;
@@ -1327,6 +1340,10 @@ body {
 .users-empty-tag {
     color: var(--text-dim);
     font-size: 0.8rem;
+}
+
+.admin-empty-tag {
+    color: var(--text-dim);
 }
 
 /* Responsive */
@@ -1901,6 +1918,10 @@ body {
     color: #ef4444;
 }
 
+.toast.is-dismissing {
+    animation: slideIn 0.3s ease reverse;
+}
+
 @keyframes slideIn {
     from {
         opacity: 0;
@@ -2171,6 +2192,16 @@ body {
 .admin-card.selected {
     border-color: var(--accent-purple);
     box-shadow: 0 0 0 2px rgba(155, 93, 229, 0.3);
+}
+
+.admin-card--hidden-by-search {
+    display: none !important;
+}
+
+.admin-card.is-removing {
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    opacity: 0;
+    transform: scale(0.9);
 }
 
 /* Batch Edit Bar - Floating Pill Design */
@@ -19905,7 +19936,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .api-key-row .key-actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .api-key-row .key-active-badge {
@@ -19915,6 +19947,16 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     border-radius: 12px;
     font-size: 0.75rem;
     font-weight: 500;
+}
+
+.api-key-row .btn-add-config.btn-add-config--compact {
+    margin-top: 0;
+    padding: 8px 12px;
+}
+
+.api-key-row .btn-add-config.btn-add-config--danger {
+    border-color: rgba(248, 113, 113, 0.35);
+    color: #fecaca;
 }
 
 .api-key-row .btn-icon {
