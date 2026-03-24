@@ -1408,6 +1408,7 @@ test('admin comments runtime renderers route list items, filters, and block menu
 
 test('wallet modal runtime renderers route wallet shell, lists, filters, and order dialogs through delegated actions', () => {
     const walletModalSource = readRepoFile('js/components/WalletModal.js');
+    const walletCssSource = readRepoFile('css/wallet.css');
     const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|keyup|mouseover|mouseout|error|load)\s*=\s*["']/i;
 
     assert.equal(
@@ -1437,13 +1438,55 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         "case 'open-order-detail':",
         "case 'copy-value':",
         "case 'buy-package':",
+        "getWalletToneClass(value = '')",
+        "buildWalletOrderLoadingMarkup(message = '')",
         'js-wallet-copy-content',
         'wallet-copy-card',
+        'wallet-order-modal--loading',
+        'wallet-detail-row--stacked',
+        'wallet-date-input',
+        'wallet-order-modal-body--fade',
+        'wallet-content-grid--double',
+        'wallet-copy-card--compact',
+        'wallet-copy-card--link',
+        'wallet-modal-actions--toolbar',
+        'product-dot--info',
+        'content-card--warning',
         'bindOverlayCloseButtons(detailOverlay);'
     ];
 
     for (const marker of delegatedMarkers) {
         assert.equal(walletModalSource.includes(marker), true, `js/components/WalletModal.js should contain ${marker}`);
+    }
+
+    const removedInlineMarkers = [
+        'style="max-width: 360px;"',
+        'style="cursor:pointer;"',
+        'style="display: flex; align-items: center; justify-content: center; min-height: 200px;"',
+        'style="animation: fadeIn 0.2s ease-out;"',
+        'style="display: flex; gap: 8px; justify-content: flex-end; padding: 4px 0; margin-top: -8px;"',
+        'style="width:8px;height:8px;background:#6b9ece;border-radius:50%;display:inline-block;margin-left:8px;cursor:pointer;transition:all 0.2s ease;position:relative;"'
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(walletModalSource.includes(marker), false, `js/components/WalletModal.js should not contain ${marker}`);
+    }
+
+    const walletCssMarkers = [
+        '.wallet-order-modal--loading',
+        '.wallet-order-loading-state',
+        '.wallet-detail-row--stacked',
+        '.wallet-date-input',
+        '.wallet-content-grid--double',
+        '.wallet-copy-card--compact',
+        '.wallet-modal-actions--toolbar',
+        '.product-dot--info',
+        '.content-card--warning',
+        '.wallet-affiliate-person-row'
+    ];
+
+    for (const marker of walletCssMarkers) {
+        assert.equal(walletCssSource.includes(marker), true, `css/wallet.css should contain ${marker}`);
     }
 });
 
