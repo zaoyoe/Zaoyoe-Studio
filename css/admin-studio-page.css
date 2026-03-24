@@ -544,6 +544,472 @@ body.admin-access-pending,
                             font-size: 12px;
                         }
 
+                        .shop-inventory-empty-cell {
+                            padding: 40px;
+                            text-align: center;
+                            color: rgba(255, 255, 255, 0.4);
+                        }
+
+                        .shop-inventory-empty-cell--error {
+                            padding: 30px;
+                            color: #ef4444;
+                        }
+
+                        .shop-inventory-checkbox-col--hidden {
+                            display: none;
+                        }
+
+                        .shop-inventory-content-chip {
+                            cursor: pointer;
+                            padding: 5px 10px;
+                            border-radius: 6px;
+                            background: rgba(255, 255, 255, 0.03);
+                            transition: all 0.2s ease;
+                            max-width: 200px;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
+                        }
+
+                        .shop-inventory-content-chip:hover {
+                            background: rgba(255, 255, 255, 0.08);
+                        }
+
+                        .shop-inventory-content-chip--copied {
+                            background: rgba(16, 185, 129, 0.2);
+                        }
+
+                        .shop-inventory-copy-feedback {
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                        }
+
+                        .shop-inventory-copy-feedback-icon {
+                            color: #10b981;
+                        }
+
+                        .shop-inventory-created-at {
+                            font-size: 12px;
+                        }
+
+                        .shop-inventory-buyer-email {
+                            font-size: 12px;
+                        }
+
+                        .shop-inventory-buyer-order {
+                            font-size: 11px;
+                            color: #888;
+                        }
+
+                        .shop-inventory-actions {
+                            display: flex;
+                            gap: 5px;
+                        }
+
+                        .shop-inventory-action-btn--danger i {
+                            color: #ef4444;
+                        }
+
+                        .shop-inventory-action-btn--repair i {
+                            color: #e879f9;
+                        }
+
+                        .shop-inventory-status-badge {
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                            padding: 3px 10px;
+                            border-radius: 20px;
+                            font-size: 12px;
+                        }
+
+                        .shop-inventory-status-badge--reserve {
+                            background: rgba(107, 158, 206, 0.2);
+                            color: #bfdbfe;
+                        }
+
+                        .shop-inventory-status-badge--available {
+                            background: rgba(16, 185, 129, 0.2);
+                            color: #34d399;
+                        }
+
+                        .shop-inventory-status-badge--sold {
+                            background: rgba(239, 68, 68, 0.2);
+                            color: #f87171;
+                        }
+
+                        .shop-inventory-status-badge--frozen {
+                            background: rgba(245, 158, 11, 0.2);
+                            color: #fbbf24;
+                        }
+
+                        .shop-inventory-status-badge--fault {
+                            background: rgba(192, 132, 252, 0.2);
+                            color: #e879f9;
+                        }
+
+                        .shop-inventory-status-badge--unknown {
+                            background: rgba(148, 163, 184, 0.15);
+                            color: #cbd5e1;
+                        }
+
+                        .shop-inventory-fault-overlay,
+                        .shop-inventory-detail-overlay {
+                            position: fixed;
+                            inset: 0;
+                            display: flex;
+                            justify-content: center;
+                            align-items: center;
+                            padding: 24px;
+                            background: rgba(0, 0, 0, 0.7);
+                            backdrop-filter: blur(8px);
+                            -webkit-backdrop-filter: blur(8px);
+                            z-index: 9999;
+                        }
+
+                        .shop-inventory-fault-modal,
+                        .shop-inventory-detail-modal {
+                            background: rgba(30, 35, 50, 0.95);
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            border-radius: 16px;
+                            padding: 25px;
+                            box-sizing: border-box;
+                        }
+
+                        .shop-inventory-fault-modal {
+                            width: min(400px, 100%);
+                        }
+
+                        .shop-inventory-fault-title {
+                            margin: 0 0 20px 0;
+                            color: #fff;
+                        }
+
+                        .shop-inventory-fault-title i {
+                            color: #ef4444;
+                        }
+
+                        .shop-inventory-fault-field {
+                            margin-bottom: 15px;
+                        }
+
+                        .shop-inventory-fault-label {
+                            display: block;
+                            color: #888;
+                            font-size: 12px;
+                            margin-bottom: 5px;
+                        }
+
+                        .shop-inventory-fault-textarea {
+                            width: 100%;
+                            background: rgba(0, 0, 0, 0.2);
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            color: #fff;
+                            border-radius: 6px;
+                            padding: 10px;
+                            min-height: 80px;
+                            resize: none;
+                            box-sizing: border-box;
+                        }
+
+                        .shop-inventory-fault-actions {
+                            display: flex;
+                            justify-content: flex-end;
+                            gap: 10px;
+                        }
+
+                        .shop-inventory-fault-btn {
+                            padding: 8px 16px;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            transition: all 0.2s ease;
+                        }
+
+                        .shop-inventory-fault-btn--cancel {
+                            background: none;
+                            border: 1px solid rgba(255, 255, 255, 0.2);
+                            color: #ccc;
+                        }
+
+                        .shop-inventory-fault-btn--cancel:hover {
+                            background: rgba(255, 255, 255, 0.08);
+                            color: #fff;
+                        }
+
+                        .shop-inventory-fault-btn--confirm {
+                            background: #ef4444;
+                            border: none;
+                            color: #fff;
+                        }
+
+                        .shop-inventory-fault-btn--confirm:hover {
+                            filter: brightness(1.08);
+                        }
+
+                        .shop-inventory-detail-modal {
+                            width: min(500px, 100%);
+                            max-height: 80vh;
+                            overflow-y: auto;
+                        }
+
+                        .shop-inventory-detail-header {
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            margin-bottom: 20px;
+                            gap: 12px;
+                        }
+
+                        .shop-inventory-detail-title {
+                            margin: 0;
+                            color: #fff;
+                        }
+
+                        .shop-inventory-detail-title i {
+                            color: #6b9ece;
+                        }
+
+                        .shop-inventory-detail-close {
+                            background: none;
+                            border: none;
+                            color: #888;
+                            font-size: 20px;
+                            cursor: pointer;
+                        }
+
+                        .shop-inventory-detail-close:hover {
+                            color: #fff;
+                        }
+
+                        .shop-inventory-detail-content {
+                            color: #e2e8f0;
+                        }
+
+                        .shop-inventory-detail-loading,
+                        .shop-inventory-detail-error {
+                            text-align: center;
+                            padding: 20px;
+                        }
+
+                        .shop-inventory-detail-error {
+                            color: #ef4444;
+                        }
+
+                        .shop-inventory-detail-section {
+                            margin-bottom: 15px;
+                            border-radius: 12px;
+                            padding: 15px;
+                        }
+
+                        .shop-inventory-detail-section--primary {
+                            background: rgba(255, 255, 255, 0.03);
+                        }
+
+                        .shop-inventory-detail-section-label {
+                            color: #888;
+                            font-size: 12px;
+                            margin-bottom: 5px;
+                        }
+
+                        .shop-inventory-detail-code {
+                            font-family: monospace;
+                            word-break: break-all;
+                            background: rgba(0, 0, 0, 0.2);
+                            padding: 10px;
+                            border-radius: 8px;
+                        }
+
+                        .shop-inventory-detail-inline-btn {
+                            margin-top: 10px;
+                            padding: 6px 15px;
+                            border-radius: 6px;
+                            cursor: pointer;
+                            font-size: 11px;
+                            border: 1px solid transparent;
+                            transition: all 0.2s ease;
+                        }
+
+                        .shop-inventory-detail-inline-btn:hover {
+                            filter: brightness(1.08);
+                        }
+
+                        .shop-inventory-detail-inline-btn--primary {
+                            background: rgba(107, 158, 206, 0.2);
+                            border-color: rgba(107, 158, 206, 0.3);
+                            color: #6b9ece;
+                        }
+
+                        .shop-inventory-detail-inline-btn--warning {
+                            background: rgba(251, 191, 36, 0.1);
+                            border-color: rgba(251, 191, 36, 0.3);
+                            color: #fbbf24;
+                        }
+
+                        .shop-inventory-detail-inline-btn--info {
+                            background: rgba(129, 140, 248, 0.1);
+                            border-color: rgba(129, 140, 248, 0.3);
+                            color: #818cf8;
+                        }
+
+                        .shop-inventory-detail-grid {
+                            display: grid;
+                            grid-template-columns: repeat(2, minmax(0, 1fr));
+                            gap: 10px;
+                            margin-bottom: 15px;
+                        }
+
+                        .shop-inventory-detail-card {
+                            background: rgba(255, 255, 255, 0.03);
+                            border-radius: 8px;
+                            padding: 12px;
+                        }
+
+                        .shop-inventory-detail-card--sold {
+                            background: rgba(239, 68, 68, 0.1);
+                        }
+
+                        .shop-inventory-detail-card-label {
+                            color: #888;
+                            font-size: 11px;
+                        }
+
+                        .shop-inventory-detail-card-value {
+                            font-weight: bold;
+                        }
+
+                        .shop-inventory-detail-card-value--status {
+                            font-weight: 700;
+                        }
+
+                        .shop-inventory-detail-card-value--reserve {
+                            color: #a5b4fc;
+                        }
+
+                        .shop-inventory-detail-card-value--available {
+                            color: #34d399;
+                        }
+
+                        .shop-inventory-detail-card-value--sold {
+                            color: #f87171;
+                        }
+
+                        .shop-inventory-detail-card-value--frozen {
+                            color: #fbbf24;
+                        }
+
+                        .shop-inventory-detail-card-value--fault {
+                            color: #e879f9;
+                        }
+
+                        .shop-inventory-detail-card-value--small {
+                            font-size: 13px;
+                            font-weight: 500;
+                        }
+
+                        .shop-inventory-detail-card-value--mono {
+                            font-family: monospace;
+                        }
+
+                        .shop-inventory-detail-card-value--break {
+                            word-break: break-all;
+                        }
+
+                        .shop-inventory-detail-card-value--strong {
+                            font-weight: 700;
+                        }
+
+                        .shop-inventory-detail-muted {
+                            opacity: 0.7;
+                        }
+
+                        .shop-inventory-detail-alert {
+                            background: rgba(239, 68, 68, 0.1);
+                            border: 1px solid rgba(239, 68, 68, 0.3);
+                            border-radius: 12px;
+                            padding: 15px;
+                            margin-bottom: 15px;
+                        }
+
+                        .shop-inventory-detail-alert-title {
+                            color: #f87171;
+                            font-size: 12px;
+                            margin-bottom: 5px;
+                            font-weight: bold;
+                        }
+
+                        .shop-inventory-detail-alert-body {
+                            color: #fca5a5;
+                            word-break: break-all;
+                        }
+
+                        .shop-inventory-detail-sold-section,
+                        .shop-inventory-detail-related-section {
+                            border-top: 1px solid rgba(255, 255, 255, 0.1);
+                            padding-top: 15px;
+                            margin-top: 15px;
+                        }
+
+                        .shop-inventory-detail-section-heading,
+                        .shop-inventory-detail-related-title {
+                            font-weight: bold;
+                        }
+
+                        .shop-inventory-detail-section-heading {
+                            color: #94a3b8;
+                            margin-bottom: 10px;
+                        }
+
+                        .shop-inventory-detail-related-header {
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            gap: 10px;
+                            margin-bottom: 10px;
+                            flex-wrap: wrap;
+                        }
+
+                        .shop-inventory-detail-section-actions {
+                            display: flex;
+                            gap: 5px;
+                            flex-wrap: wrap;
+                        }
+
+                        .shop-inventory-detail-related-title--warning {
+                            color: #fbbf24;
+                        }
+
+                        .shop-inventory-detail-related-title--info {
+                            color: #818cf8;
+                        }
+
+                        .shop-inventory-detail-entry-list {
+                            max-height: 150px;
+                            overflow-y: auto;
+                        }
+
+                        .shop-inventory-detail-entry {
+                            border-radius: 6px;
+                            padding: 8px 12px;
+                            margin-bottom: 5px;
+                            font-size: 12px;
+                            font-family: monospace;
+                            cursor: pointer;
+                            transition: all 0.2s ease;
+                        }
+
+                        .shop-inventory-detail-entry--warning {
+                            background: rgba(251, 191, 36, 0.1);
+                        }
+
+                        .shop-inventory-detail-entry--info {
+                            background: rgba(99, 102, 241, 0.1);
+                        }
+
+                        .shop-inventory-detail-entry--copied {
+                            background: rgba(16, 185, 129, 0.2);
+                        }
+
                         .shop-order-content-overlay,
                         .shop-refund-modal-overlay {
                             position: fixed;

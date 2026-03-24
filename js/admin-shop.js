@@ -591,10 +591,9 @@ Example output format:
                                 actionEl.innerHTML = originalHtml;
                             }, 1000);
                         } else {
-                            const originalBackground = actionEl.style.background;
-                            actionEl.style.background = 'rgba(16,185,129,0.2)';
+                            actionEl.classList.add('shop-inventory-detail-entry--copied');
                             setTimeout(() => {
-                                actionEl.style.background = originalBackground;
+                                actionEl.classList.remove('shop-inventory-detail-entry--copied');
                             }, 1000);
                         }
                     }).catch((error) => {
@@ -7921,50 +7920,54 @@ Example output format:
 
             // Render table
             if (this.inventoryData.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:rgba(255,255,255,0.4);">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="shop-inventory-empty-cell">暂无数据</td></tr>';
                 return;
             }
 
             tbody.innerHTML = this.inventoryData.map(item => {
                 const statusBadge = this.getStatusBadge(item.status);
                 const createdAt = new Date(item.created_at).toLocaleString('zh-CN');
+                const safeCreatedAt = this.escapeHtml(createdAt);
+                const safeProductName = this.escapeHtml(item.product_name || '-');
+                const safeItemId = this.escapeForAttr(String(item.id || ''));
+                const safeFullContent = this.escapeForAttr(item.content || '');
+                const safeBuyerEmail = this.escapeHtml(item.buyer_email || '-');
+                const safeBuyerOrderId = this.escapeHtml(item.order_id?.slice(0, 8) || '');
                 const buyerInfo = item.status === 'sold'
-                    ? `<div style="font-size:12px;">${item.buyer_email || '-'}</div><div style="font-size:11px;color:#888;">${item.order_id?.slice(0, 8) || ''}</div>`
-                    : '-';
+                    ? `<div class="shop-inventory-buyer-email">${safeBuyerEmail}</div><div class="shop-inventory-buyer-order">${safeBuyerOrderId}</div>`
+                    : '<span class="shop-inventory-empty-action">-</span>';
 
                 // Extract email only (assuming format: email----password----recovery)
-                const emailOnly = item.content.split('----')[0] || item.content;
-
-                // Checkbox visibility
-                const checkboxDisplay = this.isSelectionMode ? '' : 'none';
+                const emailOnly = this.escapeHtml(item.content.split('----')[0] || item.content);
+                const checkboxClass = this.isSelectionMode ? '' : ' shop-inventory-checkbox-col--hidden';
 
                 return `
                     <tr>
-                        <td class="inv-checkbox-col" style="display:${checkboxDisplay}">
-                            <input type="checkbox" class="inv-checkbox" data-id="${item.id}" data-shop-change="inventory-selection-count">
+                        <td class="inv-checkbox-col shop-inventory-checkbox-col${checkboxClass}">
+                            <input type="checkbox" class="inv-checkbox" data-id="${safeItemId}" data-shop-change="inventory-selection-count">
                         </td>
-                        <td>${item.product_name || '-'}</td>
+                        <td>${safeProductName}</td>
                         <td data-shop-action="inventory-toggle-selection-cell">
-                            <div class="content-cell" 
-                                 data-content="${this.escapeForAttr(item.content)}" 
+                            <div class="content-cell shop-inventory-content-chip" 
+                                 data-content="${safeFullContent}" 
                                  data-shop-action="inventory-copy-content"
                                  title="点击复制全部内容&#10;───────────&#10;${this.escapeForAttr(item.content)}"
-                                 style="cursor:pointer; padding:5px 10px; border-radius:6px; background:rgba(255,255,255,0.03); transition:all 0.2s; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                                 >
                                 ${emailOnly}
                             </div>
                         </td>
                         <td>${statusBadge}</td>
-                        <td style="font-size:12px;">${createdAt}</td>
+                        <td class="shop-inventory-created-at">${safeCreatedAt}</td>
                         <td>${buyerInfo}</td>
                         <td>
-                            <div style="display:flex;gap:5px;">
-                                <button data-shop-action="inventory-show-detail" data-inventory-id="${item.id}" class="btn-icon-sm" title="详情"><i class="fas fa-info-circle"></i></button>
-                                ${item.status === 'sold' ? `<button data-shop-action="inventory-open-fault-modal" data-inventory-id="${item.id}" class="btn-icon-sm" title="标记故障"><i class="fas fa-exclamation-triangle" style="color:#ef4444;"></i></button>` : ''}
-                                ${item.status !== 'sold' ? `<button data-shop-action="inventory-delete-item" data-inventory-id="${item.id}" class="btn-icon-sm" title="删除"><i class="fas fa-trash"></i></button>` : ''}
-                                ${item.status === 'available' ? `<button data-shop-action="inventory-freeze-item" data-inventory-id="${item.id}" data-freeze="true" class="btn-icon-sm" title="冻结"><i class="fas fa-ban"></i></button>` : ''}
-                                ${item.status === 'frozen' ? `<button data-shop-action="inventory-freeze-item" data-inventory-id="${item.id}" data-freeze="false" class="btn-icon-sm" title="解冻"><i class="fas fa-check"></i></button>` : ''}
-                                ${item.status === 'reserve' ? `<button data-shop-action="inventory-release-item" data-inventory-id="${item.id}" class="btn-icon-sm" title="上架"><i class="fas fa-rocket"></i></button>` : ''}
-                                ${item.status === 'fault' ? `<button data-shop-action="inventory-release-item" data-inventory-id="${item.id}" class="btn-icon-sm" title="修复/上架"><i class="fas fa-wrench" style="color:#e879f9;"></i></button>` : ''}
+                            <div class="shop-inventory-actions">
+                                <button data-shop-action="inventory-show-detail" data-inventory-id="${safeItemId}" class="btn-icon-sm shop-inventory-action-btn" title="详情"><i class="fas fa-info-circle"></i></button>
+                                ${item.status === 'sold' ? `<button data-shop-action="inventory-open-fault-modal" data-inventory-id="${safeItemId}" class="btn-icon-sm shop-inventory-action-btn shop-inventory-action-btn--danger" title="标记故障"><i class="fas fa-exclamation-triangle"></i></button>` : ''}
+                                ${item.status !== 'sold' ? `<button data-shop-action="inventory-delete-item" data-inventory-id="${safeItemId}" class="btn-icon-sm shop-inventory-action-btn" title="删除"><i class="fas fa-trash"></i></button>` : ''}
+                                ${item.status === 'available' ? `<button data-shop-action="inventory-freeze-item" data-inventory-id="${safeItemId}" data-freeze="true" class="btn-icon-sm shop-inventory-action-btn" title="冻结"><i class="fas fa-ban"></i></button>` : ''}
+                                ${item.status === 'frozen' ? `<button data-shop-action="inventory-freeze-item" data-inventory-id="${safeItemId}" data-freeze="false" class="btn-icon-sm shop-inventory-action-btn" title="解冻"><i class="fas fa-check"></i></button>` : ''}
+                                ${item.status === 'reserve' ? `<button data-shop-action="inventory-release-item" data-inventory-id="${safeItemId}" class="btn-icon-sm shop-inventory-action-btn" title="上架"><i class="fas fa-rocket"></i></button>` : ''}
+                                ${item.status === 'fault' ? `<button data-shop-action="inventory-release-item" data-inventory-id="${safeItemId}" class="btn-icon-sm shop-inventory-action-btn shop-inventory-action-btn--repair" title="修复/上架"><i class="fas fa-wrench"></i></button>` : ''}
                             </div>
                         </td>
                     </tr>
@@ -7984,19 +7987,29 @@ Example output format:
 
         } catch (err) {
             console.error('[ShopAdmin] Load inventory error:', err);
-            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:30px;color:#ef4444;">加载失败: ${err.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="shop-inventory-empty-cell shop-inventory-empty-cell--error">加载失败: ${this.escapeHtml(err.message || '未知错误')}</td></tr>`;
         }
     },
 
-    getStatusBadge: function (status) {
+    getInventoryStatusMeta: function (status) {
         const badges = {
-            'reserve': '<span style="background:rgba(107,158,206,0.2);color:#bfdbfe;padding:3px 10px;border-radius:20px;font-size:12px;"><i class="fas fa-archive"></i> 储备</span>',
-            'available': '<span style="background:rgba(16,185,129,0.2);color:#34d399;padding:3px 10px;border-radius:20px;font-size:12px;"><i class="fas fa-check-circle"></i> 在售</span>',
-            'sold': '<span style="background:rgba(239,68,68,0.2);color:#f87171;padding:3px 10px;border-radius:20px;font-size:12px;"><i class="fas fa-shopping-cart"></i> 已售</span>',
-            'frozen': '<span style="background:rgba(245,158,11,0.2);color:#fbbf24;padding:3px 10px;border-radius:20px;font-size:12px;"><i class="fas fa-ban"></i> 冻结</span>',
-            'fault': '<span style="background:rgba(192,132,252,0.2);color:#e879f9;padding:3px 10px;border-radius:20px;font-size:12px;"><i class="fas fa-exclamation-triangle"></i> 故障</span>' // Purple badge
+            reserve: { label: '储备', icon: 'fa-archive', modifier: 'reserve' },
+            available: { label: '在售', icon: 'fa-check-circle', modifier: 'available' },
+            sold: { label: '已售', icon: 'fa-shopping-cart', modifier: 'sold' },
+            frozen: { label: '冻结', icon: 'fa-ban', modifier: 'frozen' },
+            fault: { label: '故障', icon: 'fa-exclamation-triangle', modifier: 'fault' }
         };
-        return badges[status] || status;
+
+        return badges[status] || {
+            label: status || '未知',
+            icon: 'fa-circle',
+            modifier: 'unknown'
+        };
+    },
+
+    getStatusBadge: function (status) {
+        const meta = this.getInventoryStatusMeta(status);
+        return `<span class="shop-inventory-status-badge shop-inventory-status-badge--${meta.modifier}"><i class="fas ${meta.icon}"></i> ${this.escapeHtml(meta.label)}</span>`;
     },
 
     toggleSelectAll: function (checkbox) {
@@ -8074,12 +8087,11 @@ Example output format:
         const content = element.dataset.content;
         navigator.clipboard.writeText(content).then(() => {
             // Visual feedback
-            const originalBg = element.style.background;
             const originalText = element.textContent;
-            element.style.background = 'rgba(16, 185, 129, 0.2)';
-            element.innerHTML = '<i class="fas fa-check" style="color:#10b981;"></i> 已复制';
+            element.classList.add('shop-inventory-content-chip--copied');
+            element.innerHTML = '<span class="shop-inventory-copy-feedback"><i class="fas fa-check shop-inventory-copy-feedback-icon"></i> 已复制</span>';
             setTimeout(() => {
-                element.style.background = originalBg;
+                element.classList.remove('shop-inventory-content-chip--copied');
                 element.textContent = originalText;
             }, 1000);
         }).catch(err => {
@@ -8113,18 +8125,18 @@ Example output format:
     // Open Fault Marking Modal
     openFaultModal: function (itemId) {
         const modalHtml = `
-            <div id="markFaultModal" data-shop-overlay-close="dynamic-modal" data-modal-id="markFaultModal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;display:flex;justify-content:center;align-items:center;">
-                <div style="background:rgba(30,35,50,0.95);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:25px;width:400px;">
-                    <h3 style="margin:0 0 20px 0;color:#fff;"><i class="fas fa-exclamation-triangle" style="color:#ef4444;"></i> 标记故障</h3>
+            <div id="markFaultModal" data-shop-overlay-close="dynamic-modal" data-modal-id="markFaultModal" class="shop-inventory-fault-overlay">
+                <div class="shop-inventory-fault-modal">
+                    <h3 class="shop-inventory-fault-title"><i class="fas fa-exclamation-triangle"></i> 标记故障</h3>
                     
-                    <div style="margin-bottom:15px;">
-                        <label style="display:block;color:#888;font-size:12px;margin-bottom:5px;">故障说明 / 备注</label>
-                        <textarea id="faultRemarkInput" style="width:100%;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);color:#fff;border-radius:6px;padding:10px;height:80px;resize:none;" placeholder="请输入故障原因..."></textarea>
+                    <div class="shop-inventory-fault-field">
+                        <label class="shop-inventory-fault-label">故障说明 / 备注</label>
+                        <textarea id="faultRemarkInput" class="shop-inventory-fault-textarea" placeholder="请输入故障原因..."></textarea>
                     </div>
                     
-                    <div style="display:flex;justify-content:flex-end;gap:10px;">
-                        <button type="button" data-shop-action="fault-modal-close" data-modal-id="markFaultModal" style="padding:8px 16px;background:none;border:1px solid rgba(255,255,255,0.2);color:#ccc;border-radius:6px;cursor:pointer;">取消</button>
-                        <button type="button" data-shop-action="fault-modal-submit" data-inventory-id="${itemId}" style="padding:8px 16px;background:#ef4444;border:none;color:#fff;border-radius:6px;cursor:pointer;">确认标记</button>
+                    <div class="shop-inventory-fault-actions">
+                        <button type="button" data-shop-action="fault-modal-close" data-modal-id="markFaultModal" class="shop-inventory-fault-btn shop-inventory-fault-btn--cancel">取消</button>
+                        <button type="button" data-shop-action="fault-modal-submit" data-inventory-id="${this.escapeForAttr(String(itemId || ''))}" class="shop-inventory-fault-btn shop-inventory-fault-btn--confirm">确认标记</button>
                     </div>
                 </div>
             </div>
@@ -8161,19 +8173,16 @@ Example output format:
 
     // Show inventory detail modal
     showInventoryDetail: async function (inventoryId) {
-        // Find item in current data first
-        let item = this.inventoryData.find(i => i.id === inventoryId);
-
         // Build modal content
         let modalHtml = `
-            <div id="inventoryDetailModal" data-shop-overlay-close="dynamic-modal" data-modal-id="inventoryDetailModal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;display:flex;justify-content:center;align-items:center;">
-                <div style="background:rgba(30,35,50,0.95);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:25px;width:500px;max-width:90%;max-height:80vh;overflow-y:auto;" class="custom-scrollbar">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-                        <h3 style="margin:0;color:#fff;"><i class="fas fa-info-circle" style="color:#6b9ece;"></i> 库存详情</h3>
-                        <button type="button" data-shop-action="inventory-detail-close" data-modal-id="inventoryDetailModal" style="background:none;border:none;color:#888;font-size:20px;cursor:pointer;">&times;</button>
+            <div id="inventoryDetailModal" data-shop-overlay-close="dynamic-modal" data-modal-id="inventoryDetailModal" class="shop-inventory-detail-overlay">
+                <div class="shop-inventory-detail-modal custom-scrollbar">
+                    <div class="shop-inventory-detail-header">
+                        <h3 class="shop-inventory-detail-title"><i class="fas fa-info-circle"></i> 库存详情</h3>
+                        <button type="button" data-shop-action="inventory-detail-close" data-modal-id="inventoryDetailModal" class="shop-inventory-detail-close" aria-label="关闭">&times;</button>
                     </div>
-                    <div id="detailContent" style="color:#e2e8f0;">
-                        <div style="text-align:center;padding:20px;"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>
+                    <div id="detailContent" class="shop-inventory-detail-content">
+                        <div class="shop-inventory-detail-loading"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>
                     </div>
                 </div>
             </div>
@@ -8273,138 +8282,139 @@ Example output format:
             }
 
             // Build detail content
-            const statusMap = { reserve: '储备', available: '在售', sold: '已售', frozen: '冻结' };
-            const statusColors = { reserve: '#a5b4fc', available: '#34d399', sold: '#f87171', frozen: '#fbbf24' };
+            const statusMeta = this.getInventoryStatusMeta(invData.status);
+            const safeMainContent = this.escapeHtml(invData.content || '');
+            const safeProductName = this.escapeHtml(invData.shop_products?.name || '-');
+            const safeStatusLabel = this.escapeHtml(statusMeta.label);
+            const safeCreatedAt = this.escapeHtml(new Date(invData.created_at).toLocaleString('zh-CN'));
+            const safeBatchId = this.escapeHtml(invData.batch_id || '-');
+            const safeRemark = this.escapeHtml(invData.remark || '');
+
+            const renderInventoryDetailListActions = (items, toneClass, filename) => {
+                const joined = items.map((entry) => entry.shop_inventory?.content || '').join('\n');
+                return `
+                    <div class="shop-inventory-detail-section-actions">
+                        <button type="button" data-shop-action="inventory-detail-copy-list" data-content="${this.escapeForAttr(joined)}" class="shop-inventory-detail-inline-btn ${toneClass}">
+                            <i class="fas fa-copy"></i> 复制
+                        </button>
+                        <button type="button" data-shop-action="inventory-detail-export-list" data-content="${this.escapeForAttr(joined)}" data-filename="${this.escapeForAttr(filename)}" class="shop-inventory-detail-inline-btn ${toneClass}">
+                            <i class="fas fa-download"></i> 导出
+                        </button>
+                    </div>
+                `;
+            };
+
+            const renderInventoryDetailEntries = (items, entryClass) => `
+                <div class="shop-inventory-detail-entry-list custom-scrollbar">
+                    ${items.map((entry) => {
+                    const content = entry.shop_inventory?.content || '';
+                    const display = this.escapeHtml(content.split('----')[0] || content);
+                    return `
+                            <div class="shop-inventory-detail-entry ${entryClass}"
+                                 data-shop-action="inventory-detail-copy-entry" data-content="${this.escapeForAttr(content)}"
+                                 title="点击复制">
+                                ${display}
+                            </div>
+                        `;
+                }).join('')}
+                </div>
+            `;
 
             let detailHtml = `
-                <div style="background:rgba(255,255,255,0.03);border-radius:12px;padding:15px;margin-bottom:15px;">
-                    <div style="color:#888;font-size:12px;margin-bottom:5px;">账号内容</div>
-                    <div style="font-family:monospace;word-break:break-all;background:rgba(0,0,0,0.2);padding:10px;border-radius:8px;">${invData.content}</div>
+                <div class="shop-inventory-detail-section shop-inventory-detail-section--primary">
+                    <div class="shop-inventory-detail-section-label">账号内容</div>
+                    <div class="shop-inventory-detail-code">${safeMainContent}</div>
                     <button type="button" data-shop-action="inventory-detail-copy-main" data-content="${this.escapeForAttr(invData.content)}"
-                        style="margin-top:10px;background:rgba(107,158,206,0.2);border:1px solid rgba(107,158,206,0.3);color:#6b9ece;padding:6px 15px;border-radius:6px;cursor:pointer;">
+                        class="shop-inventory-detail-inline-btn shop-inventory-detail-inline-btn--primary">
                         <i class="fas fa-copy"></i> 复制
                     </button>
                 </div>
 
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:15px;">
-                    <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:12px;">
-                        <div style="color:#888;font-size:11px;">商品</div>
-                        <div style="font-weight:bold;">${invData.shop_products?.name || '-'}</div>
+                <div class="shop-inventory-detail-grid">
+                    <div class="shop-inventory-detail-card">
+                        <div class="shop-inventory-detail-card-label">商品</div>
+                        <div class="shop-inventory-detail-card-value">${safeProductName}</div>
                     </div>
-                    <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:12px;">
-                        <div style="color:#888;font-size:11px;">状态</div>
-                        <div style="color:${statusColors[invData.status]};font-weight:bold;">${statusMap[invData.status] || invData.status}</div>
+                    <div class="shop-inventory-detail-card">
+                        <div class="shop-inventory-detail-card-label">状态</div>
+                        <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--status shop-inventory-detail-card-value--${statusMeta.modifier}">${safeStatusLabel}</div>
                     </div>
-                    <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:12px;">
-                        <div style="color:#888;font-size:11px;">导入时间</div>
-                        <div style="font-size:13px;">${new Date(invData.created_at).toLocaleString('zh-CN')}</div>
+                    <div class="shop-inventory-detail-card">
+                        <div class="shop-inventory-detail-card-label">导入时间</div>
+                        <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small">${safeCreatedAt}</div>
                     </div>
-                    <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:12px;">
-                        <div style="color:#888;font-size:11px;">批次</div>
-                        <div style="font-size:13px;">${invData.batch_id || '-'}</div>
+                    <div class="shop-inventory-detail-card">
+                        <div class="shop-inventory-detail-card-label">批次</div>
+                        <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small">${safeBatchId}</div>
                     </div>
-                </div>
                 </div>
             `;
 
-            // Fault Remark Display
             if (invData.remark) {
                 detailHtml += `
-                    <div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:15px;margin-bottom:15px;">
-                        <div style="color:#f87171;font-size:12px;margin-bottom:5px;font-weight:bold;"><i class="fas fa-exclamation-triangle"></i> 故障/备注</div>
-                        <div style="color:#fca5a5;word-break:break-all;">${this.escapeHtml(invData.remark)}</div>
+                    <div class="shop-inventory-detail-alert">
+                        <div class="shop-inventory-detail-alert-title"><i class="fas fa-exclamation-triangle"></i> 故障/备注</div>
+                        <div class="shop-inventory-detail-alert-body">${safeRemark}</div>
                     </div>
                 `;
             }
 
-            // Add order info if sold or frozen (with buyer)
             if (invData.buyer_id || invData.status === 'sold') {
                 const buyerEmail = orderData?.profiles?.email || invData.buyer_email || invData.profiles?.email || '-';
                 const orderId = orderData?.id || invData.order_id || null;
                 const payTime = orderData?.created_at || invData.sold_at;
                 const price = orderData?.price_paid !== undefined ? orderData.price_paid : '-';
+                const safeBuyerEmail = this.escapeHtml(buyerEmail);
+                const safeOrderId = this.escapeHtml(orderId || '');
+                const safePayTime = this.escapeHtml(payTime ? new Date(payTime).toLocaleString('zh-CN') : '-');
+                const safePrice = this.escapeHtml(String(price));
+
                 detailHtml += `
-                    <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:15px;margin-top:15px;">
-                        <div style="color:#94a3b8;font-weight:bold;margin-bottom:10px;"><i class="fas fa-shopping-cart"></i> 售出信息</div>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                            <div style="background:rgba(239,68,68,0.1);border-radius:8px;padding:12px;">
-                                <div style="color:#888;font-size:11px;">购买者</div>
-                                <div style="font-size:13px;word-break:break-all;">${buyerEmail}</div>
+                    <div class="shop-inventory-detail-sold-section">
+                        <div class="shop-inventory-detail-section-heading"><i class="fas fa-shopping-cart"></i> 售出信息</div>
+                        <div class="shop-inventory-detail-grid shop-inventory-detail-grid--sold">
+                            <div class="shop-inventory-detail-card shop-inventory-detail-card--sold">
+                                <div class="shop-inventory-detail-card-label">购买者</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small shop-inventory-detail-card-value--break">${safeBuyerEmail}</div>
                             </div>
-                            <div style="background:rgba(239,68,68,0.1);border-radius:8px;padding:12px;">
-                                <div style="color:#888;font-size:11px;">订单号</div>
-                                <div style="font-size:12px;font-family:monospace;word-break:break-all;" title="${orderId || ''}">
-                                    ${orderId ? orderId : '<span style="opacity:0.7">未找到关联订单</span>'}
+                            <div class="shop-inventory-detail-card shop-inventory-detail-card--sold">
+                                <div class="shop-inventory-detail-card-label">订单号</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--mono shop-inventory-detail-card-value--break" title="${safeOrderId}">
+                                    ${orderId ? safeOrderId : '<span class="shop-inventory-detail-muted">未找到关联订单</span>'}
                                 </div>
                             </div>
-                            <div style="background:rgba(239,68,68,0.1);border-radius:8px;padding:12px;">
-                                <div style="color:#888;font-size:11px;">下单时间</div>
-                                <div style="font-size:13px;">${payTime ? new Date(payTime).toLocaleString('zh-CN') : '-'}</div>
+                            <div class="shop-inventory-detail-card shop-inventory-detail-card--sold">
+                                <div class="shop-inventory-detail-card-label">下单时间</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small">${safePayTime}</div>
                             </div>
-                            <div style="background:rgba(239,68,68,0.1);border-radius:8px;padding:12px;">
-                                <div style="color:#888;font-size:11px;">支付积分</div>
-                                <div style="font-size:13px;font-weight:bold;">${price}</div>
+                            <div class="shop-inventory-detail-card shop-inventory-detail-card--sold">
+                                <div class="shop-inventory-detail-card-label">支付积分</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small shop-inventory-detail-card-value--strong">${safePrice}</div>
                             </div>
                         </div>
                     </div>
                 `;
 
-                // Add Same Order Items
                 if (sameOrderItems.length > 0) {
                     detailHtml += `
-                        <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:15px;margin-top:15px;">
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                                <div style="color:#fbbf24;font-weight:bold;"><i class="fas fa-layer-group"></i> 本次交易关联商品 (${sameOrderItems.length})</div>
-                                <div style="display:flex;gap:5px;">
-                                    <button type="button" data-shop-action="inventory-detail-copy-list" data-content="${this.escapeForAttr(sameOrderItems.map(i => i.shop_inventory?.content || '').join('\n'))}"
-                                        style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);color:#fbbf24;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">
-                                        <i class="fas fa-copy"></i> 复制
-                                    </button>
-                                    <button type="button" data-shop-action="inventory-detail-export-list" data-content="${this.escapeForAttr(sameOrderItems.map(i => i.shop_inventory?.content || '').join('\n'))}" data-filename="sameday_orders.txt"
-                                        style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);color:#fbbf24;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">
-                                        <i class="fas fa-download"></i> 导出
-                                    </button>
-                                </div>
+                        <div class="shop-inventory-detail-related-section">
+                            <div class="shop-inventory-detail-related-header">
+                                <div class="shop-inventory-detail-related-title shop-inventory-detail-related-title--warning"><i class="fas fa-layer-group"></i> 本次交易关联商品 (${sameOrderItems.length})</div>
+                                ${renderInventoryDetailListActions(sameOrderItems, 'shop-inventory-detail-inline-btn--warning', 'sameday_orders.txt')}
                             </div>
-                            <div style="max-height:150px;overflow-y:auto;" class="custom-scrollbar">
-                                ${sameOrderItems.map(r => `
-                                    <div style="background:rgba(251,191,36,0.1);border-radius:6px;padding:8px 12px;margin-bottom:5px;font-size:12px;font-family:monospace;cursor:pointer;transition:all 0.2s;"
-                                         data-shop-action="inventory-detail-copy-entry" data-content="${this.escapeForAttr(r.shop_inventory?.content || '')}"
-                                         title="点击复制">
-                                        ${this.escapeHtml((r.shop_inventory?.content || '').split('----')[0])}
-                                    </div>
-                                `).join('')}
-                            </div>
+                            ${renderInventoryDetailEntries(sameOrderItems, 'shop-inventory-detail-entry--warning')}
                         </div>
                     `;
                 }
 
-                // Add History Items
                 if (historyItems.length > 0) {
                     detailHtml += `
-                        <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:15px;margin-top:15px;">
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                                <div style="color:#818cf8;font-weight:bold;"><i class="fas fa-history"></i> 该买家购买历史 (${historyItems.length})</div>
-                                <div style="display:flex;gap:5px;">
-                                    <button type="button" data-shop-action="inventory-detail-copy-list" data-content="${this.escapeForAttr(historyItems.map(i => i.shop_inventory?.content || '').join('\n'))}"
-                                        style="background:rgba(129,140,248,0.1);border:1px solid rgba(129,140,248,0.3);color:#818cf8;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">
-                                        <i class="fas fa-copy"></i> 复制
-                                    </button>
-                                    <button type="button" data-shop-action="inventory-detail-export-list" data-content="${this.escapeForAttr(historyItems.map(i => i.shop_inventory?.content || '').join('\n'))}" data-filename="order_history.txt"
-                                        style="background:rgba(129,140,248,0.1);border:1px solid rgba(129,140,248,0.3);color:#818cf8;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">
-                                        <i class="fas fa-download"></i> 导出
-                                    </button>
-                                </div>
+                        <div class="shop-inventory-detail-related-section">
+                            <div class="shop-inventory-detail-related-header">
+                                <div class="shop-inventory-detail-related-title shop-inventory-detail-related-title--info"><i class="fas fa-history"></i> 该买家购买历史 (${historyItems.length})</div>
+                                ${renderInventoryDetailListActions(historyItems, 'shop-inventory-detail-inline-btn--info', 'order_history.txt')}
                             </div>
-                            <div style="max-height:150px;overflow-y:auto;" class="custom-scrollbar">
-                                ${historyItems.map(r => `
-                                    <div style="background:rgba(99,102,241,0.1);border-radius:6px;padding:8px 12px;margin-bottom:5px;font-size:12px;font-family:monospace;cursor:pointer;transition:all 0.2s;"
-                                         data-shop-action="inventory-detail-copy-entry" data-content="${this.escapeForAttr(r.shop_inventory?.content || '')}"
-                                         title="点击复制">
-                                        ${this.escapeHtml((r.shop_inventory?.content || '').split('----')[0])}
-                                    </div>
-                                `).join('')}
-                            </div>
+                            ${renderInventoryDetailEntries(historyItems, 'shop-inventory-detail-entry--info')}
                         </div>
                     `;
                 }
@@ -8414,7 +8424,7 @@ Example output format:
 
         } catch (err) {
             console.error('[ShopAdmin] Detail error:', err);
-            document.getElementById('detailContent').innerHTML = `<div style="color:#ef4444;text-align:center;">加载失败: ${err.message}</div>`;
+            document.getElementById('detailContent').innerHTML = `<div class="shop-inventory-detail-error">加载失败: ${this.escapeHtml(err.message || '未知错误')}</div>`;
         }
     },
 

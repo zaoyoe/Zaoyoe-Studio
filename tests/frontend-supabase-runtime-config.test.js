@@ -378,7 +378,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
         ['shop.html', 'css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_ORDER_RUNTIME_STYLES_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_INVENTORY_RUNTIME_STYLES_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -486,7 +486,7 @@ test('admin studio page no longer embeds inline style attributes', () => {
     const source = readRepoFile('admin-studio.html');
 
     assert.equal(
-        source.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_ORDER_RUNTIME_STYLES_1'),
+        source.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_INVENTORY_RUNTIME_STYLES_1'),
         true,
         'admin-studio.html should load the updated admin studio page stylesheet'
     );
@@ -1861,6 +1861,55 @@ test('shop admin order workflows externalize runtime table-row and modal styling
         '.shop-refund-status-grid',
         '.shop-refund-modal-textarea',
         '.shop-order-action-btn--refund'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
+    }
+});
+
+test('shop admin inventory workflows externalize runtime table and modal styling', () => {
+    const shopSource = readRepoFile('js/admin-shop.js');
+    const shopStyles = readRepoFile('css/admin-studio-page.css');
+
+    const removedRuntimeMarkers = [
+        'style="display:${checkboxDisplay}"',
+        'style="cursor:pointer; padding:5px 10px; border-radius:6px; background:rgba(255,255,255,0.03); transition:all 0.2s; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"',
+        'style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;display:flex;justify-content:center;align-items:center;"',
+        "'reserve': '<span style=\"background:rgba(107,158,206,0.2);color:#bfdbfe;padding:3px 10px;border-radius:20px;font-size:12px;\"",
+        'style="background:rgba(30,35,50,0.95);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:25px;width:500px;max-width:90%;max-height:80vh;overflow-y:auto;"',
+        'style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:15px;margin-bottom:15px;"'
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(shopSource.includes(marker), false, `js/admin-shop.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'shop-inventory-checkbox-col--hidden',
+        'shop-inventory-content-chip',
+        'shop-inventory-status-badge',
+        'shop-inventory-fault-overlay',
+        'shop-inventory-detail-overlay',
+        'shop-inventory-detail-inline-btn',
+        'shop-inventory-detail-entry',
+        'shop-inventory-detail-card-value--status',
+        'shop-inventory-copy-feedback'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.shop-inventory-empty-cell',
+        '.shop-inventory-content-chip',
+        '.shop-inventory-status-badge',
+        '.shop-inventory-fault-overlay',
+        '.shop-inventory-detail-overlay',
+        '.shop-inventory-detail-inline-btn',
+        '.shop-inventory-detail-entry',
+        '.shop-inventory-copy-feedback'
     ];
 
     for (const marker of styleMarkers) {
