@@ -136,15 +136,12 @@ const ShopAdmin = {
 
         // Show site hint
         if (hint) {
-            if (filter === 'all') {
-                hint.style.display = 'block';
-                hint.innerHTML = '⚠️ 当前为“全部”模式，默认编辑 <strong>CN</strong> 商品信息。切换站点可编辑对应站点的名称/价格/描述。';
-            } else {
-                hint.style.display = 'block';
-                hint.innerHTML = isCN
+            hint.classList.add('shop-product-site-hint--visible');
+            hint.innerHTML = filter === 'all'
+                ? '⚠️ 当前为“全部”模式，默认编辑 <strong>CN</strong> 商品信息。切换站点可编辑对应站点的名称/价格/描述。'
+                : (isCN
                     ? '🇨🇳 正在编辑 <strong>CN</strong> 商品信息'
-                    : '🌍 Editing <strong>EN</strong> product info';
-            }
+                    : '🌍 Editing <strong>EN</strong> product info');
         }
     },
 
@@ -217,14 +214,8 @@ const ShopAdmin = {
     refreshFormSectionHeight(wrapperId) {
         const wrapper = document.getElementById(wrapperId);
         if (!wrapper) return;
-
-        const currentMaxHeight = Number.parseFloat(wrapper.style.maxHeight || '0');
-        if (currentMaxHeight <= 0 && wrapper.style.opacity !== '1') return;
-
-        requestAnimationFrame(() => {
-            const nextHeight = Math.max(wrapper.scrollHeight + 12, 220);
-            wrapper.style.maxHeight = `${nextHeight}px`;
-        });
+        if (!wrapper.classList.contains('shop-form-section--expanded')) return;
+        wrapper.classList.add('shop-form-section--expanded');
     },
 
     // Translate Chinese text to English using Gemini API
@@ -317,22 +308,10 @@ Example output format:
         const allStatusTabs = document.querySelectorAll('.status-filter');
         allStatusTabs.forEach(t => {
             t.classList.remove('active');
-            t.style.background = 'rgba(255,255,255,0.03)';
-            t.style.borderColor = 'rgba(255,255,255,0.1)';
-            t.style.color = 'rgba(255,255,255,0.5)';
 
             // If this tab matches the selected status, activate it
             if (t.dataset.status === status) {
                 t.classList.add('active');
-                if (status === 'active') {
-                    t.style.background = 'rgba(74, 222, 128, 0.2)';
-                    t.style.borderColor = 'rgba(74, 222, 128, 0.5)';
-                    t.style.color = '#4ade80';
-                } else {
-                    t.style.background = 'rgba(239, 68, 68, 0.2)';
-                    t.style.borderColor = 'rgba(239, 68, 68, 0.5)';
-                    t.style.color = '#ef4444';
-                }
             }
         });
 
@@ -346,20 +325,20 @@ Example output format:
         const totalPages = Math.ceil(total / pageSize) || 1;
 
         container.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 15px;">
+            <div class="pagination-shell">
                 <div class="pagination-control">
-                    <button class="pagination-btn" data-shop-action="pagination-go" data-pagination-target="${loadFuncStr}" data-pagination-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''} style="font-family:'Outfit',sans-serif;font-weight:300;font-size:20px;">
+                    <button class="pagination-btn pagination-btn--step" data-shop-action="pagination-go" data-pagination-target="${loadFuncStr}" data-pagination-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''}>
                         −
                     </button>
                     
                     <input type="number" class="pagination-input" 
                         value="${currentPage}" min="1" max="${totalPages}" data-shop-change="pagination-go" data-pagination-target="${loadFuncStr}" data-pagination-max="${totalPages}">
                     
-                    <button class="pagination-btn" data-shop-action="pagination-go" data-pagination-target="${loadFuncStr}" data-pagination-page="${currentPage + 1}" ${currentPage >= totalPages ? 'disabled' : ''} style="font-family:'Outfit',sans-serif;font-weight:300;font-size:20px;">
+                    <button class="pagination-btn pagination-btn--step" data-shop-action="pagination-go" data-pagination-target="${loadFuncStr}" data-pagination-page="${currentPage + 1}" ${currentPage >= totalPages ? 'disabled' : ''}>
                         +
                     </button>
                 </div>
-                <div class="pagination-total" style="margin:0;">共 ${totalPages} 页 / ${total} 条</div>
+                <div class="pagination-total pagination-total--compact">共 ${totalPages} 页 / ${total} 条</div>
             </div>
         `;
     },
@@ -383,7 +362,6 @@ Example output format:
     hideProductModal: function () {
         const modal = document.getElementById('productModal');
         if (modal) {
-            modal.style.display = 'none';
             modal.classList.remove('active');
         }
     },
@@ -591,10 +569,9 @@ Example output format:
                                 actionEl.innerHTML = originalHtml;
                             }, 1000);
                         } else {
-                            const originalBackground = actionEl.style.background;
-                            actionEl.style.background = 'rgba(16,185,129,0.2)';
+                            actionEl.classList.add('shop-inventory-detail-entry--copied');
                             setTimeout(() => {
-                                actionEl.style.background = originalBackground;
+                                actionEl.classList.remove('shop-inventory-detail-entry--copied');
                             }, 1000);
                         }
                     }).catch((error) => {
@@ -2581,9 +2558,7 @@ Example output format:
         const helper = document.createElement('textarea');
         helper.value = text;
         helper.setAttribute('readonly', '');
-        helper.style.position = 'fixed';
-        helper.style.opacity = '0';
-        helper.style.pointerEvents = 'none';
+        helper.className = 'shop-admin-clipboard-helper';
         document.body.appendChild(helper);
         helper.select();
         helper.setSelectionRange(0, helper.value.length);
@@ -3076,7 +3051,7 @@ Example output format:
         // Icon Logic
         const iconBox = document.getElementById('previewIconBox');
         if (iconInput.startsWith('http') || iconInput.startsWith('data:image')) {
-            iconBox.innerHTML = `<img src="${iconInput}" style="width:100%; height:100%; object-fit:cover; border-radius:12px;">`;
+            iconBox.innerHTML = `<img src="${iconInput}" class="shop-admin-preview-icon-image" alt="商品封面预览">`;
         } else {
             // Assume FontAwesome class
             iconBox.innerHTML = `<i class="${iconInput}"></i>`;
@@ -3091,7 +3066,7 @@ Example output format:
         const iconBox = document.querySelector('.upload-box');
 
         uploadText.textContent = '⏳ 压缩上传中...';
-        iconBox.style.opacity = '0.7';
+        iconBox.classList.add('upload-box--busy');
 
         try {
             // 1. Compress Image
@@ -3147,7 +3122,7 @@ Example output format:
             uploadText.textContent = '✅ 上传成功';
             setTimeout(() => {
                 uploadText.textContent = '点击更换图片 (支持 JPG, PNG, WebP)';
-                iconBox.style.opacity = '1';
+                iconBox.classList.remove('upload-box--busy');
             }, 2000);
 
             console.log('✅ Product image uploaded to R2:', imageUrl);
@@ -3156,7 +3131,7 @@ Example output format:
             console.error('Upload failed:', err);
             alert('上传失败: ' + err.message);
             uploadText.textContent = '❌ 上传失败';
-            iconBox.style.opacity = '1';
+            iconBox.classList.remove('upload-box--busy');
         }
     },
 
@@ -3224,7 +3199,7 @@ Example output format:
             let optionsHtml = categories.map(cat => {
                 const color = cat.color || '#6b9ece';
                 return `<div class="custom-category-option" data-shop-action="product-select-category" data-category-name="${this.escapeForAttr(cat.name)}" data-category-color="${this.escapeForAttr(color)}">
-                    <span class="option-dot" style="background: ${color}"></span>
+                    <span class="option-dot ${this.buildCategoryColorClass(color)}"></span>
                     <span>${cat.name}</span>
                 </div>`;
             }).join('');
@@ -3232,25 +3207,25 @@ Example output format:
             // If no categories, add default
             if (categories.length === 0) {
                 optionsHtml = `<div class="custom-category-option" data-shop-action="product-select-category" data-category-name="other" data-category-color="#9aa0a6">
-                    <span class="option-dot" style="background: #9aa0a6"></span>
+                    <span class="option-dot ${this.buildCategoryColorClass('#9aa0a6')}"></span>
                     <span>其他</span>
                 </div>`;
             }
 
             // Add "Create new category" option at the bottom
-            optionsHtml += `<div class="custom-category-option add-new-category" data-shop-action="product-show-add-category-input" style="border-top: 1px solid rgba(255,255,255,0.1); margin-top: 6px; padding-top: 12px; color: #6b9ece;">
-                <i class="fas fa-plus" style="width: 10px; text-align: center; font-size: 10px;"></i>
+            optionsHtml += `<div class="custom-category-option add-new-category custom-category-option--create" data-shop-action="product-show-add-category-input">
+                <i class="fas fa-plus custom-category-option__create-icon"></i>
                 <span>添加新分类</span>
             </div>`;
 
             // Add input container (hidden by default)
-            optionsHtml += `<div id="newCategoryInputContainer" style="display: none; padding: 12px; border-top: 1px solid rgba(255,255,255,0.1); margin-top: 6px; box-sizing: border-box;">
+            optionsHtml += `<div id="newCategoryInputContainer" class="custom-category-create-panel admin-studio-inline-style-attr-3">
                 <input type="text" id="newCategoryName" placeholder="输入分类名称" 
-                    style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08); color: #fff; font-size: 13px; outline: none; box-sizing: border-box;"
+                    class="custom-category-create-panel__input"
                     data-shop-keydown="product-save-new-category">
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button type="button" data-shop-action="product-cancel-add-category" style="flex:1; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.7); cursor: pointer; font-size: 13px; transition: all 0.2s;">取消</button>
-                    <button type="button" data-shop-action="product-save-new-category" style="flex:1; padding: 8px 12px; border-radius: 8px; border: none; background: linear-gradient(135deg, #6b9ece 0%, #5a8fc0 100%); color: #fff; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s;">确定</button>
+                <div class="custom-category-create-panel__actions">
+                    <button type="button" data-shop-action="product-cancel-add-category" class="custom-category-create-panel__btn custom-category-create-panel__btn--cancel">取消</button>
+                    <button type="button" data-shop-action="product-save-new-category" class="custom-category-create-panel__btn custom-category-create-panel__btn--confirm">确定</button>
                 </div>
             </div>`;
 
@@ -3265,8 +3240,8 @@ Example output format:
         const inputContainer = document.getElementById('newCategoryInputContainer');
         const addBtn = document.querySelector('.add-new-category');
         if (inputContainer) {
-            inputContainer.style.display = 'block';
-            addBtn.style.display = 'none';
+            inputContainer.classList.remove('admin-studio-inline-style-attr-3');
+            addBtn?.classList.add('admin-studio-inline-style-attr-3');
             document.getElementById('newCategoryName').focus();
         }
     },
@@ -3276,8 +3251,8 @@ Example output format:
         const inputContainer = document.getElementById('newCategoryInputContainer');
         const addBtn = document.querySelector('.add-new-category');
         if (inputContainer) {
-            inputContainer.style.display = 'none';
-            addBtn.style.display = 'flex';
+            inputContainer.classList.add('admin-studio-inline-style-attr-3');
+            addBtn?.classList.remove('admin-studio-inline-style-attr-3');
             document.getElementById('newCategoryName').value = '';
         }
     },
@@ -3315,9 +3290,9 @@ Example output format:
 
         // Insert new option before the "add new" button
         const newOptionHtml = `<div class="custom-category-option pending-category" data-shop-action="product-select-category" data-category-name="${this.escapeForAttr(name)}" data-category-color="${this.escapeForAttr(color)}">
-            <span class="option-dot" style="background: ${color}"></span>
+            <span class="option-dot ${this.buildCategoryColorClass(color)}"></span>
             <span>${name}</span>
-            <span style="font-size: 10px; color: rgba(255,255,255,0.4); margin-left: auto;">(新)</span>
+            <span class="custom-category-option__pending">(新)</span>
         </div>`;
         addNewBtn.insertAdjacentHTML('beforebegin', newOptionHtml);
 
@@ -3349,7 +3324,7 @@ Example output format:
         const colorDot = dropdown.querySelector('.category-color-dot');
 
         nameSpan.textContent = categoryName;
-        colorDot.style.background = categoryColor || '#6b9ece';
+        this.setCategoryColorClasses(colorDot, categoryColor || '#6b9ece');
 
         // Update selected state on options
         document.querySelectorAll('.custom-category-option').forEach(opt => {
@@ -3366,15 +3341,7 @@ Example output format:
     toggleFormSection: function (wrapperId, show) {
         const wrapper = document.getElementById(wrapperId);
         if (!wrapper) return;
-        if (show) {
-            wrapper.style.opacity = '1';
-            wrapper.style.marginTop = '8px';
-            requestAnimationFrame(() => this.refreshFormSectionHeight(wrapperId));
-        } else {
-            wrapper.style.maxHeight = '0';
-            wrapper.style.opacity = '0';
-            wrapper.style.marginTop = '0';
-        }
+        wrapper.classList.toggle('shop-form-section--expanded', Boolean(show));
     },
 
     // Toggle purchase notes textarea visibility with animation
@@ -3455,44 +3422,43 @@ Example output format:
         if (!modal) {
             modal = document.createElement('div');
             modal.id = modalId;
-            modal.style.cssText = 'display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.55); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); z-index:10000; align-items:center; justify-content:center;';
+            modal.className = 'shop-delivery-switch-modal';
             document.body.appendChild(modal);
         }
 
         modal.innerHTML = `
-            <div style="background: rgba(18, 22, 36, 0.95); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 30px; width: 90%; max-width: 400px; box-shadow: 0 24px 60px rgba(0,0,0,0.5); animation: modalFadeIn 0.3s ease-out;">
-                <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;">
-                    <div style="width:40px; height:40px; border-radius:12px; background:rgba(239, 68, 68, 0.1); display:flex; align-items:center; justify-content:center; color:#ef4444;">
-                        <i class="fas fa-exclamation-triangle" style="font-size:18px;"></i>
+            <div class="shop-delivery-switch-modal__dialog">
+                <div class="shop-delivery-switch-modal__header">
+                    <div class="shop-delivery-switch-modal__icon">
+                        <i class="fas fa-exclamation-triangle"></i>
                     </div>
-                    <h3 style="margin:0; font-size:1.1rem; color:#fff; font-weight:600;">切换发货模式</h3>
+                    <h3 class="shop-delivery-switch-modal__title">切换发货模式</h3>
                 </div>
-                <div style="color:rgba(255,255,255,0.7); font-size:0.95rem; line-height:1.6; margin-bottom:24px;">
-                    即将发货模式切换为 <strong style="color:#6b9ece;">${typeName}</strong>。<br><br>
-                    <span style="color:rgba(255,255,255,0.5); font-size:0.85rem;">${warningText}</span>
+                <div class="shop-delivery-switch-modal__body">
+                    即将发货模式切换为 <strong class="shop-delivery-switch-modal__highlight">${this.escapeHtml(typeName)}</strong>。<br><br>
+                    <span class="shop-delivery-switch-modal__warning">${warningText}</span>
                 </div>
-                <div style="display:flex; gap:12px;">
-                    <button id="cancelDeliveryChange" style="flex:1; padding:10px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:rgba(255,255,255,0.7); cursor:pointer; font-size:0.95rem; transition:all 0.2s;">取消</button>
-                    <button id="confirmDeliveryChange" style="flex:1; padding:10px; background:#ef4444; border:none; border-radius:8px; color:#fff; cursor:pointer; font-size:0.95rem; font-weight:500; transition:all 0.2s;">确定切换</button>
+                <div class="shop-delivery-switch-modal__actions">
+                    <button id="cancelDeliveryChange" type="button" class="shop-delivery-switch-modal__btn shop-delivery-switch-modal__btn--cancel">取消</button>
+                    <button id="confirmDeliveryChange" type="button" class="shop-delivery-switch-modal__btn shop-delivery-switch-modal__btn--confirm">确定切换</button>
                 </div>
             </div>
         `;
 
-        modal.style.display = 'flex';
+        modal.classList.add('is-open');
+        const closeModal = () => modal.classList.remove('is-open');
 
         document.getElementById('cancelDeliveryChange').onclick = function () {
-            modal.style.display = 'none';
+            closeModal();
         };
 
-        document.getElementById('confirmDeliveryChange').onclick = function () {
+        document.getElementById('confirmDeliveryChange').onclick = () => {
             // Apply the change
             input.value = newType;
-            var nameLabel = document.getElementById('prodDeliveryTypeName');
+            const nameLabel = document.getElementById('prodDeliveryTypeName');
             if (nameLabel) nameLabel.textContent = typeName;
-            // Toggle webhook field
-            var group = document.getElementById('webhookTargetGroup');
-            if (group) group.style.display = (newType === 'API') ? 'block' : 'none';
-            modal.style.display = 'none';
+            this.toggleWebhookField(newType);
+            closeModal();
         };
     },
 
@@ -3500,7 +3466,7 @@ Example output format:
     toggleWebhookField: function (deliveryType) {
         const group = document.getElementById('webhookTargetGroup');
         if (group) {
-            group.style.display = (deliveryType === 'API') ? 'block' : 'none';
+            group.classList.toggle('admin-studio-inline-style-attr-3', deliveryType !== 'API');
         }
     },
 
@@ -3524,13 +3490,7 @@ Example output format:
         const title = document.getElementById('productModalTitle');
         const siteEmoji = this.getEditSite() === 'intl' ? ' 🌍' : ' 🇨🇳';
         title.textContent = (isEdit ? '编辑商品' : '新建商品') + siteEmoji;
-        modal.style.display = 'flex'; // Ensure Flex is set to center it
-
-        // Force visibility properties
-        modal.style.opacity = '1';
-        modal.style.visibility = 'visible';
         modal.classList.add('active'); // In case CSS uses .active for transition
-        modal.style.zIndex = '9999';
 
         if (!isEdit) {
             this.editingProductSnapshot = null;
@@ -3836,7 +3796,7 @@ Example output format:
                 // Clear pending category after successful save
                 this.pendingCategory = null;
 
-                document.getElementById('productModal').style.display = 'none';
+                this.hideProductModal();
                 alert('保存成功' + (name_en ? ' (已自动翻译)' : ''));
 
                 // Refresh products and category filters
@@ -3888,7 +3848,7 @@ Example output format:
 
         container.innerHTML = '';
         if (data.length === 0) {
-            container.innerHTML = '<div style="padding:20px; text-align:center; color:rgba(255,255,255,0.3);">暂无商品，请先新建</div>';
+            container.innerHTML = '<div class="shop-import-product-empty">暂无商品，请先新建</div>';
             return;
         }
 
@@ -3909,14 +3869,14 @@ Example output format:
                     const nameEl = document.getElementById('targetProductName');
                     if (nameEl) {
                         nameEl.textContent = p.name;
-                        nameEl.style.display = 'inline-block';
+                        nameEl.classList.add('shop-import-target-product--visible');
                     }
                 }, 0);
             }
 
             el.innerHTML = `
-    < div style = "font-weight: bold; color:#eee;" > ${p.name}</div >
-        <div style="font-size: 0.8em; color: rgba(255,255,255,0.5);">库存: ${p.stock_count || 0}</div>
+                <div class="product-select-item-name">${this.escapeHtml(p.name)}</div>
+                <div class="product-select-item-meta">库存: ${Number(p.stock_count || 0)}</div>
 `;
 
             el.onclick = () => {
@@ -3924,7 +3884,7 @@ Example output format:
                 const nameEl = document.getElementById('targetProductName');
                 if (nameEl) {
                     nameEl.textContent = p.name;
-                    nameEl.style.display = 'inline-block';
+                    nameEl.classList.add('shop-import-target-product--visible');
                 }
                 // Reload list to update active state
                 this.loadInventoryProductList(data);
@@ -4008,20 +3968,19 @@ Example output format:
         if (!container) return;
 
         const row = document.createElement('div');
-        row.className = 'tiered-pricing-row';
-        row.style.cssText = 'display: flex; gap: 8px; align-items: center; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); animation: modalFadeIn 0.2s ease-out;';
+        row.className = 'tiered-pricing-row shop-tiered-pricing-row';
         row.innerHTML = `
-            <div style="flex: 1; display: flex; align-items: center; gap: 6px;">
-                <span style="color: rgba(255,255,255,0.5); font-size: 13px;">满</span>
-                <input type="number" class="modern-input tp-qty" placeholder="10" value="${qty}" style="padding: 8px; flex: 1; min-width: 50px;">
-                <span style="color: rgba(255,255,255,0.5); font-size: 13px;">件</span>
+            <div class="shop-tiered-pricing-row__field">
+                <span class="shop-tiered-pricing-row__label">满</span>
+                <input type="number" class="modern-input tp-qty shop-tiered-pricing-row__input" placeholder="10" value="${qty}">
+                <span class="shop-tiered-pricing-row__label">件</span>
             </div>
-            <div style="flex: 1; display: flex; align-items: center; gap: 6px;">
-                <span style="color: rgba(255,255,255,0.5); font-size: 13px;">单价降至</span>
-                <input type="number" class="modern-input tp-price" placeholder="8" value="${price}" style="padding: 8px; flex: 1; min-width: 50px;">
-                <span style="color: rgba(255,255,255,0.5); font-size: 13px;">积分</span>
+            <div class="shop-tiered-pricing-row__field">
+                <span class="shop-tiered-pricing-row__label">单价降至</span>
+                <input type="number" class="modern-input tp-price shop-tiered-pricing-row__input" placeholder="8" value="${price}">
+                <span class="shop-tiered-pricing-row__label">积分</span>
             </div>
-            <button type="button" data-shop-action="product-remove-tiered-pricing-row" style="background: rgba(239,68,68,0.1); border: none; color: #ef4444; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; transition: all 0.2s;" title="删除阶梯价规则">
+            <button type="button" data-shop-action="product-remove-tiered-pricing-row" class="shop-tiered-pricing-row__remove" title="删除阶梯价规则">
                 <i class="fas fa-trash-alt"></i>
             </button>
         `;
@@ -4033,55 +3992,20 @@ Example output format:
     },
 
     // ==================== Orders (Fix FK Issue) ====================
-    getDeliveryToneStyles: function (tone = 'neutral') {
-        const tones = {
-            success: {
-                text: '#4ade80',
-                bg: 'rgba(74, 222, 128, 0.12)',
-                border: 'rgba(74, 222, 128, 0.26)'
-            },
-            processing: {
-                text: '#60a5fa',
-                bg: 'rgba(96, 165, 250, 0.12)',
-                border: 'rgba(96, 165, 250, 0.24)'
-            },
-            waiting: {
-                text: '#fbbf24',
-                bg: 'rgba(251, 191, 36, 0.12)',
-                border: 'rgba(251, 191, 36, 0.24)'
-            },
-            warn: {
-                text: '#fbbf24',
-                bg: 'rgba(251, 191, 36, 0.12)',
-                border: 'rgba(251, 191, 36, 0.24)'
-            },
-            danger: {
-                text: '#fda4af',
-                bg: 'rgba(248, 113, 113, 0.12)',
-                border: 'rgba(248, 113, 113, 0.24)'
-            },
-            muted: {
-                text: '#cbd5f5',
-                bg: 'rgba(148, 163, 184, 0.14)',
-                border: 'rgba(148, 163, 184, 0.2)'
-            },
-            neutral: {
-                text: '#e2e8f0',
-                bg: 'rgba(255, 255, 255, 0.06)',
-                border: 'rgba(255, 255, 255, 0.1)'
-            }
-        };
-        return tones[tone] || tones.neutral;
+    getDeliveryToneClass: function (tone = 'neutral') {
+        const tones = new Set(['success', 'processing', 'waiting', 'warn', 'danger', 'muted', 'neutral']);
+        const normalizedTone = tones.has(String(tone || 'neutral')) ? String(tone || 'neutral') : 'neutral';
+        return `shop-delivery-tone--${normalizedTone}`;
     },
 
     renderDeliveryBadge: function (label, tone = 'neutral') {
-        const colors = this.getDeliveryToneStyles(tone);
-        return `<span class="status-badge" style="display:inline-flex;align-items:center;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:600;color:${colors.text};background:${colors.bg};border:1px solid ${colors.border};white-space:nowrap;">${this.escapeHtml(label)}</span>`;
+        const toneClass = this.getDeliveryToneClass(tone);
+        return `<span class="status-badge shop-delivery-badge ${toneClass}">${this.escapeHtml(label)}</span>`;
     },
 
     renderDeliveryMetaBadge: function (label, tone = 'neutral') {
-        const colors = this.getDeliveryToneStyles(tone);
-        return `<span class="shop-delivery-meta-badge" style="color:${colors.text};background:${colors.bg};border-color:${colors.border};">${this.escapeHtml(label)}</span>`;
+        const toneClass = this.getDeliveryToneClass(tone);
+        return `<span class="shop-delivery-meta-badge ${toneClass}">${this.escapeHtml(label)}</span>`;
     },
 
     buildDeliveryDataAttributes: function (attributes = {}) {
@@ -4092,7 +4016,7 @@ Example output format:
     },
 
     renderDeliveryFilterBreadcrumb: function ({ label, tone = 'neutral', title = '', preview = '', removeAction = '', removeAttrs = {} } = {}) {
-        const colors = this.getDeliveryToneStyles(tone);
+        const toneClass = this.getDeliveryToneClass(tone);
         const titleAttr = title ? ` title="${this.escapeHtml(title)}"` : '';
         const previewAttr = preview ? ` data-preview="${this.escapeHtml(preview)}"` : '';
         const actionAttrs = removeAction
@@ -4104,8 +4028,7 @@ Example output format:
         return `
             <button
                 type="button"
-                class="shop-delivery-filter-crumb"
-                style="color:${colors.text};background:${colors.bg};border-color:${colors.border};"
+                class="shop-delivery-filter-crumb ${toneClass}"
                 ${titleAttr}${previewAttr}${actionAttrs}
             >
                 <span>${this.escapeHtml(label)}</span>
@@ -4115,10 +4038,7 @@ Example output format:
     },
 
     renderDeliveryQuickFilterChip: function ({ label, tone = 'neutral', active = false, title = '', action = '', actionAttrs = {} } = {}) {
-        const colors = this.getDeliveryToneStyles(tone);
-        const textColor = active ? colors.text : 'rgba(226, 232, 240, 0.82)';
-        const background = active ? colors.bg : 'rgba(255, 255, 255, 0.05)';
-        const borderColor = active ? colors.border : 'rgba(255, 255, 255, 0.08)';
+        const toneClass = this.getDeliveryToneClass(tone);
         const titleAttr = title ? ` title="${this.escapeHtml(title)}"` : '';
         const delegatedAttrs = action
             ? this.buildDeliveryDataAttributes({
@@ -4127,14 +4047,11 @@ Example output format:
             })
             : '';
         const activeClass = active ? ' shop-delivery-meta-chip--active' : '';
-        return `<button type="button" class="shop-delivery-meta-chip shop-delivery-meta-chip--action${activeClass}"${titleAttr}${delegatedAttrs} style="color:${textColor};background:${background};border-color:${borderColor};">${this.escapeHtml(label)}</button>`;
+        return `<button type="button" class="shop-delivery-meta-chip shop-delivery-meta-chip--action ${toneClass}${activeClass}"${titleAttr}${delegatedAttrs}>${this.escapeHtml(label)}</button>`;
     },
 
     renderDeliveryTrendLegendButton: function ({ label, tone = 'neutral', active = false, title = '', action = '', actionAttrs = {} } = {}) {
-        const colors = this.getDeliveryToneStyles(tone);
-        const textColor = active ? colors.text : 'rgba(226, 232, 240, 0.72)';
-        const background = active ? colors.bg : 'rgba(255, 255, 255, 0.04)';
-        const borderColor = active ? colors.border : 'rgba(255, 255, 255, 0.08)';
+        const toneClass = this.getDeliveryToneClass(tone);
         const titleAttr = title ? ` title="${this.escapeHtml(title)}"` : '';
         const delegatedAttrs = action
             ? this.buildDeliveryDataAttributes({
@@ -4146,11 +4063,10 @@ Example output format:
         return `
             <button
                 type="button"
-                class="shop-delivery-trend-legend-item${activeClass}"
+                class="shop-delivery-trend-legend-item ${toneClass}${activeClass}"
                ${titleAttr}${delegatedAttrs}
-                style="color:${textColor};background:${background};border-color:${borderColor};"
             >
-                <i class="fas fa-circle" style="color:${colors.text};"></i>
+                <i class="fas fa-circle shop-delivery-trend-legend-dot ${toneClass}"></i>
                 <span>${this.escapeHtml(label)}</span>
             </button>
         `;
@@ -5207,7 +5123,7 @@ Example output format:
             const productName = this.escapeHtml(order.snapshot_product_name || '—');
             const latestError = task.last_error
                 ? `<span title="${this.escapeHtml(task.last_error)}">${this.escapeHtml(this.truncateText(task.last_error, 68))}</span>`
-                : '<span style="color:rgba(226,232,240,0.45);">—</span>';
+                : '<span class="shop-delivery-placeholder">—</span>';
             const executeTimeline = `
                 <div class="shop-delivery-attempt-stack">
                     <div class="shop-delivery-attempt-line"><strong>上次</strong> <span>${this.formatDeliveryTime(task.last_attempt_at || task.updated_at || task.created_at)}</span></div>
@@ -5226,26 +5142,26 @@ Example output format:
                     data-order-id="${this.escapeHtml(task.order_id || '')}"
                 >
                     <td data-label="订单号">
-                        <div style="font-weight:600;color:#fff;">${this.escapeHtml(task.order_id || '—')}</div>
-                        <div style="font-size:12px;color:rgba(226,232,240,0.58);">${task.dedupe_key ? this.escapeHtml(this.truncateText(task.dedupe_key, 36)) : '无去重键'}</div>
+                        <div class="shop-delivery-value">${this.escapeHtml(task.order_id || '—')}</div>
+                        <div class="shop-delivery-table-note">${task.dedupe_key ? this.escapeHtml(this.truncateText(task.dedupe_key, 36)) : '无去重键'}</div>
                     </td>
                     <td data-label="商品">
-                        <div style="font-weight:600;color:#fff;">${productName}</div>
-                        <div style="font-size:12px;color:rgba(226,232,240,0.58);">${this.escapeHtml(order.user_id || '未知用户')}</div>
+                        <div class="shop-delivery-value">${productName}</div>
+                        <div class="shop-delivery-table-note">${this.escapeHtml(order.user_id || '未知用户')}</div>
                     </td>
                     <td data-label="任务状态">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${taskBadges}</div>
+                        <div class="shop-delivery-meta shop-delivery-meta--stacked">${taskBadges}</div>
                         ${this.renderDeliveryObserveChips(task)}
                     </td>
                     <td data-label="尝试次数">
-                        <div style="font-weight:700;color:#fff;margin-bottom:8px;">${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</div>
+                        <div class="shop-delivery-value shop-delivery-value--strong shop-delivery-value--spaced">${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</div>
                         ${this.renderDeliveryAttemptLines(task)}
                     </td>
                     <td data-label="目标地址">
                         <div class="shop-delivery-target" title="${this.escapeHtml(task.target_url || '')}">${this.formatDeliveryTaskTarget(task.target_url)}</div>
                     </td>
-                    <td data-label="最近执行 / 下次重试" style="white-space:normal;line-height:1.5;">${executeTimeline}</td>
-                    <td data-label="最近错误" style="white-space:normal;line-height:1.55;">
+                    <td data-label="最近执行 / 下次重试" class="shop-delivery-table-cell--timeline">${executeTimeline}</td>
+                    <td data-label="最近错误" class="shop-delivery-table-cell--relaxed">
                         ${latestError}
                     </td>
                     <td data-label="操作">${this.renderDeliveryActionButtons(task)}</td>
@@ -5516,23 +5432,23 @@ Example output format:
                     title="${isActive ? '再次点击可取消任务锁定' : '点击锁定该任务、对应时间桶和热点上下文'}"
                 >
                     <td data-label="时间">
-                        <div style="font-weight:600;color:#fff;">${this.formatDeliveryTime(record.created_at)}</div>
+                        <div class="shop-delivery-value">${this.formatDeliveryTime(record.created_at)}</div>
                         <div class="shop-delivery-table-note">${record.worker_name ? `Worker ${this.escapeHtml(record.worker_name)}` : '无 worker'}</div>
                     </td>
                     <td data-label="冲突类型">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${reasonFilterChip}</div>
+                        <div class="shop-delivery-meta shop-delivery-meta--stacked">${reasonFilterChip}</div>
                         <div class="shop-delivery-table-note">${detail}</div>
                     </td>
                     <td data-label="任务 / 订单">
-                        <div style="font-weight:600;color:#fff;">任务 ${taskId}</div>
+                        <div class="shop-delivery-value">任务 ${taskId}</div>
                         <div class="shop-delivery-table-note">${order.snapshot_product_name ? this.escapeHtml(order.snapshot_product_name) : '无商品'} · 订单 ${orderId}</div>
                     </td>
                     <td data-label="目标 / 通道">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${targetFilterChip}</div>
+                        <div class="shop-delivery-meta shop-delivery-meta--stacked">${targetFilterChip}</div>
                         <div class="shop-delivery-meta">${channelFilterChip}</div>
                     </td>
                     <td data-label="结果">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${resultBadge}</div>
+                        <div class="shop-delivery-meta shop-delivery-meta--stacked">${resultBadge}</div>
                         <div class="shop-delivery-table-note">${record.next_attempt_at ? `下次 ${this.formatDeliveryTime(record.next_attempt_at)}` : '无重试时间'}${isActive ? ' · 已锁定上下文' : ' · 点击联动'}</div>
                     </td>
                 </tr>
@@ -5557,8 +5473,8 @@ Example output format:
             const productName = this.escapeHtml(order.snapshot_product_name || '—');
             const userId = this.escapeHtml(order.user_id || '未知用户');
             const reason = task.last_error
-                ? `<div style="font-weight:600;color:#fff;">${this.escapeHtml(this.truncateText(task.last_error, 54))}</div>`
-                : '<div style="font-weight:600;color:#fff;">人工标记死信</div>';
+                ? `<div class="shop-delivery-value">${this.escapeHtml(this.truncateText(task.last_error, 54))}</div>`
+                : '<div class="shop-delivery-value">人工标记死信</div>';
             const responseMeta = [
                 task.last_response_status ? `HTTP ${Number(task.last_response_status)}` : '',
                 task.dead_lettered_at ? `死信于 ${this.formatDeliveryTime(task.dead_lettered_at)}` : ''
@@ -5570,17 +5486,17 @@ Example output format:
             return `
                 <tr class="${isFocused ? 'shop-delivery-linked-row--focused' : ''}">
                     <td data-label="订单号">
-                        <div style="font-weight:600;color:#fff;">${orderId}</div>
+                        <div class="shop-delivery-value">${orderId}</div>
                         <div class="shop-delivery-table-note">${task.target_url ? this.formatDeliveryTaskTarget(task.target_url) : '无目标地址'}</div>
                     </td>
                     <td data-label="商品 / 用户">
-                        <div style="font-weight:600;color:#fff;">${productName}</div>
+                        <div class="shop-delivery-value">${productName}</div>
                         <div class="shop-delivery-table-note">${userId}</div>
                     </td>
-                    <td data-label="死信原因" style="white-space:normal;line-height:1.55;">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${deadLetterReason}</div>
+                    <td data-label="死信原因" class="shop-delivery-table-cell--relaxed">
+                        <div class="shop-delivery-meta shop-delivery-meta--stacked">${deadLetterReason}</div>
                         ${reason}
-                        <div class="shop-delivery-table-note" style="margin-top:8px;">${this.escapeHtml(responseMeta || '无额外响应信息')}</div>
+                        <div class="shop-delivery-table-note shop-delivery-table-note--spaced">${this.escapeHtml(responseMeta || '无额外响应信息')}</div>
                     </td>
                     <td data-label="锁与幂等">${this.renderDeliveryObserveChips(task)}</td>
                     <td data-label="最近尝试">${this.renderDeliveryAttemptLines(task)}</td>
@@ -5623,15 +5539,15 @@ Example output format:
             return `
                 <tr class="${isFocused ? 'shop-delivery-linked-row--focused' : ''}">
                     <td data-label="订单号">
-                        <div style="font-weight:600;color:#fff;">${orderId}</div>
+                        <div class="shop-delivery-value">${orderId}</div>
                         <div class="shop-delivery-table-note">${task.target_url ? this.formatDeliveryTaskTarget(task.target_url) : '无目标地址'}</div>
                     </td>
                     <td data-label="商品 / 用户">
-                        <div style="font-weight:600;color:#fff;">${productName}</div>
+                        <div class="shop-delivery-value">${productName}</div>
                         <div class="shop-delivery-table-note">${userId}</div>
                     </td>
                     <td data-label="锁状态">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">
+                        <div class="shop-delivery-meta shop-delivery-meta--stacked">
                             ${this.getDeliveryTaskStatusBadge(task.status)}
                             ${this.getDeliveryLockBadge(task)}
                         </div>
@@ -5640,10 +5556,10 @@ Example output format:
                     <td data-label="锁与幂等">
                         ${this.renderDeliveryObserveChips(task)}
                     </td>
-                    <td data-label="最近错误 / 尝试" style="white-space:normal;line-height:1.55;">
-                        <div style="font-weight:600;color:#fff;">${errorLabel}</div>
-                        <div class="shop-delivery-table-note" style="margin-top:8px;">尝试 ${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</div>
-                        <div style="margin-top:8px;">${this.renderDeliveryAttemptLines(task)}</div>
+                    <td data-label="最近错误 / 尝试" class="shop-delivery-table-cell--relaxed">
+                        <div class="shop-delivery-value">${errorLabel}</div>
+                        <div class="shop-delivery-table-note shop-delivery-table-note--spaced">尝试 ${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</div>
+                        <div class="shop-delivery-observe-wrap">${this.renderDeliveryAttemptLines(task)}</div>
                     </td>
                     <td data-label="操作">
                         ${this.renderDeliveryConflictAuditJumpButton(task)}
@@ -5718,25 +5634,25 @@ Example output format:
             return `
                 <tr class="${isFocused ? 'shop-delivery-linked-row--focused' : ''}">
                     <td data-label="状态">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${stateBadges}</div>
+                        <div class="shop-delivery-meta shop-delivery-meta--stacked">${stateBadges}</div>
                         <div class="shop-delivery-table-note">${task.last_conflict_reason ? this.escapeHtml(task.last_conflict_reason) : '无最近冲突原因'}</div>
                     </td>
                     <td data-label="任务 / 订单">
-                        <div style="font-weight:600;color:#fff;">任务 ${this.escapeHtml(this.truncateText(task.id || '—', 18))}</div>
+                        <div class="shop-delivery-value">任务 ${this.escapeHtml(this.truncateText(task.id || '—', 18))}</div>
                         <div class="shop-delivery-table-note">订单 ${orderId}</div>
                     </td>
                     <td data-label="商品 / 用户">
-                        <div style="font-weight:600;color:#fff;">${productName}</div>
+                        <div class="shop-delivery-value">${productName}</div>
                         <div class="shop-delivery-table-note">${userId}</div>
                     </td>
                     <td data-label="目标 / 通道">
-                        <div style="font-weight:600;color:#fff;">${this.escapeHtml(this.truncateText(task.target_key || task.target_url || '—', 34))}</div>
+                        <div class="shop-delivery-value">${this.escapeHtml(this.truncateText(task.target_key || task.target_url || '—', 34))}</div>
                         <div class="shop-delivery-table-note">${this.escapeHtml(this.truncateText(task.channel_key || '—', 26))}</div>
                     </td>
-                    <td data-label="占位 / 当前锁" style="white-space:normal;line-height:1.55;">
-                        <div style="font-weight:600;color:#fff;">${this.escapeHtml(reservationMeta || '无占位快照')}</div>
-                        <div class="shop-delivery-table-note" style="margin-top:8px;">${this.escapeHtml(currentLockMeta || '当前无活跃锁信息')}</div>
-                        <div style="margin-top:8px;">${this.renderDeliveryObserveChips(task)}</div>
+                    <td data-label="占位 / 当前锁" class="shop-delivery-table-cell--relaxed">
+                        <div class="shop-delivery-value">${this.escapeHtml(reservationMeta || '无占位快照')}</div>
+                        <div class="shop-delivery-table-note shop-delivery-table-note--spaced">${this.escapeHtml(currentLockMeta || '当前无活跃锁信息')}</div>
+                        <div class="shop-delivery-observe-wrap">${this.renderDeliveryObserveChips(task)}</div>
                     </td>
                     <td data-label="操作">
                         ${this.renderDeliveryConflictAuditJumpButton(task)}
@@ -5837,7 +5753,7 @@ Example output format:
                             <div class="shop-delivery-hotspot-key" title="${this.escapeHtml(item.key || '')}">${keyText}</div>
                             <div class="shop-delivery-hotspot-rank">#${index + 1}</div>
                         </div>
-                        <div class="shop-delivery-hotspot-bar"><span style="width:${width}%"></span></div>
+                        <progress class="shop-delivery-hotspot-progress" max="100" value="${width}"></progress>
                     </button>
                     <div class="shop-delivery-hotspot-meta">${meta.join('')}</div>
                 </div>
@@ -5891,7 +5807,7 @@ Example output format:
                 legend.innerHTML = '';
             } else {
                 chart.innerHTML = `
-                    <div class="shop-delivery-trend-bars" style="grid-template-columns:repeat(${Math.max(buckets.length, 1)}, minmax(0, 1fr));">
+                    <div class="shop-delivery-trend-bars">
                         ${buckets.map((bucket, index) => {
                             const totalHeight = Math.max(8, Math.round((Number(bucket.total || 0) / maxValue) * 100));
                             const deadHeight = Number(bucket.dead_letter || 0)
@@ -5911,8 +5827,7 @@ Example output format:
                                     <div class="shop-delivery-trend-bar" title="${this.escapeHtml(titleText)}">
                                         <div class="shop-delivery-trend-bar-stack">
                                             <div class="shop-delivery-trend-bar-column">
-                                                <div class="shop-delivery-trend-bar-fill" style="height:${totalHeight}%"></div>
-                                                ${deadHeight ? `<div class="shop-delivery-trend-bar-fill shop-delivery-trend-bar-fill--dead" style="height:${deadHeight}%"></div>` : ''}
+                                                ${this.renderDeliveryTrendBarSvg(totalHeight, deadHeight)}
                                             </div>
                                         </div>
                                         <span>${showLabel ? bucketLabelHtml : ''}</span>
@@ -5932,21 +5847,31 @@ Example output format:
                                             title="${this.escapeHtml(titleText)}"
                                         >
                                             <div class="shop-delivery-trend-bar-column">
-                                                <div class="shop-delivery-trend-bar-fill" style="height:${totalHeight}%"></div>
-                                                ${deadHeight ? `<div class="shop-delivery-trend-bar-fill shop-delivery-trend-bar-fill--dead" style="height:${deadHeight}%"></div>` : ''}
+                                                ${this.renderDeliveryTrendBarSvg(totalHeight, deadHeight)}
                                             </div>
                                         </button>
                                         ${deadHeight ? `
-                                            <button
-                                                type="button"
+                                            <svg
                                                 class="shop-delivery-trend-bar-dead-hitarea${isDeadActive ? ' shop-delivery-trend-bar-dead-hitarea--active' : ''}"
-                                                style="height:${deadHeight}%"
-                                                data-shop-action="delivery-conflict-bucket-dead-letter-focus"
-                                                data-delivery-bucket-start="${this.escapeForAttr(encodeURIComponent(bucket.bucket_at || ''))}"
-                                                data-delivery-bucket-end="${this.escapeForAttr(encodeURIComponent(bucket.bucket_end_at || ''))}"
-                                                data-delivery-bucket-label="${this.escapeForAttr(encodeURIComponent(bucket.label || ''))}"
-                                                title="${this.escapeHtml(`${bucket.label || ''} · 冲突死信 ${Number(bucket.dead_letter || 0)} · 点击联动死信任务与冲突策略`)}"
-                                            ></button>
+                                                viewBox="0 0 14 100"
+                                                preserveAspectRatio="none"
+                                                aria-hidden="true"
+                                            >
+                                                <rect
+                                                    class="shop-delivery-trend-bar-dead-fill"
+                                                    x="0"
+                                                    y="${100 - deadHeight}"
+                                                    width="14"
+                                                    height="${deadHeight}"
+                                                    rx="7"
+                                                    ry="7"
+                                                    data-shop-action="delivery-conflict-bucket-dead-letter-focus"
+                                                    data-delivery-bucket-start="${this.escapeForAttr(encodeURIComponent(bucket.bucket_at || ''))}"
+                                                    data-delivery-bucket-end="${this.escapeForAttr(encodeURIComponent(bucket.bucket_end_at || ''))}"
+                                                    data-delivery-bucket-label="${this.escapeForAttr(encodeURIComponent(bucket.label || ''))}"
+                                                    title="${this.escapeHtml(`${bucket.label || ''} · 冲突死信 ${Number(bucket.dead_letter || 0)} · 点击联动死信任务与冲突策略`)}"
+                                                ></rect>
+                                            </svg>
                                         ` : ''}
                                     </div>
                                     <span>${showLabel ? bucketLabelHtml : ''}</span>
@@ -6031,40 +5956,40 @@ Example output format:
             const transition = [record.previous_status, record.next_status]
                 .filter(Boolean)
                 .map((value) => this.getDeliveryTaskStatusBadge(value))
-                .join('<span style="color:rgba(226,232,240,0.55);">→</span>');
+                .join('<span class="shop-delivery-transition-separator">→</span>');
             const currentState = [
                 task.status ? this.getDeliveryTaskStatusBadge(task.status) : this.renderDeliveryBadge('任务缺失', 'danger'),
                 order.delivery_status ? this.getOrderDeliveryStatusBadge(order) : ''
             ].filter(Boolean).join('');
             const noteText = record.note
-                ? `<div class="shop-delivery-table-note" style="margin-top:8px;">备注：${this.escapeHtml(this.truncateText(record.note, 48))}</div>`
+                ? `<div class="shop-delivery-table-note shop-delivery-table-note--spaced">备注：${this.escapeHtml(this.truncateText(record.note, 48))}</div>`
                 : '';
 
             return `
                 <tr>
                     <td data-label="时间">
-                        <div style="font-weight:600;color:#fff;">${this.formatDeliveryTime(record.created_at)}</div>
+                        <div class="shop-delivery-value">${this.formatDeliveryTime(record.created_at)}</div>
                         <div class="shop-delivery-table-note">${record.task_id ? `任务 ${this.escapeHtml(this.truncateText(record.task_id, 18))}` : '无任务 ID'}</div>
                     </td>
                     <td data-label="管理员">
-                        <div style="font-weight:600;color:#fff;">${adminIdentity}</div>
+                        <div class="shop-delivery-value">${adminIdentity}</div>
                     </td>
                     <td data-label="订单 / 商品">
-                        <div style="font-weight:600;color:#fff;">${productName}</div>
+                        <div class="shop-delivery-value">${productName}</div>
                         <div class="shop-delivery-table-note">${orderId}</div>
                     </td>
                     <td data-label="状态流转">
                         <div class="shop-delivery-meta">${transition || this.renderDeliveryBadge('状态未知', 'muted')}</div>
-                        <div class="shop-delivery-table-note" style="margin-top:8px;">${record.previous_status && record.next_status ? '人工重放触发了一次状态迁移' : '仅记录了重放动作，状态可能已被后续 worker 覆盖'}</div>
+                        <div class="shop-delivery-table-note shop-delivery-table-note--spaced">${record.previous_status && record.next_status ? '人工重放触发了一次状态迁移' : '仅记录了重放动作，状态可能已被后续 worker 覆盖'}</div>
                         ${noteText}
                     </td>
                     <td data-label="重放次数">
-                        <div style="font-weight:700;color:#fff;">${Number(record.manual_replay_count || task.manual_replay_count || 0)}</div>
+                        <div class="shop-delivery-value shop-delivery-value--strong">${Number(record.manual_replay_count || task.manual_replay_count || 0)}</div>
                         <div class="shop-delivery-table-note">累计人工触发次数</div>
                     </td>
                     <td data-label="当前状态">
                         <div class="shop-delivery-meta">${currentState}</div>
-                        <div style="margin-top:8px;">${this.renderDeliveryCompactObserveChips(record)}</div>
+                        <div class="shop-delivery-observe-wrap">${this.renderDeliveryCompactObserveChips(record)}</div>
                     </td>
                 </tr>
             `;
@@ -7563,7 +7488,7 @@ Example output format:
             const batchMenu = document.getElementById('batchActionMenu');
             const batchBtn = document.getElementById('batchActionsBtn');
             if (batchMenu && batchBtn && !batchMenu.contains(e.target) && !batchBtn.contains(e.target)) {
-                batchMenu.style.display = 'none';
+                batchMenu.classList.remove('is-open');
             }
 
 
@@ -7637,27 +7562,25 @@ Example output format:
         this.isSelectionMode = !this.isSelectionMode;
         const btn = document.getElementById('toggleSelectionBtn');
         const batchBtn = document.getElementById('batchActionsBtn');
-        const cols = document.querySelectorAll('.inv-checkbox-col');
-        const contentCells = document.querySelectorAll('#inventoryTableBody td:nth-child(3)');
+        const inventoryView = document.getElementById('shop-view-inventory');
+        const batchMenu = document.getElementById('batchActionMenu');
 
         if (this.isSelectionMode) {
             btn.classList.add('active');
-            if (batchBtn) batchBtn.style.display = 'flex'; // Show batch button
-            cols.forEach(el => el.style.display = '');
-            contentCells.forEach(td => td.style.cursor = 'pointer');
+            inventoryView?.classList.add('shop-inventory-selection-mode');
+            if (batchBtn) batchBtn.classList.remove('admin-studio-inline-style-attr-3');
         } else {
             btn.classList.remove('active');
-            if (batchBtn) batchBtn.style.display = 'none'; // Hide batch button
-            document.getElementById('batchActionMenu').style.display = 'none'; // Close menu
-            cols.forEach(el => el.style.display = 'none');
-            contentCells.forEach(td => td.style.cursor = '');
+            inventoryView?.classList.remove('shop-inventory-selection-mode');
+            if (batchBtn) batchBtn.classList.add('admin-studio-inline-style-attr-3');
+            batchMenu?.classList.remove('is-open');
         }
     },
 
     toggleBatchMenu: function () {
         const menu = document.getElementById('batchActionMenu');
         if (menu) {
-            menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+            menu.classList.toggle('is-open');
             this.updateSelectionCount(); // Update count when opening
         }
     },
@@ -7670,7 +7593,7 @@ Example output format:
         }
         // Ensure menu stays open
         const menu = document.getElementById('batchActionMenu');
-        if (menu) menu.style.display = 'block';
+        if (menu) menu.classList.add('is-open');
     },
 
     batchDelete: async function () {
@@ -7692,7 +7615,7 @@ Example output format:
             this.updateSelectionCount();
 
             // Close menu
-            document.getElementById('batchActionMenu').style.display = 'none';
+            document.getElementById('batchActionMenu').classList.remove('is-open');
 
         } catch (err) {
             console.error('Batch delete error:', err);
@@ -7707,8 +7630,8 @@ Example output format:
         document.querySelectorAll('.subtab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelector(`[data-subtab="${tab}"]`).classList.add('active');
 
-        document.querySelectorAll('.inventory-subtab-content').forEach(el => el.style.display = 'none');
-        document.getElementById(`inventory-subtab-${tab}`).style.display = 'block';
+        document.querySelectorAll('.inventory-subtab-content').forEach(el => el.classList.add('admin-studio-inline-style-attr-3'));
+        document.getElementById(`inventory-subtab-${tab}`).classList.remove('admin-studio-inline-style-attr-3');
 
         if (tab === 'browser') {
             this.initInventoryBrowser();
@@ -7853,7 +7776,7 @@ Example output format:
         const tbody = document.getElementById('inventoryTableBody');
         if (!tbody) return;
 
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;"><i class="fas fa-spinner fa-spin"></i> 加载中...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="shop-inventory-loading-cell"><i class="fas fa-spinner fa-spin"></i> 加载中...</td></tr>';
 
         const productId = document.getElementById('invFilterProduct')?.value || null;
         const status = document.getElementById('invFilterStatus')?.value || null;
@@ -7921,50 +7844,52 @@ Example output format:
 
             // Render table
             if (this.inventoryData.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:rgba(255,255,255,0.4);">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="shop-inventory-empty-cell">暂无数据</td></tr>';
                 return;
             }
 
             tbody.innerHTML = this.inventoryData.map(item => {
                 const statusBadge = this.getStatusBadge(item.status);
                 const createdAt = new Date(item.created_at).toLocaleString('zh-CN');
+                const safeCreatedAt = this.escapeHtml(createdAt);
+                const safeProductName = this.escapeHtml(item.product_name || '-');
+                const safeItemId = this.escapeForAttr(String(item.id || ''));
+                const safeFullContent = this.escapeForAttr(item.content || '');
+                const safeBuyerEmail = this.escapeHtml(item.buyer_email || '-');
+                const safeBuyerOrderId = this.escapeHtml(item.order_id?.slice(0, 8) || '');
                 const buyerInfo = item.status === 'sold'
-                    ? `<div style="font-size:12px;">${item.buyer_email || '-'}</div><div style="font-size:11px;color:#888;">${item.order_id?.slice(0, 8) || ''}</div>`
-                    : '-';
+                    ? `<div class="shop-inventory-buyer-email">${safeBuyerEmail}</div><div class="shop-inventory-buyer-order">${safeBuyerOrderId}</div>`
+                    : '<span class="shop-inventory-empty-action">-</span>';
 
                 // Extract email only (assuming format: email----password----recovery)
-                const emailOnly = item.content.split('----')[0] || item.content;
-
-                // Checkbox visibility
-                const checkboxDisplay = this.isSelectionMode ? '' : 'none';
-
+                const emailOnly = this.escapeHtml(item.content.split('----')[0] || item.content);
                 return `
                     <tr>
-                        <td class="inv-checkbox-col" style="display:${checkboxDisplay}">
-                            <input type="checkbox" class="inv-checkbox" data-id="${item.id}" data-shop-change="inventory-selection-count">
+                        <td class="inv-checkbox-col shop-inventory-checkbox-col">
+                            <input type="checkbox" class="inv-checkbox" data-id="${safeItemId}" data-shop-change="inventory-selection-count">
                         </td>
-                        <td>${item.product_name || '-'}</td>
-                        <td data-shop-action="inventory-toggle-selection-cell">
-                            <div class="content-cell" 
-                                 data-content="${this.escapeForAttr(item.content)}" 
+                        <td>${safeProductName}</td>
+                        <td class="shop-inventory-selection-toggle-cell" data-shop-action="inventory-toggle-selection-cell">
+                            <div class="content-cell shop-inventory-content-chip" 
+                                 data-content="${safeFullContent}" 
                                  data-shop-action="inventory-copy-content"
                                  title="点击复制全部内容&#10;───────────&#10;${this.escapeForAttr(item.content)}"
-                                 style="cursor:pointer; padding:5px 10px; border-radius:6px; background:rgba(255,255,255,0.03); transition:all 0.2s; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                                 >
                                 ${emailOnly}
                             </div>
                         </td>
                         <td>${statusBadge}</td>
-                        <td style="font-size:12px;">${createdAt}</td>
+                        <td class="shop-inventory-created-at">${safeCreatedAt}</td>
                         <td>${buyerInfo}</td>
                         <td>
-                            <div style="display:flex;gap:5px;">
-                                <button data-shop-action="inventory-show-detail" data-inventory-id="${item.id}" class="btn-icon-sm" title="详情"><i class="fas fa-info-circle"></i></button>
-                                ${item.status === 'sold' ? `<button data-shop-action="inventory-open-fault-modal" data-inventory-id="${item.id}" class="btn-icon-sm" title="标记故障"><i class="fas fa-exclamation-triangle" style="color:#ef4444;"></i></button>` : ''}
-                                ${item.status !== 'sold' ? `<button data-shop-action="inventory-delete-item" data-inventory-id="${item.id}" class="btn-icon-sm" title="删除"><i class="fas fa-trash"></i></button>` : ''}
-                                ${item.status === 'available' ? `<button data-shop-action="inventory-freeze-item" data-inventory-id="${item.id}" data-freeze="true" class="btn-icon-sm" title="冻结"><i class="fas fa-ban"></i></button>` : ''}
-                                ${item.status === 'frozen' ? `<button data-shop-action="inventory-freeze-item" data-inventory-id="${item.id}" data-freeze="false" class="btn-icon-sm" title="解冻"><i class="fas fa-check"></i></button>` : ''}
-                                ${item.status === 'reserve' ? `<button data-shop-action="inventory-release-item" data-inventory-id="${item.id}" class="btn-icon-sm" title="上架"><i class="fas fa-rocket"></i></button>` : ''}
-                                ${item.status === 'fault' ? `<button data-shop-action="inventory-release-item" data-inventory-id="${item.id}" class="btn-icon-sm" title="修复/上架"><i class="fas fa-wrench" style="color:#e879f9;"></i></button>` : ''}
+                            <div class="shop-inventory-actions">
+                                <button data-shop-action="inventory-show-detail" data-inventory-id="${safeItemId}" class="btn-icon-sm shop-inventory-action-btn" title="详情"><i class="fas fa-info-circle"></i></button>
+                                ${item.status === 'sold' ? `<button data-shop-action="inventory-open-fault-modal" data-inventory-id="${safeItemId}" class="btn-icon-sm shop-inventory-action-btn shop-inventory-action-btn--danger" title="标记故障"><i class="fas fa-exclamation-triangle"></i></button>` : ''}
+                                ${item.status !== 'sold' ? `<button data-shop-action="inventory-delete-item" data-inventory-id="${safeItemId}" class="btn-icon-sm shop-inventory-action-btn" title="删除"><i class="fas fa-trash"></i></button>` : ''}
+                                ${item.status === 'available' ? `<button data-shop-action="inventory-freeze-item" data-inventory-id="${safeItemId}" data-freeze="true" class="btn-icon-sm shop-inventory-action-btn" title="冻结"><i class="fas fa-ban"></i></button>` : ''}
+                                ${item.status === 'frozen' ? `<button data-shop-action="inventory-freeze-item" data-inventory-id="${safeItemId}" data-freeze="false" class="btn-icon-sm shop-inventory-action-btn" title="解冻"><i class="fas fa-check"></i></button>` : ''}
+                                ${item.status === 'reserve' ? `<button data-shop-action="inventory-release-item" data-inventory-id="${safeItemId}" class="btn-icon-sm shop-inventory-action-btn" title="上架"><i class="fas fa-rocket"></i></button>` : ''}
+                                ${item.status === 'fault' ? `<button data-shop-action="inventory-release-item" data-inventory-id="${safeItemId}" class="btn-icon-sm shop-inventory-action-btn shop-inventory-action-btn--repair" title="修复/上架"><i class="fas fa-wrench"></i></button>` : ''}
                             </div>
                         </td>
                     </tr>
@@ -7984,19 +7909,29 @@ Example output format:
 
         } catch (err) {
             console.error('[ShopAdmin] Load inventory error:', err);
-            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:30px;color:#ef4444;">加载失败: ${err.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="shop-inventory-empty-cell shop-inventory-empty-cell--error">加载失败: ${this.escapeHtml(err.message || '未知错误')}</td></tr>`;
         }
     },
 
-    getStatusBadge: function (status) {
+    getInventoryStatusMeta: function (status) {
         const badges = {
-            'reserve': '<span style="background:rgba(107,158,206,0.2);color:#bfdbfe;padding:3px 10px;border-radius:20px;font-size:12px;"><i class="fas fa-archive"></i> 储备</span>',
-            'available': '<span style="background:rgba(16,185,129,0.2);color:#34d399;padding:3px 10px;border-radius:20px;font-size:12px;"><i class="fas fa-check-circle"></i> 在售</span>',
-            'sold': '<span style="background:rgba(239,68,68,0.2);color:#f87171;padding:3px 10px;border-radius:20px;font-size:12px;"><i class="fas fa-shopping-cart"></i> 已售</span>',
-            'frozen': '<span style="background:rgba(245,158,11,0.2);color:#fbbf24;padding:3px 10px;border-radius:20px;font-size:12px;"><i class="fas fa-ban"></i> 冻结</span>',
-            'fault': '<span style="background:rgba(192,132,252,0.2);color:#e879f9;padding:3px 10px;border-radius:20px;font-size:12px;"><i class="fas fa-exclamation-triangle"></i> 故障</span>' // Purple badge
+            reserve: { label: '储备', icon: 'fa-archive', modifier: 'reserve' },
+            available: { label: '在售', icon: 'fa-check-circle', modifier: 'available' },
+            sold: { label: '已售', icon: 'fa-shopping-cart', modifier: 'sold' },
+            frozen: { label: '冻结', icon: 'fa-ban', modifier: 'frozen' },
+            fault: { label: '故障', icon: 'fa-exclamation-triangle', modifier: 'fault' }
         };
-        return badges[status] || status;
+
+        return badges[status] || {
+            label: status || '未知',
+            icon: 'fa-circle',
+            modifier: 'unknown'
+        };
+    },
+
+    getStatusBadge: function (status) {
+        const meta = this.getInventoryStatusMeta(status);
+        return `<span class="shop-inventory-status-badge shop-inventory-status-badge--${meta.modifier}"><i class="fas ${meta.icon}"></i> ${this.escapeHtml(meta.label)}</span>`;
     },
 
     toggleSelectAll: function (checkbox) {
@@ -8074,12 +8009,11 @@ Example output format:
         const content = element.dataset.content;
         navigator.clipboard.writeText(content).then(() => {
             // Visual feedback
-            const originalBg = element.style.background;
             const originalText = element.textContent;
-            element.style.background = 'rgba(16, 185, 129, 0.2)';
-            element.innerHTML = '<i class="fas fa-check" style="color:#10b981;"></i> 已复制';
+            element.classList.add('shop-inventory-content-chip--copied');
+            element.innerHTML = '<span class="shop-inventory-copy-feedback"><i class="fas fa-check shop-inventory-copy-feedback-icon"></i> 已复制</span>';
             setTimeout(() => {
-                element.style.background = originalBg;
+                element.classList.remove('shop-inventory-content-chip--copied');
                 element.textContent = originalText;
             }, 1000);
         }).catch(err => {
@@ -8113,18 +8047,18 @@ Example output format:
     // Open Fault Marking Modal
     openFaultModal: function (itemId) {
         const modalHtml = `
-            <div id="markFaultModal" data-shop-overlay-close="dynamic-modal" data-modal-id="markFaultModal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;display:flex;justify-content:center;align-items:center;">
-                <div style="background:rgba(30,35,50,0.95);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:25px;width:400px;">
-                    <h3 style="margin:0 0 20px 0;color:#fff;"><i class="fas fa-exclamation-triangle" style="color:#ef4444;"></i> 标记故障</h3>
+            <div id="markFaultModal" data-shop-overlay-close="dynamic-modal" data-modal-id="markFaultModal" class="shop-inventory-fault-overlay">
+                <div class="shop-inventory-fault-modal">
+                    <h3 class="shop-inventory-fault-title"><i class="fas fa-exclamation-triangle"></i> 标记故障</h3>
                     
-                    <div style="margin-bottom:15px;">
-                        <label style="display:block;color:#888;font-size:12px;margin-bottom:5px;">故障说明 / 备注</label>
-                        <textarea id="faultRemarkInput" style="width:100%;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);color:#fff;border-radius:6px;padding:10px;height:80px;resize:none;" placeholder="请输入故障原因..."></textarea>
+                    <div class="shop-inventory-fault-field">
+                        <label class="shop-inventory-fault-label">故障说明 / 备注</label>
+                        <textarea id="faultRemarkInput" class="shop-inventory-fault-textarea" placeholder="请输入故障原因..."></textarea>
                     </div>
                     
-                    <div style="display:flex;justify-content:flex-end;gap:10px;">
-                        <button type="button" data-shop-action="fault-modal-close" data-modal-id="markFaultModal" style="padding:8px 16px;background:none;border:1px solid rgba(255,255,255,0.2);color:#ccc;border-radius:6px;cursor:pointer;">取消</button>
-                        <button type="button" data-shop-action="fault-modal-submit" data-inventory-id="${itemId}" style="padding:8px 16px;background:#ef4444;border:none;color:#fff;border-radius:6px;cursor:pointer;">确认标记</button>
+                    <div class="shop-inventory-fault-actions">
+                        <button type="button" data-shop-action="fault-modal-close" data-modal-id="markFaultModal" class="shop-inventory-fault-btn shop-inventory-fault-btn--cancel">取消</button>
+                        <button type="button" data-shop-action="fault-modal-submit" data-inventory-id="${this.escapeForAttr(String(itemId || ''))}" class="shop-inventory-fault-btn shop-inventory-fault-btn--confirm">确认标记</button>
                     </div>
                 </div>
             </div>
@@ -8161,19 +8095,16 @@ Example output format:
 
     // Show inventory detail modal
     showInventoryDetail: async function (inventoryId) {
-        // Find item in current data first
-        let item = this.inventoryData.find(i => i.id === inventoryId);
-
         // Build modal content
         let modalHtml = `
-            <div id="inventoryDetailModal" data-shop-overlay-close="dynamic-modal" data-modal-id="inventoryDetailModal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;display:flex;justify-content:center;align-items:center;">
-                <div style="background:rgba(30,35,50,0.95);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:25px;width:500px;max-width:90%;max-height:80vh;overflow-y:auto;" class="custom-scrollbar">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-                        <h3 style="margin:0;color:#fff;"><i class="fas fa-info-circle" style="color:#6b9ece;"></i> 库存详情</h3>
-                        <button type="button" data-shop-action="inventory-detail-close" data-modal-id="inventoryDetailModal" style="background:none;border:none;color:#888;font-size:20px;cursor:pointer;">&times;</button>
+            <div id="inventoryDetailModal" data-shop-overlay-close="dynamic-modal" data-modal-id="inventoryDetailModal" class="shop-inventory-detail-overlay">
+                <div class="shop-inventory-detail-modal custom-scrollbar">
+                    <div class="shop-inventory-detail-header">
+                        <h3 class="shop-inventory-detail-title"><i class="fas fa-info-circle"></i> 库存详情</h3>
+                        <button type="button" data-shop-action="inventory-detail-close" data-modal-id="inventoryDetailModal" class="shop-inventory-detail-close" aria-label="关闭">&times;</button>
                     </div>
-                    <div id="detailContent" style="color:#e2e8f0;">
-                        <div style="text-align:center;padding:20px;"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>
+                    <div id="detailContent" class="shop-inventory-detail-content">
+                        <div class="shop-inventory-detail-loading"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>
                     </div>
                 </div>
             </div>
@@ -8273,138 +8204,139 @@ Example output format:
             }
 
             // Build detail content
-            const statusMap = { reserve: '储备', available: '在售', sold: '已售', frozen: '冻结' };
-            const statusColors = { reserve: '#a5b4fc', available: '#34d399', sold: '#f87171', frozen: '#fbbf24' };
+            const statusMeta = this.getInventoryStatusMeta(invData.status);
+            const safeMainContent = this.escapeHtml(invData.content || '');
+            const safeProductName = this.escapeHtml(invData.shop_products?.name || '-');
+            const safeStatusLabel = this.escapeHtml(statusMeta.label);
+            const safeCreatedAt = this.escapeHtml(new Date(invData.created_at).toLocaleString('zh-CN'));
+            const safeBatchId = this.escapeHtml(invData.batch_id || '-');
+            const safeRemark = this.escapeHtml(invData.remark || '');
+
+            const renderInventoryDetailListActions = (items, toneClass, filename) => {
+                const joined = items.map((entry) => entry.shop_inventory?.content || '').join('\n');
+                return `
+                    <div class="shop-inventory-detail-section-actions">
+                        <button type="button" data-shop-action="inventory-detail-copy-list" data-content="${this.escapeForAttr(joined)}" class="shop-inventory-detail-inline-btn ${toneClass}">
+                            <i class="fas fa-copy"></i> 复制
+                        </button>
+                        <button type="button" data-shop-action="inventory-detail-export-list" data-content="${this.escapeForAttr(joined)}" data-filename="${this.escapeForAttr(filename)}" class="shop-inventory-detail-inline-btn ${toneClass}">
+                            <i class="fas fa-download"></i> 导出
+                        </button>
+                    </div>
+                `;
+            };
+
+            const renderInventoryDetailEntries = (items, entryClass) => `
+                <div class="shop-inventory-detail-entry-list custom-scrollbar">
+                    ${items.map((entry) => {
+                    const content = entry.shop_inventory?.content || '';
+                    const display = this.escapeHtml(content.split('----')[0] || content);
+                    return `
+                            <div class="shop-inventory-detail-entry ${entryClass}"
+                                 data-shop-action="inventory-detail-copy-entry" data-content="${this.escapeForAttr(content)}"
+                                 title="点击复制">
+                                ${display}
+                            </div>
+                        `;
+                }).join('')}
+                </div>
+            `;
 
             let detailHtml = `
-                <div style="background:rgba(255,255,255,0.03);border-radius:12px;padding:15px;margin-bottom:15px;">
-                    <div style="color:#888;font-size:12px;margin-bottom:5px;">账号内容</div>
-                    <div style="font-family:monospace;word-break:break-all;background:rgba(0,0,0,0.2);padding:10px;border-radius:8px;">${invData.content}</div>
+                <div class="shop-inventory-detail-section shop-inventory-detail-section--primary">
+                    <div class="shop-inventory-detail-section-label">账号内容</div>
+                    <div class="shop-inventory-detail-code">${safeMainContent}</div>
                     <button type="button" data-shop-action="inventory-detail-copy-main" data-content="${this.escapeForAttr(invData.content)}"
-                        style="margin-top:10px;background:rgba(107,158,206,0.2);border:1px solid rgba(107,158,206,0.3);color:#6b9ece;padding:6px 15px;border-radius:6px;cursor:pointer;">
+                        class="shop-inventory-detail-inline-btn shop-inventory-detail-inline-btn--primary">
                         <i class="fas fa-copy"></i> 复制
                     </button>
                 </div>
 
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:15px;">
-                    <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:12px;">
-                        <div style="color:#888;font-size:11px;">商品</div>
-                        <div style="font-weight:bold;">${invData.shop_products?.name || '-'}</div>
+                <div class="shop-inventory-detail-grid">
+                    <div class="shop-inventory-detail-card">
+                        <div class="shop-inventory-detail-card-label">商品</div>
+                        <div class="shop-inventory-detail-card-value">${safeProductName}</div>
                     </div>
-                    <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:12px;">
-                        <div style="color:#888;font-size:11px;">状态</div>
-                        <div style="color:${statusColors[invData.status]};font-weight:bold;">${statusMap[invData.status] || invData.status}</div>
+                    <div class="shop-inventory-detail-card">
+                        <div class="shop-inventory-detail-card-label">状态</div>
+                        <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--status shop-inventory-detail-card-value--${statusMeta.modifier}">${safeStatusLabel}</div>
                     </div>
-                    <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:12px;">
-                        <div style="color:#888;font-size:11px;">导入时间</div>
-                        <div style="font-size:13px;">${new Date(invData.created_at).toLocaleString('zh-CN')}</div>
+                    <div class="shop-inventory-detail-card">
+                        <div class="shop-inventory-detail-card-label">导入时间</div>
+                        <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small">${safeCreatedAt}</div>
                     </div>
-                    <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:12px;">
-                        <div style="color:#888;font-size:11px;">批次</div>
-                        <div style="font-size:13px;">${invData.batch_id || '-'}</div>
+                    <div class="shop-inventory-detail-card">
+                        <div class="shop-inventory-detail-card-label">批次</div>
+                        <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small">${safeBatchId}</div>
                     </div>
-                </div>
                 </div>
             `;
 
-            // Fault Remark Display
             if (invData.remark) {
                 detailHtml += `
-                    <div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:15px;margin-bottom:15px;">
-                        <div style="color:#f87171;font-size:12px;margin-bottom:5px;font-weight:bold;"><i class="fas fa-exclamation-triangle"></i> 故障/备注</div>
-                        <div style="color:#fca5a5;word-break:break-all;">${this.escapeHtml(invData.remark)}</div>
+                    <div class="shop-inventory-detail-alert">
+                        <div class="shop-inventory-detail-alert-title"><i class="fas fa-exclamation-triangle"></i> 故障/备注</div>
+                        <div class="shop-inventory-detail-alert-body">${safeRemark}</div>
                     </div>
                 `;
             }
 
-            // Add order info if sold or frozen (with buyer)
             if (invData.buyer_id || invData.status === 'sold') {
                 const buyerEmail = orderData?.profiles?.email || invData.buyer_email || invData.profiles?.email || '-';
                 const orderId = orderData?.id || invData.order_id || null;
                 const payTime = orderData?.created_at || invData.sold_at;
                 const price = orderData?.price_paid !== undefined ? orderData.price_paid : '-';
+                const safeBuyerEmail = this.escapeHtml(buyerEmail);
+                const safeOrderId = this.escapeHtml(orderId || '');
+                const safePayTime = this.escapeHtml(payTime ? new Date(payTime).toLocaleString('zh-CN') : '-');
+                const safePrice = this.escapeHtml(String(price));
+
                 detailHtml += `
-                    <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:15px;margin-top:15px;">
-                        <div style="color:#94a3b8;font-weight:bold;margin-bottom:10px;"><i class="fas fa-shopping-cart"></i> 售出信息</div>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                            <div style="background:rgba(239,68,68,0.1);border-radius:8px;padding:12px;">
-                                <div style="color:#888;font-size:11px;">购买者</div>
-                                <div style="font-size:13px;word-break:break-all;">${buyerEmail}</div>
+                    <div class="shop-inventory-detail-sold-section">
+                        <div class="shop-inventory-detail-section-heading"><i class="fas fa-shopping-cart"></i> 售出信息</div>
+                        <div class="shop-inventory-detail-grid shop-inventory-detail-grid--sold">
+                            <div class="shop-inventory-detail-card shop-inventory-detail-card--sold">
+                                <div class="shop-inventory-detail-card-label">购买者</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small shop-inventory-detail-card-value--break">${safeBuyerEmail}</div>
                             </div>
-                            <div style="background:rgba(239,68,68,0.1);border-radius:8px;padding:12px;">
-                                <div style="color:#888;font-size:11px;">订单号</div>
-                                <div style="font-size:12px;font-family:monospace;word-break:break-all;" title="${orderId || ''}">
-                                    ${orderId ? orderId : '<span style="opacity:0.7">未找到关联订单</span>'}
+                            <div class="shop-inventory-detail-card shop-inventory-detail-card--sold">
+                                <div class="shop-inventory-detail-card-label">订单号</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--mono shop-inventory-detail-card-value--break" title="${safeOrderId}">
+                                    ${orderId ? safeOrderId : '<span class="shop-inventory-detail-muted">未找到关联订单</span>'}
                                 </div>
                             </div>
-                            <div style="background:rgba(239,68,68,0.1);border-radius:8px;padding:12px;">
-                                <div style="color:#888;font-size:11px;">下单时间</div>
-                                <div style="font-size:13px;">${payTime ? new Date(payTime).toLocaleString('zh-CN') : '-'}</div>
+                            <div class="shop-inventory-detail-card shop-inventory-detail-card--sold">
+                                <div class="shop-inventory-detail-card-label">下单时间</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small">${safePayTime}</div>
                             </div>
-                            <div style="background:rgba(239,68,68,0.1);border-radius:8px;padding:12px;">
-                                <div style="color:#888;font-size:11px;">支付积分</div>
-                                <div style="font-size:13px;font-weight:bold;">${price}</div>
+                            <div class="shop-inventory-detail-card shop-inventory-detail-card--sold">
+                                <div class="shop-inventory-detail-card-label">支付积分</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small shop-inventory-detail-card-value--strong">${safePrice}</div>
                             </div>
                         </div>
                     </div>
                 `;
 
-                // Add Same Order Items
                 if (sameOrderItems.length > 0) {
                     detailHtml += `
-                        <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:15px;margin-top:15px;">
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                                <div style="color:#fbbf24;font-weight:bold;"><i class="fas fa-layer-group"></i> 本次交易关联商品 (${sameOrderItems.length})</div>
-                                <div style="display:flex;gap:5px;">
-                                    <button type="button" data-shop-action="inventory-detail-copy-list" data-content="${this.escapeForAttr(sameOrderItems.map(i => i.shop_inventory?.content || '').join('\n'))}"
-                                        style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);color:#fbbf24;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">
-                                        <i class="fas fa-copy"></i> 复制
-                                    </button>
-                                    <button type="button" data-shop-action="inventory-detail-export-list" data-content="${this.escapeForAttr(sameOrderItems.map(i => i.shop_inventory?.content || '').join('\n'))}" data-filename="sameday_orders.txt"
-                                        style="background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);color:#fbbf24;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">
-                                        <i class="fas fa-download"></i> 导出
-                                    </button>
-                                </div>
+                        <div class="shop-inventory-detail-related-section">
+                            <div class="shop-inventory-detail-related-header">
+                                <div class="shop-inventory-detail-related-title shop-inventory-detail-related-title--warning"><i class="fas fa-layer-group"></i> 本次交易关联商品 (${sameOrderItems.length})</div>
+                                ${renderInventoryDetailListActions(sameOrderItems, 'shop-inventory-detail-inline-btn--warning', 'sameday_orders.txt')}
                             </div>
-                            <div style="max-height:150px;overflow-y:auto;" class="custom-scrollbar">
-                                ${sameOrderItems.map(r => `
-                                    <div style="background:rgba(251,191,36,0.1);border-radius:6px;padding:8px 12px;margin-bottom:5px;font-size:12px;font-family:monospace;cursor:pointer;transition:all 0.2s;"
-                                         data-shop-action="inventory-detail-copy-entry" data-content="${this.escapeForAttr(r.shop_inventory?.content || '')}"
-                                         title="点击复制">
-                                        ${this.escapeHtml((r.shop_inventory?.content || '').split('----')[0])}
-                                    </div>
-                                `).join('')}
-                            </div>
+                            ${renderInventoryDetailEntries(sameOrderItems, 'shop-inventory-detail-entry--warning')}
                         </div>
                     `;
                 }
 
-                // Add History Items
                 if (historyItems.length > 0) {
                     detailHtml += `
-                        <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:15px;margin-top:15px;">
-                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                                <div style="color:#818cf8;font-weight:bold;"><i class="fas fa-history"></i> 该买家购买历史 (${historyItems.length})</div>
-                                <div style="display:flex;gap:5px;">
-                                    <button type="button" data-shop-action="inventory-detail-copy-list" data-content="${this.escapeForAttr(historyItems.map(i => i.shop_inventory?.content || '').join('\n'))}"
-                                        style="background:rgba(129,140,248,0.1);border:1px solid rgba(129,140,248,0.3);color:#818cf8;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">
-                                        <i class="fas fa-copy"></i> 复制
-                                    </button>
-                                    <button type="button" data-shop-action="inventory-detail-export-list" data-content="${this.escapeForAttr(historyItems.map(i => i.shop_inventory?.content || '').join('\n'))}" data-filename="order_history.txt"
-                                        style="background:rgba(129,140,248,0.1);border:1px solid rgba(129,140,248,0.3);color:#818cf8;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">
-                                        <i class="fas fa-download"></i> 导出
-                                    </button>
-                                </div>
+                        <div class="shop-inventory-detail-related-section">
+                            <div class="shop-inventory-detail-related-header">
+                                <div class="shop-inventory-detail-related-title shop-inventory-detail-related-title--info"><i class="fas fa-history"></i> 该买家购买历史 (${historyItems.length})</div>
+                                ${renderInventoryDetailListActions(historyItems, 'shop-inventory-detail-inline-btn--info', 'order_history.txt')}
                             </div>
-                            <div style="max-height:150px;overflow-y:auto;" class="custom-scrollbar">
-                                ${historyItems.map(r => `
-                                    <div style="background:rgba(99,102,241,0.1);border-radius:6px;padding:8px 12px;margin-bottom:5px;font-size:12px;font-family:monospace;cursor:pointer;transition:all 0.2s;"
-                                         data-shop-action="inventory-detail-copy-entry" data-content="${this.escapeForAttr(r.shop_inventory?.content || '')}"
-                                         title="点击复制">
-                                        ${this.escapeHtml((r.shop_inventory?.content || '').split('----')[0])}
-                                    </div>
-                                `).join('')}
-                            </div>
+                            ${renderInventoryDetailEntries(historyItems, 'shop-inventory-detail-entry--info')}
                         </div>
                     `;
                 }
@@ -8414,7 +8346,7 @@ Example output format:
 
         } catch (err) {
             console.error('[ShopAdmin] Detail error:', err);
-            document.getElementById('detailContent').innerHTML = `<div style="color:#ef4444;text-align:center;">加载失败: ${err.message}</div>`;
+            document.getElementById('detailContent').innerHTML = `<div class="shop-inventory-detail-error">加载失败: ${this.escapeHtml(err.message || '未知错误')}</div>`;
         }
     },
 
@@ -8437,15 +8369,15 @@ Example output format:
 
         document.getElementById('releaseCount').value = '';
         document.getElementById('releaseBeforeDate').value = '';
-        modal.style.display = 'flex';
+        modal.classList.add('active');
     },
 
     closeReleaseModal: function () {
-        document.getElementById('releaseReserveModal').style.display = 'none';
+        document.getElementById('releaseReserveModal')?.classList.remove('active');
     },
 
     closeImportModal: function () {
-        document.getElementById('importInventoryModal')?.style.setProperty('display', 'none');
+        document.getElementById('importInventoryModal')?.classList.remove('active');
     },
 
     doImport: async function () {
@@ -8566,11 +8498,11 @@ Example output format:
         // Target the tree container (new structure)
         const treeContainer = document.getElementById('importProductTree');
         // Clear and add loading state
-        treeContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: rgba(255,255,255,0.4); font-size: 13px;">正在加载商品...</div>';
+        treeContainer.innerHTML = '<div class="shop-import-tree-state">正在加载商品...</div>';
 
         // Reset selection
         document.getElementById('importViewProductId').value = '';
-        document.getElementById('targetProductName').style.display = 'none';
+        document.getElementById('targetProductName').classList.remove('shop-import-target-product--visible');
         document.getElementById('targetProductName').textContent = '';
 
         try {
@@ -8599,7 +8531,7 @@ Example output format:
 
         } catch (e) {
             console.error('Failed to load products for import view', e);
-            treeContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: rgba(255,100,100,0.6);">加载失败</div>';
+            treeContainer.innerHTML = '<div class="shop-import-tree-state shop-import-tree-state--error">加载失败</div>';
         }
     },
 
@@ -8744,7 +8676,7 @@ Example output format:
         });
 
         if (sortedKeys.length === 0) {
-            treeContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: rgba(255,255,255,0.4);">暂无商品</div>';
+            treeContainer.innerHTML = '<div class="shop-import-tree-state">暂无商品</div>';
             return;
         }
 
@@ -8766,7 +8698,7 @@ Example output format:
 
             header.innerHTML = `
                 <i class="fas fa-chevron-right tree-chevron"></i>
-                <i class="fas fa-folder tree-folder-icon" style="color: ${folderColor};"></i>
+                <i class="fas fa-folder tree-folder-icon ${this.buildCategoryColorClass(folderColor)}"></i>
                 <span class="tree-category-name">${cat.name}</span>
                 <span class="tree-category-count">${cat.products.length}</span>
             `;
@@ -8914,11 +8846,11 @@ Example output format:
                     e.dataTransfer.setData('text/plain', p.id);
                     e.dataTransfer.effectAllowed = 'move';
                     item.classList.add('dragging');
-                    setTimeout(() => item.style.opacity = '0.4', 0);
+                    setTimeout(() => item.classList.add('tree-product-item--drag-dim'), 0);
                 };
                 item.ondragend = () => {
                     item.classList.remove('dragging');
-                    item.style.opacity = '';
+                    item.classList.remove('tree-product-item--drag-dim');
                     // Clean up any remaining indicators
                     document.querySelectorAll('.drop-indicator').forEach(i => i.remove());
                 };
@@ -8949,9 +8881,9 @@ Example output format:
             recycleBinHeader.dataset.category = '__recycle_bin__';
             recycleBinHeader.innerHTML = `
                 <i class="fas fa-chevron-right tree-chevron"></i>
-                <i class="fas fa-trash tree-folder-icon" style="color: #ef4444;"></i>
-                <span class="tree-category-name" style="color: rgba(255,255,255,0.5);">回收站</span>
-                <span class="tree-category-count" style="background:rgba(239, 68, 68, 0.2); color:#ef4444;">${this.deletedProductsForImport.length}</span>
+                <i class="fas fa-trash tree-folder-icon tree-folder-icon--recycle-bin"></i>
+                <span class="tree-category-name tree-category-name--muted">回收站</span>
+                <span class="tree-category-count tree-category-count--danger">${this.deletedProductsForImport.length}</span>
             `;
             recycleBinHeader.onclick = () => this.toggleTreeCategory(recycleBinDiv);
 
@@ -8961,13 +8893,12 @@ Example output format:
 
             this.deletedProductsForImport.forEach(p => {
                 const item = document.createElement('div');
-                item.className = 'tree-product-item deleted-product';
+                item.className = 'tree-product-item deleted-product tree-product-item--deleted';
                 item.dataset.id = p.id;
                 item.dataset.name = p.name;
-                item.style.opacity = '0.6';
                 item.onclick = () => this.selectImportProduct(p.id, p.name);
                 item.innerHTML = `
-                    <i class="fas fa-file-alt tree-product-icon" style="color: #ef4444;"></i>
+                    <i class="fas fa-file-alt tree-product-icon tree-product-icon--danger"></i>
                     <span class="tree-product-name">${p.name}</span>
                 `;
                 recycleBinChildren.appendChild(item);
@@ -9063,6 +8994,67 @@ Example output format:
         return colors[key] || '#6b9ece';
     },
 
+    getCategoryColorToken: function (color) {
+        const normalized = String(color || '').trim().toLowerCase();
+        const tokenMap = {
+            '#6b9ece': 'blue',
+            '#f4b400': 'yellow',
+            '#0f9d58': 'green',
+            '#4ade80': 'green-bright',
+            '#e57373': 'red-soft',
+            '#ea4335': 'red',
+            '#9c27b0': 'purple',
+            '#a78bfa': 'purple-soft',
+            '#f472b6': 'pink',
+            '#fb923c': 'orange',
+            '#22d3d8': 'cyan',
+            '#74aa9c': 'teal',
+            '#9aa0a6': 'gray',
+            '#ffffff': 'white',
+            '#ffeb3b': 'lemon',
+            '#ff9800': 'amber',
+            '#4caf50': 'green-soft'
+        };
+        return tokenMap[normalized] || 'blue';
+    },
+
+    buildCategoryColorClass: function (color) {
+        return `category-color--${this.getCategoryColorToken(color)}`;
+    },
+
+    setCategoryColorClasses: function (element, color) {
+        if (!element) return;
+        const colorClasses = Array.from(element.classList).filter((className) => className.startsWith('category-color--'));
+        colorClasses.forEach((className) => element.classList.remove(className));
+        element.classList.add(this.buildCategoryColorClass(color));
+    },
+
+    renderDeliveryTrendBarSvg: function (totalHeight, deadHeight = 0) {
+        const safeTotalHeight = Math.max(0, Math.min(100, Number(totalHeight || 0)));
+        const safeDeadHeight = Math.max(0, Math.min(100, Number(deadHeight || 0)));
+        return `
+            <svg class="shop-delivery-trend-bar-svg" viewBox="0 0 24 100" preserveAspectRatio="none" aria-hidden="true">
+                <rect class="shop-delivery-trend-bar-svg-fill" x="0" y="${100 - safeTotalHeight}" width="24" height="${safeTotalHeight}" rx="7" ry="7"></rect>
+                ${safeDeadHeight ? `<rect class="shop-delivery-trend-bar-svg-fill shop-delivery-trend-bar-svg-fill--dead" x="5" y="${100 - safeDeadHeight}" width="14" height="${safeDeadHeight}" rx="7" ry="7"></rect>` : ''}
+            </svg>
+        `;
+    },
+
+    closeCategoryContextMenu: function () {
+        const menu = document.getElementById('categoryContextMenu');
+        if (!menu) return;
+        menu.classList.remove(
+            'show',
+            'tree-context-menu--anchor-left',
+            'tree-context-menu--anchor-right',
+            'tree-context-menu--anchor-up',
+            'tree-context-menu--anchor-down'
+        );
+        if (menu.parentElement !== document.body) {
+            document.body.appendChild(menu);
+        }
+    },
+
     toggleTreeCategory: function (catDiv) {
         catDiv.classList.toggle('expanded');
     },
@@ -9075,46 +9067,36 @@ Example output format:
         this.contextMenuCategory = categoryKey;
         const menu = document.getElementById('categoryContextMenu');
         if (!menu) return;
+        const anchor = e.currentTarget
+            || Array.from(document.querySelectorAll('.tree-category-header')).find((element) => element.dataset.category === categoryKey)
+            || null;
+        if (!anchor) return;
 
-        // Show menu first to measure its dimensions
+        this.closeCategoryContextMenu();
+        anchor.appendChild(menu);
         menu.classList.add('show');
 
-        // Get viewport dimensions
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
         const menuRect = menu.getBoundingClientRect();
-
-        // Calculate position, ensuring menu stays within viewport
-        let left = e.clientX;
-        let top = e.clientY;
-
-        // Adjust horizontal position if menu would overflow right edge
-        if (left + menuRect.width > viewportWidth - 10) {
-            left = viewportWidth - menuRect.width - 10;
-        }
-
-        // Adjust vertical position if menu would overflow bottom edge
-        if (top + menuRect.height > viewportHeight - 10) {
-            top = viewportHeight - menuRect.height - 10;
-        }
-
-        // Ensure minimum position
-        left = Math.max(10, left);
-        top = Math.max(10, top);
-
-        menu.style.left = left + 'px';
-        menu.style.top = top + 'px';
+        const anchorRect = anchor.getBoundingClientRect();
+        const alignRight = anchorRect.left + menuRect.width > viewportWidth - 10;
+        const alignUp = anchorRect.bottom + menuRect.height > viewportHeight - 10 && anchorRect.top > menuRect.height + 10;
+        menu.classList.toggle('tree-context-menu--anchor-left', !alignRight);
+        menu.classList.toggle('tree-context-menu--anchor-right', alignRight);
+        menu.classList.toggle('tree-context-menu--anchor-down', !alignUp);
+        menu.classList.toggle('tree-context-menu--anchor-up', alignUp);
 
         // Highlight current color
         const currentColor = this.getCategoryColor(categoryKey);
         menu.querySelectorAll('.color-option').forEach(opt => {
-            opt.classList.toggle('selected', opt.style.background === currentColor);
+            opt.classList.toggle('selected', String(opt.dataset.categoryColor || '').toLowerCase() === String(currentColor || '').toLowerCase());
         });
 
         // Close on click or touch outside
         const closeHandler = (evt) => {
             if (!menu.contains(evt.target)) {
-                menu.classList.remove('show');
+                this.closeCategoryContextMenu();
                 document.removeEventListener('click', closeHandler);
                 document.removeEventListener('touchstart', closeHandler);
             }
@@ -9161,12 +9143,12 @@ Example output format:
 
         const newName = prompt('重命名分类:', currentName);
         if (!newName || !newName.trim() || newName.trim() === currentName) {
-            document.getElementById('categoryContextMenu')?.classList.remove('show');
+            this.closeCategoryContextMenu();
             return;
         }
 
         this.renameCategory(key, newName.trim());
-        document.getElementById('categoryContextMenu')?.classList.remove('show');
+        this.closeCategoryContextMenu();
     },
 
     renameCategory: async function (oldKey, newName) {
@@ -9210,6 +9192,7 @@ Example output format:
 
         const cat = this.categoryData.find(c => c.name === key || c.id === key);
         if (!cat) return;
+        this.closeCategoryContextMenu();
 
         try {
             const { error } = await supabaseClient
@@ -9224,8 +9207,6 @@ Example output format:
         } catch (e) {
             console.error('Failed to set color:', e);
         }
-
-        document.getElementById('categoryContextMenu')?.classList.remove('show');
     },
 
     // Delete category
@@ -9242,12 +9223,12 @@ Example output format:
             : `确定删除分类"${cat.name}"吗？`;
 
         if (!confirm(msg)) {
-            document.getElementById('categoryContextMenu')?.classList.remove('show');
+            this.closeCategoryContextMenu();
             return;
         }
 
         this.deleteCategory(cat);
-        document.getElementById('categoryContextMenu')?.classList.remove('show');
+        this.closeCategoryContextMenu();
     },
 
     deleteCategory: async function (cat) {
@@ -9322,7 +9303,7 @@ Example output format:
         // Update UI Badge
         const badge = document.getElementById('selectedProductBadge');
         badge.textContent = name;
-        badge.style.display = 'inline-block';
+        badge.classList.remove('admin-studio-inline-style-attr-3');
 
         // Update Tree UI
         document.querySelectorAll('.tree-product-item').forEach(item => {
@@ -9404,7 +9385,7 @@ Example output format:
 
                 // Close menu
                 const menu = document.getElementById('batchActionMenu');
-                if (menu) menu.style.display = 'none';
+                if (menu) menu.classList.remove('is-open');
 
             } else {
                 const productId = document.getElementById('invFilterProduct')?.value || null;

@@ -61,6 +61,7 @@ const SYNTHETIC_ROLE_SEGMENT_RE = /(?:^|[._-])(admin|regular)(?:[._-]|$)/i;
 const SYNTHETIC_TIMESTAMP_RE = /(?:^|[._-])\d{8,}$/;
 const SYSTEM_USERNAME_RE = /^(?:system|bot|service|worker|cron|automation)(?:[._-]|$)/i;
 const PHONE_ONLY_USERNAME_RE = /^\+?\d{8,}$/;
+const USERS_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';
 
 function getTagClass(tag) {
     return TAG_CONFIG[tag]?.class || 'tag-custom';
@@ -113,6 +114,32 @@ function updateUserAccountVisibilityMeta() {
         : `已隐藏 ${testAccountCount} 个测试/系统账号`;
 }
 
+function setUsersHiddenState(element, hidden) {
+    if (!(element instanceof HTMLElement)) {
+        return;
+    }
+    element.classList.toggle(USERS_HIDDEN_CLASS, Boolean(hidden));
+}
+
+function ensureUsersTableEmptyState() {
+    let emptyDiv = document.getElementById('usersEmptyState');
+    if (emptyDiv) {
+        return emptyDiv;
+    }
+
+    emptyDiv = document.createElement('div');
+    emptyDiv.id = 'usersEmptyState';
+    emptyDiv.className = `users-table-empty-state ${USERS_HIDDEN_CLASS}`;
+    emptyDiv.hidden = true;
+
+    const table = document.getElementById('usersTable');
+    if (table?.parentNode) {
+        table.parentNode.insertBefore(emptyDiv, table.nextSibling);
+    }
+
+    return emptyDiv;
+}
+
 // Initialize Module
 function initUserModule() {
     console.log('👥 Initializing User Module...');
@@ -137,7 +164,7 @@ function initUserModule() {
     // Show admin role filter for super admins
     if (window._isSuperAdmin) {
         const roleFilter = document.getElementById('adminRoleFilter');
-        if (roleFilter) roleFilter.style.display = 'block';
+        setUsersHiddenState(roleFilter, false);
     }
 
     // Bind Modal Overlay Click
@@ -471,10 +498,11 @@ async function loadUsers() {
     } catch (err) {
         console.error('Failed to load users:', err);
         document.getElementById('usersTableBody').innerHTML = `
-            <tr><td colspan="5" style="text-align:center;color:var(--text-dim);padding:20px;">
+            <tr><td colspan="5" class="loading-cell users-table-status-cell">
                 加载失败: ${err.message}
             </td></tr>
         `;
+        hideUsersEmptyState();
     }
 }
 
@@ -490,6 +518,26 @@ function handleUserFilterChange(e) {
     if (e.target.id === 'userLevelFilter') userState.filters.level = e.target.value;
     userState.currentPage = 1;
     renderUsersTable();
+}
+
+function setUsersEmptyStateContent(content, { isHtml = false } = {}) {
+    const emptyDiv = ensureUsersTableEmptyState();
+    if (!emptyDiv) return;
+    if (isHtml) {
+        emptyDiv.innerHTML = content;
+    } else {
+        emptyDiv.textContent = content;
+    }
+    emptyDiv.hidden = false;
+    setUsersHiddenState(emptyDiv, false);
+}
+
+function hideUsersEmptyState() {
+    const emptyDiv = document.getElementById('usersEmptyState');
+    if (!emptyDiv) return;
+    emptyDiv.hidden = true;
+    emptyDiv.innerHTML = '';
+    setUsersHiddenState(emptyDiv, true);
 }
 
 function toggleUserTestAccountVisibility(checked) {
@@ -591,24 +639,14 @@ function renderUsersTable() {
 
     if (paginatedUsers.length === 0) {
         tableBody.innerHTML = '';
-        // Show centered empty message as div sibling (not in table)
-        let emptyDiv = document.getElementById('usersEmptyState');
-        if (!emptyDiv) {
-            emptyDiv = document.createElement('div');
-            emptyDiv.id = 'usersEmptyState';
-            emptyDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;height:300px;width:100%;color:var(--text-dim);font-size:0.9rem;';
-            const table = document.getElementById('usersTable');
-            if (table) table.parentNode.insertBefore(emptyDiv, table.nextSibling);
-        }
-        emptyDiv.textContent = showTestAccounts
-            ? '未找到符合条件的用户'
-            : '当前仅显示真实用户，打开“显示测试/系统账号”可查看被隐藏账号';
-        emptyDiv.style.display = 'flex';
+        setUsersEmptyStateContent(
+            showTestAccounts
+                ? '未找到符合条件的用户'
+                : '当前仅显示真实用户，打开“显示测试/系统账号”可查看被隐藏账号'
+        );
         return;
     }
-    // Hide empty state if visible
-    const emptyDiv = document.getElementById('usersEmptyState');
-    if (emptyDiv) emptyDiv.style.display = 'none';
+    hideUsersEmptyState();
 
     // 4. Render Rows
     tableBody.innerHTML = paginatedUsers.map(u => {
@@ -686,7 +724,7 @@ function renderUsersTable() {
                 <div class="user-tags-cell">
                     ${u.tags.length > 0
                 ? u.tags.slice(0, 2).map(tag => `<span class="user-tag ${getTagClass(tag)}">${getTagLabel(tag)}</span>`).join('') + (u.tags.length > 2 ? `<span class="user-tag more">+${u.tags.length - 2}</span>` : '')
-                : '<span style="color:var(--text-dim);font-size:0.8rem;">-</span>'
+                : '<span class="users-empty-tag">-</span>'
             }
                 </div>
             </td>
@@ -697,17 +735,7 @@ function renderUsersTable() {
 // Loading State
 function renderUserLoading() {
     document.getElementById('usersTableBody').innerHTML = '';
-    // Show centered loading as div sibling (not in table)
-    let emptyDiv = document.getElementById('usersEmptyState');
-    if (!emptyDiv) {
-        emptyDiv = document.createElement('div');
-        emptyDiv.id = 'usersEmptyState';
-        emptyDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;height:300px;width:100%;color:var(--text-dim);font-size:0.9rem;';
-        const table = document.getElementById('usersTable');
-        if (table) table.parentNode.insertBefore(emptyDiv, table.nextSibling);
-    }
-    emptyDiv.innerHTML = '<div class="neural-loader small"><div class="neural-dot"></div><div class="neural-dot"></div><div class="neural-dot"></div></div>';
-    emptyDiv.style.display = 'flex';
+    setUsersEmptyStateContent('<div class="neural-loader small"><div class="neural-dot"></div><div class="neural-dot"></div><div class="neural-dot"></div></div>', { isHtml: true });
 }
 
 // ========================================
@@ -780,13 +808,8 @@ function updateSelectModeUI() {
         selectModeBtn.classList.toggle('active', userState.selectMode);
     }
 
-    if (batchMenuContainer) {
-        batchMenuContainer.style.display = userState.selectMode ? 'block' : 'none';
-    }
-
-    if (selectedCountWrapper) {
-        selectedCountWrapper.style.display = userState.selectMode && userState.selectedUsers.size > 0 ? 'flex' : 'none';
-    }
+    setUsersHiddenState(batchMenuContainer, !userState.selectMode);
+    setUsersHiddenState(selectedCountWrapper, !(userState.selectMode && userState.selectedUsers.size > 0));
 }
 
 // Update selection count display
@@ -798,9 +821,7 @@ function updateUserSelectionCount() {
         countEl.textContent = userState.selectedUsers.size;
     }
 
-    if (wrapper) {
-        wrapper.style.display = userState.selectMode && userState.selectedUsers.size > 0 ? 'flex' : 'none';
-    }
+    setUsersHiddenState(wrapper, !(userState.selectMode && userState.selectedUsers.size > 0));
 }
 
 // Select all users on current page
@@ -850,38 +871,91 @@ async function batchSendNotification() {
     showNotificationModalBatch(userIds.length);
 }
 
-// Open notification modal in batch mode
-function showNotificationModalBatch(count) {
-    // Reuse the existing showNotificationModal logic but with batch marker
-    let modal = document.getElementById('notificationModal');
+function buildUsersModalCountBadge(count) {
+    return `<span class="users-modal-title-count">(${escapeHtml(String(count))} 人)</span>`;
+}
 
-    if (!modal) {
-        // Create modal if not exists (similar to showNotificationModal)
-        showNotificationModal('__BATCH__');
-        modal = document.getElementById('notificationModal');
+function buildNotificationModalTitle(count = null) {
+    const isBatch = Number.isFinite(Number(count)) && Number(count) > 0;
+    const badge = isBatch ? ` ${buildUsersModalCountBadge(count)}` : '';
+    return `<i class="far fa-bell notification-modal-title-icon" aria-hidden="true"></i>${isBatch ? '批量通知' : '通知'}${badge}`;
+}
+
+function getNotificationModal() {
+    let modal = document.getElementById('notificationModal');
+    if (modal) {
+        return modal;
     }
 
-    // Update modal title for batch mode
+    modal = document.createElement('div');
+    modal.id = 'notificationModal';
+    modal.className = 'custom-modal-overlay notification-modal-overlay';
+    modal.innerHTML = `
+        <div class="custom-modal notification-modal-dialog">
+            <div class="modal-header">
+                <h3 class="modal-title">${buildNotificationModalTitle()}</h3>
+                <button class="modal-close-btn" type="button" data-admin-action="users-close-notification-modal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>标题</label>
+                    <input type="text" id="notifTitle" class="modal-input" placeholder="简短的通知标题">
+                </div>
+                <div class="form-group">
+                    <label>内容</label>
+                    <textarea id="notifContent" class="modal-input" rows="4" placeholder="通知详细内容..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>类型</label>
+                    <div class="notif-type-selector notification-type-selector">
+                        <button class="type-btn active" type="button" data-type="info" data-admin-action="users-select-notification-type" data-notification-type="info"><i class="fas fa-info-circle"></i> 信息</button>
+                        <button class="type-btn" type="button" data-type="warning" data-admin-action="users-select-notification-type" data-notification-type="warning"><i class="fas fa-exclamation-triangle"></i> 警告</button>
+                        <button class="type-btn" type="button" data-type="success" data-admin-action="users-select-notification-type" data-notification-type="success"><i class="fas fa-check-circle"></i> 成功</button>
+                    </div>
+                    <input type="hidden" id="notifType" value="info">
+                </div>
+            </div>
+            <div class="modal-footer notification-modal-footer">
+                <button class="send-notification-btn" type="button" data-admin-action="users-send-notification" data-user-id=""><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+    `;
+
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            closeNotificationModal();
+        }
+    });
+
+    document.body.appendChild(modal);
+    return modal;
+}
+
+function openNotificationModal(userId, count = null) {
+    const modal = getNotificationModal();
     const titleEl = modal.querySelector('.modal-title');
     if (titleEl) {
-        titleEl.innerHTML = `<i class="far fa-bell" style="margin-right: 8px;"></i> 批量通知 <span style="font-size:0.9rem;color:#94a3b8;margin-left:6px;">(${count} 人)</span>`;
+        titleEl.innerHTML = buildNotificationModalTitle(count);
     }
 
-    // Update send button onclick for batch mode
+    document.getElementById('notifTitle').value = '';
+    document.getElementById('notifContent').value = '';
+
     const sendBtn = modal.querySelector('.send-notification-btn');
     if (sendBtn) {
-        sendBtn.onclick = () => executeBatchNotification();
+        sendBtn.dataset.userId = userId;
     }
 
-    // Clear previous input
-    const titleInput = document.getElementById('notifTitle');
-    const contentInput = document.getElementById('notifContent');
-    if (titleInput) titleInput.value = '';
-    if (contentInput) contentInput.value = '';
+    selectNotifType('info');
 
-    // Show modal
-    modal.style.display = 'flex';
-    modal.classList.add('active');
+    requestAnimationFrame(() => {
+        modal.classList.add('active');
+    });
+}
+
+// Open notification modal in batch mode
+function showNotificationModalBatch(count) {
+    openNotificationModal('__BATCH__', count);
 }
 
 // Execute batch notification send
@@ -920,11 +994,7 @@ async function executeBatchNotification() {
         showToast(`成功发送通知给 ${batchNotificationUserIds.length} 位用户`, 'success');
 
         // Close modal
-        const modal = document.getElementById('notificationModal');
-        if (modal) {
-            modal.classList.remove('active');
-            setTimeout(() => modal.style.display = 'none', 300);
-        }
+        closeNotificationModal();
 
         batchNotificationUserIds = [];
         clearAllSelections();
@@ -962,7 +1032,7 @@ async function openBanModalBatch(count) {
     // Update modal title to show batch mode
     const titleEl = document.querySelector('#banUserModalOverlay .modal-title');
     if (titleEl) {
-        titleEl.innerHTML = `🚫 批量封禁管理 <span style="font-size:0.9rem;color:#94a3b8;">(${count} 人)</span>`;
+        titleEl.innerHTML = `🚫 批量封禁管理 ${buildUsersModalCountBadge(count)}`;
     }
 
     // Reset State
@@ -1159,20 +1229,19 @@ function showBatchTagModal(count) {
             .join('');
 
         modal.innerHTML = `
-            <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-content users-batch-tag-modal">
                 <div class="modal-header">
                     <h3>批量添加标签 (${count} 人)</h3>
                     <button class="modal-close" type="button" data-batch-tag-close="1">&times;</button>
                 </div>
-                <div class="modal-body" style="padding: 20px;">
-                    <p style="margin-bottom: 16px; color: var(--text-dim);">选择要添加的标签：</p>
-                    <div class="tag-options" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                <div class="modal-body users-batch-tag-body">
+                    <p class="users-batch-tag-note">选择要添加的标签：</p>
+                    <div class="tag-options users-batch-tag-options">
                         ${tagButtons}
                     </div>
-                    <div style="margin-top: 16px;">
-                        <input type="text" id="customTagInput" placeholder="或输入自定义标签..." 
-                               style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-main);">
-                        <button class="btn-secondary" type="button" style="width: 100%; margin-top: 8px;" data-batch-tag-submit="1">添加自定义标签</button>
+                    <div class="users-batch-tag-custom">
+                        <input type="text" id="customTagInput" class="users-batch-tag-input" placeholder="或输入自定义标签...">
+                        <button class="btn-secondary users-batch-tag-submit" type="button" data-batch-tag-submit="1">添加自定义标签</button>
                     </div>
                 </div>
             </div>
@@ -1251,76 +1320,61 @@ async function batchExportUsers() {
 function showBatchExportModal(count) {
     return new Promise((resolve, reject) => {
         // Remove existing modal if any
-        document.querySelector('.batch-export-modal')?.remove();
+        document.querySelector('.batch-export-modal-overlay')?.remove();
 
         const modalOverlay = document.createElement('div');
         modalOverlay.className = 'batch-export-modal-overlay';
-        modalOverlay.style.cssText = `
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
-            z-index: 10000; display: flex; align-items: center; justify-content: center;
-            opacity: 0; transition: opacity 0.3s ease;
-        `;
 
         const modal = document.createElement('div');
         modal.className = 'batch-export-modal glass-panel';
-        modal.style.cssText = `
-            width: 380px; max-width: 90vw;
-            background: var(--bg-color, #fff);
-            color: var(--text-main, #1e1e1e);
-            border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.2);
-            border: 1px solid var(--border-color, rgba(0,0,0,0.1));
-            overflow: hidden; transform: scale(0.95); transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-        `;
-
         modal.innerHTML = `
-            <div style="padding: 14px 16px; border-bottom: 1px solid var(--border-color, rgba(0,0,0,0.1)); text-align: center;">
-                <h3 style="margin: 0; font-size: 1rem; font-weight: 600; color: var(--text-main);">📥 批量导出用户</h3>
+            <div class="batch-export-modal-header">
+                <h3 class="batch-export-modal-title">📥 批量导出用户</h3>
             </div>
-            
-            <div style="padding: 14px 20px;">
-                <div style="margin-bottom: 14px; font-size: 0.95rem; color: var(--text-main);">
-                    已选 <span style="font-weight:700; color:#3b82f6;">${count}</span> 位用户
+
+            <div class="batch-export-modal-body">
+                <div class="batch-export-modal-summary">
+                    已选 <span class="batch-export-modal-count">${escapeHtml(String(count))}</span> 位用户
                 </div>
 
-                <div style="margin-bottom: 16px;">
-                    <div style="color: var(--text-dim, #666); margin-bottom: 8px; font-size: 0.85rem;">导出格式:</div>
-                    <div style="display: flex; flex-direction: column; gap: 8px;">
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
-                            <input type="radio" name="exportMode" value="simple" style="accent-color: #3b82f6;">
+                <div class="batch-export-modal-section">
+                    <div class="batch-export-modal-section-title">导出格式:</div>
+                    <div class="batch-export-modal-options">
+                        <label class="batch-export-modal-option">
+                            <input type="radio" name="exportMode" value="simple">
                             <span>简洁模式 (CSV) - 仅基本信息</span>
                         </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
-                            <input type="radio" name="exportMode" value="full" checked style="accent-color: #3b82f6;">
+                        <label class="batch-export-modal-option">
+                            <input type="radio" name="exportMode" value="full" checked>
                             <span>完整模式 (Excel) - 含积分流水/封禁记录</span>
                         </label>
                     </div>
                 </div>
 
-                <div id="exportDataOptions" style="margin-bottom: 6px;">
-                    <div style="color: var(--text-dim, #666); margin-bottom: 8px; font-size: 0.85rem;">包含数据:</div>
-                    <div style="display: flex; flex-direction: column; gap: 6px;">
-                        <label style="display: flex; align-items: center; gap: 8px; opacity: 0.7; color: var(--text-main); font-size: 0.9rem;">
+                <div id="exportDataOptions" class="batch-export-modal-section batch-export-modal-section-compact">
+                    <div class="batch-export-modal-section-title">包含数据:</div>
+                    <div class="batch-export-modal-options batch-export-modal-options-tight">
+                        <label class="batch-export-modal-option is-disabled">
                             <input type="checkbox" checked disabled> 基本信息 (用户名/邮箱/积分/状态)
                         </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
-                            <input type="checkbox" id="exportLedger" checked style="accent-color: #3b82f6;"> 积分流水记录
+                        <label class="batch-export-modal-option">
+                            <input type="checkbox" id="exportLedger" checked> 积分流水记录
                         </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
-                            <input type="checkbox" id="exportBanHistory" style="accent-color: #3b82f6;"> 封禁历史
+                        <label class="batch-export-modal-option">
+                            <input type="checkbox" id="exportBanHistory"> 封禁历史
                         </label>
-                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
-                            <input type="checkbox" id="exportTags" style="accent-color: #3b82f6;"> 标签详情
+                        <label class="batch-export-modal-option">
+                            <input type="checkbox" id="exportTags"> 标签详情
                         </label>
                     </div>
                 </div>
             </div>
 
-            <div style="padding: 14px 20px; border-top: 1px solid var(--border-color, rgba(0,0,0,0.1)); display: flex; justify-content: center; gap: 16px;">
-                <button class="modal-btn-cancel" style="padding: 6px 24px; border-radius: 6px; border: 1px solid var(--border-color, rgba(0,0,0,0.2)); background: transparent; color: var(--text-main); cursor: pointer; font-size: 0.9rem;">
+            <div class="batch-export-modal-footer">
+                <button class="modal-btn-cancel batch-export-modal-btn" type="button">
                     取消
                 </button>
-                <button class="modal-btn-confirm" style="padding: 6px 24px; border-radius: 6px; border: none; background: #3b82f6; color: #fff; cursor: pointer; font-weight: 600; font-size: 0.9rem;">
+                <button class="modal-btn-confirm batch-export-modal-btn batch-export-modal-btn-primary" type="button">
                     导出
                 </button>
             </div>
@@ -1331,20 +1385,26 @@ function showBatchExportModal(count) {
 
         // Animation in
         requestAnimationFrame(() => {
-            modalOverlay.style.opacity = '1';
-            modal.style.transform = 'scale(1)';
+            modalOverlay.classList.add('active');
         });
 
-        // Event Listeners
-        const close = () => {
-            modalOverlay.style.opacity = '0';
-            modal.style.transform = 'scale(0.95)';
-            setTimeout(() => modalOverlay.remove(), 300);
-            resolve(null);
+        let finished = false;
+
+        const finish = (result) => {
+            if (finished) return;
+            finished = true;
+            modalOverlay.classList.remove('active');
+            setTimeout(() => {
+                modalOverlay.remove();
+                resolve(result);
+            }, 300);
         };
 
+        // Event Listeners
+        const close = () => finish(null);
+
         const confirm = () => {
-            const mode = modal.querySelector('input[name="exportMode"]:checked').value;
+            const mode = modal.querySelector('input[name="exportMode"]:checked')?.value || 'full';
             const options = {
                 mode,
                 includeLedger: modal.querySelector('#exportLedger')?.checked ?? false,
@@ -1352,10 +1412,7 @@ function showBatchExportModal(count) {
                 includeTags: modal.querySelector('#exportTags')?.checked ?? false
             };
 
-            modalOverlay.style.opacity = '0';
-            modal.style.transform = 'scale(0.95)';
-            setTimeout(() => modalOverlay.remove(), 300);
-            resolve(options);
+            finish(options);
         };
 
         // Bind event listeners to buttons
@@ -1865,7 +1922,7 @@ async function openUserModal(userId) {
 
     } catch (err) {
         console.error('❌ Error loading user modal:', err);
-        leftPanel.innerHTML = `< div style = "color:#ef4444;padding:20px;" > 加载失败: ${err.message}</div > `;
+        leftPanel.innerHTML = `<div class="users-modal-error">加载失败: ${escapeHtml(err.message)}</div>`;
         tabContent.innerHTML = '';
     }
 }
@@ -1914,8 +1971,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                          data-tooltip="${user.id}" 
                          data-admin-action="users-copy-meta"
                          data-copy-value="${encodeURIComponent(user.id)}"
-                         data-copy-success="✅ ID 已复制!"
-                         style="cursor: pointer;">
+                         data-copy-success="✅ ID 已复制!">
                         <i class="fas fa-info-circle"></i>
                     </div>
                     
@@ -1946,7 +2002,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                 </div>
                 <!-- Inline Add Button -->
                 ${!user.tags.length ? `
-                <div class="add-tag-wrapper" id="addTagWrapper_${user.id}" style="margin-left:auto;">
+                <div class="add-tag-wrapper add-tag-wrapper--push-end" id="addTagWrapper_${user.id}">
                     <button class="add-tag-btn" type="button" data-admin-action="users-show-tag-input" data-user-id="${encodeURIComponent(user.id)}" title="添加标签">
                         <i class="fas fa-plus"></i>
                     </button>
@@ -1994,7 +2050,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
             </div>
             
             ${!['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(user.email) ? `
-                <div class="modal-permissions-panel" id="modalPermissionsPanel" style="display: ${roleInfo.is_admin ? 'block' : 'none'}; margin-top: 0;">
+                <div class="modal-permissions-panel modal-permissions-panel--flush" id="modalPermissionsPanel"${roleInfo.is_admin ? '' : ' hidden'}>
                     <div class="perm-checkboxes">
                         <label class="perm-item">
                             <input type="checkbox" data-perm="content.moderate" ${roleInfo.permissions?.includes('content.moderate') ? 'checked' : ''}>
@@ -2068,7 +2124,7 @@ function toggleModalDropdown(dropdownId) {
 function handleModalAdminToggle(userId, isEnabled) {
     const panel = document.getElementById('modalPermissionsPanel');
     if (panel) {
-        panel.style.display = isEnabled ? 'block' : 'none';
+        panel.hidden = !isEnabled;
     }
     toggleAdminRole(userId, isEnabled);
 }
@@ -2129,21 +2185,6 @@ function renderModalActions(user) {
         </button>
     `;
 
-    // Force grid layout on mobile
-    if (window.innerWidth <= 768) {
-        actionsPanel.style.display = 'grid';
-        actionsPanel.style.gridTemplateColumns = 'repeat(3, 1fr)';
-        actionsPanel.style.gap = '10px';
-        actionsPanel.style.padding = '12px';
-
-        // Style each button
-        actionsPanel.querySelectorAll('.modal-action-btn').forEach(btn => {
-            btn.style.width = '100%';
-            btn.style.justifyContent = 'center';
-            btn.style.padding = '10px 6px';
-            btn.style.fontSize = '0.75rem';
-        });
-    }
 }
 
 // Switch Tab
@@ -2154,6 +2195,9 @@ function switchUserTab(tabName) {
     document.querySelectorAll('.user-tab-btn').forEach(btn => {
         const isActive = btn.dataset.tab === tabName;
         btn.classList.toggle('active', isActive);
+        if (!isActive) {
+            btn.removeAttribute('aria-current');
+        }
 
         // Move indicator to active button
         if (isActive) {
@@ -2167,13 +2211,8 @@ function switchUserTab(tabName) {
 
 // Update Sliding Indicator Position
 function updateTabIndicator(activeBtn) {
-    const nav = document.querySelector('.user-tab-nav');
-    const indicator = document.querySelector('.tab-indicator');
-
-    if (nav && indicator && activeBtn) {
-        indicator.style.left = `${activeBtn.offsetLeft}px`;
-        indicator.style.width = `${activeBtn.offsetWidth}px`;
-        indicator.style.opacity = '1';
+    if (activeBtn) {
+        activeBtn.setAttribute('aria-current', 'page');
     }
 }
 
@@ -2220,9 +2259,9 @@ function buildUserTabToolbar(tabName, options = {}) {
     ];
 
     return `
-        <div class="tab-toolbar" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+        <div class="tab-toolbar users-tab-toolbar">
             <div class="modal-dropdown" id="${tabName}TimeDropdown">
-                <div class="modal-dropdown-trigger" data-admin-action="users-toggle-modal-dropdown" data-dropdown-id="${tabName}TimeDropdown" style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;background:transparent;border:1px solid var(--border-color);border-radius:6px;font-size:0.85rem;color:var(--text-dim);">
+                <div class="modal-dropdown-trigger users-tab-date-trigger" data-admin-action="users-toggle-modal-dropdown" data-dropdown-id="${tabName}TimeDropdown">
                     <i class="far fa-calendar-alt"></i>
                     <span id="${tabName}TimeLabel">全部时间</span>
                     <i class="fas fa-chevron-down"></i>
@@ -2234,11 +2273,19 @@ function buildUserTabToolbar(tabName, options = {}) {
                     ${includeCustomDate ? `<div class="modal-dropdown-item" data-admin-action="users-open-custom-date-picker" data-user-tab-name="${tabName}">📅 自定义</div>` : ''}
                 </div>
             </div>
-            <button class="btn-export" type="button" data-admin-action="users-export-tab-data" data-user-tab-name="${tabName}" style="background:transparent;border:1px solid var(--border-color);padding:6px 12px;border-radius:6px;font-size:0.85rem;cursor:pointer;color:var(--text-dim);">
+            <button class="btn-export users-tab-export-btn" type="button" data-admin-action="users-export-tab-data" data-user-tab-name="${tabName}">
                 <i class="fas fa-download"></i> ${exportLabel}
             </button>
         </div>
     `;
+}
+
+function buildUsersTabEmptyState(message) {
+    return `<div class="empty-state users-tab-empty-state">${escapeHtml(message)}</div>`;
+}
+
+function buildUsersTabError(message) {
+    return `<div class="error-msg users-tab-error">加载失败: ${escapeHtml(message)}</div>`;
 }
 
 // Render Ledger Tab
@@ -2247,7 +2294,7 @@ function renderLedgerTab(container) {
 
     container.innerHTML = `
         ${buildUserTabToolbar('ledger', { includeCustomDate: true })}
-        <input type="text" id="ledgerDatePicker" style="position:absolute; visibility:hidden; height:0; width:0;" placeholder="选择日期范围">
+        <input type="text" id="ledgerDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
         <div class="data-list" id="ledgerList">
             ${renderLedgerItems(data)}
         </div>
@@ -2257,20 +2304,21 @@ function renderLedgerTab(container) {
 // Render ledger items helper
 function renderLedgerItems(data) {
     if (data.length === 0) {
-        return '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">暂无积分记录</div>';
+        return buildUsersTabEmptyState('暂无积分记录');
     }
     return data.map(record => {
         const meta = getAdminLedgerMeta(record);
         const normalizedAmount = normalizeAdminLedgerValue(record.amount);
         const recordId = encodeURIComponent(String(record.id || ''));
         const amountText = `${normalizedAmount >= 0 ? '+' : ''}${formatAdminPointValue(normalizedAmount)} 分`;
+        const tone = getAdminUiTone(meta.accent);
         const referenceChip = meta.referenceLabel
             ? `<span class="admin-ledger-chip admin-ledger-chip-mono">${escapeHtml(meta.referenceLabel)}</span>`
             : '';
 
         return `
-            <div class="data-list-item admin-ledger-item" style="border-left-color: ${meta.accent};" data-admin-action="users-open-ledger-detail" data-ledger-id="${recordId}">
-                <div class="admin-ledger-icon" style="--ledger-accent:${meta.accent};">
+            <div class="data-list-item admin-ledger-item admin-ledger-item--${tone}" data-admin-action="users-open-ledger-detail" data-ledger-id="${recordId}">
+                <div class="admin-ledger-icon admin-ledger-icon--${tone}">
                     <i class="fas ${meta.icon}"></i>
                 </div>
                 <div class="admin-ledger-main">
@@ -2340,6 +2388,32 @@ function getAdminVerifyStatusMeta(status = '') {
         return { text: '处理中', color: '#6b9ece' };
     }
     return { text: normalized || '未知', color: '#cbd5e1' };
+}
+
+function getAdminUiTone(color = '') {
+    const normalized = String(color || '').trim().toLowerCase();
+    const palette = new Map([
+        ['#10b981', 'emerald'],
+        ['#22c55e', 'emerald'],
+        ['#34d399', 'emerald'],
+        ['#38bdf8', 'sky'],
+        ['#60a5fa', 'sky'],
+        ['#6b9ece', 'sky'],
+        ['#3b82f6', 'sky'],
+        ['#8b5cf6', 'violet'],
+        ['#a78bfa', 'violet'],
+        ['#f59e0b', 'amber'],
+        ['#f97316', 'amber'],
+        ['#ec4899', 'pink'],
+        ['#f472b6', 'pink'],
+        ['#ef4444', 'danger'],
+        ['#f87171', 'danger'],
+        ['#fca5a5', 'danger'],
+        ['#94a3b8', 'muted'],
+        ['#cbd5e1', 'muted']
+    ]);
+
+    return palette.get(normalized) || 'muted';
 }
 
 function isAdminVerifyServiceReason(reason = '') {
@@ -2676,7 +2750,7 @@ function renderAdminLedgerDetailRows(rows = []) {
     return rows.filter(row => row && row.value !== undefined && row.value !== null && row.value !== '').map(row => `
         <div class="admin-ledger-detail-row">
             <span class="admin-ledger-detail-label">${escapeHtml(row.label)}</span>
-            <span class="admin-ledger-detail-value ${row.mono ? 'mono' : ''}" style="${row.color ? `color:${row.color};` : ''}">${escapeHtml(String(row.value))}</span>
+            <span class="admin-ledger-detail-value ${row.mono ? 'mono' : ''}${row.color ? ` admin-ledger-detail-value--${getAdminUiTone(row.color)}` : ''}">${escapeHtml(String(row.value))}</span>
         </div>
     `).join('');
 }
@@ -3163,6 +3237,7 @@ function openCustomDatePicker(tabName) {
                 const rect = targetEl.getBoundingClientRect();
 
                 // Force fixed positioning relative to viewport
+                instance.calendarContainer.classList.add('users-fixed-flatpickr-calendar');
                 Object.assign(instance.calendarContainer.style, {
                     position: 'fixed',
                     top: `${rect.bottom + 4}px`,
@@ -3171,8 +3246,6 @@ function openCustomDatePicker(tabName) {
                     visibility: 'visible',
                     opacity: '1'
                 });
-                // Force max z-index separately to ensure it applies
-                instance.calendarContainer.style.setProperty('z-index', '2147483647', 'important');
             }
         });
     }
@@ -3244,7 +3317,7 @@ function renderActivityTab(container) {
 
     container.innerHTML = `
         ${buildUserTabToolbar('activity', { includeCustomDate: true })}
-        <input type="text" id="activityDatePicker" style="position:absolute; visibility:hidden; height:0; width:0;" placeholder="选择日期范围">
+        <input type="text" id="activityDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
         <div class="data-list" id="activityList">
             ${renderActivityItems(data)}
         </div>
@@ -3254,16 +3327,16 @@ function renderActivityTab(container) {
 // Render activity items helper
 function renderActivityItems(data) {
     if (data.length === 0) {
-        return '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">暂无内容记录</div>';
+        return buildUsersTabEmptyState('暂无内容记录');
     }
     return data.map(item => `
         <div class="data-list-item">
-            <div style="width:32px;height:32px;border-radius:8px;background:rgba(107,158,206,0.15);display:flex;align-items:center;justify-content:center;">
-                <i class="fas ${item.type === 'comment' ? 'fa-comment' : 'fa-book'}" style="color:#6b9ece;font-size:0.85rem;"></i>
+            <div class="users-tab-item-icon users-tab-item-icon-info">
+                <i class="fas ${item.type === 'comment' ? 'fa-comment' : 'fa-book'} users-tab-item-icon-glyph"></i>
             </div>
-            <div style="flex:1;">
-                <div style="font-size:0.9rem;">${escapeHtml(item.content.substring(0, 80))}${item.content.length > 80 ? '...' : ''}</div>
-                <div style="font-size:0.75rem;color:var(--text-dim);">${item.source} · ${formatTimeAgo(item.created_at)}</div>
+            <div class="users-tab-item-main">
+                <div class="users-tab-item-title">${escapeHtml(item.content.substring(0, 80))}${item.content.length > 80 ? '...' : ''}</div>
+                <div class="users-tab-item-subtitle">${escapeHtml(String(item.source || '-'))} · ${formatTimeAgo(item.created_at)}</div>
             </div>
         </div>
     `).join('');
@@ -3275,7 +3348,7 @@ function renderBlocksTab(container) {
 
     container.innerHTML = `
         ${buildUserTabToolbar('blocks', { includeCustomDate: true })}
-        <input type="text" id="blocksDatePicker" style="position:absolute; visibility:hidden; height:0; width:0;" placeholder="选择日期范围">
+        <input type="text" id="blocksDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
         <div class="data-list" id="blocksList">
             ${renderBlocksItems(data)}
         </div>
@@ -3285,16 +3358,16 @@ function renderBlocksTab(container) {
 // Render blocks items helper
 function renderBlocksItems(data) {
     if (data.length === 0) {
-        return '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">无封禁记录</div>';
+        return buildUsersTabEmptyState('无封禁记录');
     }
     return data.map(record => `
-        <div class="data-list-item" style="border-left-color: ${record.action === 'block' ? '#ef4444' : '#10b981'};">
-            <div style="width:32px;height:32px;border-radius:8px;background:${record.action === 'block' ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)'};display:flex;align-items:center;justify-content:center;">
-                <i class="fas ${record.action === 'block' ? 'fa-ban' : 'fa-unlock'}" style="color:${record.action === 'block' ? '#ef4444' : '#10b981'};font-size:0.85rem;"></i>
+        <div class="data-list-item users-block-item ${record.action === 'block' ? 'is-block' : 'is-unblock'}">
+            <div class="users-tab-item-icon ${record.action === 'block' ? 'users-tab-item-icon-danger' : 'users-tab-item-icon-success'}">
+                <i class="fas ${record.action === 'block' ? 'fa-ban' : 'fa-unlock'} users-tab-item-icon-glyph"></i>
             </div>
-            <div style="flex:1;">
-                <div style="font-size:0.9rem;">${record.action === 'block' ? '封禁' : '解封'} - ${record.scope === 'all' ? '全站' : record.scope}</div>
-                <div style="font-size:0.75rem;color:var(--text-dim);">${record.reason || '无备注'} · ${formatTimeAgo(record.created_at)}</div>
+            <div class="users-tab-item-main">
+                <div class="users-tab-item-title">${record.action === 'block' ? '封禁' : '解封'} - ${record.scope === 'all' ? '全站' : record.scope}</div>
+                <div class="users-tab-item-subtitle">${escapeHtml(record.reason || '无备注')} · ${formatTimeAgo(record.created_at)}</div>
             </div>
         </div>
     `).join('');
@@ -3307,17 +3380,17 @@ function renderRelatedTab(container) {
     container.innerHTML = `
         <div class="data-list">
             ${data.length > 0 ? data.map(acc => `
-                <div class="data-list-item" style="cursor:pointer;" data-admin-action="users-open-user-modal" data-user-id="${encodeURIComponent(acc.related_user_id)}">
-                    <div style="width:40px;height:40px;border-radius:50%;background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center;">
-                        <i class="fas fa-user-circle" style="color:#f59e0b;font-size:1.2rem;"></i>
+                <div class="data-list-item users-related-item" data-admin-action="users-open-user-modal" data-user-id="${encodeURIComponent(acc.related_user_id)}">
+                    <div class="users-related-avatar">
+                        <i class="fas fa-user-circle users-related-avatar-icon"></i>
                     </div>
-                    <div style="flex:1;">
-                        <div style="font-size:0.9rem;font-weight:500;">${escapeHtml(acc.related_username || 'Unknown')}</div>
-                        <div style="font-size:0.75rem;color:var(--text-dim);">共享 IP: ${acc.shared_ip}</div>
+                    <div class="users-tab-item-main">
+                        <div class="users-related-title">${escapeHtml(acc.related_username || 'Unknown')}</div>
+                        <div class="users-tab-item-subtitle">共享 IP: ${escapeHtml(acc.shared_ip || '-')}</div>
                     </div>
-                    <i class="fas fa-chevron-right" style="color:var(--text-dim);"></i>
+                    <i class="fas fa-chevron-right users-related-arrow"></i>
                 </div>
-            `).join('') : '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">未检测到关联账号</div>'}
+            `).join('') : buildUsersTabEmptyState('未检测到关联账号')}
         </div>
     `;
 }
@@ -3327,7 +3400,7 @@ function renderAffiliateTab(container) {
     currentModalData.affiliate = affiliateState;
 
     if (!currentModalUser?.id) {
-        container.innerHTML = '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">未找到用户</div>';
+        container.innerHTML = buildUsersTabEmptyState('未找到用户');
         return;
     }
 
@@ -3344,9 +3417,9 @@ function renderAffiliateTab(container) {
 
     if (affiliateState.error) {
         container.innerHTML = `
-            <div class="empty-state" style="text-align:center;padding:48px;color:var(--text-dim);">
-                <div style="font-size:1rem;color:#fca5a5;margin-bottom:10px;">推广数据加载失败</div>
-                <div style="margin-bottom:18px;">${escapeHtml(affiliateState.error)}</div>
+            <div class="empty-state users-affiliate-error-state">
+                <div class="users-affiliate-error-title">推广数据加载失败</div>
+                <div class="users-affiliate-error-message">${escapeHtml(affiliateState.error)}</div>
                 <button class="btn-export" type="button" data-admin-action="users-reload-affiliate">
                     <i class="fas fa-rotate-right"></i> 重新加载
                 </button>
@@ -4006,16 +4079,15 @@ async function fetchPointsLedger(userId) {
 // Format ledger reason for display
 function formatLedgerReason(reason, createdAt, referenceId) {
     const timeStr = createdAt ? formatTimeAgo(createdAt) : '';
-    const timeHtml = `<span style="font-size:0.75rem;color:#94a3b8;margin-left:auto;">${timeStr}</span>`;
+    const timeHtml = `<span class="users-ledger-reason-time">${timeStr}</span>`;
 
     if (!reason) return `
-        <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="users-ledger-reason-row">
              <span>未知</span>
              ${timeHtml}
         </div>`;
 
     let text = reason;
-    let icon = 'fa-circle';
     let color = '#94a3b8'; // default gray
 
     if (reason === 'daily_checkin') {
@@ -4056,9 +4128,10 @@ function formatLedgerReason(reason, createdAt, referenceId) {
         color = '#ec4899';
     }
 
+    const tone = getAdminUiTone(color);
     return `
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-             <span style="color:${color}; font-weight:500;">${text}</span>
+        <div class="users-ledger-reason-row">
+             <span class="users-ledger-reason-text users-ledger-reason-text--${tone}">${text}</span>
              ${timeHtml}
         </div>`;
 }
@@ -4077,10 +4150,10 @@ function injectBanUserModal() {
     <div id="banUserModalOverlay" class="custom-modal-overlay">
         <div class="custom-modal ban-user-modal">
             <div class="modal-header">
-                <h3 class="modal-title" style="color:#ef4444;">🚫 封禁管理</h3>
+                <h3 class="modal-title users-danger-modal-title">🚫 封禁管理</h3>
                 <button class="modal-close-btn" type="button" data-users-ban-action="close"><i class="fas fa-times"></i></button>
             </div>
-            <div class="modal-body" style="padding: 0 24px 24px 24px;">
+            <div class="modal-body users-ban-modal-body">
                  <input type="hidden" id="banTargetUserId">
                  
                  <!-- Permanent Bans -->
@@ -4122,16 +4195,16 @@ function injectBanUserModal() {
                      </div>
                  </div>
                  
-                 <div class="ban-scope-group" style="margin-top:20px;padding-top:15px;border-top:1px dashed rgba(0,0,0,0.1);">
+                 <div class="ban-scope-group users-ban-reset-group">
                     <div class="scope-options-pills no-indicator">
-                        <div class="scope-pill success" style="width:100%;justify-content:center;" data-scope="all" data-days="unban" data-users-ban-action="select">
-                            <i class="fas fa-shield-alt" style="margin-right:6px;"></i> 解除该用户所有封禁
+                        <div class="scope-pill success users-ban-unban-all" data-scope="all" data-days="unban" data-users-ban-action="select">
+                            <i class="fas fa-shield-alt users-ban-unban-icon"></i> 解除该用户所有封禁
                         </div>
                     </div>
                  </div>
                  
-                 <div class="ban-actions" style="margin-top:24px;display:flex;gap:12px;justify-content:flex-end;">
-                    <button class="modal-btn" type="button" data-users-ban-action="details" style="margin-right:auto;background:transparent;border:1px solid rgba(0,0,0,0.1);color:#64748b;">状态详情</button>
+                 <div class="ban-actions users-ban-actions">
+                    <button class="modal-btn users-ban-details-btn" type="button" data-users-ban-action="details">状态详情</button>
                     <button id="btnBanConfirm" class="modal-btn confirm" type="button" data-users-ban-action="confirm">确认执行</button>
                  </div>
             </div>
@@ -4203,34 +4276,26 @@ function updatePillIndicator(container, selectedPill) {
     const pills = Array.from(container.querySelectorAll('.scope-pill'));
     const index = pills.indexOf(selectedPill);
     const count = pills.length;
+    const countClasses = ['scope-options-pills--count-4', 'scope-options-pills--count-5'];
+    const indexClasses = ['scope-options-pills--index-0', 'scope-options-pills--index-1', 'scope-options-pills--index-2', 'scope-options-pills--index-3', 'scope-options-pills--index-4'];
+    const toneClasses = ['scope-options-pills--tone-unban', 'scope-options-pills--tone-temp', 'scope-options-pills--tone-permanent'];
 
     if (index === -1) return;
 
-    // Set pill count and active index
-    container.style.setProperty('--pill-count', count);
-    container.style.setProperty('--active-index', index);
+    container.classList.remove(...countClasses, ...indexClasses, ...toneClasses);
+    container.classList.add(`scope-options-pills--count-${count}`, `scope-options-pills--index-${index}`);
 
     // Determine indicator color based on pill type
     const days = selectedPill.dataset.days;
     const isDanger = selectedPill.classList.contains('danger');
 
-    let bgColor, borderColor;
     if (days === 'unban') {
-        // Blue for normal/unban
-        bgColor = 'rgba(59, 130, 246, 0.25)';
-        borderColor = 'rgba(59, 130, 246, 0.5)';
+        container.classList.add('scope-options-pills--tone-unban');
     } else if (isDanger || days === 'permanent') {
-        // Red for permanent ban
-        bgColor = 'rgba(239, 68, 68, 0.25)';
-        borderColor = 'rgba(239, 68, 68, 0.5)';
+        container.classList.add('scope-options-pills--tone-permanent');
     } else {
-        // Orange for temporary ban
-        bgColor = 'rgba(245, 158, 11, 0.2)';
-        borderColor = 'rgba(245, 158, 11, 0.5)';
+        container.classList.add('scope-options-pills--tone-temp');
     }
-
-    container.style.setProperty('--indicator-color', bgColor);
-    container.style.setProperty('--indicator-border', borderColor);
 }
 
 // Toggle Selection (Pills behavior)
@@ -4276,6 +4341,12 @@ function toggleBanSelection(el, scope, days) {
 function updateConfirmBtn() {
     const btn = document.getElementById('btnBanConfirm');
     if (!btn) return;
+    const toneClasses = [
+        'users-ban-confirm-btn--unban',
+        'users-ban-confirm-btn--ban',
+        'users-ban-confirm-btn--idle'
+    ];
+    btn.classList.remove(...toneClasses);
 
     // Check if any changes
     const hasChanges = Object.keys(pendingBanState).length > 0;
@@ -4286,15 +4357,15 @@ function updateConfirmBtn() {
         const allUnban = Object.values(pendingBanState).every(s => s.action === 'unban');
         if (allUnban) {
             btn.textContent = '确认解封';
-            btn.style.background = '#10b981';
+            btn.classList.add('users-ban-confirm-btn--unban');
         } else {
             btn.textContent = '确认执行';
-            btn.style.background = '#ef4444';
+            btn.classList.add('users-ban-confirm-btn--ban');
         }
     } else {
         btn.disabled = false; // Always enabled to allow "No Change"? No, prefer disabled or "No Change"
         btn.textContent = '未做修改';
-        btn.style.background = '#94a3b8';
+        btn.classList.add('users-ban-confirm-btn--idle');
     }
 }
 
@@ -4587,10 +4658,9 @@ function escapeHtml(text) {
 // Generate avatar with initials
 function generateInitialsAvatar(name, size = 32) {
     const initials = (name || 'U').slice(0, 2).toUpperCase();
-    const colors = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6'];
-    const colorIndex = (name || 'U').charCodeAt(0) % colors.length;
-    const bgColor = colors[colorIndex];
-    return `<div class="user-avatar-small initials-avatar" style="background:${bgColor};display:flex;align-items:center;justify-content:center;color:white;font-weight:600;font-size:${size * 0.4}px;width:${size}px;height:${size}px;border-radius:50%;">${initials}</div>`;
+    const colorIndex = (name || 'U').charCodeAt(0) % 6;
+    const avatarSizeClass = size >= 64 ? 'user-avatar-large initials-avatar--lg' : 'user-avatar-small initials-avatar--sm';
+    return `<div class="${avatarSizeClass} initials-avatar initials-avatar--tone-${colorIndex}">${initials}</div>`;
 }
 
 // Points Modal Logic
@@ -4614,7 +4684,7 @@ function injectPointsModal() {
                         <span id="pmCurrentPoints" class="value-highlight">0</span>
                     </div>
 
-                    <div class="form-group" style="margin-top:20px;">
+                    <div class="form-group users-points-form-group-first">
                         <label>调整数值 <small>(正数增加 / 负数扣除)</small></label>
                         <input type="number" id="pmAmount" class="modal-input">
                     </div>
@@ -4624,7 +4694,7 @@ function injectPointsModal() {
                         <input type="text" id="pmReason" class="modal-input">
                     </div>
                 </div>
-                <div class="modal-footer" style="justify-content: flex-end;">
+                <div class="modal-footer users-points-modal-footer">
                     <button class="modal-btn confirm" id="pmConfirmBtn">确认调整</button>
                 </div>
             </div>
@@ -4790,53 +4860,53 @@ function injectClearContentModal() {
         <div id="clearContentModalOverlay" class="custom-modal-overlay">
             <div class="custom-modal ban-user-modal danger-modal">
                 <div class="modal-header">
-                    <h3 class="modal-title" style="color:#ef4444;">⚠️ 危险操作</h3>
+                    <h3 class="modal-title users-danger-modal-title">⚠️ 危险操作</h3>
                     <button class="modal-close-btn" type="button" data-users-clear-action="close"><i class="fas fa-times"></i></button>
                 </div>
                 <div class="modal-body">
-                    <div class="checklist-container" style="background:rgba(0,0,0,0.02); padding:16px; border-radius:8px; margin-bottom:20px; border:1px solid rgba(0,0,0,0.05);">
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckComments" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                    <div class="checklist-container users-danger-checklist">
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckComments">
                                 <span>🖼️ 画廊评论</span>
                         </label>
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckGuestbook" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckGuestbook">
                                 <span>📝 留言板留言</span>
                         </label>
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckPoints" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckPoints">
                                 <span>💰 积分流水</span>
                         </label>
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckBlocks" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckBlocks">
                                 <span>🚫 封禁记录</span>
                         </label>
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckNotes" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckNotes">
                                 <span>🗒️ 内部备注</span>
                         </label>
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckAudit" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckAudit">
                                 <span>🛡️ 审计日志</span>
                         </label>
-                        <div style="height:1px;background:rgba(0,0,0,0.1);margin:8px 0;"></div>
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckResetPoints" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                        <div class="users-danger-divider"></div>
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckResetPoints">
                                 <span>🗑️ 清空剩余积分 (重置为0)</span>
                         </label>
-                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
-                            <input type="checkbox" id="ccCheckPurchases" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                        <label class="checkbox-item users-danger-checkbox-item">
+                            <input type="checkbox" id="ccCheckPurchases">
                                 <span>🛒 清空购买记录 (收回商品)</span>
                         </label>
                     </div>
 
                     <div class="form-group">
-                        <input type="text" id="ccConfirmInput" class="modal-input" placeholder="输入密匙" style="border-color: #fca5a5;">
+                        <input type="text" id="ccConfirmInput" class="modal-input users-danger-input" placeholder="输入密匙">
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button class="modal-btn cancel" type="button" data-users-clear-action="close">取消</button>
-                    <button class="modal-btn danger" id="ccConfirmBtn" style="background:#ef4444; color:white; border:none; box-shadow:0 2px 8px rgba(239, 68, 68, 0.4);">确认清空</button>
+                    <button class="modal-btn danger users-clear-confirm-btn" id="ccConfirmBtn">确认清空</button>
                 </div>
             </div>
     </div > `;
@@ -4907,16 +4977,7 @@ async function clearAllUserContent(userId) {
     const validateState = () => {
         const isConfirmed = input.value === '0.0wangyong';
         const hasSelection = checkboxes.some(cb => cb.checked);
-
-        if (isConfirmed && hasSelection) {
-            confirmBtn.disabled = false;
-            confirmBtn.style.opacity = '1';
-            confirmBtn.style.cursor = 'pointer';
-        } else {
-            confirmBtn.disabled = true;
-            confirmBtn.style.opacity = '0.5';
-            confirmBtn.style.cursor = 'not-allowed';
-        }
+        confirmBtn.disabled = !(isConfirmed && hasSelection);
     };
 
     // Bind events
@@ -5124,7 +5185,6 @@ function showTagInput(userId) {
                    placeholder="输入标签..." 
                    data-users-tag-input="1"
                    data-user-id="${userId}"
-                   style="width: 80px; padding: 3px 8px; border-radius: 20px; border: 1px solid #cbd5e1; font-size: 0.75rem; background: transparent; color: inherit; outline: none; transition: all 0.2s;"
             >
         </div>
     `;
@@ -5265,7 +5325,7 @@ async function toggleAdminRole(userId, enabled) {
 
     if (enabled) {
         // Show permissions panel
-        if (permPanel) permPanel.style.display = 'block';
+        if (permPanel) permPanel.hidden = false;
 
         // Insert role with default permissions
         try {
@@ -5290,11 +5350,11 @@ async function toggleAdminRole(userId, enabled) {
             alert('授予管理员权限失败: ' + err.message);
             // Revert toggle
             document.getElementById(`adminRoleToggle - ${userId} `).checked = false;
-            if (permPanel) permPanel.style.display = 'none';
+            if (permPanel) permPanel.hidden = true;
         }
     } else {
         // Hide permissions panel
-        if (permPanel) permPanel.style.display = 'none';
+        if (permPanel) permPanel.hidden = true;
 
         // Remove role
         try {
@@ -5312,7 +5372,7 @@ async function toggleAdminRole(userId, enabled) {
             alert('撤销管理员权限失败: ' + err.message);
             // Revert toggle
             document.getElementById(`adminRoleToggle - ${userId} `).checked = true;
-            if (permPanel) permPanel.style.display = 'block';
+            if (permPanel) permPanel.hidden = false;
         }
     }
 }
@@ -5444,22 +5504,32 @@ bindAdminUsersRuntimeDelegates();
 // ==========================================
 // Helper for auto-resizing notes input
 window.autoResizeNotesInput = function (el) {
-    el.style.height = 'auto';
-    el.style.height = el.scrollHeight + 'px';
+    if (!(el instanceof HTMLTextAreaElement)) {
+        return;
+    }
+
+    const computedStyle = window.getComputedStyle(el);
+    const lineHeight = parseFloat(computedStyle.lineHeight) || 24;
+    const verticalPadding = (parseFloat(computedStyle.paddingTop) || 0) + (parseFloat(computedStyle.paddingBottom) || 0);
+    const maxRows = 4;
+
+    el.rows = 1;
+    const contentRows = Math.max(1, Math.ceil((el.scrollHeight - verticalPadding) / lineHeight));
+    el.rows = Math.min(maxRows, contentRows);
+    el.classList.toggle('users-notes-input--overflow', contentRows > maxRows);
 };
 
 async function renderNotesTab(container) {
     container.innerHTML = `
         ${buildUserTabToolbar('notes')}
-        <div class="notes-container" style="display:flex;flex-direction:column;height:calc(100% - 60px);max-height:600px;">
-             <div class="notes-list" id="notesList" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;">
+        <div class="notes-container users-notes-container">
+             <div class="notes-list users-notes-list" id="notesList">
                  <div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载备注...</div>
              </div>
-             <div class="notes-input-area" style="padding:16px;background:transparent">
-                 <div style="display:flex;align-items:flex-end;gap:10px;">
-                     <textarea id="newNoteInput" placeholder="添加内部备注..." rows="1" data-users-note-input="1" style="flex:1;min-height:38px;max-height:120px;padding:8px 0;border:none;border-bottom:1px solid var(--card-border);background:transparent;color:inherit;outline:none;resize:none;font-family:inherit;font-size:0.9rem;line-height:1.5;overflow-y:auto;box-sizing:border-box;display:block;"></textarea>
-                     <button class="btn-primary" type="button" data-admin-action="users-submit-note" style="padding:0 20px;height:38px;border-radius:8px;flex-shrink:0;"><i class="fas fa-paper-plane"></i></button>
-                 </div>
+             <div class="notes-input-area users-notes-input-area">
+                 <div class="users-notes-composer">
+                     <textarea id="newNoteInput" class="users-notes-input" placeholder="添加内部备注..." rows="1" data-users-note-input="1"></textarea>
+                     <button class="btn-primary users-notes-submit-btn" type="button" data-admin-action="users-submit-note"><i class="fas fa-paper-plane"></i></button>
                  </div>
              </div>
         </div>
@@ -5479,21 +5549,21 @@ async function renderNotesTab(container) {
 
     } catch (err) {
         console.error('Error loading notes:', err);
-        document.getElementById('notesList').innerHTML = `<div class="error-msg" style="text-align:center;padding:20px;color:#ef4444;">加载失败: ${escapeHtml(err.message)}</div>`;
+        document.getElementById('notesList').innerHTML = buildUsersTabError(err.message);
     }
 }
 
 function renderNotesItems(data) {
     if (!data || data.length === 0) {
-        return `<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">暂无备注</div>`;
+        return buildUsersTabEmptyState('暂无备注');
     }
 
     return data.map(note => {
         const adminEmail = note.admin_email || 'Unknown';
         return `
-            <div class="note-item" style="background:rgba(255,255,255,0.03);padding:10px 12px;border-radius:8px;border-left:2px solid rgba(107,158,206,0.5);">
-                <div class="note-content" style="margin-bottom:6px;line-height:1.5;font-size:0.85rem;color:var(--text-main);">${escapeHtml(note.content)}</div>
-                <div class="note-meta" style="font-size:0.75rem;color:var(--text-dim);display:flex;justify-content:space-between;">
+            <div class="note-item users-note-item">
+                <div class="note-content users-note-content">${escapeHtml(note.content)}</div>
+                <div class="note-meta users-note-meta">
                         <span><i class="fas fa-user-shield"></i> ${escapeHtml(adminEmail)}</span>
                         <span>${formatTimeAgo(note.created_at)}</span>
                 </div>
@@ -5538,7 +5608,7 @@ async function submitUserNote() {
 async function renderAuditTab(container) {
     container.innerHTML = `
         ${buildUserTabToolbar('audit')}
-        <div class="audit-list" id="auditList" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+        <div class="audit-list users-audit-list" id="auditList">
             <div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载审计日志...</div>
         </div>
     `;
@@ -5557,25 +5627,28 @@ async function renderAuditTab(container) {
 
     } catch (err) {
         console.error('Error loading audit logs:', err);
-        document.getElementById('auditList').innerHTML = `<div class="error-msg" style="text-align:center;padding:20px;color:#ef4444;">加载失败: ${escapeHtml(err.message)}</div>`;
+        document.getElementById('auditList').innerHTML = buildUsersTabError(err.message);
     }
 }
 
 function renderAuditItems(data) {
     if (!data || data.length === 0) {
-        return `<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">暂无审计记录</div>`;
+        return buildUsersTabEmptyState('暂无审计记录');
     }
 
     return data.map(log => {
         const adminEmail = log.admin_email || 'Unknown';
         // Format details helper
         const formatDetails = (type, details) => {
-            if (type.includes('POINT')) return `变动: <span style="color:${details.amount > 0 ? '#10b981' : '#ef4444'}">${details.amount > 0 ? '+' : ''}${details.amount}</span> · 理由: ${details.reason}`;
-            if (type.includes('BAN')) return `范围: ${details.scope === 'all' ? '全站' : '单项'} · 时长: ${details.days}天`;
+            if (type.includes('POINT')) {
+                const detailClass = details.amount > 0 ? 'is-positive' : 'is-negative';
+                return `变动: <span class="audit-detail-amount ${detailClass}">${details.amount > 0 ? '+' : ''}${details.amount}</span> · 理由: ${escapeHtml(details.reason || '-')} `;
+            }
+            if (type.includes('BAN')) return `范围: ${details.scope === 'all' ? '全站' : '单项'} · 时长: ${escapeHtml(String(details.days || 0))}天`;
             if (type.includes('UNBAN')) return `解封范围: ${details.scope === 'all' ? '全站' : '单项'}`;
-            if (type.includes('NOTE')) return `内容: ${details.content_preview}...`;
-            if (type.includes('NOTIFICATION')) return `标题: ${details.title} (${details.type})`;
-            if (type.includes('CLEAR')) return `清空项目: ${details.cleared_items ? details.cleared_items.join(', ') : '无'}`;
+            if (type.includes('NOTE')) return `内容: ${escapeHtml(String(details.content_preview || ''))}...`;
+            if (type.includes('NOTIFICATION')) return `标题: ${escapeHtml(String(details.title || '-'))} (${escapeHtml(String(details.type || 'info'))})`;
+            if (type.includes('CLEAR')) return `清空项目: ${Array.isArray(details.cleared_items) ? details.cleared_items.map((item) => escapeHtml(String(item))).join(', ') : '无'}`;
 
             // Admin Permission Changes
             if (type === 'grant_admin' || type === 'update_admin_permissions') {
@@ -5588,40 +5661,39 @@ function renderAuditItems(data) {
                 const perms = details.permissions
                     ? details.permissions.map(p => permMap[p] || p).join(', ')
                     : '无';
-                return `授予权限: ${perms}`;
+                return `授予权限: ${escapeHtml(perms)}`;
             }
             if (type === 'revoke_admin') return '已移除该用户的管理员权限';
 
-            return JSON.stringify(details, null, 2); // Fallback
+            return escapeHtml(JSON.stringify(details, null, 2)); // Fallback
         };
 
         let icon = 'fa-shield-alt';
-        let color = '#64748b'; // default slate
+        let toneClass = 'is-neutral';
 
-        if (log.action_type.includes('BAN')) { icon = 'fa-ban'; color = '#ef4444'; }
-        else if (log.action_type.includes('UNBAN')) { icon = 'fa-unlock'; color = '#10b981'; }
-        else if (log.action_type.includes('POINTS')) { icon = 'fa-coins'; color = '#f59e0b'; }
-        else if (log.action_type.includes('NOTE')) { icon = 'fa-sticky-note'; color = '#3b82f6'; }
-        else if (log.action_type.includes('CLEAR')) { icon = 'fa-trash-alt'; color = '#ef4444'; }
-        else if (log.action_type.includes('NOTIFICATION')) { icon = 'fa-bell'; color = '#8b5cf6'; }
-        else if (log.action_type.includes('AVATAR')) { icon = 'fa-user-circle'; color = '#64748b'; }
-        else if (log.action_type.includes('admin')) { icon = 'fa-user-shield'; color = '#8b5cf6'; }
+        if (log.action_type.includes('BAN')) { icon = 'fa-ban'; toneClass = 'is-danger'; }
+        else if (log.action_type.includes('UNBAN')) { icon = 'fa-unlock'; toneClass = 'is-success'; }
+        else if (log.action_type.includes('POINTS')) { icon = 'fa-coins'; toneClass = 'is-warning'; }
+        else if (log.action_type.includes('NOTE')) { icon = 'fa-sticky-note'; toneClass = 'is-info'; }
+        else if (log.action_type.includes('CLEAR')) { icon = 'fa-trash-alt'; toneClass = 'is-danger'; }
+        else if (log.action_type.includes('NOTIFICATION')) { icon = 'fa-bell'; toneClass = 'is-accent'; }
+        else if (log.action_type.includes('admin')) { icon = 'fa-user-shield'; toneClass = 'is-accent'; }
 
         return `
-            <div class="audit-item" style="display:flex;gap:12px;padding:12px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid var(--card-border);">
-                <div class="audit-icon" style="color:${color};font-size:1.1rem;margin-top:2px;">
+            <div class="audit-item users-audit-item ${toneClass}">
+                <div class="audit-icon users-audit-icon ${toneClass}">
                     <i class="fas ${icon}"></i>
                 </div>
-                <div class="audit-content" style="flex:1;">
-                    <div class="audit-header" style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                        <span style="font-weight:600;color:var(--text-main);font-size:0.9rem;">${formatAuditAction(log.action_type)}</span>
-                        <span style="font-size:0.75rem;color:var(--text-dim);">${formatTimeAgo(log.created_at)}</span>
+                <div class="audit-content users-audit-content">
+                    <div class="audit-header users-audit-header">
+                        <span class="users-audit-title">${formatAuditAction(log.action_type)}</span>
+                        <span class="users-audit-time">${formatTimeAgo(log.created_at)}</span>
                     </div>
-                    <div class="audit-meta" style="font-size:0.8rem;color:var(--text-dim);margin-bottom:6px;">
-                        <i class="fas fa-user-tie" style="font-size:0.7rem;"></i> ${escapeHtml(adminEmail)}
+                    <div class="audit-meta users-audit-meta">
+                        <i class="fas fa-user-tie users-audit-meta-icon"></i> ${escapeHtml(adminEmail)}
                     </div>
                     ${Object.keys(log.details).length > 0 || log.action_type === 'revoke_admin' ? `
-                    <div class="audit-details" style="font-size:0.85rem;color:var(--text-main);background:transparent;padding:0;">
+                    <div class="audit-details users-audit-details">
                         ${formatDetails(log.action_type, log.details)}
                     </div>` : ''}
 
@@ -5652,128 +5724,7 @@ function formatAuditAction(action) {
 // SYSTEM NOTIFICATIONS
 // ==========================================
 function showNotificationModal(userId) {
-    let modal = document.getElementById('notificationModal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'notificationModal';
-        modal.className = 'custom-modal-overlay';
-        modal.style.zIndex = '10000'; // Ensure it's above other modals
-        modal.onclick = (e) => {
-            if (e.target === modal) {
-                modal.classList.remove('active');
-                setTimeout(() => modal.style.display = 'none', 300);
-            }
-        };
-        modal.innerHTML = `
-            <div class="custom-modal" style="width:400px;">
-                <div class="modal-header">
-                    <h3 class="modal-title"><i class="far fa-bell" style="margin-right: 8px;"></i> 通知</h3>
-                    <button class="modal-close-btn" type="button" data-admin-action="users-close-notification-modal"><i class="fas fa-times"></i></button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label>标题</label>
-                        <input type="text" id="notifTitle" class="modal-input" placeholder="简短的通知标题">
-                    </div>
-                    <div class="form-group">
-                        <label>内容</label>
-                        <textarea id="notifContent" class="modal-input" rows="4" placeholder="通知详细内容..."></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>类型</label>
-                        <div class="notif-type-selector" style="display:flex;gap:8px;">
-                            <button class="type-btn active" type="button" data-type="info" data-admin-action="users-select-notification-type" data-notification-type="info"><i class="fas fa-info-circle"></i> 信息</button>
-                            <button class="type-btn" type="button" data-type="warning" data-admin-action="users-select-notification-type" data-notification-type="warning"><i class="fas fa-exclamation-triangle"></i> 警告</button>
-                            <button class="type-btn" type="button" data-type="success" data-admin-action="users-select-notification-type" data-notification-type="success"><i class="fas fa-check-circle"></i> 成功</button>
-                        </div>
-                        <input type="hidden" id="notifType" value="info">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="send-notification-btn" type="button" data-admin-action="users-send-notification" data-user-id="${encodeURIComponent(userId)}"><i class="fas fa-paper-plane"></i></button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-
-        const style = document.createElement('style');
-        style.textContent = `
-            .type-btn { 
-                flex: 1; 
-                padding: 10px; 
-                border: 1px solid transparent; 
-                background: rgba(255, 255, 255, 0.03); 
-                border-radius: 10px; 
-                cursor: pointer; 
-                color: var(--text-dim); 
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
-                font-size: 0.9rem;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 8px;
-                font-weight: 500;
-            }
-            .type-btn:hover { 
-                background: rgba(255, 255, 255, 0.08); 
-                color: var(--text-main);
-            }
-            .type-btn.active { 
-                border-color: #6b9ece; 
-                background: rgba(107, 158, 206, 0.12); 
-                color: #6b9ece; 
-                font-weight: 600;
-            }
-            
-            /* Specific colors for types when active */
-            .type-btn[data-type="warning"].active {
-                border-color: #f59e0b;
-                color: #f59e0b;
-                background: rgba(245, 158, 11, 0.08);
-            }
-            .type-btn[data-type="success"].active {
-                border-color: #10b981;
-                color: #10b981;
-                background: rgba(16, 185, 129, 0.08);
-            }
-
-            @media (prefers-color-scheme: dark) {
-                .type-btn {
-                    background: rgba(255,255,255,0.05);
-                }
-            }
-            
-            .send-notification-btn {
-                background: transparent;
-                border: none;
-                color: #94a3b8; /* Neutral default */
-                font-size: 1.5rem;
-                cursor: pointer;
-                padding: 10px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                transition: color 0.2s;
-            }
-            .send-notification-btn:hover {
-                color: #6b9ece; /* Blue on hover */
-            }
-        `;
-        document.head.appendChild(style);
-    }
-
-    document.getElementById('notifTitle').value = '';
-    document.getElementById('notifContent').value = '';
-    const btnParam = modal.querySelector('.send-notification-btn');
-    if (btnParam) {
-        btnParam.dataset.userId = encodeURIComponent(userId);
-    }
-    selectNotifType('info');
-
-    modal.style.display = 'flex';
-    // Force reflow to enable transition
-    void modal.offsetWidth;
-    modal.classList.add('active');
+    openNotificationModal(userId);
 }
 
 function closeNotificationModal() {
@@ -5783,9 +5734,6 @@ function closeNotificationModal() {
     }
 
     modal.classList.remove('active');
-    setTimeout(() => {
-        modal.style.display = 'none';
-    }, 300);
 }
 
 function selectNotifType(buttonOrType, maybeType = null) {
@@ -5806,6 +5754,10 @@ function selectNotifType(buttonOrType, maybeType = null) {
 }
 
 async function sendSystemNotification(userId, titleArg = null, contentArg = null, typeArg = null) {
+    if (!titleArg && userId === '__BATCH__') {
+        return executeBatchNotification();
+    }
+
     // Determine if manual (UI) or automated
     const isManual = !titleArg;
 

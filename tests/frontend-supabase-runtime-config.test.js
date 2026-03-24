@@ -196,6 +196,67 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     assert.deepEqual(violations, [], violations.join('\n'));
 });
 
+test('chat widget runtime renderers externalize hidden, loading, and open-close state styling', () => {
+    const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
+    const chatWidgetCss = readRepoFile('css/chat-widget.css');
+
+    const runtimeMarkers = [
+        '_setFabHidden(hidden)',
+        '_setFabDisabled(disabled)',
+        '_setFabTransitionless(enabled)',
+        '_setChatWindowForceHidden(hidden)',
+        '_setChatWindowTransitionless(enabled)',
+        '_setSessionItemHidden(item, hidden)',
+        'chat-file-input',
+        'mascot-wrapper mascot-wrapper--compact',
+        "loadingOverlay.className = 'loading-overlay';",
+        "shield.className = 'chat-status-bar-shield';"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(chatWidgetSource.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
+    }
+
+    const removedRuntimeMarkers = [
+        "shield.style.cssText = [",
+        "this._statusBarShield.style.visibility = 'visible';",
+        "this._statusBarShield.style.opacity = '1';",
+        "this.messagesContainer.style.overflowY = 'hidden';",
+        'loadingOverlay.style.cssText = `',
+        "this.messagesContainer.style.position = 'relative';",
+        "item.style.display = 'flex';",
+        "item.style.display = 'none';",
+        "item.style.display = matches ? 'flex' : 'none';",
+        'style="display: none;"',
+        'style="transform: scale(0.8);"',
+        "this.fab.style.opacity = '0';",
+        "this.fab.style.visibility = 'hidden';",
+        "this.fab.style.pointerEvents = 'none';"
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(chatWidgetSource.includes(marker), false, `js/components/ChatWidget.js should not contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '.chat-status-bar-shield',
+        '.chat-status-bar-shield.is-visible',
+        '.chat-widget-fab.chat-widget-fab--hidden',
+        '.chat-widget-fab.chat-widget-fab--disabled',
+        '.chat-widget-fab.chat-widget-fab--transitionless',
+        '.chat-window.chat-window--transitionless',
+        '.chat-window.chat-window--force-hidden',
+        '.loading-overlay',
+        '.chat-file-input',
+        '.session-item.session-item--hidden',
+        '.mascot-wrapper--compact'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(chatWidgetCss.includes(marker), true, `css/chat-widget.css should contain ${marker}`);
+    }
+});
+
 test('shared frontend scripts depend on the unified runtime Supabase helpers', () => {
     const expectations = new Map([
         ['supabase-client.js', 'requireZaoyoeSupabaseConfig'],
@@ -378,7 +439,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
         ['shop.html', 'css/shop-page.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_ORDER_RUNTIME_STYLES_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_SHOP_RUNTIME_STYLE_ZERO_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -486,7 +547,7 @@ test('admin studio page no longer embeds inline style attributes', () => {
     const source = readRepoFile('admin-studio.html');
 
     assert.equal(
-        source.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_ORDER_RUNTIME_STYLES_1'),
+        source.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_SHOP_RUNTIME_STYLE_ZERO_1'),
         true,
         'admin-studio.html should load the updated admin studio page stylesheet'
     );
@@ -1112,6 +1173,7 @@ test('admin studio points and users controls route through delegated actions', (
 test('admin user runtime renderers route list, modal, toolbar, and notification controls through delegated actions', () => {
     const adminUsersSource = readRepoFile('admin-users.js');
     const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
 
     const removedInlineMarkers = [
         `onclick="openUserDrawer('`,
@@ -1144,7 +1206,50 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         `onclick="showBanDetails(null)"`,
         `onclick="executeBanSelection()"`,
         `onclick="closePointsModal()"`,
-        `onclick="closeClearContentModal()"`
+        `onclick="closeClearContentModal()"`,
+        'modalOverlay.style.cssText =',
+        'modal.style.cssText =',
+        "const style = document.createElement('style');",
+        "modal.style.display = 'flex'",
+        "modal.style.display = 'none'",
+        'class="notes-container" style="display:flex',
+        'class="audit-list" id="auditList" style="padding:16px',
+        'style="margin-right: 8px;"',
+        'style="font-size:0.9rem;color:#94a3b8;margin-left:6px;"',
+        'class="modal-content" style="max-width: 400px;"',
+        'class="modal-body" style="padding: 20px;"',
+        'style="display: flex; flex-wrap: wrap; gap: 10px;"',
+        'style="width: 100%; padding: 10px; border-radius: 8px;',
+        'class="modal-title" style="color:#ef4444;"',
+        'class="modal-body" style="padding: 0 24px 24px 24px;"',
+        'class="scope-pill success" style="width:100%;justify-content:center;"',
+        'data-users-ban-action="details" style="margin-right:auto;background:transparent;',
+        'class="checklist-container" style="background:rgba(0,0,0,0.02);',
+        'class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;"',
+        'id="ccConfirmInput" class="modal-input" placeholder="输入密匙" style="border-color: #fca5a5;"',
+        'id="ccConfirmBtn" style="background:#ef4444; color:white; border:none; box-shadow:0 2px 8px rgba(239, 68, 68, 0.4);"',
+        'style="text-align:center;color:var(--text-dim);padding:20px;"',
+        'emptyDiv.style.cssText =',
+        "emptyDiv.style.display = 'flex'",
+        "emptyDiv.style.display = 'none'",
+        'style="margin-left:auto;"',
+        'style="display: ${roleInfo.is_admin ? \'block\' : \'none\'}; margin-top: 0;"',
+        'style="font-size:1rem;color:#fca5a5;margin-bottom:10px;"',
+        'style="margin-bottom:18px;"',
+        'style="background:${bgColor};display:flex;align-items:center;justify-content:center;color:white;',
+        'style="width: 80px; padding: 3px 8px; border-radius: 20px;',
+        "btn.style.background = '#10b981'",
+        "btn.style.background = '#ef4444'",
+        "btn.style.background = '#94a3b8'",
+        "indicator.style.setProperty('--users-tab-indicator-left'",
+        "container.style.setProperty('--pill-count'",
+        "container.style.setProperty('--indicator-color'",
+        "instance.calendarContainer.style.setProperty('z-index', '2147483647', 'important')",
+        "el.style.setProperty('--users-note-height'",
+        "confirmBtn.style.opacity = '1'",
+        "confirmBtn.style.cursor = 'pointer'",
+        "confirmBtn.style.opacity = '0.5'",
+        "confirmBtn.style.cursor = 'not-allowed'"
     ];
 
     for (const marker of removedInlineMarkers) {
@@ -1180,6 +1285,25 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         'data-admin-action="users-close-notification-modal"',
         'data-admin-action="users-select-notification-type"',
         'data-admin-action="users-send-notification"',
+        'batch-export-modal-overlay',
+        'notification-modal-overlay',
+        'users-notes-container',
+        'users-audit-item',
+        'users-modal-title-count',
+        'users-hidden-date-picker',
+        'users-batch-tag-modal',
+        'users-ban-actions',
+        'users-clear-confirm-btn',
+        'users-table-empty-state',
+        'users-empty-tag',
+        'modal-permissions-panel--flush',
+        'users-affiliate-error-state',
+        'users-ledger-reason-row',
+        'users-ban-confirm-btn--ban',
+        'initials-avatar--tone-',
+        'users-points-modal-footer',
+        'users-points-form-group-first',
+        'custom-tag-input',
         'data-batch-tag-value="',
         'data-batch-tag-close="1"',
         'data-batch-tag-submit="1"',
@@ -1231,6 +1355,34 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
 
     for (const marker of delegatedHandlerMarkers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.batch-export-modal-overlay',
+        '.notification-modal-overlay',
+        '.users-notes-container',
+        '.users-audit-item',
+        '.users-modal-title-count',
+        '.users-hidden-date-picker',
+        '.users-batch-tag-modal',
+        '.users-ban-actions',
+        '.users-clear-confirm-btn',
+        '.users-table-empty-state',
+        '.modal-permissions-panel--flush',
+        '.admin-ledger-item--emerald',
+        '.users-affiliate-error-state',
+        '.users-ledger-reason-row',
+        '.users-ban-confirm-btn--ban',
+        '.initials-avatar--tone-0',
+        '.users-points-modal-footer',
+        '.custom-tag-input',
+        '.scope-options-pills--tone-unban',
+        '.users-fixed-flatpickr-calendar',
+        '.users-notes-input--overflow'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 });
 
@@ -1317,6 +1469,7 @@ test('admin comments runtime renderers route list items, filters, and block menu
 
 test('wallet modal runtime renderers route wallet shell, lists, filters, and order dialogs through delegated actions', () => {
     const walletModalSource = readRepoFile('js/components/WalletModal.js');
+    const walletCssSource = readRepoFile('css/wallet.css');
     const inlineHandlerPattern = /\bon(?:click|change|submit|input|keydown|keyup|mouseover|mouseout|error|load)\s*=\s*["']/i;
 
     assert.equal(
@@ -1346,13 +1499,55 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         "case 'open-order-detail':",
         "case 'copy-value':",
         "case 'buy-package':",
+        "getWalletToneClass(value = '')",
+        "buildWalletOrderLoadingMarkup(message = '')",
         'js-wallet-copy-content',
         'wallet-copy-card',
+        'wallet-order-modal--loading',
+        'wallet-detail-row--stacked',
+        'wallet-date-input',
+        'wallet-order-modal-body--fade',
+        'wallet-content-grid--double',
+        'wallet-copy-card--compact',
+        'wallet-copy-card--link',
+        'wallet-modal-actions--toolbar',
+        'product-dot--info',
+        'content-card--warning',
         'bindOverlayCloseButtons(detailOverlay);'
     ];
 
     for (const marker of delegatedMarkers) {
         assert.equal(walletModalSource.includes(marker), true, `js/components/WalletModal.js should contain ${marker}`);
+    }
+
+    const removedInlineMarkers = [
+        'style="max-width: 360px;"',
+        'style="cursor:pointer;"',
+        'style="display: flex; align-items: center; justify-content: center; min-height: 200px;"',
+        'style="animation: fadeIn 0.2s ease-out;"',
+        'style="display: flex; gap: 8px; justify-content: flex-end; padding: 4px 0; margin-top: -8px;"',
+        'style="width:8px;height:8px;background:#6b9ece;border-radius:50%;display:inline-block;margin-left:8px;cursor:pointer;transition:all 0.2s ease;position:relative;"'
+    ];
+
+    for (const marker of removedInlineMarkers) {
+        assert.equal(walletModalSource.includes(marker), false, `js/components/WalletModal.js should not contain ${marker}`);
+    }
+
+    const walletCssMarkers = [
+        '.wallet-order-modal--loading',
+        '.wallet-order-loading-state',
+        '.wallet-detail-row--stacked',
+        '.wallet-date-input',
+        '.wallet-content-grid--double',
+        '.wallet-copy-card--compact',
+        '.wallet-modal-actions--toolbar',
+        '.product-dot--info',
+        '.content-card--warning',
+        '.wallet-affiliate-person-row'
+    ];
+
+    for (const marker of walletCssMarkers) {
+        assert.equal(walletCssSource.includes(marker), true, `css/wallet.css should contain ${marker}`);
     }
 });
 
@@ -1868,6 +2063,246 @@ test('shop admin order workflows externalize runtime table-row and modal styling
     }
 });
 
+test('shop admin inventory workflows externalize runtime table and modal styling', () => {
+    const shopSource = readRepoFile('js/admin-shop.js');
+    const shopStyles = readRepoFile('css/admin-studio-page.css');
+
+    const removedRuntimeMarkers = [
+        'style="display:${checkboxDisplay}"',
+        'style="cursor:pointer; padding:5px 10px; border-radius:6px; background:rgba(255,255,255,0.03); transition:all 0.2s; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"',
+        'style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);z-index:9999;display:flex;justify-content:center;align-items:center;"',
+        "'reserve': '<span style=\"background:rgba(107,158,206,0.2);color:#bfdbfe;padding:3px 10px;border-radius:20px;font-size:12px;\"",
+        'style="background:rgba(30,35,50,0.95);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:25px;width:500px;max-width:90%;max-height:80vh;overflow-y:auto;"',
+        'style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:15px;margin-bottom:15px;"'
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(shopSource.includes(marker), false, `js/admin-shop.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'shop-inventory-loading-cell',
+        'shop-inventory-content-chip',
+        'shop-inventory-status-badge',
+        'shop-inventory-fault-overlay',
+        'shop-inventory-detail-overlay',
+        'shop-inventory-detail-inline-btn',
+        'shop-inventory-detail-entry',
+        'shop-inventory-detail-card-value--status',
+        'shop-inventory-copy-feedback',
+        'shop-inventory-selection-toggle-cell'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.shop-inventory-empty-cell',
+        '.shop-inventory-loading-cell',
+        '.shop-inventory-content-chip',
+        '.shop-inventory-status-badge',
+        '.shop-inventory-fault-overlay',
+        '.shop-inventory-detail-overlay',
+        '.shop-inventory-detail-inline-btn',
+        '.shop-inventory-detail-entry',
+        '.shop-inventory-copy-feedback',
+        '.shop-inventory-selection-mode .shop-inventory-selection-toggle-cell'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
+    }
+});
+
+test('shop admin import and editor helpers externalize runtime layout styling', () => {
+    const shopSource = readRepoFile('js/admin-shop.js');
+    const shopStyles = readRepoFile('css/admin-studio-page.css');
+    const adminStudioSource = readRepoFile('admin-studio.html');
+
+    const removedRuntimeMarkers = [
+        'style="display: flex; align-items: center; gap: 15px;"',
+        `style="font-family:'Outfit',sans-serif;font-weight:300;font-size:20px;"`,
+        "modal.style.cssText = 'display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.55);",
+        'style="background: rgba(18, 22, 36, 0.95); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 30px;',
+        "row.style.cssText = 'display: flex; gap: 8px; align-items: center; background: rgba(0,0,0,0.2);",
+        'style="padding:20px; text-align:center; color:rgba(255,255,255,0.3);"',
+        'style="padding: 20px; text-align: center; color: rgba(255,255,255,0.4); font-size: 13px;"',
+        "batchMenu.style.display = 'none'",
+        "menu.style.display = menu.style.display === 'none' ? 'block' : 'none'",
+        "document.querySelectorAll('.inventory-subtab-content').forEach(el => el.style.display = 'none')"
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(shopSource.includes(marker), false, `js/admin-shop.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'pagination-shell',
+        'shop-delivery-switch-modal',
+        'shop-tiered-pricing-row',
+        'shop-import-tree-state',
+        'shop-import-product-empty',
+        'shop-import-target-product--visible',
+        'shop-inventory-selection-mode',
+        "batchMenu.classList.remove('is-open')",
+        "menu.classList.toggle('is-open')",
+        "document.querySelectorAll('.inventory-subtab-content').forEach(el => el.classList.add('admin-studio-inline-style-attr-3'))"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.pagination-shell',
+        '.pagination-btn--step',
+        '.pagination-total--compact',
+        '.shop-delivery-switch-modal',
+        '.shop-tiered-pricing-row',
+        '.shop-import-tree-state',
+        '.shop-import-product-empty',
+        '.shop-import-target-product--visible',
+        '.shop-inventory-selection-mode #batchActionsBtn'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioSource.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_SHOP_RUNTIME_STYLE_ZERO_1'),
+        true,
+        'admin-studio.html should load the latest import/runtime stylesheet version'
+    );
+    assert.equal(
+        adminStudioSource.includes('js/admin-shop.js?v=20260324_SHOP_RUNTIME_STYLE_ZERO_1'),
+        true,
+        'admin-studio.html should load the latest shop admin runtime script version'
+    );
+});
+
+test('shop admin final runtime style remnants are fully externalized from scripts', () => {
+    const shopSource = readRepoFile('js/admin-shop.js');
+    const shopStyles = readRepoFile('css/admin-studio-page.css');
+
+    const removedRuntimeMarkers = [
+        "hint.style.display = 'block'",
+        "helper.style.position = 'fixed'",
+        "helper.style.opacity = '0'",
+        "helper.style.pointerEvents = 'none'",
+        "iconBox.style.opacity = '0.7'",
+        "wrapper.style.maxHeight =",
+        "wrapper.style.opacity =",
+        "wrapper.style.marginTop =",
+        'style="width:100%; height:100%; object-fit:cover; border-radius:12px;"',
+        '<div class="shop-delivery-hotspot-bar"><span style="width:${width}%"></span></div>',
+        'style="grid-template-columns:repeat(${Math.max(buckets.length, 1)}, minmax(0, 1fr));"',
+        'style="height:${totalHeight}%"',
+        'style="color: ${folderColor};"',
+        "menu.style.left = left + 'px'",
+        "menu.style.top = top + 'px'"
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(shopSource.includes(marker), false, `js/admin-shop.js should not retain ${marker}`);
+    }
+
+    const inlineAttrCount = (shopSource.match(/style=\"/g) || []).length;
+    const cssTextCount = (shopSource.match(/\.style\.cssText/g) || []).length;
+    const styleWriteCount = (shopSource.match(/\.style\.[A-Za-z_$][\w$]*/g) || []).filter((token) => token !== '.style.cssText').length;
+
+    assert.equal(inlineAttrCount, 0, 'js/admin-shop.js should not emit inline style attributes');
+    assert.equal(cssTextCount, 0, 'js/admin-shop.js should not use style.cssText');
+    assert.equal(styleWriteCount, 0, 'js/admin-shop.js should not write runtime style properties directly');
+
+    const runtimeMarkers = [
+        'shop-product-site-hint--visible',
+        'shop-form-section--expanded',
+        'shop-admin-clipboard-helper',
+        'shop-admin-preview-icon-image',
+        'upload-box--busy',
+        'shop-delivery-hotspot-progress',
+        'renderDeliveryTrendBarSvg: function',
+        'shop-delivery-trend-bar-svg',
+        'shop-delivery-trend-bar-dead-fill',
+        'closeCategoryContextMenu: function ()',
+        'tree-folder-icon ${this.buildCategoryColorClass(folderColor)}',
+        "anchor.appendChild(menu)"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.shop-product-site-hint--visible',
+        '.shop-form-section--expanded',
+        '.shop-admin-clipboard-helper',
+        '.shop-admin-preview-icon-image',
+        '.upload-box--busy',
+        '.shop-delivery-hotspot-progress',
+        '.shop-delivery-trend-bar-svg',
+        '.shop-delivery-trend-bar-dead-fill',
+        '.tree-context-menu--anchor-left',
+        '.tree-folder-icon.category-color--blue'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
+    }
+});
+
+test('shop admin delivery dashboards externalize tone and table-row styling', () => {
+    const shopSource = readRepoFile('js/admin-shop.js');
+    const shopStyles = readRepoFile('css/admin-studio-page.css');
+
+    const removedRuntimeMarkers = [
+        'class="status-badge" style="display:inline-flex;align-items:center;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:600;color:${colors.text};background:${colors.bg};border:1px solid ${colors.border};white-space:nowrap;"',
+        'class="shop-delivery-meta-badge" style="color:${colors.text};background:${colors.bg};border-color:${colors.border};"',
+        'class="shop-delivery-meta-chip shop-delivery-meta-chip--action${activeClass}"${titleAttr}${delegatedAttrs} style="color:${textColor};background:${background};border-color:${borderColor};"',
+        'class="shop-delivery-trend-legend-item${activeClass}"',
+        '<span style="color:rgba(226,232,240,0.45);">—</span>',
+        `.join('<span style="color:rgba(226,232,240,0.55);">→</span>')`,
+        'class="shop-delivery-meta" style="margin-bottom:8px;"',
+        'style="white-space:normal;line-height:1.55;"'
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(shopSource.includes(marker), false, `js/admin-shop.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'shop-delivery-badge',
+        'shop-delivery-tone--',
+        'shop-delivery-meta--stacked',
+        'shop-delivery-value',
+        'shop-delivery-table-cell--relaxed',
+        'shop-delivery-table-note--spaced',
+        'shop-delivery-transition-separator',
+        'shop-delivery-trend-legend-dot'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.shop-delivery-badge',
+        '.shop-delivery-tone--success',
+        '.shop-delivery-meta--stacked',
+        '.shop-delivery-value',
+        '.shop-delivery-table-cell--relaxed',
+        '.shop-delivery-table-note--spaced',
+        '.shop-delivery-transition-separator',
+        '.shop-delivery-trend-legend-dot'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
+    }
+});
+
 test('admin studio create form and shop import/orders/fulfillment controls route through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
@@ -2171,6 +2606,144 @@ test('analytics calendar and config poster/editor templates route through delega
     for (const marker of adminScriptMarkers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
+});
+
+test('prompts gallery UI state renderers externalize toast, banner, nav, and comment visibility styling', () => {
+    const promptsSource = readRepoFile('prompts-poetry.js');
+    const promptsStyles = readRepoFile('prompts-poetry.css');
+    const promptsHtml = readRepoFile('prompts.html');
+
+    const removedRuntimeMarkers = [
+        'style="color: ${color.icon}; font-size: 1.2rem;"',
+        'Object.assign(toast.style',
+        "toast.style.opacity = '1'",
+        "loginBtn.style.display = 'none'",
+        "unifiedModal.style.setProperty('z-index', '12060', 'important')",
+        "banner.style.display = 'flex'",
+        'msg.style.cssText =',
+        'style="--delay: ${i * 0.03}s"',
+        'style="color:#fca5a5;"',
+        'style="display:none;"',
+        "icon.style.color = '#e74c3c'",
+        "icon.style.color = ''",
+        "leftArrow.style.display = 'flex'",
+        "modal.style.display = 'flex'",
+        "if (modal) modal.style.display = 'none'",
+        "title.style.cursor = 'pointer'",
+        "comment.style.display = 'none'",
+        "card.style.transition = 'transform 0.3s ease, opacity 0.3s ease'",
+        "card.style.display = 'none'",
+        'card.style.animationDelay =',
+        'shield.style.cssText =',
+        'shield.style.height = expanded',
+        "shield.style.visibility = 'visible'",
+        "shield.style.opacity = '1'",
+        "probe.style.position = 'fixed'",
+        "el.style.width = '4px'",
+        "el.style.fontSize = '8px'",
+        "el.style.backgroundColor = CONFIG.color",
+        "modalInner.style.setProperty('--prompt-modal-scale', '1')",
+        "modalInner.style.setProperty('--prompt-modal-translate-y', '-24px')",
+        "backdrop.style.setProperty('height',",
+        "modal.style.setProperty('height',",
+        "sheet.style.setProperty('height',",
+        "overlay.style.setProperty('--composer-keyboard-offset',",
+        "sheet.style.removeProperty('max-height')",
+        "document.documentElement.style.overflow = 'hidden'",
+        "document.body.style.overflow = 'hidden'",
+        'style="${svgStyle}"',
+        'style="overflow:visible;"',
+        'style="stop-color:#ffe6ea;stop-opacity:1"',
+        'style="left:${left}%; top:${top}%; width:${size}px; height:${size}px;',
+        'style="left:${left}%;animation-delay:${delay.toFixed(2)}s;',
+        "container.style.setProperty('--cursor-x'",
+        "card.style.setProperty('--breathe-delay'",
+        "textarea.style.height = 'auto'"
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(promptsSource.includes(marker), false, `prompts-poetry.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'gallery-toast--visible',
+        "setPromptsDisplayState(loginBtn, false, 'prompts-display-flex')",
+        'buildPromptsStaggerClass(i)',
+        'featured-banner--revealed',
+        'search-cooldown-msg',
+        'comment-empty-subtitle comment-empty-subtitle--error',
+        "button.classList.add('liked')",
+        "leftArrow.classList.add('is-visible')",
+        "modal.classList.add('poetry-modal--visible')",
+        "comment.classList.toggle('hidden-collapsed', shouldHide)",
+        'class="prompts-comment-image-upload-hidden"',
+        'hidePromptCard(card, true)',
+        'showPromptCard(card, visibleIndex)',
+        'setPromptCardStaggerClass(card, index)',
+        "shield.classList.add('prompt-status-bar-shield--active')",
+        "probe.className = 'prompt-comment-composer-viewport-probe'",
+        "applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--spark'",
+        "applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--rain'",
+        "applyPromptsThemeParticleClasses(el, ['prompts-theme-particle--decor', 'prompts-theme-particle--decor-svg']",
+        'setPromptsCssVars(modalInner, {',
+        'setPromptsCssVars(backdrop, {',
+        'setPromptsCssVars(modal, {',
+        'setPromptsCssVars(overlay, {',
+        'setPromptsCssVars(sheet, {',
+        'getPromptsPageOverflowState()',
+        "setPromptsPageOverflow('hidden')",
+        'setPromptsPercentPosition(heart, initialPos.x, initialPos.y)',
+        'applyPromptsTextareaAutoHeight(textarea, maxHeight)',
+        'resetPromptsTextareaAutoHeight(input)',
+        'hydrateDecorationParticleStyles(root)',
+        'data-left="${left.toFixed(2)}"',
+        "setPromptsCssVars(container, {",
+        "setPromptsCssVars(card, {"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(promptsSource.includes(marker), true, `prompts-poetry.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.gallery-toast',
+        '.gallery-toast--visible',
+        '.prompts-display-flex',
+        '.prompts-nav-transition',
+        '.featured-banner--revealed',
+        '.prompts-pagination-nav',
+        '.search-cooldown-msg',
+        '.comment-header-title--expandable',
+        '.comment-empty-subtitle--error',
+        '.modal-img-nav.is-visible',
+        '.poetry-modal.poetry-modal--visible',
+        '.prompt-card.prompt-card-exiting',
+        '.prompt-card.card-visible.prompt-card-stagger-11',
+        '.prompt-status-bar-shield',
+        '.prompt-status-bar-shield.prompt-status-bar-shield--visible',
+        '.prompt-comment-composer-viewport-probe',
+        '.prompts-theme-particle--spark',
+        '.prompts-theme-particle--rain',
+        '.prompts-theme-particle--snow',
+        '.prompts-theme-particle--decor',
+        '.decoration-svg',
+        '.decoration-svg--overflow-visible'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(promptsStyles.includes(marker), true, `prompts-poetry.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        promptsHtml.includes('prompts-poetry.css?v=20260324_PROMPTS_UI_STATE_STYLES_4'),
+        true,
+        'prompts.html should load the latest prompts gallery stylesheet version'
+    );
+    assert.equal(
+        promptsHtml.includes('prompts-poetry.js?v=20260324_PROMPTS_UI_STATE_STYLES_5'),
+        true,
+        'prompts.html should load the latest prompts gallery runtime version'
+    );
 });
 
 test('payments runtime controls, site filter, and admin chat menu route through delegated actions', () => {

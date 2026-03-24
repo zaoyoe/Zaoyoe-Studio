@@ -51,7 +51,9 @@ function syncPromptNavOffset() {
     const applyNavHeight = () => {
         const navHeight = Math.round(nav.getBoundingClientRect().height);
         if (navHeight > 0) {
-            document.documentElement.style.setProperty('--prompts-nav-height', `${navHeight}px`);
+            setPromptsCssVars(document.documentElement, {
+                '--prompts-nav-height': `${navHeight}px`
+            });
         }
     };
 
@@ -224,69 +226,192 @@ function showGalleryToast(message, type = 'warning', duration = 3000) {
         info: 'fas fa-info-circle'
     };
 
-    // Color mapping
-    const colors = {
-        warning: { bg: 'rgba(245, 158, 11, 0.15)', border: 'rgba(245, 158, 11, 0.5)', icon: '#f59e0b' },
-        error: { bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.5)', icon: '#ef4444' },
-        success: { bg: 'rgba(34, 197, 94, 0.15)', border: 'rgba(34, 197, 94, 0.5)', icon: '#22c55e' },
-        info: { bg: 'rgba(59, 130, 246, 0.15)', border: 'rgba(59, 130, 246, 0.5)', icon: '#3b82f6' }
-    };
-
-    const color = colors[type] || colors.info;
-
     // Create toast element
     const toast = document.createElement('div');
-    toast.className = 'gallery-toast';
+    toast.className = `gallery-toast gallery-toast--${type}`;
     toast.innerHTML = `
-        <i class="${icons[type] || icons.info}" style="color: ${color.icon}; font-size: 1.2rem;"></i>
+        <i class="gallery-toast__icon ${icons[type] || icons.info}"></i>
         <span>${message}</span>
     `;
-
-    // Apply styles
-    Object.assign(toast.style, {
-        position: 'fixed',
-        bottom: '24px',
-        left: '50%',
-        transform: 'translateX(-50%) translateY(100px)',
-        background: 'rgba(255, 255, 255, 0.85)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: `1px solid ${color.border}`,
-        borderRadius: '16px',
-        padding: '16px 24px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
-        zIndex: '10000',
-        fontFamily: 'var(--font-sans, sans-serif)',
-        fontSize: '0.95rem',
-        color: '#1e293b',
-        opacity: '0',
-        transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)'
-    });
-
-    // Dark mode styles
-    if (document.documentElement.getAttribute('data-theme') === 'dark') {
-        toast.style.background = 'rgba(30, 41, 59, 0.85)';
-        toast.style.color = '#e2e8f0';
-        toast.style.borderColor = color.border;
-    }
 
     document.body.appendChild(toast);
 
     // Animate in
     requestAnimationFrame(() => {
-        toast.style.opacity = '1';
-        toast.style.transform = 'translateX(-50%) translateY(0)';
+        toast.classList.add('gallery-toast--visible');
     });
 
     // Auto dismiss
     setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateX(-50%) translateY(20px)';
+        toast.classList.remove('gallery-toast--visible');
+        toast.classList.add('gallery-toast--exiting');
         setTimeout(() => toast.remove(), 400);
     }, duration);
+}
+
+function setPromptsHidden(element, hidden) {
+    if (!element) return;
+    element.classList.toggle('prompts-hidden', Boolean(hidden));
+}
+
+function setPromptsDisplayState(element, visible, displayClass) {
+    if (!element) return;
+    element.classList.toggle('prompts-hidden', !visible);
+    if (displayClass) {
+        element.classList.toggle(displayClass, Boolean(visible));
+    }
+}
+
+function buildPromptsStaggerClass(index) {
+    return `prompts-stagger-${Math.min(Math.max(Number(index) || 0, 0), 5)}`;
+}
+
+function beginPromptsNavTransition(navContainer, hiddenClass) {
+    if (!navContainer) return;
+    navContainer.classList.add('prompts-nav-transition');
+    navContainer.classList.remove('prompts-nav-hidden-up', 'prompts-nav-hidden-down');
+    if (hiddenClass) {
+        navContainer.classList.add(hiddenClass);
+    }
+}
+
+function finishPromptsNavTransition(navContainer, hiddenClass) {
+    if (!navContainer) return;
+    navContainer.classList.remove('prompts-nav-hidden-up', 'prompts-nav-hidden-down');
+    if (hiddenClass) {
+        navContainer.classList.add(hiddenClass);
+    }
+    requestAnimationFrame(() => {
+        navContainer.classList.remove('prompts-nav-hidden-up', 'prompts-nav-hidden-down');
+    });
+}
+
+function setPromptCardStaggerClass(card, index) {
+    if (!card) return;
+    const nextClass = `prompt-card-stagger-${Math.min(Math.max(Number(index) || 0, 0), 11)}`;
+    const previousClass = card.dataset.promptCardStaggerClass;
+    if (previousClass && previousClass !== nextClass) {
+        card.classList.remove(previousClass);
+    }
+    card.dataset.promptCardStaggerClass = nextClass;
+    card.classList.add(nextClass);
+}
+
+function clearPromptCardHideTimer(card) {
+    if (!card?.__promptCardHideTimer) return;
+    clearTimeout(card.__promptCardHideTimer);
+    card.__promptCardHideTimer = null;
+}
+
+function showPromptCard(card, index = 0) {
+    if (!card) return;
+    clearPromptCardHideTimer(card);
+    setPromptsHidden(card, false);
+    card.classList.remove('prompt-card-exiting', 'card-visible');
+    setPromptCardStaggerClass(card, index);
+    requestAnimationFrame(() => {
+        card.classList.add('card-visible');
+    });
+}
+
+function hidePromptCard(card, animated = false) {
+    if (!card) return;
+    clearPromptCardHideTimer(card);
+    card.classList.remove('card-visible');
+    if (!animated) {
+        card.classList.remove('prompt-card-exiting');
+        setPromptsHidden(card, true);
+        return;
+    }
+
+    card.classList.add('prompt-card-exiting');
+    card.__promptCardHideTimer = setTimeout(() => {
+        card.classList.remove('prompt-card-exiting');
+        setPromptsHidden(card, true);
+        card.__promptCardHideTimer = null;
+    }, 300);
+}
+
+function setPromptsCssVars(element, entries) {
+    if (!element || !entries) return;
+    const styleDecl = element.style;
+    if (!styleDecl) return;
+    Object.entries(entries).forEach(([name, value]) => {
+        if (value === null || value === undefined || value === '') {
+            styleDecl['removeProperty'](name);
+            return;
+        }
+        styleDecl['setProperty'](name, String(value));
+    });
+}
+
+function applyPromptsThemeParticleClasses(element, classes, vars = null) {
+    if (!element) return;
+    const nextClasses = Array.isArray(classes) ? classes : [classes];
+    element.className = ['prompts-theme-particle', ...nextClasses.filter(Boolean)].join(' ');
+    setPromptsCssVars(element, vars);
+}
+
+function getPromptsPageOverflowState() {
+    const htmlStyle = document.documentElement.style;
+    const bodyStyle = document.body.style;
+    return {
+        htmlOverflow: htmlStyle?.['getPropertyValue']('overflow'),
+        bodyOverflow: bodyStyle?.['getPropertyValue']('overflow')
+    };
+}
+
+function setPromptsPageOverflow(value) {
+    setPromptsCssVars(document.documentElement, {
+        overflow: value
+    });
+    setPromptsCssVars(document.body, {
+        overflow: value
+    });
+}
+
+function setPromptsPercentPosition(element, x, y) {
+    if (!element) return;
+    setPromptsCssVars(element, {
+        left: `${x}%`,
+        top: `${y}%`
+    });
+}
+
+function resetPromptsTextareaAutoHeight(element) {
+    if (!element) return;
+    setPromptsCssVars(element, {
+        height: 'auto',
+        'overflow-y': 'hidden'
+    });
+}
+
+function applyPromptsTextareaAutoHeight(element, maxHeight, minHeight = 0) {
+    if (!element) return;
+    resetPromptsTextareaAutoHeight(element);
+    const targetHeight = Math.max(minHeight, Math.min(element.scrollHeight, maxHeight));
+    setPromptsCssVars(element, {
+        height: `${targetHeight}px`,
+        'overflow-y': element.scrollHeight > targetHeight ? 'auto' : 'hidden'
+    });
+}
+
+function setCommentCollapseVisibility(allComments, collapsed) {
+    let shownParents = 0;
+
+    allComments.forEach((comment) => {
+        const isParent = !comment.classList.contains('comment-reply');
+        let shouldHide = false;
+
+        if (collapsed) {
+            shouldHide = isParent ? shownParents >= COLLAPSE_SHOW_COUNT : true;
+            if (isParent && !shouldHide) {
+                shownParents++;
+            }
+        }
+
+        comment.classList.toggle('hidden-collapsed', shouldHide);
+    });
 }
 
 // Inverted search index for O(1) tag lookups (built on init)
@@ -641,23 +766,23 @@ async function checkAuthState() {
             }
 
             // Hide login button, show other buttons for logged-in users
-            if (loginBtn) loginBtn.style.display = 'none';
-            if (profileBtn) profileBtn.style.display = 'flex';
-            if (walletBtn) walletBtn.style.display = 'flex';
-            if (switchAccountBtn) switchAccountBtn.style.display = 'flex';
-            if (logoutBtn) logoutBtn.style.display = 'flex';
+            setPromptsDisplayState(loginBtn, false, 'prompts-display-flex');
+            setPromptsDisplayState(profileBtn, true, 'prompts-display-flex');
+            setPromptsDisplayState(walletBtn, true, 'prompts-display-flex');
+            setPromptsDisplayState(switchAccountBtn, true, 'prompts-display-flex');
+            setPromptsDisplayState(logoutBtn, true, 'prompts-display-flex');
 
             // Only show Enter Studio for admin
-            if (adminStudioBtn) adminStudioBtn.style.display = isAdmin ? 'flex' : 'none';
+            setPromptsDisplayState(adminStudioBtn, isAdmin, 'prompts-display-flex');
         } else {
             // Guest - show login button, hide all user controls
             if (identityName) identityName.textContent = 'Guest';
-            if (loginBtn) loginBtn.style.display = 'flex';
-            if (profileBtn) profileBtn.style.display = 'none';
-            if (walletBtn) walletBtn.style.display = 'none';
-            if (switchAccountBtn) switchAccountBtn.style.display = 'none';
-            if (logoutBtn) logoutBtn.style.display = 'none';
-            if (adminStudioBtn) adminStudioBtn.style.display = 'none';
+            setPromptsDisplayState(loginBtn, true, 'prompts-display-flex');
+            setPromptsDisplayState(profileBtn, false, 'prompts-display-flex');
+            setPromptsDisplayState(walletBtn, false, 'prompts-display-flex');
+            setPromptsDisplayState(switchAccountBtn, false, 'prompts-display-flex');
+            setPromptsDisplayState(logoutBtn, false, 'prompts-display-flex');
+            setPromptsDisplayState(adminStudioBtn, false, 'prompts-display-flex');
         }
     } catch (error) {
         console.error('Auth check failed:', error);
@@ -670,7 +795,7 @@ function showLoginModal() {
     if (typeof window.openLoginModal === 'function') {
         const unifiedModal = document.getElementById('loginModal');
         if (unifiedModal) {
-            unifiedModal.style.setProperty('z-index', '12060', 'important');
+            unifiedModal.classList.add('prompts-auth-modal-promoted');
         }
         window.openLoginModal();
         return;
@@ -785,13 +910,9 @@ function lockAnnouncementBackground(lockTarget) {
     if (window.iOSScrollLock?.isLocked) return;
 
     announcementOwnsScrollLock = true;
-    announcementOverflowRestore = {
-        htmlOverflow: document.documentElement.style.overflow,
-        bodyOverflow: document.body.style.overflow
-    };
+    announcementOverflowRestore = getPromptsPageOverflowState();
 
-    document.documentElement.style.overflow = 'hidden';
-    document.body.style.overflow = 'hidden';
+    setPromptsPageOverflow('hidden');
 
     if (window.iOSScrollLock) {
         window.iOSScrollLock.lockLight(lockTarget);
@@ -806,11 +927,12 @@ function unlockAnnouncementBackground() {
     }
 
     if (announcementOverflowRestore) {
-        document.documentElement.style.overflow = announcementOverflowRestore.htmlOverflow;
-        document.body.style.overflow = announcementOverflowRestore.bodyOverflow;
+        setPromptsPageOverflow(announcementOverflowRestore.htmlOverflow || '');
+        setPromptsCssVars(document.body, {
+            overflow: announcementOverflowRestore.bodyOverflow || ''
+        });
     } else {
-        document.documentElement.style.overflow = '';
-        document.body.style.overflow = '';
+        setPromptsPageOverflow('');
     }
 
     announcementOverflowRestore = null;
@@ -930,6 +1052,40 @@ function showAnnouncement(type, color, size, content, ackKey, decoration) {
     }
 }
 
+function hydrateDecorationParticleStyles(root) {
+    if (!root) return;
+
+    root.querySelectorAll('.dust-mote[data-left]').forEach((mote) => {
+        setPromptsCssVars(mote, {
+            left: `${mote.dataset.left}%`,
+            top: `${mote.dataset.top}%`,
+            width: `${mote.dataset.width}px`,
+            height: `${mote.dataset.height}px`,
+            opacity: mote.dataset.opacity,
+            '--tx': `${mote.dataset.tx}px`,
+            '--ty': `${mote.dataset.ty}px`,
+            'animation-duration': `${mote.dataset.duration}s`,
+            'animation-delay': `${mote.dataset.delay}s`
+        });
+    });
+
+    root.querySelectorAll('.decoration-particle[data-left]').forEach((particle) => {
+        const width = particle.dataset.width;
+        const height = particle.dataset.height;
+        setPromptsCssVars(particle, {
+            left: `${particle.dataset.left}%`,
+            'animation-delay': `${particle.dataset.delay}s`,
+            'animation-duration': `${particle.dataset.duration}s`,
+            '--drift-x': `${particle.dataset.drift}px`,
+            'font-size': `${particle.dataset.fontSize}px`,
+            width: width ? `${width}px` : null,
+            height: height ? `${height}px` : null,
+            opacity: particle.dataset.opacity,
+            filter: `blur(${particle.dataset.blur}px)`
+        });
+    });
+}
+
 // ========================================
 // DECORATION PARTICLE SYSTEM
 // ========================================
@@ -962,7 +1118,7 @@ function generateDecorationParticles(theme) {
             const tx = Math.random() * 100 - 50; // -50px to +50px drift
             const ty = Math.random() * -70 - 30; // -30px to -100px rise
 
-            dustParticles += `<div class="dust-mote" style="left:${left}%; top:${top}%; width:${size}px; height:${size}px; opacity:${opacity}; --tx:${tx}px; --ty:${ty}px; animation-duration:${duration}s; animation-delay:${delay}s"></div>`;
+            dustParticles += `<div class="dust-mote" data-left="${left.toFixed(2)}" data-top="${top.toFixed(2)}" data-width="${size.toFixed(2)}" data-height="${size.toFixed(2)}" data-opacity="${opacity.toFixed(2)}" data-tx="${tx.toFixed(2)}" data-ty="${ty.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-delay="${delay.toFixed(2)}"></div>`;
         }
 
         return `
@@ -1217,9 +1373,6 @@ function generateDecorationParticles(theme) {
         leaves: 12, rain: 30, sunshine: 5 // Sakura: 20 -> 24 for better flow
     };
 
-    // Style for SVG content to fill the particle span
-    const svgStyle = "width:100%;height:100%;filter:drop-shadow(0 1px 1px rgba(0,0,0,0.1));display:block;";
-
     // Helper to generate random leaf SVG
     const getLeafContent = () => {
         const type = Math.floor(Math.random() * 3);
@@ -1228,14 +1381,14 @@ function generateDecorationParticles(theme) {
 
         // 1. Maple Leaf (Maple)
         if (type === 0) {
-            return `<svg viewBox="0 0 24 24" fill="${color}" style="${svgStyle}"><path d="M17,12L12,17L7,12L2,17V7L7,2L12,7L17,2V12M22,12V17H17V12H22M22,2V7H17V2H22Z" style="display:none"/><path d="M12.5,2C12.5,2 12.8,4.5 11,6C9,7.5 7,6 7,6L6,8C6,8 3,7.5 2,9C1,10.5 4,11 4,11L3,13C3,13 1,12.5 0,14C-1,15.5 2,16 2,16L3,18C3,18 2,19.5 4,20.5C6,21.5 7,19.5 7,19.5L9,21C9,21 10,22 13,22C16,22 16,19 16,19L17,20.5C17,20.5 19,20.5 20,19C21,17.5 19,16 19,16L21,14.5C21,14.5 23,14 22,12C21,10 19,10.5 19,10.5L20,8C20,8 19,6 17,6C15,6 14.5,8 14.5,8L12.5,2Z" /></svg>`;
+            return `<svg viewBox="0 0 24 24" fill="${color}" class="decoration-svg"><path d="M12.5,2C12.5,2 12.8,4.5 11,6C9,7.5 7,6 7,6L6,8C6,8 3,7.5 2,9C1,10.5 4,11 4,11L3,13C3,13 1,12.5 0,14C-1,15.5 2,16 2,16L3,18C3,18 2,19.5 4,20.5C6,21.5 7,19.5 7,19.5L9,21C9,21 10,22 13,22C16,22 16,19 16,19L17,20.5C17,20.5 19,20.5 20,19C21,17.5 19,16 19,16L21,14.5C21,14.5 23,14 22,12C21,10 19,10.5 19,10.5L20,8C20,8 19,6 17,6C15,6 14.5,8 14.5,8L12.5,2Z" /></svg>`;
         }
         // 2. Oak Leaf (Oak - Lobed)
         if (type === 1) {
-            return `<svg viewBox="0 0 24 24" fill="${color}" style="${svgStyle}"><path d="M7,18C6,18 5,16.5 5.5,15C6,13.5 4,12 4,12C4,12 5,10.5 6.5,11C8,11.5 9,10 9,10C9,10 8,8 9.5,7C11,6 12,3 13,3C14,3 15.5,5 15,7C14.5,9 16,9.5 16,9.5C16,9.5 18,9 18.5,10.5C19,12 17,13 17,13C17,13 18.5,14 18,16C17.5,18 16,18 15,17C14,16 13,17 12,18C11,19 12,21 12,21H11C11,21 10,19 11,18C12,17 10,16 10,16C10,16 8,18 7,18Z"/></svg>`;
+            return `<svg viewBox="0 0 24 24" fill="${color}" class="decoration-svg"><path d="M7,18C6,18 5,16.5 5.5,15C6,13.5 4,12 4,12C4,12 5,10.5 6.5,11C8,11.5 9,10 9,10C9,10 8,8 9.5,7C11,6 12,3 13,3C14,3 15.5,5 15,7C14.5,9 16,9.5 16,9.5C16,9.5 18,9 18.5,10.5C19,12 17,13 17,13C17,13 18.5,14 18,16C17.5,18 16,18 15,17C14,16 13,17 12,18C11,19 12,21 12,21H11C11,21 10,19 11,18C12,17 10,16 10,16C10,16 8,18 7,18Z"/></svg>`;
         }
         // 3. Poplar/Birch (Simple Teardrop)
-        return `<svg viewBox="0 0 24 24" fill="${color}" style="${svgStyle}"><path d="M12,2C12,2 4,8 4,14C4,19 9,22 12,22C15,22 20,19 20,14C20,8 12,2 12,2M12,20C12,20 11,16 12,12"/></svg>`;
+        return `<svg viewBox="0 0 24 24" fill="${color}" class="decoration-svg"><path d="M12,2C12,2 4,8 4,14C4,19 9,22 12,22C15,22 20,19 20,14C20,8 12,2 12,2M12,20C12,20 11,16 12,12"/></svg>`;
     };
 
     // Helper to generate random Sakura SVG
@@ -1247,12 +1400,12 @@ function generateDecorationParticles(theme) {
         // 60% Full Flower (5 Petals with authentic notches)
         if (type > 0.4) {
             // A more detailed 5-petal sakura shape
-            return `<svg viewBox="0 0 100 100" fill="${color}" style="${svgStyle}"><path d="M50 50 L50 15 C50 15 55 20 60 15 C65 10 75 25 50 50 Z M50 50 L85 50 C85 50 80 55 85 60 C90 65 75 75 50 50 Z M50 50 L50 85 C50 85 45 80 40 85 C35 90 25 75 50 50 Z M50 50 L15 50 C15 50 20 45 15 40 C10 35 25 25 50 50 Z M50 50 L25 25 C25 25 30 20 25 15 C20 10 10 20 50 50 Z" stroke="none" opacity="0.9"/><circle cx="50" cy="50" r="4" fill="#fff1f2"/></svg>`;
+            return `<svg viewBox="0 0 100 100" fill="${color}" class="decoration-svg"><path d="M50 50 L50 15 C50 15 55 20 60 15 C65 10 75 25 50 50 Z M50 50 L85 50 C85 50 80 55 85 60 C90 65 75 75 50 50 Z M50 50 L50 85 C50 85 45 80 40 85 C35 90 25 75 50 50 Z M50 50 L15 50 C15 50 20 45 15 40 C10 35 25 25 50 50 Z M50 50 L25 25 C25 25 30 20 25 15 C20 10 10 20 50 50 Z" stroke="none" opacity="0.9"/><circle cx="50" cy="50" r="4" fill="#fff1f2"/></svg>`;
         }
 
         // 40% Single Petal (Notched tip, not heart)
         // Classic Sakura petal shape: wider top with a notch, tapering bottom
-        return `<svg viewBox="0 0 100 100" fill="${color}" style="${svgStyle}"><path d="M50 90 C50 90 20 60 20 40 C20 25 30 10 45 20 C48 22 50 25 50 25 C50 25 52 22 55 20 C70 10 80 25 80 40 C80 60 50 90 50 90 Z" opacity="0.8"/></svg>`;
+        return `<svg viewBox="0 0 100 100" fill="${color}" class="decoration-svg"><path d="M50 90 C50 90 20 60 20 40 C20 25 30 10 45 20 C48 22 50 25 50 25 C50 25 52 22 55 20 C70 10 80 25 80 40 C80 60 50 90 50 90 Z" opacity="0.8"/></svg>`;
     };
 
 
@@ -1262,7 +1415,7 @@ function generateDecorationParticles(theme) {
     // Helper to generate random Snowflake SVG (Theme Adaptive)
     const getSnowContent = () => {
         // High-quality Snowflake SVG
-        return `<svg viewBox="0 0 24 24" fill="var(--snow-color)" style="${svgStyle}"><path d="M12,2L12,22 M2,12L22,12 M19.07,4.93L4.93,19.07 M19.07,19.07L4.93,4.93 M12,2C12,2 14,6 16,6 M12,2C12,2 10,6 8,6 M12,22C12,22 14,18 16,18 M12,22C12,22 10,18 8,18 M2,12C2,12 6,10 6,8 M2,12C2,12 6,14 6,16 M22,12C22,12 18,10 18,8 M22,12C22,12 18,14 18,16" stroke="var(--snow-color)" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`;
+        return `<svg viewBox="0 0 24 24" fill="var(--snow-color)" class="decoration-svg"><path d="M12,2L12,22 M2,12L22,12 M19.07,4.93L4.93,19.07 M19.07,19.07L4.93,4.93 M12,2C12,2 14,6 16,6 M12,2C12,2 10,6 8,6 M12,22C12,22 14,18 16,18 M12,22C12,22 10,18 8,18 M2,12C2,12 6,10 6,8 M2,12C2,12 6,14 6,16 M22,12C22,12 18,10 18,8 M22,12C22,12 18,14 18,16" stroke="var(--snow-color)" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`;
     };
 
     for (let i = 0; i < count; i++) {
@@ -1309,10 +1462,9 @@ function generateDecorationParticles(theme) {
         const finalFontSize = fontSize * size;
 
         // Explicit dimensions for SVGs (Added snow via SVG)
-        let dimensionStyle = `font-size:${finalFontSize.toFixed(0)}px;`;
-        if (theme === 'leaves' || theme === 'sakura' || theme === 'snow') {
-            dimensionStyle += `width:${finalFontSize.toFixed(0)}px;height:${finalFontSize.toFixed(0)}px;`;
-        }
+        const dimensionSize = (theme === 'leaves' || theme === 'sakura' || theme === 'snow')
+            ? finalFontSize.toFixed(0)
+            : '';
 
         // Opacity: Near = 1.0, Far = 0.4 (Increased visibility floor)
         const opacity = 0.4 + (depth * 0.6);
@@ -1320,7 +1472,7 @@ function generateDecorationParticles(theme) {
         // Blur: Far = 1.5px, Near = 0px (Sharper for visibility)
         const blur = (1 - depth) * 1.5;
 
-        particles += `<span class="decoration-particle" style="left:${left}%;animation-delay:${delay.toFixed(2)}s;animation-duration:${duration.toFixed(2)}s;--drift-x:${driftOffset}px;${dimensionStyle}opacity:${opacity.toFixed(2)};filter:blur(${blur.toFixed(1)}px);">${particleContent}</span>`;
+        particles += `<span class="decoration-particle" data-left="${left.toFixed(2)}" data-delay="${delay.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-drift="${driftOffset.toFixed(2)}" data-font-size="${finalFontSize.toFixed(0)}" data-width="${dimensionSize}" data-height="${dimensionSize}" data-opacity="${opacity.toFixed(2)}" data-blur="${blur.toFixed(1)}">${particleContent}</span>`;
     }
 
     return `<div class="decoration-particles ${theme}">${particles}</div>`;
@@ -1346,14 +1498,7 @@ const ParticleSystem = {
         this.particles = [];
 
         // 强制容器样式，确保动画环境稳定
-        container.style.position = 'absolute';
-        container.style.top = '0';
-        container.style.left = '0';
-        container.style.width = '100%';
-        container.style.height = '100%';
-        container.style.overflow = 'hidden';
-        container.style.pointerEvents = 'none';
-        container.style.zIndex = '1';
+        container.classList.add('prompts-theme-particle-layer');
 
         // 更新尺寸
         this.updateDimensions();
@@ -1411,11 +1556,11 @@ const ParticleSystem = {
             // 原创手绘樱花矢量图 (SVG)
             // 包含花蕊细节和渐变色
             return `
-            <svg viewBox="0 0 32 32" width="100%" height="100%" style="overflow:visible;">
+            <svg viewBox="0 0 32 32" width="100%" height="100%" class="decoration-svg decoration-svg--overflow-visible">
                 <defs>
                     <radialGradient id="sakuraGradient" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-                        <stop offset="0%" style="stop-color:#ffe6ea;stop-opacity:1" />
-                        <stop offset="100%" style="stop-color:#ffb7b2;stop-opacity:1" />
+                        <stop offset="0%" stop-color="#ffe6ea" stop-opacity="1" />
+                        <stop offset="100%" stop-color="#ffb7b2" stop-opacity="1" />
                     </radialGradient>
                     <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
                         <feGaussianBlur stdDeviation="1" result="blur"/>
@@ -1433,7 +1578,7 @@ const ParticleSystem = {
         if (this.theme === 'snow') {
             // 原创矢量雪花 (SVG) - 简化版 (无 Gradient/Filter，确保颜色正确)
             return `
-            <svg viewBox="0 0 32 32" width="100%" height="100%" style="overflow:visible;">
+            <svg viewBox="0 0 32 32" width="100%" height="100%" class="decoration-svg decoration-svg--overflow-visible">
                 <g stroke="var(--snow-color)" stroke-width="1.5" stroke-linecap="round" fill="none">
                     <!-- 主轴 -->
                     <path d="M16 2 L16 30 M8 6 L24 26 M24 6 L8 26" />
@@ -1513,14 +1658,9 @@ const ParticleSystem = {
 
     createSpark(rocket, CONFIG) {
         const el = document.createElement('div');
-        el.style.position = 'absolute';
-        el.style.width = '4px';
-        el.style.height = '4px';
-        el.style.borderRadius = '50%';
-        el.style.backgroundColor = CONFIG.color;
-        el.style.boxShadow = `0 0 6px 1px ${CONFIG.color}`;
-        el.style.pointerEvents = 'none';
-        el.style.willChange = 'transform, opacity';
+        applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--spark', {
+            '--particle-color': CONFIG.color
+        });
 
         this.container.appendChild(el);
 
@@ -1609,15 +1749,10 @@ const ParticleSystem = {
         if (this.theme === 'fireworks') {
             const el = document.createElement('div');
             el.textContent = '✦'; // 烟花弹
-            el.style.position = 'absolute';
-            el.style.left = '0';
-            el.style.top = '0';
-            el.style.fontSize = '8px';
-            el.style.color = `hsl(${Math.random() * 360}, 100%, 70%)`; // 随机亮色
-            el.style.willChange = 'transform, opacity';
-            el.style.pointerEvents = 'none';
-            // 初始在底部
-            el.style.transform = `translate3d(0, 0, 0)`;
+            const rocketColor = `hsl(${Math.random() * 360}, 100%, 70%)`;
+            applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--rocket', {
+                '--particle-color': rocketColor
+            });
 
             this.container.appendChild(el);
 
@@ -1632,7 +1767,7 @@ const ParticleSystem = {
                 vy: -4 - Math.random() * 3, // 向上速度 (稍微加快)
                 state: 'rising',
                 opacity: 1,
-                color: el.style.color
+                color: rocketColor
             };
             this.particles.push(p);
             return;
@@ -1645,16 +1780,11 @@ const ParticleSystem = {
         // --- 雨滴逻辑分支 (CSS Streaks) ---
         if (this.theme === 'rain') {
             const el = document.createElement('div');
-            // 纯 CSS 实现雨滴拖尾效果 (Streak)
-            el.style.position = 'absolute';
-            el.style.width = (1 + Math.random()) + 'px'; // 极细 1-2px
-            el.style.height = (60 + Math.random() * 60) + 'px'; // 很长 60-120px
-            // 渐变色：上端透明 -> 下端钢蓝/深蓝，适配浅色背景
-            el.style.background = 'linear-gradient(to bottom, transparent, rgba(70, 130, 180, 0.6))'; // SteelBlue
-            el.style.filter = 'blur(0.5px)'; // 轻微羽化
-            el.style.willChange = 'transform, opacity';
-            el.style.pointerEvents = 'none';
-            el.style.opacity = 0.4 + Math.random() * 0.4; // 0.4-0.8，更明显
+            applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--rain', {
+                '--particle-width': `${1 + Math.random()}px`,
+                '--particle-height': `${60 + Math.random() * 60}px`,
+                '--particle-opacity': (0.4 + Math.random() * 0.4).toFixed(2)
+            });
 
             this.container.appendChild(el);
 
@@ -1687,21 +1817,18 @@ const ParticleSystem = {
             const rand = Math.random();
             let size, isCrystal = false;
             let swayParam = 1.0; // 物理参数系数
+            const particleClasses = ['prompts-theme-particle--snow'];
 
             // 层级 1: 微尘 (30%) - 极小，增加氛围感
             if (rand < 0.3) {
                 size = 1.5 + Math.random() * 1.5; // 1.5-3px (极小)
-                el.style.borderRadius = '50%';
-                el.style.backgroundColor = 'rgba(255, 255, 255, 0.6)'; // 更透明
-                el.style.filter = 'blur(0.8px)';
+                particleClasses.push('prompts-theme-particle--snow-dust');
                 swayParam = 1.5; // 更容易受风影响，摇摆快
             }
             // 层级 2: 柔光片 (20%) - 中等，模糊边缘
             else if (rand < 0.5) {
                 size = 3 + Math.random() * 2; // 3-5px (缩小)
-                el.style.borderRadius = '50%';
-                el.style.backgroundColor = 'rgba(255, 255, 255, 0.7)'; // 稍透
-                el.style.filter = 'blur(0.6px)';
+                particleClasses.push('prompts-theme-particle--snow-soft');
                 swayParam = 1.2;
             }
             // 层级 3: 冰晶 (20%) - 大，清晰 SVG
@@ -1709,20 +1836,13 @@ const ParticleSystem = {
                 isCrystal = true;
                 el.innerHTML = this.getParticleContent().trim();
                 size = 4 + Math.random() * 4; // 4-8px (极致精细)
-                el.style.filter = 'drop-shadow(0 0 0.5px rgba(255,255,255,0.6))';
+                particleClasses.push('prompts-theme-particle--snow-crystal');
                 swayParam = 0.8; // 重，摇摆稳
             }
 
-            el.style.width = size + 'px';
-            el.style.height = size + 'px';
-
-            el.style.position = 'absolute';
-            el.style.left = '0';
-            el.style.top = '0';
-            el.style.willChange = 'transform, opacity';
-            el.style.pointerEvents = 'none';
-            // 初始透明度 0 避免闪烁
-            el.style.opacity = '0';
+            applyPromptsThemeParticleClasses(el, particleClasses, {
+                '--particle-size': `${size}px`
+            });
 
             this.container.appendChild(el);
 
@@ -1776,24 +1896,15 @@ const ParticleSystem = {
 
         if (content.startsWith('<svg')) {
             el.innerHTML = content;
-            // SVG 必须显式设置宽高，否则会默认变得巨大
-            el.style.width = size + 'px';
-            el.style.height = size + 'px';
+            applyPromptsThemeParticleClasses(el, ['prompts-theme-particle--decor', 'prompts-theme-particle--decor-svg'], {
+                '--particle-size': `${size}px`
+            });
         } else {
             el.textContent = content;
-            // Emoji 使用字体大小控制
-            el.style.fontSize = size + 'px';
+            applyPromptsThemeParticleClasses(el, ['prompts-theme-particle--decor', 'prompts-theme-particle--decor-emoji'], {
+                '--particle-size': `${size}px`
+            });
         }
-
-        el.style.position = 'absolute';
-        el.style.left = '0';
-        el.style.top = '0';
-        el.style.willChange = 'transform, opacity';
-        el.style.pointerEvents = 'none';
-        el.style.userSelect = 'none';
-
-        el.style.opacity = '0';
-        el.style.transform = `translate3d(-100px, -100px, 0)`;
 
         this.container.appendChild(el);
 
@@ -1855,15 +1966,11 @@ const ParticleSystem = {
         const splashCount = 3 + Math.floor(Math.random() * 4); // 3-6 个水滴
         for (let i = 0; i < splashCount; i++) {
             const el = document.createElement('div');
-            el.style.position = 'absolute';
-            el.style.width = '2px';
-            el.style.height = '2px'; // 小圆点
-            el.style.borderRadius = '50%';
-            el.style.backgroundColor = 'rgba(70, 130, 180, 0.8)'; // 深蓝色 (SteelBlue)，浅色背景可见
-            el.style.willChange = 'transform, opacity';
-            el.style.pointerEvents = 'none';
+            applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--splash');
             // 修正：初始位置
-            el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+            setPromptsCssVars(el, {
+                transform: `translate3d(${x}px, ${y}px, 0)`
+            });
 
             this.container.appendChild(el);
 
@@ -1905,7 +2012,9 @@ const ParticleSystem = {
             // --- 烟花物理逻辑: 火箭 ---
             if (p.type === 'rocket') {
                 p.y += p.vy * timeScale;
-                p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+                setPromptsCssVars(p.el, {
+                    transform: `translate3d(${p.x}px, ${p.y}px, 0)`
+                });
 
                 // 到达目标高度或速度耗尽则爆炸
                 if (p.y <= p.targetY) {
@@ -1924,7 +2033,9 @@ const ParticleSystem = {
                 if (deltaTime < 10) hzDampener = 0.6; // 240Hz 降速 40%
 
                 p.y += p.speed * timeScale * hzDampener;
-                p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+                setPromptsCssVars(p.el, {
+                    transform: `translate3d(${p.x}px, ${p.y}px, 0)`
+                });
                 // 边界检测：超出屏幕底部移除
                 if (p.y > this.height) {
                     // 溅起水花
@@ -1943,8 +2054,10 @@ const ParticleSystem = {
                 p.y += p.vy * timeScale;
                 p.opacity -= 0.05 * timeScale; // 快速消失
 
-                p.el.style.opacity = p.opacity;
-                p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+                setPromptsCssVars(p.el, {
+                    opacity: String(p.opacity),
+                    transform: `translate3d(${p.x}px, ${p.y}px, 0)`
+                });
 
                 if (p.opacity <= 0) {
                     this.particles.splice(i, 1);
@@ -1963,8 +2076,10 @@ const ParticleSystem = {
                 p.y += p.vy * timeScale;
                 p.opacity -= p.decay * timeScale;
 
-                p.el.style.opacity = p.opacity;
-                p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+                setPromptsCssVars(p.el, {
+                    opacity: String(p.opacity),
+                    transform: `translate3d(${p.x}px, ${p.y}px, 0)`
+                });
 
                 if (p.opacity <= 0) {
                     this.particles.splice(i, 1);
@@ -2061,8 +2176,10 @@ const ParticleSystem = {
             }
 
             // 渲染
-            p.el.style.opacity = p.opacity;
-            p.el.style.transform = `translate3d(${p.currentX}px, ${p.y}px, 0) rotate(${p.rotation}deg)`;
+            setPromptsCssVars(p.el, {
+                opacity: String(p.opacity),
+                transform: `translate3d(${p.currentX}px, ${p.y}px, 0) rotate(${p.rotation}deg)`
+            });
         }
 
         this.frameId = requestAnimationFrame((t) => this.loop(t));
@@ -2086,7 +2203,7 @@ function showBannerAnnouncement(color, size, content, ackKey, decoration) {
     if (banner && textEl) {
         textEl.innerHTML = content;
         banner.className = 'announcement-banner color-' + color + ' size-' + size;
-        banner.style.display = 'flex';
+        banner.classList.remove('prompts-announcement-banner-hidden');
         banner.dataset.ackKey = ackKey;
         currentAnnouncementElement = banner;
 
@@ -2097,6 +2214,7 @@ function showBannerAnnouncement(color, size, content, ackKey, decoration) {
             banner.insertAdjacentHTML('beforeend', generateDecorationParticles(decoration));
             const particleContainer = banner.querySelector('.decoration-particles');
             if (particleContainer) {
+                hydrateDecorationParticleStyles(particleContainer);
                 startContinuousParticles(particleContainer, decoration);
             }
         }
@@ -2149,6 +2267,7 @@ function showModalAnnouncement(color, size, content, ackKey, decoration) {
     document.body.appendChild(overlay);
     currentAnnouncementElement = overlay;
     lockAnnouncementBackground(overlay);
+    hydrateDecorationParticleStyles(overlay);
 
     // Start particle animation after DOM is ready
     if (decoration && decoration !== 'none') {
@@ -2216,8 +2335,7 @@ function startHeartFloat(container) {
         // --- Initial Move ---
         const initialPos = getSafePosition();
         positions[index] = initialPos;
-        heart.style.left = `${initialPos.x}%`;
-        heart.style.top = `${initialPos.y}%`;
+        setPromptsPercentPosition(heart, initialPos.x, initialPos.y);
 
         // --- Schedule Next Move ---
         const scheduleNextMove = () => {
@@ -2240,8 +2358,7 @@ function startHeartFloat(container) {
                     const newPos = getSafePosition();
                     positions[index] = newPos; // Update tracker
 
-                    heart.style.left = `${newPos.x}%`;
-                    heart.style.top = `${newPos.y}%`;
+                    setPromptsPercentPosition(heart, newPos.x, newPos.y);
 
                     // 3. Fade In
                     requestAnimationFrame(() => {
@@ -2281,6 +2398,7 @@ function showToastAnnouncement(color, size, content, ackKey, decoration) {
         <div class="toast-body">${content}</div>
         <button class="announcement-ack-btn-sm" type="button">已读</button>
     `;
+    hydrateDecorationParticleStyles(toast);
 
     toast.querySelector('.announcement-ack-btn-sm')?.addEventListener('click', (event) => {
         event.stopPropagation();
@@ -3152,18 +3270,16 @@ function renderFeaturedBanner() {
 
     // Hide banner if no data
     if (!PROMPTS || PROMPTS.length === 0) {
-        banner.style.display = 'none';
+        banner.classList.remove('featured-banner--visible', 'featured-banner--revealed', 'featured-banner--interactive');
+        banner.onclick = null;
         return;
     }
 
     // Show banner with fade-in + float-up animation
-    banner.style.display = 'flex';
-    banner.style.opacity = '0';
-    banner.style.transform = 'translateY(20px)';
+    banner.classList.add('featured-banner--visible', 'featured-banner--interactive');
+    banner.classList.remove('featured-banner--revealed');
     requestAnimationFrame(() => {
-        banner.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
-        banner.style.opacity = '1';
-        banner.style.transform = 'translateY(0)';
+        banner.classList.add('featured-banner--revealed');
         forcePromptPageTop();
     });
 
@@ -3200,7 +3316,6 @@ function renderFeaturedBanner() {
     }
 
     // Click to open modal
-    banner.style.cursor = 'pointer';
     banner.onclick = () => openPromptModal(featured.id);
 }
 
@@ -3247,8 +3362,10 @@ function initSpotlight() {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
-        container.style.setProperty('--cursor-x', `${x}px`);
-        container.style.setProperty('--cursor-y', `${y}px`);
+        setPromptsCssVars(container, {
+            '--cursor-x': `${x}px`,
+            '--cursor-y': `${y}px`
+        });
     });
 }
 
@@ -3392,10 +3509,7 @@ function toggleFavorite(id, btn, e) {
     // If viewing favorites, remove card if unsaved
     if (currentFilter === 'favorites' && !favorites.has(id)) {
         const card = btn.closest('.prompt-card');
-        card.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
-        card.style.transform = 'scale(0.9)';
-        card.style.opacity = '0';
-        setTimeout(() => card.style.display = 'none', 300);
+        hidePromptCard(card, true);
     }
 }
 
@@ -3474,8 +3588,8 @@ function renderCurrentPage() {
         card.dataset.tags = item.tags.join(','); // For CSS filtering
         card.dataset.id = item.id;
         card.dataset.images = JSON.stringify(item.images); // Store all images
-        card.style.animationDelay = `${index * 0.05}s`; // Stagger effect
         card.onclick = () => openPromptModal(item.id);
+        setPromptCardStaggerClass(card, index);
 
         // Generate image indicator dots if multiple images
         const hasMultiple = item.images.length > 1;
@@ -3488,7 +3602,9 @@ function renderCurrentPage() {
 
         // Random breathing delay for organic feel (0-4 seconds)
         const breatheDelay = (Math.random() * 4).toFixed(2);
-        card.style.setProperty('--breathe-delay', `${breatheDelay}s`);
+        setPromptsCssVars(card, {
+            '--breathe-delay': `${breatheDelay}s`
+        });
 
         card.innerHTML = `
             <button class="card-fav-btn ${isSaved ? 'saved' : ''}" type="button">
@@ -3577,15 +3693,7 @@ function renderPaginationControls(totalPages) {
     if (!grid || totalPages <= 1) return;
 
     const nav = document.createElement('div');
-    nav.className = 'pagination-nav';
-    nav.style.cssText = `
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 10px;
-        margin: 40px auto 60px;
-        padding-bottom: 40px;
-    `;
+    nav.className = 'pagination-nav prompts-pagination-nav';
 
     // Helper to create button
     const createBtn = (text, page, isActive = false, isDisabled = false) => {
@@ -3595,10 +3703,10 @@ function renderPaginationControls(totalPages) {
         if (isDisabled) btn.disabled = true;
 
         if (!isDisabled && !isActive) {
-            btn.onclick = () => {
+            btn.addEventListener('click', () => {
                 currentPage = page;
                 renderCurrentPage();
-            };
+            });
         }
         return btn;
     };
@@ -3633,7 +3741,7 @@ function renderPaginationControls(totalPages) {
         if (p === '...') {
             const span = document.createElement('span');
             span.textContent = '...';
-            span.style.color = 'var(--text-dim)';
+            span.className = 'pagination-ellipsis';
             nav.appendChild(span);
         } else {
             nav.appendChild(createBtn(String(p), p, p === currentPage));
@@ -3787,11 +3895,7 @@ function showAISubTags(category, navContainer) {
 
     isInSubNav = true;
 
-    // Elegant Lift Out (Up + Blur)
-    navContainer.style.transition = 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), filter 0.3s ease';
-    navContainer.style.opacity = '0';
-    navContainer.style.transform = 'translateY(-10px)';
-    navContainer.style.filter = 'blur(2px)';
+    beginPromptsNavTransition(navContainer, 'prompts-nav-hidden-up');
 
     setTimeout(() => {
         // Build new sub-nav
@@ -3806,7 +3910,7 @@ function showAISubTags(category, navContainer) {
             // Use zh from aiTags data, fallback to TAG_TRANSLATIONS, then empty
             const cnTranslation = tagObj.zh || TAG_TRANSLATIONS[tagObj.en] || TAG_TRANSLATIONS[tagObj.en.toLowerCase()] || '';
             subNavHTML += `
-                <div class="nav-item sub-tag" data-filter="${tagObj.en.toLowerCase()}" style="animation-delay: ${i * 0.05}s">
+                <div class="nav-item sub-tag ${buildPromptsStaggerClass(i)}" data-filter="${tagObj.en.toLowerCase()}">
                     <span class="en">${tagObj.en}</span>
                     ${cnTranslation ? `<span class="cn">${cnTranslation}</span>` : ''}
                 </div>
@@ -3823,17 +3927,7 @@ function showAISubTags(category, navContainer) {
             });
         });
 
-        // Set initial state for entrance (From Down)
-        navContainer.style.opacity = '0';
-        navContainer.style.transform = 'translateY(10px)';
-        navContainer.style.filter = 'blur(2px)';
-
-        // Elegant Lift In (Focus)
-        requestAnimationFrame(() => {
-            navContainer.style.opacity = '1';
-            navContainer.style.transform = 'translateY(0)';
-            navContainer.style.filter = 'blur(0)';
-        });
+        finishPromptsNavTransition(navContainer, 'prompts-nav-hidden-down');
     }, 250);
 }
 
@@ -3843,11 +3937,7 @@ function returnToMainNav() {
 
     isInSubNav = false;
 
-    // Elegant Drop Out (Down + Blur)
-    navContainer.style.transition = 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), filter 0.3s ease';
-    navContainer.style.opacity = '0';
-    navContainer.style.transform = 'translateY(10px)';
-    navContainer.style.filter = 'blur(2px)';
+    beginPromptsNavTransition(navContainer, 'prompts-nav-hidden-down');
 
     setTimeout(() => {
         navContainer.innerHTML = originalNavHTML;
@@ -3870,17 +3960,7 @@ function returnToMainNav() {
             renderGallery('all');
         }
 
-        // Set initial state for entrance (From Up)
-        navContainer.style.opacity = '0';
-        navContainer.style.transform = 'translateY(-10px)';
-        navContainer.style.filter = 'blur(2px)';
-
-        // Elegant Drop In
-        requestAnimationFrame(() => {
-            navContainer.style.opacity = '1';
-            navContainer.style.transform = 'translateY(0)';
-            navContainer.style.filter = 'blur(0)';
-        });
+        finishPromptsNavTransition(navContainer, 'prompts-nav-hidden-up');
     }, 250);
 }
 
@@ -3941,7 +4021,7 @@ function setupSearch() {
     // Render hot tags helper function
     function renderHotTags(topTags, container, searchInput) {
         container.innerHTML = topTags.map((tag, i) =>
-            `<span class="hot-tag" data-tag="${tag}" style="--delay: ${i * 0.03}s">${tag}</span>`
+            `<span class="hot-tag ${buildPromptsStaggerClass(i)}" data-tag="${tag}">${tag}</span>`
         ).join('');
 
         // Add mousedown handlers to hot tags (mousedown fires before document mousedown)
@@ -3984,8 +4064,8 @@ function setupSearch() {
 
         // If no query, hide dropdown entirely (no more hot tags panel on focus)
         if (!query) {
-            if (hotTagsSection) hotTagsSection.style.display = 'none';
-            suggestionsSection.style.display = 'none';
+            setPromptsHidden(hotTagsSection, true);
+            setPromptsHidden(suggestionsSection, true);
             hideDropdown();
             return;
         }
@@ -4018,8 +4098,8 @@ function setupSearch() {
         const suggestionArray = Array.from(suggestions).slice(0, 5); // Reduced to 5 for inline tags
 
         // Always hide the old hot tags section
-        if (hotTagsSection) hotTagsSection.style.display = 'none';
-        suggestionsSection.style.display = 'flex';
+        setPromptsHidden(hotTagsSection, true);
+        setPromptsHidden(suggestionsSection, false);
 
         // Build suggestions HTML
         let html = suggestionArray.map(s =>
@@ -4148,13 +4228,8 @@ async function filterBySearch(query) {
     if (!query) {
         let visibleIndex = 0;
         cards.forEach(card => {
-            card.style.display = '';
-            card.classList.remove('card-visible');
-            card.style.animationDelay = `${visibleIndex * 0.03}s`;
+            showPromptCard(card, visibleIndex);
             visibleIndex++;
-            requestAnimationFrame(() => {
-                card.classList.add('card-visible');
-            });
         });
         // Re-select "All" when search cleared
         const allItem = document.querySelector('.nav-item[data-filter="all"]');
@@ -4342,20 +4417,6 @@ function showSearchCooldownMessage() {
         const msg = document.createElement('div');
         msg.className = 'search-cooldown-msg';
         msg.innerHTML = '<i class="fas fa-clock"></i> AI 搜索冷却中，请稍后再试';
-        msg.style.cssText = `
-            position: absolute;
-            bottom: -30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(239, 68, 68, 0.9);
-            color: white;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            white-space: nowrap;
-            z-index: 100;
-            animation: fadeIn 0.3s ease;
-        `;
         searchWrapper.appendChild(msg);
 
         setTimeout(() => msg.remove(), 3000);
@@ -4475,15 +4536,10 @@ function applySearchResults(cards, matchedIds, searchingForColor) {
         }
 
         if (isVisible) {
-            card.style.display = '';
-            card.classList.remove('card-visible');
-            card.style.animationDelay = `${visibleIndex * 0.03}s`;
+            showPromptCard(card, visibleIndex);
             visibleIndex++;
-            requestAnimationFrame(() => {
-                card.classList.add('card-visible');
-            });
         } else {
-            card.style.display = 'none';
+            hidePromptCard(card, false);
         }
     });
 
@@ -4552,15 +4608,17 @@ function clearPromptModalPreLiftCleanupTimer() {
 
 function clearPromptModalLegacyDockLayout(modalInner) {
     if (!modalInner) return;
-    modalInner.style.removeProperty('position');
-    modalInner.style.removeProperty('top');
-    modalInner.style.removeProperty('left');
-    modalInner.style.removeProperty('right');
-    modalInner.style.removeProperty('bottom');
-    modalInner.style.removeProperty('margin');
-    modalInner.style.removeProperty('width');
-    modalInner.style.removeProperty('max-width');
-    modalInner.style.removeProperty('transform');
+    setPromptsCssVars(modalInner, {
+        position: null,
+        top: null,
+        left: null,
+        right: null,
+        bottom: null,
+        margin: null,
+        width: null,
+        'max-width': null,
+        transform: null
+    });
 }
 
 function togglePromptModalSheetAnimation(modalInner, animate, duration = 180) {
@@ -4582,12 +4640,12 @@ function clearPromptModalKeyboardPreLift(restoreTransform = true) {
     clearPromptModalPreLiftCleanupTimer();
     promptModalKeyboardDock.preLiftActive = false;
     if (!modalInner || modalInner.classList.contains('keyboard-docked')) return;
-    modalInner.style.removeProperty('transition');
-    modalInner.style.removeProperty('will-change');
-    if (restoreTransform) {
-        modalInner.style.removeProperty('--prompt-modal-translate-y');
-        modalInner.style.removeProperty('--prompt-modal-scale');
-    }
+    setPromptsCssVars(modalInner, {
+        transition: null,
+        'will-change': null,
+        '--prompt-modal-translate-y': restoreTransform ? null : undefined,
+        '--prompt-modal-scale': restoreTransform ? null : undefined
+    });
 }
 
 function applyPromptModalKeyboardPreLift() {
@@ -4597,10 +4655,12 @@ function applyPromptModalKeyboardPreLift() {
 
     clearPromptModalPreLiftCleanupTimer();
     promptModalKeyboardDock.preLiftActive = true;
-    modalInner.style.willChange = 'transform';
-    modalInner.style.transition = 'transform 120ms cubic-bezier(0.22, 1, 0.36, 1)';
-    modalInner.style.setProperty('--prompt-modal-scale', '1');
-    modalInner.style.setProperty('--prompt-modal-translate-y', '-24px');
+    setPromptsCssVars(modalInner, {
+        'will-change': 'transform',
+        transition: 'transform 120ms cubic-bezier(0.22, 1, 0.36, 1)',
+        '--prompt-modal-scale': '1',
+        '--prompt-modal-translate-y': '-24px'
+    });
     promptModalKeyboardDock.preLiftCleanupTimer = setTimeout(() => {
         promptModalKeyboardDock.preLiftCleanupTimer = null;
         if (!promptModalKeyboardDock.docked) {
@@ -4749,19 +4809,6 @@ function ensurePromptModalStatusBarShield() {
     if (promptModalStatusBarShield?.isConnected) return promptModalStatusBarShield;
     const shield = document.createElement('div');
     shield.className = 'prompt-status-bar-shield';
-    shield.style.cssText = [
-        'position: fixed',
-        'top: 0',
-        'left: 0',
-        'right: 0',
-        'height: env(safe-area-inset-top, 0px)',
-        'background: #000',
-        'opacity: 0',
-        'visibility: hidden',
-        'pointer-events: none',
-        'z-index: 20000',
-        'transition: opacity 80ms linear'
-    ].join('; ');
     document.body.appendChild(shield);
     promptModalStatusBarShield = shield;
     return shield;
@@ -4771,9 +4818,7 @@ function setPromptModalStatusBarShieldExpanded(expanded) {
     if (!isPromptModalIOSMobile()) return;
     const shield = ensurePromptModalStatusBarShield();
     if (!shield) return;
-    shield.style.height = expanded
-        ? 'calc(env(safe-area-inset-top, 0px) + 8px)'
-        : 'env(safe-area-inset-top, 0px)';
+    shield.classList.toggle('prompt-status-bar-shield--expanded', Boolean(expanded));
 }
 
 function showPromptModalStatusBarShield() {
@@ -4781,18 +4826,20 @@ function showPromptModalStatusBarShield() {
     const shield = ensurePromptModalStatusBarShield();
     if (!shield) return;
     setPromptModalStatusBarShieldExpanded(false);
-    shield.style.visibility = 'visible';
-    shield.style.opacity = '1';
+    shield.classList.add('prompt-status-bar-shield--active');
+    requestAnimationFrame(() => {
+        shield.classList.add('prompt-status-bar-shield--visible');
+    });
 }
 
 function hidePromptModalStatusBarShield() {
     if (!promptModalStatusBarShield) return;
-    promptModalStatusBarShield.style.opacity = '0';
+    promptModalStatusBarShield.classList.remove('prompt-status-bar-shield--visible');
     setPromptModalStatusBarShieldExpanded(false);
 
     setTimeout(() => {
         if (!promptModalStatusBarShield) return;
-        promptModalStatusBarShield.style.visibility = 'hidden';
+        promptModalStatusBarShield.classList.remove('prompt-status-bar-shield--active');
     }, 90);
 }
 
@@ -4889,14 +4936,16 @@ function freezePromptModalOverlay() {
     );
     promptModalKeyboardDock.overlayBaseHeight = baseHeight + 64;
 
-    backdrop.style.setProperty('position', 'fixed');
-    backdrop.style.setProperty('top', 'env(safe-area-inset-top, 0px)');
-    backdrop.style.setProperty('left', '0');
-    backdrop.style.setProperty('right', '0');
-    backdrop.style.setProperty('bottom', 'auto');
-    backdrop.style.setProperty('width', '100%');
-    backdrop.style.setProperty('height', `${promptModalKeyboardDock.overlayBaseHeight}px`);
-    backdrop.style.setProperty('max-height', `${promptModalKeyboardDock.overlayBaseHeight}px`);
+    setPromptsCssVars(backdrop, {
+        position: 'fixed',
+        top: 'env(safe-area-inset-top, 0px)',
+        left: '0',
+        right: '0',
+        bottom: 'auto',
+        width: '100%',
+        height: `${promptModalKeyboardDock.overlayBaseHeight}px`,
+        'max-height': `${promptModalKeyboardDock.overlayBaseHeight}px`
+    });
 }
 
 function restorePromptModalOverlay() {
@@ -4904,14 +4953,16 @@ function restorePromptModalOverlay() {
     promptModalKeyboardDock.overlayBaseHeight = 0;
 
     if (!backdrop) return;
-    backdrop.style.removeProperty('position');
-    backdrop.style.removeProperty('top');
-    backdrop.style.removeProperty('left');
-    backdrop.style.removeProperty('right');
-    backdrop.style.removeProperty('bottom');
-    backdrop.style.removeProperty('width');
-    backdrop.style.removeProperty('height');
-    backdrop.style.removeProperty('max-height');
+    setPromptsCssVars(backdrop, {
+        position: null,
+        top: null,
+        left: null,
+        right: null,
+        bottom: null,
+        width: null,
+        height: null,
+        'max-height': null
+    });
 }
 
 function capturePromptModalDockMetrics(force = false) {
@@ -5050,14 +5101,18 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     document.body.classList.add('prompt-modal-keyboard-docked');
     scrollPromptModalPageToBase();
     modal.classList.add('keyboard-docked');
-    modal.style.setProperty('height', `${baseViewportHeight}px`, 'important');
+    setPromptsCssVars(modal, {
+        height: `${baseViewportHeight}px`
+    });
     modalInner.classList.add('keyboard-docked');
     clearPromptModalLegacyDockLayout(modalInner);
-    modalInner.style.setProperty('--prompt-modal-scale', '1');
+    setPromptsCssVars(modalInner, {
+        '--prompt-modal-scale': '1',
+        height: `${dockHeight}px`,
+        'max-height': `${dockHeight}px`,
+        '--prompt-modal-translate-y': `${deltaY}px`
+    });
     togglePromptModalSheetAnimation(modalInner, animate, duration);
-    modalInner.style.height = `${dockHeight}px`;
-    modalInner.style.maxHeight = `${dockHeight}px`;
-    modalInner.style.setProperty('--prompt-modal-translate-y', `${deltaY}px`);
     promptModalKeyboardDock.docked = true;
     promptModalKeyboardDock.lastKeyboardInset = bottomInset;
     promptModalKeyboardDock.animatingUntil = duration ? (now + duration + 24) : 0;
@@ -5073,13 +5128,13 @@ function resetPromptModalKeyboardDock(animate = false) {
     document.body.classList.remove('prompt-modal-keyboard-docked');
     setPromptModalStatusBarShieldExpanded(false);
     clearPromptModalLegacyDockLayout(modalInner);
-    modalInner.style.setProperty('--prompt-modal-scale', '1');
-    if (promptModalKeyboardDock.baseHeight > 0) {
-        modalInner.style.height = `${promptModalKeyboardDock.baseHeight}px`;
-        modalInner.style.maxHeight = `${promptModalKeyboardDock.baseHeight}px`;
-    }
+    setPromptsCssVars(modalInner, {
+        '--prompt-modal-scale': '1',
+        height: promptModalKeyboardDock.baseHeight > 0 ? `${promptModalKeyboardDock.baseHeight}px` : undefined,
+        'max-height': promptModalKeyboardDock.baseHeight > 0 ? `${promptModalKeyboardDock.baseHeight}px` : undefined,
+        '--prompt-modal-translate-y': '0px'
+    });
     togglePromptModalSheetAnimation(modalInner, animate, duration);
-    modalInner.style.setProperty('--prompt-modal-translate-y', '0px');
     promptModalKeyboardDock.docked = false;
     promptModalKeyboardDock.animatingUntil = 0;
     promptModalKeyboardDock.lastKeyboardInset = 0;
@@ -5089,28 +5144,36 @@ function resetPromptModalKeyboardDock(animate = false) {
             const { modal: activeModal, modalInner: activeInner } = getPromptModalDockNodes();
             if (!activeInner || !activeModal) return;
             activeModal.classList.remove('keyboard-docked');
-            activeModal.style.removeProperty('height');
+            setPromptsCssVars(activeModal, {
+                height: null
+            });
             activeInner.classList.remove('keyboard-docked');
             activeInner.classList.remove('prompt-modal-animating');
             clearPromptModalLegacyDockLayout(activeInner);
-            activeInner.style.removeProperty('height');
-            activeInner.style.removeProperty('max-height');
-            activeInner.style.removeProperty('--prompt-modal-translate-y');
-            activeInner.style.removeProperty('--prompt-modal-scale');
-            activeInner.style.removeProperty('will-change');
+            setPromptsCssVars(activeInner, {
+                height: null,
+                'max-height': null,
+                '--prompt-modal-translate-y': null,
+                '--prompt-modal-scale': null,
+                'will-change': null
+            });
             requestAnimationFrame(() => capturePromptModalDockMetrics(true));
         }, duration + 40);
     } else {
         modal.classList.remove('keyboard-docked');
-        modal.style.removeProperty('height');
+        setPromptsCssVars(modal, {
+            height: null
+        });
         modalInner.classList.remove('keyboard-docked');
         modalInner.classList.remove('prompt-modal-animating');
         clearPromptModalLegacyDockLayout(modalInner);
-        modalInner.style.removeProperty('height');
-        modalInner.style.removeProperty('max-height');
-        modalInner.style.removeProperty('--prompt-modal-translate-y');
-        modalInner.style.removeProperty('--prompt-modal-scale');
-        modalInner.style.removeProperty('will-change');
+        setPromptsCssVars(modalInner, {
+            height: null,
+            'max-height': null,
+            '--prompt-modal-translate-y': null,
+            '--prompt-modal-scale': null,
+            'will-change': null
+        });
         requestAnimationFrame(() => capturePromptModalDockMetrics(true));
     }
 }
@@ -5411,14 +5474,14 @@ function openPromptModal(id) {
     const counter = document.getElementById('modalImgCounter');
 
     if (hasMultipleImages) {
-        leftArrow.style.display = 'flex';
-        rightArrow.style.display = 'flex';
-        counter.style.display = 'block';
+        leftArrow.classList.add('is-visible');
+        rightArrow.classList.add('is-visible');
+        counter.classList.add('is-visible');
         updateModalCounter();
     } else {
-        leftArrow.style.display = 'none';
-        rightArrow.style.display = 'none';
-        counter.style.display = 'none';
+        leftArrow.classList.remove('is-visible');
+        rightArrow.classList.remove('is-visible');
+        counter.classList.remove('is-visible');
     }
 
     // Reset Comments
@@ -5441,7 +5504,7 @@ function openPromptModal(id) {
     // Physical modal mounting
     document.body.classList.add('modal-open');
 
-    modal.style.display = 'flex';
+    modal.classList.add('poetry-modal--visible');
     // Clear any stale closing state (clip-path, etc.) from previous close
     modal.classList.remove('closing');
     if (backdrop) backdrop.classList.remove('closing');
@@ -5458,8 +5521,7 @@ function openPromptModal(id) {
     // Unlike full lock(), this does NOT set position:fixed on body,
     // so Safari's bottom bar keeps sampling black background (not canvas blue).
     if (isPromptModalIOSMobile()) {
-        document.documentElement.style.overflow = 'hidden';
-        document.body.style.overflow = 'hidden';
+        setPromptsPageOverflow('hidden');
     }
 
     showPromptModalStatusBarShield();
@@ -5554,18 +5616,24 @@ function toggleCommentMode() {
             const dy = first.top - last.top;
             const wRatio = first.width / last.width;
 
-            promptArea.style.transform = `translate(${dx}px, ${dy}px) scale(${wRatio})`;
-            promptArea.style.transformOrigin = 'top left';
+            setPromptsCssVars(promptArea, {
+                transform: `translate(${dx}px, ${dy}px) scale(${wRatio})`,
+                'transform-origin': 'top left'
+            });
 
             requestAnimationFrame(() => {
-                promptArea.style.transition = 'transform 0.5s ease-in-out';
-                promptArea.style.transform = '';
+                setPromptsCssVars(promptArea, {
+                    transition: 'transform 0.5s ease-in-out',
+                    transform: null
+                });
 
                 const img = document.querySelector('.modal-image-col img');
                 if (img) img.classList.add('blur-motion');
 
                 setTimeout(() => {
-                    promptArea.style.transition = '';
+                    setPromptsCssVars(promptArea, {
+                        transition: null
+                    });
                     if (img) img.classList.remove('blur-motion');
                 }, 500);
             });
@@ -5847,15 +5915,7 @@ function getPromptCommentComposerStableViewportProbe() {
 
     const probe = document.createElement('div');
     probe.setAttribute('aria-hidden', 'true');
-    probe.style.position = 'fixed';
-    probe.style.top = '0';
-    probe.style.left = '0';
-    probe.style.width = '0';
-    probe.style.height = '100svh';
-    probe.style.pointerEvents = 'none';
-    probe.style.visibility = 'hidden';
-    probe.style.opacity = '0';
-    probe.style.zIndex = '-1';
+    probe.className = 'prompt-comment-composer-viewport-probe';
     document.body.appendChild(probe);
     promptCommentComposerStableViewportProbe = probe;
     return probe;
@@ -5871,15 +5931,11 @@ function getPromptCommentComposerStableViewportHeight() {
 function autoExpandPromptCommentComposerInput(input) {
     if (!input) return;
     if (!input.value.trim()) {
-        input.style.height = 'auto';
-        input.style.overflowY = 'hidden';
+        resetPromptsTextareaAutoHeight(input);
         return;
     }
-    input.style.height = 'auto';
     const maxHeight = Math.min(Math.round((window.innerHeight || 0) * 0.42), 360);
-    const targetHeight = Math.max(160, Math.min(input.scrollHeight, maxHeight || 360));
-    input.style.height = `${targetHeight}px`;
-    input.style.overflowY = input.scrollHeight > targetHeight ? 'auto' : 'hidden';
+    applyPromptsTextareaAutoHeight(input, maxHeight || 360, 160);
 }
 
 function syncPromptCommentComposerEmptyState() {
@@ -6046,16 +6102,14 @@ function clearCommentDraftFields() {
         triggerInput.value = '';
         delete triggerInput.dataset.replyTo;
         delete triggerInput.dataset.replyToName;
-        triggerInput.style.height = 'auto';
-        triggerInput.style.overflowY = 'hidden';
+        resetPromptsTextareaAutoHeight(triggerInput);
     }
 
     if (input) {
         input.value = '';
         delete input.dataset.replyTo;
         delete input.dataset.replyToName;
-        input.style.height = 'auto';
-        input.style.overflowY = 'hidden';
+        resetPromptsTextareaAutoHeight(input);
     }
 
     syncPromptCommentComposerMeta();
@@ -6113,15 +6167,23 @@ function resetPromptCommentComposerViewportStyles() {
     }
     if (sheet) {
         sheet.classList.remove('composer-animating');
-        sheet.style.removeProperty('--composer-translate-y');
+        setPromptsCssVars(sheet, {
+            '--composer-translate-y': null
+        });
     }
 
-    overlay.style.setProperty('--composer-keyboard-offset', '0px');
+    setPromptsCssVars(overlay, {
+        '--composer-keyboard-offset': '0px'
+    });
     overlay.classList.remove('keyboard-active');
     overlay.classList.remove('keyboard-docked-active');
-    input?.style.removeProperty('max-height');
-    sheet?.style.removeProperty('height');
-    sheet?.style.removeProperty('max-height');
+    setPromptsCssVars(input, {
+        'max-height': null
+    });
+    setPromptsCssVars(sheet, {
+        height: null,
+        'max-height': null
+    });
     promptCommentComposerDocked = false;
     promptCommentComposerLastBottomInset = 0;
     promptCommentComposerOwnsScrollLock = false;
@@ -6168,24 +6230,28 @@ function capturePromptCommentComposerViewportBase() {
 function freezePromptCommentComposerOverlay() {
     const { overlay } = getPromptCommentComposerElements();
     if (!overlay) return;
-    overlay.style.setProperty('position', 'fixed', 'important');
-    overlay.style.setProperty('top', '0', 'important');
-    overlay.style.setProperty('left', '0', 'important');
-    overlay.style.setProperty('right', '0', 'important');
-    overlay.style.setProperty('bottom', '0', 'important');
-    overlay.style.setProperty('width', '100%', 'important');
+    setPromptsCssVars(overlay, {
+        position: 'fixed',
+        top: '0',
+        left: '0',
+        right: '0',
+        bottom: '0',
+        width: '100%'
+    });
 }
 
 function restorePromptCommentComposerOverlay() {
     const { overlay } = getPromptCommentComposerElements();
     if (!overlay) return;
-    overlay.style.removeProperty('position');
-    overlay.style.removeProperty('top');
-    overlay.style.removeProperty('left');
-    overlay.style.removeProperty('right');
-    overlay.style.removeProperty('bottom');
-    overlay.style.removeProperty('width');
-    overlay.style.removeProperty('height');
+    setPromptsCssVars(overlay, {
+        position: null,
+        top: null,
+        left: null,
+        right: null,
+        bottom: null,
+        width: null,
+        height: null
+    });
 }
 
 function getPromptCommentComposerViewportMetrics() {
@@ -6231,11 +6297,15 @@ function applyPromptCommentComposerDock(bottomInset, animate = false) {
     const desiredTop = Math.max(minTop, keyboardTop - 12 - dockHeight);
     const deltaY = Math.round(desiredTop - centeredTop);
 
-    overlay.style.setProperty('--composer-keyboard-offset', `${bottomInset}px`);
+    setPromptsCssVars(overlay, {
+        '--composer-keyboard-offset': `${bottomInset}px`
+    });
     overlay.classList.toggle('keyboard-active', bottomInset > 0);
     overlay.classList.toggle('keyboard-docked-active', bottomInset > 0);
-    sheet.style.setProperty('height', `${dockHeight}px`);
-    sheet.style.setProperty('max-height', `${dockHeight}px`);
+    setPromptsCssVars(sheet, {
+        height: `${dockHeight}px`,
+        'max-height': `${dockHeight}px`
+    });
 
     if (window.promptCommentComposerAnimRafId) {
         clearTimeout(window.promptCommentComposerAnimRafId);
@@ -6250,7 +6320,9 @@ function applyPromptCommentComposerDock(bottomInset, animate = false) {
         }, 200);
     }
 
-    sheet.style.setProperty('--composer-translate-y', `${deltaY}px`);
+    setPromptsCssVars(sheet, {
+        '--composer-translate-y': `${deltaY}px`
+    });
     promptCommentComposerDocked = bottomInset > 0;
     promptCommentComposerLastBottomInset = Math.max(0, bottomInset);
 }
@@ -6276,11 +6348,15 @@ function releasePromptCommentComposerDock(animate = false) {
     const { overlay, sheet } = getPromptCommentComposerElements();
     if (!overlay || !sheet) return;
 
-    overlay.style.setProperty('--composer-keyboard-offset', '0px');
+    setPromptsCssVars(overlay, {
+        '--composer-keyboard-offset': '0px'
+    });
     overlay.classList.remove('keyboard-active');
     overlay.classList.remove('keyboard-docked-active');
-    sheet.style.removeProperty('height');
-    sheet.style.removeProperty('max-height');
+    setPromptsCssVars(sheet, {
+        height: null,
+        'max-height': null
+    });
 
     if (window.promptCommentComposerAnimRafId) {
         clearTimeout(window.promptCommentComposerAnimRafId);
@@ -6295,7 +6371,9 @@ function releasePromptCommentComposerDock(animate = false) {
         }, 200);
     }
 
-    sheet.style.setProperty('--composer-translate-y', '0px');
+    setPromptsCssVars(sheet, {
+        '--composer-translate-y': '0px'
+    });
     promptCommentComposerDocked = false;
     promptCommentComposerLastBottomInset = 0;
 }
@@ -6383,10 +6461,14 @@ function syncPromptCommentComposerViewport() {
         return;
     }
 
-    sheet.style.removeProperty('height');
-    sheet.style.removeProperty('max-height');
-    sheet.style.setProperty('--composer-translate-y', '0px');
-    overlay.style.setProperty('--composer-keyboard-offset', '0px');
+    setPromptsCssVars(sheet, {
+        height: null,
+        'max-height': null,
+        '--composer-translate-y': '0px'
+    });
+    setPromptsCssVars(overlay, {
+        '--composer-keyboard-offset': '0px'
+    });
     overlay.classList.remove('keyboard-active');
     overlay.classList.remove('keyboard-docked-active');
     promptCommentComposerLastBottomInset = 0;
@@ -6450,7 +6532,7 @@ function ensurePromptCommentComposer() {
                     <i class="fas fa-image"></i>
                 </button>
             </div>
-            <input type="file" id="promptCommentComposerImageUpload" accept="image/*" style="display:none;">
+            <input type="file" id="promptCommentComposerImageUpload" accept="image/*" class="prompts-comment-image-upload-hidden">
             <div class="prompt-comment-composer-actions">
                 <button type="button" class="prompt-comment-composer-send" id="promptCommentComposerSendBtn" data-i18n="gallery.send">
                     ${copy.send}
@@ -7180,7 +7262,7 @@ async function fetchComments(promptId, forceRefresh = false) {
     if (error) {
         console.error("Comment Load Error:", error);
         list.classList.add('comment-list-empty');
-        list.innerHTML = `<div class="comment-empty-state" data-state="error"><div class="comment-empty-subtitle" style="color:#fca5a5;">${window.i18n?.t('common.error') || 'Failed to load comments'}</div></div>`;
+        list.innerHTML = `<div class="comment-empty-state" data-state="error"><div class="comment-empty-subtitle comment-empty-subtitle--error">${window.i18n?.t('common.error') || 'Failed to load comments'}</div></div>`;
         return;
     }
 
@@ -7316,11 +7398,15 @@ function initCommentCollapse() {
 
     if (isPromptModalExpandedCommentView()) {
         updateCommentSectionHeading(parentCount);
-        title.style.cursor = 'default';
+        title.classList.remove('comment-header-title--expandable');
+        title.classList.add('comment-header-title--static');
         title.removeAttribute('data-expandable');
-        title.onclick = null;
-        list.removeAttribute('data-collapsed');
-        allComments.forEach(c => c.style.display = '');
+        list.classList.remove('collapsed');
+        allComments.forEach((comment) => comment.classList.remove('hidden-collapsed'));
+        if (!title.dataset.collapseBound) {
+            title.addEventListener('click', handleCollapseToggle);
+            title.dataset.collapseBound = '1';
+        }
         return;
     }
 
@@ -7328,40 +7414,30 @@ function initCommentCollapse() {
 
     // If 3 or fewer parent comments, no collapse needed
     if (parentCount <= COLLAPSE_SHOW_COUNT) {
-        title.style.cursor = 'default';
+        title.classList.remove('comment-header-title--expandable');
+        title.classList.add('comment-header-title--static');
         title.removeAttribute('data-expandable');
-        title.onclick = null;
-        list.removeAttribute('data-collapsed');
+        list.classList.remove('collapsed');
         // Make sure all are visible
-        allComments.forEach(c => c.style.display = '');
+        allComments.forEach((comment) => comment.classList.remove('hidden-collapsed'));
+        if (!title.dataset.collapseBound) {
+            title.addEventListener('click', handleCollapseToggle);
+            title.dataset.collapseBound = '1';
+        }
         return;
     }
 
     // Mark as expandable and collapsed
-    title.style.cursor = 'pointer';
+    title.classList.add('comment-header-title--expandable');
+    title.classList.remove('comment-header-title--static');
     title.setAttribute('data-expandable', 'true');
-    list.setAttribute('data-collapsed', 'true');
+    list.classList.add('collapsed');
+    setCommentCollapseVisibility(allComments, true);
 
-    // Show only first 3 PARENT comments (hide everything else including their replies)
-    let shownParents = 0;
-    allComments.forEach(comment => {
-        const isParent = !comment.classList.contains('comment-reply');
-
-        if (isParent) {
-            if (shownParents < COLLAPSE_SHOW_COUNT) {
-                comment.style.display = '';
-                shownParents++;
-            } else {
-                comment.style.display = 'none';
-            }
-        } else {
-            // Hide all replies when collapsed
-            comment.style.display = 'none';
-        }
-    });
-
-    // Bind click event
-    title.onclick = handleCollapseToggle;
+    if (!title.dataset.collapseBound) {
+        title.addEventListener('click', handleCollapseToggle);
+        title.dataset.collapseBound = '1';
+    }
 }
 
 /**
@@ -7374,7 +7450,7 @@ function handleCollapseToggle() {
     if (!list || !title) return;
     if (title.getAttribute('data-expandable') !== 'true') return;
 
-    const isCollapsed = list.getAttribute('data-collapsed') === 'true';
+    const isCollapsed = list.classList.contains('collapsed');
     const allComments = Array.from(list.children);
     const total = allComments.length;
 
@@ -7382,33 +7458,16 @@ function handleCollapseToggle() {
 
     if (isCollapsed) {
         // EXPAND: Show all comments
-        allComments.forEach(c => c.style.display = '');
-        list.setAttribute('data-collapsed', 'false');
+        setCommentCollapseVisibility(allComments, false);
+        list.classList.remove('collapsed');
         title.textContent = window.i18n?.t('gallery.hideComments') || 'Hide comments';
 
         // Ensure list is scrollable and scroll to top
-        list.style.overflowY = 'auto';
         list.scrollTop = 0;
     } else {
         // COLLAPSE: Show only first 3 PARENT comments
-        let shownParents = 0;
-        allComments.forEach(comment => {
-            const isParent = !comment.classList.contains('comment-reply');
-
-            if (isParent) {
-                if (shownParents < COLLAPSE_SHOW_COUNT) {
-                    comment.style.display = '';
-                    shownParents++;
-                } else {
-                    comment.style.display = 'none';
-                }
-            } else {
-                // Hide all replies when collapsed
-                comment.style.display = 'none';
-            }
-        });
-
-        list.setAttribute('data-collapsed', 'true');
+        setCommentCollapseVisibility(allComments, true);
+        list.classList.add('collapsed');
         updateCommentSectionHeading(allComments.filter(c => !c.classList.contains('comment-reply')).length);
 
         // Scroll to top when collapsed
@@ -7458,7 +7517,6 @@ function renderComment(comment, overrideAvatar = null, replyToProfile = null, ha
 
     // Determine heart icon class and style based on isLiked
     const heartIconClass = isLiked ? 'fas fa-heart' : 'far fa-heart';
-    const heartStyle = isLiked ? 'style="color: #e74c3c;"' : '';
 
     const div = document.createElement('div');
     div.className = 'comment-item' +
@@ -7482,8 +7540,8 @@ function renderComment(comment, overrideAvatar = null, replyToProfile = null, ha
             </div>
             <div class="comment-content">${formatMentions(displayContent)}</div>
             <div class="comment-actions">
-                <button class="comment-action-btn like-btn" data-liked="${isLiked}">
-                    <i class="${heartIconClass}" ${heartStyle}></i> <span class="like-count">${likeCount}</span>
+                <button class="comment-action-btn like-btn${isLiked ? ' liked' : ''}" data-liked="${isLiked}">
+                    <i class="${heartIconClass}"></i> <span class="like-count">${likeCount}</span>
                 </button>
                 <button class="comment-action-btn reply-btn">${window.i18n?.t('gallery.reply') || 'Reply'}</button>
                 ${comment.image_url ? `
@@ -7534,13 +7592,13 @@ async function handleLikeComment(commentId, button) {
     if (isLiked) {
         // Unlike
         icon.className = 'far fa-heart';
-        icon.style.color = '';
+        button.classList.remove('liked');
         countSpan.textContent = Math.max(0, currentCount - 1);
         button.dataset.liked = 'false';
     } else {
         // Like
         icon.className = 'fas fa-heart';
-        icon.style.color = '#e74c3c';
+        button.classList.add('liked');
         countSpan.textContent = currentCount + 1;
         button.dataset.liked = 'true';
     }
@@ -7566,7 +7624,7 @@ async function handleLikeComment(commentId, button) {
         countSpan.textContent = currentCount;
         button.dataset.liked = isLiked ? 'true' : 'false';
         icon.className = isLiked ? 'fas fa-heart' : 'far fa-heart';
-        icon.style.color = isLiked ? '#e74c3c' : '';
+        button.classList.toggle('liked', isLiked);
     }
 }
 
@@ -7683,13 +7741,8 @@ function formatMentions(text) {
 }
 
 function autoExpandTextarea(textarea) {
-    // Reset height to auto to properly calculate scrollHeight
-    textarea.style.height = 'auto';
-    // Set height to scrollHeight (content height)
     const maxHeight = 120; // Max ~5 lines, matches CSS max-height
-    textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
-    // Show scrollbar if content exceeds max height
-    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    applyPromptsTextareaAutoHeight(textarea, maxHeight);
 }
 
 function handleCommentKeydown(e) {
@@ -7814,8 +7867,7 @@ async function submitComment() {
     // Clear input IMMEDIATELY for instant feedback
     input.value = '';
     // Reset textarea height to original single-line
-    input.style.height = 'auto';
-    input.style.overflowY = 'hidden';
+    resetPromptsTextareaAutoHeight(input);
     delete input.dataset.replyTo;
     delete input.dataset.replyToName;
 
@@ -7940,9 +7992,11 @@ function positionCommentSortDropdown() {
         Math.max(12, viewportWidth - dropdownWidth - 12)
     ));
 
-    dropdown.style.top = `${top}px`;
-    dropdown.style.left = `${left}px`;
-    dropdown.style.right = 'auto';
+    setPromptsCssVars(dropdown, {
+        top: `${top}px`,
+        left: `${left}px`,
+        right: 'auto'
+    });
 }
 
 function setCommentSortDropdownOpen(open) {
@@ -8350,8 +8404,7 @@ function closePromptModal() {
 
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
         // Remove manual overflow:hidden added in openPromptModal for iOS
-        document.documentElement.style.overflow = '';
-        document.body.style.overflow = '';
+        setPromptsPageOverflow('');
         document.body.classList.remove('prompt-modal-keyboard-docked');
         document.body.classList.remove('modal-open');
         promptModalBaseScrollY = 0;
@@ -8359,7 +8412,7 @@ function closePromptModal() {
         hidePromptModalStatusBarShield();
 
         // Physically detach modal from Safe Area render tree, skipping layout breakage of `visibility`
-        if (modal) modal.style.display = 'none';
+        if (modal) modal.classList.remove('poetry-modal--visible');
 
         // Force Safari iOS 15+ to acknowledge the detached modal by micro-tickling the theme color layer
         forceSafariSafeAreaJiggle();

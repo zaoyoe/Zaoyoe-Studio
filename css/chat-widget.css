@@ -22,6 +22,25 @@
     --chat-accent-blue-soft: rgba(159, 202, 255, 0.14);
 }
 
+.chat-status-bar-shield {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: env(safe-area-inset-top, 0px);
+    background: #000;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: 10001;
+    transition: opacity 80ms linear;
+}
+
+.chat-status-bar-shield.is-visible {
+    visibility: visible;
+    opacity: 1;
+}
+
 /* Floating Action Button */
 /* Floating Action Button - Premium Glass Design */
 .chat-widget-fab {
@@ -51,6 +70,20 @@
     cursor: pointer;
     z-index: 9999;
     transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.chat-widget-fab.chat-widget-fab--hidden {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+.chat-widget-fab.chat-widget-fab--disabled {
+    pointer-events: none !important;
+}
+
+.chat-widget-fab.chat-widget-fab--transitionless {
+    transition: none !important;
 }
 
 /* Hover State - Glow and Lift */
@@ -294,6 +327,10 @@
     transition: all 0.3s ease;
 }
 
+.mascot-wrapper--compact {
+    transform: scale(0.8);
+}
+
 .chat-widget-fab:hover .mascot-wrapper {
     transform: scale(1.1) rotate(10deg);
 }
@@ -405,6 +442,16 @@
         transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
         visibility 0.4s;
     transform-origin: bottom right;
+}
+
+.chat-window.chat-window--transitionless {
+    transition: none !important;
+}
+
+.chat-window.chat-window--force-hidden {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
 }
 
 .chat-window.active {
@@ -548,6 +595,30 @@
     background: rgba(0, 0, 0, 0.1);
     cursor: wait;
     z-index: 5;
+}
+
+.loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(20, 20, 30, 0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 14px;
+    z-index: 10;
+    backdrop-filter: blur(4px);
+}
+
+.loading-overlay .loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    border-top-color: rgba(102, 126, 234, 0.8);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
 }
 
 /* Use the browser's native scrollbar rendering here.
@@ -784,6 +855,14 @@
 
 .emoji-item:hover {
     background: rgba(255, 255, 255, 0.1);
+}
+
+.chat-file-input {
+    display: none;
+}
+
+.session-item.session-item--hidden {
+    display: none !important;
 }
 
 /* Mobile Responsiveness */

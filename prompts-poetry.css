@@ -1420,6 +1420,92 @@ body {
 }
 
 /* Search Dropdown (Glassmorphism) */
+.prompts-hidden {
+    display: none !important;
+}
+
+.prompts-display-flex {
+    display: flex !important;
+}
+
+.prompts-auth-modal-promoted {
+    z-index: 12060 !important;
+}
+
+.gallery-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 24px;
+    border-radius: 16px;
+    border: 1px solid rgba(59, 130, 246, 0.5);
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+    z-index: 10000;
+    font-family: var(--font-sans, sans-serif);
+    font-size: 0.95rem;
+    color: #1e293b;
+    opacity: 0;
+    transform: translateX(-50%) translateY(100px);
+    transition: opacity 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.gallery-toast--visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.gallery-toast--exiting {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+}
+
+.gallery-toast__icon {
+    font-size: 1.2rem;
+}
+
+.gallery-toast--warning {
+    border-color: rgba(245, 158, 11, 0.5);
+}
+
+.gallery-toast--warning .gallery-toast__icon {
+    color: #f59e0b;
+}
+
+.gallery-toast--error {
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+.gallery-toast--error .gallery-toast__icon {
+    color: #ef4444;
+}
+
+.gallery-toast--success {
+    border-color: rgba(34, 197, 94, 0.5);
+}
+
+.gallery-toast--success .gallery-toast__icon {
+    color: #22c55e;
+}
+
+.gallery-toast--info {
+    border-color: rgba(59, 130, 246, 0.5);
+}
+
+.gallery-toast--info .gallery-toast__icon {
+    color: #3b82f6;
+}
+
+[data-theme="dark"] .gallery-toast {
+    background: rgba(30, 41, 59, 0.85);
+    color: #e2e8f0;
+}
+
 .search-dropdown {
     position: absolute;
     top: calc(100% + 12px);
@@ -1716,6 +1802,46 @@ body {
     opacity: 1;
 }
 
+.prompts-nav-transition {
+    transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), filter 0.3s ease;
+}
+
+.prompts-nav-hidden-up {
+    opacity: 0;
+    transform: translateY(-10px);
+    filter: blur(2px);
+}
+
+.prompts-nav-hidden-down {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(2px);
+}
+
+.prompts-stagger-0 {
+    animation-delay: 0s;
+}
+
+.prompts-stagger-1 {
+    animation-delay: 0.05s;
+}
+
+.prompts-stagger-2 {
+    animation-delay: 0.1s;
+}
+
+.prompts-stagger-3 {
+    animation-delay: 0.15s;
+}
+
+.prompts-stagger-4 {
+    animation-delay: 0.2s;
+}
+
+.prompts-stagger-5 {
+    animation-delay: 0.25s;
+}
+
 /* Back navigation style */
 .nav-item.back-nav {
     color: var(--text-dim);
@@ -1818,7 +1944,50 @@ body {
     display: flex;
     align-items: center;
     overflow: hidden;
-    /* opacity controlled by JS */
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.featured-banner--visible {
+    display: flex;
+}
+
+.featured-banner--revealed {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.featured-banner--interactive {
+    cursor: pointer;
+}
+
+.prompts-pagination-nav {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin: 40px auto 60px;
+    padding-bottom: 40px;
+}
+
+.pagination-ellipsis {
+    color: var(--text-dim);
+}
+
+.search-cooldown-msg {
+    position: absolute;
+    bottom: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(239, 68, 68, 0.9);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 100;
+    animation: fadeIn 0.3s ease;
 }
 
 .featured-image-container {
@@ -2091,6 +2260,61 @@ html[lang="en"] .nav-item .en {
     transition: opacity 0.8s ease, transform 0.8s ease;
 }
 
+.prompt-card.prompt-card-exiting {
+    opacity: 0;
+    transform: scale(0.9);
+    transition: transform 0.3s ease, opacity 0.3s ease;
+    pointer-events: none;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-0 {
+    transition-delay: 0s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-1 {
+    transition-delay: 0.03s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-2 {
+    transition-delay: 0.06s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-3 {
+    transition-delay: 0.09s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-4 {
+    transition-delay: 0.12s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-5 {
+    transition-delay: 0.15s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-6 {
+    transition-delay: 0.18s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-7 {
+    transition-delay: 0.21s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-8 {
+    transition-delay: 0.24s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-9 {
+    transition-delay: 0.27s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-10 {
+    transition-delay: 0.3s;
+}
+
+.prompt-card.card-visible.prompt-card-stagger-11 {
+    transition-delay: 0.33s;
+}
+
 /* Override card-visible during filtering */
 .prompt-card.card-visible.filtering {
     transition: none !important;
@@ -2240,6 +2464,32 @@ html[lang="en"] .nav-item .en {
 
 /* Removed buggy nav blurring rules */
 
+.prompt-status-bar-shield {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: env(safe-area-inset-top, 0px);
+    background: #000;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: 20000;
+    transition: opacity 80ms linear;
+}
+
+.prompt-status-bar-shield.prompt-status-bar-shield--active {
+    visibility: visible;
+}
+
+.prompt-status-bar-shield.prompt-status-bar-shield--visible {
+    opacity: 1;
+}
+
+.prompt-status-bar-shield.prompt-status-bar-shield--expanded {
+    height: calc(env(safe-area-inset-top, 0px) + 8px);
+}
+
 .poetry-modal-backdrop.visible {
     opacity: 1;
 }
@@ -2272,6 +2522,10 @@ body.modal-open .prompt-card {
     display: none;
     justify-content: center;
     align-items: center;
+}
+
+.poetry-modal.poetry-modal--visible {
+    display: flex;
 }
 
 .poetry-modal.active {
@@ -2416,6 +2670,10 @@ body.modal-open .prompt-card {
     /* Hidden by default */
 }
 
+.modal-img-nav.is-visible {
+    display: flex;
+}
+
 /* Show arrows on hover */
 .modal-image-col:hover .modal-img-nav {
     opacity: 1;
@@ -2467,6 +2725,10 @@ body.modal-open .prompt-card {
     z-index: 9;
     letter-spacing: 0.05em;
     border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.modal-img-counter.is-visible {
+    display: block;
 }
 
 .modal-content-col {
@@ -3138,12 +3400,20 @@ body.modal-open .prompt-card {
     font-weight: 500;
     color: var(--text-dim);
     /* Match sort button color */
-    cursor: pointer;
+    cursor: default;
     transition: color 0.2s;
 }
 
-.comment-header-title:hover {
+.comment-header-title--expandable {
+    cursor: pointer;
+}
+
+.comment-header-title--expandable:hover {
     color: var(--text-primary);
+}
+
+.comment-header-title--static {
+    cursor: default;
 }
 
 
@@ -3276,6 +3546,10 @@ body.modal-open .prompt-card {
     font-size: 0.95rem;
     line-height: 1.65;
     color: rgba(148, 163, 184, 0.92);
+}
+
+.comment-empty-subtitle--error {
+    color: #fca5a5;
 }
 
 [data-theme="light"] .comment-empty-title {
@@ -3475,6 +3749,18 @@ body.modal-open .prompt-card {
 
 .prompt-comment-composer-sheet.composer-animating {
     transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+.prompt-comment-composer-viewport-probe {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 100svh;
+    pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+    z-index: -1;
 }
 
 [data-theme="dark"] .prompt-comment-composer-sheet {
@@ -4477,6 +4763,102 @@ body.modal-open .prompt-card {
    Announcement Decoration Particles
    完全重写，禁用所有交互
    ======================================== */
+
+.prompts-theme-particle-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.prompts-theme-particle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+    will-change: transform, opacity;
+}
+
+.prompts-theme-particle--spark {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background-color: var(--particle-color);
+    box-shadow: 0 0 6px 1px var(--particle-color);
+}
+
+.prompts-theme-particle--rocket {
+    font-size: 8px;
+    color: var(--particle-color);
+    transform: translate3d(0, 0, 0);
+}
+
+.prompts-theme-particle--rain {
+    width: var(--particle-width, 2px);
+    height: var(--particle-height, 80px);
+    background: linear-gradient(to bottom, transparent, rgba(70, 130, 180, 0.6));
+    filter: blur(0.5px);
+    opacity: var(--particle-opacity, 0.5);
+}
+
+.prompts-theme-particle--snow {
+    width: var(--particle-size, 4px);
+    height: var(--particle-size, 4px);
+    opacity: 0;
+}
+
+.prompts-theme-particle--snow-dust {
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.6);
+    filter: blur(0.8px);
+}
+
+.prompts-theme-particle--snow-soft {
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.7);
+    filter: blur(0.6px);
+}
+
+.prompts-theme-particle--snow-crystal {
+    filter: drop-shadow(0 0 0.5px rgba(255, 255, 255, 0.6));
+}
+
+.prompts-theme-particle--decor {
+    opacity: 0;
+    transform: translate3d(-100px, -100px, 0);
+    user-select: none;
+}
+
+.prompts-theme-particle--decor-svg {
+    width: var(--particle-size, 32px);
+    height: var(--particle-size, 32px);
+}
+
+.prompts-theme-particle--decor-emoji {
+    font-size: var(--particle-size, 32px);
+}
+
+.prompts-theme-particle--splash {
+    width: 2px;
+    height: 2px;
+    border-radius: 50%;
+    background-color: rgba(70, 130, 180, 0.8);
+}
+
+.decoration-svg {
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.1));
+    display: block;
+}
+
+.decoration-svg--overflow-visible {
+    overflow: visible;
+}
 
 /* 粒子容器 - 绝对禁止所有鼠标交互 */
 .decoration-particles {
