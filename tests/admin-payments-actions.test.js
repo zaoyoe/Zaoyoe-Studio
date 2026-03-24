@@ -7,6 +7,7 @@ function createQueryBuilder(executor) {
     const state = {
         mode: 'select',
         filters: [],
+        order: null,
         payload: null,
         single: false
     };
@@ -16,7 +17,18 @@ function createQueryBuilder(executor) {
             return builder;
         },
         eq(column, value) {
-            state.filters.push({ column, value });
+            state.filters.push({ op: 'eq', column, value });
+            return builder;
+        },
+        gte(column, value) {
+            state.filters.push({ op: 'gte', column, value });
+            return builder;
+        },
+        order(column, options = {}) {
+            state.order = {
+                column,
+                ascending: options.ascending !== false
+            };
             return builder;
         },
         single() {
@@ -25,6 +37,11 @@ function createQueryBuilder(executor) {
         },
         upsert(payload) {
             state.mode = 'upsert';
+            state.payload = payload;
+            return builder;
+        },
+        update(payload) {
+            state.mode = 'update';
             state.payload = payload;
             return builder;
         },
@@ -44,25 +61,136 @@ function createQueryBuilder(executor) {
     return builder;
 }
 
+function createRpcResult(data, error = null) {
+    return {
+        single() {
+            return Promise.resolve({ data, error });
+        },
+        then(resolve, reject) {
+            return Promise.resolve({ data, error }).then(resolve, reject);
+        },
+        catch(reject) {
+            return Promise.resolve({ data, error }).catch(reject);
+        }
+    };
+}
+
 function applyFilters(rows, filters) {
-    return rows.filter((row) => filters.every(({ column, value }) => row[column] === value));
+    return rows.filter((row) => filters.every(({ op, column, value }) => {
+        if (op === 'gte') {
+            return new Date(row[column] || 0).getTime() >= new Date(value || 0).getTime();
+        }
+
+        return row[column] === value;
+    }));
+}
+
+function sortRows(rows, order) {
+    if (!order?.column) return rows.slice();
+
+    const sorted = rows.slice().sort((left, right) => {
+        const leftValue = left?.[order.column];
+        const rightValue = right?.[order.column];
+        return String(leftValue || '').localeCompare(String(rightValue || ''));
+    });
+
+    return order.ascending === false ? sorted.reverse() : sorted;
 }
 
 function createSupabaseStub(state = {}) {
     const orders = state.orders || [];
     const anomalyCases = state.anomalyCases || [];
+    const paymentEvents = state.paymentEvents || [];
+    const pointsLedger = state.pointsLedger || [];
+    const adminRoles = state.adminRoles || [];
+    const systemNotifications = state.systemNotifications || [];
     state.anomalyCases = anomalyCases;
+    state.paymentEvents = paymentEvents;
+    state.pointsLedger = pointsLedger;
+    state.adminRoles = adminRoles;
+    state.systemNotifications = systemNotifications;
     state.metrics = state.metrics || {};
     state.metrics.reviewRpcCalls = state.metrics.reviewRpcCalls || [];
+    state.metrics.balanceRpcCalls = state.metrics.balanceRpcCalls || [];
+    state.metrics.refundReclaimRpcCalls = state.metrics.refundReclaimRpcCalls || [];
+    state.metrics.rechargeRpcCalls = state.metrics.rechargeRpcCalls || [];
 
     return {
         rpc(name, args = {}) {
             if (name === 'fn_apply_payment_order_review') {
                 state.metrics.reviewRpcCalls.push(args);
-                return Promise.resolve({
-                    data: state.reviewRpcData || { ok: true },
-                    error: state.reviewRpcError || null
+                return createRpcResult(
+                    state.reviewRpcData || { ok: true },
+                    state.reviewRpcError || null
+                );
+            }
+
+            if (name === 'fn_get_user_balance') {
+                state.metrics.balanceRpcCalls.push(args);
+                const configuredBalance = state.userBalances?.[args.p_user_id];
+                const data = configuredBalance && typeof configuredBalance === 'object'
+                    ? configuredBalance
+                    : { total_balance: Number(configuredBalance ?? state.defaultUserBalance ?? 0) };
+                return createRpcResult(data, state.balanceRpcError || null);
+            }
+
+            if (name === 'fn_deduct_points_admin_site_with_breakdown') {
+                state.metrics.refundReclaimRpcCalls.push(args);
+                if (state.refundReclaimRpcError) {
+                    return createRpcResult(null, state.refundReclaimRpcError);
+                }
+
+                const configuredResult = state.refundReclaimRpcData && typeof state.refundReclaimRpcData === 'object'
+                    ? state.refundReclaimRpcData
+                    : {};
+                const deducted = Number(configuredResult.deducted ?? args.p_amount) || 0;
+                const deductedPaid = Number(configuredResult.deducted_paid ?? deducted) || 0;
+                const deductedBonus = Number(configuredResult.deducted_bonus ?? Math.max(0, deducted - deductedPaid)) || 0;
+                const data = {
+                    deducted,
+                    deducted_paid: deductedPaid,
+                    deducted_bonus: deductedBonus,
+                    site: args.p_site || 'cn',
+                    ...configuredResult
+                };
+
+                if (deducted > 0) {
+                    pointsLedger.push({
+                        id: `ledger-${pointsLedger.length + 1}`,
+                        user_id: args.p_target_user_id,
+                        amount: -Math.abs(deducted),
+                        paid_points: deductedPaid,
+                        bonus_points: deductedBonus,
+                        reference_id: args.p_reference_id,
+                        site: args.p_site || 'cn',
+                        created_at: new Date().toISOString()
+                    });
+                }
+
+                return createRpcResult(data, null);
+            }
+
+            if (name === 'fn_recharge_points') {
+                state.metrics.rechargeRpcCalls.push(args);
+                if (state.rechargeRpcError) {
+                    return createRpcResult(null, state.rechargeRpcError);
+                }
+
+                const data = state.rechargeRpcData || {
+                    paid: Number(args.p_paid) || 0,
+                    bonus: Number(args.p_bonus) || 0
+                };
+                pointsLedger.push({
+                    id: `ledger-${pointsLedger.length + 1}`,
+                    user_id: args.target_user_id,
+                    amount: Math.abs(Number(args.p_paid) || 0) + Math.abs(Number(args.p_bonus) || 0),
+                    paid_points: Math.abs(Number(args.p_paid) || 0),
+                    bonus_points: Math.abs(Number(args.p_bonus) || 0),
+                    reference_id: args.p_reference_id,
+                    site: args.p_site || 'cn',
+                    created_at: new Date().toISOString()
                 });
+                return createRpcResult(data, null);
             }
 
             throw new Error(`Unexpected RPC: ${name}`);
@@ -74,6 +202,25 @@ function createSupabaseStub(state = {}) {
                     return {
                         data: query.single ? (rows[0] || null) : rows,
                         error: rows.length ? null : { message: 'Order not found' }
+                    };
+                }
+
+                if (table === 'payment_orders' && query.mode === 'update') {
+                    const rows = applyFilters(orders, query.filters);
+                    if (!rows.length) {
+                        return {
+                            data: query.single ? null : [],
+                            error: { message: 'Order not found' }
+                        };
+                    }
+
+                    rows.forEach((row) => {
+                        Object.assign(row, query.payload || {});
+                    });
+
+                    return {
+                        data: query.single ? rows[0] : rows,
+                        error: null
                     };
                 }
 
@@ -99,8 +246,57 @@ function createSupabaseStub(state = {}) {
                     };
                 }
 
+                if (table === 'payment_events' && query.mode === 'insert') {
+                    const payload = Array.isArray(query.payload)
+                        ? query.payload
+                        : [query.payload];
+                    payload.forEach((entry, index) => {
+                        paymentEvents.push({
+                            id: entry.id || `payment-event-${paymentEvents.length + index + 1}`,
+                            ...entry
+                        });
+                    });
+                    return {
+                        data: query.single ? paymentEvents[paymentEvents.length - 1] : payload,
+                        error: null
+                    };
+                }
+
                 if (table === 'admin_audit_logs' && query.mode === 'insert') {
                     return { data: null, error: null };
+                }
+
+                if (table === 'admin_roles' && query.mode === 'select') {
+                    const rows = sortRows(applyFilters(adminRoles, query.filters), query.order);
+                    return {
+                        data: query.single ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'system_notifications' && query.mode === 'select') {
+                    const rows = sortRows(applyFilters(systemNotifications, query.filters), query.order);
+                    return {
+                        data: query.single ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'system_notifications' && query.mode === 'insert') {
+                    const payload = Array.isArray(query.payload)
+                        ? query.payload
+                        : [query.payload];
+                    payload.forEach((entry, index) => {
+                        systemNotifications.push({
+                            id: entry.id || `notification-${systemNotifications.length + index + 1}`,
+                            created_at: entry.created_at || new Date().toISOString(),
+                            ...entry
+                        });
+                    });
+                    return {
+                        data: query.single ? systemNotifications[systemNotifications.length - 1] : payload,
+                        error: null
+                    };
                 }
 
                 throw new Error(`Unexpected table access: ${table}/${query.mode}`);
@@ -167,11 +363,16 @@ async function withPaymentsActionHandler(state, callback) {
     const handlerPath = path.resolve(__dirname, '../server/api-handlers/admin/payments/actions.js');
     const originalLoad = Module._load;
     const mockAdminModule = createMockAdminModule(state);
+    const providerAdaptersModule = state.providerAdaptersModule || null;
 
     delete require.cache[handlerPath];
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../../../../api/_lib/admin') {
             return mockAdminModule;
+        }
+
+        if (request === '../../../../api/_lib/payments/provider-adapters' && providerAdaptersModule) {
+            return providerAdaptersModule;
         }
 
         return originalLoad.call(this, request, parent, isMain);
@@ -317,5 +518,544 @@ test('sensitive review actions require an operator note', async () => {
         assert.equal(state.metrics.reviewRpcCalls.length, 0);
         assert.equal(state.anomalyCases.length, 0);
         assert.equal(state.auditLogs.length, 0);
+    });
+});
+
+test('refund_hupijiao refunds an uncredited order, syncs local state, and records audit data', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-hj-1',
+                user_id: 'user-1',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_ORDER_1',
+                checkout_session_id: 'session-1',
+                site: 'cn',
+                expected_amount: 20,
+                paid_amount: 20,
+                points_amount: 1000,
+                status: 'pending_review',
+                claimed_at: null,
+                paid_at: '2026-03-24T08:00:00.000Z',
+                verified_at: null,
+                last_error: 'amount_mismatch_expected_20',
+                provider_metadata: {
+                    gateway_open_order_id: 'OPEN_ORDER_1'
+                },
+                raw_payload: {}
+            }
+        ],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter(providerKey) {
+                assert.equal(providerKey, 'hupijiao');
+                return {
+                    async resolveRuntimeContext() {
+                        return {
+                            provider: 'hupijiao'
+                        };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'HJ_ORDER_1',
+                            openOrderId: 'OPEN_ORDER_1',
+                            status: 'paid',
+                            statusRaw: 'OD',
+                            message: 'success'
+                        };
+                    },
+                    async refundOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'HJ_ORDER_1',
+                            openOrderId: 'OPEN_ORDER_1',
+                            status: 'refunded',
+                            statusRaw: 'CD',
+                            message: 'success',
+                            responsePayload: {
+                                errcode: 0,
+                                errmsg: 'success'
+                            }
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-hj-1',
+                action: 'refund_hupijiao',
+                note: '重复支付，原路退款'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.anomaly_case.status, 'handled');
+        assert.equal(payload.anomaly_case.last_action, 'refund_hupijiao');
+        assert.equal(state.orders[0].status, 'refunded');
+        assert.equal(state.orders[0].provider_metadata.refund_status, 'refunded');
+        assert.equal(state.orders[0].provider_metadata.payment_status, 'refunded');
+        assert.equal(state.orders[0].provider_metadata.refund_source, 'admin_action');
+        assert.equal(state.orders[0].raw_payload.admin_refund.note, '重复支付，原路退款');
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].event_type, 'admin_refund');
+        assert.equal(state.paymentEvents[0].processing_result, 'admin_refund_processed');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'payments.anomaly.action');
+        assert.equal(state.auditLogs[0].details.refund_status, 'refunded');
+    });
+});
+
+test('refund_hupijiao reclaims credited points before refunding an already credited order', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-hj-2',
+                user_id: 'user-2',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_ORDER_2',
+                checkout_session_id: 'session-2',
+                site: 'cn',
+                expected_amount: 20,
+                paid_amount: 20,
+                points_amount: 1000,
+                status: 'redeemed',
+                claimed_at: '2026-03-24T08:10:00.000Z',
+                paid_at: '2026-03-24T08:00:00.000Z',
+                verified_at: '2026-03-24T08:05:00.000Z',
+                last_error: null,
+                provider_metadata: {
+                    gateway_open_order_id: 'OPEN_ORDER_2',
+                    paid_points: 900,
+                    bonus_points: 100
+                },
+                raw_payload: {
+                    request: {
+                        points_amount: 900,
+                        bonus_points: 100
+                    }
+                }
+            }
+        ],
+        userBalances: {
+            'user-2': {
+                total_balance: 1400,
+                paid_balance: 1000,
+                bonus_balance: 400
+            }
+        },
+        refundReclaimRpcData: {
+            deducted: 1000,
+            deducted_paid: 900,
+            deducted_bonus: 100,
+            site: 'cn'
+        },
+        providerAdaptersModule: {
+            getPaymentProviderAdapter() {
+                return {
+                    async resolveRuntimeContext() {
+                        return {
+                            provider: 'hupijiao'
+                        };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'HJ_ORDER_2',
+                            openOrderId: 'OPEN_ORDER_2',
+                            status: 'paid',
+                            statusRaw: 'OD',
+                            message: 'success'
+                        };
+                    },
+                    async refundOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'HJ_ORDER_2',
+                            openOrderId: 'OPEN_ORDER_2',
+                            status: 'refunded',
+                            statusRaw: 'CD',
+                            message: 'success'
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-hj-2',
+                action: 'refund_hupijiao',
+                note: '已入账订单不应直接退款'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.orders[0].status, 'refunded');
+        assert.equal(state.orders[0].provider_metadata.refund_reclaimed_points, 1000);
+        assert.equal(state.orders[0].provider_metadata.refund_reclaimed_paid_points, 900);
+        assert.equal(state.orders[0].provider_metadata.refund_reclaimed_bonus_points, 100);
+        assert.equal(state.orders[0].raw_payload.admin_refund.reclaim.reclaimedPaidPoints, 900);
+        assert.equal(state.metrics.balanceRpcCalls.length, 1);
+        assert.equal(state.metrics.refundReclaimRpcCalls.length, 1);
+        assert.equal(state.metrics.rechargeRpcCalls.length, 0);
+        assert.equal(state.pointsLedger.length, 1);
+        assert.match(state.pointsLedger[0].reference_id, /admin-refund-reclaim:hupijiao:/);
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].processing_result, 'admin_refund_processed');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].details.refund_reclaimed_points, 1000);
+    });
+});
+
+test('refund_hupijiao compensates reclaimed points when credited-order refund fails', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-hj-3',
+                user_id: 'user-3',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_ORDER_3',
+                checkout_session_id: 'session-3',
+                site: 'cn',
+                expected_amount: 30,
+                paid_amount: 30,
+                points_amount: 1200,
+                status: 'redeemed',
+                claimed_at: '2026-03-24T08:15:00.000Z',
+                paid_at: '2026-03-24T08:00:00.000Z',
+                verified_at: '2026-03-24T08:05:00.000Z',
+                last_error: null,
+                provider_metadata: {
+                    gateway_open_order_id: 'OPEN_ORDER_3',
+                    paid_points: 1000,
+                    bonus_points: 200
+                },
+                raw_payload: {
+                    request: {
+                        points_amount: 1000,
+                        bonus_points: 200
+                    }
+                }
+            }
+        ],
+        userBalances: {
+            'user-3': {
+                total_balance: 1800,
+                paid_balance: 1200,
+                bonus_balance: 600
+            }
+        },
+        adminRoles: [
+            { user_id: 'admin-1', role_name: 'admin', expires_at: null },
+            { user_id: 'admin-2', role_name: 'super_admin', expires_at: null }
+        ],
+        refundReclaimRpcData: {
+            deducted: 1200,
+            deducted_paid: 1000,
+            deducted_bonus: 200,
+            site: 'cn'
+        },
+        providerAdaptersModule: {
+            getPaymentProviderAdapter() {
+                return {
+                    async resolveRuntimeContext() {
+                        return {
+                            provider: 'hupijiao'
+                        };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'HJ_ORDER_3',
+                            openOrderId: 'OPEN_ORDER_3',
+                            status: 'paid',
+                            statusRaw: 'OD',
+                            message: 'success'
+                        };
+                    },
+                    async refundOrder() {
+                        return {
+                            supported: true,
+                            success: false,
+                            providerOrderNo: 'HJ_ORDER_3',
+                            openOrderId: 'OPEN_ORDER_3',
+                            status: 'paid',
+                            statusRaw: 'OD',
+                            message: 'gateway busy'
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-hj-3',
+                action: 'refund_hupijiao',
+                note: '已入账售后退款'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 502);
+        assert.equal(payload.success, false);
+        assert.match(payload.message, /gateway busy/);
+        assert.equal(state.orders[0].status, 'redeemed');
+        assert.equal(state.metrics.refundReclaimRpcCalls.length, 1);
+        assert.equal(state.metrics.rechargeRpcCalls.length, 1);
+        assert.equal(state.pointsLedger.length, 2);
+        assert.match(state.pointsLedger[0].reference_id, /admin-refund-reclaim:hupijiao:/);
+        assert.match(state.pointsLedger[1].reference_id, /admin-refund-compensate:hupijiao:/);
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].processing_result, 'admin_refund_failed');
+        assert.equal(state.systemNotifications.length, 2);
+        assert.equal(state.systemNotifications.every((item) => item.title === '支付退款失败（已补回）'), true);
+        assert.equal(state.systemNotifications.every((item) => item.type === 'warning'), true);
+        assert.equal(state.systemNotifications.every((item) => String(item.content || '').includes('HJ_ORDER_3')), true);
+        assert.equal(state.anomalyCases.length, 0);
+        assert.equal(state.auditLogs.length, 0);
+    });
+});
+
+test('refund_hupijiao fails closed when credited-order balance is insufficient for reclaim', async () => {
+    let refundOrderCalled = false;
+    const state = {
+        orders: [
+            {
+                id: 'order-hj-4',
+                user_id: 'user-4',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_ORDER_4',
+                checkout_session_id: 'session-4',
+                site: 'cn',
+                expected_amount: 20,
+                paid_amount: 20,
+                points_amount: 1000,
+                status: 'redeemed',
+                claimed_at: '2026-03-24T08:10:00.000Z',
+                paid_at: '2026-03-24T08:00:00.000Z',
+                verified_at: '2026-03-24T08:05:00.000Z',
+                last_error: null,
+                provider_metadata: {
+                    gateway_open_order_id: 'OPEN_ORDER_4',
+                    paid_points: 1000,
+                    bonus_points: 0
+                },
+                raw_payload: {
+                    request: {
+                        points_amount: 1000,
+                        bonus_points: 0
+                    }
+                }
+            }
+        ],
+        userBalances: {
+            'user-4': {
+                total_balance: 300,
+                paid_balance: 300,
+                bonus_balance: 0
+            }
+        },
+        adminRoles: [
+            { user_id: 'admin-1', role_name: 'admin', expires_at: null }
+        ],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter() {
+                return {
+                    async resolveRuntimeContext() {
+                        return {
+                            provider: 'hupijiao'
+                        };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'HJ_ORDER_4',
+                            openOrderId: 'OPEN_ORDER_4',
+                            status: 'paid',
+                            statusRaw: 'OD',
+                            message: 'success'
+                        };
+                    },
+                    async refundOrder() {
+                        refundOrderCalled = true;
+                        return {
+                            supported: true,
+                            success: true
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-hj-4',
+                action: 'refund_hupijiao',
+                note: '余额不足时应阻止退款'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 409);
+        assert.equal(payload.success, false);
+        assert.match(payload.message, /无法原子扣回/);
+        assert.equal(refundOrderCalled, false);
+        assert.equal(state.metrics.refundReclaimRpcCalls.length, 0);
+        assert.equal(state.pointsLedger.length, 0);
+        assert.equal(state.paymentEvents.length, 1);
+        assert.equal(state.paymentEvents[0].processing_result, 'admin_refund_reclaim_failed');
+        assert.equal(state.systemNotifications.length, 1);
+        assert.equal(state.systemNotifications[0].title, '支付退款积分扣回失败');
+        assert.equal(state.systemNotifications[0].type, 'alert');
+        assert.equal(state.anomalyCases.length, 0);
+        assert.equal(state.auditLogs.length, 0);
+    });
+});
+
+test('refund_hupijiao dedupes repeated admin refund alerts within the recent window', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-hj-5',
+                user_id: 'user-5',
+                provider: 'hupijiao',
+                provider_order_no: 'HJ_ORDER_5',
+                checkout_session_id: 'session-5',
+                site: 'cn',
+                expected_amount: 30,
+                paid_amount: 30,
+                points_amount: 1200,
+                status: 'redeemed',
+                claimed_at: '2026-03-24T08:15:00.000Z',
+                paid_at: '2026-03-24T08:00:00.000Z',
+                verified_at: '2026-03-24T08:05:00.000Z',
+                last_error: null,
+                provider_metadata: {
+                    gateway_open_order_id: 'OPEN_ORDER_5',
+                    paid_points: 1000,
+                    bonus_points: 200
+                },
+                raw_payload: {
+                    request: {
+                        points_amount: 1000,
+                        bonus_points: 200
+                    }
+                }
+            }
+        ],
+        userBalances: {
+            'user-5': {
+                total_balance: 1800,
+                paid_balance: 1200,
+                bonus_balance: 600
+            }
+        },
+        adminRoles: [
+            { user_id: 'admin-1', role_name: 'admin', expires_at: null },
+            { user_id: 'admin-2', role_name: 'admin', expires_at: null }
+        ],
+        refundReclaimRpcData: {
+            deducted: 1200,
+            deducted_paid: 1000,
+            deducted_bonus: 200,
+            site: 'cn'
+        },
+        providerAdaptersModule: {
+            getPaymentProviderAdapter() {
+                return {
+                    async resolveRuntimeContext() {
+                        return {
+                            provider: 'hupijiao'
+                        };
+                    },
+                    async queryOrder() {
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'HJ_ORDER_5',
+                            openOrderId: 'OPEN_ORDER_5',
+                            status: 'paid',
+                            statusRaw: 'OD',
+                            message: 'success'
+                        };
+                    },
+                    async refundOrder() {
+                        return {
+                            supported: true,
+                            success: false,
+                            providerOrderNo: 'HJ_ORDER_5',
+                            openOrderId: 'OPEN_ORDER_5',
+                            status: 'paid',
+                            statusRaw: 'OD',
+                            message: 'gateway busy'
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-hj-5',
+                action: 'refund_hupijiao',
+                note: '重复重试时不应刷爆通知'
+            }
+        };
+
+        const firstRes = createMockResponse();
+        await handler(req, firstRes);
+        assert.equal(firstRes.statusCode, 502);
+        assert.equal(state.systemNotifications.length, 2);
+
+        const secondRes = createMockResponse();
+        await handler(req, secondRes);
+        assert.equal(secondRes.statusCode, 502);
+        assert.equal(state.systemNotifications.length, 2);
+        assert.equal(state.systemNotifications.every((item) => item.title === '支付退款失败（已补回）'), true);
     });
 });

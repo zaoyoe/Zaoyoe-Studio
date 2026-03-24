@@ -2,7 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-    buildPublicPaymentConfig
+    buildPublicPaymentConfig,
+    buildPublicPaymentRuntime
 } = require('../api/_lib/payments/providers');
 
 test('public payment config hides mock when runtime blocks remote mock payments', () => {
@@ -24,7 +25,9 @@ test('public payment config hides mock when runtime blocks remote mock payments'
                     display_name: '虎皮椒',
                     checkout_url: '',
                     gateway_url: '',
-                    merchant_id: ''
+                    merchant_id: '',
+                    notify_url: 'https://verify.example.com/webhook',
+                    return_url: 'https://www.zaoyoe.com/wallet'
                 }
             }
         },
@@ -44,6 +47,10 @@ test('public payment config hides mock when runtime blocks remote mock payments'
     assert.equal(result.paymentChannels.providers.mock.enabled, false);
     assert.equal(result.rechargeOptions.mock_payment_enabled, false);
     assert.equal(result.rechargeOptions.custom_amount_enabled, true);
+    assert.equal('gateway_url' in result.paymentChannels.providers.hupijiao, false);
+    assert.equal('merchant_id' in result.paymentChannels.providers.hupijiao, false);
+    assert.equal('notify_url' in result.paymentChannels.providers.hupijiao, false);
+    assert.equal('return_url' in result.paymentChannels.providers.hupijiao, false);
 });
 
 test('public payment config preserves mock when runtime explicitly allows it', () => {
@@ -59,6 +66,15 @@ test('public payment config preserves mock when runtime explicitly allows it', (
                     enabled: false,
                     display_name: '爱发电',
                     checkout_url: 'https://afdian.com/a/zaoyoe'
+                },
+                hupijiao: {
+                    enabled: true,
+                    display_name: '虎皮椒',
+                    checkout_url: 'https://pay.example.com/public',
+                    gateway_url: 'https://api.xunhupay.com/payment/do.html',
+                    merchant_id: 'appid-demo',
+                    notify_url: 'https://verify.example.com/webhook',
+                    return_url: 'https://www.zaoyoe.com/wallet'
                 }
             }
         },
@@ -77,6 +93,10 @@ test('public payment config preserves mock when runtime explicitly allows it', (
     assert.equal(result.paymentChannels.active_provider, 'mock');
     assert.equal(result.paymentChannels.providers.mock.enabled, true);
     assert.equal(result.rechargeOptions.mock_payment_enabled, true);
+    assert.equal('gateway_url' in result.paymentChannels.providers.hupijiao, false);
+    assert.equal('merchant_id' in result.paymentChannels.providers.hupijiao, false);
+    assert.equal('notify_url' in result.paymentChannels.providers.hupijiao, false);
+    assert.equal('return_url' in result.paymentChannels.providers.hupijiao, false);
 });
 
 test('public payment config does not auto-promote hupijiao from partial gateway config while afdian remains available', () => {
@@ -114,4 +134,27 @@ test('public payment config does not auto-promote hupijiao from partial gateway 
     );
 
     assert.equal(result.paymentChannels.active_provider, 'afdian');
+    assert.equal('gateway_url' in result.paymentChannels.providers.hupijiao, false);
+    assert.equal('merchant_id' in result.paymentChannels.providers.hupijiao, false);
+});
+
+test('public payment runtime strips operational override metadata and env hints', () => {
+    const runtime = buildPublicPaymentRuntime({
+        mock_payment: {
+            allowed: false,
+            reason: 'production_like_runtime',
+            message: '当前站点运行在生产环境，服务端默认禁用模拟支付；如需临时测试，建议设置 ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL 后重新部署。',
+            override_env_name: 'ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL',
+            override_mode: 'until',
+            cleanup_message: '环境变量仍存在但当前未启用，需移除 vercel 的环境变量 ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL'
+        }
+    });
+
+    assert.deepEqual(runtime, {
+        mock_payment: {
+            allowed: false,
+            reason: 'production_like_runtime',
+            message: '当前环境暂未开放模拟支付。'
+        }
+    });
 });

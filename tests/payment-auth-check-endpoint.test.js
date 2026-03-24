@@ -38,11 +38,17 @@ function createMockResponse() {
 async function withAuthCheckHandler(mockAdminModule, callback, mockRequestSecurityModule = null) {
     const handlerPath = path.resolve(__dirname, '../api/payments/auth-check.js');
     const originalLoad = Module._load;
+    const resolvedAdminModule = {
+        getOptionalSupabaseAdmin() {
+            return null;
+        },
+        ...mockAdminModule
+    };
 
     delete require.cache[handlerPath];
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../_lib/admin') {
-            return mockAdminModule;
+            return resolvedAdminModule;
         }
 
         if (request === '../_lib/request-security' && mockRequestSecurityModule) {

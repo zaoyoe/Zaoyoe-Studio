@@ -52,11 +52,17 @@ async function withLoginSecurityHandler({
 }, callback) {
     const handlerPath = path.resolve(__dirname, '../api/auth/login-security.js');
     const originalLoad = Module._load;
+    const resolvedAdminModule = {
+        getOptionalSupabaseAdmin() {
+            return null;
+        },
+        ...adminModule
+    };
 
     delete require.cache[handlerPath];
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../_lib/admin') {
-            return adminModule;
+            return resolvedAdminModule;
         }
 
         if (request === '../_lib/request-security' && requestSecurityModule) {

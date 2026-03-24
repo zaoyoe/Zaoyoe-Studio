@@ -9,7 +9,9 @@ const EVENT_OK_RESULTS = new Set([
     'received',
     'ignored_non_success_ec',
     'ignored_non_order_event',
-    'ignored_non_paid_status'
+    'ignored_non_paid_status',
+    'admin_refund_processed',
+    'admin_refund_synced_refunded'
 ]);
 const SESSION_OPEN_STATUSES = new Set(['created', 'redirect_ready']);
 const SESSION_FAILURE_STATUSES = new Set(['failed', 'expired', 'cancelled']);
@@ -27,6 +29,59 @@ const QUERY_OUTCOME_META = Object.freeze({
     code_pending: { label: '兑换码未就绪', severity: 'warning' },
     query_exception: { label: '查码接口异常', severity: 'critical' }
 });
+const REFUND_FAILURE_EVENT_META = Object.freeze({
+    admin_refund_failed: {
+        title: '退款失败已补回',
+        message: '网关退款失败，但系统已自动补回之前扣回的积分，请复核退款通道返回值。',
+        severity: 'warning',
+        topicKey: 'refund_failures',
+        topicLabel: '退款失败'
+    },
+    admin_refund_reclaim_failed: {
+        title: '退款积分扣回失败',
+        message: '已入账订单在退款前无法安全扣回积分，系统已停止继续发起网关退款。',
+        severity: 'critical',
+        topicKey: 'refund_reclaim_failures',
+        topicLabel: '扣回失败'
+    },
+    admin_refund_compensation_failed: {
+        title: '退款积分回滚失败',
+        message: '网关退款失败后，系统自动补回积分也失败了，需要立即人工修复账务。',
+        severity: 'critical',
+        topicKey: 'refund_compensation_failures',
+        topicLabel: '回滚失败'
+    }
+});
+const REFUND_EXCEPTION_TOPIC_META = Object.freeze([
+    {
+        key: 'refund_failures',
+        label: '退款失败',
+        severity: 'warning',
+        description: '网关退款失败，但系统已自动补回积分，仍需复核通道响应和重复提交风险。'
+    },
+    {
+        key: 'refund_reclaim_failures',
+        label: '扣回失败',
+        severity: 'critical',
+        description: '已入账订单在退款前无法安全扣回积分，当前退款已 fail-closed 停止。'
+    },
+    {
+        key: 'refund_compensation_failures',
+        label: '回滚失败',
+        severity: 'critical',
+        description: '退款失败后自动补回积分也失败了，需要立刻人工对账修复。'
+    }
+]);
+const TREND_FAILED_EVENT_RESULTS = new Set([
+    'webhook_exception',
+    'process_rpc_failed',
+    'missing_signature',
+    'invalid_order_no',
+    'missing_afdian_token',
+    'admin_refund_failed',
+    'admin_refund_reclaim_failed',
+    'admin_refund_compensation_failed'
+]);
 
 function getIsoDaysAgo(days) {
     const date = new Date();
@@ -111,6 +166,9 @@ function buildOrderAnomaly(order) {
         provider: order.provider,
         provider_order_no: order.provider_order_no,
         status: order.status,
+        user_id: order.user_id || null,
+        claimed_at: order.claimed_at || null,
+        provider_metadata: normalizeJsonObject(order.provider_metadata),
         severity,
         title,
         message,
@@ -123,6 +181,8 @@ function buildEventAnomaly(event) {
     let title = '回调异常';
     let message = String(event.error_message || '').trim() || String(event.processing_result || '').trim() || '支付回调需要人工检查。';
     let severity = 'warning';
+    const processingResult = String(event.processing_result || '').trim();
+    const refundMeta = REFUND_FAILURE_EVENT_META[processingResult];
 
     if (event.signature_valid === false) {
         title = '回调签名异常';
@@ -135,6 +195,10 @@ function buildEventAnomaly(event) {
     } else if (String(event.processing_result || '').trim() === 'webhook_exception') {
         title = '回调处理异常';
         severity = 'critical';
+    } else if (refundMeta) {
+        title = refundMeta.title;
+        message = String(event.error_message || '').trim() || refundMeta.message;
+        severity = refundMeta.severity;
     }
 
     return {
@@ -282,6 +346,26 @@ function isResolvedOpsStatus(status) {
     return ['handled', 'ignored', 'approved', 'rejected'].includes(String(status || '').trim().toLowerCase());
 }
 
+function canRefundHupijiaoOrder(item) {
+    if (!item) return false;
+    if ((item?.type && item.type !== 'order')) return false;
+    if (String(item?.provider || '').trim().toLowerCase() !== 'hupijiao') return false;
+
+    const status = String(item?.status || '').trim().toLowerCase();
+    if (!['pending_review', 'amount_mismatch', 'paid', 'redeemed'].includes(status)) return false;
+    if ((status === 'redeemed' || Boolean(String(item?.claimed_at || '').trim())) && !item?.user_id) return false;
+
+    const metadata = normalizeJsonObject(item?.provider_metadata);
+    const refundStatus = String(metadata.refund_status || '').trim().toLowerCase();
+    return !['refunded', 'refund_pending'].includes(refundStatus);
+}
+
+function getOrderAvailableActions(order) {
+    return canRefundHupijiaoOrder(order)
+        ? ['refund_hupijiao']
+        : [];
+}
+
 function getAnomalyAvailableActions(item, caseStatus) {
     const normalizedStatus = String(caseStatus || '').trim().toLowerCase();
 
@@ -294,11 +378,19 @@ function getAnomalyAvailableActions(item, caseStatus) {
     }
 
     if (item?.type === 'order' && String(item?.status || '').trim().toLowerCase() === 'amount_mismatch') {
-        return ['approve_amount_mismatch', 'reject_amount_mismatch', 'ignore'];
+        return canRefundHupijiaoOrder(item)
+            ? ['approve_amount_mismatch', 'reject_amount_mismatch', 'refund_hupijiao', 'ignore']
+            : ['approve_amount_mismatch', 'reject_amount_mismatch', 'ignore'];
     }
 
     if (item?.type === 'order' && String(item?.status || '').trim().toLowerCase() === 'pending_review') {
-        return ['approve_review', 'reject_review', 'ignore'];
+        return canRefundHupijiaoOrder(item)
+            ? ['approve_review', 'reject_review', 'refund_hupijiao', 'ignore']
+            : ['approve_review', 'reject_review', 'ignore'];
+    }
+
+    if (canRefundHupijiaoOrder(item)) {
+        return ['refund_hupijiao', 'mark_handled', 'ignore', 'request_retry'];
     }
 
     return ['mark_handled', 'ignore', 'request_retry'];
@@ -362,7 +454,7 @@ function buildTrend24h(events) {
         if (
             event.signature_valid === false
             || event.amount_valid === false
-            || ['webhook_exception', 'process_rpc_failed', 'missing_signature', 'invalid_order_no', 'missing_afdian_token'].includes(String(event.processing_result || '').trim())
+            || TREND_FAILED_EVENT_RESULTS.has(String(event.processing_result || '').trim())
         ) {
             bucket.failed_events += 1;
         }
@@ -843,6 +935,38 @@ function buildQueryFailureTopicItems(rows) {
         .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
 }
 
+function buildRefundFailureTopicItems(events) {
+    return (events || [])
+        .filter((event) => Object.prototype.hasOwnProperty.call(REFUND_FAILURE_EVENT_META, String(event?.processing_result || '').trim()))
+        .map((event) => {
+            const processingResult = String(event.processing_result || '').trim();
+            const refundMeta = REFUND_FAILURE_EVENT_META[processingResult];
+            return {
+                ...buildEventAnomaly(event),
+                topic_key: refundMeta.topicKey,
+                topic_label: refundMeta.topicLabel
+            };
+        })
+        .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+}
+
+function buildRefundExceptionTopics(events) {
+    const refundItems = buildRefundFailureTopicItems(events);
+    const topicItems = REFUND_EXCEPTION_TOPIC_META
+        .flatMap((topic) => refundItems.filter((item) => item.topic_key === topic.key).slice(0, 12))
+        .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+
+    return {
+        topics: REFUND_EXCEPTION_TOPIC_META
+            .map((topic) => ({
+                ...topic,
+                count: refundItems.filter((item) => item.topic_key === topic.key).length
+            }))
+            .filter((topic) => Number(topic.count || 0) > 0),
+        items: topicItems
+    };
+}
+
 function buildExceptionTopics({ orders, events, queryAttempts }) {
     const amountMismatchItems = (orders || [])
         .filter((order) => order.status === 'amount_mismatch')
@@ -860,12 +984,14 @@ function buildExceptionTopics({ orders, events, queryAttempts }) {
         }));
     const duplicateItems = buildDuplicateWebhookTopicItems(events);
     const queryFailureItems = buildQueryFailureTopicItems(queryAttempts);
+    const refundTopics = buildRefundExceptionTopics(events);
 
     const topicItems = [
         ...amountMismatchItems.slice(0, 12),
         ...reviewItems.slice(0, 12),
         ...duplicateItems.slice(0, 12),
-        ...queryFailureItems.slice(0, 12)
+        ...queryFailureItems.slice(0, 12),
+        ...(refundTopics.items || [])
     ].sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
 
     return {
@@ -897,8 +1023,9 @@ function buildExceptionTopics({ orders, events, queryAttempts }) {
                 severity: 'warning',
                 description: '追踪钱包查码失败原因，判断是用户误输、订单未落单还是接口异常。',
                 count: queryFailureItems.length
-            }
-        ],
+            },
+            ...(refundTopics.topics || [])
+        ].filter((topic) => Number(topic.count || 0) > 0),
         items: topicItems
     };
 }
@@ -1420,7 +1547,14 @@ module.exports = async function handler(req, res) {
         });
         const scopedTrendEvents = scopedEvents.filter((event) => new Date(event.created_at).getTime() >= new Date(trendSinceIso).getTime());
 
-        const recentOrders = view === 'ops' ? (visibleOrders || []).slice(0, 20) : [];
+        const recentOrders = view === 'ops'
+            ? (visibleOrders || [])
+                .slice(0, 20)
+                .map((order) => ({
+                    ...order,
+                    order_available_actions: getOrderAvailableActions(order)
+                }))
+            : [];
         const recentOrderAnomalies = view === 'ops'
             ? (visibleOrders || [])
                 .filter(isOrderAnomaly)
@@ -1435,6 +1569,9 @@ module.exports = async function handler(req, res) {
             duplicateMap.set(orderNo, (duplicateMap.get(orderNo) || 0) + 1);
         });
         const duplicateWebhookOrders = Array.from(duplicateMap.values()).filter((count) => count > 1).length;
+        const refundGatewayFailures = scopedEvents.filter((event) => String(event.processing_result || '').trim() === 'admin_refund_failed').length;
+        const refundReclaimFailures = scopedEvents.filter((event) => String(event.processing_result || '').trim() === 'admin_refund_reclaim_failed').length;
+        const refundCompensationFailures = scopedEvents.filter((event) => String(event.processing_result || '').trim() === 'admin_refund_compensation_failed').length;
 
         const recentEventAnomalies = needsEvents
             ? scopedEvents
@@ -1448,6 +1585,9 @@ module.exports = async function handler(req, res) {
                 .filter(Boolean)
                 .slice(0, 24)
             : [];
+        const refundAlertSummary = needsEvents
+            ? buildRefundExceptionTopics(scopedEvents || [])
+            : { topics: [], items: [] };
         const exceptionTopics = view === 'ops'
             ? buildExceptionTopics({
                 orders: visibleOrders || [],
@@ -1460,14 +1600,26 @@ module.exports = async function handler(req, res) {
             ? [...recentOrderAnomalies, ...recentEventAnomalies, ...recentSessionAnomalies]
                 .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
             : [];
-        const anomalyCases = view === 'ops'
-            ? await fetchAnomalyCasesByTargets(scopedClient, [...combinedRecentAnomalies, ...(exceptionTopics.items || [])])
+        const anomalyCaseTargets = view === 'ops'
+            ? [...combinedRecentAnomalies, ...(exceptionTopics.items || [])]
+            : (refundAlertSummary.items || []);
+        const anomalyCases = anomalyCaseTargets.length
+            ? await fetchAnomalyCasesByTargets(scopedClient, anomalyCaseTargets)
+            : [];
+        const enrichedRefundAlertItems = needsEvents
+            ? enrichAnomaliesWithCases(refundAlertSummary.items || [], anomalyCases)
             : [];
         const enrichedRecentAnomalies = view === 'ops'
             ? enrichAnomaliesWithCases(combinedRecentAnomalies, anomalyCases)
             : [];
         const enrichedExceptionTopicItems = view === 'ops'
             ? enrichAnomaliesWithCases(exceptionTopics.items || [], anomalyCases)
+            : [];
+        const refundAlertTopics = needsEvents
+            ? (refundAlertSummary.topics || []).map((topic) => ({
+                ...topic,
+                count: enrichedRefundAlertItems.filter((item) => item.topic_key === topic.key).length
+            })).filter((topic) => Number(topic.count || 0) > 0)
             : [];
         const recentAnomalies = view === 'ops'
             ? enrichedRecentAnomalies
@@ -1487,6 +1639,9 @@ module.exports = async function handler(req, res) {
             unclaimed_paid_orders: (visibleOrders || []).filter((order) => order.status === 'paid' && !order.user_id).length,
             recent_event_anomalies: recentEventAnomalies.length,
             duplicate_webhook_orders: duplicateWebhookOrders,
+            refund_failures: refundGatewayFailures,
+            refund_reclaim_failures: refundReclaimFailures,
+            refund_compensation_failures: refundCompensationFailures,
             query_failures: Number(querySummary?.failed_attempts || 0),
             stale_checkout_sessions: Number(sessionSummary?.stale_sessions || 0),
             failed_checkout_sessions: Number(sessionSummary?.failed_sessions || 0),
@@ -1540,6 +1695,8 @@ module.exports = async function handler(req, res) {
             sitewide_summary,
             points_breakdown,
             business_breakdown,
+            refund_alert_topics: needsEvents ? refundAlertTopics : undefined,
+            refund_alert_items: needsEvents ? enrichedRefundAlertItems : undefined,
             exception_topics: exceptionTopics.topics || [],
             exception_topic_items: enrichedExceptionTopicItems,
             recent_anomalies: recentAnomalies,

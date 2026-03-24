@@ -104,6 +104,12 @@ async function withPaymentHandler(handlerRelativePath, options, callback) {
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../_lib/admin' || request === '../../_lib/admin') {
             return {
+                getOptionalSupabaseAdmin() {
+                    if (typeof options.getOptionalSupabaseAdmin === 'function') {
+                        return options.getOptionalSupabaseAdmin();
+                    }
+                    return options.authResult?.adminSupabase || null;
+                },
                 async requireAuthenticatedUser(req) {
                     if (typeof options.requireAuthenticatedUser === 'function') {
                         return options.requireAuthenticatedUser(req);

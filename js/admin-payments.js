@@ -31,14 +31,17 @@
     };
 
     const PAYMENTS_PAGE_SIZE = 5;
-    const SENSITIVE_REVIEW_ACTIONS = new Set([
+    const NOTE_REQUIRED_ACTIONS = new Set([
         'approve_review',
         'reject_review',
         'approve_amount_mismatch',
-        'reject_amount_mismatch'
+        'reject_amount_mismatch',
+        'refund_hupijiao'
     ]);
     const CLEANUP_SCOPE_HTML = '只会清理订单号前缀为 <code>AUTO_CDX_*</code> 或 <code>SMOKE_*</code> 的测试订单，以及邮箱匹配 <code>codex.*@example.com</code> 或 <code>smoke-payment-*@zaoyoe.invalid</code> 的测试账号。';
     const CLEANUP_SCOPE_TEXT = '将删除 AUTO_CDX_* / SMOKE_* 测试订单，以及 codex.*@example.com / smoke-payment-*@zaoyoe.invalid 测试账号。此操作不可撤销，是否继续？';
+    const REFUND_TOPIC_ORDER = ['refund_compensation_failures', 'refund_reclaim_failures', 'refund_failures'];
+    const REFUND_TOPIC_KEY_SET = new Set(REFUND_TOPIC_ORDER);
 
     function escapeHtml(value) {
         return String(value ?? '')
@@ -233,6 +236,22 @@
         return map[String(provider || '').trim().toLowerCase()] || 'fas fa-credit-card';
     }
 
+    function getRefundTopicIcon(topicKey) {
+        const map = {
+            refund_compensation_failures: 'fas fa-triangle-exclamation',
+            refund_reclaim_failures: 'fas fa-rotate-left',
+            refund_failures: 'fas fa-arrow-rotate-left'
+        };
+        return map[String(topicKey || '').trim().toLowerCase()] || 'fas fa-bell';
+    }
+
+    function getRefundTopicTone(topic) {
+        const severity = String(topic?.severity || '').trim().toLowerCase();
+        if (severity === 'critical') return 'danger';
+        if (severity === 'warning') return 'warning';
+        return 'info';
+    }
+
     function getSeverityLabel(severity) {
         const map = {
             critical: '高危',
@@ -263,9 +282,17 @@
             approve_review: '审核通过',
             reject_review: '驳回',
             approve_amount_mismatch: '人工放行',
-            reject_amount_mismatch: '拒绝入账'
+            reject_amount_mismatch: '拒绝入账',
+            refund_hupijiao: '执行退款'
         };
         return map[String(action || '').trim().toLowerCase()] || '执行操作';
+    }
+
+    function getAnomalyActionPrompt(action) {
+        if (String(action || '').trim().toLowerCase() === 'refund_hupijiao') {
+            return '请填写退款备注，这条备注会进入后台审计记录，并作为退款原因传给虎皮椒：';
+        }
+        return '请填写处理备注，这条备注会进入后台审计记录：';
     }
 
     function getAnomalyOpsTone(status) {
@@ -352,6 +379,15 @@
         const message = String(item?.message || '');
         const type = String(item?.type || '').trim().toLowerCase();
 
+        if (title.includes('退款积分回滚失败')) {
+            return '处理建议：立即核对 payment_orders、payment_events 与 points_ledger，确认是否需要人工补回积分并暂停继续退款。';
+        }
+        if (title.includes('退款积分扣回失败')) {
+            return '处理建议：先检查用户当前余额、扣回 RPC 是否已部署，再决定是否改走人工售后或人工扣回。';
+        }
+        if (title.includes('退款失败')) {
+            return '处理建议：复核通道返回、网关订单状态与后台补回记录，避免重复退款或重复扣回。';
+        }
         if (type === 'query' || title.includes('查码')) {
             return '处理建议：先判断是用户输错订单号，还是 webhook 未落单、订单被拦截或兑换码尚未生成。';
         }
@@ -430,6 +466,32 @@
                         data-admin-action="payments-handle-anomaly-action"
                         data-payments-target-type="${escapeHtml(item.type)}"
                         data-payments-target-id="${escapeHtml(item.id)}"
+                        data-payments-action="${escapeHtml(action)}"
+                        ${loading ? 'disabled' : ''}
+                    >
+                        ${escapeHtml(getAnomalyActionLabel(action))}
+                    </button>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function renderOrderActions(order) {
+        const actions = Array.isArray(order?.order_available_actions) ? order.order_available_actions : [];
+        if (!actions.length) {
+            return '<span class="payments-text-muted">—</span>';
+        }
+
+        const loading = isAnomalyActionLoading('order', order.id);
+        return `
+            <div class="payments-anomaly-actions">
+                ${actions.map((action) => `
+                    <button
+                        type="button"
+                        class="payments-anomaly-action-btn ${escapeHtml(action)}"
+                        data-admin-action="payments-handle-anomaly-action"
+                        data-payments-target-type="order"
+                        data-payments-target-id="${escapeHtml(order.id || '')}"
                         data-payments-action="${escapeHtml(action)}"
                         ${loading ? 'disabled' : ''}
                     >
@@ -704,6 +766,9 @@
         const sitewide = data?.sitewide_summary || {};
         const sessionSummary = data?.session_summary || {};
         const providerCount = Array.isArray(data?.provider_stats) ? data.provider_stats.length : 0;
+        const refundIssueCount = Number(anomaly.refund_failures || 0)
+            + Number(anomaly.refund_reclaim_failures || 0)
+            + Number(anomaly.refund_compensation_failures || 0);
         const anomalyCount = Number(anomaly.review_orders || 0)
             + Number(anomaly.failed_orders || 0)
             + Number(anomaly.recent_event_anomalies || 0)
@@ -727,6 +792,12 @@
                 <i class="fas fa-triangle-exclamation"></i>
                 <span>异常 ${escapeHtml(formatNumber(anomalyCount))}</span>
             </div>
+            ${refundIssueCount > 0 ? `
+                <div class="payments-highlight-pill warning">
+                    <i class="fas fa-rotate-left"></i>
+                    <span>退款异常 ${escapeHtml(formatNumber(refundIssueCount))}</span>
+                </div>
+            ` : ''}
             <div class="payments-highlight-pill">
                 <i class="fas fa-wallet"></i>
                 <span>收入 ${escapeHtml(formatCurrency(incomeValue))}</span>
@@ -741,11 +812,23 @@
         }
 
         const anomaly = data?.anomaly_summary || {};
+        const refundIssueCount = Number(anomaly.refund_failures || 0)
+            + Number(anomaly.refund_reclaim_failures || 0)
+            + Number(anomaly.refund_compensation_failures || 0);
         const anomalyCount = Number(anomaly.review_orders || 0)
             + Number(anomaly.failed_orders || 0)
             + Number(anomaly.recent_event_anomalies || 0)
             + Number(anomaly.session_anomalies || 0)
             + Number(anomaly.query_failures || 0);
+
+        if (refundIssueCount > 0) {
+            renderAccessState(
+                `当前有 ${formatNumber(refundIssueCount)} 项退款售后异常，请优先查看退款失败、积分扣回失败与积分回滚失败专题。`,
+                Number(anomaly.refund_compensation_failures || 0) > 0 ? 'error' : 'warning',
+                { preserveBody: true }
+            );
+            return;
+        }
 
         if (anomalyCount > 0) {
             renderAccessState(`当前有 ${formatNumber(anomalyCount)} 项异常需要关注，请优先查看金额异常、待审核、重复回调、查码失败与支付意图回填。`, 'warning', { preserveBody: true });
@@ -876,6 +959,9 @@
         const querySummary = data?.query_summary || {};
         const target = document.getElementById('paymentsOverviewGrid');
         if (!target) return;
+        const refundIssueCount = Number(anomaly.refund_failures || 0)
+            + Number(anomaly.refund_reclaim_failures || 0)
+            + Number(anomaly.refund_compensation_failures || 0);
 
         const cards = [
             {
@@ -934,6 +1020,15 @@
                 tone: 'warning'
             },
             {
+                icon: 'fas fa-rotate-left',
+                label: '退款异常',
+                value: formatNumber(refundIssueCount),
+                help: `退款失败 ${formatNumber(anomaly.refund_failures)} · 扣回失败 ${formatNumber(anomaly.refund_reclaim_failures)} · 回滚失败 ${formatNumber(anomaly.refund_compensation_failures)}`,
+                tone: Number(anomaly.refund_compensation_failures || 0) > 0 || Number(anomaly.refund_reclaim_failures || 0) > 0
+                    ? 'critical'
+                    : (refundIssueCount > 0 ? 'warning' : 'info')
+            },
+            {
                 icon: 'fas fa-magnifying-glass-chart',
                 label: '查码成功率',
                 value: Number(querySummary.total_attempts || 0) > 0 ? formatPercent(querySummary.success_rate) : '—',
@@ -945,6 +1040,86 @@
         ];
 
         renderMetricCards(target, cards);
+    }
+
+    function renderRefundAlerts(data) {
+        const panel = document.getElementById('paymentsRefundAlertsPanel');
+        const target = document.getElementById('paymentsRefundAlerts');
+        const meta = document.getElementById('paymentsRefundAlertsMeta');
+        if (!panel || !target || !meta) return;
+
+        const topics = (Array.isArray(data?.refund_alert_topics) ? data.refund_alert_topics : [])
+            .filter((topic) => REFUND_TOPIC_KEY_SET.has(String(topic?.key || '').trim().toLowerCase()))
+            .sort((left, right) => REFUND_TOPIC_ORDER.indexOf(String(left?.key || '').trim().toLowerCase()) - REFUND_TOPIC_ORDER.indexOf(String(right?.key || '').trim().toLowerCase()));
+        const items = Array.isArray(data?.refund_alert_items) ? data.refund_alert_items : [];
+        const totalCount = topics.reduce((sum, topic) => sum + Number(topic?.count || 0), 0);
+        const criticalCount = topics.reduce((sum, topic) => sum + (String(topic?.severity || '').trim().toLowerCase() === 'critical' ? Number(topic?.count || 0) : 0), 0);
+
+        if (!topics.length || !items.length) {
+            panel.hidden = true;
+            target.innerHTML = '';
+            meta.textContent = '';
+            return;
+        }
+
+        panel.hidden = false;
+        meta.textContent = criticalCount > 0
+            ? `当前有 ${formatNumber(totalCount)} 项退款售后告警，其中 ${formatNumber(criticalCount)} 项需要立即人工对账。`
+            : `当前有 ${formatNumber(totalCount)} 项退款售后告警，已同步管理员站内通知。`;
+
+        target.innerHTML = topics.map((topic) => {
+            const topicKey = String(topic?.key || '').trim().toLowerCase();
+            const topicItems = items
+                .filter((item) => String(item?.topic_key || '').trim().toLowerCase() === topicKey)
+                .slice(0, 2);
+            const tone = getRefundTopicTone(topic);
+            return `
+                <article class="payments-refund-topic-card severity-${escapeHtml(topic?.severity || 'warning')}">
+                    <div class="payments-refund-topic-head">
+                        <div class="payments-refund-topic-copy">
+                            <div class="payments-refund-topic-title">
+                                <i class="${escapeHtml(getRefundTopicIcon(topicKey))}"></i>
+                                <span>${escapeHtml(topic?.label || '退款告警')}</span>
+                            </div>
+                            <div class="payments-refund-topic-description">${escapeHtml(topic?.description || '')}</div>
+                        </div>
+                        <div class="payments-provider-badges">
+                            <span class="payments-mini-badge ${escapeHtml(tone)}">${escapeHtml(formatNumber(topic?.count || 0))} 项</span>
+                            <button
+                                type="button"
+                                class="payments-anomaly-action-btn request_retry"
+                                data-admin-action="payments-focus-exception-topic"
+                                data-payments-topic-key="${escapeHtml(topicKey)}"
+                            >
+                                查看专题
+                            </button>
+                        </div>
+                    </div>
+                    <div class="payments-refund-alert-stream">
+                        ${topicItems.length ? topicItems.map((item) => `
+                            <div class="payments-refund-alert-item severity-${escapeHtml(item?.severity || 'warning')}">
+                                <div class="payments-refund-alert-item-top">
+                                    <div class="payments-refund-alert-item-copy">
+                                        <strong>${escapeHtml(item?.title || '退款异常')}</strong>
+                                        <span>${escapeHtml(item?.message || '')}</span>
+                                    </div>
+                                    <span class="payments-anomaly-severity">${escapeHtml(getSeverityLabel(item?.severity))}</span>
+                                </div>
+                                <div class="payments-refund-alert-item-meta">
+                                    <span><small>订单号</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
+                                    <span><small>通道</small><strong>${escapeHtml(getProviderLabel(item?.provider))}</strong></span>
+                                    <span><small>时间</small><strong>${escapeHtml(formatDateTime(item?.created_at))}</strong></span>
+                                </div>
+                                ${renderAnomalyOpsState(item)}
+                                <div class="payments-refund-alert-hint">${escapeHtml(getHandlingSuggestion(item))}</div>
+                            </div>
+                        `).join('') : `
+                            <div class="payments-empty-state compact">当前专题暂无可展开的最新明细，请切到异常运维查看完整历史。</div>
+                        `}
+                    </div>
+                </article>
+            `;
+        }).join('');
     }
 
     function renderProviderStats(data) {
@@ -1333,6 +1508,9 @@
                                     <span>${escapeHtml(formatDateTime(order.claimed_at))}</span>
                                 </div>
                             </div>
+                            <div class="payments-order-card-actions">
+                                ${renderOrderActions(order)}
+                            </div>
                         </div>
                     `).join('')}
                 </div>
@@ -1355,6 +1533,7 @@
                             <th>站点</th>
                             <th>创建时间</th>
                             <th>认领时间</th>
+                            <th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1372,6 +1551,7 @@
                                 <td>${escapeHtml((order.site || 'cn').toUpperCase())}</td>
                                 <td>${escapeHtml(formatDateTime(order.created_at))}</td>
                                 <td>${escapeHtml(formatDateTime(order.claimed_at))}</td>
+                                <td>${renderOrderActions(order)}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -1441,6 +1621,7 @@
 
     function rerenderCurrentView() {
         if (!state.summary) return;
+        renderRefundAlerts(state.summary);
         renderOverviewCards(state.summary);
         renderSitewideSummary(state.summary);
         renderBusinessBreakdown(state.summary);
@@ -1485,6 +1666,7 @@
         const data = state.summary;
         state.viewCache[state.activeTab] = getCurrentCacheKey();
         updateToolbarHighlights(data);
+        renderRefundAlerts(data);
         renderOverviewCards(data);
         renderProviderStats(data);
         renderSitewideSummary(data);
@@ -1515,8 +1697,8 @@
         if (!normalizedTargetType || !normalizedTargetId || !normalizedAction) return;
 
         let note = '';
-        if (SENSITIVE_REVIEW_ACTIONS.has(normalizedAction)) {
-            note = String(window.prompt('请填写处理备注，这条备注会进入后台审计记录：', '') || '').trim();
+        if (NOTE_REQUIRED_ACTIONS.has(normalizedAction)) {
+            note = String(window.prompt(getAnomalyActionPrompt(normalizedAction), '') || '').trim();
             if (!note) {
                 window.showToast?.('敏感操作必须填写处理备注。', 'warning');
                 return;
@@ -1527,7 +1709,7 @@
         if (state.anomalyActionLoading[actionKey]) return;
 
         state.anomalyActionLoading[actionKey] = true;
-        renderAnomalies(state.summary || {});
+        rerenderCurrentView();
 
         try {
             const payload = await fetchAdminJson('/api/admin/payments/actions', {
@@ -1550,15 +1732,33 @@
             throw error;
         } finally {
             delete state.anomalyActionLoading[actionKey];
-            if (state.summary) {
-                renderAnomalies(state.summary);
-            }
+            rerenderCurrentView();
         }
     }
 
     function setExceptionTopicFilter(topicKey = 'all') {
         state.exceptionTopicFilter = String(topicKey || 'all').trim().toLowerCase() || 'all';
         renderExceptionTopics(state.summary || {});
+    }
+
+    async function focusExceptionTopic(topicKey = 'all') {
+        const normalizedTopicKey = String(topicKey || 'all').trim().toLowerCase() || 'all';
+        state.exceptionTopicFilter = normalizedTopicKey;
+        switchTab('ops', { reload: false });
+        if (state.initialized) {
+            if (!hasCachedDataForTab('ops')) {
+                await reload();
+            } else {
+                renderExceptionTopics(state.summary || {});
+            }
+        }
+
+        const target = document.getElementById('paymentsExceptionTopics');
+        if (target && typeof target.scrollIntoView === 'function') {
+            window.setTimeout(() => {
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 40);
+        }
     }
 
     async function init() {
@@ -1980,6 +2180,7 @@
         cleanupTestData,
         goToPage,
         handleAnomalyAction,
-        setExceptionTopicFilter
+        setExceptionTopicFilter,
+        focusExceptionTopic
     };
 })();

@@ -1,4 +1,5 @@
 const {
+    getOptionalSupabaseAdmin,
     parseJsonBody,
     requireAuthenticatedUser,
     sendJson
@@ -18,7 +19,8 @@ module.exports = async function handler(req, res) {
         return sendJson(res, 405, { success: false, message: 'Method not allowed' });
     }
 
-    const rateLimit = takeRateLimitToken({
+    const rateLimit = await takeRateLimitToken({
+        supabase: getOptionalSupabaseAdmin(),
         key: `payments-mock-complete:${resolveClientIp(req, { env: process.env }) || 'unknown'}`,
         limit: Math.max(1, Number(process.env.PAYMENTS_MOCK_COMPLETE_RATE_LIMIT_MAX || 10)),
         windowMs: Math.max(10_000, Number(process.env.PAYMENTS_MOCK_COMPLETE_RATE_LIMIT_WINDOW_MS || 60_000))

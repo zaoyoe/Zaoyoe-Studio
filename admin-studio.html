@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=55">
+    <link rel="stylesheet" href="admin-studio.css?v=56">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -4440,6 +4440,15 @@
                                     <p>聚焦充值支付通道、认领效率、成功率与回调稳定性，适合快速判断当前支付链路是否健康。</p>
                                 </div>
                             </div>
+                            <div class="chart-card glass-panel payments-card payments-refund-alert-panel" id="paymentsRefundAlertsPanel" hidden>
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-bell"></i> 退款售后告警</h3>
+                                    <span id="paymentsRefundAlertsMeta">当前暂无退款售后告警。</span>
+                                </div>
+                                <div class="chart-body payments-card-body">
+                                    <div class="payments-refund-alerts" id="paymentsRefundAlerts"></div>
+                                </div>
+                            </div>
                             <div class="kpi-cards-row payments-kpi-grid" id="paymentsOverviewGrid"></div>
                             <div class="charts-grid payments-charts-grid">
                                 <div class="chart-card glass-panel payments-card">
@@ -5710,14 +5719,14 @@
     <script src="js/admin-ai.js"></script>
     <script src="admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1"></script>
     <script src="admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1"></script>
-    <script src="js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_1"></script>
+    <script src="js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_2"></script>
     <script src="admin-config.js?v=20260324_ADMIN_CONFIG_RUNTIME_STYLE_1"></script>
     <script src="admin-homepage.js?v=20260324_HOMEPAGE_RUNTIME_STYLE_2"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
     <script src="js/admin-tickets.js?v=20260324_ADMIN_TICKETS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-access.js"></script>
-    <script src="admin-studio.js?v=20260324_ADMIN_RUNTIME_STYLE_HELPERS_2"></script>
+    <script src="admin-studio.js?v=20260324_ADMIN_RUNTIME_STYLE_HELPERS_3"></script>
     <script src="js/admin-shop.js?v=20260324_SHOP_RUNTIME_STYLE_ZERO_1"></script>
 </body>
 

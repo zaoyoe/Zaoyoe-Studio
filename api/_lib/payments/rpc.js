@@ -49,6 +49,23 @@ async function deductPointsForService({
     return { data, error };
 }
 
+async function deductPointsForRefundReclaim({
+    supabase,
+    userId,
+    amount,
+    reason,
+    referenceId,
+    site = 'cn'
+}) {
+    return supabase.rpc('fn_deduct_points_admin_site_with_breakdown', {
+        p_target_user_id: userId,
+        p_amount: amount,
+        p_reason: reason,
+        p_reference_id: referenceId,
+        p_site: normalizeSite(site)
+    });
+}
+
 async function rechargePointsForPayment({
     supabase,
     userId,
@@ -147,6 +164,7 @@ async function finalizeAfdianCustomPayment({
 
 module.exports = {
     applyPaymentOrderReview,
+    deductPointsForRefundReclaim,
     deductPointsForService,
     finalizeAfdianCustomPayment,
     getUserBalance,

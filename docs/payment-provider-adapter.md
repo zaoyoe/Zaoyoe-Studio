@@ -115,14 +115,16 @@
 - `/api/payments/create` 已能通过官方 API 创建虎皮椒支付，并把真实 `trade_order_id` 写回 `payment_checkout_sessions` / 预创建的 `payment_orders`
 - Railway 服务端已新增 `/api/payments/hupijiao/webhook`，会验签、记录 `payment_events`、更新 `payment_orders`、自动为已绑定账号入账，并回填 `payment_checkout_sessions.payment_order_id`
 - `hupijiao.queryOrder` 已接入官方查询接口，后续只需要再暴露后台/补单入口即可
-- 退款 helper 仍停留在共享层，后台退款流和运营 UI 还没真正接上
+- 后台退款流已经接入支付异常页和最近订单列表，未入账订单会先查单再退款
+- 已入账 / 已发点订单现在会先精确扣回积分，再调虎皮椒退款；若网关失败，会按 paid / bonus 拆分自动补回积分并保留审计事件
+- 这条“已入账退款”链路依赖 migration：`/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260324_add_admin_refund_reclaim_rpc.sql`
 
 上线前仍建议完成的收口：
 
 1. 用真实商户号完成一次正式联调，确认 `notify_url` / `return_url` 域名配置无误
 2. 决定是否启用 `HUPIJIAO_WEBHOOK_TRUSTED_PROXIES` / `HUPIJIAO_WEBHOOK_ALLOWED_IPS` 做来源链路收口
 3. 把虎皮椒查单/补单能力接进后台支付对账页面，而不是只停留在 adapter 层
-4. 把退款链路从 helper 推进到后台实际操作流
+4. 上线前先执行 `20260324_add_admin_refund_reclaim_rpc.sql`，否则“已入账订单退款”会保持 fail-closed
 
 ## 约束
 

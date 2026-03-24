@@ -23,6 +23,21 @@ const SECRET_ENV_FALLBACKS = Object.freeze({
     hupijiao_api_key: ['HUPIJIAO_API_KEY'],
     hupijiao_secret_key: ['HUPIJIAO_SECRET_KEY']
 });
+const PUBLIC_PROVIDER_FIELDS = Object.freeze({
+    mock: ['enabled', 'display_name', 'description'],
+    afdian: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint'],
+    hupijiao: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint']
+});
+const PUBLIC_MOCK_RUNTIME_MESSAGES = Object.freeze({
+    local_request_host: '当前环境允许使用模拟支付。',
+    local_app_base_url: '当前环境允许使用模拟支付。',
+    remote_whitelist_until_enabled: '当前环境临时允许使用模拟支付。',
+    remote_whitelist_enabled: '当前环境允许使用模拟支付。',
+    remote_whitelist_until_invalid: '当前环境暂未开放模拟支付。',
+    remote_whitelist_until_expired: '当前环境暂未开放模拟支付。',
+    production_like_runtime: '当前环境暂未开放模拟支付。',
+    remote_whitelist_required: '当前环境暂未开放模拟支付。'
+});
 
 function sanitizeOrigin(value, fallback = DEFAULT_SITE_ORIGIN) {
     const normalized = String(value || '').trim();
@@ -180,6 +195,47 @@ function getMockRuntimeState(runtime = {}) {
     return runtime && typeof runtime === 'object' ? runtime : {};
 }
 
+function pickPublicProviderConfig(providerKey, provider = {}) {
+    const allowedFields = PUBLIC_PROVIDER_FIELDS[providerKey] || [];
+    const publicProvider = {};
+
+    allowedFields.forEach((fieldName) => {
+        if (Object.prototype.hasOwnProperty.call(provider, fieldName)) {
+            publicProvider[fieldName] = provider[fieldName];
+        }
+    });
+
+    return publicProvider;
+}
+
+function sanitizePublicPaymentChannels(paymentChannels = {}) {
+    const providers = paymentChannels?.providers || {};
+    return {
+        active_provider: paymentChannels?.active_provider || 'afdian',
+        providers: {
+            mock: pickPublicProviderConfig('mock', providers.mock),
+            afdian: pickPublicProviderConfig('afdian', providers.afdian),
+            hupijiao: pickPublicProviderConfig('hupijiao', providers.hupijiao)
+        }
+    };
+}
+
+function buildPublicPaymentRuntime(runtime = null) {
+    const mockRuntime = getMockRuntimeState(runtime);
+    const allowed = mockRuntime.allowed === true;
+    const reason = String(mockRuntime.reason || '').trim();
+
+    return {
+        mock_payment: {
+            allowed,
+            reason: reason || (allowed ? 'enabled' : 'disabled'),
+            message: PUBLIC_MOCK_RUNTIME_MESSAGES[reason] || (allowed
+                ? '当前环境允许使用模拟支付。'
+                : '当前环境暂未开放模拟支付。')
+        }
+    };
+}
+
 function resolvePublicActiveProvider(paymentChannels = {}) {
     const providers = paymentChannels?.providers || {};
     const afdianCheckoutUrl = String(providers.afdian?.checkout_url || '').trim();
@@ -203,12 +259,12 @@ function buildPublicPaymentConfig(paymentChannels, rechargeOptions, runtime = nu
 
     if (mockRuntime.allowed === true) {
         return {
-            paymentChannels: normalizedPaymentChannels,
+            paymentChannels: sanitizePublicPaymentChannels(normalizedPaymentChannels),
             rechargeOptions: normalizedRechargeOptions
         };
     }
 
-    const publicPaymentChannels = JSON.parse(JSON.stringify(normalizedPaymentChannels));
+    const publicPaymentChannels = sanitizePublicPaymentChannels(normalizedPaymentChannels);
     const publicRechargeOptions = {
         ...normalizedRechargeOptions,
         mock_payment_enabled: false
@@ -317,6 +373,7 @@ async function buildPaymentSecretStatus(supabase, env = process.env) {
 
 module.exports = {
     buildPublicPaymentConfig,
+    buildPublicPaymentRuntime,
     DEFAULT_AFDIAN_CHECKOUT_URL,
     DEFAULT_SITE_ORIGIN,
     PROVIDER_KEYS,
