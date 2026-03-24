@@ -348,6 +348,48 @@ function applyPromptsThemeParticleClasses(element, classes, vars = null) {
     setPromptsCssVars(element, vars);
 }
 
+function getPromptsPageOverflowState() {
+    return {
+        htmlOverflow: document.documentElement.style.getPropertyValue('overflow'),
+        bodyOverflow: document.body.style.getPropertyValue('overflow')
+    };
+}
+
+function setPromptsPageOverflow(value) {
+    setPromptsCssVars(document.documentElement, {
+        overflow: value
+    });
+    setPromptsCssVars(document.body, {
+        overflow: value
+    });
+}
+
+function setPromptsPercentPosition(element, x, y) {
+    if (!element) return;
+    setPromptsCssVars(element, {
+        left: `${x}%`,
+        top: `${y}%`
+    });
+}
+
+function resetPromptsTextareaAutoHeight(element) {
+    if (!element) return;
+    setPromptsCssVars(element, {
+        height: 'auto',
+        'overflow-y': 'hidden'
+    });
+}
+
+function applyPromptsTextareaAutoHeight(element, maxHeight, minHeight = 0) {
+    if (!element) return;
+    resetPromptsTextareaAutoHeight(element);
+    const targetHeight = Math.max(minHeight, Math.min(element.scrollHeight, maxHeight));
+    setPromptsCssVars(element, {
+        height: `${targetHeight}px`,
+        'overflow-y': element.scrollHeight > targetHeight ? 'auto' : 'hidden'
+    });
+}
+
 function setCommentCollapseVisibility(allComments, collapsed) {
     let shownParents = 0;
 
@@ -862,13 +904,9 @@ function lockAnnouncementBackground(lockTarget) {
     if (window.iOSScrollLock?.isLocked) return;
 
     announcementOwnsScrollLock = true;
-    announcementOverflowRestore = {
-        htmlOverflow: document.documentElement.style.overflow,
-        bodyOverflow: document.body.style.overflow
-    };
+    announcementOverflowRestore = getPromptsPageOverflowState();
 
-    document.documentElement.style.overflow = 'hidden';
-    document.body.style.overflow = 'hidden';
+    setPromptsPageOverflow('hidden');
 
     if (window.iOSScrollLock) {
         window.iOSScrollLock.lockLight(lockTarget);
@@ -883,11 +921,12 @@ function unlockAnnouncementBackground() {
     }
 
     if (announcementOverflowRestore) {
-        document.documentElement.style.overflow = announcementOverflowRestore.htmlOverflow;
-        document.body.style.overflow = announcementOverflowRestore.bodyOverflow;
+        setPromptsPageOverflow(announcementOverflowRestore.htmlOverflow || '');
+        setPromptsCssVars(document.body, {
+            overflow: announcementOverflowRestore.bodyOverflow || ''
+        });
     } else {
-        document.documentElement.style.overflow = '';
-        document.body.style.overflow = '';
+        setPromptsPageOverflow('');
     }
 
     announcementOverflowRestore = null;
@@ -1294,9 +1333,6 @@ function generateDecorationParticles(theme) {
         leaves: 12, rain: 30, sunshine: 5 // Sakura: 20 -> 24 for better flow
     };
 
-    // Style for SVG content to fill the particle span
-    const svgStyle = "width:100%;height:100%;filter:drop-shadow(0 1px 1px rgba(0,0,0,0.1));display:block;";
-
     // Helper to generate random leaf SVG
     const getLeafContent = () => {
         const type = Math.floor(Math.random() * 3);
@@ -1305,14 +1341,14 @@ function generateDecorationParticles(theme) {
 
         // 1. Maple Leaf (Maple)
         if (type === 0) {
-            return `<svg viewBox="0 0 24 24" fill="${color}" style="${svgStyle}"><path d="M17,12L12,17L7,12L2,17V7L7,2L12,7L17,2V12M22,12V17H17V12H22M22,2V7H17V2H22Z" style="display:none"/><path d="M12.5,2C12.5,2 12.8,4.5 11,6C9,7.5 7,6 7,6L6,8C6,8 3,7.5 2,9C1,10.5 4,11 4,11L3,13C3,13 1,12.5 0,14C-1,15.5 2,16 2,16L3,18C3,18 2,19.5 4,20.5C6,21.5 7,19.5 7,19.5L9,21C9,21 10,22 13,22C16,22 16,19 16,19L17,20.5C17,20.5 19,20.5 20,19C21,17.5 19,16 19,16L21,14.5C21,14.5 23,14 22,12C21,10 19,10.5 19,10.5L20,8C20,8 19,6 17,6C15,6 14.5,8 14.5,8L12.5,2Z" /></svg>`;
+            return `<svg viewBox="0 0 24 24" fill="${color}" class="decoration-svg"><path d="M12.5,2C12.5,2 12.8,4.5 11,6C9,7.5 7,6 7,6L6,8C6,8 3,7.5 2,9C1,10.5 4,11 4,11L3,13C3,13 1,12.5 0,14C-1,15.5 2,16 2,16L3,18C3,18 2,19.5 4,20.5C6,21.5 7,19.5 7,19.5L9,21C9,21 10,22 13,22C16,22 16,19 16,19L17,20.5C17,20.5 19,20.5 20,19C21,17.5 19,16 19,16L21,14.5C21,14.5 23,14 22,12C21,10 19,10.5 19,10.5L20,8C20,8 19,6 17,6C15,6 14.5,8 14.5,8L12.5,2Z" /></svg>`;
         }
         // 2. Oak Leaf (Oak - Lobed)
         if (type === 1) {
-            return `<svg viewBox="0 0 24 24" fill="${color}" style="${svgStyle}"><path d="M7,18C6,18 5,16.5 5.5,15C6,13.5 4,12 4,12C4,12 5,10.5 6.5,11C8,11.5 9,10 9,10C9,10 8,8 9.5,7C11,6 12,3 13,3C14,3 15.5,5 15,7C14.5,9 16,9.5 16,9.5C16,9.5 18,9 18.5,10.5C19,12 17,13 17,13C17,13 18.5,14 18,16C17.5,18 16,18 15,17C14,16 13,17 12,18C11,19 12,21 12,21H11C11,21 10,19 11,18C12,17 10,16 10,16C10,16 8,18 7,18Z"/></svg>`;
+            return `<svg viewBox="0 0 24 24" fill="${color}" class="decoration-svg"><path d="M7,18C6,18 5,16.5 5.5,15C6,13.5 4,12 4,12C4,12 5,10.5 6.5,11C8,11.5 9,10 9,10C9,10 8,8 9.5,7C11,6 12,3 13,3C14,3 15.5,5 15,7C14.5,9 16,9.5 16,9.5C16,9.5 18,9 18.5,10.5C19,12 17,13 17,13C17,13 18.5,14 18,16C17.5,18 16,18 15,17C14,16 13,17 12,18C11,19 12,21 12,21H11C11,21 10,19 11,18C12,17 10,16 10,16C10,16 8,18 7,18Z"/></svg>`;
         }
         // 3. Poplar/Birch (Simple Teardrop)
-        return `<svg viewBox="0 0 24 24" fill="${color}" style="${svgStyle}"><path d="M12,2C12,2 4,8 4,14C4,19 9,22 12,22C15,22 20,19 20,14C20,8 12,2 12,2M12,20C12,20 11,16 12,12"/></svg>`;
+        return `<svg viewBox="0 0 24 24" fill="${color}" class="decoration-svg"><path d="M12,2C12,2 4,8 4,14C4,19 9,22 12,22C15,22 20,19 20,14C20,8 12,2 12,2M12,20C12,20 11,16 12,12"/></svg>`;
     };
 
     // Helper to generate random Sakura SVG
@@ -1324,12 +1360,12 @@ function generateDecorationParticles(theme) {
         // 60% Full Flower (5 Petals with authentic notches)
         if (type > 0.4) {
             // A more detailed 5-petal sakura shape
-            return `<svg viewBox="0 0 100 100" fill="${color}" style="${svgStyle}"><path d="M50 50 L50 15 C50 15 55 20 60 15 C65 10 75 25 50 50 Z M50 50 L85 50 C85 50 80 55 85 60 C90 65 75 75 50 50 Z M50 50 L50 85 C50 85 45 80 40 85 C35 90 25 75 50 50 Z M50 50 L15 50 C15 50 20 45 15 40 C10 35 25 25 50 50 Z M50 50 L25 25 C25 25 30 20 25 15 C20 10 10 20 50 50 Z" stroke="none" opacity="0.9"/><circle cx="50" cy="50" r="4" fill="#fff1f2"/></svg>`;
+            return `<svg viewBox="0 0 100 100" fill="${color}" class="decoration-svg"><path d="M50 50 L50 15 C50 15 55 20 60 15 C65 10 75 25 50 50 Z M50 50 L85 50 C85 50 80 55 85 60 C90 65 75 75 50 50 Z M50 50 L50 85 C50 85 45 80 40 85 C35 90 25 75 50 50 Z M50 50 L15 50 C15 50 20 45 15 40 C10 35 25 25 50 50 Z M50 50 L25 25 C25 25 30 20 25 15 C20 10 10 20 50 50 Z" stroke="none" opacity="0.9"/><circle cx="50" cy="50" r="4" fill="#fff1f2"/></svg>`;
         }
 
         // 40% Single Petal (Notched tip, not heart)
         // Classic Sakura petal shape: wider top with a notch, tapering bottom
-        return `<svg viewBox="0 0 100 100" fill="${color}" style="${svgStyle}"><path d="M50 90 C50 90 20 60 20 40 C20 25 30 10 45 20 C48 22 50 25 50 25 C50 25 52 22 55 20 C70 10 80 25 80 40 C80 60 50 90 50 90 Z" opacity="0.8"/></svg>`;
+        return `<svg viewBox="0 0 100 100" fill="${color}" class="decoration-svg"><path d="M50 90 C50 90 20 60 20 40 C20 25 30 10 45 20 C48 22 50 25 50 25 C50 25 52 22 55 20 C70 10 80 25 80 40 C80 60 50 90 50 90 Z" opacity="0.8"/></svg>`;
     };
 
 
@@ -1339,7 +1375,7 @@ function generateDecorationParticles(theme) {
     // Helper to generate random Snowflake SVG (Theme Adaptive)
     const getSnowContent = () => {
         // High-quality Snowflake SVG
-        return `<svg viewBox="0 0 24 24" fill="var(--snow-color)" style="${svgStyle}"><path d="M12,2L12,22 M2,12L22,12 M19.07,4.93L4.93,19.07 M19.07,19.07L4.93,4.93 M12,2C12,2 14,6 16,6 M12,2C12,2 10,6 8,6 M12,22C12,22 14,18 16,18 M12,22C12,22 10,18 8,18 M2,12C2,12 6,10 6,8 M2,12C2,12 6,14 6,16 M22,12C22,12 18,10 18,8 M22,12C22,12 18,14 18,16" stroke="var(--snow-color)" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`;
+        return `<svg viewBox="0 0 24 24" fill="var(--snow-color)" class="decoration-svg"><path d="M12,2L12,22 M2,12L22,12 M19.07,4.93L4.93,19.07 M19.07,19.07L4.93,4.93 M12,2C12,2 14,6 16,6 M12,2C12,2 10,6 8,6 M12,22C12,22 14,18 16,18 M12,22C12,22 10,18 8,18 M2,12C2,12 6,10 6,8 M2,12C2,12 6,14 6,16 M22,12C22,12 18,10 18,8 M22,12C22,12 18,14 18,16" stroke="var(--snow-color)" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`;
     };
 
     for (let i = 0; i < count; i++) {
@@ -1481,11 +1517,11 @@ const ParticleSystem = {
             // 原创手绘樱花矢量图 (SVG)
             // 包含花蕊细节和渐变色
             return `
-            <svg viewBox="0 0 32 32" width="100%" height="100%" style="overflow:visible;">
+            <svg viewBox="0 0 32 32" width="100%" height="100%" class="decoration-svg decoration-svg--overflow-visible">
                 <defs>
                     <radialGradient id="sakuraGradient" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-                        <stop offset="0%" style="stop-color:#ffe6ea;stop-opacity:1" />
-                        <stop offset="100%" style="stop-color:#ffb7b2;stop-opacity:1" />
+                        <stop offset="0%" stop-color="#ffe6ea" stop-opacity="1" />
+                        <stop offset="100%" stop-color="#ffb7b2" stop-opacity="1" />
                     </radialGradient>
                     <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
                         <feGaussianBlur stdDeviation="1" result="blur"/>
@@ -1503,7 +1539,7 @@ const ParticleSystem = {
         if (this.theme === 'snow') {
             // 原创矢量雪花 (SVG) - 简化版 (无 Gradient/Filter，确保颜色正确)
             return `
-            <svg viewBox="0 0 32 32" width="100%" height="100%" style="overflow:visible;">
+            <svg viewBox="0 0 32 32" width="100%" height="100%" class="decoration-svg decoration-svg--overflow-visible">
                 <g stroke="var(--snow-color)" stroke-width="1.5" stroke-linecap="round" fill="none">
                     <!-- 主轴 -->
                     <path d="M16 2 L16 30 M8 6 L24 26 M24 6 L8 26" />
@@ -1893,7 +1929,9 @@ const ParticleSystem = {
             const el = document.createElement('div');
             applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--splash');
             // 修正：初始位置
-            el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+            setPromptsCssVars(el, {
+                transform: `translate3d(${x}px, ${y}px, 0)`
+            });
 
             this.container.appendChild(el);
 
@@ -1935,7 +1973,9 @@ const ParticleSystem = {
             // --- 烟花物理逻辑: 火箭 ---
             if (p.type === 'rocket') {
                 p.y += p.vy * timeScale;
-                p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+                setPromptsCssVars(p.el, {
+                    transform: `translate3d(${p.x}px, ${p.y}px, 0)`
+                });
 
                 // 到达目标高度或速度耗尽则爆炸
                 if (p.y <= p.targetY) {
@@ -1954,7 +1994,9 @@ const ParticleSystem = {
                 if (deltaTime < 10) hzDampener = 0.6; // 240Hz 降速 40%
 
                 p.y += p.speed * timeScale * hzDampener;
-                p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+                setPromptsCssVars(p.el, {
+                    transform: `translate3d(${p.x}px, ${p.y}px, 0)`
+                });
                 // 边界检测：超出屏幕底部移除
                 if (p.y > this.height) {
                     // 溅起水花
@@ -1973,8 +2015,10 @@ const ParticleSystem = {
                 p.y += p.vy * timeScale;
                 p.opacity -= 0.05 * timeScale; // 快速消失
 
-                p.el.style.opacity = p.opacity;
-                p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+                setPromptsCssVars(p.el, {
+                    opacity: String(p.opacity),
+                    transform: `translate3d(${p.x}px, ${p.y}px, 0)`
+                });
 
                 if (p.opacity <= 0) {
                     this.particles.splice(i, 1);
@@ -1993,8 +2037,10 @@ const ParticleSystem = {
                 p.y += p.vy * timeScale;
                 p.opacity -= p.decay * timeScale;
 
-                p.el.style.opacity = p.opacity;
-                p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+                setPromptsCssVars(p.el, {
+                    opacity: String(p.opacity),
+                    transform: `translate3d(${p.x}px, ${p.y}px, 0)`
+                });
 
                 if (p.opacity <= 0) {
                     this.particles.splice(i, 1);
@@ -2091,8 +2137,10 @@ const ParticleSystem = {
             }
 
             // 渲染
-            p.el.style.opacity = p.opacity;
-            p.el.style.transform = `translate3d(${p.currentX}px, ${p.y}px, 0) rotate(${p.rotation}deg)`;
+            setPromptsCssVars(p.el, {
+                opacity: String(p.opacity),
+                transform: `translate3d(${p.currentX}px, ${p.y}px, 0) rotate(${p.rotation}deg)`
+            });
         }
 
         this.frameId = requestAnimationFrame((t) => this.loop(t));
@@ -2246,8 +2294,7 @@ function startHeartFloat(container) {
         // --- Initial Move ---
         const initialPos = getSafePosition();
         positions[index] = initialPos;
-        heart.style.left = `${initialPos.x}%`;
-        heart.style.top = `${initialPos.y}%`;
+        setPromptsPercentPosition(heart, initialPos.x, initialPos.y);
 
         // --- Schedule Next Move ---
         const scheduleNextMove = () => {
@@ -2270,8 +2317,7 @@ function startHeartFloat(container) {
                     const newPos = getSafePosition();
                     positions[index] = newPos; // Update tracker
 
-                    heart.style.left = `${newPos.x}%`;
-                    heart.style.top = `${newPos.y}%`;
+                    setPromptsPercentPosition(heart, newPos.x, newPos.y);
 
                     // 3. Fade In
                     requestAnimationFrame(() => {
@@ -5429,8 +5475,7 @@ function openPromptModal(id) {
     // Unlike full lock(), this does NOT set position:fixed on body,
     // so Safari's bottom bar keeps sampling black background (not canvas blue).
     if (isPromptModalIOSMobile()) {
-        document.documentElement.style.overflow = 'hidden';
-        document.body.style.overflow = 'hidden';
+        setPromptsPageOverflow('hidden');
     }
 
     showPromptModalStatusBarShield();
@@ -5525,18 +5570,24 @@ function toggleCommentMode() {
             const dy = first.top - last.top;
             const wRatio = first.width / last.width;
 
-            promptArea.style.transform = `translate(${dx}px, ${dy}px) scale(${wRatio})`;
-            promptArea.style.transformOrigin = 'top left';
+            setPromptsCssVars(promptArea, {
+                transform: `translate(${dx}px, ${dy}px) scale(${wRatio})`,
+                'transform-origin': 'top left'
+            });
 
             requestAnimationFrame(() => {
-                promptArea.style.transition = 'transform 0.5s ease-in-out';
-                promptArea.style.transform = '';
+                setPromptsCssVars(promptArea, {
+                    transition: 'transform 0.5s ease-in-out',
+                    transform: null
+                });
 
                 const img = document.querySelector('.modal-image-col img');
                 if (img) img.classList.add('blur-motion');
 
                 setTimeout(() => {
-                    promptArea.style.transition = '';
+                    setPromptsCssVars(promptArea, {
+                        transition: null
+                    });
                     if (img) img.classList.remove('blur-motion');
                 }, 500);
             });
@@ -5834,15 +5885,11 @@ function getPromptCommentComposerStableViewportHeight() {
 function autoExpandPromptCommentComposerInput(input) {
     if (!input) return;
     if (!input.value.trim()) {
-        input.style.height = 'auto';
-        input.style.overflowY = 'hidden';
+        resetPromptsTextareaAutoHeight(input);
         return;
     }
-    input.style.height = 'auto';
     const maxHeight = Math.min(Math.round((window.innerHeight || 0) * 0.42), 360);
-    const targetHeight = Math.max(160, Math.min(input.scrollHeight, maxHeight || 360));
-    input.style.height = `${targetHeight}px`;
-    input.style.overflowY = input.scrollHeight > targetHeight ? 'auto' : 'hidden';
+    applyPromptsTextareaAutoHeight(input, maxHeight || 360, 160);
 }
 
 function syncPromptCommentComposerEmptyState() {
@@ -6009,16 +6056,14 @@ function clearCommentDraftFields() {
         triggerInput.value = '';
         delete triggerInput.dataset.replyTo;
         delete triggerInput.dataset.replyToName;
-        triggerInput.style.height = 'auto';
-        triggerInput.style.overflowY = 'hidden';
+        resetPromptsTextareaAutoHeight(triggerInput);
     }
 
     if (input) {
         input.value = '';
         delete input.dataset.replyTo;
         delete input.dataset.replyToName;
-        input.style.height = 'auto';
-        input.style.overflowY = 'hidden';
+        resetPromptsTextareaAutoHeight(input);
     }
 
     syncPromptCommentComposerMeta();
@@ -7650,13 +7695,8 @@ function formatMentions(text) {
 }
 
 function autoExpandTextarea(textarea) {
-    // Reset height to auto to properly calculate scrollHeight
-    textarea.style.height = 'auto';
-    // Set height to scrollHeight (content height)
     const maxHeight = 120; // Max ~5 lines, matches CSS max-height
-    textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
-    // Show scrollbar if content exceeds max height
-    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    applyPromptsTextareaAutoHeight(textarea, maxHeight);
 }
 
 function handleCommentKeydown(e) {
@@ -7781,8 +7821,7 @@ async function submitComment() {
     // Clear input IMMEDIATELY for instant feedback
     input.value = '';
     // Reset textarea height to original single-line
-    input.style.height = 'auto';
-    input.style.overflowY = 'hidden';
+    resetPromptsTextareaAutoHeight(input);
     delete input.dataset.replyTo;
     delete input.dataset.replyToName;
 
@@ -7907,9 +7946,11 @@ function positionCommentSortDropdown() {
         Math.max(12, viewportWidth - dropdownWidth - 12)
     ));
 
-    dropdown.style.top = `${top}px`;
-    dropdown.style.left = `${left}px`;
-    dropdown.style.right = 'auto';
+    setPromptsCssVars(dropdown, {
+        top: `${top}px`,
+        left: `${left}px`,
+        right: 'auto'
+    });
 }
 
 function setCommentSortDropdownOpen(open) {
@@ -8317,8 +8358,7 @@ function closePromptModal() {
 
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
         // Remove manual overflow:hidden added in openPromptModal for iOS
-        document.documentElement.style.overflow = '';
-        document.body.style.overflow = '';
+        setPromptsPageOverflow('');
         document.body.classList.remove('prompt-modal-keyboard-docked');
         document.body.classList.remove('modal-open');
         promptModalBaseScrollY = 0;

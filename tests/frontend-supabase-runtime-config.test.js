@@ -2453,7 +2453,12 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         "modal.style.setProperty('height',",
         "sheet.style.setProperty('height',",
         "overlay.style.setProperty('--composer-keyboard-offset',",
-        "sheet.style.removeProperty('max-height')"
+        "sheet.style.removeProperty('max-height')",
+        "document.documentElement.style.overflow = 'hidden'",
+        "document.body.style.overflow = 'hidden'",
+        'style="${svgStyle}"',
+        'style="overflow:visible;"',
+        'style="stop-color:#ffe6ea;stop-opacity:1"'
     ];
 
     for (const marker of removedRuntimeMarkers) {
@@ -2484,7 +2489,12 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'setPromptsCssVars(backdrop, {',
         'setPromptsCssVars(modal, {',
         'setPromptsCssVars(overlay, {',
-        'setPromptsCssVars(sheet, {'
+        'setPromptsCssVars(sheet, {',
+        'getPromptsPageOverflowState()',
+        "setPromptsPageOverflow('hidden')",
+        'setPromptsPercentPosition(heart, initialPos.x, initialPos.y)',
+        'applyPromptsTextareaAutoHeight(textarea, maxHeight)',
+        'resetPromptsTextareaAutoHeight(input)'
     ];
 
     for (const marker of runtimeMarkers) {
@@ -2511,7 +2521,9 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         '.prompts-theme-particle--spark',
         '.prompts-theme-particle--rain',
         '.prompts-theme-particle--snow',
-        '.prompts-theme-particle--decor'
+        '.prompts-theme-particle--decor',
+        '.decoration-svg',
+        '.decoration-svg--overflow-visible'
     ];
 
     for (const marker of styleMarkers) {
@@ -2519,12 +2531,12 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260324_PROMPTS_UI_STATE_STYLES_2'),
+        promptsHtml.includes('prompts-poetry.css?v=20260324_PROMPTS_UI_STATE_STYLES_4'),
         true,
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260324_PROMPTS_UI_STATE_STYLES_3'),
+        promptsHtml.includes('prompts-poetry.js?v=20260324_PROMPTS_UI_STATE_STYLES_4'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
     );
