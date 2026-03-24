@@ -966,6 +966,18 @@ body {
     color: var(--text-main);
 }
 
+.admin-tabs .admin-tab.active::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--accent-purple);
+    box-shadow: 0 -1px 8px rgba(107, 158, 206, 0.4);
+    border-radius: 999px;
+}
+
 .admin-tab:hover:not(.active) {
     color: var(--text-main);
 }
@@ -2421,11 +2433,30 @@ body {
 }
 
 .batch-progress-fill {
+    appearance: none;
+    -webkit-appearance: none;
     height: 100%;
     background: linear-gradient(90deg, var(--accent-purple), #00d4ff);
     border-radius: 10px;
-    transition: width 0.3s ease;
-    width: 0%;
+    width: 100%;
+    overflow: hidden;
+    display: block;
+    border: none;
+}
+
+.batch-progress-fill::-webkit-progress-bar {
+    background: transparent;
+    border-radius: 10px;
+}
+
+.batch-progress-fill::-webkit-progress-value {
+    background: linear-gradient(90deg, var(--accent-purple), #00d4ff);
+    border-radius: 10px;
+}
+
+.batch-progress-fill::-moz-progress-bar {
+    background: linear-gradient(90deg, var(--accent-purple), #00d4ff);
+    border-radius: 10px;
 }
 
 .batch-progress-text {
@@ -20745,6 +20776,118 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .color-swatch--blue {
     background: #6b9ece;
+}
+
+.color-swatch--black {
+    background: #000000;
+}
+
+.color-swatch--gray,
+.color-swatch--grey {
+    background: #808080;
+}
+
+.color-swatch--purple {
+    background: #9b59b6;
+}
+
+.color-swatch--pink {
+    background: #e91e63;
+}
+
+.color-swatch--brown {
+    background: #8b4513;
+}
+
+.color-swatch--gold,
+.color-swatch--golden {
+    background: #ffd700;
+}
+
+.color-swatch--silver {
+    background: #c0c0c0;
+}
+
+.color-swatch--bronze {
+    background: #cd7f32;
+}
+
+.color-swatch--cyan {
+    background: #00bcd4;
+}
+
+.color-swatch--teal {
+    background: #008080;
+}
+
+.color-swatch--navy {
+    background: #001f3f;
+}
+
+.color-swatch--maroon {
+    background: #800000;
+}
+
+.color-swatch--beige {
+    background: #f5f5dc;
+}
+
+.color-swatch--cream {
+    background: #fffdd0;
+}
+
+.color-swatch--ivory {
+    background: #fffff0;
+}
+
+.color-swatch--tan {
+    background: #d2b48c;
+}
+
+.color-swatch--coral {
+    background: #ff7f50;
+}
+
+.color-swatch--salmon {
+    background: #fa8072;
+}
+
+.color-swatch--turquoise {
+    background: #40e0d0;
+}
+
+.color-swatch--lavender {
+    background: #e6e6fa;
+}
+
+.color-swatch--dark-blue {
+    background: #00008b;
+}
+
+.color-swatch--dark-green {
+    background: #006400;
+}
+
+.color-swatch--dark-gray,
+.color-swatch--dark-grey {
+    background: #404040;
+}
+
+.color-swatch--light-blue {
+    background: #add8e6;
+}
+
+.color-swatch--light-green {
+    background: #90ee90;
+}
+
+.color-swatch--light-gray,
+.color-swatch--light-grey {
+    background: #d3d3d3;
+}
+
+.color-swatch--unknown {
+    background: #888888;
 }
 
 /* Font size indicator */

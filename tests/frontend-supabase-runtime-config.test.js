@@ -1599,7 +1599,11 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         "card.style.display = visible ? '' : 'none';",
         "msg.style.cssText = 'grid-column: 1/-1; text-align: center; color: var(--text-dim); padding: 2rem;'",
         '<p style="grid-column: 1/-1; text-align: center; color: var(--text-dim);">No prompts yet. Create your first one!</p>',
-        'style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"'
+        'style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"',
+        'indicator.style.left = `${left}px`;',
+        'indicator.style.width = `${tabRect.width}px`;',
+        'return `<div class="color-swatch" style="background: ${hex}" data-color="${color}"></div>`;',
+        "document.getElementById('batchProgressFill').style.width = `${percent}%`;"
     ];
 
     for (const marker of removedRuntimeMarkers) {
@@ -1615,6 +1619,8 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         "card.classList.add('is-removing');",
         "syncAdminSearchCardVisibility(card, visible);",
         "setAdminStudioVisibility(suggestionsSection, true, 'is-visible');",
+        "document.getElementById('batchProgressFill').value = percent;",
+        "color-swatch--unknown",
         'class="key-actions"',
         'btn-add-config btn-add-config--compact'
     ];
@@ -1630,6 +1636,10 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         '.toast.is-dismissing',
         '.admin-card--hidden-by-search',
         '.admin-card.is-removing',
+        '.admin-tabs .admin-tab.active::after',
+        '.batch-progress-fill::-webkit-progress-value',
+        '.color-swatch--dark-blue',
+        '.color-swatch--unknown',
         '.api-key-row .btn-add-config.btn-add-config--compact',
         '.api-key-row .btn-add-config.btn-add-config--danger'
     ];
@@ -1639,14 +1649,81 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=53'),
+        adminStudioHtml.includes('admin-studio.css?v=54'),
         true,
         'admin-studio.html should load the latest admin studio stylesheet version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-studio.js?v=20260324_ADMIN_RUNTIME_STYLE_HELPERS_1'),
+        adminStudioHtml.includes('admin-studio.js?v=20260324_ADMIN_RUNTIME_STYLE_HELPERS_2'),
         true,
         'admin-studio.html should load the latest admin studio runtime version'
+    );
+});
+
+test('force input background fix externalizes focus styling and avoids repeated inline writes', () => {
+    const forceInputScript = readRepoFile('force-input-bg-fix.js');
+    const forceInputStyles = readRepoFile('css/force-input-bg-fix.css');
+    const guestbookHtml = readRepoFile('guestbook.html');
+    const legacyIndexHtml = readRepoFile('index_old.html');
+
+    const removedMarkers = [
+        "input.style.removeProperty('background');",
+        "input.style.removeProperty('background-color');",
+        "input.style.removeProperty('border');",
+        "input.style.removeProperty('border-color');",
+        "input.style.removeProperty('box-shadow');",
+        "input.style.setProperty('background', 'rgba(0, 0, 0, 0.4)', 'important');",
+        "input.style.setProperty('background-color', 'rgba(0, 0, 0, 0.4)', 'important');",
+        "input.style.setProperty('border', '1px solid rgba(155, 93, 229, 0.7)', 'important');",
+        "input.style.setProperty('border-color', 'rgba(155, 93, 229, 0.7)', 'important');",
+        "input.style.setProperty('box-shadow', '0 0 0 3px rgba(155, 93, 229, 0.15)', 'important');"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(forceInputScript.includes(marker), false, `force-input-bg-fix.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "const FORCE_INPUT_FIX_CLASS = 'force-input-bg-fixed';",
+        "const FORCE_INPUT_FIX_FOCUSED_CLASS = 'force-input-bg-fixed--focused';",
+        "const FORCE_INPUT_FIX_BOUND_ATTR = 'data-force-input-bg-bound';",
+        "input.classList.add(FORCE_INPUT_FIX_CLASS);",
+        "input.classList.toggle(FORCE_INPUT_FIX_FOCUSED_CLASS, input === document.activeElement);",
+        "input.setAttribute(FORCE_INPUT_FIX_BOUND_ATTR, 'true');"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(forceInputScript.includes(marker), true, `force-input-bg-fix.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.force-input-bg-fixed {',
+        '.force-input-bg-fixed.force-input-bg-fixed--focused {'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(forceInputStyles.includes(marker), true, `force-input-bg-fix.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        guestbookHtml.includes('css/force-input-bg-fix.css?v=20260324_FORCE_INPUT_BG_FIX_1'),
+        true,
+        'guestbook.html should load the latest force input fix stylesheet version'
+    );
+    assert.equal(
+        guestbookHtml.includes('./force-input-bg-fix.js?v=20260324_FORCE_INPUT_BG_FIX_1'),
+        true,
+        'guestbook.html should load the latest force input fix runtime version'
+    );
+    assert.equal(
+        legacyIndexHtml.includes('css/force-input-bg-fix.css?v=20260324_FORCE_INPUT_BG_FIX_1'),
+        true,
+        'index_old.html should load the latest force input fix stylesheet version'
+    );
+    assert.equal(
+        legacyIndexHtml.includes('./force-input-bg-fix.js?v=20260324_FORCE_INPUT_BG_FIX_1'),
+        true,
+        'index_old.html should load the latest force input fix runtime version'
     );
 });
 
@@ -2209,7 +2286,7 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=53'),
+        adminStudioSource.includes('admin-studio.css?v=54'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -2816,7 +2893,7 @@ test('discount admin runtime renderers externalize table states, copy toast, and
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=53'),
+        adminStudioSource.includes('admin-studio.css?v=54'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -2883,7 +2960,7 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=53'),
+        adminStudioSource.includes('admin-studio.css?v=54'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -3788,7 +3865,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
     }
 
     const htmlMarkers = [
-        'admin-studio.css?v=53',
+        'admin-studio.css?v=54',
         '<div class="anomaly-alerts-area" id="anomalyAlertsArea" hidden>',
         '<div class="ab-results-chart" id="abResultsChart" hidden>',
         'admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1'
@@ -3858,7 +3935,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=53'),
+        adminStudioHtml.includes('admin-studio.css?v=54'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );

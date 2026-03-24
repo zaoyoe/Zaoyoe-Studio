@@ -1288,23 +1288,6 @@ window.addEventListener('resize', () => {
 // Update Admin Tab Indicator Position
 function updateAdminTabIndicator(activeTab) {
     if (!activeTab) return;
-
-    // Find the indicator within the same navigation container
-    const nav = activeTab.closest('.admin-tabs');
-    if (!nav) return;
-
-    const indicator = nav.querySelector('.admin-tab-indicator');
-    if (indicator) {
-        // Ensure nav has relative positioning context (handled in CSS, but check anyway)
-        const navRect = nav.getBoundingClientRect();
-        const tabRect = activeTab.getBoundingClientRect();
-
-        // Calculate relative position to handle potential nested offsets
-        const left = tabRect.left - navRect.left;
-
-        indicator.style.left = `${left}px`;
-        indicator.style.width = `${tabRect.width}px`;
-    }
 }
 
 // ========================================
@@ -2449,9 +2432,16 @@ function renderColors(colors) {
         'light blue': '#add8e6', 'light green': '#90ee90', 'light gray': '#d3d3d3', 'light grey': '#d3d3d3'
     };
 
+    const colorClassMap = Object.fromEntries(
+        Object.keys(colorMap).map((name) => [
+            name,
+            `color-swatch--${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+        ])
+    );
+
     container.innerHTML = colors.map(color => {
-        const hex = colorMap[color.toLowerCase()] || '#888888';
-        return `<div class="color-swatch" style="background: ${hex}" data-color="${color}"></div>`;
+        const swatchClass = colorClassMap[color.toLowerCase()] || 'color-swatch--unknown';
+        return `<div class="color-swatch ${swatchClass}" data-color="${color}"></div>`;
     }).join('');
 }
 
@@ -3536,7 +3526,7 @@ function hideBatchProgressModal() {
 function updateBatchProgress(current, total, currentItem) {
     const percent = Math.round((current / total) * 100);
     document.getElementById('batchCurrentItem').textContent = `正在分析: ${currentItem}`;
-    document.getElementById('batchProgressFill').style.width = `${percent}%`;
+    document.getElementById('batchProgressFill').value = percent;
     document.getElementById('batchProgressText').textContent = `${current}/${total} (${percent}%)`;
 
     // Estimate remaining time
