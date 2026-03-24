@@ -7,6 +7,7 @@
 let systemConfigCache = {};
 let paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
 let paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
+let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
 let paymentChannelAccordionState = {
     mock: false,
     afdian: false,
@@ -125,6 +126,68 @@ function getDefaultPaymentChannelRuntimeState() {
             cleanup_message: ''
         }
     };
+}
+
+function getDefaultOpsAlertSecretStatus() {
+    return {
+        telegram_bot_token: { configured: false, source: 'missing', updatedAt: null },
+        feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+    };
+}
+
+function getDefaultOpsAlertConfig() {
+    return {
+        enabled: false,
+        dedupe_window_minutes: 45,
+        batch_size: 10,
+        sweep_interval_ms: 15000,
+        max_attempts: 6,
+        retry_base_delay_ms: 60000,
+        retry_max_delay_ms: 1800000,
+        timeout_ms: 5000,
+        channels: {
+            telegram: {
+                enabled: false,
+                minimum_severity: 'warning',
+                chat_ids: []
+            },
+            feishu: {
+                enabled: false,
+                minimum_severity: 'warning'
+            }
+        }
+    };
+}
+
+function normalizeConfigBoolean(value, fallback = false) {
+    if (typeof value === 'boolean') return value;
+    const normalized = String(value ?? '').trim().toLowerCase();
+    if (!normalized) return fallback;
+    if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
+    return fallback;
+}
+
+function normalizeConfigStringArray(value) {
+    if (Array.isArray(value)) {
+        return Array.from(new Set(value.map((item) => String(item ?? '').trim()).filter(Boolean)));
+    }
+
+    if (typeof value === 'string') {
+        return Array.from(new Set(
+            value
+                .split(/[\n,]/)
+                .map((item) => String(item ?? '').trim())
+                .filter(Boolean)
+        ));
+    }
+
+    return [];
+}
+
+function normalizeOpsAlertSeverity(value, fallback = 'warning') {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return ['info', 'warning', 'critical'].includes(normalized) ? normalized : fallback;
 }
 
 function normalizePaymentChannelRuntimeState(raw) {
@@ -437,6 +500,46 @@ function normalizePaymentChannelsConfig(raw) {
     return normalized;
 }
 
+function normalizeOpsAlertConfig(raw) {
+    const defaults = getDefaultOpsAlertConfig();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const sourceChannels = source.channels && typeof source.channels === 'object' && !Array.isArray(source.channels)
+        ? source.channels
+        : {};
+    const telegramSource = sourceChannels.telegram && typeof sourceChannels.telegram === 'object' && !Array.isArray(sourceChannels.telegram)
+        ? sourceChannels.telegram
+        : {};
+    const feishuSource = sourceChannels.feishu && typeof sourceChannels.feishu === 'object' && !Array.isArray(sourceChannels.feishu)
+        ? sourceChannels.feishu
+        : {};
+
+    return {
+        enabled: normalizeConfigBoolean(source.enabled, defaults.enabled),
+        dedupe_window_minutes: clamp(toWholeNumber(source.dedupe_window_minutes, defaults.dedupe_window_minutes), 1, 1440),
+        batch_size: clamp(toWholeNumber(source.batch_size, defaults.batch_size), 1, 50),
+        sweep_interval_ms: clamp(toWholeNumber(source.sweep_interval_ms, defaults.sweep_interval_ms), 1000, 10 * 60 * 1000),
+        max_attempts: clamp(toWholeNumber(source.max_attempts, defaults.max_attempts), 1, 20),
+        retry_base_delay_ms: clamp(toWholeNumber(source.retry_base_delay_ms, defaults.retry_base_delay_ms), 1000, 60 * 60 * 1000),
+        retry_max_delay_ms: clamp(
+            toWholeNumber(source.retry_max_delay_ms, defaults.retry_max_delay_ms),
+            Math.max(1000, toWholeNumber(source.retry_base_delay_ms, defaults.retry_base_delay_ms)),
+            24 * 60 * 60 * 1000
+        ),
+        timeout_ms: clamp(toWholeNumber(source.timeout_ms, defaults.timeout_ms), 1000, 30000),
+        channels: {
+            telegram: {
+                enabled: normalizeConfigBoolean(telegramSource.enabled, defaults.channels.telegram.enabled),
+                minimum_severity: normalizeOpsAlertSeverity(telegramSource.minimum_severity, defaults.channels.telegram.minimum_severity),
+                chat_ids: normalizeConfigStringArray(telegramSource.chat_ids)
+            },
+            feishu: {
+                enabled: normalizeConfigBoolean(feishuSource.enabled, defaults.channels.feishu.enabled),
+                minimum_severity: normalizeOpsAlertSeverity(feishuSource.minimum_severity, defaults.channels.feishu.minimum_severity)
+            }
+        }
+    };
+}
+
 function normalizeAffiliateProgramConfig(raw) {
     const defaults = getDefaultAffiliateProgramConfig();
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
@@ -517,6 +620,7 @@ async function loadAllSystemConfig() {
         renderUnlockPricingConfig();
         renderPackagesConfig();
         renderPaymentChannelsConfig();
+        renderOpsAlertSettings();
         renderChannelsConfig();
         renderRewardsConfig();
         renderGeneralSettingsConfig();
@@ -528,6 +632,7 @@ async function loadAllSystemConfig() {
         renderVerifyConfig();
         loadAffiliateSettings();
         loadPaymentChannelSettings();
+        loadOpsAlertSettings();
 
     } catch (err) {
         console.warn('[Config] Load error:', err.message);
@@ -647,6 +752,32 @@ function getPaymentSecretStatusMessage(secretName) {
         return `已配置后台安全密钥${status.updatedAt ? ` · 更新于 ${new Date(status.updatedAt).toLocaleString('zh-CN')}` : ''}`;
     }
     return '未配置后台安全密钥';
+}
+
+function getOpsAlertSecretStatusMessage(secretName) {
+    const status = opsAlertSecretStatus?.[secretName];
+    if (!status?.configured) {
+        return '未配置后台安全密钥';
+    }
+
+    const sourceLabel = status.source === 'environment' ? '环境变量' : '后台密钥仓';
+    return `已配置${sourceLabel}${status.updatedAt ? ` · 更新于 ${new Date(status.updatedAt).toLocaleString('zh-CN')}` : ''}`;
+}
+
+function setOpsAlertDeleteButtonState(secretName, status) {
+    const button = document.querySelector(`[data-admin-action="settings-delete-ops-alert-secret"][data-secret-name="${secretName}"]`);
+    if (!button) return;
+
+    if (status?.configured && status.source === 'stored') {
+        button.disabled = false;
+        button.title = '';
+        return;
+    }
+
+    button.disabled = true;
+    button.title = status?.source === 'environment'
+        ? '当前密钥来自环境变量，请在 Vercel / Railway 中删除或修改。'
+        : '当前没有可删除的后台密钥。';
 }
 
 function getPaymentProviderDomRefs(providerKey) {
@@ -804,6 +935,131 @@ function renderPaymentChannelsConfig() {
     Object.entries(paymentChannelAccordionState).forEach(([providerKey, expanded]) => {
         setPaymentProviderPanelExpanded(providerKey, expanded);
     });
+}
+
+function applyOpsAlertOverview(config) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const telegramSecret = opsAlertSecretStatus?.telegram_bot_token || getDefaultOpsAlertSecretStatus().telegram_bot_token;
+    const feishuSecret = opsAlertSecretStatus?.feishu_webhook_url || getDefaultOpsAlertSecretStatus().feishu_webhook_url;
+    const telegramChatCount = normalizedConfig.channels.telegram.chat_ids.length;
+    const channelStates = [];
+    const deliveryIssues = [];
+
+    if (normalizedConfig.channels.telegram.enabled) {
+        const telegramSummary = `Telegram · ${normalizedConfig.channels.telegram.minimum_severity}+ · ${telegramChatCount || 0} 个 chat`;
+        if (telegramSecret.configured && telegramChatCount > 0) {
+            channelStates.push(`${telegramSummary} · 已就绪`);
+        } else {
+            channelStates.push(`${telegramSummary} · 待补充配置`);
+            if (!telegramSecret.configured) deliveryIssues.push('Telegram Bot Token 未配置');
+            if (!telegramChatCount) deliveryIssues.push('Telegram Chat ID 未填写');
+        }
+    }
+
+    if (normalizedConfig.channels.feishu.enabled) {
+        const feishuSummary = `飞书 · ${normalizedConfig.channels.feishu.minimum_severity}+`;
+        if (feishuSecret.configured) {
+            channelStates.push(`${feishuSummary} · 已就绪`);
+        } else {
+            channelStates.push(`${feishuSummary} · 待补充配置`);
+            deliveryIssues.push('飞书 Webhook 未配置');
+        }
+    }
+
+    const summaryEl = document.getElementById('opsAlertSummary');
+    if (summaryEl) {
+        const isEnabled = normalizedConfig.enabled;
+        const hasChannels = channelStates.length > 0;
+        const hasIssues = deliveryIssues.length > 0;
+        const summaryIcon = !isEnabled
+            ? 'fa-bell-slash'
+            : (hasIssues ? 'fa-exclamation-triangle' : 'fa-satellite-dish');
+        let summaryText = '当前未启用站外退款告警，退款异常仍只会保留站内后台通知。';
+
+        if (isEnabled && !hasChannels) {
+            summaryText = '已启用站外退款告警，但还没有打开任何外部通道。';
+        } else if (isEnabled) {
+            summaryText = `已启用站外退款告警：${channelStates.join('；')}。发送采用异步队列，不阻塞退款主流程。`;
+            if (deliveryIssues.length) {
+                summaryText += ` 当前待补充：${deliveryIssues.join('、')}。`;
+            }
+        } else if (hasChannels) {
+            summaryText = `当前未启用站外退款告警，已预设通道：${channelStates.join('；')}。保存后启用即可生效。`;
+        }
+
+        summaryEl.innerHTML = `
+            <i class="fas ${summaryIcon}"></i>
+            <span>${escapeConfigHtml(summaryText)}</span>
+        `;
+    }
+
+    const masterToggle = document.getElementById('opsAlertEnabledToggle');
+    if (masterToggle) {
+        masterToggle.classList.toggle('active', normalizedConfig.enabled);
+    }
+
+    const telegramToggle = document.getElementById('opsAlertTelegramEnabledToggle');
+    if (telegramToggle) {
+        telegramToggle.classList.toggle('active', normalizedConfig.channels.telegram.enabled);
+    }
+
+    const feishuToggle = document.getElementById('opsAlertFeishuEnabledToggle');
+    if (feishuToggle) {
+        feishuToggle.classList.toggle('active', normalizedConfig.channels.feishu.enabled);
+    }
+
+    const telegramInputIds = [
+        'opsAlertTelegramChatIds',
+        'opsAlertTelegramSeverity',
+        'opsAlertTelegramBotToken'
+    ];
+    telegramInputIds.forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !normalizedConfig.channels.telegram.enabled;
+    });
+
+    const feishuInputIds = [
+        'opsAlertFeishuSeverity',
+        'opsAlertFeishuWebhookUrl'
+    ];
+    feishuInputIds.forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !normalizedConfig.channels.feishu.enabled;
+    });
+
+    const telegramStatus = document.getElementById('opsAlertTelegramBotTokenStatus');
+    if (telegramStatus) {
+        telegramStatus.textContent = getOpsAlertSecretStatusMessage('telegram_bot_token');
+    }
+
+    const feishuStatus = document.getElementById('opsAlertFeishuWebhookStatus');
+    if (feishuStatus) {
+        feishuStatus.textContent = getOpsAlertSecretStatusMessage('feishu_webhook_url');
+    }
+
+    setOpsAlertDeleteButtonState('telegram_bot_token', telegramSecret);
+    setOpsAlertDeleteButtonState('feishu_webhook_url', feishuSecret);
+}
+
+function renderOpsAlertSettings() {
+    const config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
+
+    const telegramChatIds = document.getElementById('opsAlertTelegramChatIds');
+    if (telegramChatIds) {
+        telegramChatIds.value = config.channels.telegram.chat_ids.join('\n');
+    }
+
+    const telegramSeverity = document.getElementById('opsAlertTelegramSeverity');
+    if (telegramSeverity) {
+        telegramSeverity.value = config.channels.telegram.minimum_severity;
+    }
+
+    const feishuSeverity = document.getElementById('opsAlertFeishuSeverity');
+    if (feishuSeverity) {
+        feishuSeverity.value = config.channels.feishu.minimum_severity;
+    }
+
+    applyOpsAlertOverview(config);
 }
 
 function renderChannelsConfig() {
@@ -1012,6 +1268,44 @@ async function loadPaymentChannelSettings(force = false) {
         return await loadPaymentChannelSettings._loadingPromise;
     } finally {
         loadPaymentChannelSettings._loadingPromise = null;
+    }
+}
+
+async function loadOpsAlertSettings(force = false) {
+    if (loadOpsAlertSettings._loadingPromise && !force) {
+        return loadOpsAlertSettings._loadingPromise;
+    }
+
+    loadOpsAlertSettings._loadingPromise = (async () => {
+        try {
+            const headers = await getAdminConfigApiHeaders();
+            const response = await fetch('/api/admin/settings/ops-alerts', {
+                method: 'GET',
+                headers
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || '加载站外告警配置失败');
+            }
+
+            systemConfigCache['ops_alerts'] = normalizeOpsAlertConfig(payload.config);
+            opsAlertSecretStatus = payload.secrets || getDefaultOpsAlertSecretStatus();
+            renderOpsAlertSettings();
+            return payload;
+        } catch (error) {
+            console.warn('[Config] Ops alert settings load failed:', error.message);
+            systemConfigCache['ops_alerts'] = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
+            opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
+            renderOpsAlertSettings();
+            return null;
+        }
+    })();
+
+    try {
+        return await loadOpsAlertSettings._loadingPromise;
+    } finally {
+        loadOpsAlertSettings._loadingPromise = null;
     }
 }
 
@@ -1690,6 +1984,157 @@ async function toggleMockPaymentStatus() {
         configOverride: currentConfig,
         successMessage: nextValue ? '已开启临时模拟支付' : '已关闭临时模拟支付'
     });
+}
+
+function collectOpsAlertConfigFromForm() {
+    const currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
+    const nextConfig = {
+        ...currentConfig,
+        channels: {
+            telegram: {
+                ...currentConfig.channels.telegram
+            },
+            feishu: {
+                ...currentConfig.channels.feishu
+            }
+        }
+    };
+
+    nextConfig.enabled = document.getElementById('opsAlertEnabledToggle')?.classList.contains('active') ?? currentConfig.enabled;
+    nextConfig.channels.telegram.enabled = document.getElementById('opsAlertTelegramEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.channels.telegram.enabled;
+    nextConfig.channels.telegram.chat_ids = normalizeConfigStringArray(
+        document.getElementById('opsAlertTelegramChatIds')?.value ?? currentConfig.channels.telegram.chat_ids
+    );
+    nextConfig.channels.telegram.minimum_severity = normalizeOpsAlertSeverity(
+        document.getElementById('opsAlertTelegramSeverity')?.value,
+        currentConfig.channels.telegram.minimum_severity
+    );
+    nextConfig.channels.feishu.enabled = document.getElementById('opsAlertFeishuEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.channels.feishu.enabled;
+    nextConfig.channels.feishu.minimum_severity = normalizeOpsAlertSeverity(
+        document.getElementById('opsAlertFeishuSeverity')?.value,
+        currentConfig.channels.feishu.minimum_severity
+    );
+
+    return normalizeOpsAlertConfig(nextConfig);
+}
+
+function clearOpsAlertSecretInputs() {
+    [
+        'opsAlertTelegramBotToken',
+        'opsAlertFeishuWebhookUrl'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.value = '';
+    });
+}
+
+async function saveOpsAlertSettings() {
+    try {
+        const config = collectOpsAlertConfigFromForm();
+        const headers = await getAdminConfigApiHeaders();
+        const body = {
+            config,
+            secrets: {
+                telegram_bot_token: document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '',
+                feishu_webhook_url: document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || ''
+            }
+        };
+
+        const response = await fetch('/api/admin/settings/ops-alerts', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body)
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '保存站外退款告警配置失败');
+        }
+
+        systemConfigCache['ops_alerts'] = normalizeOpsAlertConfig(payload.config);
+        opsAlertSecretStatus = payload.secrets || getDefaultOpsAlertSecretStatus();
+        renderOpsAlertSettings();
+        clearOpsAlertSecretInputs();
+        showConfigSavedToast(payload.message || '站外退款告警配置已保存');
+        return true;
+    } catch (error) {
+        console.error('[Config] Save ops alert settings failed:', error);
+        showToast('保存失败: ' + (error.message || '未知错误'), 'error');
+        renderOpsAlertSettings();
+        return false;
+    }
+}
+
+async function deleteOpsAlertSecret(secretName) {
+    const secretLabels = {
+        telegram_bot_token: 'Telegram Bot Token',
+        feishu_webhook_url: '飞书 Webhook'
+    };
+    const normalizedSecretName = String(secretName || '').trim();
+    if (!secretLabels[normalizedSecretName]) {
+        showToast('无效的站外告警密钥标识', 'warning');
+        return false;
+    }
+
+    const currentStatus = opsAlertSecretStatus?.[normalizedSecretName];
+    if (currentStatus?.source === 'environment') {
+        showToast(`${secretLabels[normalizedSecretName]} 当前来自环境变量，请在部署平台里删除。`, 'warning');
+        return false;
+    }
+
+    if (!confirm(`确定删除 ${secretLabels[normalizedSecretName]} 吗？删除后将无法继续通过该通道发送站外退款告警。`)) {
+        return false;
+    }
+
+    try {
+        const headers = await getAdminConfigApiHeaders();
+        const response = await fetch('/api/admin/settings/ops-alerts', {
+            method: 'DELETE',
+            headers,
+            body: JSON.stringify({ secretName: normalizedSecretName })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '删除站外告警密钥失败');
+        }
+
+        systemConfigCache['ops_alerts'] = normalizeOpsAlertConfig(payload.config);
+        opsAlertSecretStatus = payload.secrets || getDefaultOpsAlertSecretStatus();
+        renderOpsAlertSettings();
+        clearOpsAlertSecretInputs();
+        showConfigSavedToast(payload.message || '站外告警密钥已删除');
+        return true;
+    } catch (error) {
+        console.error('[Config] Delete ops alert secret failed:', error);
+        showToast('删除失败: ' + (error.message || '未知错误'), 'error');
+        renderOpsAlertSettings();
+        return false;
+    }
+}
+
+function toggleOpsAlertsEnabled() {
+    const toggleEl = document.getElementById('opsAlertEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertChannelEnabled(channelKey) {
+    const toggleMap = {
+        telegram: 'opsAlertTelegramEnabledToggle',
+        feishu: 'opsAlertFeishuEnabledToggle'
+    };
+    const toggleEl = document.getElementById(toggleMap[channelKey]);
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
 // ============================================
@@ -3610,6 +4055,11 @@ window.togglePaymentProviderEnabled = togglePaymentProviderEnabled;
 window.togglePaymentProviderPanel = togglePaymentProviderPanel;
 window.handlePaymentChannelActiveChange = handlePaymentChannelActiveChange;
 window.savePaymentChannelSettings = savePaymentChannelSettings;
+window.loadOpsAlertSettings = loadOpsAlertSettings;
+window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;
+window.toggleOpsAlertChannelEnabled = toggleOpsAlertChannelEnabled;
+window.saveOpsAlertSettings = saveOpsAlertSettings;
+window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;
 window.saveIpBlacklist = saveIpBlacklist;

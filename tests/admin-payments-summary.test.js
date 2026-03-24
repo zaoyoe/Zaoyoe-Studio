@@ -93,6 +93,7 @@ function createSupabaseStub(state = {}) {
     const checkoutSessions = state.checkoutSessions || [];
     const paymentQueryAttempts = state.paymentQueryAttempts || [];
     const paymentAnomalyCases = state.paymentAnomalyCases || [];
+    const opsAlertJobs = state.opsAlertJobs || [];
 
     return {
         from(table) {
@@ -171,6 +172,24 @@ function createSupabaseStub(state = {}) {
 
                 if (table === 'payment_anomaly_cases' && query.mode === 'select') {
                     let rows = applyFilters(paymentAnomalyCases, query.filters);
+                    if (query.order) {
+                        const { column, ascending } = query.order;
+                        rows = rows.slice().sort((left, right) => (
+                            ascending
+                                ? compareValue(left[column], right[column])
+                                : compareValue(right[column], left[column])
+                        ));
+                    }
+                    const from = query.range?.from ?? 0;
+                    const to = query.range?.to ?? (rows.length ? rows.length - 1 : -1);
+                    return {
+                        data: rows.slice(from, to + 1),
+                        error: null
+                    };
+                }
+
+                if (table === 'ops_alert_jobs' && query.mode === 'select') {
+                    let rows = applyFilters(opsAlertJobs, query.filters);
                     if (query.order) {
                         const { column, ascending } = query.order;
                         rows = rows.slice().sort((left, right) => (
@@ -453,8 +472,83 @@ test('payments overview summary exposes refund alerts for admin-studio visibilit
     });
 });
 
+test('payments summary exposes outbound ops alert queue health and actionable dead-letter jobs', async () => {
+    const state = {
+        opsAlertJobs: [
+            {
+                id: 'ops-job-1',
+                alert_type: 'payment_refund_ops',
+                severity: 'critical',
+                title: '支付退款积分回滚失败',
+                content: '站点：CN\n订单号：HJ_ALERT_1',
+                payload: {
+                    provider: 'hupijiao',
+                    provider_order_no: 'HJ_ALERT_1',
+                    site: 'cn'
+                },
+                channels: ['telegram', 'feishu'],
+                remaining_channels: ['telegram', 'feishu'],
+                status: 'dead_letter',
+                attempt_count: 6,
+                max_attempts: 6,
+                next_retry_at: null,
+                delivered_at: null,
+                last_error: 'telegram timeout',
+                created_at: '2026-03-24T11:00:00.000Z',
+                updated_at: '2026-03-24T11:10:00.000Z'
+            },
+            {
+                id: 'ops-job-2',
+                alert_type: 'payment_refund_ops',
+                severity: 'warning',
+                title: '支付退款失败（已补回）',
+                content: '站点：CN\n订单号：HJ_ALERT_2',
+                payload: {
+                    provider: 'hupijiao',
+                    provider_order_no: 'HJ_ALERT_2',
+                    site: 'cn'
+                },
+                channels: ['telegram'],
+                remaining_channels: ['telegram'],
+                status: 'retry',
+                attempt_count: 2,
+                max_attempts: 6,
+                next_retry_at: '2026-03-24T12:00:00.000Z',
+                delivered_at: null,
+                last_error: 'feishu 502',
+                created_at: '2026-03-24T11:30:00.000Z',
+                updated_at: '2026-03-24T11:40:00.000Z'
+            }
+        ]
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'overview',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.ops_alert_summary.dead_letter, 1);
+        assert.equal(payload.ops_alert_summary.retry, 1);
+        assert.equal(payload.ops_alert_summary.actionable_count, 2);
+        assert.equal(payload.ops_alert_items.some((item) => item.type === 'ops_alert_job' && item.queue_status === 'dead_letter'), true);
+        assert.equal(payload.ops_alert_items.some((item) => item.type === 'ops_alert_job' && Array.isArray(item.ops_available_actions) && item.ops_available_actions.includes('request_retry')), true);
+    });
+});
+
 test('payments runtime summary UI keeps refund anomaly indicators wired in source', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'js', 'admin-payments.js'), 'utf8');
+    const adminStudioSource = fs.readFileSync(path.join(__dirname, '..', 'admin-studio.js'), 'utf8');
+    const adminStudioHtml = fs.readFileSync(path.join(__dirname, '..', 'admin-studio.html'), 'utf8');
 
     assert.match(source, /refund_failures/);
     assert.match(source, /refund_reclaim_failures/);
@@ -464,4 +558,12 @@ test('payments runtime summary UI keeps refund anomaly indicators wired in sourc
     assert.match(source, /退款积分回滚失败/);
     assert.match(source, /payments-focus-exception-topic/);
     assert.match(source, /paymentsRefundAlertsPanel/);
+    assert.match(source, /paymentsOpsAlertHealthPanel/);
+    assert.match(source, /paymentsOpsAlertQueuePanel/);
+    assert.match(source, /payments-focus-ops-alert-queue/);
+    assert.match(source, /ops_alert_summary/);
+    assert.match(source, /ops_alert_items/);
+    assert.match(adminStudioSource, /payments-focus-ops-alert-queue/);
+    assert.match(adminStudioHtml, /paymentsOpsAlertHealthPanel/);
+    assert.match(adminStudioHtml, /paymentsOpsAlertQueuePanel/);
 });

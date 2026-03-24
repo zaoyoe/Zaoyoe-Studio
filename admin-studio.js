@@ -317,6 +317,18 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-delete-api-key':
                 window.deleteApiKey?.();
                 break;
+            case 'settings-toggle-ops-alerts-enabled':
+                window.toggleOpsAlertsEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-channel':
+                window.toggleOpsAlertChannelEnabled?.(actionEl.dataset.alertChannel);
+                break;
+            case 'settings-save-ops-alerts':
+                window.saveOpsAlertSettings?.();
+                break;
+            case 'settings-delete-ops-alert-secret':
+                window.deleteOpsAlertSecret?.(actionEl.dataset.secretName);
+                break;
             case 'settings-select-affiliate-poster-template':
                 window.selectAffiliatePosterTemplate?.(actionEl.dataset.posterTemplateId);
                 break;
@@ -464,6 +476,9 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'payments-focus-exception-topic':
                 window.AdminPayments?.focusExceptionTopic?.(actionEl.dataset.paymentsTopicKey);
+                break;
+            case 'payments-focus-ops-alert-queue':
+                window.AdminPayments?.focusOpsAlertQueue?.();
                 break;
             case 'payments-preview-cleanup':
                 window.AdminPayments?.previewCleanup?.();

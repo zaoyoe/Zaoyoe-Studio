@@ -48,6 +48,10 @@ const {
     splitIpRules,
     takeRateLimitToken
 } = require('../api/_lib/request-security');
+const {
+    loadOpsAlertsRuntimeConfig,
+    sweepOpsAlertJobs
+} = require('../api/_lib/ops-alerts');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -65,6 +69,8 @@ let pendingJobSweepTimer = null;
 let pendingJobSweepRunning = false;
 let shopDeliverySweepTimer = null;
 let shopDeliverySweepRunning = false;
+let opsAlertSweepTimer = null;
+let opsAlertSweepRunning = false;
 let cachedShopDeliveryStrategy = null;
 let cachedShopDeliveryStrategyAt = 0;
 const afdianProvider = getPaymentProviderAdapter('afdian');
@@ -2727,6 +2733,69 @@ function startShopDeliverySweep() {
     });
 }
 
+function getOpsAlertWorkerName() {
+    return String(
+        process.env.OPS_ALERT_WORKER_NAME
+        || process.env.RAILWAY_STATIC_URL
+        || process.env.HOSTNAME
+        || 'ops-alert-worker'
+    ).trim();
+}
+
+async function sweepExternalOpsAlerts() {
+    if (opsAlertSweepRunning) return;
+    opsAlertSweepRunning = true;
+
+    try {
+        const result = await sweepOpsAlertJobs(supabase, {
+            env: process.env,
+            workerName: getOpsAlertWorkerName()
+        });
+
+        if (Number(result?.claimed || 0) > 0) {
+            console.log('[OpsAlertWorker] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[OpsAlertWorker] Sweep failed:', error);
+    } finally {
+        opsAlertSweepRunning = false;
+    }
+}
+
+async function queueNextOpsAlertSweep(delayMs = null) {
+    if (opsAlertSweepTimer) return;
+
+    let nextDelay = 15000;
+    try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        nextDelay = Math.max(1000, Number(delayMs ?? runtime?.config?.sweep_interval_ms ?? 15000));
+    } catch (error) {
+        nextDelay = Math.max(1000, Number(delayMs ?? 15000));
+        console.warn('[OpsAlertWorker] Failed to load runtime config for next sweep:', error.message);
+    }
+
+    opsAlertSweepTimer = setTimeout(() => {
+        opsAlertSweepTimer = null;
+        sweepExternalOpsAlerts()
+            .catch((error) => {
+                console.error('[OpsAlertWorker] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextOpsAlertSweep().catch((error) => {
+                    console.error('[OpsAlertWorker] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startOpsAlertSweep() {
+    if (opsAlertSweepTimer) return;
+
+    queueNextOpsAlertSweep(2200).catch((error) => {
+        console.error('[OpsAlertWorker] Failed to start sweep:', error);
+    });
+}
+
 async function hasLoggedJobResult(userId, jobId, site = 'cn') {
     if (!userId || !jobId) return false;
 
@@ -3919,6 +3988,7 @@ function startServer(port = PORT) {
         console.log(`🚀 Verify proxy server running on port ${port}`);
         startPendingJobSweep();
         startShopDeliverySweep();
+        startOpsAlertSweep();
     });
 }
 

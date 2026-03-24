@@ -7,6 +7,10 @@ const PAYMENT_CHANNEL_SECRET_KEYS = {
     hupijiao_api_key: 'payment_provider_hupijiao_api_key',
     hupijiao_secret_key: 'payment_provider_hupijiao_secret_key'
 };
+const OPS_ALERT_SECRET_KEYS = {
+    telegram_bot_token: 'ops_alert_telegram_bot_token',
+    feishu_webhook_url: 'ops_alert_feishu_webhook_url'
+};
 
 function wrapSecretStoreError(error, fallbackMessage) {
     const message = error?.message || fallbackMessage || 'Admin secret store failed';
@@ -94,18 +98,18 @@ async function getStoredAdminSecret(supabase, secretKey) {
     const { data, error } = await supabase
         .from('admin_secret_store')
         .select('secret_key, encrypted_value, metadata, description, updated_at, updated_by')
-        .eq('secret_key', secretKey)
-        .maybeSingle();
+        .eq('secret_key', secretKey);
 
     if (error) {
         throw wrapSecretStoreError(error, 'Failed to load admin secret');
     }
 
-    if (!data) return null;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return null;
 
     return {
-        ...data,
-        value: decryptSecretValue(data.encrypted_value)
+        ...row,
+        value: decryptSecretValue(row.encrypted_value)
     };
 }
 
@@ -184,6 +188,7 @@ module.exports = {
         readIndependentSecret
     },
     GEMINI_SECRET_KEY,
+    OPS_ALERT_SECRET_KEYS,
     PAYMENT_CHANNEL_SECRET_KEYS,
     deleteStoredAdminSecret,
     getStoredAdminSecret,

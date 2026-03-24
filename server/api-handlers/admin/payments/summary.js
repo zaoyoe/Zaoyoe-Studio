@@ -72,6 +72,16 @@ const REFUND_EXCEPTION_TOPIC_META = Object.freeze([
         description: '退款失败后自动补回积分也失败了，需要立刻人工对账修复。'
     }
 ]);
+const OPS_ALERT_JOB_ACTIONABLE_STATUSES = new Set(['pending', 'retry', 'processing', 'dead_letter', 'handled', 'ignored']);
+const OPS_ALERT_JOB_STATUS_PRIORITY = Object.freeze({
+    dead_letter: 0,
+    retry: 1,
+    pending: 2,
+    processing: 3,
+    handled: 4,
+    ignored: 5,
+    delivered: 6
+});
 const TREND_FAILED_EVENT_RESULTS = new Set([
     'webhook_exception',
     'process_rpc_failed',
@@ -364,6 +374,142 @@ function getOrderAvailableActions(order) {
     return canRefundHupijiaoOrder(order)
         ? ['refund_hupijiao']
         : [];
+}
+
+function normalizeStringArray(value) {
+    return Array.isArray(value)
+        ? value.map((item) => String(item || '').trim()).filter(Boolean)
+        : [];
+}
+
+function getOpsAlertJobAvailableActions(job) {
+    const status = String(job?.status || '').trim().toLowerCase();
+
+    if (status === 'dead_letter') {
+        return ['request_retry', 'mark_handled'];
+    }
+
+    if (status === 'handled' || status === 'ignored') {
+        return ['reopen'];
+    }
+
+    if (status === 'pending' || status === 'retry' || status === 'processing') {
+        return ['mark_handled', 'ignore'];
+    }
+
+    return [];
+}
+
+function matchesOpsAlertJobSite(job, site) {
+    if (!site) return true;
+    const payload = normalizeJsonObject(job?.payload);
+    return String(payload.site || '').trim().toLowerCase() === String(site || '').trim().toLowerCase();
+}
+
+function buildOpsAlertJobMessage(job, payload) {
+    const status = String(job?.status || '').trim().toLowerCase();
+    const lastError = String(job?.last_error || '').trim();
+    const nextRetryAt = job?.next_retry_at || null;
+    const deliveredAt = job?.delivered_at || null;
+
+    if (status === 'dead_letter') {
+        return lastError
+            ? `站外告警已进入死信队列：${lastError}`
+            : '站外告警已进入死信队列，请人工确认渠道配置、网络连通性和重试策略。';
+    }
+    if (status === 'retry') {
+        return nextRetryAt
+            ? `站外告警已进入重试队列，计划于 ${new Date(nextRetryAt).toLocaleString('zh-CN')} 再次投递。`
+            : '站外告警已进入重试队列，等待下一次投递。';
+    }
+    if (status === 'processing') {
+        return '站外告警正在由后台 worker 投递，请留意是否持续卡在处理中。';
+    }
+    if (status === 'delivered') {
+        return deliveredAt
+            ? `站外告警已于 ${new Date(deliveredAt).toLocaleString('zh-CN')} 投递完成。`
+            : '站外告警已投递完成。';
+    }
+    if (status === 'handled') {
+        return '该站外告警已人工处理，不会继续自动投递。';
+    }
+    if (status === 'ignored') {
+        return '该站外告警已人工忽略。';
+    }
+
+    return String(job?.content || '').trim() || String(payload?.topic_label || '').trim() || '站外告警等待处理。';
+}
+
+function buildOpsAlertJobItem(job) {
+    const payload = normalizeJsonObject(job?.payload);
+    const status = String(job?.status || '').trim().toLowerCase() || 'pending';
+    const channels = normalizeStringArray(job?.channels);
+    const remainingChannels = normalizeStringArray(job?.remaining_channels);
+
+    return {
+        type: 'ops_alert_job',
+        id: job.id,
+        provider: String(payload.provider || '').trim() || null,
+        provider_order_no: String(payload.provider_order_no || '').trim() || null,
+        site: String(payload.site || '').trim().toLowerCase() || null,
+        severity: status === 'dead_letter'
+            ? 'critical'
+            : (status === 'retry' ? 'warning' : String(job?.severity || 'warning').trim().toLowerCase()),
+        title: String(job?.title || '').trim() || '站外告警',
+        message: buildOpsAlertJobMessage(job, payload),
+        created_at: job?.created_at || null,
+        queue_status: status,
+        channels,
+        remaining_channels: remainingChannels,
+        attempt_count: Number(job?.attempt_count || 0),
+        max_attempts: Number(job?.max_attempts || 0),
+        next_retry_at: job?.next_retry_at || null,
+        delivered_at: job?.delivered_at || null,
+        last_error: String(job?.last_error || '').trim() || null,
+        ops_status: status,
+        ops_resolution: String(job?.last_error || '').trim() || null,
+        ops_last_action_at: job?.updated_at || job?.last_attempt_at || job?.created_at || null,
+        ops_available_actions: getOpsAlertJobAvailableActions(job)
+    };
+}
+
+function buildOpsAlertSummary(jobs) {
+    const items = (jobs || []).map(buildOpsAlertJobItem);
+
+    return {
+        total: items.length,
+        pending: items.filter((item) => item.queue_status === 'pending').length,
+        retry: items.filter((item) => item.queue_status === 'retry').length,
+        processing: items.filter((item) => item.queue_status === 'processing').length,
+        delivered: items.filter((item) => item.queue_status === 'delivered').length,
+        dead_letter: items.filter((item) => item.queue_status === 'dead_letter').length,
+        handled: items.filter((item) => item.queue_status === 'handled').length,
+        ignored: items.filter((item) => item.queue_status === 'ignored').length,
+        actionable_count: items.filter((item) => OPS_ALERT_JOB_ACTIONABLE_STATUSES.has(item.queue_status)).length,
+        latest_dead_letter_at: items
+            .filter((item) => item.queue_status === 'dead_letter' && item.created_at)
+            .map((item) => item.created_at)
+            .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] || null,
+        latest_delivered_at: items
+            .filter((item) => item.queue_status === 'delivered' && item.delivered_at)
+            .map((item) => item.delivered_at)
+            .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] || null
+    };
+}
+
+function buildOpsAlertQueueItems(jobs) {
+    return (jobs || [])
+        .map(buildOpsAlertJobItem)
+        .filter((item) => OPS_ALERT_JOB_ACTIONABLE_STATUSES.has(item.queue_status))
+        .sort((left, right) => {
+            const leftPriority = OPS_ALERT_JOB_STATUS_PRIORITY[left.queue_status] ?? 99;
+            const rightPriority = OPS_ALERT_JOB_STATUS_PRIORITY[right.queue_status] ?? 99;
+            if (leftPriority !== rightPriority) {
+                return leftPriority - rightPriority;
+            }
+            return new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime();
+        })
+        .slice(0, 12);
 }
 
 function getAnomalyAvailableActions(item, caseStatus) {
@@ -752,6 +898,29 @@ async function fetchCheckoutSessions(client, sinceIso, untilIso, site) {
 
             return query;
         });
+    } catch (error) {
+        if (isMissingColumnError(error)) {
+            return [];
+        }
+        throw error;
+    }
+}
+
+async function fetchOpsAlertJobs(client, sinceIso, untilIso) {
+    try {
+        return await fetchPagedRows(() => {
+            let query = client
+                .from('ops_alert_jobs')
+                .select('id, alert_type, severity, title, content, payload, channels, remaining_channels, status, attempt_count, max_attempts, next_retry_at, last_attempt_at, delivered_at, last_error, worker_name, created_at, updated_at')
+                .gte('created_at', sinceIso)
+                .order('created_at', { ascending: false });
+
+            if (untilIso) {
+                query = query.lte('created_at', untilIso);
+            }
+
+            return query;
+        }, 200, 10);
     } catch (error) {
         if (isMissingColumnError(error)) {
             return [];
@@ -1506,12 +1675,14 @@ module.exports = async function handler(req, res) {
         const needsSessions = view === 'overview' || view === 'ops';
         const needsQueries = view === 'overview' || view === 'ops';
         const needsFinance = view === 'finance';
+        const needsOpsAlerts = view === 'overview' || view === 'ops';
 
         const [
             orderRows,
             eventRows,
             queryRows,
             rawCheckoutSessions,
+            rawOpsAlertJobs,
             shopOrders,
             pointsLedgerRows,
             pointsBalanceRows
@@ -1520,6 +1691,7 @@ module.exports = async function handler(req, res) {
             needsEvents ? fetchPaymentEvents(scopedClient, sinceIso, untilIso) : Promise.resolve([]),
             needsQueries ? fetchPaymentQueryAttempts(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
             needsSessions ? fetchCheckoutSessions(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
+            needsOpsAlerts ? fetchOpsAlertJobs(scopedClient, sinceIso, untilIso) : Promise.resolve([]),
             needsFinance ? fetchShopOrders(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
             needsFinance ? fetchPointsLedger(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
             needsFinance ? fetchPointsBalances(scopedClient, site) : Promise.resolve([])
@@ -1530,11 +1702,16 @@ module.exports = async function handler(req, res) {
             : [];
         const enrichedOrders = enrichPaymentOrdersWithCheckoutSessions(orderRows || [], checkoutSessions || []);
         const visibleOrders = filterVisiblePaymentOrders(enrichedOrders || []);
+        const opsAlertJobs = needsOpsAlerts
+            ? (rawOpsAlertJobs || []).filter((job) => matchesOpsAlertJobSite(job, site))
+            : [];
         const querySummary = needsQueries ? buildQuerySummary(queryRows || []) : undefined;
         const overview = buildOverview(visibleOrders || []);
         const sessionSummary = needsSessions
             ? buildSessionSummary(checkoutSessions || [], visibleOrders || [])
             : undefined;
+        const opsAlertSummary = needsOpsAlerts ? buildOpsAlertSummary(opsAlertJobs) : undefined;
+        const opsAlertItems = needsOpsAlerts ? buildOpsAlertQueueItems(opsAlertJobs) : [];
 
         const siteOrderIds = new Set((visibleOrders || []).map((order) => order.id).filter(Boolean));
         const siteOrderNumbers = new Set((visibleOrders || []).map((order) => order.provider_order_no).filter(Boolean));
@@ -1697,6 +1874,8 @@ module.exports = async function handler(req, res) {
             business_breakdown,
             refund_alert_topics: needsEvents ? refundAlertTopics : undefined,
             refund_alert_items: needsEvents ? enrichedRefundAlertItems : undefined,
+            ops_alert_summary: needsOpsAlerts ? opsAlertSummary : undefined,
+            ops_alert_items: needsOpsAlerts ? opsAlertItems : undefined,
             exception_topics: exceptionTopics.topics || [],
             exception_topic_items: enrichedExceptionTopicItems,
             recent_anomalies: recentAnomalies,
