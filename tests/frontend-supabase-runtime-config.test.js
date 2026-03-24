@@ -454,7 +454,7 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes('css/auth-sheet.css?v=20260324_AUTH_RUNTIME_STYLE_HELPERS_1'),
+            source.includes('css/auth-sheet.css?v=20260324_AUTH_INJECT_RUNTIME_STYLE_HELPERS_2'),
             true,
             'auth entry pages should load the latest auth sheet stylesheet'
         );
@@ -462,6 +462,82 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
             source.includes('supabase-auth-functions.js?v=20260324_AUTH_RUNTIME_STYLE_HELPERS_1'),
             true,
             'auth entry pages should load the latest auth runtime script'
+        );
+    }
+});
+
+test('injected auth runtime centralizes dropdown, drag, and badge style state', () => {
+    const injectSource = readRepoFile('inject-auth.js');
+    const authSheetStyles = readRepoFile('css/auth-sheet.css');
+    const pageSources = [
+        readRepoFile('index.html'),
+        readRepoFile('guestbook.html'),
+        readRepoFile('verify.html'),
+        readRepoFile('prompts.html'),
+        readRepoFile('shop.html'),
+        readRepoFile('index_old.html')
+    ];
+
+    const removedRuntimeMarkers = [
+        'indicator.style.width =',
+        "clone.style.position = 'absolute'",
+        "body.style.setProperty('--auth-primary-view-min-height'",
+        "dropdown.style.setProperty('right'",
+        "overlay.style.removeProperty('display');",
+        "sheet.style.transform = `translateY(${translate}px) scale(${1 - translate * 0.00045})`",
+        "avatarBadge.style.display = hasUnread ? 'block' : 'none'",
+        "dropdownBadge.style.display = hasUnread ? 'inline-block' : 'none'"
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(
+            injectSource.includes(marker),
+            false,
+            `inject-auth.js should not retain ${marker}`
+        );
+    }
+
+    const runtimeMarkers = [
+        "function setInjectedAuthStyleProperty(target, name, value, priority = '')",
+        "function setInjectedAuthStyleState(target, styles = {}, priority = '')",
+        `class="fas fa-user-circle\${hasAvatar ? ' auth-display-none' : ''}"`,
+        `class="nav-user-avatar\${hasAvatar ? ' show' : ' auth-display-none'}"`,
+        'class="avatar-dropdown auth-dropdown-layer"',
+        "clone.classList.add('is-active', 'auth-sheet-view-measure');",
+        "setInjectedAuthStyleState(indicator, {",
+        "setInjectedAuthStyleProperty(body, '--auth-primary-view-min-height'",
+        "setInjectedAuthStyleState(dropdown, {",
+        "setInjectedAuthStyleProperty(sheet, 'transform', null);",
+        "avatarBadge.classList.toggle('is-visible', !!hasUnread);",
+        "dropdownBadge.classList.toggle('is-visible', !!hasUnread);"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(injectSource.includes(marker), true, `inject-auth.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.auth-display-none',
+        '.auth-dropdown-layer',
+        '.avatar-unread-badge',
+        '.dropdown-notif-badge.is-visible',
+        '.auth-sheet-view-measure'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(authSheetStyles.includes(marker), true, `css/auth-sheet.css should contain ${marker}`);
+    }
+
+    for (const source of pageSources) {
+        assert.equal(
+            source.includes('css/auth-sheet.css?v=20260324_AUTH_INJECT_RUNTIME_STYLE_HELPERS_2'),
+            true,
+            'auth entry pages should load the latest injected auth stylesheet'
+        );
+        assert.equal(
+            source.includes('inject-auth.js?v=20260324_INJECT_AUTH_RUNTIME_STYLE_HELPERS_1'),
+            true,
+            'auth entry pages should load the latest injected auth runtime version'
         );
     }
 });

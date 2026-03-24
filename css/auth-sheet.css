@@ -37,6 +37,44 @@ body.auth-sheet-open {
     overflow: hidden;
 }
 
+.login-trigger-btn {
+    position: relative;
+}
+
+.auth-display-none {
+    display: none;
+}
+
+.auth-dropdown-layer {
+    z-index: 2100;
+}
+
+.avatar-unread-badge,
+.dropdown-notif-badge {
+    display: none;
+}
+
+.avatar-unread-badge {
+    position: absolute;
+    top: 8px;
+    right: 6px;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #ef4444;
+    border: 1px solid rgba(0, 0, 0, 0.35);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+    pointer-events: none;
+}
+
+.avatar-unread-badge.is-visible {
+    display: block;
+}
+
+.dropdown-notif-badge.is-visible {
+    display: inline-block;
+}
+
 .auth-sheet-overlay {
     position: fixed;
     inset: 0;
@@ -403,6 +441,17 @@ body.auth-sheet-open {
 
 .auth-sheet-view--primary {
     min-height: var(--auth-primary-view-min-height, 0px);
+}
+
+.auth-sheet-view-measure {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    visibility: hidden;
+    pointer-events: none;
+    display: flex !important;
+    min-height: 0;
 }
 
 #loginView.auth-sheet-view--primary {
