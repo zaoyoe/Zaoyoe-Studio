@@ -167,8 +167,8 @@
 - 虎皮椒已经能真实创建支付
 - `/api/payments/hupijiao/webhook` 已能验签、落 `payment_events`、更新 `payment_orders`、自动入账
 - `queryOrder` 已接进统一 adapter
-- 后台退款流已开放给“未入账订单”，会先查单再退款并写审计
-- 已入账/已发点的订单继续 fail-closed，不允许直接退款
+- 后台退款流已开放到“异常队列 + 最近订单”，会先查单再退款并写审计
+- 已入账/已发点的订单会先扣回积分，再调虎皮椒退款；若网关失败，会按精确 paid / bonus 拆分自动补回积分
 
 上线前至少确认这几项：
 
@@ -179,4 +179,8 @@
 5. 如果要收紧来源链路，再补：
    - `HUPIJIAO_WEBHOOK_TRUSTED_PROXIES`
    - `HUPIJIAO_WEBHOOK_ALLOWED_IPS`
-6. 当前后台只允许退款“未入账订单”；已入账订单仍需先完成人工扣回/售后闭环
+6. 先执行 migration：`20260324_add_admin_refund_reclaim_rpc.sql`，确认 `fn_deduct_points_admin_site_with_breakdown` 已落库
+7. 做 1 笔“已入账订单退款”演练，确认后台会写入：
+   - `payment_events.admin_refund_*`
+   - `payment_orders.provider_metadata.refund_reclaimed_*`
+   - `admin_audit_logs`

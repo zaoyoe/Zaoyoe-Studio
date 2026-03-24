@@ -449,6 +449,32 @@
         `;
     }
 
+    function renderOrderActions(order) {
+        const actions = Array.isArray(order?.order_available_actions) ? order.order_available_actions : [];
+        if (!actions.length) {
+            return '<span class="payments-text-muted">—</span>';
+        }
+
+        const loading = isAnomalyActionLoading('order', order.id);
+        return `
+            <div class="payments-anomaly-actions">
+                ${actions.map((action) => `
+                    <button
+                        type="button"
+                        class="payments-anomaly-action-btn ${escapeHtml(action)}"
+                        data-admin-action="payments-handle-anomaly-action"
+                        data-payments-target-type="order"
+                        data-payments-target-id="${escapeHtml(order.id || '')}"
+                        data-payments-action="${escapeHtml(action)}"
+                        ${loading ? 'disabled' : ''}
+                    >
+                        ${escapeHtml(getAnomalyActionLabel(action))}
+                    </button>
+                `).join('')}
+            </div>
+        `;
+    }
+
     function getRangeLabel(days) {
         const num = Number(days || state.days || 30);
         const labels = {
@@ -1342,6 +1368,9 @@
                                     <span>${escapeHtml(formatDateTime(order.claimed_at))}</span>
                                 </div>
                             </div>
+                            <div class="payments-order-card-actions">
+                                ${renderOrderActions(order)}
+                            </div>
                         </div>
                     `).join('')}
                 </div>
@@ -1364,6 +1393,7 @@
                             <th>站点</th>
                             <th>创建时间</th>
                             <th>认领时间</th>
+                            <th>操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1381,6 +1411,7 @@
                                 <td>${escapeHtml((order.site || 'cn').toUpperCase())}</td>
                                 <td>${escapeHtml(formatDateTime(order.created_at))}</td>
                                 <td>${escapeHtml(formatDateTime(order.claimed_at))}</td>
+                                <td>${renderOrderActions(order)}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -1536,7 +1567,7 @@
         if (state.anomalyActionLoading[actionKey]) return;
 
         state.anomalyActionLoading[actionKey] = true;
-        renderAnomalies(state.summary || {});
+        rerenderCurrentView();
 
         try {
             const payload = await fetchAdminJson('/api/admin/payments/actions', {
@@ -1559,9 +1590,7 @@
             throw error;
         } finally {
             delete state.anomalyActionLoading[actionKey];
-            if (state.summary) {
-                renderAnomalies(state.summary);
-            }
+            rerenderCurrentView();
         }
     }
 

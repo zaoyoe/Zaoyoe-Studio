@@ -27,6 +27,9 @@ const {
     parseHupijiaoAttach
 } = require('../api/_lib/payments/hupijiao');
 const {
+    deriveHupijiaoPointBreakdown
+} = require('../api/_lib/payments/hupijiao-points');
+const {
     deductPointsForService,
     finalizeAfdianCustomPayment,
     getUserBalance,
@@ -710,45 +713,6 @@ async function loadPaymentOrderSnapshotByCheckoutSessionId(provider, checkoutSes
         });
 
     return scoredRows[0]?.row || null;
-}
-
-function deriveHupijiaoPointBreakdown(paymentOrder = null, attachData = {}) {
-    const requestPayload = paymentOrder?.raw_payload?.request && typeof paymentOrder.raw_payload.request === 'object'
-        ? paymentOrder.raw_payload.request
-        : {};
-    const storedGrantedPoints = Math.max(
-        0,
-        Math.round(Number(paymentOrder?.points_amount ?? attachData.granted_points ?? 0) || 0)
-    );
-    let paidPoints = Number(requestPayload.points_amount ?? attachData.paid_points);
-    let bonusPoints = Number(requestPayload.bonus_points ?? attachData.bonus_points);
-
-    if (!Number.isFinite(paidPoints) || paidPoints < 0) {
-        paidPoints = storedGrantedPoints;
-    } else {
-        paidPoints = Math.round(paidPoints);
-    }
-
-    if (!Number.isFinite(bonusPoints) || bonusPoints < 0) {
-        bonusPoints = Math.max(0, storedGrantedPoints - paidPoints);
-    } else {
-        bonusPoints = Math.round(bonusPoints);
-    }
-
-    if (paidPoints + bonusPoints !== storedGrantedPoints && storedGrantedPoints > 0) {
-        if (paidPoints > storedGrantedPoints) {
-            paidPoints = storedGrantedPoints;
-            bonusPoints = 0;
-        } else {
-            bonusPoints = Math.max(0, storedGrantedPoints - paidPoints);
-        }
-    }
-
-    return {
-        paidPoints,
-        bonusPoints,
-        grantedPoints: Math.max(storedGrantedPoints, paidPoints + bonusPoints)
-    };
 }
 
 async function ensureHupijiaoRecoveredPaymentOrder({

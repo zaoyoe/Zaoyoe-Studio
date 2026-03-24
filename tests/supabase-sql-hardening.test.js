@@ -12,6 +12,7 @@ function readRepoFile(relativePath) {
 test('standalone Supabase helper SQL files stay aligned with hardened site-aware signatures', () => {
     const balanceSql = readRepoFile(path.join('supabase', 'fn_get_user_balance.sql'));
     const rechargeSql = readRepoFile(path.join('supabase', 'fn_recharge_points.sql'));
+    const reclaimSql = readRepoFile(path.join('supabase', 'fn_admin_deduct_points_site_with_breakdown.sql'));
     const redeemSql = readRepoFile(path.join('supabase', 'fn_redeem_code_v2.sql'));
     const customCodesSql = readRepoFile(path.join('supabase', 'fn_generate_custom_codes.sql'));
 
@@ -30,6 +31,16 @@ test('standalone Supabase helper SQL files stay aligned with hardened site-aware
         rechargeSql,
         /CREATE OR REPLACE FUNCTION public\.fn_recharge_points\(\s*target_user_id UUID,\s*p_paid NUMERIC\(12,1\),\s*p_bonus NUMERIC\(12,1\),\s*p_reason TEXT,\s*p_reference_id TEXT,\s*p_site VARCHAR DEFAULT 'cn'/s,
         'fn_recharge_points helper should preserve the site-aware overload'
+    );
+    assert.match(
+        reclaimSql,
+        /CREATE OR REPLACE FUNCTION public\.fn_deduct_points_admin_site_with_breakdown\(\s*p_target_user_id UUID,\s*p_amount INT,\s*p_reason TEXT DEFAULT 'Admin Deduction',\s*p_reference_id TEXT DEFAULT NULL,\s*p_site VARCHAR DEFAULT 'cn'/s,
+        'refund reclaim helper should expose the site-aware breakdown signature'
+    );
+    assert.match(
+        reclaimSql,
+        /GRANT EXECUTE ON FUNCTION public\.fn_deduct_points_admin_site_with_breakdown\(UUID, INT, TEXT, TEXT, VARCHAR\) TO service_role;/,
+        'refund reclaim helper should stay restricted to service_role'
     );
 
     assert.match(
@@ -66,6 +77,7 @@ test('database migrations retire the legacy redemption overload and formalize th
     const paymentCreationSql = readRepoFile(path.join('supabase', 'migrations', '20260322_harden_payment_creation_entrypoints.sql'));
     const paymentSiteSql = readRepoFile(path.join('supabase', 'migrations', '20260322_constrain_payment_sites.sql'));
     const rateLimitSql = readRepoFile(path.join('supabase', 'migrations', '20260324_add_persistent_rate_limits.sql'));
+    const refundReclaimSql = readRepoFile(path.join('supabase', 'migrations', '20260324_add_admin_refund_reclaim_rpc.sql'));
 
     assert.match(
         migrationSql,
@@ -166,6 +178,26 @@ test('database migrations retire the legacy redemption overload and formalize th
         rateLimitSql,
         /GRANT EXECUTE ON FUNCTION public\.take_rate_limit_token\(TEXT, INTEGER, INTEGER, TIMESTAMPTZ\) TO service_role;/,
         'persistent rate limit migration should keep limiter execution restricted to service_role'
+    );
+    assert.match(
+        refundReclaimSql,
+        /CREATE OR REPLACE FUNCTION public\.fn_deduct_points_admin_site_with_breakdown\(/,
+        'refund reclaim migration should define the explicit paid\/bonus breakdown RPC'
+    );
+    assert.match(
+        refundReclaimSql,
+        /'deducted_paid', deduct_from_paid/s,
+        'refund reclaim migration should return the exact paid deduction split'
+    );
+    assert.match(
+        refundReclaimSql,
+        /'deducted_bonus', deduct_from_bonus/s,
+        'refund reclaim migration should return the exact bonus deduction split'
+    );
+    assert.match(
+        refundReclaimSql,
+        /GRANT EXECUTE ON FUNCTION public\.fn_deduct_points_admin_site_with_breakdown\(UUID, INT, TEXT, TEXT, VARCHAR\) TO service_role;/,
+        'refund reclaim migration should keep execution restricted to service_role'
     );
 });
 

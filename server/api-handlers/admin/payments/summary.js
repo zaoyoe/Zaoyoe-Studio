@@ -113,6 +113,7 @@ function buildOrderAnomaly(order) {
         provider: order.provider,
         provider_order_no: order.provider_order_no,
         status: order.status,
+        user_id: order.user_id || null,
         claimed_at: order.claimed_at || null,
         provider_metadata: normalizeJsonObject(order.provider_metadata),
         severity,
@@ -286,17 +287,24 @@ function isResolvedOpsStatus(status) {
     return ['handled', 'ignored', 'approved', 'rejected'].includes(String(status || '').trim().toLowerCase());
 }
 
-function isRefundableHupijiaoOrder(item) {
-    if (item?.type !== 'order') return false;
+function canRefundHupijiaoOrder(item) {
+    if (!item) return false;
+    if ((item?.type && item.type !== 'order')) return false;
     if (String(item?.provider || '').trim().toLowerCase() !== 'hupijiao') return false;
 
     const status = String(item?.status || '').trim().toLowerCase();
-    if (!['pending_review', 'amount_mismatch', 'paid'].includes(status)) return false;
-    if (status === 'redeemed' || Boolean(String(item?.claimed_at || '').trim())) return false;
+    if (!['pending_review', 'amount_mismatch', 'paid', 'redeemed'].includes(status)) return false;
+    if ((status === 'redeemed' || Boolean(String(item?.claimed_at || '').trim())) && !item?.user_id) return false;
 
     const metadata = normalizeJsonObject(item?.provider_metadata);
     const refundStatus = String(metadata.refund_status || '').trim().toLowerCase();
     return !['refunded', 'refund_pending'].includes(refundStatus);
+}
+
+function getOrderAvailableActions(order) {
+    return canRefundHupijiaoOrder(order)
+        ? ['refund_hupijiao']
+        : [];
 }
 
 function getAnomalyAvailableActions(item, caseStatus) {
@@ -311,18 +319,18 @@ function getAnomalyAvailableActions(item, caseStatus) {
     }
 
     if (item?.type === 'order' && String(item?.status || '').trim().toLowerCase() === 'amount_mismatch') {
-        return isRefundableHupijiaoOrder(item)
+        return canRefundHupijiaoOrder(item)
             ? ['approve_amount_mismatch', 'reject_amount_mismatch', 'refund_hupijiao', 'ignore']
             : ['approve_amount_mismatch', 'reject_amount_mismatch', 'ignore'];
     }
 
     if (item?.type === 'order' && String(item?.status || '').trim().toLowerCase() === 'pending_review') {
-        return isRefundableHupijiaoOrder(item)
+        return canRefundHupijiaoOrder(item)
             ? ['approve_review', 'reject_review', 'refund_hupijiao', 'ignore']
             : ['approve_review', 'reject_review', 'ignore'];
     }
 
-    if (isRefundableHupijiaoOrder(item)) {
+    if (canRefundHupijiaoOrder(item)) {
         return ['refund_hupijiao', 'mark_handled', 'ignore', 'request_retry'];
     }
 
@@ -1445,7 +1453,14 @@ module.exports = async function handler(req, res) {
         });
         const scopedTrendEvents = scopedEvents.filter((event) => new Date(event.created_at).getTime() >= new Date(trendSinceIso).getTime());
 
-        const recentOrders = view === 'ops' ? (visibleOrders || []).slice(0, 20) : [];
+        const recentOrders = view === 'ops'
+            ? (visibleOrders || [])
+                .slice(0, 20)
+                .map((order) => ({
+                    ...order,
+                    order_available_actions: getOrderAvailableActions(order)
+                }))
+            : [];
         const recentOrderAnomalies = view === 'ops'
             ? (visibleOrders || [])
                 .filter(isOrderAnomaly)

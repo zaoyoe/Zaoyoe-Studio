@@ -6,11 +6,17 @@ const {
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
 const {
-    applyPaymentOrderReview
+    applyPaymentOrderReview,
+    deductPointsForRefundReclaim,
+    getUserBalance,
+    rechargePointsForPayment
 } = require('../../../../api/_lib/payments/rpc');
 const {
     getPaymentProviderAdapter
 } = require('../../../../api/_lib/payments/provider-adapters');
+const {
+    deriveHupijiaoPointBreakdown
+} = require('../../../../api/_lib/payments/hupijiao-points');
 
 const VALID_TARGET_TYPES = new Set(['order', 'event', 'session']);
 const VALID_ACTIONS = new Set([
@@ -37,6 +43,12 @@ const SENSITIVE_REVIEW_ACTIONS = new Set([
     'approve_amount_mismatch',
     'reject_amount_mismatch'
 ]);
+const REFUNDABLE_HUPIJIAO_STATUSES = new Set([
+    'pending_review',
+    'amount_mismatch',
+    'paid',
+    'redeemed'
+]);
 
 function normalizeText(value) {
     return String(value || '').trim();
@@ -53,6 +65,24 @@ function mergeJsonObjects(...values) {
         ...result,
         ...normalizeJsonObject(value)
     }), {});
+}
+
+function normalizePointAmount(value, fallback = 0) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return fallback;
+    return Math.max(0, Math.round(numericValue));
+}
+
+function getBalanceTotal(balanceData = {}) {
+    const totalBalance = Number(balanceData?.total_balance);
+    if (Number.isFinite(totalBalance)) {
+        return normalizePointAmount(totalBalance, 0);
+    }
+
+    return normalizePointAmount(
+        Number(balanceData?.paid_balance || 0) + Number(balanceData?.bonus_balance || 0),
+        0
+    );
 }
 
 function mapActionToStatus(action) {
@@ -225,6 +255,59 @@ function buildAdminRefundEventKey(targetId, providerOrderNo, actorId) {
     return `admin-refund:hupijiao:${digest}`;
 }
 
+function buildAdminRefundAttemptId(targetId, providerOrderNo, actorId) {
+    return crypto
+        .createHash('sha256')
+        .update([
+            String(targetId || '').trim(),
+            String(providerOrderNo || '').trim(),
+            String(actorId || '').trim(),
+            new Date().toISOString()
+        ].join(':'))
+        .digest('hex')
+        .slice(0, 20);
+}
+
+function buildRefundReclaimReference(attemptId) {
+    return `admin-refund-reclaim:hupijiao:${String(attemptId || '').trim()}`;
+}
+
+function buildRefundCompensationReference(attemptId) {
+    return `admin-refund-compensate:hupijiao:${String(attemptId || '').trim()}`;
+}
+
+function buildRefundReclaimReason(target = {}) {
+    return `支付退款扣回 ${normalizeText(target.provider_order_no || target.id) || '未知订单'}`;
+}
+
+function buildRefundCompensationReason(target = {}) {
+    return `支付退款回滚 ${normalizeText(target.provider_order_no || target.id) || '未知订单'}`;
+}
+
+function extractRefundReclaimSummary(payload = {}) {
+    return {
+        reclaimedPoints: normalizePointAmount(payload?.deducted, 0),
+        reclaimedPaidPoints: normalizePointAmount(payload?.deducted_paid, 0),
+        reclaimedBonusPoints: normalizePointAmount(payload?.deducted_bonus, 0),
+        duplicate: Boolean(payload?.duplicate),
+        site: normalizeText(payload?.site).toLowerCase() || null
+    };
+}
+
+function isMissingRefundReclaimRpc(error) {
+    const message = [
+        error?.message,
+        error?.details,
+        error?.hint
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return (
+        message.includes('fn_deduct_points_admin_site_with_breakdown')
+        || message.includes('schema cache')
+        || message.includes('could not find the function')
+    );
+}
+
 function getHupijiaoRefundSnapshot(target = {}) {
     const metadata = normalizeJsonObject(target.provider_metadata);
     const status = normalizeText(target.status).toLowerCase();
@@ -241,6 +324,197 @@ function getHupijiaoRefundSnapshot(target = {}) {
         openOrderId: normalizeText(metadata.gateway_open_order_id || metadata.open_order_id),
         credited: status === 'redeemed' || Boolean(normalizeText(target.claimed_at))
     };
+}
+
+async function compensateRefundReclaim(supabase, target, reclaimSummary, attemptId) {
+    if (!reclaimSummary || reclaimSummary.reclaimedPoints <= 0) {
+        return {
+            success: true,
+            referenceId: null,
+            restoredPaidPoints: 0,
+            restoredBonusPoints: 0,
+            data: null,
+            error: null
+        };
+    }
+
+    const referenceId = buildRefundCompensationReference(attemptId);
+    const { data, error } = await rechargePointsForPayment({
+        supabase,
+        userId: target.user_id,
+        paidPoints: reclaimSummary.reclaimedPaidPoints,
+        bonusPoints: reclaimSummary.reclaimedBonusPoints,
+        reason: buildRefundCompensationReason(target),
+        referenceId,
+        site: target.site || 'cn'
+    });
+
+    return {
+        success: !error,
+        referenceId,
+        restoredPaidPoints: reclaimSummary.reclaimedPaidPoints,
+        restoredBonusPoints: reclaimSummary.reclaimedBonusPoints,
+        data: data || null,
+        error: error || null
+    };
+}
+
+async function reclaimCreditedHupijiaoPoints(supabase, target, attemptId) {
+    const userId = normalizeText(target.user_id);
+    if (!userId) {
+        const error = new Error('该虎皮椒订单缺少用户归属，无法自动扣回已入账积分');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const pointBreakdown = deriveHupijiaoPointBreakdown(target, normalizeJsonObject(target.provider_metadata));
+    const pointsToReclaim = normalizePointAmount(
+        pointBreakdown.grantedPoints ?? target.points_amount,
+        normalizePointAmount(target.points_amount, 0)
+    );
+    const site = normalizeText(target.site).toLowerCase() || 'cn';
+
+    if (!(pointsToReclaim > 0)) {
+        return {
+            reclaimReference: null,
+            compensationReference: null,
+            reclaimedPoints: 0,
+            reclaimedPaidPoints: 0,
+            reclaimedBonusPoints: 0,
+            originalPaidPoints: normalizePointAmount(pointBreakdown.paidPoints, 0),
+            originalBonusPoints: normalizePointAmount(pointBreakdown.bonusPoints, 0),
+            originalGrantedPoints: pointsToReclaim,
+            balanceBefore: 0
+        };
+    }
+
+    const balanceResult = await getUserBalance({
+        supabase,
+        userId,
+        site
+    });
+    if (balanceResult?.error) {
+        const error = new Error(balanceResult.error.message || '读取用户积分余额失败，已停止退款');
+        error.statusCode = 502;
+        throw error;
+    }
+
+    const balanceBefore = getBalanceTotal(balanceResult?.data);
+    if (balanceBefore < pointsToReclaim) {
+        const error = new Error(`用户当前仅剩 ${balanceBefore} 点，无法原子扣回这笔订单的 ${pointsToReclaim} 点积分`);
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const reclaimReference = buildRefundReclaimReference(attemptId);
+    const reclaimResult = await deductPointsForRefundReclaim({
+        supabase,
+        userId,
+        amount: pointsToReclaim,
+        reason: buildRefundReclaimReason(target),
+        referenceId: reclaimReference,
+        site
+    });
+
+    if (reclaimResult?.error) {
+        const error = new Error(
+            isMissingRefundReclaimRpc(reclaimResult.error)
+                ? '退款扣回 RPC 尚未部署，请先执行 20260324_add_admin_refund_reclaim_rpc.sql'
+                : (reclaimResult.error.message || '执行退款积分扣回失败')
+        );
+        error.statusCode = isMissingRefundReclaimRpc(reclaimResult.error) ? 503 : 502;
+        throw error;
+    }
+
+    const reclaimSummary = extractRefundReclaimSummary(reclaimResult?.data);
+    if (reclaimSummary.reclaimedPoints !== pointsToReclaim) {
+        const compensation = await compensateRefundReclaim(supabase, target, reclaimSummary, attemptId);
+        const error = new Error(
+            compensation.success
+                ? `积分扣回未完整执行，系统已自动补回；预期扣回 ${pointsToReclaim} 点，实际仅扣回 ${reclaimSummary.reclaimedPoints} 点`
+                : `积分扣回异常且自动补回失败；预期扣回 ${pointsToReclaim} 点，实际仅扣回 ${reclaimSummary.reclaimedPoints} 点`
+        );
+        error.statusCode = compensation.success ? 409 : 500;
+        error.reclaimDetails = {
+            ...reclaimSummary,
+            compensation
+        };
+        throw error;
+    }
+
+    return {
+        reclaimReference,
+        compensationReference: buildRefundCompensationReference(attemptId),
+        reclaimedPoints: reclaimSummary.reclaimedPoints,
+        reclaimedPaidPoints: reclaimSummary.reclaimedPaidPoints,
+        reclaimedBonusPoints: reclaimSummary.reclaimedBonusPoints,
+        originalPaidPoints: normalizePointAmount(pointBreakdown.paidPoints, 0),
+        originalBonusPoints: normalizePointAmount(pointBreakdown.bonusPoints, 0),
+        originalGrantedPoints: pointsToReclaim,
+        balanceBefore
+    };
+}
+
+function buildNoopRefundCompensation() {
+    return {
+        success: true,
+        referenceId: null,
+        restoredPaidPoints: 0,
+        restoredBonusPoints: 0,
+        data: null,
+        error: null
+    };
+}
+
+async function failHupijiaoRefundAfterReclaim({
+    supabase,
+    target,
+    snapshot,
+    actorId,
+    note,
+    liveOrder,
+    reclaimSummary,
+    attemptId,
+    message,
+    response = null,
+    responseStatus = 502
+}) {
+    const compensation = snapshot.credited
+        ? await compensateRefundReclaim(supabase, target, reclaimSummary, attemptId)
+        : buildNoopRefundCompensation();
+
+    await tryRecordPaymentEvent(supabase, {
+        payment_order_id: target.id,
+        provider: 'hupijiao',
+        provider_order_no: snapshot.providerOrderNo || null,
+        event_key: buildAdminRefundEventKey(target.id, snapshot.providerOrderNo, actorId),
+        event_type: 'admin_refund',
+        signature_valid: true,
+        amount_valid: null,
+        payload: {
+            action: 'refund_hupijiao',
+            source: 'admin_action',
+            query: liveOrder,
+            response: response,
+            reclaim: reclaimSummary,
+            compensation,
+            note: note || null
+        },
+        processing_result: compensation.success ? 'admin_refund_failed' : 'admin_refund_compensation_failed',
+        error_message: compensation.success
+            ? message
+            : `${message}；积分补回失败，需要人工修复`,
+        response_status: compensation.success ? responseStatus : 500,
+        processed_at: new Date().toISOString()
+    });
+
+    const error = new Error(
+        compensation.success
+            ? message
+            : `${message}，且积分补回失败，需要人工修复`
+    );
+    error.statusCode = compensation.success ? responseStatus : 500;
+    throw error;
 }
 
 async function tryRecordPaymentEvent(supabase, payload = {}) {
@@ -263,34 +537,52 @@ async function syncRefundedPaymentOrder(supabase, target, {
     refundStatus = 'refunded',
     refundStatusRaw = 'CD',
     refundSource = 'admin_action',
-    payload = null
+    payload = null,
+    reclaimSummary = null
 }) {
     const existingMetadata = normalizeJsonObject(target.provider_metadata);
     const existingRawPayload = normalizeJsonObject(target.raw_payload);
+    const existingAdminRefund = normalizeJsonObject(existingRawPayload.admin_refund);
     const nowIso = new Date().toISOString();
     const normalizedRefundStatus = normalizeText(refundStatus).toLowerCase() || 'refunded';
+    const normalizedReclaimSummary = reclaimSummary && typeof reclaimSummary === 'object'
+        ? reclaimSummary
+        : null;
+    const nextProviderMetadata = mergeJsonObjects(existingMetadata, {
+        provider_order_no: providerOrderNo || existingMetadata.provider_order_no || target.provider_order_no || null,
+        gateway_open_order_id: openOrderId || existingMetadata.gateway_open_order_id || null,
+        payment_status: normalizedRefundStatus,
+        payment_status_raw: refundStatusRaw || existingMetadata.payment_status_raw || null,
+        refund_status: normalizedRefundStatus,
+        refund_requested_at: nowIso,
+        refund_requested_by: actorId || null,
+        refund_note: note || null,
+        refund_source: refundSource
+    });
+
+    if (normalizedReclaimSummary) {
+        Object.assign(nextProviderMetadata, {
+            refund_reclaimed_points: normalizedReclaimSummary.reclaimedPoints,
+            refund_reclaimed_paid_points: normalizedReclaimSummary.reclaimedPaidPoints,
+            refund_reclaimed_bonus_points: normalizedReclaimSummary.reclaimedBonusPoints,
+            refund_reclaimed_at: nowIso,
+            refund_reclaim_reference: normalizedReclaimSummary.reclaimReference || null
+        });
+    }
+
     const orderPatch = {
         status: normalizedRefundStatus === 'refunded' ? 'refunded' : target.status,
         last_error: normalizedRefundStatus === 'refunded' ? null : (target.last_error || null),
-        provider_metadata: mergeJsonObjects(existingMetadata, {
-            provider_order_no: providerOrderNo || existingMetadata.provider_order_no || target.provider_order_no || null,
-            gateway_open_order_id: openOrderId || existingMetadata.gateway_open_order_id || null,
-            payment_status: normalizedRefundStatus,
-            payment_status_raw: refundStatusRaw || existingMetadata.payment_status_raw || null,
-            refund_status: normalizedRefundStatus,
-            refund_requested_at: nowIso,
-            refund_requested_by: actorId || null,
-            refund_note: note || null,
-            refund_source: refundSource
-        }),
+        provider_metadata: nextProviderMetadata,
         raw_payload: mergeJsonObjects(existingRawPayload, {
-            admin_refund: {
+            admin_refund: mergeJsonObjects(existingAdminRefund, {
                 requested_at: nowIso,
                 requested_by: actorId || null,
                 note: note || null,
                 source: refundSource,
-                payload: payload && typeof payload === 'object' ? payload : null
-            }
+                payload: payload && typeof payload === 'object' ? payload : null,
+                reclaim: normalizedReclaimSummary
+            })
         })
     };
 
@@ -332,13 +624,7 @@ async function applyHupijiaoRefundDecision(supabase, target, note, actorId, env 
         throw error;
     }
 
-    if (snapshot.credited) {
-        const error = new Error('当前仅开放未入账的虎皮椒退款；已入账订单需先走人工扣回闭环');
-        error.statusCode = 409;
-        throw error;
-    }
-
-    if (!['pending_review', 'amount_mismatch', 'paid'].includes(snapshot.status)) {
+    if (!REFUNDABLE_HUPIJIAO_STATUSES.has(snapshot.status)) {
         const error = new Error('当前订单状态不允许执行虎皮椒退款');
         error.statusCode = 409;
         throw error;
@@ -355,6 +641,7 @@ async function applyHupijiaoRefundDecision(supabase, target, note, actorId, env 
         supabase,
         env
     });
+    const attemptId = buildAdminRefundAttemptId(target.id, snapshot.providerOrderNo, actorId);
 
     let liveOrder = null;
     if (typeof adapter.queryOrder === 'function') {
@@ -384,6 +671,35 @@ async function applyHupijiaoRefundDecision(supabase, target, note, actorId, env 
         }
 
         if (liveStatus === 'refunded') {
+            let reclaimSummary = null;
+            if (snapshot.credited) {
+                try {
+                    reclaimSummary = await reclaimCreditedHupijiaoPoints(supabase, target, attemptId);
+                } catch (reclaimError) {
+                    await tryRecordPaymentEvent(supabase, {
+                        payment_order_id: target.id,
+                        provider: 'hupijiao',
+                        provider_order_no: liveOrder.providerOrderNo || snapshot.providerOrderNo || null,
+                        event_key: buildAdminRefundEventKey(target.id, liveOrder.providerOrderNo || snapshot.providerOrderNo, actorId),
+                        event_type: 'admin_refund',
+                        signature_valid: true,
+                        amount_valid: null,
+                        payload: {
+                            action: 'refund_hupijiao',
+                            source: 'gateway_query_sync',
+                            query: liveOrder,
+                            reclaim: reclaimError?.reclaimDetails || null,
+                            note: note || null
+                        },
+                        processing_result: 'admin_refund_reclaim_failed',
+                        error_message: reclaimError.message || '虎皮椒退款积分扣回失败',
+                        response_status: reclaimError?.statusCode || 409,
+                        processed_at: new Date().toISOString()
+                    });
+                    throw reclaimError;
+                }
+            }
+
             const syncedOrder = await syncRefundedPaymentOrder(supabase, target, {
                 actorId,
                 note,
@@ -394,7 +710,8 @@ async function applyHupijiaoRefundDecision(supabase, target, note, actorId, env 
                 refundSource: 'gateway_query_sync',
                 payload: {
                     query: liveOrder
-                }
+                },
+                reclaimSummary
             });
 
             await tryRecordPaymentEvent(supabase, {
@@ -409,6 +726,7 @@ async function applyHupijiaoRefundDecision(supabase, target, note, actorId, env 
                     action: 'refund_hupijiao',
                     source: 'gateway_query_sync',
                     query: liveOrder,
+                    reclaim: reclaimSummary,
                     note: note || null
                 },
                 processing_result: 'admin_refund_synced_refunded',
@@ -425,50 +743,100 @@ async function applyHupijiaoRefundDecision(supabase, target, note, actorId, env 
                     refund_status: 'refunded',
                     refund_source: 'gateway_query_sync',
                     provider_order_no: liveOrder.providerOrderNo || snapshot.providerOrderNo || null,
-                    gateway_open_order_id: liveOrder.openOrderId || snapshot.openOrderId || null
+                    gateway_open_order_id: liveOrder.openOrderId || snapshot.openOrderId || null,
+                    refund_reclaimed_points: reclaimSummary?.reclaimedPoints || 0,
+                    refund_reclaimed_paid_points: reclaimSummary?.reclaimedPaidPoints || 0,
+                    refund_reclaimed_bonus_points: reclaimSummary?.reclaimedBonusPoints || 0
                 }
             };
         }
     }
 
-    const refundResult = await adapter.refundOrder({
-        runtimeContext,
-        providerOrderNo: snapshot.providerOrderNo,
-        openOrderId: snapshot.openOrderId,
-        reason: note
-    });
+    let reclaimSummary = null;
+    if (snapshot.credited) {
+        try {
+            reclaimSummary = await reclaimCreditedHupijiaoPoints(supabase, target, attemptId);
+        } catch (reclaimError) {
+            await tryRecordPaymentEvent(supabase, {
+                payment_order_id: target.id,
+                provider: 'hupijiao',
+                provider_order_no: snapshot.providerOrderNo || null,
+                event_key: buildAdminRefundEventKey(target.id, snapshot.providerOrderNo, actorId),
+                event_type: 'admin_refund',
+                signature_valid: true,
+                amount_valid: null,
+                payload: {
+                    action: 'refund_hupijiao',
+                    source: 'admin_action',
+                    query: liveOrder,
+                    reclaim: reclaimError?.reclaimDetails || null,
+                    note: note || null
+                },
+                processing_result: 'admin_refund_reclaim_failed',
+                error_message: reclaimError.message || '虎皮椒退款积分扣回失败',
+                response_status: reclaimError?.statusCode || 409,
+                processed_at: new Date().toISOString()
+            });
+            throw reclaimError;
+        }
+    }
+
+    let refundResult = null;
+    try {
+        refundResult = await adapter.refundOrder({
+            runtimeContext,
+            providerOrderNo: snapshot.providerOrderNo,
+            openOrderId: snapshot.openOrderId,
+            reason: note
+        });
+    } catch (refundError) {
+        await failHupijiaoRefundAfterReclaim({
+            supabase,
+            target,
+            snapshot,
+            actorId,
+            note,
+            liveOrder,
+            reclaimSummary,
+            attemptId,
+            message: refundError?.message || '虎皮椒退款请求异常',
+            response: {
+                error: refundError?.message || '虎皮椒退款请求异常'
+            },
+            responseStatus: 502
+        });
+    }
 
     if (refundResult?.supported === false) {
-        const error = new Error(refundResult.message || '虎皮椒退款能力不可用');
-        error.statusCode = 503;
-        throw error;
+        await failHupijiaoRefundAfterReclaim({
+            supabase,
+            target,
+            snapshot,
+            actorId,
+            note,
+            liveOrder,
+            reclaimSummary,
+            attemptId,
+            message: refundResult.message || '虎皮椒退款能力不可用',
+            response: refundResult,
+            responseStatus: 503
+        });
     }
 
     if (!refundResult?.success) {
-        await tryRecordPaymentEvent(supabase, {
-            payment_order_id: target.id,
-            provider: 'hupijiao',
-            provider_order_no: snapshot.providerOrderNo || null,
-            event_key: buildAdminRefundEventKey(target.id, snapshot.providerOrderNo, actorId),
-            event_type: 'admin_refund',
-            signature_valid: true,
-            amount_valid: null,
-            payload: {
-                action: 'refund_hupijiao',
-                source: 'admin_action',
-                query: liveOrder,
-                response: refundResult || null,
-                note: note || null
-            },
-            processing_result: 'admin_refund_failed',
-            error_message: refundResult?.message || '虎皮椒退款失败',
-            response_status: 502,
-            processed_at: new Date().toISOString()
+        await failHupijiaoRefundAfterReclaim({
+            supabase,
+            target,
+            snapshot,
+            actorId,
+            note,
+            liveOrder,
+            reclaimSummary,
+            attemptId,
+            message: refundResult?.message || '虎皮椒退款失败',
+            response: refundResult || null,
+            responseStatus: 502
         });
-
-        const error = new Error(refundResult?.message || '虎皮椒退款失败');
-        error.statusCode = 502;
-        throw error;
     }
 
     const refundedOrder = await syncRefundedPaymentOrder(supabase, target, {
@@ -482,7 +850,8 @@ async function applyHupijiaoRefundDecision(supabase, target, note, actorId, env 
         payload: {
             query: liveOrder,
             response: refundResult
-        }
+        },
+        reclaimSummary
     });
 
     await tryRecordPaymentEvent(supabase, {
@@ -498,6 +867,7 @@ async function applyHupijiaoRefundDecision(supabase, target, note, actorId, env 
             source: 'admin_action',
             query: liveOrder,
             response: refundResult,
+            reclaim: reclaimSummary,
             note: note || null
         },
         processing_result: 'admin_refund_processed',
@@ -514,7 +884,10 @@ async function applyHupijiaoRefundDecision(supabase, target, note, actorId, env 
             refund_status: normalizeText(refundResult.status).toLowerCase() || 'refunded',
             refund_source: 'admin_action',
             provider_order_no: refundResult.providerOrderNo || snapshot.providerOrderNo || null,
-            gateway_open_order_id: refundResult.openOrderId || snapshot.openOrderId || null
+            gateway_open_order_id: refundResult.openOrderId || snapshot.openOrderId || null,
+            refund_reclaimed_points: reclaimSummary?.reclaimedPoints || 0,
+            refund_reclaimed_paid_points: reclaimSummary?.reclaimedPaidPoints || 0,
+            refund_reclaimed_bonus_points: reclaimSummary?.reclaimedBonusPoints || 0
         }
     };
 }
