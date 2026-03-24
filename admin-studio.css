@@ -1313,6 +1313,22 @@ body {
     font-weight: 600;
 }
 
+.users-table-empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    width: 100%;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    text-align: center;
+}
+
+.users-empty-tag {
+    color: var(--text-dim);
+    font-size: 0.8rem;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .manage-toolbar {
@@ -2598,6 +2614,11 @@ body {
     text-align: center !important;
     vertical-align: middle !important;
     height: 300px;
+}
+
+.users-table-status-cell {
+    color: var(--text-dim);
+    padding: 20px !important;
 }
 
 /* Ticket status cell - centered but normal height */
@@ -4180,6 +4201,44 @@ body {
 /* Initials Avatar */
 .initials-avatar {
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 600;
+    border-radius: 50%;
+}
+
+.initials-avatar--sm {
+    font-size: 12.8px;
+}
+
+.initials-avatar--lg {
+    font-size: 25.6px;
+}
+
+.initials-avatar--tone-0 {
+    background: #6366f1;
+}
+
+.initials-avatar--tone-1 {
+    background: #8b5cf6;
+}
+
+.initials-avatar--tone-2 {
+    background: #ec4899;
+}
+
+.initials-avatar--tone-3 {
+    background: #f59e0b;
+}
+
+.initials-avatar--tone-4 {
+    background: #10b981;
+}
+
+.initials-avatar--tone-5 {
+    background: #3b82f6;
 }
 
 /* ============================================
@@ -5178,13 +5237,15 @@ input:checked+.toggle-slider:before {
 .tab-indicator {
     position: absolute;
     bottom: -1px;
-    left: 0;
+    left: var(--users-tab-indicator-left, 0);
+    width: var(--users-tab-indicator-width, 0);
     height: 2px;
     background: #6b9ece;
     box-shadow: 0 -2px 8px rgba(107, 158, 206, 0.5);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     pointer-events: none;
     z-index: 10;
+    opacity: var(--users-tab-indicator-opacity, 0);
 }
 
 
@@ -5415,6 +5476,34 @@ input:checked+.toggle-slider:before {
     cursor: pointer;
 }
 
+.admin-ledger-item--emerald {
+    border-left-color: #10b981;
+}
+
+.admin-ledger-item--sky {
+    border-left-color: #38bdf8;
+}
+
+.admin-ledger-item--violet {
+    border-left-color: #8b5cf6;
+}
+
+.admin-ledger-item--amber {
+    border-left-color: #f59e0b;
+}
+
+.admin-ledger-item--pink {
+    border-left-color: #f472b6;
+}
+
+.admin-ledger-item--danger {
+    border-left-color: #ef4444;
+}
+
+.admin-ledger-item--muted {
+    border-left-color: #94a3b8;
+}
+
 .admin-ledger-icon {
     width: 42px;
     height: 42px;
@@ -5426,6 +5515,34 @@ input:checked+.toggle-slider:before {
     border: 1px solid color-mix(in srgb, var(--ledger-accent) 28%, transparent);
     color: var(--ledger-accent);
     flex-shrink: 0;
+}
+
+.admin-ledger-icon--emerald {
+    --ledger-accent: #10b981;
+}
+
+.admin-ledger-icon--sky {
+    --ledger-accent: #38bdf8;
+}
+
+.admin-ledger-icon--violet {
+    --ledger-accent: #8b5cf6;
+}
+
+.admin-ledger-icon--amber {
+    --ledger-accent: #f59e0b;
+}
+
+.admin-ledger-icon--pink {
+    --ledger-accent: #f472b6;
+}
+
+.admin-ledger-icon--danger {
+    --ledger-accent: #ef4444;
+}
+
+.admin-ledger-icon--muted {
+    --ledger-accent: #94a3b8;
 }
 
 .admin-ledger-main {
@@ -5614,6 +5731,34 @@ input:checked+.toggle-slider:before {
     font-size: 0.82rem;
 }
 
+.admin-ledger-detail-value--emerald {
+    color: #34d399;
+}
+
+.admin-ledger-detail-value--sky {
+    color: #6b9ece;
+}
+
+.admin-ledger-detail-value--violet {
+    color: #8b5cf6;
+}
+
+.admin-ledger-detail-value--amber {
+    color: #f59e0b;
+}
+
+.admin-ledger-detail-value--pink {
+    color: #ec4899;
+}
+
+.admin-ledger-detail-value--danger {
+    color: #f87171;
+}
+
+.admin-ledger-detail-value--muted {
+    color: #cbd5e1;
+}
+
 .admin-ledger-content-grid {
     display: grid;
     gap: 12px;
@@ -5672,6 +5817,22 @@ input:checked+.toggle-slider:before {
     flex-direction: column;
     gap: 18px;
     padding-top: 12px;
+}
+
+.users-affiliate-error-state {
+    text-align: center;
+    padding: 48px;
+    color: var(--text-dim);
+}
+
+.users-affiliate-error-title {
+    font-size: 1rem;
+    color: #fca5a5;
+    margin-bottom: 10px;
+}
+
+.users-affiliate-error-message {
+    margin-bottom: 18px;
 }
 
 .affiliate-admin-link-strip {
@@ -6920,6 +7081,10 @@ input:checked+.toggle-slider:before {
     display: inline-flex;
 }
 
+.add-tag-wrapper--push-end {
+    margin-left: auto;
+}
+
 .add-tag-btn {
     background: transparent;
     border: 1px dashed #cbd5e1;
@@ -6957,6 +7122,18 @@ input:checked+.toggle-slider:before {
     outline: none;
     font-family: inherit;
     background: transparent;
+}
+
+.custom-tag-input {
+    width: 80px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    border: 1px solid #cbd5e1;
+    font-size: 0.75rem;
+    background: transparent;
+    color: inherit;
+    outline: none;
+    transition: all 0.2s;
 }
 
 [data-theme="dark"] .custom-tag-input {
@@ -7048,6 +7225,10 @@ input:checked+.toggle-slider:before {
     background: rgba(15, 23, 42, 0.4);
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.modal-permissions-panel--flush {
+    margin-top: 0;
 }
 
 .perm-checkboxes {
@@ -9058,6 +9239,18 @@ input:checked+.toggle-slider:before {
 
 .users-danger-modal-title {
     color: #ef4444 !important;
+}
+
+.users-ban-confirm-btn--unban {
+    background: #10b981 !important;
+}
+
+.users-ban-confirm-btn--ban {
+    background: #ef4444 !important;
+}
+
+.users-ban-confirm-btn--idle {
+    background: #94a3b8 !important;
 }
 
 .users-danger-checklist {
@@ -12359,6 +12552,64 @@ input:checked+.toggle-slider:before {
 .ban-user-modal.points-adjustment-modal {
     max-width: 480px !important;
     width: 480px !important;
+}
+
+.users-points-form-group-first {
+    margin-top: 20px;
+}
+
+.users-points-modal-footer {
+    justify-content: flex-end;
+}
+
+.users-modal-error {
+    color: #ef4444;
+    padding: 20px;
+}
+
+.users-ledger-reason-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.users-ledger-reason-time {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin-left: auto;
+}
+
+.users-ledger-reason-text {
+    font-weight: 500;
+}
+
+.users-ledger-reason-text--emerald {
+    color: #10b981;
+}
+
+.users-ledger-reason-text--sky {
+    color: #3b82f6;
+}
+
+.users-ledger-reason-text--violet {
+    color: #8b5cf6;
+}
+
+.users-ledger-reason-text--amber {
+    color: #f59e0b;
+}
+
+.users-ledger-reason-text--pink {
+    color: #ec4899;
+}
+
+.users-ledger-reason-text--danger {
+    color: #ef4444;
+}
+
+.users-ledger-reason-text--muted {
+    color: #94a3b8;
 }
 
 .ban-user-modal .modal-header {

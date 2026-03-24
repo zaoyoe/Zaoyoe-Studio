@@ -61,6 +61,7 @@ const SYNTHETIC_ROLE_SEGMENT_RE = /(?:^|[._-])(admin|regular)(?:[._-]|$)/i;
 const SYNTHETIC_TIMESTAMP_RE = /(?:^|[._-])\d{8,}$/;
 const SYSTEM_USERNAME_RE = /^(?:system|bot|service|worker|cron|automation)(?:[._-]|$)/i;
 const PHONE_ONLY_USERNAME_RE = /^\+?\d{8,}$/;
+const USERS_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';
 
 function getTagClass(tag) {
     return TAG_CONFIG[tag]?.class || 'tag-custom';
@@ -113,6 +114,32 @@ function updateUserAccountVisibilityMeta() {
         : `已隐藏 ${testAccountCount} 个测试/系统账号`;
 }
 
+function setUsersHiddenState(element, hidden) {
+    if (!(element instanceof HTMLElement)) {
+        return;
+    }
+    element.classList.toggle(USERS_HIDDEN_CLASS, Boolean(hidden));
+}
+
+function ensureUsersTableEmptyState() {
+    let emptyDiv = document.getElementById('usersEmptyState');
+    if (emptyDiv) {
+        return emptyDiv;
+    }
+
+    emptyDiv = document.createElement('div');
+    emptyDiv.id = 'usersEmptyState';
+    emptyDiv.className = `users-table-empty-state ${USERS_HIDDEN_CLASS}`;
+    emptyDiv.hidden = true;
+
+    const table = document.getElementById('usersTable');
+    if (table?.parentNode) {
+        table.parentNode.insertBefore(emptyDiv, table.nextSibling);
+    }
+
+    return emptyDiv;
+}
+
 // Initialize Module
 function initUserModule() {
     console.log('👥 Initializing User Module...');
@@ -137,7 +164,7 @@ function initUserModule() {
     // Show admin role filter for super admins
     if (window._isSuperAdmin) {
         const roleFilter = document.getElementById('adminRoleFilter');
-        if (roleFilter) roleFilter.style.display = 'block';
+        setUsersHiddenState(roleFilter, false);
     }
 
     // Bind Modal Overlay Click
@@ -471,10 +498,11 @@ async function loadUsers() {
     } catch (err) {
         console.error('Failed to load users:', err);
         document.getElementById('usersTableBody').innerHTML = `
-            <tr><td colspan="5" style="text-align:center;color:var(--text-dim);padding:20px;">
+            <tr><td colspan="5" class="loading-cell users-table-status-cell">
                 加载失败: ${err.message}
             </td></tr>
         `;
+        hideUsersEmptyState();
     }
 }
 
@@ -490,6 +518,26 @@ function handleUserFilterChange(e) {
     if (e.target.id === 'userLevelFilter') userState.filters.level = e.target.value;
     userState.currentPage = 1;
     renderUsersTable();
+}
+
+function setUsersEmptyStateContent(content, { isHtml = false } = {}) {
+    const emptyDiv = ensureUsersTableEmptyState();
+    if (!emptyDiv) return;
+    if (isHtml) {
+        emptyDiv.innerHTML = content;
+    } else {
+        emptyDiv.textContent = content;
+    }
+    emptyDiv.hidden = false;
+    setUsersHiddenState(emptyDiv, false);
+}
+
+function hideUsersEmptyState() {
+    const emptyDiv = document.getElementById('usersEmptyState');
+    if (!emptyDiv) return;
+    emptyDiv.hidden = true;
+    emptyDiv.innerHTML = '';
+    setUsersHiddenState(emptyDiv, true);
 }
 
 function toggleUserTestAccountVisibility(checked) {
@@ -591,24 +639,14 @@ function renderUsersTable() {
 
     if (paginatedUsers.length === 0) {
         tableBody.innerHTML = '';
-        // Show centered empty message as div sibling (not in table)
-        let emptyDiv = document.getElementById('usersEmptyState');
-        if (!emptyDiv) {
-            emptyDiv = document.createElement('div');
-            emptyDiv.id = 'usersEmptyState';
-            emptyDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;height:300px;width:100%;color:var(--text-dim);font-size:0.9rem;';
-            const table = document.getElementById('usersTable');
-            if (table) table.parentNode.insertBefore(emptyDiv, table.nextSibling);
-        }
-        emptyDiv.textContent = showTestAccounts
-            ? '未找到符合条件的用户'
-            : '当前仅显示真实用户，打开“显示测试/系统账号”可查看被隐藏账号';
-        emptyDiv.style.display = 'flex';
+        setUsersEmptyStateContent(
+            showTestAccounts
+                ? '未找到符合条件的用户'
+                : '当前仅显示真实用户，打开“显示测试/系统账号”可查看被隐藏账号'
+        );
         return;
     }
-    // Hide empty state if visible
-    const emptyDiv = document.getElementById('usersEmptyState');
-    if (emptyDiv) emptyDiv.style.display = 'none';
+    hideUsersEmptyState();
 
     // 4. Render Rows
     tableBody.innerHTML = paginatedUsers.map(u => {
@@ -686,7 +724,7 @@ function renderUsersTable() {
                 <div class="user-tags-cell">
                     ${u.tags.length > 0
                 ? u.tags.slice(0, 2).map(tag => `<span class="user-tag ${getTagClass(tag)}">${getTagLabel(tag)}</span>`).join('') + (u.tags.length > 2 ? `<span class="user-tag more">+${u.tags.length - 2}</span>` : '')
-                : '<span style="color:var(--text-dim);font-size:0.8rem;">-</span>'
+                : '<span class="users-empty-tag">-</span>'
             }
                 </div>
             </td>
@@ -697,17 +735,7 @@ function renderUsersTable() {
 // Loading State
 function renderUserLoading() {
     document.getElementById('usersTableBody').innerHTML = '';
-    // Show centered loading as div sibling (not in table)
-    let emptyDiv = document.getElementById('usersEmptyState');
-    if (!emptyDiv) {
-        emptyDiv = document.createElement('div');
-        emptyDiv.id = 'usersEmptyState';
-        emptyDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;height:300px;width:100%;color:var(--text-dim);font-size:0.9rem;';
-        const table = document.getElementById('usersTable');
-        if (table) table.parentNode.insertBefore(emptyDiv, table.nextSibling);
-    }
-    emptyDiv.innerHTML = '<div class="neural-loader small"><div class="neural-dot"></div><div class="neural-dot"></div><div class="neural-dot"></div></div>';
-    emptyDiv.style.display = 'flex';
+    setUsersEmptyStateContent('<div class="neural-loader small"><div class="neural-dot"></div><div class="neural-dot"></div><div class="neural-dot"></div></div>', { isHtml: true });
 }
 
 // ========================================
@@ -780,13 +808,8 @@ function updateSelectModeUI() {
         selectModeBtn.classList.toggle('active', userState.selectMode);
     }
 
-    if (batchMenuContainer) {
-        batchMenuContainer.style.display = userState.selectMode ? 'block' : 'none';
-    }
-
-    if (selectedCountWrapper) {
-        selectedCountWrapper.style.display = userState.selectMode && userState.selectedUsers.size > 0 ? 'flex' : 'none';
-    }
+    setUsersHiddenState(batchMenuContainer, !userState.selectMode);
+    setUsersHiddenState(selectedCountWrapper, !(userState.selectMode && userState.selectedUsers.size > 0));
 }
 
 // Update selection count display
@@ -798,9 +821,7 @@ function updateUserSelectionCount() {
         countEl.textContent = userState.selectedUsers.size;
     }
 
-    if (wrapper) {
-        wrapper.style.display = userState.selectMode && userState.selectedUsers.size > 0 ? 'flex' : 'none';
-    }
+    setUsersHiddenState(wrapper, !(userState.selectMode && userState.selectedUsers.size > 0));
 }
 
 // Select all users on current page
@@ -1901,7 +1922,7 @@ async function openUserModal(userId) {
 
     } catch (err) {
         console.error('❌ Error loading user modal:', err);
-        leftPanel.innerHTML = `< div style = "color:#ef4444;padding:20px;" > 加载失败: ${err.message}</div > `;
+        leftPanel.innerHTML = `<div class="users-modal-error">加载失败: ${escapeHtml(err.message)}</div>`;
         tabContent.innerHTML = '';
     }
 }
@@ -1950,8 +1971,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                          data-tooltip="${user.id}" 
                          data-admin-action="users-copy-meta"
                          data-copy-value="${encodeURIComponent(user.id)}"
-                         data-copy-success="✅ ID 已复制!"
-                         style="cursor: pointer;">
+                         data-copy-success="✅ ID 已复制!">
                         <i class="fas fa-info-circle"></i>
                     </div>
                     
@@ -1982,7 +2002,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                 </div>
                 <!-- Inline Add Button -->
                 ${!user.tags.length ? `
-                <div class="add-tag-wrapper" id="addTagWrapper_${user.id}" style="margin-left:auto;">
+                <div class="add-tag-wrapper add-tag-wrapper--push-end" id="addTagWrapper_${user.id}">
                     <button class="add-tag-btn" type="button" data-admin-action="users-show-tag-input" data-user-id="${encodeURIComponent(user.id)}" title="添加标签">
                         <i class="fas fa-plus"></i>
                     </button>
@@ -2030,7 +2050,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
             </div>
             
             ${!['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(user.email) ? `
-                <div class="modal-permissions-panel" id="modalPermissionsPanel" style="display: ${roleInfo.is_admin ? 'block' : 'none'}; margin-top: 0;">
+                <div class="modal-permissions-panel modal-permissions-panel--flush" id="modalPermissionsPanel"${roleInfo.is_admin ? '' : ' hidden'}>
                     <div class="perm-checkboxes">
                         <label class="perm-item">
                             <input type="checkbox" data-perm="content.moderate" ${roleInfo.permissions?.includes('content.moderate') ? 'checked' : ''}>
@@ -2104,7 +2124,7 @@ function toggleModalDropdown(dropdownId) {
 function handleModalAdminToggle(userId, isEnabled) {
     const panel = document.getElementById('modalPermissionsPanel');
     if (panel) {
-        panel.style.display = isEnabled ? 'block' : 'none';
+        panel.hidden = !isEnabled;
     }
     toggleAdminRole(userId, isEnabled);
 }
@@ -2165,21 +2185,6 @@ function renderModalActions(user) {
         </button>
     `;
 
-    // Force grid layout on mobile
-    if (window.innerWidth <= 768) {
-        actionsPanel.style.display = 'grid';
-        actionsPanel.style.gridTemplateColumns = 'repeat(3, 1fr)';
-        actionsPanel.style.gap = '10px';
-        actionsPanel.style.padding = '12px';
-
-        // Style each button
-        actionsPanel.querySelectorAll('.modal-action-btn').forEach(btn => {
-            btn.style.width = '100%';
-            btn.style.justifyContent = 'center';
-            btn.style.padding = '10px 6px';
-            btn.style.fontSize = '0.75rem';
-        });
-    }
 }
 
 // Switch Tab
@@ -2207,9 +2212,9 @@ function updateTabIndicator(activeBtn) {
     const indicator = document.querySelector('.tab-indicator');
 
     if (nav && indicator && activeBtn) {
-        indicator.style.left = `${activeBtn.offsetLeft}px`;
-        indicator.style.width = `${activeBtn.offsetWidth}px`;
-        indicator.style.opacity = '1';
+        indicator.style.setProperty('--users-tab-indicator-left', `${activeBtn.offsetLeft}px`);
+        indicator.style.setProperty('--users-tab-indicator-width', `${activeBtn.offsetWidth}px`);
+        indicator.style.setProperty('--users-tab-indicator-opacity', '1');
     }
 }
 
@@ -2308,13 +2313,14 @@ function renderLedgerItems(data) {
         const normalizedAmount = normalizeAdminLedgerValue(record.amount);
         const recordId = encodeURIComponent(String(record.id || ''));
         const amountText = `${normalizedAmount >= 0 ? '+' : ''}${formatAdminPointValue(normalizedAmount)} 分`;
+        const tone = getAdminUiTone(meta.accent);
         const referenceChip = meta.referenceLabel
             ? `<span class="admin-ledger-chip admin-ledger-chip-mono">${escapeHtml(meta.referenceLabel)}</span>`
             : '';
 
         return `
-            <div class="data-list-item admin-ledger-item" style="border-left-color: ${meta.accent};" data-admin-action="users-open-ledger-detail" data-ledger-id="${recordId}">
-                <div class="admin-ledger-icon" style="--ledger-accent:${meta.accent};">
+            <div class="data-list-item admin-ledger-item admin-ledger-item--${tone}" data-admin-action="users-open-ledger-detail" data-ledger-id="${recordId}">
+                <div class="admin-ledger-icon admin-ledger-icon--${tone}">
                     <i class="fas ${meta.icon}"></i>
                 </div>
                 <div class="admin-ledger-main">
@@ -2384,6 +2390,32 @@ function getAdminVerifyStatusMeta(status = '') {
         return { text: '处理中', color: '#6b9ece' };
     }
     return { text: normalized || '未知', color: '#cbd5e1' };
+}
+
+function getAdminUiTone(color = '') {
+    const normalized = String(color || '').trim().toLowerCase();
+    const palette = new Map([
+        ['#10b981', 'emerald'],
+        ['#22c55e', 'emerald'],
+        ['#34d399', 'emerald'],
+        ['#38bdf8', 'sky'],
+        ['#60a5fa', 'sky'],
+        ['#6b9ece', 'sky'],
+        ['#3b82f6', 'sky'],
+        ['#8b5cf6', 'violet'],
+        ['#a78bfa', 'violet'],
+        ['#f59e0b', 'amber'],
+        ['#f97316', 'amber'],
+        ['#ec4899', 'pink'],
+        ['#f472b6', 'pink'],
+        ['#ef4444', 'danger'],
+        ['#f87171', 'danger'],
+        ['#fca5a5', 'danger'],
+        ['#94a3b8', 'muted'],
+        ['#cbd5e1', 'muted']
+    ]);
+
+    return palette.get(normalized) || 'muted';
 }
 
 function isAdminVerifyServiceReason(reason = '') {
@@ -2720,7 +2752,7 @@ function renderAdminLedgerDetailRows(rows = []) {
     return rows.filter(row => row && row.value !== undefined && row.value !== null && row.value !== '').map(row => `
         <div class="admin-ledger-detail-row">
             <span class="admin-ledger-detail-label">${escapeHtml(row.label)}</span>
-            <span class="admin-ledger-detail-value ${row.mono ? 'mono' : ''}" style="${row.color ? `color:${row.color};` : ''}">${escapeHtml(String(row.value))}</span>
+            <span class="admin-ledger-detail-value ${row.mono ? 'mono' : ''}${row.color ? ` admin-ledger-detail-value--${getAdminUiTone(row.color)}` : ''}">${escapeHtml(String(row.value))}</span>
         </div>
     `).join('');
 }
@@ -3388,9 +3420,9 @@ function renderAffiliateTab(container) {
 
     if (affiliateState.error) {
         container.innerHTML = `
-            <div class="empty-state" style="text-align:center;padding:48px;color:var(--text-dim);">
-                <div style="font-size:1rem;color:#fca5a5;margin-bottom:10px;">推广数据加载失败</div>
-                <div style="margin-bottom:18px;">${escapeHtml(affiliateState.error)}</div>
+            <div class="empty-state users-affiliate-error-state">
+                <div class="users-affiliate-error-title">推广数据加载失败</div>
+                <div class="users-affiliate-error-message">${escapeHtml(affiliateState.error)}</div>
                 <button class="btn-export" type="button" data-admin-action="users-reload-affiliate">
                     <i class="fas fa-rotate-right"></i> 重新加载
                 </button>
@@ -4050,16 +4082,15 @@ async function fetchPointsLedger(userId) {
 // Format ledger reason for display
 function formatLedgerReason(reason, createdAt, referenceId) {
     const timeStr = createdAt ? formatTimeAgo(createdAt) : '';
-    const timeHtml = `<span style="font-size:0.75rem;color:#94a3b8;margin-left:auto;">${timeStr}</span>`;
+    const timeHtml = `<span class="users-ledger-reason-time">${timeStr}</span>`;
 
     if (!reason) return `
-        <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="users-ledger-reason-row">
              <span>未知</span>
              ${timeHtml}
         </div>`;
 
     let text = reason;
-    let icon = 'fa-circle';
     let color = '#94a3b8'; // default gray
 
     if (reason === 'daily_checkin') {
@@ -4100,9 +4131,10 @@ function formatLedgerReason(reason, createdAt, referenceId) {
         color = '#ec4899';
     }
 
+    const tone = getAdminUiTone(color);
     return `
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-             <span style="color:${color}; font-weight:500;">${text}</span>
+        <div class="users-ledger-reason-row">
+             <span class="users-ledger-reason-text users-ledger-reason-text--${tone}">${text}</span>
              ${timeHtml}
         </div>`;
 }
@@ -4320,6 +4352,12 @@ function toggleBanSelection(el, scope, days) {
 function updateConfirmBtn() {
     const btn = document.getElementById('btnBanConfirm');
     if (!btn) return;
+    const toneClasses = [
+        'users-ban-confirm-btn--unban',
+        'users-ban-confirm-btn--ban',
+        'users-ban-confirm-btn--idle'
+    ];
+    btn.classList.remove(...toneClasses);
 
     // Check if any changes
     const hasChanges = Object.keys(pendingBanState).length > 0;
@@ -4330,15 +4368,15 @@ function updateConfirmBtn() {
         const allUnban = Object.values(pendingBanState).every(s => s.action === 'unban');
         if (allUnban) {
             btn.textContent = '确认解封';
-            btn.style.background = '#10b981';
+            btn.classList.add('users-ban-confirm-btn--unban');
         } else {
             btn.textContent = '确认执行';
-            btn.style.background = '#ef4444';
+            btn.classList.add('users-ban-confirm-btn--ban');
         }
     } else {
         btn.disabled = false; // Always enabled to allow "No Change"? No, prefer disabled or "No Change"
         btn.textContent = '未做修改';
-        btn.style.background = '#94a3b8';
+        btn.classList.add('users-ban-confirm-btn--idle');
     }
 }
 
@@ -4631,10 +4669,9 @@ function escapeHtml(text) {
 // Generate avatar with initials
 function generateInitialsAvatar(name, size = 32) {
     const initials = (name || 'U').slice(0, 2).toUpperCase();
-    const colors = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6'];
-    const colorIndex = (name || 'U').charCodeAt(0) % colors.length;
-    const bgColor = colors[colorIndex];
-    return `<div class="user-avatar-small initials-avatar" style="background:${bgColor};display:flex;align-items:center;justify-content:center;color:white;font-weight:600;font-size:${size * 0.4}px;width:${size}px;height:${size}px;border-radius:50%;">${initials}</div>`;
+    const colorIndex = (name || 'U').charCodeAt(0) % 6;
+    const avatarSizeClass = size >= 64 ? 'user-avatar-large initials-avatar--lg' : 'user-avatar-small initials-avatar--sm';
+    return `<div class="${avatarSizeClass} initials-avatar initials-avatar--tone-${colorIndex}">${initials}</div>`;
 }
 
 // Points Modal Logic
@@ -4658,7 +4695,7 @@ function injectPointsModal() {
                         <span id="pmCurrentPoints" class="value-highlight">0</span>
                     </div>
 
-                    <div class="form-group" style="margin-top:20px;">
+                    <div class="form-group users-points-form-group-first">
                         <label>调整数值 <small>(正数增加 / 负数扣除)</small></label>
                         <input type="number" id="pmAmount" class="modal-input">
                     </div>
@@ -4668,7 +4705,7 @@ function injectPointsModal() {
                         <input type="text" id="pmReason" class="modal-input">
                     </div>
                 </div>
-                <div class="modal-footer" style="justify-content: flex-end;">
+                <div class="modal-footer users-points-modal-footer">
                     <button class="modal-btn confirm" id="pmConfirmBtn">确认调整</button>
                 </div>
             </div>
@@ -5159,7 +5196,6 @@ function showTagInput(userId) {
                    placeholder="输入标签..." 
                    data-users-tag-input="1"
                    data-user-id="${userId}"
-                   style="width: 80px; padding: 3px 8px; border-radius: 20px; border: 1px solid #cbd5e1; font-size: 0.75rem; background: transparent; color: inherit; outline: none; transition: all 0.2s;"
             >
         </div>
     `;
@@ -5300,7 +5336,7 @@ async function toggleAdminRole(userId, enabled) {
 
     if (enabled) {
         // Show permissions panel
-        if (permPanel) permPanel.style.display = 'block';
+        if (permPanel) permPanel.hidden = false;
 
         // Insert role with default permissions
         try {
@@ -5325,11 +5361,11 @@ async function toggleAdminRole(userId, enabled) {
             alert('授予管理员权限失败: ' + err.message);
             // Revert toggle
             document.getElementById(`adminRoleToggle - ${userId} `).checked = false;
-            if (permPanel) permPanel.style.display = 'none';
+            if (permPanel) permPanel.hidden = true;
         }
     } else {
         // Hide permissions panel
-        if (permPanel) permPanel.style.display = 'none';
+        if (permPanel) permPanel.hidden = true;
 
         // Remove role
         try {
@@ -5347,7 +5383,7 @@ async function toggleAdminRole(userId, enabled) {
             alert('撤销管理员权限失败: ' + err.message);
             // Revert toggle
             document.getElementById(`adminRoleToggle - ${userId} `).checked = true;
-            if (permPanel) permPanel.style.display = 'block';
+            if (permPanel) permPanel.hidden = false;
         }
     }
 }
