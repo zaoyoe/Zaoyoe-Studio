@@ -196,6 +196,67 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     assert.deepEqual(violations, [], violations.join('\n'));
 });
 
+test('chat widget runtime renderers externalize hidden, loading, and open-close state styling', () => {
+    const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
+    const chatWidgetCss = readRepoFile('css/chat-widget.css');
+
+    const runtimeMarkers = [
+        '_setFabHidden(hidden)',
+        '_setFabDisabled(disabled)',
+        '_setFabTransitionless(enabled)',
+        '_setChatWindowForceHidden(hidden)',
+        '_setChatWindowTransitionless(enabled)',
+        '_setSessionItemHidden(item, hidden)',
+        'chat-file-input',
+        'mascot-wrapper mascot-wrapper--compact',
+        "loadingOverlay.className = 'loading-overlay';",
+        "shield.className = 'chat-status-bar-shield';"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(chatWidgetSource.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
+    }
+
+    const removedRuntimeMarkers = [
+        "shield.style.cssText = [",
+        "this._statusBarShield.style.visibility = 'visible';",
+        "this._statusBarShield.style.opacity = '1';",
+        "this.messagesContainer.style.overflowY = 'hidden';",
+        'loadingOverlay.style.cssText = `',
+        "this.messagesContainer.style.position = 'relative';",
+        "item.style.display = 'flex';",
+        "item.style.display = 'none';",
+        "item.style.display = matches ? 'flex' : 'none';",
+        'style="display: none;"',
+        'style="transform: scale(0.8);"',
+        "this.fab.style.opacity = '0';",
+        "this.fab.style.visibility = 'hidden';",
+        "this.fab.style.pointerEvents = 'none';"
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(chatWidgetSource.includes(marker), false, `js/components/ChatWidget.js should not contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '.chat-status-bar-shield',
+        '.chat-status-bar-shield.is-visible',
+        '.chat-widget-fab.chat-widget-fab--hidden',
+        '.chat-widget-fab.chat-widget-fab--disabled',
+        '.chat-widget-fab.chat-widget-fab--transitionless',
+        '.chat-window.chat-window--transitionless',
+        '.chat-window.chat-window--force-hidden',
+        '.loading-overlay',
+        '.chat-file-input',
+        '.session-item.session-item--hidden',
+        '.mascot-wrapper--compact'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(chatWidgetCss.includes(marker), true, `css/chat-widget.css should contain ${marker}`);
+    }
+});
+
 test('shared frontend scripts depend on the unified runtime Supabase helpers', () => {
     const expectations = new Map([
         ['supabase-client.js', 'requireZaoyoeSupabaseConfig'],

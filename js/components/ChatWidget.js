@@ -209,19 +209,6 @@ class ChatWidget {
         if (this._statusBarShield) return;
         const shield = document.createElement('div');
         shield.className = 'chat-status-bar-shield';
-        shield.style.cssText = [
-            'position: fixed',
-            'top: 0',
-            'left: 0',
-            'right: 0',
-            'height: env(safe-area-inset-top, 0px)',
-            'background: #000',
-            'opacity: 0',
-            'visibility: hidden',
-            'pointer-events: none',
-            'z-index: 10001',
-            'transition: opacity 80ms linear'
-        ].join('; ');
         document.body.appendChild(shield);
         this._statusBarShield = shield;
     }
@@ -230,19 +217,48 @@ class ChatWidget {
         if (!(this._isIOSMobile() && this._isNarrowViewport())) return;
         this._ensureStatusBarShield();
         if (!this._statusBarShield) return;
-        this._statusBarShield.style.visibility = 'visible';
-        this._statusBarShield.style.opacity = '1';
+        this._statusBarShield.classList.add('is-visible');
         this._lockThemeColor();
     }
 
     _hideStatusBarShield() {
         if (!this._statusBarShield) return;
-        this._statusBarShield.style.opacity = '0';
+        this._statusBarShield.classList.remove('is-visible');
         setTimeout(() => {
             if (!this._statusBarShield || this.isOpen) return;
-            this._statusBarShield.style.visibility = 'hidden';
+            this._statusBarShield.classList.remove('is-visible');
         }, 90);
         this._unlockThemeColor();
+    }
+
+    _setFabHidden(hidden) {
+        if (!this.fab) return;
+        this.fab.classList.toggle('chat-widget-fab--hidden', hidden);
+    }
+
+    _setFabDisabled(disabled) {
+        if (!this.fab) return;
+        this.fab.classList.toggle('chat-widget-fab--disabled', disabled);
+    }
+
+    _setFabTransitionless(enabled) {
+        if (!this.fab) return;
+        this.fab.classList.toggle('chat-widget-fab--transitionless', enabled);
+    }
+
+    _setChatWindowForceHidden(hidden) {
+        if (!this.chatWindow) return;
+        this.chatWindow.classList.toggle('chat-window--force-hidden', hidden);
+    }
+
+    _setChatWindowTransitionless(enabled) {
+        if (!this.chatWindow) return;
+        this.chatWindow.classList.toggle('chat-window--transitionless', enabled);
+    }
+
+    _setSessionItemHidden(item, hidden) {
+        if (!item) return;
+        item.classList.toggle('session-item--hidden', hidden);
     }
 
     _scheduleStableKeyboardInset(bottomInset) {
@@ -607,7 +623,7 @@ class ChatWidget {
                     </div>
                 </div>
                 <div class="chat-input-area">
-                    <input type="file" id="chatImageInput" accept="image/*" style="display: none;">
+                    <input type="file" id="chatImageInput" class="chat-file-input" accept="image/*">
                     <button class="chat-action-btn" id="chatUploadBtn"><i class="fas fa-plus"></i></button>
                     <input type="text" class="chat-input" id="chatInput" placeholder="${this.t('chat.inputPlaceholder', '输入回复...')}">
                     <button class="chat-action-btn" id="chatEmojiBtn"><i class="far fa-smile"></i></button>
@@ -1551,7 +1567,6 @@ class ChatWidget {
         if (this.messagesContainer) {
             this.isPreloading = true;
             this.messagesContainer.classList.add('scroll-locked');
-            this.messagesContainer.style.overflowY = 'hidden';
         }
     }
 
@@ -1560,7 +1575,6 @@ class ChatWidget {
         if (this.messagesContainer) {
             this.isPreloading = false;
             this.messagesContainer.classList.remove('scroll-locked');
-            this.messagesContainer.style.overflowY = '';
         }
     }
 
@@ -1585,24 +1599,6 @@ class ChatWidget {
         loadingOverlay = document.createElement('div');
         loadingOverlay.className = 'loading-overlay';
         loadingOverlay.innerHTML = '<div class="loading-spinner"></div><span>预加载消息中...</span>';
-        loadingOverlay.style.cssText = `
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(20, 20, 30, 0.85);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 14px;
-            z-index: 10;
-            backdrop-filter: blur(4px);
-        `;
-        this.messagesContainer.style.position = 'relative';
         this.messagesContainer.appendChild(loadingOverlay);
         return loadingOverlay;
     }
@@ -1724,7 +1720,7 @@ class ChatWidget {
     async searchSessions(query) {
         // First, search in session list (name, email, preview)
         this.sessionList.querySelectorAll('.session-item').forEach(item => {
-            item.style.display = 'flex';
+            this._setSessionItemHidden(item, false);
             // Remove previous match count
             const existingCount = item.querySelector('.search-match-count');
             if (existingCount) existingCount.remove();
@@ -1764,7 +1760,7 @@ class ChatWidget {
                 const hasInfoMatch = name.includes(query) || email.includes(query) || preview.includes(query);
 
                 if (hasInfoMatch || hasMessageMatch) {
-                    item.style.display = 'flex';
+                    this._setSessionItemHidden(item, false);
 
                     // Show match count if there are message matches
                     const totalMatches = sessionIds.reduce((sum, sid) => sum + (matchCounts[sid] || 0), 0);
@@ -1775,7 +1771,7 @@ class ChatWidget {
                         item.appendChild(countBadge);
                     }
                 } else {
-                    item.style.display = 'none';
+                    this._setSessionItemHidden(item, true);
                 }
             });
         } catch (err) {
@@ -1785,7 +1781,7 @@ class ChatWidget {
                 const name = item.querySelector('.session-name')?.textContent.toLowerCase() || '';
                 const preview = item.querySelector('.session-preview')?.textContent.toLowerCase() || '';
                 const matches = name.includes(query) || preview.includes(query);
-                item.style.display = matches ? 'flex' : 'none';
+                this._setSessionItemHidden(item, !matches);
             });
         }
     }
@@ -1820,7 +1816,7 @@ class ChatWidget {
                 if (!query) {
                     // Show all sessions when empty
                     this.sessionList.querySelectorAll('.session-item').forEach(item => {
-                        item.style.display = 'flex';
+                        this._setSessionItemHidden(item, false);
                         // Remove search highlights
                         const highlight = item.querySelector('.search-match-count');
                         if (highlight) highlight.remove();
@@ -2325,7 +2321,7 @@ class ChatWidget {
             <div class="chat-header">
                 <div class="chat-header-info">
                     <div class="chat-avatar">
-                        <div class="mascot-wrapper" style="transform: scale(0.8);">
+                        <div class="mascot-wrapper mascot-wrapper--compact">
                             <div class="mascot-head">
                                 <div class="mascot-ears"></div>
                                 <div class="mascot-face">
@@ -2354,7 +2350,7 @@ class ChatWidget {
                 </div>
             </div>
             <div class="chat-input-area">
-                <input type="file" id="chatImageInput" accept="image/*" style="display: none;">
+                <input type="file" id="chatImageInput" class="chat-file-input" accept="image/*">
                 <button class="chat-action-btn" id="chatUploadBtn"><i class="fas fa-plus"></i></button>
                 <input type="text" class="chat-input" id="chatInput" placeholder="${this.t('chat.inputMessagePlaceholder', '输入消息...')}">
                 <button class="chat-action-btn" id="chatEmojiBtn"><i class="far fa-smile"></i></button>
@@ -2418,14 +2414,13 @@ class ChatWidget {
             this.chatWindow.classList.remove('chat-closing-end');
             this.chatWindow.classList.add('chat-opening');
             this._primeOpeningAnimationFromFab();
-            this.chatWindow.style.removeProperty('transition');
-            this.chatWindow.style.removeProperty('opacity');
-            this.chatWindow.style.removeProperty('visibility');
+            this._setChatWindowTransitionless(false);
+            this._setChatWindowForceHidden(false);
             this._showStatusBarShield();
             // 1. 先执行所有会触发布局突变的操作（弹窗此刻仍然 opacity:0, visibility:hidden）
-            this.fab.style.opacity = '0';
-            this.fab.style.visibility = 'hidden';
-            this.fab.style.pointerEvents = 'none';
+            this._setFabTransitionless(false);
+            this._setFabHidden(true);
+            this._setFabDisabled(true);
             if (this.overlay) {
                 this.overlay.classList.remove('closing');
                 this.overlay.classList.add('visible');
@@ -2453,7 +2448,7 @@ class ChatWidget {
                             this.chatWindow.classList.remove('chat-opening');
                             this._clearOpeningAnimationState();
                             if (!this.chatWindow.classList.contains('keyboard-docked')) {
-                                this.chatWindow.style.removeProperty('transition');
+                                this._setChatWindowTransitionless(false);
                             }
                         }
                     }, 280);
@@ -2975,10 +2970,9 @@ class ChatWidget {
         this.chatWindow.classList.remove('chat-closing-end');
         this.chatWindow.classList.remove('active');
         this._clearOpeningAnimationState();
-        this.chatWindow.style.setProperty('transition', 'none', 'important');
-        this.chatWindow.style.setProperty('opacity', '0', 'important');
-        this.chatWindow.style.setProperty('visibility', 'hidden', 'important');
-        this.fab.style.pointerEvents = 'none';
+        this._setChatWindowTransitionless(true);
+        this._setChatWindowForceHidden(true);
+        this._setFabDisabled(true);
         if (this.overlay) {
             this.overlay.classList.remove('visible');
             this.overlay.classList.remove('closing');
@@ -2997,14 +2991,13 @@ class ChatWidget {
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
                 if (this.isOpen) return;
-                this.fab.style.transition = 'none';
-                this.fab.style.visibility = 'visible';
-                this.fab.style.opacity = '1';
-                this.fab.style.pointerEvents = 'all';
+                this._setFabTransitionless(true);
+                this._setFabHidden(false);
+                this._setFabDisabled(false);
                 requestAnimationFrame(() => {
                     if (!this.isOpen) {
-                        this.fab.style.removeProperty('transition');
-                        this.chatWindow.style.removeProperty('transition');
+                        this._setFabTransitionless(false);
+                        this._setChatWindowTransitionless(false);
                     }
                 });
             });
@@ -3022,17 +3015,15 @@ class ChatWidget {
         this.chatWindow.classList.add('chat-closing');
         this.chatWindow.classList.remove('chat-closing-end');
         this._primeOpeningAnimationFromFab();
-        this.chatWindow.style.removeProperty('transition');
-        this.chatWindow.style.removeProperty('opacity');
-        this.chatWindow.style.removeProperty('visibility');
+        this._setChatWindowTransitionless(false);
+        this._setChatWindowForceHidden(false);
         if (this.overlay) {
             this.overlay.classList.add('closing');
             this.overlay.classList.remove('visible');
         }
-        this.fab.style.transition = 'none';
-        this.fab.style.visibility = 'visible';
-        this.fab.style.opacity = '1';
-        this.fab.style.pointerEvents = 'none';
+        this._setFabTransitionless(true);
+        this._setFabHidden(false);
+        this._setFabDisabled(true);
         this._detachKeyboardListener();
 
         const activeInput = document.activeElement;
