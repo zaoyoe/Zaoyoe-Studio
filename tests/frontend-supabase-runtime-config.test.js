@@ -4063,6 +4063,73 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
     }
 });
 
+test('section visibility runtime externalizes element hiding and blocked overlay styling', () => {
+    const sectionVisibilitySource = readRepoFile('js/section-visibility.js');
+    const sectionVisibilityStyles = readRepoFile('css/section-visibility.css');
+    const pageSources = [
+        readRepoFile('index.html'),
+        readRepoFile('guestbook.html'),
+        readRepoFile('verify.html'),
+        readRepoFile('prompts.html'),
+        readRepoFile('shop.html')
+    ];
+
+    const removedMarkers = [
+        "el.style.display = visible ? '' : 'none';",
+        "navEls.forEach(el => el.style.display = visible ? '' : 'none');",
+        "menuItem.style.display = visible ? '' : 'none';",
+        "el.style.display = 'none';",
+        'overlay.style.cssText = `',
+        '<div style="',
+        'onmouseenter="this.style.background=',
+        'onmouseleave="this.style.background='
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(sectionVisibilitySource.includes(marker), false, `js/section-visibility.js should not contain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'function setDomVisibility(element, visible)',
+        'element.hidden = !visible;',
+        'element.classList.toggle(HIDDEN_CLASS, !visible);',
+        'setDomVisibility(el, visible);',
+        'setDomVisibility(menuItem, visible);',
+        "overlay.className = 'section-blocked-overlay';",
+        'class="section-blocked-overlay__icon-shell"',
+        'class="section-blocked-overlay__home-link"',
+        "document.body.classList.add('section-visibility-page-blocked');",
+        'setDomVisibility(el, false);'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(sectionVisibilitySource.includes(marker), true, `js/section-visibility.js should contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '.section-visibility-hidden',
+        'body.section-visibility-page-blocked',
+        '.section-blocked-overlay',
+        '.section-blocked-overlay__icon-shell',
+        '.section-blocked-overlay__home-link:hover'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(sectionVisibilityStyles.includes(marker), true, `css/section-visibility.css should contain ${marker}`);
+    }
+
+    const sharedMarkers = [
+        'css/section-visibility.css?v=20260324_SECTION_VISIBILITY_RUNTIME_STYLE_1',
+        'js/section-visibility.js?v=20260324_SECTION_VISIBILITY_RUNTIME_STYLE_1'
+    ];
+
+    for (const pageSource of pageSources) {
+        for (const marker of sharedMarkers) {
+            assert.equal(pageSource.includes(marker), true, `public section pages should contain ${marker}`);
+        }
+    }
+});
+
 test('final frontend runtime remnants route through delegated or bound listeners instead of inline attributes', () => {
     const notificationSource = readRepoFile('notification-client.js');
     const announcementSource = readRepoFile('announcement-loader.js');
