@@ -1563,7 +1563,7 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=51'),
+        adminStudioHtml.includes('admin-studio.css?v=52'),
         true,
         'admin-studio.html should load the latest admin studio stylesheet version'
     );
@@ -2133,7 +2133,7 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=51'),
+        adminStudioSource.includes('admin-studio.css?v=52'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -2690,7 +2690,7 @@ test('discount admin runtime renderers externalize table states, copy toast, and
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=51'),
+        adminStudioSource.includes('admin-studio.css?v=52'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -2757,7 +2757,7 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=51'),
+        adminStudioSource.includes('admin-studio.css?v=52'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -3608,6 +3608,86 @@ test('analytics calendar and config poster/editor templates route through delega
     for (const marker of adminScriptMarkers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
+});
+
+test('admin config runtime renderers externalize poster preview, toggle pulse, save indicator, and verify quota styling', () => {
+    const adminConfigSource = readRepoFile('admin-config.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    const removedRuntimeMarkers = [
+        'style="background:${previewBackground};"',
+        "toggleEl.style.transform = 'scale(1.1)'",
+        "setTimeout(() => toggleEl.style.transform = '', 150);",
+        "indicator.style.opacity = '1';",
+        "setTimeout(() => indicator.style.opacity = '0', 2000);",
+        "badgeEl.style.display = accountsWithEmail.length > 0 ? 'inline-flex' : 'none';",
+        "unlockAllBtn.style.display = accountsWithEmail.length > 0 ? 'flex' : 'none';",
+        "if (emptyMsg) emptyMsg.style.display = 'flex';",
+        "if (emptyMsg) emptyMsg.style.display = 'none';",
+        'instance.colorPreview.style.background = color;',
+        '<span class="color-swatch" style="background:${value}"></span>',
+        'style="background:#6b9ece"',
+        "instance.hiddenInput.style.display = 'none';",
+        '`<i class=\"fas fa-gem\" style=\"color: ${color};\"></i> <strong style=\"color: ${color};\">${display}</strong>`',
+        '`<i class=\"fas fa-exclamation-triangle\" style=\"color: #e74c3c;\"></i> ${data.message || \'查询失败\'}\'',
+        '\'<i class="fas fa-exclamation-triangle" style="color: #e74c3c;"></i> 网络错误\''
+    ];
+
+    for (const marker of removedRuntimeMarkers) {
+        assert.equal(adminConfigSource.includes(marker), false, `admin-config.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'function pulseAdminConfigToggle(toggleEl)',
+        "toggleEl.classList.add(ADMIN_CONFIG_TOGGLE_PULSE_CLASS);",
+        'function showAdminConfigSaveIndicator(indicator, text = \'✓ 已保存\', durationMs = 1500)',
+        'function getAdminConfigRichTextColorClass(color)',
+        'function renderVerifyQuotaState(quotaEl, tone, iconClass, message, options = {})',
+        'instance.hiddenInput.hidden = true;',
+        'setAdminConfigHiddenState(badgeEl, accountsWithEmail.length === 0);',
+        'class="affiliate-poster-preview ${getAffiliatePosterPreviewClass(preset.id)}"',
+        'class="color-swatch ${getAdminConfigRichTextColorClass(value)}"',
+        "renderVerifyQuotaState(quotaEl, 'neutral', 'fas fa-spinner fa-spin', '查询中...');"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '#unlockAllBtn[hidden]',
+        '.verify-quota-badge--success',
+        '.affiliate-poster-preview--midnight',
+        '.affiliate-poster-preview-media',
+        '.status-toggle.status-toggle--pulse',
+        '.color-swatch--blue'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('admin-studio.css?v=52'),
+        true,
+        'admin-studio.html should reference the updated admin stylesheet version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('admin-config.js?v=20260324_ADMIN_CONFIG_RUNTIME_STYLE_1'),
+        true,
+        'admin-studio.html should reference the updated admin config runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('id="lockedCountBadge" hidden'),
+        true,
+        'admin-studio.html should hide the locked-account badge until runtime data arrives'
+    );
+    assert.equal(
+        adminStudioHtml.includes('id="unlockAllBtn" hidden'),
+        true,
+        'admin-studio.html should hide the unlock-all action until runtime data arrives'
+    );
 });
 
 test('prompts gallery UI state renderers externalize toast, banner, nav, and comment visibility styling', () => {

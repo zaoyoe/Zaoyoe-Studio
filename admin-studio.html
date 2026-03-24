@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=51">
+    <link rel="stylesheet" href="admin-studio.css?v=52">
     <link rel="stylesheet" href="admin-sidebar.css?v=10">
     <link rel="stylesheet" href="css/admin-chat.css">
 
@@ -1135,7 +1135,7 @@
                         <!-- Locked Accounts -->
                         <div class="settings-section">
                             <h3><i class="fas fa-user-lock"></i> 锁定账户 <span class="locked-count-badge"
-                                    id="lockedCountBadge">0</span></h3>
+                                    id="lockedCountBadge" hidden>0</span></h3>
                             <div class="locked-accounts-container">
                                 <div class="locked-accounts-list" id="lockedAccountsList">
                                     <div class="empty-state" id="noLockedAccountsMsg">
@@ -1148,7 +1148,7 @@
                                     <button class="btn-sm btn-secondary" data-admin-action="settings-refresh-locked-accounts">
                                         <i class="fas fa-sync-alt"></i> 刷新
                                     </button>
-                                    <button class="btn-sm btn-warning admin-studio-inline-style-attr-8" data-admin-action="settings-unlock-all-accounts" id="unlockAllBtn"
+                                    <button class="btn-sm btn-warning admin-studio-inline-style-attr-8" data-admin-action="settings-unlock-all-accounts" id="unlockAllBtn" hidden
                                        >
                                         <i class="fas fa-unlock"></i>全部解锁
                                     </button>
@@ -5711,7 +5711,7 @@
     <script src="admin-comments.js?v=20260323_ADMIN_COMMENTS_DELEGATION_1"></script>
     <script src="admin-analytics.js?v=20260323_ANALYTICS_DELEGATION_2"></script>
     <script src="js/admin-payments.js?v=20260323_ADMIN_PAYMENTS_V12"></script>
-    <script src="admin-config.js?v=20260323_ADMIN_GENERAL_SETTINGS_DELEGATION_3"></script>
+    <script src="admin-config.js?v=20260324_ADMIN_CONFIG_RUNTIME_STYLE_1"></script>
     <script src="admin-homepage.js?v=20260323_HOMEPAGE_DELEGATION_1"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
