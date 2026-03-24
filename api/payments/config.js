@@ -11,6 +11,7 @@ const {
 } = require('../_lib/request-security');
 const {
     buildPublicPaymentConfig,
+    buildPublicPaymentRuntime,
     loadStoredPaymentConfigs
 } = require('../_lib/payments/providers');
 const {
@@ -60,12 +61,13 @@ module.exports = async function handler(req, res) {
             })
         };
         const publicConfig = buildPublicPaymentConfig(paymentChannels, rechargeOptions, runtime);
+        const publicRuntime = buildPublicPaymentRuntime(runtime);
 
         return sendJson(res, 200, {
             success: true,
             config: publicConfig.paymentChannels,
             recharge_options: publicConfig.rechargeOptions,
-            runtime
+            runtime: publicRuntime
         });
     } catch (error) {
         return sendJson(res, error.statusCode || 500, {
