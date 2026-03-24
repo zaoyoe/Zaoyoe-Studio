@@ -1292,7 +1292,7 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260324_GUESTBOOK_RUNTIME_STYLE_HELPERS_1'),
+        guestbookHtml.includes('style.css?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
@@ -1300,6 +1300,78 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
         guestbookHtml.includes('guestbook.js?v=20260324_GUESTBOOK_RUNTIME_STYLE_HELPERS_1'),
         true,
         'guestbook.html should reference the updated guestbook script version'
+    );
+});
+
+test('homepage guestbook modal runtime renderers externalize keyboard dock, viewport probe, and overlay state styling', () => {
+    const homepageGuestbookSource = readRepoFile('js/homepage-guestbook-modal.js');
+    const styleSource = readRepoFile('style.css');
+    const indexSource = readRepoFile('index.html');
+    const guestbookHtml = readRepoFile('guestbook.html');
+
+    const removedMarkers = [
+        "overlay.style.pointerEvents = interactive ? 'auto' : 'none';",
+        "card.style.pointerEvents = interactive ? 'auto' : 'none';",
+        "card.style.zIndex = interactive ? '4' : '1';",
+        "element.style.pointerEvents = interactive ? 'auto' : 'none';",
+        "probe.style.position = 'fixed';",
+        "overlay.style.setProperty('--guestbook-modal-overlay-height'",
+        "overlay.style.removeProperty('--guestbook-modal-overlay-height')",
+        "overlay.style.setProperty('--guestbook-modal-translate-y'",
+        "card.style.setProperty('height'",
+        "card.style.setProperty('max-height'",
+        "card.style.removeProperty('height')",
+        "card.style.removeProperty('max-height')"
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(homepageGuestbookSource.includes(marker), false, `js/homepage-guestbook-modal.js should not retain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        "const GUESTBOOK_MODAL_STYLE_DECL_KEY = 'style';",
+        'function setGuestbookModalRuntimeStyles(target, styles = {}, priority = \'\')',
+        "overlay.classList.toggle('guestbook-modal-interactive', interactive);",
+        "probe.className = 'guestbook-modal-viewport-probe';",
+        "'--guestbook-modal-overlay-height': `${measuredHeight}px`",
+        "'--guestbook-modal-translate-y': `${shiftY}px`",
+        "'--guestbook-modal-card-height': `${finalCardHeight}px`",
+        "'--guestbook-modal-card-max-height': `${finalCardHeight}px`"
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(homepageGuestbookSource.includes(marker), true, `js/homepage-guestbook-modal.js should contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '--guestbook-modal-card-height: 420px;',
+        '--guestbook-modal-card-max-height: calc(100svh - 56px);',
+        '#guestbookModal.guestbook-modal-interactive',
+        '.guestbook-modal-viewport-probe',
+        'height: var(--guestbook-modal-card-height, 420px);',
+        'max-height: var(--guestbook-modal-card-max-height, calc(100svh - 56px));',
+        'height: var(--guestbook-modal-card-height, min(400px, calc(var(--guestbook-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px)));',
+        'max-height: var(--guestbook-modal-card-max-height, calc(var(--guestbook-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(styleSource.includes(marker), true, `style.css should contain ${marker}`);
+    }
+
+    assert.equal(
+        indexSource.includes('style.css?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_1'),
+        true,
+        'index.html should load the latest homepage guestbook modal stylesheet version'
+    );
+    assert.equal(
+        indexSource.includes('./js/homepage-guestbook-modal.js?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_1'),
+        true,
+        'index.html should load the latest homepage guestbook modal script version'
+    );
+    assert.equal(
+        guestbookHtml.includes('style.css?v=20260324_HOMEPAGE_GUESTBOOK_MODAL_RUNTIME_STYLE_1'),
+        true,
+        'guestbook.html should load the latest shared stylesheet version'
     );
 });
 
