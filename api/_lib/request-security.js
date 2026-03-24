@@ -2,6 +2,7 @@ const { isIP } = require('node:net');
 
 const sharedRateLimitStore = new Map();
 const MAX_RATE_LIMIT_BUCKETS = 5000;
+const MEMORY_RATE_LIMIT_BACKENDS = new Set(['memory', 'in-memory', 'local']);
 
 function normalizeIp(value) {
     let raw = String(value || '').trim();
@@ -336,7 +337,22 @@ function trimRateLimitStore(store = sharedRateLimitStore, now = Date.now()) {
     }
 }
 
-function takeRateLimitToken({
+function shouldUsePersistentRateLimitStore(env = process.env) {
+    const backend = String(
+        env?.RATE_LIMIT_BACKEND
+        || env?.RATE_LIMIT_STORE
+        || ''
+    ).trim().toLowerCase();
+    const disabled = String(env?.DISABLE_PERSISTENT_RATE_LIMITS || '').trim().toLowerCase();
+
+    if (disabled === '1' || disabled === 'true') {
+        return false;
+    }
+
+    return !MEMORY_RATE_LIMIT_BACKENDS.has(backend);
+}
+
+function takeLocalRateLimitToken({
     store = sharedRateLimitStore,
     key,
     limit = 60,
@@ -377,6 +393,79 @@ function takeRateLimitToken({
     };
 }
 
+async function takePersistentRateLimitToken({
+    supabase,
+    store = sharedRateLimitStore,
+    key,
+    limit = 60,
+    windowMs = 60_000,
+    now = Date.now(),
+    env = process.env
+}) {
+    const normalizedKey = String(key || '').trim();
+    const safeLimit = Math.max(1, Number(limit) || 1);
+    const safeWindowMs = Math.max(1000, Number(windowMs) || 60_000);
+    const numericNow = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+    const fallback = () => takeLocalRateLimitToken({
+        store,
+        key: normalizedKey,
+        limit: safeLimit,
+        windowMs: safeWindowMs,
+        now: numericNow
+    });
+
+    if (!normalizedKey || !supabase || typeof supabase.rpc !== 'function' || !shouldUsePersistentRateLimitStore(env)) {
+        return fallback();
+    }
+
+    try {
+        const rpcRequest = supabase.rpc('take_rate_limit_token', {
+            p_key: normalizedKey,
+            p_limit: safeLimit,
+            p_window_ms: safeWindowMs,
+            p_now: new Date(numericNow).toISOString()
+        });
+        const { data, error } = typeof rpcRequest?.single === 'function'
+            ? await rpcRequest.single()
+            : await rpcRequest;
+
+        if (error) {
+            throw error;
+        }
+
+        const payload = Array.isArray(data) ? data[0] : data;
+        if (!payload || typeof payload !== 'object') {
+            throw new Error('Persistent rate limit RPC returned no data');
+        }
+
+        const resetAt = Date.parse(payload.reset_at || payload.resetAt || '');
+        const retryAfterSeconds = Number(payload.retry_after_seconds ?? payload.retryAfterSeconds);
+
+        return {
+            allowed: payload.allowed !== false,
+            limit: Math.max(1, Number(payload.limit ?? payload.limit_value) || safeLimit),
+            remaining: Math.max(0, Number(payload.remaining) || 0),
+            resetAt: Number.isFinite(resetAt) ? resetAt : (numericNow + safeWindowMs),
+            retryAfterSeconds: Math.max(
+                1,
+                Number.isFinite(retryAfterSeconds)
+                    ? Math.ceil(retryAfterSeconds)
+                    : Math.ceil(safeWindowMs / 1000)
+            )
+        };
+    } catch (_) {
+        return fallback();
+    }
+}
+
+function takeRateLimitToken(options = {}) {
+    if (options?.supabase) {
+        return takePersistentRateLimitToken(options);
+    }
+
+    return takeLocalRateLimitToken(options);
+}
+
 function applyRateLimitHeaders(res, result = {}) {
     if (!res || typeof res.setHeader !== 'function') return;
 
@@ -408,6 +497,9 @@ module.exports = {
         isPrivateOrLoopbackIp,
         resetSharedRateLimitStore,
         sharedRateLimitStore,
+        shouldUsePersistentRateLimitStore,
+        takeLocalRateLimitToken,
+        takePersistentRateLimitToken,
         trimRateLimitStore
     }
 };

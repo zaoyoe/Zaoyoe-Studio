@@ -1,4 +1,5 @@
 const {
+    getOptionalSupabaseAdmin,
     getSupabaseAdmin,
     parseJsonBody,
     sendJson
@@ -188,7 +189,8 @@ async function handler(req, res) {
         });
     }
 
-    const rateLimit = takeRateLimitToken({
+    const rateLimit = await takeRateLimitToken({
+        supabase: getOptionalSupabaseAdmin(),
         key: `auth-login-security:${resolveClientIp(req, { env: process.env }) || 'unknown'}`,
         limit: Math.max(1, Number(process.env.AUTH_LOGIN_SECURITY_RATE_LIMIT_MAX || 20)),
         windowMs: Math.max(10_000, Number(process.env.AUTH_LOGIN_SECURITY_RATE_LIMIT_WINDOW_MS || 60_000))

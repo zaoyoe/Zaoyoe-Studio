@@ -217,6 +217,11 @@ function getCurrentSite(req, explicitSite) {
     return 'cn';
 }
 
+function sanitizeResolvedPaymentSite(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === 'cn' || normalized === 'intl' ? normalized : '';
+}
+
 function isProductionLikeRuntime(env = process.env) {
     const vercelEnv = String(env?.VERCEL_ENV || '').trim().toLowerCase();
     const railwayEnv = String(env?.RAILWAY_ENVIRONMENT_NAME || '').trim().toLowerCase();
@@ -248,14 +253,16 @@ function getHupijiaoWebhookTrustedProxies() {
         || '';
 }
 
-function applyRequestRateLimit(req, res, {
+async function applyRequestRateLimit(req, res, {
     keyPrefix,
     limit,
     windowMs,
     trustedProxies = ''
 }) {
     const clientIp = resolveRequestClientIp(req, { trustedProxies });
-    const rateLimit = takeRateLimitToken({
+    const rateLimit = await takeRateLimitToken({
+        supabase,
+        env: process.env,
         key: `${keyPrefix}:${clientIp || 'unknown'}`,
         limit,
         windowMs
@@ -569,6 +576,20 @@ async function finalizePaymentEvent(eventKey, patch = {}) {
 
     if (error) {
         console.warn('[Payments] Failed to finalize payment event:', error.message);
+    }
+}
+
+async function deletePaymentEvent(eventKey) {
+    const normalizedEventKey = String(eventKey || '').trim();
+    if (!normalizedEventKey) return;
+
+    const { error } = await supabase
+        .from('payment_events')
+        .delete()
+        .eq('event_key', normalizedEventKey);
+
+    if (error) {
+        console.warn('[Payments] Failed to delete payment event:', error.message);
     }
 }
 
@@ -934,17 +955,15 @@ async function loadCheckoutSessionSiteById(checkoutSessionId) {
 }
 
 async function resolveAfdianWebhookContext({
-    req,
     orderNo,
     resolvedPackage = null,
     amount
 }) {
-    const fallbackSite = getCurrentSite(req);
     const snapshot = await loadAfdianQuerySnapshot(orderNo);
     const snapshotSite = String(snapshot.paymentOrder?.site || snapshot.afdianOrder?.site || '').trim();
     if (snapshotSite) {
         return {
-            currentSite: sanitizeSite(snapshotSite),
+            currentSite: sanitizeResolvedPaymentSite(snapshotSite),
             pendingPaymentOrder: snapshot.paymentOrder?.id
                 ? {
                     paymentOrderId: snapshot.paymentOrder.id,
@@ -977,7 +996,7 @@ async function resolveAfdianWebhookContext({
     }
 
     return {
-        currentSite: sanitizeSite(resolvedSite || fallbackSite),
+        currentSite: sanitizeResolvedPaymentSite(resolvedSite),
         pendingPaymentOrder
     };
 }
@@ -3180,7 +3199,7 @@ app.post('/api/payments/hupijiao/webhook', async (req, res) => {
         return res.status(403).end('forbidden');
     }
 
-    const webhookRateLimit = applyRequestRateLimit(req, res, {
+    const webhookRateLimit = await applyRequestRateLimit(req, res, {
         keyPrefix: 'hupijiao-webhook',
         limit: Math.max(1, Number(process.env.HUPIJIAO_WEBHOOK_RATE_LIMIT_MAX || 180)),
         windowMs: Math.max(10_000, Number(process.env.HUPIJIAO_WEBHOOK_RATE_LIMIT_WINDOW_MS || 60_000)),
@@ -3435,7 +3454,7 @@ app.post('/api/afdian/webhook', async (req, res) => {
         return res.status(403).json({ ec: 403, em: 'forbidden' });
     }
 
-    const webhookRateLimit = applyRequestRateLimit(req, res, {
+    const webhookRateLimit = await applyRequestRateLimit(req, res, {
         keyPrefix: 'afdian-webhook',
         limit: Math.max(1, Number(process.env.AFDIAN_WEBHOOK_RATE_LIMIT_MAX || 180)),
         windowMs: Math.max(10_000, Number(process.env.AFDIAN_WEBHOOK_RATE_LIMIT_WINDOW_MS || 60_000)),
@@ -3549,11 +3568,19 @@ app.post('/api/afdian/webhook', async (req, res) => {
             amountValid
         });
         const { currentSite, pendingPaymentOrder } = await resolveAfdianWebhookContext({
-            req,
             orderNo,
             resolvedPackage,
             amount
         });
+
+        if (!currentSite) {
+            console.warn('[Afdian] Webhook site resolution failed for order:', orderNo);
+            await deletePaymentEvent(eventKey);
+            return res.status(503).json({
+                ec: 503,
+                em: 'payment site unresolved'
+            });
+        }
 
         const { data: processResult, error: processRpcError } = await processAfdianPayment({
             supabase,
@@ -3661,7 +3688,7 @@ async function handleAfdianQueryRequest(req, res) {
         return res.status(statusCode).json(payload);
     }
 
-    const queryRateLimit = applyRequestRateLimit(req, res, {
+    const queryRateLimit = await applyRequestRateLimit(req, res, {
         keyPrefix: 'afdian-query',
         limit: Math.max(1, Number(process.env.AFDIAN_QUERY_RATE_LIMIT_MAX || 25)),
         windowMs: Math.max(10_000, Number(process.env.AFDIAN_QUERY_RATE_LIMIT_WINDOW_MS || 60_000))

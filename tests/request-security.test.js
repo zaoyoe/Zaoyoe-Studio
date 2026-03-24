@@ -120,3 +120,78 @@ test('takeRateLimitToken blocks after the configured threshold and resets after 
     assert.equal(reset.allowed, true);
     assert.equal(reset.remaining, 1);
 });
+
+test('takeRateLimitToken can use a persistent Supabase-backed limiter when provided', async () => {
+    const buckets = new Map();
+    const supabase = {
+        rpc(name, args) {
+            assert.equal(name, 'take_rate_limit_token');
+
+            return {
+                async single() {
+                    const key = String(args.p_key || '').trim();
+                    const limit = Math.max(1, Number(args.p_limit) || 1);
+                    const windowMs = Math.max(1000, Number(args.p_window_ms) || 60_000);
+                    const now = Date.parse(args.p_now);
+
+                    let entry = buckets.get(key);
+                    if (!entry || entry.resetAt <= now) {
+                        entry = {
+                            count: 0,
+                            resetAt: now + windowMs
+                        };
+                    }
+
+                    let allowed = true;
+                    if (entry.count >= limit) {
+                        allowed = false;
+                    } else {
+                        entry.count += 1;
+                    }
+
+                    buckets.set(key, entry);
+
+                    return {
+                        data: {
+                            allowed,
+                            limit_value: limit,
+                            remaining: allowed ? Math.max(0, limit - entry.count) : 0,
+                            reset_at: new Date(entry.resetAt).toISOString(),
+                            retry_after_seconds: Math.max(1, Math.ceil((entry.resetAt - now) / 1000))
+                        },
+                        error: null
+                    };
+                }
+            };
+        }
+    };
+
+    const first = await takeRateLimitToken({
+        supabase,
+        key: 'persistent-bucket',
+        limit: 2,
+        windowMs: 1_000,
+        now: 1_000
+    });
+    const second = await takeRateLimitToken({
+        supabase,
+        key: 'persistent-bucket',
+        limit: 2,
+        windowMs: 1_000,
+        now: 1_100
+    });
+    const third = await takeRateLimitToken({
+        supabase,
+        key: 'persistent-bucket',
+        limit: 2,
+        windowMs: 1_000,
+        now: 1_200
+    });
+
+    assert.equal(first.allowed, true);
+    assert.equal(first.remaining, 1);
+    assert.equal(second.allowed, true);
+    assert.equal(second.remaining, 0);
+    assert.equal(third.allowed, false);
+    assert.equal(third.retryAfterSeconds, 1);
+});

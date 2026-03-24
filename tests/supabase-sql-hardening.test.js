@@ -65,6 +65,7 @@ test('database migrations retire the legacy redemption overload and formalize th
     const verificationSql = readRepoFile(path.join('supabase', 'verify_payment_redemption_hardening.sql'));
     const paymentCreationSql = readRepoFile(path.join('supabase', 'migrations', '20260322_harden_payment_creation_entrypoints.sql'));
     const paymentSiteSql = readRepoFile(path.join('supabase', 'migrations', '20260322_constrain_payment_sites.sql'));
+    const rateLimitSql = readRepoFile(path.join('supabase', 'migrations', '20260324_add_persistent_rate_limits.sql'));
 
     assert.match(
         migrationSql,
@@ -150,6 +151,21 @@ test('database migrations retire the legacy redemption overload and formalize th
         paymentSiteSql,
         /ADD CONSTRAINT payment_orders_site_check\s+CHECK \(site IN \('cn', 'intl'\)\);/s,
         'payment site guardrail should constrain payment orders to the supported site set'
+    );
+    assert.match(
+        rateLimitSql,
+        /CREATE TABLE IF NOT EXISTS public\.rate_limit_buckets\s*\(/s,
+        'persistent rate limit migration should create the shared bucket table'
+    );
+    assert.match(
+        rateLimitSql,
+        /CREATE OR REPLACE FUNCTION public\.take_rate_limit_token\(/,
+        'persistent rate limit migration should define the shared limiter RPC'
+    );
+    assert.match(
+        rateLimitSql,
+        /GRANT EXECUTE ON FUNCTION public\.take_rate_limit_token\(TEXT, INTEGER, INTEGER, TIMESTAMPTZ\) TO service_role;/,
+        'persistent rate limit migration should keep limiter execution restricted to service_role'
     );
 });
 

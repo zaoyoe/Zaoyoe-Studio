@@ -156,6 +156,7 @@ function createSupabaseStub(state = {}) {
     const afdianOrders = state.afdianOrders || [];
     const pointsLedger = state.pointsLedger || [];
     const pointsPackages = state.pointsPackages || [];
+    const rateLimitBuckets = state.rateLimitBuckets || new Map();
     const adminSecretStore = state.adminSecretStore || [];
     const adminRoles = state.adminRoles || {};
     const permissions = state.permissions || {};
@@ -175,6 +176,7 @@ function createSupabaseStub(state = {}) {
     state.paymentCheckoutSessions = paymentCheckoutSessions;
     state.afdianOrders = afdianOrders;
     state.pointsLedger = pointsLedger;
+    state.rateLimitBuckets = rateLimitBuckets;
     state.rpcCalls = rpcCalls;
     state.metrics = state.metrics || {};
     state.metrics.deductCalls = Number(state.metrics.deductCalls || 0);
@@ -263,6 +265,52 @@ function createSupabaseStub(state = {}) {
                     Object.assign(row, args.p_patch || {});
                 }
                 return createRpcResult(row, null);
+            }
+
+            if (name === 'take_rate_limit_token') {
+                const key = String(args.p_key || '').trim();
+                const limit = Math.max(1, Number(args.p_limit) || 1);
+                const windowMs = Math.max(1000, Number(args.p_window_ms) || 60_000);
+                const now = Number.isFinite(Date.parse(args.p_now))
+                    ? Date.parse(args.p_now)
+                    : Date.now();
+
+                if (!key) {
+                    return createRpcResult({
+                        allowed: true,
+                        limit_value: limit,
+                        remaining: Math.max(0, limit - 1),
+                        reset_at: new Date(now + windowMs).toISOString(),
+                        retry_after_seconds: Math.max(1, Math.ceil(windowMs / 1000)),
+                        hit_count: 1
+                    });
+                }
+
+                let entry = rateLimitBuckets.get(key);
+                if (!entry || entry.resetAt <= now) {
+                    entry = {
+                        count: 0,
+                        resetAt: now + windowMs
+                    };
+                }
+
+                let allowed = true;
+                if (entry.count >= limit) {
+                    allowed = false;
+                } else {
+                    entry.count += 1;
+                }
+
+                rateLimitBuckets.set(key, entry);
+
+                return createRpcResult({
+                    allowed,
+                    limit_value: limit,
+                    remaining: allowed ? Math.max(0, limit - entry.count) : 0,
+                    reset_at: new Date(entry.resetAt).toISOString(),
+                    retry_after_seconds: Math.max(1, Math.ceil((entry.resetAt - now) / 1000)),
+                    hit_count: entry.count
+                });
             }
 
             throw new Error(`Unexpected RPC in test stub: ${name}`);
@@ -556,6 +604,17 @@ function createSupabaseStub(state = {}) {
                     const matched = applyCommonFilters(paymentEvents, query);
                     matched.forEach((row) => {
                         Object.assign(row, query.payload || {});
+                    });
+                    return { data: matched, error: null };
+                }
+
+                if (table === 'payment_events' && query.mode === 'delete') {
+                    const matched = applyCommonFilters(paymentEvents, query);
+                    matched.forEach((row) => {
+                        const index = paymentEvents.indexOf(row);
+                        if (index >= 0) {
+                            paymentEvents.splice(index, 1);
+                        }
                     });
                     return { data: matched, error: null };
                 }
@@ -1165,6 +1224,7 @@ test('afdian webhook rejects invalid signatures after processing metadata is rec
                 id: 'pay-order-signature',
                 provider: 'afdian',
                 provider_order_no: 'AFD-BAD-SIGN',
+                site: 'cn',
                 checkout_session_id: null
             }
         ]
@@ -1210,6 +1270,7 @@ test('afdian webhook keeps amount mismatches in pending review', async () => {
                 id: 'pay-order-mismatch',
                 provider: 'afdian',
                 provider_order_no: 'AFD-AMOUNT-MISMATCH',
+                site: 'cn',
                 checkout_session_id: null
             }
         ],
@@ -1277,6 +1338,7 @@ test('afdian webhook marks process_rpc_failed when fn_process_afdian_payment err
                 id: 'pay-order-rpc-fail',
                 provider: 'afdian',
                 provider_order_no: 'AFD-RPC-FAIL',
+                site: 'cn',
                 checkout_session_id: null
             }
         ],
@@ -1491,6 +1553,62 @@ test('afdian webhook resolves site from the linked pending checkout session when
         assert.deepEqual(payload, { ec: 200, em: '' });
         assert.ok(processCall);
         assert.equal(processCall.args.p_site, 'intl');
+    });
+});
+
+test('afdian webhook fails closed when it cannot resolve a trusted payment site', async () => {
+    const state = {
+        paymentEvents: [],
+        pointsPackages: [
+            {
+                id: 'pkg-unresolved-1',
+                name: 'Unresolved Package',
+                points_amount: 200,
+                bonus_points: 0,
+                price_cny: 20,
+                sku_id: 'sku-unresolved-20',
+                is_active: true
+            }
+        ]
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const payloadData = {
+            type: 'order',
+            order: {
+                out_trade_no: 'AFD-SITE-UNRESOLVED',
+                status: 2,
+                plan_id: 'sku-unresolved-20',
+                total_amount: '20.00',
+                user_id: 'afd-user-2'
+            }
+        };
+        const sign = crypto
+            .createHash('md5')
+            .update(`afdian-secret${JSON.stringify(payloadData)}`)
+            .digest('hex');
+
+        const response = await withEnv({
+            AFDIAN_TOKEN: 'afdian-secret'
+        }, async () => dispatchRoute(app, {
+            method: 'POST',
+            url: '/api/afdian/webhook',
+            headers: {
+                host: 'zaoyoe.com'
+            },
+            body: {
+                ec: 200,
+                sign,
+                data: payloadData
+            }
+        }));
+        const payload = response.json();
+        const processCall = state.rpcCalls.find((call) => call.name === 'fn_process_afdian_payment');
+
+        assert.equal(response.status, 503);
+        assert.deepEqual(payload, { ec: 503, em: 'payment site unresolved' });
+        assert.equal(state.paymentEvents.length, 0);
+        assert.equal(processCall, undefined);
     });
 });
 

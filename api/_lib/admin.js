@@ -46,6 +46,14 @@ function getSupabaseAdmin() {
     return supabaseAdmin;
 }
 
+function getOptionalSupabaseAdmin() {
+    try {
+        return getSupabaseAdmin();
+    } catch (_) {
+        return null;
+    }
+}
+
 function getSupabasePublicClient() {
     if (supabasePublic) return supabasePublic;
 
@@ -260,6 +268,7 @@ module.exports = {
     createSupabaseRequestClient,
     getEnv,
     getSupabaseAdmin,
+    getOptionalSupabaseAdmin,
     getAuthenticatedUser,
     getBearerToken,
     getSupabasePublishableKey,

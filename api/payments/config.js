@@ -1,5 +1,6 @@
 const {
     getSupabaseAdmin,
+    getOptionalSupabaseAdmin,
     getSupabasePublicClient,
     sendJson
 } = require('../_lib/admin');
@@ -33,7 +34,8 @@ module.exports = async function handler(req, res) {
         });
     }
 
-    const rateLimit = takeRateLimitToken({
+    const rateLimit = await takeRateLimitToken({
+        supabase: getOptionalSupabaseAdmin(),
         key: `payments-config:${resolveClientIp(req, { env: process.env }) || 'unknown'}`,
         limit: Math.max(1, Number(process.env.PAYMENTS_CONFIG_RATE_LIMIT_MAX || 120)),
         windowMs: Math.max(10_000, Number(process.env.PAYMENTS_CONFIG_RATE_LIMIT_WINDOW_MS || 60_000))
