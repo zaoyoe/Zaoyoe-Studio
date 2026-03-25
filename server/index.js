@@ -52,6 +52,10 @@ const {
     loadOpsAlertsRuntimeConfig,
     sweepOpsAlertJobs
 } = require('../api/_lib/ops-alerts');
+const {
+    normalizePaymentGatewayMonitorConfig,
+    runPaymentGatewayDegradationSweep
+} = require('../api/_lib/payment-gateway-alerts');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -71,6 +75,8 @@ let shopDeliverySweepTimer = null;
 let shopDeliverySweepRunning = false;
 let opsAlertSweepTimer = null;
 let opsAlertSweepRunning = false;
+let paymentGatewaySweepTimer = null;
+let paymentGatewaySweepRunning = false;
 let cachedShopDeliveryStrategy = null;
 let cachedShopDeliveryStrategyAt = 0;
 const afdianProvider = getPaymentProviderAdapter('afdian');
@@ -2796,6 +2802,53 @@ function startOpsAlertSweep() {
     });
 }
 
+async function sweepPaymentGatewayHealth() {
+    if (paymentGatewaySweepRunning) return;
+    paymentGatewaySweepRunning = true;
+
+    try {
+        const result = await runPaymentGatewayDegradationSweep(supabase, {
+            env: process.env
+        });
+
+        if (Number(result?.degraded_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+            console.log('[PaymentGatewayMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[PaymentGatewayMonitor] Sweep failed:', error);
+    } finally {
+        paymentGatewaySweepRunning = false;
+    }
+}
+
+async function queueNextPaymentGatewaySweep(delayMs = null) {
+    if (paymentGatewaySweepTimer) return;
+
+    const monitorConfig = normalizePaymentGatewayMonitorConfig({}, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 5 * 60 * 1000));
+
+    paymentGatewaySweepTimer = setTimeout(() => {
+        paymentGatewaySweepTimer = null;
+        sweepPaymentGatewayHealth()
+            .catch((error) => {
+                console.error('[PaymentGatewayMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextPaymentGatewaySweep().catch((error) => {
+                    console.error('[PaymentGatewayMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startPaymentGatewaySweep() {
+    if (paymentGatewaySweepTimer) return;
+
+    queueNextPaymentGatewaySweep(3200).catch((error) => {
+        console.error('[PaymentGatewayMonitor] Failed to start sweep:', error);
+    });
+}
+
 async function hasLoggedJobResult(userId, jobId, site = 'cn') {
     if (!userId || !jobId) return false;
 
@@ -3989,6 +4042,7 @@ function startServer(port = PORT) {
         startPendingJobSweep();
         startShopDeliverySweep();
         startOpsAlertSweep();
+        startPaymentGatewaySweep();
     });
 }
 

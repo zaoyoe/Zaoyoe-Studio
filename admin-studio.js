@@ -332,6 +332,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-refund-sample':
                 window.sendOpsAlertRefundSample?.();
                 break;
+            case 'settings-send-ops-alert-gateway-sample':
+                window.sendOpsAlertGatewaySample?.();
+                break;
             case 'settings-delete-ops-alert-secret':
                 window.deleteOpsAlertSecret?.(actionEl.dataset.secretName);
                 break;

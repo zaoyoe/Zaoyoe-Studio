@@ -2140,6 +2140,16 @@ async function sendOpsAlertRefundSample() {
     }
 }
 
+async function sendOpsAlertGatewaySample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_gateway_degraded', '支付通道异常示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send payment gateway degraded sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function deleteOpsAlertSecret(secretName) {
     const secretLabels = {
         telegram_bot_token: 'Telegram Bot Token',
@@ -4134,6 +4144,7 @@ window.toggleOpsAlertChannelEnabled = toggleOpsAlertChannelEnabled;
 window.saveOpsAlertSettings = saveOpsAlertSettings;
 window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;
 window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;
+window.sendOpsAlertGatewaySample = sendOpsAlertGatewaySample;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;

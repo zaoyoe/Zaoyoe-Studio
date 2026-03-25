@@ -233,6 +233,46 @@ function buildTelegramRefundSampleJob(user) {
     };
 }
 
+function buildGatewayDegradedSampleJob(user) {
+    return {
+        alert_type: 'payment_gateway_degraded',
+        severity: 'critical',
+        title: '虎皮椒 支付通道异常波动（CN）',
+        payload: {
+            provider: 'hupijiao',
+            site: 'cn',
+            monitor_window_minutes: 30,
+            degraded_reasons: [
+                '支付成功率仅 33.33%（2/6）',
+                '回调成功率仅 40.00%（失败 3，5xx 3）',
+                '查码 5xx 已累计 3 次'
+            ],
+            total_orders: 6,
+            paid_orders: 2,
+            review_orders: 3,
+            failed_orders: 1,
+            paid_rate: 33.33,
+            review_ratio: 50,
+            failed_ratio: 16.67,
+            webhook_total: 5,
+            webhook_success: 2,
+            webhook_failed: 3,
+            webhook_4xx: 0,
+            webhook_5xx: 3,
+            webhook_success_rate: 40,
+            query_total: 5,
+            query_success: 2,
+            query_failed: 3,
+            query_4xx: 0,
+            query_5xx: 3,
+            query_success_rate: 40,
+            target_id: 'payment_gateway:hupijiao:cn',
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了支付通道异常示例发送`,
+            entry_path: '支付对账 -> 支付总览 -> 通道表现 / 最近24小时异常趋势（示例）'
+        }
+    };
+}
+
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
     const { error } = await supabase
         .from('system_config')
@@ -264,7 +304,11 @@ module.exports = async (req, res) => {
 
         if (req.method === 'POST') {
             const body = await parseJsonBody(req);
-            if (sanitizeText(body.action) === 'send_test_telegram' || sanitizeText(body.action) === 'send_sample_refund_telegram') {
+            if (
+                sanitizeText(body.action) === 'send_test_telegram'
+                || sanitizeText(body.action) === 'send_sample_refund_telegram'
+                || sanitizeText(body.action) === 'send_sample_gateway_degraded'
+            ) {
                 const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase);
                 const runtime = {
                     config: normalizeOpsAlertsConfig(body.config),
@@ -274,7 +318,9 @@ module.exports = async (req, res) => {
                 const normalizedAction = sanitizeText(body.action);
                 const job = normalizedAction === 'send_sample_refund_telegram'
                     ? buildTelegramRefundSampleJob(user)
-                    : buildTelegramTestJob(user, runtime);
+                    : normalizedAction === 'send_sample_gateway_degraded'
+                        ? buildGatewayDegradedSampleJob(user)
+                        : buildTelegramTestJob(user, runtime);
                 const result = await sendOpsAlertPreview(job, runtime);
 
                 await writeAdminAuditLog({
@@ -282,7 +328,9 @@ module.exports = async (req, res) => {
                     adminId: user.id,
                     actionType: normalizedAction === 'send_sample_refund_telegram'
                         ? 'admin.ops_alerts.telegram_refund_sample'
-                        : 'admin.ops_alerts.telegram_test',
+                        : normalizedAction === 'send_sample_gateway_degraded'
+                            ? 'admin.ops_alerts.gateway_degraded_sample'
+                            : 'admin.ops_alerts.telegram_test',
                     details: {
                         ok: result?.ok === true,
                         channels: result?.channels || [],
@@ -302,6 +350,8 @@ module.exports = async (req, res) => {
                     success: true,
                     message: normalizedAction === 'send_sample_refund_telegram'
                         ? `退款详情示例消息已发送到 ${channelLabels || '已启用通道'}`
+                        : normalizedAction === 'send_sample_gateway_degraded'
+                            ? `支付通道异常示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : `测试站外告警已发送到 ${channelLabels || '已启用通道'}`
                 });
             }
