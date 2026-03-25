@@ -6,8 +6,9 @@ const {
 } = require('../../../../api/_lib/admin');
 
 const OPS_ALERT_MONITOR_LOOKBACK_HOURS = 7 * 24;
-const OPS_ALERT_MONITOR_PAGE_SIZE = 200;
-const OPS_ALERT_MONITOR_MAX_PAGES = 5;
+const OPS_ALERT_MONITOR_PAGE_SIZE = 120;
+const OPS_ALERT_MONITOR_MAX_PAGES = 2;
+const OPS_ALERT_MONITOR_TIMEOUT_MS = 4000;
 
 const ALERT_MONITOR_CATEGORIES = Object.freeze([
     {
@@ -91,6 +92,24 @@ async function fetchPagedRows(buildQuery, pageSize = OPS_ALERT_MONITOR_PAGE_SIZE
     }
 
     return rows;
+}
+
+async function withTimeout(promise, timeoutMs, message) {
+    let timer = null;
+    try {
+        return await Promise.race([
+            promise,
+            new Promise((_, reject) => {
+                timer = setTimeout(() => {
+                    const error = new Error(message);
+                    error.statusCode = 503;
+                    reject(error);
+                }, timeoutMs);
+            })
+        ]);
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
 }
 
 async function fetchRecentOpsAlertJobs(supabase, sinceIso) {
@@ -343,7 +362,11 @@ module.exports = async (req, res) => {
 
         const now = new Date();
         const sinceIso = new Date(now.getTime() - OPS_ALERT_MONITOR_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
-        const jobs = await fetchRecentOpsAlertJobs(supabase, sinceIso);
+        const jobs = await withTimeout(
+            fetchRecentOpsAlertJobs(supabase, sinceIso),
+            OPS_ALERT_MONITOR_TIMEOUT_MS,
+            '集中告警处理面板加载超时，请先执行最新索引 migration 后重试'
+        );
         const categories = ALERT_MONITOR_CATEGORIES.map((category) => buildCategorySnapshot(category, jobs));
         const totalActiveCount = categories.reduce((sum, category) => sum + Number(category.active_count || 0), 0);
         const totalCriticalCount = categories.reduce((sum, category) => sum + Number(category.critical_count || 0), 0);
