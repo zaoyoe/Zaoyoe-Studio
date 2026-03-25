@@ -1365,6 +1365,72 @@ test('ops alert settings POST can send a shop order delivery failed sample witho
     });
 });
 
+test('ops alert settings POST can send a shop order delivery recovered sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                },
+                feishu: {
+                    enabled: true,
+                    minimum_severity: 'warning'
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: 'https://open.feishu.cn/open-apis/bot/v2/hook/demo'
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_shop_order_delivery_recovered',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        },
+                        feishu: {
+                            enabled: true,
+                            minimum_severity: 'warning'
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /履约恢复示例消息已发送到 Telegram、飞书/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.feishuTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'shop_order_delivery_recovered');
+        assert.equal(state.telegramTests[0].job.payload.delivery_status, 'delivered');
+        assert.equal(state.telegramTests[0].job.payload.previous_delivery_status, 'dead_letter');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.shop_delivery_recovered_sample');
+    });
+});
+
 test('ops alert settings POST can send a payment config changed sample without persisting config changes', async () => {
     await withOpsAlertsSettingsHandler({
         config: createNormalizedConfig({

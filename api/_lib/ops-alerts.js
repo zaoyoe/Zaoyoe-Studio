@@ -551,6 +551,10 @@ function buildExternalAlertText(job = {}) {
     if (shopOrderDeliveryText) {
         return shopOrderDeliveryText;
     }
+    const shopOrderDeliveryRecoveredText = buildShopOrderDeliveryRecoveredAlertText(job);
+    if (shopOrderDeliveryRecoveredText) {
+        return shopOrderDeliveryRecoveredText;
+    }
     const adminLoginAnomalyText = buildAdminLoginAnomalyAlertText(job);
     if (adminLoginAnomalyText) {
         return adminLoginAnomalyText;
@@ -1196,6 +1200,44 @@ function buildShopOrderDeliveryFailedAlertText(job = {}) {
     if (normalizeText(payload.delivery_last_error)) lines.push(`最近错误：${normalizeText(payload.delivery_last_error)}`);
     if (normalizeText(payload.created_at)) lines.push(`下单时间：${formatTimestamp(payload.created_at)}`);
     if (normalizeText(payload.delivery_updated_at)) lines.push(`最近履约更新时间：${formatTimestamp(payload.delivery_updated_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildShopOrderDeliveryRecoveredAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'shop_order_delivery_recovered') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const lines = [
+        `[商城履约恢复][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '订单履约已恢复'}`
+    ];
+
+    if (normalizeText(payload.order_id)) lines.push(`订单号：${normalizeText(payload.order_id)}`);
+    if (normalizeText(payload.product_name)) lines.push(`商品：${normalizeText(payload.product_name)}`);
+    if (normalizeText(payload.user_id)) lines.push(`用户ID：${normalizeText(payload.user_id)}`);
+    if (Number.isFinite(Number(payload.item_count))) lines.push(`购买数量：${Math.max(1, Math.round(Number(payload.item_count || 1)))} 件`);
+    if (Number.isFinite(Number(payload.total_price)) || Number.isFinite(Number(payload.price_paid))) {
+        lines.push(`订单金额：${formatCurrencyAmount(payload.total_price ?? payload.price_paid)}`);
+    }
+    if (normalizeText(payload.recovery_summary)) lines.push(`恢复结论：${normalizeText(payload.recovery_summary)}`);
+    if (normalizeText(payload.previous_delivery_status)) {
+        lines.push(`上次异常状态：${normalizeText(payload.previous_delivery_status_label) || getShopDeliveryStatusLabel(payload.previous_delivery_status)}`);
+    }
+    if (Number.isFinite(Number(payload.previous_delivery_attempt_count))) {
+        lines.push(`上次失败次数：${Math.max(0, Math.round(Number(payload.previous_delivery_attempt_count || 0)))}`);
+    }
+    if (normalizeText(payload.delivery_status)) lines.push(`当前履约状态：${normalizeText(payload.delivery_status_label) || getShopDeliveryStatusLabel(payload.delivery_status)}`);
+    if (normalizeText(payload.refund_status)) lines.push(`退款状态：${normalizeText(payload.refund_status_label) || getRefundStatusLabel(payload.refund_status)}`);
+    if (normalizeText(payload.incident_started_at)) lines.push(`上次异常：${formatTimestamp(payload.incident_started_at)}`);
+    if (normalizeText(payload.delivery_updated_at)) lines.push(`最近履约更新时间：${formatTimestamp(payload.delivery_updated_at)}`);
+    if (normalizeText(payload.incident_recovered_at)) lines.push(`恢复时间：${formatTimestamp(payload.incident_recovered_at)}`);
+    if (Number.isFinite(Number(payload.incident_duration_minutes))) {
+        lines.push(`持续时长：${Math.max(0, Math.round(Number(payload.incident_duration_minutes || 0)))} 分钟`);
+    }
+    if (normalizeText(payload.previous_delivery_last_error)) lines.push(`上次错误：${normalizeText(payload.previous_delivery_last_error)}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
     return lines.filter(Boolean).join('\n');

@@ -3352,6 +3352,8 @@ async function sweepShopOrderDeliveryHealth() {
         if (
             Number(result?.failure_count || 0) > 0
             || Number(result?.queued || 0) > 0
+            || Number(result?.recovered_count || 0) > 0
+            || Number(result?.admin_notifications_created || 0) > 0
         ) {
             console.log('[ShopOrderDeliveryMonitor] Sweep complete:', JSON.stringify(result));
         }

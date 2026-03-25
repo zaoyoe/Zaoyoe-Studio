@@ -1718,7 +1718,7 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         'admin-studio.html should load the latest admin studio stylesheet version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-studio.js?v=20260325_ADMIN_RUNTIME_STYLE_HELPERS_16'),
+        adminStudioHtml.includes('admin-studio.js?v=20260325_ADMIN_RUNTIME_STYLE_HELPERS_17'),
         true,
         'admin-studio.html should load the latest admin studio runtime version'
     );
@@ -2063,6 +2063,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'data-admin-action="settings-send-ops-alert-shop-inventory-recovered-sample"',
         'data-admin-action="settings-send-ops-alert-admin-login-anomaly-sample"',
         'data-admin-action="settings-send-ops-alert-shop-order-delivery-failed-sample"',
+        'data-admin-action="settings-send-ops-alert-shop-order-delivery-recovered-sample"',
         'data-admin-action="settings-send-ops-alert-payment-config-changed-sample"',
         'data-admin-action="settings-delete-ops-alert-secret"',
         'id="opsAlertTelegramChatIds"',
@@ -2094,6 +2095,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         "case 'settings-send-ops-alert-shop-inventory-recovered-sample':",
         "case 'settings-send-ops-alert-admin-login-anomaly-sample':",
         "case 'settings-send-ops-alert-shop-order-delivery-failed-sample':",
+        "case 'settings-send-ops-alert-shop-order-delivery-recovered-sample':",
         "case 'settings-send-ops-alert-payment-config-changed-sample':",
         "case 'settings-delete-ops-alert-secret':"
     ];
@@ -2117,6 +2119,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.sendOpsAlertVerifyServiceDisabledSample = sendOpsAlertVerifyServiceDisabledSample;',
         'window.sendOpsAlertTicketSlaRecoveredSample = sendOpsAlertTicketSlaRecoveredSample;',
         'window.sendOpsAlertShopInventoryRecoveredSample = sendOpsAlertShopInventoryRecoveredSample;',
+        'window.sendOpsAlertShopOrderDeliveryRecoveredSample = sendOpsAlertShopOrderDeliveryRecoveredSample;',
         'window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;',
         'window.saveOpsAlertSettings = saveOpsAlertSettings;',
         'window.deleteOpsAlertSecret = deleteOpsAlertSecret;'
@@ -4331,7 +4334,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         'admin-studio.html should reference the updated admin stylesheet version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-config.js?v=20260325_ADMIN_CONFIG_OPS_ALERT_SAMPLES_13'),
+        adminStudioHtml.includes('admin-config.js?v=20260325_ADMIN_CONFIG_OPS_ALERT_SAMPLES_14'),
         true,
         'admin-studio.html should reference the updated admin config runtime version'
     );

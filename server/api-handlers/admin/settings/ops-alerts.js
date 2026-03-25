@@ -528,6 +528,40 @@ function buildTicketSlaRecoveredSampleJob(user) {
     };
 }
 
+function buildShopOrderDeliveryRecoveredSampleJob(user) {
+    return {
+        alert_type: 'shop_order_delivery_recovered',
+        severity: 'warning',
+        title: '商城履约已恢复（shop-ord）',
+        payload: {
+            target_id: 'shop-order-demo-delivery-001',
+            order_id: 'shop-order-demo-delivery-001',
+            user_id: 'demo_delivery_user_001',
+            product_name: 'Prompt Pro 年卡',
+            item_count: 2,
+            total_price: 59.8,
+            price_paid: 59.8,
+            previous_delivery_status: 'dead_letter',
+            previous_delivery_status_label: '死信待处理',
+            previous_delivery_attempt_count: 4,
+            previous_delivery_last_error: '目标履约地址连续超时',
+            delivery_status: 'delivered',
+            delivery_status_label: '已发货',
+            refund_status: 'none',
+            refund_status_label: '正常',
+            incident_alert_job_id: 'shop-delivery-demo-001',
+            incident_started_at: '2026-03-25T10:00:00.000Z',
+            incident_recovered_at: new Date().toISOString(),
+            incident_duration_minutes: 37,
+            recovery_summary: '订单已成功履约，已退出履约异常状态',
+            created_at: '2026-03-25T09:30:00.000Z',
+            delivery_updated_at: new Date().toISOString(),
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了履约恢复示例发送`,
+            entry_path: '商城管理 -> 履约任务 / 异常订单（示例）'
+        }
+    };
+}
+
 function buildShopInventoryLowSampleJob(user) {
     return {
         alert_type: 'shop_inventory_low',
@@ -707,6 +741,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_shop_inventory_recovered'
                 || sanitizeText(body.action) === 'send_sample_admin_login_anomaly'
                 || sanitizeText(body.action) === 'send_sample_shop_order_delivery_failed'
+                || sanitizeText(body.action) === 'send_sample_shop_order_delivery_recovered'
                 || sanitizeText(body.action) === 'send_sample_payment_config_changed'
             ) {
                 const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase);
@@ -742,10 +777,12 @@ module.exports = async (req, res) => {
                                     ? buildShopInventoryLowSampleJob(user)
                                     : normalizedAction === 'send_sample_shop_inventory_recovered'
                                         ? buildShopInventoryRecoveredSampleJob(user)
-                                    : normalizedAction === 'send_sample_admin_login_anomaly'
-                                        ? buildAdminLoginAnomalySampleJob(user)
-                                        : normalizedAction === 'send_sample_shop_order_delivery_failed'
-                                            ? buildShopOrderDeliveryFailedSampleJob(user)
+                                        : normalizedAction === 'send_sample_admin_login_anomaly'
+                                            ? buildAdminLoginAnomalySampleJob(user)
+                                            : normalizedAction === 'send_sample_shop_order_delivery_failed'
+                                                ? buildShopOrderDeliveryFailedSampleJob(user)
+                                                : normalizedAction === 'send_sample_shop_order_delivery_recovered'
+                                                    ? buildShopOrderDeliveryRecoveredSampleJob(user)
                                             : normalizedAction === 'send_sample_payment_config_changed'
                                                 ? buildPaymentConfigChangedSampleJob(user)
                         : buildTelegramTestJob(user, runtime);
@@ -784,6 +821,8 @@ module.exports = async (req, res) => {
                                             ? 'admin.ops_alerts.admin_login_anomaly_sample'
                                             : normalizedAction === 'send_sample_shop_order_delivery_failed'
                                                 ? 'admin.ops_alerts.shop_delivery_failed_sample'
+                                                : normalizedAction === 'send_sample_shop_order_delivery_recovered'
+                                                    ? 'admin.ops_alerts.shop_delivery_recovered_sample'
                                                 : normalizedAction === 'send_sample_payment_config_changed'
                                                     ? 'admin.ops_alerts.payment_config_changed_sample'
                             : 'admin.ops_alerts.telegram_test',
@@ -834,6 +873,8 @@ module.exports = async (req, res) => {
                                             ? `管理员异常登录示例消息已发送到 ${channelLabels || '已启用通道'}`
                                             : normalizedAction === 'send_sample_shop_order_delivery_failed'
                                                 ? `履约失败示例消息已发送到 ${channelLabels || '已启用通道'}`
+                                                : normalizedAction === 'send_sample_shop_order_delivery_recovered'
+                                                    ? `履约恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
                                                 : normalizedAction === 'send_sample_payment_config_changed'
                                                     ? `支付配置变更示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : `测试站外告警已发送到 ${channelLabels || '已启用通道'}`

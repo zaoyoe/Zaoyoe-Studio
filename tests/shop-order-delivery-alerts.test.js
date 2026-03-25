@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { normalizeOpsAlertsConfig } = require('../api/_lib/ops-alerts');
 const {
     buildShopOrderDeliveryFailedAlerts,
+    buildShopOrderDeliveryRecoveredAlerts,
     normalizeShopOrderDeliveryMonitorConfig,
     runShopOrderDeliveryFailedSweep
 } = require('../api/_lib/shop-order-delivery-alerts');
@@ -108,6 +109,8 @@ function applyRange(rows, range) {
 function createSupabaseStub(state = {}) {
     const jobs = state.jobs || [];
     const orders = state.orders || [];
+    const adminRoles = state.adminRoles || [];
+    const systemNotifications = state.systemNotifications || [];
 
     return {
         from(table) {
@@ -136,6 +139,38 @@ function createSupabaseStub(state = {}) {
 
                     inserted.forEach((row) => {
                         jobs.push({ ...row });
+                    });
+
+                    return {
+                        data: query.single ? inserted[0] : inserted,
+                        error: null
+                    };
+                }
+
+                if (table === 'admin_roles' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(adminRoles, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'system_notifications' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(systemNotifications, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'system_notifications' && query.mode === 'insert') {
+                    const payload = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    const inserted = payload.map((row, index) => ({
+                        id: row.id || `notification-${systemNotifications.length + index + 1}`,
+                        created_at: row.created_at || new Date().toISOString(),
+                        ...row
+                    }));
+
+                    inserted.forEach((row) => {
+                        systemNotifications.push({ ...row });
                     });
 
                     return {
@@ -300,4 +335,130 @@ test('runShopOrderDeliveryFailedSweep enqueues delivery failure alerts with stab
     assert.equal(second.queued, 0);
     assert.equal(second.deduped, 2);
     assert.equal(state.jobs.length, 2);
+});
+
+test('buildShopOrderDeliveryRecoveredAlerts emits a recovery notice after a dead-letter order is delivered', () => {
+    const alerts = buildShopOrderDeliveryRecoveredAlerts([
+        {
+            id: 'shop-order-dead-001',
+            user_id: 'buyer-001',
+            snapshot_product_name: 'Prompt Pro 年卡',
+            price_paid: 59.8,
+            total_price: 59.8,
+            item_count: 2,
+            delivery_status: 'delivered',
+            delivery_attempt_count: 4,
+            delivery_last_error: '',
+            delivery_updated_at: '2026-03-25T10:54:00.000Z',
+            created_at: '2026-03-25T08:10:00.000Z',
+            refund_status: 'none'
+        }
+    ], [
+        {
+            id: 'delivery-failed-1',
+            alert_type: 'shop_order_delivery_failed',
+            severity: 'critical',
+            title: '商城履约失败（shop-ord）',
+            created_at: '2026-03-25T10:00:00.000Z',
+            payload: {
+                target_id: 'shop-order-dead-001',
+                order_id: 'shop-order-dead-001',
+                product_name: 'Prompt Pro 年卡',
+                user_id: 'buyer-001',
+                item_count: 2,
+                total_price: 59.8,
+                delivery_status: 'dead_letter',
+                delivery_status_label: '死信待处理',
+                delivery_attempt_count: 4,
+                delivery_last_error: '目标履约地址连续超时'
+            }
+        }
+    ], normalizeShopOrderDeliveryMonitorConfig(), {
+        now: '2026-03-25T10:54:00.000Z'
+    });
+
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].alertType, 'shop_order_delivery_recovered');
+    assert.equal(alerts[0].severity, 'warning');
+    assert.deepEqual(alerts[0].allowedChannels, ['feishu']);
+    assert.match(alerts[0].content, /恢复结论：订单已成功履约，已退出履约异常状态/);
+    assert.equal(alerts[0].payload.incident_alert_job_id, 'delivery-failed-1');
+    assert.equal(alerts[0].payload.previous_delivery_status, 'dead_letter');
+    assert.equal(alerts[0].payload.delivery_status, 'delivered');
+    assert.equal(alerts[0].payload.incident_duration_minutes, 54);
+});
+
+test('runShopOrderDeliveryFailedSweep enqueues recovery notices and writes admin notifications once', async () => {
+    const state = {
+        jobs: [
+            {
+                id: 'delivery-failed-1',
+                alert_type: 'shop_order_delivery_failed',
+                severity: 'critical',
+                title: '商城履约失败（shop-ord）',
+                created_at: '2026-03-25T10:00:00.000Z',
+                payload: {
+                    target_id: 'shop-order-dead-001',
+                    order_id: 'shop-order-dead-001',
+                    product_name: 'Prompt Pro 年卡',
+                    user_id: 'buyer-001',
+                    item_count: 2,
+                    total_price: 59.8,
+                    delivery_status: 'dead_letter',
+                    delivery_status_label: '死信待处理',
+                    delivery_attempt_count: 4,
+                    delivery_last_error: '目标履约地址连续超时'
+                }
+            }
+        ],
+        orders: [
+            {
+                id: 'shop-order-dead-001',
+                user_id: 'buyer-001',
+                snapshot_product_name: 'Prompt Pro 年卡',
+                price_paid: 59.8,
+                total_price: 59.8,
+                item_count: 2,
+                delivery_status: 'delivered',
+                delivery_attempt_count: 4,
+                delivery_last_error: '',
+                delivery_updated_at: '2026-03-25T10:54:00.000Z',
+                created_at: '2026-03-25T08:10:00.000Z',
+                refund_status: 'none'
+            }
+        ],
+        adminRoles: [
+            { user_id: 'admin-1', role_name: 'admin', expires_at: null },
+            { user_id: 'admin-2', role_name: 'super_admin', expires_at: null }
+        ],
+        systemNotifications: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime();
+
+    const first = await runShopOrderDeliveryFailedSweep(supabase, {
+        runtime,
+        now: '2026-03-25T10:54:00.000Z'
+    });
+
+    assert.equal(first.failure_count, 0);
+    assert.equal(first.recovered_count, 1);
+    assert.equal(first.recovered_queued, 1);
+    assert.equal(first.admin_notifications_created, 2);
+    assert.equal(state.jobs.length, 2);
+    assert.equal(state.jobs[1].alert_type, 'shop_order_delivery_recovered');
+    assert.deepEqual(state.jobs[1].channels, ['feishu']);
+    assert.equal(state.systemNotifications.length, 2);
+    assert.match(state.systemNotifications[0].title, /履约已恢复/);
+
+    const second = await runShopOrderDeliveryFailedSweep(supabase, {
+        runtime,
+        now: '2026-03-25T10:55:00.000Z'
+    });
+
+    assert.equal(second.recovered_count, 0);
+    assert.equal(second.recovered_queued, 0);
+    assert.equal(second.admin_notifications_created, 0);
+    assert.equal(state.jobs.length, 2);
+    assert.equal(state.systemNotifications.length, 2);
 });
