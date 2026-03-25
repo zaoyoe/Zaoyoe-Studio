@@ -74,6 +74,7 @@
 | --- | --- | --- | --- | --- | --- |
 | `shop_order_delivery_failed` | 发货失败 / 库存出库失败 | `warning` | 飞书 + 站内 | 30 分钟 | 订单号、商品、用户ID、错误 |
 | `shop_order_delivery_incident` | 短时间多笔履约失败 / 死信堆积，升级成集中排障事件 | `critical` | TG + 飞书 + 站内 | 20 分钟 | 异常订单数、死信数、热点商品、热点错误 |
+| `shop_order_delivery_incident_recovered` | 履约集中事故退出升级状态，转入观察 | `warning` | 飞书 + 站内 | 每次事故 1 次 | 恢复结论、持续时长、剩余异常 |
 | `shop_order_delivery_recovered` | 订单退出履约失败状态并完成发货/退款关闭 | `warning` | 飞书 + 站内 | 每次事故 1 次 | 订单号、恢复结论、当前状态、持续时长 |
 | `shop_order_high_value` | 高价值订单成交 | `info` | 飞书 | 立即发送 | 订单号、金额、商品、渠道 |
 | `shop_inventory_low` | 库存低于阈值 | `warning` | 飞书 + 站内 | 6 小时 | 商品、剩余库存、近 7 天销量 |

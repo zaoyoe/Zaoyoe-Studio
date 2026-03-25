@@ -870,6 +870,39 @@ test('buildExternalAlertText renders shop order delivery incident details', () =
     assert.match(text, /处理入口：商城管理 -> 履约任务 \/ 异常订单（示例）/);
 });
 
+test('buildExternalAlertText renders shop order delivery incident recovery details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'shop_order_delivery_incident_recovered',
+        severity: 'warning',
+        title: '商城履约事故已恢复',
+        payload: {
+            incident_started_at: '2026-03-25T10:00:00.000Z',
+            incident_recovered_at: '2026-03-25T10:46:00.000Z',
+            incident_duration_minutes: 46,
+            previous_incident_order_count: 4,
+            previous_dead_letter_count: 2,
+            previous_retry_waiting_count: 2,
+            recovery_summary: '履约集中事故阈值已解除，当前仍保留 1 笔单笔异常订单',
+            active_order_count: 1,
+            active_dead_letter_count: 0,
+            active_retry_waiting_count: 1,
+            active_user_count: 1,
+            active_products: ['卡密周卡 × 1'],
+            active_errors: ['库存锁定冲突，已等待下一轮重试 × 1'],
+            entry_path: '商城管理 -> 履约任务 / 异常订单（示例）'
+        }
+    });
+
+    assert.match(text, /商城履约事故恢复/);
+    assert.match(text, /恢复结论：履约集中事故阈值已解除，当前仍保留 1 笔单笔异常订单/);
+    assert.match(text, /上次事故规模：4 笔（死信 2 \/ 重试 2）/);
+    assert.match(text, /当前剩余异常：1 笔（死信 0 \/ 重试 1）/);
+    assert.match(text, /当前受影响用户：1 位/);
+    assert.match(text, /当前热点商品：卡密周卡 × 1/);
+    assert.match(text, /当前热点错误：库存锁定冲突，已等待下一轮重试 × 1/);
+    assert.match(text, /处理入口：商城管理 -> 履约任务 \/ 异常订单（示例）/);
+});
+
 test('buildExternalAlertText renders shop order delivery recovery details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'shop_order_delivery_recovered',

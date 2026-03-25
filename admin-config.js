@@ -2290,6 +2290,16 @@ async function sendOpsAlertShopOrderDeliveryIncidentSample() {
     }
 }
 
+async function sendOpsAlertShopOrderDeliveryIncidentRecoveredSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_incident_recovered', '履约事故恢复示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send shop order delivery incident recovery sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function sendOpsAlertShopOrderDeliveryRecoveredSample() {
     try {
         return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_recovered', '履约恢复示例消息已发送');
@@ -4319,6 +4329,7 @@ window.sendOpsAlertShopInventoryRecoveredSample = sendOpsAlertShopInventoryRecov
 window.sendOpsAlertAdminLoginAnomalySample = sendOpsAlertAdminLoginAnomalySample;
 window.sendOpsAlertShopOrderDeliveryFailedSample = sendOpsAlertShopOrderDeliveryFailedSample;
 window.sendOpsAlertShopOrderDeliveryIncidentSample = sendOpsAlertShopOrderDeliveryIncidentSample;
+window.sendOpsAlertShopOrderDeliveryIncidentRecoveredSample = sendOpsAlertShopOrderDeliveryIncidentRecoveredSample;
 window.sendOpsAlertShopOrderDeliveryRecoveredSample = sendOpsAlertShopOrderDeliveryRecoveredSample;
 window.sendOpsAlertPaymentConfigChangedSample = sendOpsAlertPaymentConfigChangedSample;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;

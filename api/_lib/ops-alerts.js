@@ -555,6 +555,10 @@ function buildExternalAlertText(job = {}) {
     if (shopOrderDeliveryIncidentText) {
         return shopOrderDeliveryIncidentText;
     }
+    const shopOrderDeliveryIncidentRecoveredText = buildShopOrderDeliveryIncidentRecoveredAlertText(job);
+    if (shopOrderDeliveryIncidentRecoveredText) {
+        return shopOrderDeliveryIncidentRecoveredText;
+    }
     const shopOrderDeliveryRecoveredText = buildShopOrderDeliveryRecoveredAlertText(job);
     if (shopOrderDeliveryRecoveredText) {
         return shopOrderDeliveryRecoveredText;
@@ -1249,6 +1253,52 @@ function buildShopOrderDeliveryIncidentAlertText(job = {}) {
     if (hotErrors.length) lines.push(`热点错误：${hotErrors.join('；')}`);
     if (orderRefs.length) lines.push(`示例订单：${orderRefs.join('、')}`);
     if (normalizeText(payload.latest_failure_at)) lines.push(`最近异常时间：${formatTimestamp(payload.latest_failure_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildShopOrderDeliveryIncidentRecoveredAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'shop_order_delivery_incident_recovered') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const activeProducts = Array.isArray(payload.active_products)
+        ? payload.active_products.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const activeErrors = Array.isArray(payload.active_errors)
+        ? payload.active_errors.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const lines = [
+        `[商城履约事故恢复][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '商城履约事故已恢复'}`
+    ];
+
+    if (normalizeText(payload.recovery_summary)) lines.push(`恢复结论：${normalizeText(payload.recovery_summary)}`);
+    if (normalizeText(payload.incident_started_at)) lines.push(`上次升级：${formatTimestamp(payload.incident_started_at)}`);
+    if (normalizeText(payload.incident_recovered_at)) lines.push(`恢复时间：${formatTimestamp(payload.incident_recovered_at)}`);
+    if (Number.isFinite(Number(payload.incident_duration_minutes))) {
+        lines.push(`持续时长：${Math.max(0, Math.round(Number(payload.incident_duration_minutes || 0)))} 分钟`);
+    }
+    if (
+        Number.isFinite(Number(payload.previous_incident_order_count))
+        || Number.isFinite(Number(payload.previous_dead_letter_count))
+        || Number.isFinite(Number(payload.previous_retry_waiting_count))
+    ) {
+        lines.push(`上次事故规模：${Math.max(0, Math.round(Number(payload.previous_incident_order_count || 0)))} 笔（死信 ${Math.max(0, Math.round(Number(payload.previous_dead_letter_count || 0)))} / 重试 ${Math.max(0, Math.round(Number(payload.previous_retry_waiting_count || 0)))}）`);
+    }
+    if (
+        Number.isFinite(Number(payload.active_order_count))
+        || Number.isFinite(Number(payload.active_dead_letter_count))
+        || Number.isFinite(Number(payload.active_retry_waiting_count))
+    ) {
+        lines.push(`当前剩余异常：${Math.max(0, Math.round(Number(payload.active_order_count || 0)))} 笔（死信 ${Math.max(0, Math.round(Number(payload.active_dead_letter_count || 0)))} / 重试 ${Math.max(0, Math.round(Number(payload.active_retry_waiting_count || 0)))}）`);
+    }
+    if (Number.isFinite(Number(payload.active_user_count))) {
+        lines.push(`当前受影响用户：${Math.max(0, Math.round(Number(payload.active_user_count || 0)))} 位`);
+    }
+    if (activeProducts.length) lines.push(`当前热点商品：${activeProducts.join('、')}`);
+    if (activeErrors.length) lines.push(`当前热点错误：${activeErrors.join('；')}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
     return lines.filter(Boolean).join('\n');

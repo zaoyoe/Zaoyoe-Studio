@@ -1422,6 +1422,63 @@ test('ops alert settings POST can send a shop order delivery incident sample wit
     });
 });
 
+test('ops alert settings POST can send a shop order delivery incident recovery sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_shop_order_delivery_incident_recovered',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /履约事故恢复示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'shop_order_delivery_incident_recovered');
+        assert.equal(state.telegramTests[0].job.payload.previous_incident_order_count, 4);
+        assert.equal(state.telegramTests[0].job.payload.active_order_count, 1);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.shop_delivery_incident_recovered_sample');
+    });
+});
+
 test('ops alert settings POST can send a shop order delivery recovered sample without persisting config changes', async () => {
     await withOpsAlertsSettingsHandler({
         config: createNormalizedConfig({

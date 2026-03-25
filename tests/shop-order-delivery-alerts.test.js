@@ -5,6 +5,7 @@ const { normalizeOpsAlertsConfig } = require('../api/_lib/ops-alerts');
 const {
     buildShopOrderDeliveryFailedAlerts,
     buildShopOrderDeliveryIncidentAlerts,
+    buildShopOrderDeliveryIncidentRecoveryAlerts,
     buildShopOrderDeliveryRecoveredAlerts,
     normalizeShopOrderDeliveryMonitorConfig,
     runShopOrderDeliveryFailedSweep
@@ -389,6 +390,48 @@ test('buildShopOrderDeliveryRecoveredAlerts emits a recovery notice after a dead
     assert.equal(alerts[0].payload.incident_duration_minutes, 54);
 });
 
+test('buildShopOrderDeliveryIncidentRecoveryAlerts emits a recovery notice after clustered failures fall below the incident threshold', () => {
+    const alerts = buildShopOrderDeliveryIncidentRecoveryAlerts([
+        {
+            alertType: 'shop_order_delivery_failed',
+            severity: 'warning',
+            payload: {
+                order_id: 'shop-order-3',
+                user_id: 'buyer-003',
+                product_name: '卡密周卡',
+                delivery_status: 'retry_waiting',
+                delivery_attempt_count: 2,
+                delivery_last_error: '库存锁定冲突，已等待下一轮重试'
+            }
+        }
+    ], [
+        {
+            id: 'delivery-incident-1',
+            alert_type: 'shop_order_delivery_incident',
+            severity: 'critical',
+            title: '商城履约异常升级（4 笔）',
+            created_at: '2026-03-25T10:00:00.000Z',
+            payload: {
+                target_id: 'shop_order_delivery_incident:global',
+                incident_order_count: 4,
+                dead_letter_count: 2,
+                retry_waiting_count: 2
+            }
+        }
+    ], normalizeShopOrderDeliveryMonitorConfig(), {
+        now: '2026-03-25T10:46:00.000Z'
+    });
+
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].alertType, 'shop_order_delivery_incident_recovered');
+    assert.equal(alerts[0].severity, 'warning');
+    assert.deepEqual(alerts[0].allowedChannels, ['feishu']);
+    assert.match(alerts[0].content, /履约集中事故阈值已解除，当前仍保留 1 笔单笔异常订单/);
+    assert.equal(alerts[0].payload.previous_incident_order_count, 4);
+    assert.equal(alerts[0].payload.active_order_count, 1);
+    assert.equal(alerts[0].payload.incident_duration_minutes, 46);
+});
+
 test('buildShopOrderDeliveryIncidentAlerts escalates when multiple delivery failures pile up', () => {
     const alerts = buildShopOrderDeliveryIncidentAlerts([
         {
@@ -590,4 +633,75 @@ test('runShopOrderDeliveryFailedSweep enqueues a delivery incident escalation wi
     assert.equal(second.incident_queued, 0);
     assert.equal(second.incident_deduped, 1);
     assert.equal(state.jobs.length, 4);
+});
+
+test('runShopOrderDeliveryFailedSweep enqueues incident recovery notices and writes admin notifications once', async () => {
+    const state = {
+        jobs: [
+            {
+                id: 'delivery-incident-1',
+                alert_type: 'shop_order_delivery_incident',
+                severity: 'critical',
+                title: '商城履约异常升级（4 笔）',
+                created_at: '2026-03-25T10:00:00.000Z',
+                payload: {
+                    target_id: 'shop_order_delivery_incident:global',
+                    incident_order_count: 4,
+                    dead_letter_count: 2,
+                    retry_waiting_count: 2
+                }
+            }
+        ],
+        orders: [
+            {
+                id: 'shop-order-3',
+                user_id: 'buyer-003',
+                snapshot_product_name: '卡密周卡',
+                price_paid: 9.9,
+                total_price: 9.9,
+                item_count: 1,
+                delivery_status: 'retry_waiting',
+                delivery_attempt_count: 2,
+                delivery_last_error: '库存锁定冲突，已等待下一轮重试',
+                delivery_updated_at: '2026-03-25T10:15:00.000Z',
+                created_at: '2026-03-25T09:10:00.000Z',
+                refund_status: 'none'
+            }
+        ],
+        adminRoles: [
+            { user_id: 'admin-1', role_name: 'admin', expires_at: null },
+            { user_id: 'admin-2', role_name: 'super_admin', expires_at: null }
+        ],
+        systemNotifications: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime();
+
+    const first = await runShopOrderDeliveryFailedSweep(supabase, {
+        runtime,
+        now: '2026-03-25T10:46:00.000Z'
+    });
+
+    assert.equal(first.incident_count, 0);
+    assert.equal(first.incident_recovered_count, 1);
+    assert.equal(first.incident_recovered_queued, 1);
+    assert.equal(first.admin_notifications_created, 2);
+    assert.equal(state.jobs.length, 3);
+    assert.equal(state.jobs[0].alert_type, 'shop_order_delivery_incident');
+    assert.equal(state.jobs[1].alert_type, 'shop_order_delivery_failed');
+    assert.equal(state.jobs[2].alert_type, 'shop_order_delivery_incident_recovered');
+    assert.deepEqual(state.jobs[2].channels, ['feishu']);
+    assert.equal(state.systemNotifications.length, 2);
+    assert.match(state.systemNotifications[0].title, /履约事故已恢复/);
+
+    const second = await runShopOrderDeliveryFailedSweep(supabase, {
+        runtime,
+        now: '2026-03-25T10:47:00.000Z'
+    });
+
+    assert.equal(second.incident_recovered_count, 0);
+    assert.equal(second.incident_recovered_queued, 0);
+    assert.equal(second.admin_notifications_created, 0);
+    assert.equal(state.jobs.length, 3);
+    assert.equal(state.systemNotifications.length, 2);
 });
