@@ -63,7 +63,8 @@ function createDefaultState() {
         systemConfigUpserts: [],
         upsertedSecrets: [],
         deletedSecrets: [],
-        auditLogs: []
+        auditLogs: [],
+        telegramTests: []
     };
 }
 
@@ -243,6 +244,18 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
                 },
                 buildOpsAlertSecretStatus() {
                     return buildSecretStatus(state);
+                },
+                async sendTelegramAlert(job, runtime) {
+                    state.telegramTests.push({
+                        job: cloneValue(job),
+                        runtime: cloneValue(runtime)
+                    });
+
+                    return {
+                        ok: true,
+                        status: 200,
+                        body: JSON.stringify([{ chatId: '5104238366', ok: true, status: 200 }])
+                    };
                 }
             };
         }
@@ -412,5 +425,64 @@ test('ops alert settings DELETE removes a stored secret and returns refreshed st
         assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.secret.delete');
         assert.equal(payload.secrets.telegram_bot_token.configured, false);
         assert.equal(payload.secrets.telegram_bot_token.source, 'missing');
+    });
+});
+
+test('ops alert settings POST can send a Telegram self-check without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_test_telegram',
+                config: {
+                    enabled: false,
+                    channels: {
+                        telegram: {
+                            enabled: false,
+                            minimum_severity: 'critical',
+                            chat_ids: ['5104238366', '5104238367']
+                        }
+                    }
+                },
+                secrets: {
+                    telegram_bot_token: 'temporary-telegram-token'
+                }
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /2 个 chat/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.deepEqual(state.telegramTests[0].runtime.config.channels.telegram.chat_ids, ['5104238366', '5104238367']);
+        assert.equal(state.telegramTests[0].runtime.secrets.telegram_bot_token, 'temporary-telegram-token');
+        assert.match(state.telegramTests[0].job.title, /Telegram 自检/);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.telegram_test');
     });
 });

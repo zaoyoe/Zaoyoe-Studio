@@ -965,6 +965,7 @@ module.exports = {
     normalizeOpsAlertsConfig,
     processOpsAlertJob,
     resolveEnabledChannels,
+    sendTelegramAlert,
     sweepOpsAlertJobs,
     __testUtils: {
         buildExternalAlertText,

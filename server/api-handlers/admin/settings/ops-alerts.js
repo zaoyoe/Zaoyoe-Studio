@@ -13,7 +13,8 @@ const {
     buildOpsAlertSecretStatus,
     loadOpsAlertsRuntimeConfig,
     normalizeOpsAlertsConfig,
-    OPS_ALERTS_CONFIG_KEY
+    OPS_ALERTS_CONFIG_KEY,
+    sendTelegramAlert
 } = require('../../../../api/_lib/ops-alerts');
 
 const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
@@ -32,6 +33,72 @@ function getOpsAlertSecretKeys() {
     }
 
     return DEFAULT_OPS_ALERT_SECRET_KEYS;
+}
+
+function mergeRuntimeSecrets(baseSecrets = {}, incomingSecrets = {}) {
+    const nextSecrets = {
+        telegram_bot_token: sanitizeText(baseSecrets.telegram_bot_token, 4000),
+        feishu_webhook_url: sanitizeText(baseSecrets.feishu_webhook_url, 4000)
+    };
+
+    for (const [secretName] of Object.entries(getOpsAlertSecretKeys())) {
+        const incomingValue = sanitizeText(incomingSecrets?.[secretName], 4000);
+        if (incomingValue) {
+            nextSecrets[secretName] = incomingValue;
+        }
+    }
+
+    return nextSecrets;
+}
+
+function extractTelegramFailureMessage(result = {}) {
+    if (sanitizeText(result.error)) {
+        return sanitizeText(result.error);
+    }
+
+    const body = sanitizeText(result.body, 2000);
+    if (!body) {
+        return `HTTP ${Number(result.status || 0) || 0}`;
+    }
+
+    try {
+        const parsed = JSON.parse(body);
+        if (Array.isArray(parsed)) {
+            const firstFailed = parsed.find((item) => item && item.ok === false) || parsed[0];
+            const message = sanitizeText(firstFailed?.error, 500)
+                || sanitizeText(firstFailed?.body, 500)
+                || sanitizeText(firstFailed?.description, 500);
+            if (message) return message;
+        } else if (parsed && typeof parsed === 'object') {
+            const message = sanitizeText(parsed.description, 500)
+                || sanitizeText(parsed.error, 500)
+                || sanitizeText(parsed.message, 500);
+            if (message) return message;
+        }
+    } catch (error) {
+        return body.slice(0, 500);
+    }
+
+    return body.slice(0, 500);
+}
+
+function buildTelegramTestJob(user, runtime) {
+    const chatCount = Array.isArray(runtime?.config?.channels?.telegram?.chat_ids)
+        ? runtime.config.channels.telegram.chat_ids.length
+        : 0;
+
+    return {
+        alert_type: 'ops_alert_test',
+        severity: 'warning',
+        title: '站外退款告警 Telegram 自检',
+        content: [
+            '这是一条 Telegram 通道自检消息。',
+            `触发管理员：${sanitizeText(user?.email || user?.id) || 'unknown'}`,
+            `目标 chat 数量：${chatCount}`,
+            `发送时间：${new Date().toISOString()}`,
+            '说明：该消息不会写入退款异常队列，也不会受 45 分钟去重限制。'
+        ].join('\n')
+    };
 }
 
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
@@ -65,6 +132,59 @@ module.exports = async (req, res) => {
 
         if (req.method === 'POST') {
             const body = await parseJsonBody(req);
+            if (sanitizeText(body.action) === 'send_test_telegram') {
+                const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase);
+                const runtime = {
+                    config: normalizeOpsAlertsConfig(body.config),
+                    secrets: mergeRuntimeSecrets(storedRuntime?.secrets, body.secrets)
+                };
+                const chatIds = Array.isArray(runtime.config?.channels?.telegram?.chat_ids)
+                    ? runtime.config.channels.telegram.chat_ids
+                    : [];
+
+                if (!sanitizeText(runtime.secrets.telegram_bot_token)) {
+                    return sendJson(res, 400, {
+                        success: false,
+                        message: '请先配置 Telegram Bot Token'
+                    });
+                }
+
+                if (!chatIds.length) {
+                    return sendJson(res, 400, {
+                        success: false,
+                        message: '请先填写至少一个 Telegram Chat ID'
+                    });
+                }
+
+                const result = await sendTelegramAlert(
+                    buildTelegramTestJob(user, runtime),
+                    runtime
+                );
+
+                await writeAdminAuditLog({
+                    supabase,
+                    adminId: user.id,
+                    actionType: 'admin.ops_alerts.telegram_test',
+                    details: {
+                        ok: result?.ok === true,
+                        status: Number(result?.status || 0) || null,
+                        chat_count: chatIds.length
+                    }
+                });
+
+                if (!result?.ok) {
+                    return sendJson(res, 502, {
+                        success: false,
+                        message: `Telegram 测试告警发送失败：${extractTelegramFailureMessage(result)}`
+                    });
+                }
+
+                return sendJson(res, 200, {
+                    success: true,
+                    message: `测试 Telegram 告警已发送到 ${chatIds.length} 个 chat`
+                });
+            }
+
             const nextConfig = normalizeOpsAlertsConfig(body.config);
             const incomingSecrets = body.secrets && typeof body.secrets === 'object' ? body.secrets : {};
             const updatedSecrets = [];

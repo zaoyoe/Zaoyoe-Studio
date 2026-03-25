@@ -2067,6 +2067,51 @@ async function saveOpsAlertSettings() {
     }
 }
 
+async function sendOpsAlertTelegramTest() {
+    try {
+        const config = collectOpsAlertConfigFromForm();
+        const chatIds = Array.isArray(config.channels?.telegram?.chat_ids)
+            ? config.channels.telegram.chat_ids
+            : [];
+        const hasStoredToken = Boolean(opsAlertSecretStatus?.telegram_bot_token?.configured);
+        const providedToken = document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '';
+
+        if (!chatIds.length) {
+            throw new Error('请先填写至少一个 Telegram Chat ID');
+        }
+
+        if (!providedToken && !hasStoredToken) {
+            throw new Error('请先填写 Telegram Bot Token，或先保存已配置的后台密钥');
+        }
+
+        const headers = await getAdminConfigApiHeaders();
+        const response = await fetch('/api/admin/settings/ops-alerts', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                action: 'send_test_telegram',
+                config,
+                secrets: {
+                    telegram_bot_token: providedToken,
+                    feishu_webhook_url: document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || ''
+                }
+            })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '发送 Telegram 测试告警失败');
+        }
+
+        showConfigSavedToast(payload.message || '测试 Telegram 告警已发送');
+        return true;
+    } catch (error) {
+        console.error('[Config] Send Telegram ops alert test failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function deleteOpsAlertSecret(secretName) {
     const secretLabels = {
         telegram_bot_token: 'Telegram Bot Token',
@@ -4059,6 +4104,7 @@ window.loadOpsAlertSettings = loadOpsAlertSettings;
 window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;
 window.toggleOpsAlertChannelEnabled = toggleOpsAlertChannelEnabled;
 window.saveOpsAlertSettings = saveOpsAlertSettings;
+window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;
