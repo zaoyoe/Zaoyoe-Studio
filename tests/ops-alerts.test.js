@@ -318,8 +318,9 @@ test('buildExternalAlertText renders rich refund details for payment refund ops 
     assert.match(text, /专题：回滚失败/);
     assert.match(text, /异常类型：退款失败后积分回滚失败/);
     assert.match(text, /支付通道：虎皮椒/);
-    assert.match(text, /订单号：HJ_ORDER_88/);
-    assert.match(text, /金额：应付 30\.00 元 \/ 实付 30\.00 元/);
+        assert.match(text, /订单号：HJ_ORDER_88/);
+        assert.match(text, /付款者\/用户ID：user-88/);
+        assert.match(text, /金额：应付 30\.00 元 \/ 实付 30\.00 元/);
     assert.match(text, /积分：1000 点（已入账：是）/);
     assert.match(text, /扣回积分：总 1000 点 \/ 本金 800 点 \/ 赠送 200 点/);
     assert.match(text, /补回积分：本金 800 点 \/ 赠送 200 点/);
