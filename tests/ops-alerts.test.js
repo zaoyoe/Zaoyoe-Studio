@@ -7,6 +7,7 @@ const {
     __testUtils,
     enqueueOpsAlertJob,
     normalizeOpsAlertsConfig,
+    sendFeishuAlert,
     sweepOpsAlertJobs
 } = require('../api/_lib/ops-alerts');
 
@@ -364,6 +365,10 @@ test('sendFeishuAlert treats non-zero webhook result codes as delivery failures'
     assert.equal(result.ok, false);
     assert.equal(result.status, 200);
     assert.match(result.error || '', /Key Words Not Found|feishu_error_19024/);
+});
+
+test('ops alerts exports sendFeishuAlert for admin preview actions', () => {
+    assert.equal(typeof sendFeishuAlert, 'function');
 });
 
 test('sweepOpsAlertJobs delivers queued alerts and records per-channel attempts', async () => {
