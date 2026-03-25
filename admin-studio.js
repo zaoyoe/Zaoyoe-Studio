@@ -350,6 +350,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-shop-order-delivery-failed-sample':
                 window.sendOpsAlertShopOrderDeliveryFailedSample?.();
                 break;
+            case 'settings-send-ops-alert-payment-config-changed-sample':
+                window.sendOpsAlertPaymentConfigChangedSample?.();
+                break;
             case 'settings-delete-ops-alert-secret':
                 window.deleteOpsAlertSecret?.(actionEl.dataset.secretName);
                 break;

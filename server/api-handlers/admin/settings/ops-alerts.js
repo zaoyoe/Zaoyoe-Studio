@@ -407,6 +407,30 @@ function buildShopOrderDeliveryFailedSampleJob(user) {
     };
 }
 
+function buildPaymentConfigChangedSampleJob(user) {
+    return {
+        alert_type: 'payment_config_changed',
+        severity: 'critical',
+        title: `支付配置已变更（${sanitizeText(user?.email || user?.id) || 'admin@example.com'}）`,
+        payload: {
+            target_id: 'audit-demo-payment-config-001',
+            audit_id: 'audit-demo-payment-config-001',
+            admin_id: sanitizeText(user?.id) || 'admin-demo-user',
+            admin_email: sanitizeText(user?.email || user?.id) || 'admin@example.com',
+            action_type: 'admin.payment_channels.upsert',
+            action_label: '支付通道配置更新',
+            active_provider: 'mock',
+            active_provider_label: '模拟支付',
+            updated_providers: ['mock', 'hupijiao'],
+            updated_provider_labels: ['模拟支付', '虎皮椒'],
+            updated_secrets: ['hupijiao_secret_key'],
+            risk_flags: ['当前活动通道已切换为模拟支付', '本次更新包含 1 个支付密钥'],
+            created_at: new Date().toISOString(),
+            entry_path: '后台设置 -> 支付通道配置 / Admin Audit Logs（示例）'
+        }
+    };
+}
+
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
     const { error } = await supabase
         .from('system_config')
@@ -447,6 +471,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_shop_inventory_low'
                 || sanitizeText(body.action) === 'send_sample_admin_login_anomaly'
                 || sanitizeText(body.action) === 'send_sample_shop_order_delivery_failed'
+                || sanitizeText(body.action) === 'send_sample_payment_config_changed'
             ) {
                 const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase);
                 const runtime = {
@@ -469,6 +494,8 @@ module.exports = async (req, res) => {
                                         ? buildAdminLoginAnomalySampleJob(user)
                                         : normalizedAction === 'send_sample_shop_order_delivery_failed'
                                             ? buildShopOrderDeliveryFailedSampleJob(user)
+                                            : normalizedAction === 'send_sample_payment_config_changed'
+                                                ? buildPaymentConfigChangedSampleJob(user)
                         : buildTelegramTestJob(user, runtime);
                 const result = await sendOpsAlertPreview(job, runtime);
 
@@ -489,6 +516,8 @@ module.exports = async (req, res) => {
                                             ? 'admin.ops_alerts.admin_login_anomaly_sample'
                                             : normalizedAction === 'send_sample_shop_order_delivery_failed'
                                                 ? 'admin.ops_alerts.shop_delivery_failed_sample'
+                                                : normalizedAction === 'send_sample_payment_config_changed'
+                                                    ? 'admin.ops_alerts.payment_config_changed_sample'
                             : 'admin.ops_alerts.telegram_test',
                     details: {
                         ok: result?.ok === true,
@@ -521,6 +550,8 @@ module.exports = async (req, res) => {
                                             ? `管理员异常登录示例消息已发送到 ${channelLabels || '已启用通道'}`
                                             : normalizedAction === 'send_sample_shop_order_delivery_failed'
                                                 ? `履约失败示例消息已发送到 ${channelLabels || '已启用通道'}`
+                                                : normalizedAction === 'send_sample_payment_config_changed'
+                                                    ? `支付配置变更示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : `测试站外告警已发送到 ${channelLabels || '已启用通道'}`
                 });
             }

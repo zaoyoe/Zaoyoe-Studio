@@ -329,6 +329,34 @@ test('buildExternalAlertText renders rich refund details for payment refund ops 
     assert.match(text, /处理入口：支付对账 -> 异常运维 -> 回滚失败/);
 });
 
+test('buildExternalAlertText renders payment config changed details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'payment_config_changed',
+        severity: 'critical',
+        title: '支付配置已变更（admin@example.com）',
+        payload: {
+            admin_email: 'admin@example.com',
+            action_label: '支付通道配置更新',
+            active_provider: 'mock',
+            active_provider_label: '模拟支付',
+            updated_provider_labels: ['模拟支付', '虎皮椒'],
+            updated_secrets: ['hupijiao_secret_key'],
+            risk_flags: ['当前活动通道已切换为模拟支付', '本次更新包含 1 个支付密钥'],
+            created_at: '2026-03-25T10:00:00.000Z',
+            entry_path: '后台设置 -> 支付通道配置 / Admin Audit Logs'
+        }
+    });
+
+    assert.match(text, /支付配置告警/);
+    assert.match(text, /操作人：admin@example.com/);
+    assert.match(text, /变更类型：支付通道配置更新/);
+    assert.match(text, /当前生效通道：模拟支付/);
+    assert.match(text, /启用通道：模拟支付、虎皮椒/);
+    assert.match(text, /更新密钥：hupijiao_secret_key/);
+    assert.match(text, /风险提示：当前活动通道已切换为模拟支付；本次更新包含 1 个支付密钥/);
+    assert.match(text, /处理入口：后台设置 -> 支付通道配置 \/ Admin Audit Logs/);
+});
+
 test('sendFeishuAlert treats non-zero webhook result codes as delivery failures', async () => {
     const result = await __testUtils.sendFeishuAlert({
         alert_type: 'payment_refund_ops',

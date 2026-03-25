@@ -53,6 +53,10 @@ const {
     sweepOpsAlertJobs
 } = require('../api/_lib/ops-alerts');
 const {
+    normalizePaymentConfigChangeMonitorConfig,
+    runPaymentConfigChangedSweep
+} = require('../api/_lib/payment-config-change-alerts');
+const {
     normalizePaymentGatewayMonitorConfig,
     runPaymentGatewayDegradationSweep
 } = require('../api/_lib/payment-gateway-alerts');
@@ -95,6 +99,8 @@ let shopDeliverySweepTimer = null;
 let shopDeliverySweepRunning = false;
 let opsAlertSweepTimer = null;
 let opsAlertSweepRunning = false;
+let paymentConfigChangeSweepTimer = null;
+let paymentConfigChangeSweepRunning = false;
 let paymentGatewaySweepTimer = null;
 let paymentGatewaySweepRunning = false;
 let verifyQuotaSweepTimer = null;
@@ -2835,6 +2841,53 @@ function startOpsAlertSweep() {
     });
 }
 
+async function sweepPaymentConfigChangeHealth() {
+    if (paymentConfigChangeSweepRunning) return;
+    paymentConfigChangeSweepRunning = true;
+
+    try {
+        const result = await runPaymentConfigChangedSweep(supabase, {
+            env: process.env
+        });
+
+        if (Number(result?.change_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+            console.log('[PaymentConfigChangeMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[PaymentConfigChangeMonitor] Sweep failed:', error);
+    } finally {
+        paymentConfigChangeSweepRunning = false;
+    }
+}
+
+async function queueNextPaymentConfigChangeSweep(delayMs = null) {
+    if (paymentConfigChangeSweepTimer) return;
+
+    const monitorConfig = normalizePaymentConfigChangeMonitorConfig({}, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
+
+    paymentConfigChangeSweepTimer = setTimeout(() => {
+        paymentConfigChangeSweepTimer = null;
+        sweepPaymentConfigChangeHealth()
+            .catch((error) => {
+                console.error('[PaymentConfigChangeMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextPaymentConfigChangeSweep().catch((error) => {
+                    console.error('[PaymentConfigChangeMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startPaymentConfigChangeSweep() {
+    if (paymentConfigChangeSweepTimer) return;
+
+    queueNextPaymentConfigChangeSweep(2800).catch((error) => {
+        console.error('[PaymentConfigChangeMonitor] Failed to start sweep:', error);
+    });
+}
+
 async function sweepPaymentGatewayHealth() {
     if (paymentGatewaySweepRunning) return;
     paymentGatewaySweepRunning = true;
@@ -4320,6 +4373,7 @@ function startServer(port = PORT) {
         startPendingJobSweep();
         startShopDeliverySweep();
         startOpsAlertSweep();
+        startPaymentConfigChangeSweep();
         startPaymentGatewaySweep();
         startVerifyQuotaSweep();
         startTicketSlaSweep();

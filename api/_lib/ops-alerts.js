@@ -487,6 +487,10 @@ function buildExternalAlertText(job = {}) {
     if (refundOpsText) {
         return refundOpsText;
     }
+    const paymentConfigChangedText = buildPaymentConfigChangedAlertText(job);
+    if (paymentConfigChangedText) {
+        return paymentConfigChangedText;
+    }
     const gatewayAlertText = buildPaymentGatewayDegradedAlertText(job);
     if (gatewayAlertText) {
         return gatewayAlertText;
@@ -687,6 +691,39 @@ function buildPaymentGatewayDegradedAlertText(job = {}) {
     if (Number(payload.query_total || 0) > 0) {
         lines.push(`查码概览：总 ${Number(payload.query_total || 0)} 次 / 成功 ${Number(payload.query_success || 0)} 次 / 失败 ${Number(payload.query_failed || 0)} 次 / 4xx ${Number(payload.query_4xx || 0)} 次 / 5xx ${Number(payload.query_5xx || 0)} 次 / 成功率 ${formatPercent(payload.query_success_rate)}`);
     }
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildPaymentConfigChangedAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'payment_config_changed') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const riskFlags = Array.isArray(payload.risk_flags)
+        ? payload.risk_flags.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const updatedProviders = Array.isArray(payload.updated_provider_labels)
+        ? payload.updated_provider_labels.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const updatedSecrets = Array.isArray(payload.updated_secrets)
+        ? payload.updated_secrets.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+
+    const lines = [
+        `[支付配置告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '支付配置变更'}`
+    ];
+
+    if (normalizeText(payload.admin_email)) lines.push(`操作人：${normalizeText(payload.admin_email)}`);
+    if (normalizeText(payload.action_label)) lines.push(`变更类型：${normalizeText(payload.action_label)}`);
+    if (normalizeText(payload.active_provider)) lines.push(`当前生效通道：${normalizeText(payload.active_provider_label) || getProviderLabel(payload.active_provider)}`);
+    if (updatedProviders.length) lines.push(`启用通道：${updatedProviders.join('、')}`);
+    if (updatedSecrets.length) lines.push(`更新密钥：${updatedSecrets.join('、')}`);
+    if (normalizeText(payload.secret_name)) lines.push(`删除密钥：${normalizeText(payload.secret_name)}`);
+    if (riskFlags.length) lines.push(`风险提示：${riskFlags.join('；')}`);
+    if (normalizeText(payload.created_at)) lines.push(`发生时间：${formatTimestamp(payload.created_at)}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
     return lines.filter(Boolean).join('\n');
