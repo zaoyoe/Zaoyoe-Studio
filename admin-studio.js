@@ -326,6 +326,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-save-ops-alerts':
                 window.saveOpsAlertSettings?.();
                 break;
+            case 'settings-send-ops-alert-telegram-test':
+                window.sendOpsAlertTelegramTest?.();
+                break;
             case 'settings-delete-ops-alert-secret':
                 window.deleteOpsAlertSecret?.(actionEl.dataset.secretName);
                 break;
