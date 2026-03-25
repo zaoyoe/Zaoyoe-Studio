@@ -374,6 +374,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-shop-order-delivery-failed-sample':
                 window.sendOpsAlertShopOrderDeliveryFailedSample?.();
                 break;
+            case 'settings-send-ops-alert-shop-order-delivery-incident-sample':
+                window.sendOpsAlertShopOrderDeliveryIncidentSample?.();
+                break;
             case 'settings-send-ops-alert-shop-order-delivery-recovered-sample':
                 window.sendOpsAlertShopOrderDeliveryRecoveredSample?.();
                 break;

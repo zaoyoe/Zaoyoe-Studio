@@ -835,6 +835,41 @@ test('buildExternalAlertText renders shop order delivery failure details', () =>
     assert.match(text, /处理入口：商城管理 -> 履约任务 \/ 异常订单/);
 });
 
+test('buildExternalAlertText renders shop order delivery incident details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'shop_order_delivery_incident',
+        severity: 'critical',
+        title: '商城履约异常升级（4 笔）',
+        payload: {
+            incident_order_count: 4,
+            dead_letter_count: 2,
+            retry_waiting_count: 2,
+            distinct_user_count: 3,
+            distinct_product_count: 2,
+            signal_labels: [
+                '当前有 4 笔订单处于履约异常状态',
+                '其中 2 笔已进入死信队列',
+                '影响 3 位用户'
+            ],
+            hot_products: ['Prompt Pro 年卡 × 3', '卡密周卡 × 1'],
+            hot_errors: ['目标履约地址连续超时 × 2', '库存锁定冲突，已等待下一轮重试 × 2'],
+            order_refs: ['shop-order-demo-delivery-001', 'shop-order-demo-delivery-002'],
+            latest_failure_at: '2026-03-25T10:15:00.000Z',
+            entry_path: '商城管理 -> 履约任务 / 异常订单（示例）'
+        }
+    });
+
+    assert.match(text, /商城履约事故/);
+    assert.match(text, /升级信号：当前有 4 笔订单处于履约异常状态；其中 2 笔已进入死信队列；影响 3 位用户/);
+    assert.match(text, /异常订单：4 笔（死信 2 \/ 重试 2）/);
+    assert.match(text, /受影响用户：3 位/);
+    assert.match(text, /涉及商品：2 个/);
+    assert.match(text, /热点商品：Prompt Pro 年卡 × 3、卡密周卡 × 1/);
+    assert.match(text, /热点错误：目标履约地址连续超时 × 2；库存锁定冲突，已等待下一轮重试 × 2/);
+    assert.match(text, /示例订单：shop-order-demo-delivery-001、shop-order-demo-delivery-002/);
+    assert.match(text, /处理入口：商城管理 -> 履约任务 \/ 异常订单（示例）/);
+});
+
 test('buildExternalAlertText renders shop order delivery recovery details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'shop_order_delivery_recovered',

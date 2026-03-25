@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { normalizeOpsAlertsConfig } = require('../api/_lib/ops-alerts');
 const {
     buildShopOrderDeliveryFailedAlerts,
+    buildShopOrderDeliveryIncidentAlerts,
     buildShopOrderDeliveryRecoveredAlerts,
     normalizeShopOrderDeliveryMonitorConfig,
     runShopOrderDeliveryFailedSweep
@@ -388,6 +389,58 @@ test('buildShopOrderDeliveryRecoveredAlerts emits a recovery notice after a dead
     assert.equal(alerts[0].payload.incident_duration_minutes, 54);
 });
 
+test('buildShopOrderDeliveryIncidentAlerts escalates when multiple delivery failures pile up', () => {
+    const alerts = buildShopOrderDeliveryIncidentAlerts([
+        {
+            alertType: 'shop_order_delivery_failed',
+            severity: 'critical',
+            payload: {
+                order_id: 'shop-order-1',
+                user_id: 'buyer-001',
+                product_name: 'Prompt Pro 年卡',
+                delivery_status: 'dead_letter',
+                delivery_attempt_count: 4,
+                delivery_last_error: '目标履约地址连续超时',
+                delivery_updated_at: '2026-03-25T10:10:00.000Z'
+            }
+        },
+        {
+            alertType: 'shop_order_delivery_failed',
+            severity: 'critical',
+            payload: {
+                order_id: 'shop-order-2',
+                user_id: 'buyer-002',
+                product_name: 'Prompt Pro 年卡',
+                delivery_status: 'dead_letter',
+                delivery_attempt_count: 3,
+                delivery_last_error: '目标履约地址连续超时',
+                delivery_updated_at: '2026-03-25T10:12:00.000Z'
+            }
+        },
+        {
+            alertType: 'shop_order_delivery_failed',
+            severity: 'warning',
+            payload: {
+                order_id: 'shop-order-3',
+                user_id: 'buyer-003',
+                product_name: '卡密周卡',
+                delivery_status: 'retry_waiting',
+                delivery_attempt_count: 2,
+                delivery_last_error: '库存锁定冲突，已等待下一轮重试',
+                delivery_updated_at: '2026-03-25T10:15:00.000Z'
+            }
+        }
+    ], [], normalizeShopOrderDeliveryMonitorConfig());
+
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].alertType, 'shop_order_delivery_incident');
+    assert.equal(alerts[0].severity, 'critical');
+    assert.match(alerts[0].content, /当前同时存在 3 笔履约异常订单/);
+    assert.equal(alerts[0].payload.dead_letter_count, 2);
+    assert.equal(alerts[0].payload.distinct_user_count, 3);
+    assert.deepEqual(alerts[0].payload.hot_products, ['Prompt Pro 年卡 × 2', '卡密周卡 × 1']);
+});
+
 test('runShopOrderDeliveryFailedSweep enqueues recovery notices and writes admin notifications once', async () => {
     const state = {
         jobs: [
@@ -461,4 +514,80 @@ test('runShopOrderDeliveryFailedSweep enqueues recovery notices and writes admin
     assert.equal(second.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 2);
     assert.equal(state.systemNotifications.length, 2);
+});
+
+test('runShopOrderDeliveryFailedSweep enqueues a delivery incident escalation with stable dedupe', async () => {
+    const state = {
+        jobs: [],
+        orders: [
+            {
+                id: 'shop-order-1',
+                user_id: 'buyer-001',
+                snapshot_product_name: 'Prompt Pro 年卡',
+                price_paid: 59.8,
+                total_price: 59.8,
+                item_count: 2,
+                delivery_status: 'dead_letter',
+                delivery_attempt_count: 4,
+                delivery_last_error: '目标履约地址连续超时',
+                delivery_updated_at: '2026-03-25T10:10:00.000Z',
+                created_at: '2026-03-25T08:10:00.000Z',
+                refund_status: 'none'
+            },
+            {
+                id: 'shop-order-2',
+                user_id: 'buyer-002',
+                snapshot_product_name: 'Prompt Pro 年卡',
+                price_paid: 29.9,
+                total_price: 29.9,
+                item_count: 1,
+                delivery_status: 'dead_letter',
+                delivery_attempt_count: 3,
+                delivery_last_error: '目标履约地址连续超时',
+                delivery_updated_at: '2026-03-25T10:12:00.000Z',
+                created_at: '2026-03-25T08:20:00.000Z',
+                refund_status: 'none'
+            },
+            {
+                id: 'shop-order-3',
+                user_id: 'buyer-003',
+                snapshot_product_name: '卡密周卡',
+                price_paid: 9.9,
+                total_price: 9.9,
+                item_count: 1,
+                delivery_status: 'retry_waiting',
+                delivery_attempt_count: 2,
+                delivery_last_error: '库存锁定冲突，已等待下一轮重试',
+                delivery_updated_at: '2026-03-25T10:15:00.000Z',
+                created_at: '2026-03-25T09:10:00.000Z',
+                refund_status: 'none'
+            }
+        ],
+        adminRoles: [],
+        systemNotifications: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime();
+
+    const first = await runShopOrderDeliveryFailedSweep(supabase, {
+        runtime,
+        now: '2026-03-25T10:20:00.000Z'
+    });
+
+    assert.equal(first.failure_count, 3);
+    assert.equal(first.incident_count, 1);
+    assert.equal(first.queued, 3);
+    assert.equal(first.incident_queued, 1);
+    assert.equal(state.jobs.length, 4);
+    assert.equal(state.jobs.some((job) => job.alert_type === 'shop_order_delivery_incident'), true);
+
+    const second = await runShopOrderDeliveryFailedSweep(supabase, {
+        runtime,
+        now: '2026-03-25T10:25:00.000Z'
+    });
+
+    assert.equal(second.incident_count, 1);
+    assert.equal(second.incident_queued, 0);
+    assert.equal(second.incident_deduped, 1);
+    assert.equal(state.jobs.length, 4);
 });

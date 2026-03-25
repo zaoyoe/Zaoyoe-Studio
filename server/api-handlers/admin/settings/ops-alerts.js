@@ -669,6 +669,33 @@ function buildShopOrderDeliveryFailedSampleJob(user) {
     };
 }
 
+function buildShopOrderDeliveryIncidentSampleJob(user) {
+    return {
+        alert_type: 'shop_order_delivery_incident',
+        severity: 'critical',
+        title: '商城履约异常升级（4 笔）',
+        payload: {
+            target_id: 'shop_order_delivery_incident:global',
+            incident_order_count: 4,
+            dead_letter_count: 2,
+            retry_waiting_count: 2,
+            distinct_user_count: 3,
+            distinct_product_count: 2,
+            signal_labels: [
+                '当前有 4 笔订单处于履约异常状态',
+                '其中 2 笔已进入死信队列',
+                '影响 3 位用户'
+            ],
+            hot_products: ['Prompt Pro 年卡 × 3', '卡密周卡 × 1'],
+            hot_errors: ['目标履约地址连续超时 × 2', '库存锁定冲突，已等待下一轮重试 × 2'],
+            order_refs: ['shop-order-demo-delivery-001', 'shop-order-demo-delivery-002', 'shop-order-demo-delivery-003'],
+            latest_failure_at: new Date().toISOString(),
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了履约异常升级示例发送`,
+            entry_path: '商城管理 -> 履约任务 / 异常订单（示例）'
+        }
+    };
+}
+
 function buildPaymentConfigChangedSampleJob(user) {
     return {
         alert_type: 'payment_config_changed',
@@ -741,6 +768,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_shop_inventory_recovered'
                 || sanitizeText(body.action) === 'send_sample_admin_login_anomaly'
                 || sanitizeText(body.action) === 'send_sample_shop_order_delivery_failed'
+                || sanitizeText(body.action) === 'send_sample_shop_order_delivery_incident'
                 || sanitizeText(body.action) === 'send_sample_shop_order_delivery_recovered'
                 || sanitizeText(body.action) === 'send_sample_payment_config_changed'
             ) {
@@ -781,6 +809,8 @@ module.exports = async (req, res) => {
                                             ? buildAdminLoginAnomalySampleJob(user)
                                             : normalizedAction === 'send_sample_shop_order_delivery_failed'
                                                 ? buildShopOrderDeliveryFailedSampleJob(user)
+                                                : normalizedAction === 'send_sample_shop_order_delivery_incident'
+                                                    ? buildShopOrderDeliveryIncidentSampleJob(user)
                                                 : normalizedAction === 'send_sample_shop_order_delivery_recovered'
                                                     ? buildShopOrderDeliveryRecoveredSampleJob(user)
                                             : normalizedAction === 'send_sample_payment_config_changed'
@@ -821,6 +851,8 @@ module.exports = async (req, res) => {
                                             ? 'admin.ops_alerts.admin_login_anomaly_sample'
                                             : normalizedAction === 'send_sample_shop_order_delivery_failed'
                                                 ? 'admin.ops_alerts.shop_delivery_failed_sample'
+                                                : normalizedAction === 'send_sample_shop_order_delivery_incident'
+                                                    ? 'admin.ops_alerts.shop_delivery_incident_sample'
                                                 : normalizedAction === 'send_sample_shop_order_delivery_recovered'
                                                     ? 'admin.ops_alerts.shop_delivery_recovered_sample'
                                                 : normalizedAction === 'send_sample_payment_config_changed'
@@ -873,6 +905,8 @@ module.exports = async (req, res) => {
                                             ? `管理员异常登录示例消息已发送到 ${channelLabels || '已启用通道'}`
                                             : normalizedAction === 'send_sample_shop_order_delivery_failed'
                                                 ? `履约失败示例消息已发送到 ${channelLabels || '已启用通道'}`
+                                                : normalizedAction === 'send_sample_shop_order_delivery_incident'
+                                                    ? `履约异常升级示例消息已发送到 ${channelLabels || '已启用通道'}`
                                                 : normalizedAction === 'send_sample_shop_order_delivery_recovered'
                                                     ? `履约恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
                                                 : normalizedAction === 'send_sample_payment_config_changed'

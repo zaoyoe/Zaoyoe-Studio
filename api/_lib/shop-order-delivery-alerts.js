@@ -14,13 +14,20 @@ const DEFAULT_SHOP_ORDER_DELIVERY_MONITOR_CONFIG = Object.freeze({
     state_lookback_minutes: 24 * 60,
     retry_waiting_min_attempts: 2,
     dedupe_window_minutes: 30,
+    incident_enabled: true,
+    incident_min_order_count: 3,
+    incident_min_dead_letter_count: 1,
+    incident_min_distinct_users: 2,
+    incident_dedupe_window_minutes: 20,
     page_size: 500,
     max_pages: 10
 });
 const SHOP_ORDER_DELIVERY_STATE_TYPES = Object.freeze([
     'shop_order_delivery_failed',
-    'shop_order_delivery_recovered'
+    'shop_order_delivery_recovered',
+    'shop_order_delivery_incident'
 ]);
+const SHOP_ORDER_DELIVERY_INCIDENT_TARGET_ID = 'shop_order_delivery_incident:global';
 
 function normalizeText(value) {
     return String(value || '').trim();
@@ -79,6 +86,34 @@ function normalizeShopOrderDeliveryMonitorConfig(rawConfig = {}, env = process.e
         dedupe_window_minutes: normalizeNumber(
             source.dedupe_window_minutes,
             normalizeNumber(env?.SHOP_ORDER_DELIVERY_MONITOR_DEDUPE_WINDOW_MINUTES, DEFAULT_SHOP_ORDER_DELIVERY_MONITOR_CONFIG.dedupe_window_minutes, 1, 24 * 60),
+            1,
+            24 * 60
+        ),
+        incident_enabled: normalizeBoolean(
+            source.incident_enabled,
+            normalizeBoolean(env?.SHOP_ORDER_DELIVERY_INCIDENT_ENABLED, DEFAULT_SHOP_ORDER_DELIVERY_MONITOR_CONFIG.incident_enabled)
+        ),
+        incident_min_order_count: normalizeNumber(
+            source.incident_min_order_count,
+            normalizeNumber(env?.SHOP_ORDER_DELIVERY_INCIDENT_MIN_ORDER_COUNT, DEFAULT_SHOP_ORDER_DELIVERY_MONITOR_CONFIG.incident_min_order_count, 2, 50),
+            2,
+            50
+        ),
+        incident_min_dead_letter_count: normalizeNumber(
+            source.incident_min_dead_letter_count,
+            normalizeNumber(env?.SHOP_ORDER_DELIVERY_INCIDENT_MIN_DEAD_LETTER_COUNT, DEFAULT_SHOP_ORDER_DELIVERY_MONITOR_CONFIG.incident_min_dead_letter_count, 0, 50),
+            0,
+            50
+        ),
+        incident_min_distinct_users: normalizeNumber(
+            source.incident_min_distinct_users,
+            normalizeNumber(env?.SHOP_ORDER_DELIVERY_INCIDENT_MIN_DISTINCT_USERS, DEFAULT_SHOP_ORDER_DELIVERY_MONITOR_CONFIG.incident_min_distinct_users, 1, 50),
+            1,
+            50
+        ),
+        incident_dedupe_window_minutes: normalizeNumber(
+            source.incident_dedupe_window_minutes,
+            normalizeNumber(env?.SHOP_ORDER_DELIVERY_INCIDENT_DEDUPE_WINDOW_MINUTES, DEFAULT_SHOP_ORDER_DELIVERY_MONITOR_CONFIG.incident_dedupe_window_minutes, 1, 24 * 60),
             1,
             24 * 60
         ),
@@ -275,6 +310,42 @@ function formatItemCount(value) {
     return `${Math.max(1, Math.round(Number(value || 1)))} 件`;
 }
 
+function countLabels(values = []) {
+    const counts = new Map();
+
+    for (const value of values || []) {
+        const label = normalizeText(value);
+        if (!label) continue;
+        counts.set(label, (counts.get(label) || 0) + 1);
+    }
+
+    return Array.from(counts.entries())
+        .sort((left, right) => {
+            if (right[1] !== left[1]) return right[1] - left[1];
+            return left[0].localeCompare(right[0]);
+        });
+}
+
+function formatTopLabels(values = [], maxItems = 3) {
+    return countLabels(values)
+        .slice(0, Math.max(1, maxItems))
+        .map(([label, count]) => `${label} × ${count}`);
+}
+
+function getLatestFailureAt(alerts = []) {
+    return (alerts || []).reduce((latest, alert) => {
+        const payload = alert?.payload && typeof alert.payload === 'object' ? alert.payload : {};
+        const candidate = normalizeText(payload.delivery_updated_at || payload.detected_at || payload.created_at);
+        if (!candidate) {
+            return latest;
+        }
+        if (!latest) {
+            return candidate;
+        }
+        return Date.parse(candidate) > Date.parse(latest) ? candidate : latest;
+    }, '');
+}
+
 function buildShopOrderDeliveryFailedAlerts(orders = [], rawConfig = {}, options = {}) {
     const config = normalizeShopOrderDeliveryMonitorConfig(rawConfig);
     const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
@@ -370,6 +441,122 @@ function buildShopOrderDeliveryFailedAlerts(orders = [], rawConfig = {}, options
             };
         })
         .filter(Boolean);
+}
+
+function buildShopOrderDeliveryIncidentAlerts(activeAlerts = [], stateJobs = [], rawConfig = {}, options = {}) {
+    const config = normalizeShopOrderDeliveryMonitorConfig(rawConfig);
+    if (!config.incident_enabled) {
+        return [];
+    }
+
+    const incidentAlerts = (activeAlerts || []).filter((alert) => normalizeText(alert?.alertType || alert?.alert_type).toLowerCase() === 'shop_order_delivery_failed');
+    if (incidentAlerts.length < Number(config.incident_min_order_count || 0)) {
+        return [];
+    }
+
+    const deadLetterCount = incidentAlerts.filter((alert) => normalizeText(alert.payload?.delivery_status).toLowerCase() === 'dead_letter').length;
+    const retryWaitingCount = incidentAlerts.filter((alert) => normalizeText(alert.payload?.delivery_status).toLowerCase() === 'retry_waiting').length;
+    const distinctUsers = Array.from(new Set(
+        incidentAlerts.map((alert) => normalizeText(alert.payload?.user_id)).filter(Boolean)
+    ));
+    const distinctProducts = Array.from(new Set(
+        incidentAlerts.map((alert) => normalizeText(alert.payload?.product_name)).filter(Boolean)
+    ));
+
+    if (
+        deadLetterCount < Number(config.incident_min_dead_letter_count || 0)
+        && distinctUsers.length < Number(config.incident_min_distinct_users || 0)
+    ) {
+        return [];
+    }
+
+    const hotProducts = formatTopLabels(incidentAlerts.map((alert) => alert.payload?.product_name), 3);
+    const hotErrors = formatTopLabels(incidentAlerts.map((alert) => alert.payload?.delivery_last_error || alert.payload?.delivery_status_label || alert.payload?.delivery_status), 3);
+    const orderRefs = incidentAlerts
+        .map((alert) => normalizeText(alert.payload?.order_id))
+        .filter(Boolean)
+        .slice(0, 5);
+    const latestFailureAt = getLatestFailureAt(incidentAlerts);
+    const signalLabels = [];
+    signalLabels.push(`当前有 ${incidentAlerts.length} 笔订单处于履约异常状态`);
+    if (deadLetterCount > 0) {
+        signalLabels.push(`其中 ${deadLetterCount} 笔已进入死信队列`);
+    }
+    if (retryWaitingCount > 0) {
+        signalLabels.push(`仍有 ${retryWaitingCount} 笔处于重试队列`);
+    }
+    if (distinctUsers.length > 0) {
+        signalLabels.push(`影响 ${distinctUsers.length} 位用户`);
+    }
+    if (distinctProducts.length > 1) {
+        signalLabels.push(`涉及 ${distinctProducts.length} 个商品`);
+    }
+
+    const title = `商城履约异常升级（${incidentAlerts.length} 笔）`;
+    const lines = [
+        `商城当前同时存在 ${incidentAlerts.length} 笔履约异常订单，建议立即切换到集中排障模式。`,
+        `升级信号：${signalLabels.join('；')}`,
+        `异常订单：${incidentAlerts.length} 笔（死信 ${deadLetterCount} / 重试 ${retryWaitingCount})`
+    ];
+
+    if (distinctUsers.length > 0) {
+        lines.push(`受影响用户：${distinctUsers.length} 位`);
+    }
+    if (distinctProducts.length > 0) {
+        lines.push(`涉及商品：${distinctProducts.length} 个`);
+    }
+    if (hotProducts.length) {
+        lines.push(`热点商品：${hotProducts.join('、')}`);
+    }
+    if (hotErrors.length) {
+        lines.push(`热点错误：${hotErrors.join('；')}`);
+    }
+    if (orderRefs.length) {
+        lines.push(`示例订单：${orderRefs.join('、')}`);
+    }
+    if (latestFailureAt) {
+        lines.push(`最近异常时间：${latestFailureAt}`);
+    }
+    lines.push('处理入口：商城管理 -> 履约任务 / 异常订单');
+
+    const fingerprint = incidentAlerts
+        .map((alert) => [
+            normalizeText(alert.payload?.order_id),
+            normalizeText(alert.payload?.delivery_status),
+            String(Math.max(0, Math.round(Number(alert.payload?.delivery_attempt_count || 0))))
+        ].join(':'))
+        .filter(Boolean)
+        .sort()
+        .join('|');
+
+    return [{
+        alertType: 'shop_order_delivery_incident',
+        severity: 'critical',
+        title,
+        content: lines.join('\n'),
+        payload: {
+            target_id: SHOP_ORDER_DELIVERY_INCIDENT_TARGET_ID,
+            incident_order_count: incidentAlerts.length,
+            dead_letter_count: deadLetterCount,
+            retry_waiting_count: retryWaitingCount,
+            distinct_user_count: distinctUsers.length,
+            distinct_product_count: distinctProducts.length,
+            signal_labels: signalLabels,
+            hot_products: hotProducts,
+            hot_errors: hotErrors,
+            order_refs: orderRefs,
+            latest_failure_at: latestFailureAt || null,
+            entry_path: '商城管理 -> 履约任务 / 异常订单'
+        },
+        dedupeKey: crypto
+            .createHash('sha256')
+            .update(`shop_order_delivery_incident:${fingerprint || 'empty'}`)
+            .digest('hex'),
+        dedupeWindowMinutes: Number(
+            config.incident_dedupe_window_minutes
+            || DEFAULT_SHOP_ORDER_DELIVERY_MONITOR_CONFIG.incident_dedupe_window_minutes
+        )
+    }];
 }
 
 function buildShopOrderDeliveryRecoveredAlerts(orders = [], stateJobs = [], rawConfig = {}, options = {}) {
@@ -520,6 +707,7 @@ async function runShopOrderDeliveryFailedSweep(supabase, options = {}) {
         return {
             skipped: 'monitor_disabled',
             failure_count: 0,
+            incident_count: 0,
             dead_letter_count: 0,
             retry_waiting_count: 0,
             queued: 0,
@@ -532,6 +720,7 @@ async function runShopOrderDeliveryFailedSweep(supabase, options = {}) {
         return {
             skipped: 'ops_alerts_disabled',
             failure_count: 0,
+            incident_count: 0,
             dead_letter_count: 0,
             retry_waiting_count: 0,
             queued: 0,
@@ -547,6 +736,7 @@ async function runShopOrderDeliveryFailedSweep(supabase, options = {}) {
         fetchRecentShopOrderDeliveryStateJobs(supabase, stateSinceIso, config)
     ]);
     const alerts = buildShopOrderDeliveryFailedAlerts(orders, config, { now: nowDate });
+    const incidentAlerts = buildShopOrderDeliveryIncidentAlerts(alerts, stateJobs, config, { now: nowDate });
     const trackedOrderIds = Array.from(new Set(
         (stateJobs || [])
             .filter((job) => normalizeText(job.alert_type).toLowerCase() === 'shop_order_delivery_failed')
@@ -559,6 +749,9 @@ async function runShopOrderDeliveryFailedSweep(supabase, options = {}) {
     let queued = 0;
     let deduped = 0;
     let skippedNoChannels = 0;
+    let incidentQueued = 0;
+    let incidentDeduped = 0;
+    let incidentSkippedNoChannels = 0;
     let recoveredQueued = 0;
     let recoveredDeduped = 0;
     let recoveredSkippedNoChannels = 0;
@@ -585,6 +778,32 @@ async function runShopOrderDeliveryFailedSweep(supabase, options = {}) {
 
         results.push({
             order_id: alert.payload?.order_id || null,
+            severity: alert.severity,
+            queued: result?.queued === true,
+            reason: result?.reason || null
+        });
+    }
+
+    for (const alert of incidentAlerts) {
+        const result = await enqueueOpsAlertJob(supabase, {
+            ...alert,
+            createdAt: nowDate.toISOString(),
+            source: 'shop_delivery_monitor'
+        }, {
+            runtime,
+            env
+        });
+
+        if (result?.queued === true) {
+            incidentQueued += 1;
+        } else if (result?.reason === 'deduped') {
+            incidentDeduped += 1;
+        } else if (result?.reason === 'no_active_channels') {
+            incidentSkippedNoChannels += 1;
+        }
+
+        results.push({
+            alert_type: alert.alertType,
             severity: alert.severity,
             queued: result?.queued === true,
             reason: result?.reason || null
@@ -633,14 +852,18 @@ async function runShopOrderDeliveryFailedSweep(supabase, options = {}) {
 
     return {
         failure_count: alerts.length,
+        incident_count: incidentAlerts.length,
         recovered_count: recoveryAlerts.length,
         dead_letter_count: alerts.filter((alert) => normalizeText(alert.payload?.delivery_status).toLowerCase() === 'dead_letter').length,
         retry_waiting_count: alerts.filter((alert) => normalizeText(alert.payload?.delivery_status).toLowerCase() === 'retry_waiting').length,
         queued,
         deduped,
+        incident_queued: incidentQueued,
+        incident_deduped: incidentDeduped,
         recovered_queued: recoveredQueued,
         recovered_deduped: recoveredDeduped,
         skipped_no_channels: skippedNoChannels,
+        incident_skipped_no_channels: incidentSkippedNoChannels,
         recovered_skipped_no_channels: recoveredSkippedNoChannels,
         admin_notifications_created: adminNotificationsCreated,
         admin_notifications_skipped: adminNotificationsSkipped,
@@ -653,6 +876,7 @@ module.exports = {
     DEFAULT_SHOP_ORDER_DELIVERY_MONITOR_CONFIG,
     SHOP_ORDER_DELIVERY_STATE_TYPES,
     buildShopOrderDeliveryFailedAlerts,
+    buildShopOrderDeliveryIncidentAlerts,
     buildShopOrderDeliveryRecoveredAlerts,
     normalizeShopOrderDeliveryMonitorConfig,
     runShopOrderDeliveryFailedSweep,

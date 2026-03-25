@@ -551,6 +551,10 @@ function buildExternalAlertText(job = {}) {
     if (shopOrderDeliveryText) {
         return shopOrderDeliveryText;
     }
+    const shopOrderDeliveryIncidentText = buildShopOrderDeliveryIncidentAlertText(job);
+    if (shopOrderDeliveryIncidentText) {
+        return shopOrderDeliveryIncidentText;
+    }
     const shopOrderDeliveryRecoveredText = buildShopOrderDeliveryRecoveredAlertText(job);
     if (shopOrderDeliveryRecoveredText) {
         return shopOrderDeliveryRecoveredText;
@@ -1200,6 +1204,51 @@ function buildShopOrderDeliveryFailedAlertText(job = {}) {
     if (normalizeText(payload.delivery_last_error)) lines.push(`最近错误：${normalizeText(payload.delivery_last_error)}`);
     if (normalizeText(payload.created_at)) lines.push(`下单时间：${formatTimestamp(payload.created_at)}`);
     if (normalizeText(payload.delivery_updated_at)) lines.push(`最近履约更新时间：${formatTimestamp(payload.delivery_updated_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildShopOrderDeliveryIncidentAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'shop_order_delivery_incident') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const signalLabels = Array.isArray(payload.signal_labels)
+        ? payload.signal_labels.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const hotProducts = Array.isArray(payload.hot_products)
+        ? payload.hot_products.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const hotErrors = Array.isArray(payload.hot_errors)
+        ? payload.hot_errors.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const orderRefs = Array.isArray(payload.order_refs)
+        ? payload.order_refs.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const lines = [
+        `[商城履约事故][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '商城履约异常升级'}`
+    ];
+
+    if (signalLabels.length) lines.push(`升级信号：${signalLabels.join('；')}`);
+    if (
+        Number.isFinite(Number(payload.incident_order_count))
+        || Number.isFinite(Number(payload.dead_letter_count))
+        || Number.isFinite(Number(payload.retry_waiting_count))
+    ) {
+        lines.push(`异常订单：${Math.max(0, Math.round(Number(payload.incident_order_count || 0)))} 笔（死信 ${Math.max(0, Math.round(Number(payload.dead_letter_count || 0)))} / 重试 ${Math.max(0, Math.round(Number(payload.retry_waiting_count || 0)))}）`);
+    }
+    if (Number.isFinite(Number(payload.distinct_user_count))) {
+        lines.push(`受影响用户：${Math.max(0, Math.round(Number(payload.distinct_user_count || 0)))} 位`);
+    }
+    if (Number.isFinite(Number(payload.distinct_product_count))) {
+        lines.push(`涉及商品：${Math.max(0, Math.round(Number(payload.distinct_product_count || 0)))} 个`);
+    }
+    if (hotProducts.length) lines.push(`热点商品：${hotProducts.join('、')}`);
+    if (hotErrors.length) lines.push(`热点错误：${hotErrors.join('；')}`);
+    if (orderRefs.length) lines.push(`示例订单：${orderRefs.join('、')}`);
+    if (normalizeText(payload.latest_failure_at)) lines.push(`最近异常时间：${formatTimestamp(payload.latest_failure_at)}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
     return lines.filter(Boolean).join('\n');
