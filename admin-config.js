@@ -2736,6 +2736,33 @@ async function getAdminConfigApiHeaders() {
     return headers;
 }
 
+async function fetchAdminConfigJsonWithTimeout(url, options = {}, timeoutMs = 8000) {
+    const controller = typeof AbortController !== 'undefined'
+        ? new AbortController()
+        : null;
+    const timeoutId = controller
+        ? window.setTimeout(() => controller.abort(), timeoutMs)
+        : null;
+
+    try {
+        const response = await fetch(url, {
+            ...options,
+            signal: controller?.signal
+        });
+        const payload = await response.json().catch(() => ({}));
+        return { response, payload };
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            throw new Error('请求超时，请稍后重试');
+        }
+        throw error;
+    } finally {
+        if (timeoutId) {
+            window.clearTimeout(timeoutId);
+        }
+    }
+}
+
 async function loadPaymentChannelSettings(force = false) {
     if (loadPaymentChannelSettings._loadingPromise && !force) {
         return loadPaymentChannelSettings._loadingPromise;
@@ -2832,12 +2859,10 @@ async function loadOpsAlertHealth(force = false) {
     loadOpsAlertHealth._loadingPromise = (async () => {
         try {
             const headers = await getAdminConfigApiHeaders();
-            const response = await fetch('/api/admin/settings/ops-alert-health', {
+            const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/ops-alert-health', {
                 method: 'GET',
                 headers
             });
-
-            const payload = await response.json().catch(() => ({}));
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载站外告警通道健康状态失败');
             }
@@ -2886,12 +2911,10 @@ async function loadOpsAlertMonitor(force = false) {
     loadOpsAlertMonitor._loadingPromise = (async () => {
         try {
             const headers = await getAdminConfigApiHeaders();
-            const response = await fetch('/api/admin/settings/ops-alert-monitor', {
+            const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/ops-alert-monitor', {
                 method: 'GET',
                 headers
             });
-
-            const payload = await response.json().catch(() => ({}));
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载集中告警处理面板失败');
             }

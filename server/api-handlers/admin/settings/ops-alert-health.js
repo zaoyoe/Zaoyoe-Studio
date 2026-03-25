@@ -8,8 +8,9 @@ const {
 } = require('../../../../api/_lib/ops-alerts');
 
 const OPS_ALERT_HEALTH_LOOKBACK_DAYS = 7;
-const OPS_ALERT_HEALTH_PAGE_SIZE = 200;
-const OPS_ALERT_HEALTH_MAX_PAGES = 5;
+const OPS_ALERT_HEALTH_PAGE_SIZE = 80;
+const OPS_ALERT_HEALTH_MAX_PAGES = 2;
+const OPS_ALERT_HEALTH_TIMEOUT_MS = 4000;
 const HEALTH_CHANNELS = Object.freeze(['telegram', 'feishu', 'email']);
 
 function sanitizeText(value, maxLength = 240) {
@@ -68,6 +69,24 @@ async function fetchPagedRows(buildQuery, pageSize = OPS_ALERT_HEALTH_PAGE_SIZE,
     }
 
     return rows;
+}
+
+async function withTimeout(promise, timeoutMs, message) {
+    let timer = null;
+    try {
+        return await Promise.race([
+            promise,
+            new Promise((_, reject) => {
+                timer = setTimeout(() => {
+                    const error = new Error(message);
+                    error.statusCode = 503;
+                    reject(error);
+                }, timeoutMs);
+            })
+        ]);
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
 }
 
 async function fetchRecentOpsAlertJobs(supabase, sinceIso) {
@@ -204,11 +223,11 @@ module.exports = async (req, res) => {
 
         const now = new Date();
         const sinceIso = new Date(now.getTime() - OPS_ALERT_HEALTH_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
-        const [runtime, jobs, attempts] = await Promise.all([
+        const [runtime, jobs, attempts] = await withTimeout(Promise.all([
             loadOpsAlertsRuntimeConfig(supabase),
             fetchRecentOpsAlertJobs(supabase, sinceIso),
             fetchRecentOpsAlertAttempts(supabase, sinceIso)
-        ]);
+        ]), OPS_ALERT_HEALTH_TIMEOUT_MS, '站外告警通道健康状态加载超时，请先执行最新索引 migration 后重试');
         const secretStatus = buildOpsAlertSecretStatus(runtime);
         const channels = HEALTH_CHANNELS.map((channel) => {
             const channelAttempts = attempts.filter((item) => sanitizeText(item.channel, 40).toLowerCase() === channel);
