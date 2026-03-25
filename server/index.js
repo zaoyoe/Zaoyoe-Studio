@@ -68,6 +68,10 @@ const {
     normalizeShopInventoryMonitorConfig,
     runShopInventoryLowSweep
 } = require('../api/_lib/shop-inventory-alerts');
+const {
+    normalizeAdminLoginAnomalyMonitorConfig,
+    runAdminLoginAnomalySweep
+} = require('../api/_lib/admin-login-anomaly-alerts');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -95,6 +99,8 @@ let ticketSlaSweepTimer = null;
 let ticketSlaSweepRunning = false;
 let shopInventorySweepTimer = null;
 let shopInventorySweepRunning = false;
+let adminLoginAnomalySweepTimer = null;
+let adminLoginAnomalySweepRunning = false;
 let cachedShopDeliveryStrategy = null;
 let cachedShopDeliveryStrategyAt = 0;
 const afdianProvider = getPaymentProviderAdapter('afdian');
@@ -3018,6 +3024,53 @@ function startShopInventorySweep() {
     });
 }
 
+async function sweepAdminLoginAnomalyHealth() {
+    if (adminLoginAnomalySweepRunning) return;
+    adminLoginAnomalySweepRunning = true;
+
+    try {
+        const result = await runAdminLoginAnomalySweep(supabase, {
+            env: process.env
+        });
+
+        if (Number(result?.anomaly_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+            console.log('[AdminLoginAnomalyMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[AdminLoginAnomalyMonitor] Sweep failed:', error);
+    } finally {
+        adminLoginAnomalySweepRunning = false;
+    }
+}
+
+async function queueNextAdminLoginAnomalySweep(delayMs = null) {
+    if (adminLoginAnomalySweepTimer) return;
+
+    const monitorConfig = normalizeAdminLoginAnomalyMonitorConfig({}, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
+
+    adminLoginAnomalySweepTimer = setTimeout(() => {
+        adminLoginAnomalySweepTimer = null;
+        sweepAdminLoginAnomalyHealth()
+            .catch((error) => {
+                console.error('[AdminLoginAnomalyMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextAdminLoginAnomalySweep().catch((error) => {
+                    console.error('[AdminLoginAnomalyMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startAdminLoginAnomalySweep() {
+    if (adminLoginAnomalySweepTimer) return;
+
+    queueNextAdminLoginAnomalySweep(7200).catch((error) => {
+        console.error('[AdminLoginAnomalyMonitor] Failed to start sweep:', error);
+    });
+}
+
 async function hasLoggedJobResult(userId, jobId, site = 'cn') {
     if (!userId || !jobId) return false;
 
@@ -4215,6 +4268,7 @@ function startServer(port = PORT) {
         startVerifyQuotaSweep();
         startTicketSlaSweep();
         startShopInventorySweep();
+        startAdminLoginAnomalySweep();
     });
 }
 

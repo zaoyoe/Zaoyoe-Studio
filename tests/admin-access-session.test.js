@@ -36,14 +36,19 @@ function createMockResponse() {
 }
 
 function createMockAdminModule(options = {}) {
+    const auditLogs = options.auditLogs || [];
     return {
         async requireAdmin() {
             if (options.requireAdminError) {
                 throw options.requireAdminError;
             }
             return {
-                user: options.user || { id: 'admin-user-1', email: 'admin@example.com' }
+                user: options.user || { id: 'admin-user-1', email: 'admin@example.com' },
+                supabase: options.supabase || { from() { throw new Error('unexpected supabase call'); } }
             };
+        },
+        async writeAdminAuditLog(entry) {
+            auditLogs.push(entry);
         },
         sendJson(res, status, payload) {
             res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -87,9 +92,18 @@ async function loadAccessHelpers() {
 test('admin access session POST issues a short-lived cookie for admins', async () => {
     process.env.ADMIN_STUDIO_ACCESS_SECRET = 'session-secret-for-tests';
     process.env.ADMIN_STUDIO_ACCESS_TTL_SECONDS = '120';
+    const auditLogs = [];
 
-    await withAdminAccessSessionHandler({}, async (handler) => {
-        const req = { method: 'POST', headers: {} };
+    await withAdminAccessSessionHandler({ auditLogs }, async (handler) => {
+        const req = {
+            method: 'POST',
+            headers: {
+                'user-agent': 'Mozilla/5.0 test',
+                origin: 'https://www.zaoyoe.com',
+                referer: 'https://www.zaoyoe.com/admin-entry.html'
+            },
+            socket: { remoteAddress: '127.0.0.1' }
+        };
         const res = createMockResponse();
 
         await handler(req, res);
@@ -111,6 +125,10 @@ test('admin access session POST issues a short-lived cookie for admins', async (
         const verified = await helpers.verifyAdminStudioToken(token);
 
         assert.equal(verified?.sub, 'admin-user-1');
+        assert.equal(auditLogs.length, 1);
+        assert.equal(auditLogs[0].actionType, 'admin.access.session.issue');
+        assert.equal(auditLogs[0].details.admin_email, 'admin@example.com');
+        assert.equal(auditLogs[0].details.user_agent, 'Mozilla/5.0 test');
     });
 });
 

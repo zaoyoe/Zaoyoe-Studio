@@ -1,4 +1,9 @@
-const { requireAdmin, sendJson } = require('../../../../api/_lib/admin');
+const {
+    requireAdmin,
+    sendJson,
+    writeAdminAuditLog
+} = require('../../../../api/_lib/admin');
+const { resolveClientIp } = require('../../../../api/_lib/request-security');
 
 async function loadAdminStudioAccessHelpers() {
     return import('../../../../api/_lib/admin-studio-access.mjs');
@@ -30,8 +35,22 @@ module.exports = async function adminAccessSessionHandler(req, res) {
             });
         }
 
-        const { user } = await requireAdmin(req);
+        const { user, supabase } = await requireAdmin(req);
         const token = await issueAdminStudioToken({ sub: user.id });
+
+        await writeAdminAuditLog({
+            supabase,
+            adminId: user.id,
+            actionType: 'admin.access.session.issue',
+            details: {
+                admin_email: String(user.email || '').trim() || null,
+                client_ip: resolveClientIp(req, { env: process.env }) || null,
+                user_agent: String(req.headers?.['user-agent'] || '').trim() || null,
+                origin: String(req.headers?.origin || '').trim() || null,
+                referer: String(req.headers?.referer || '').trim() || null,
+                granted: true
+            }
+        });
 
         res.setHeader('Set-Cookie', buildAdminStudioSetCookie(token));
         return sendJson(res, 200, {

@@ -350,6 +350,33 @@ function buildShopInventoryLowSampleJob(user) {
     };
 }
 
+function buildAdminLoginAnomalySampleJob(user) {
+    return {
+        alert_type: 'security_admin_login_anomaly',
+        severity: 'critical',
+        title: `管理员异常登录（${sanitizeText(user?.email || user?.id) || 'admin@example.com'}）`,
+        payload: {
+            target_id: sanitizeText(user?.id) || 'admin-demo-user',
+            admin_id: sanitizeText(user?.id) || 'admin-demo-user',
+            admin_email: sanitizeText(user?.email || user?.id) || 'admin@example.com',
+            client_ip: '203.0.113.88',
+            user_agent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 Chrome/124.0',
+            occurred_at: new Date().toISOString(),
+            previous_ips: ['198.51.100.21', '198.51.100.22'],
+            recent_distinct_ip_count: 3,
+            recent_distinct_user_agent_count: 2,
+            detected_reasons: [
+                '管理员首次从该 IP 登录后台',
+                '最近窗口内出现 3 个登录 IP',
+                '最近窗口内出现 2 个登录设备指纹'
+            ],
+            origin: 'https://www.zaoyoe.com',
+            referer: 'https://www.zaoyoe.com/admin-entry.html',
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs（示例）'
+        }
+    };
+}
+
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
     const { error } = await supabase
         .from('system_config')
@@ -388,6 +415,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_verify_quota_low'
                 || sanitizeText(body.action) === 'send_sample_ticket_sla_overdue'
                 || sanitizeText(body.action) === 'send_sample_shop_inventory_low'
+                || sanitizeText(body.action) === 'send_sample_admin_login_anomaly'
             ) {
                 const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase);
                 const runtime = {
@@ -406,6 +434,8 @@ module.exports = async (req, res) => {
                                 ? buildTicketSlaOverdueSampleJob(user)
                                 : normalizedAction === 'send_sample_shop_inventory_low'
                                     ? buildShopInventoryLowSampleJob(user)
+                                    : normalizedAction === 'send_sample_admin_login_anomaly'
+                                        ? buildAdminLoginAnomalySampleJob(user)
                         : buildTelegramTestJob(user, runtime);
                 const result = await sendOpsAlertPreview(job, runtime);
 
@@ -422,6 +452,8 @@ module.exports = async (req, res) => {
                                     ? 'admin.ops_alerts.ticket_sla_sample'
                                     : normalizedAction === 'send_sample_shop_inventory_low'
                                         ? 'admin.ops_alerts.shop_inventory_sample'
+                                        : normalizedAction === 'send_sample_admin_login_anomaly'
+                                            ? 'admin.ops_alerts.admin_login_anomaly_sample'
                             : 'admin.ops_alerts.telegram_test',
                     details: {
                         ok: result?.ok === true,
@@ -450,6 +482,8 @@ module.exports = async (req, res) => {
                                     ? `工单超时示例消息已发送到 ${channelLabels || '已启用通道'}`
                                     : normalizedAction === 'send_sample_shop_inventory_low'
                                         ? `库存预警示例消息已发送到 ${channelLabels || '已启用通道'}`
+                                        : normalizedAction === 'send_sample_admin_login_anomaly'
+                                            ? `管理员异常登录示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : `测试站外告警已发送到 ${channelLabels || '已启用通道'}`
                 });
             }

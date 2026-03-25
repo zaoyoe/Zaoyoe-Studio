@@ -500,6 +500,38 @@ test('buildExternalAlertText renders shop inventory low details', () => {
     assert.match(text, /处理入口：商城管理 -> 商品列表 -> 库存 \/ 补货/);
 });
 
+test('buildExternalAlertText renders admin login anomaly details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'security_admin_login_anomaly',
+        severity: 'critical',
+        title: '管理员异常登录（admin@example.com）',
+        payload: {
+            admin_email: 'admin@example.com',
+            client_ip: '203.0.113.88',
+            user_agent: 'Mozilla/5.0 Demo Chrome/124',
+            occurred_at: '2026-03-25T10:00:00.000Z',
+            previous_ips: ['198.51.100.21', '198.51.100.22'],
+            recent_distinct_ip_count: 3,
+            recent_distinct_user_agent_count: 2,
+            detected_reasons: [
+                '管理员首次从该 IP 登录后台',
+                '最近窗口内出现 3 个登录 IP'
+            ],
+            origin: 'https://www.zaoyoe.com',
+            referer: 'https://www.zaoyoe.com/admin-entry.html',
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs'
+        }
+    });
+
+    assert.match(text, /管理员安全告警/);
+    assert.match(text, /管理员：admin@example.com/);
+    assert.match(text, /登录 IP：203\.0\.113\.88/);
+    assert.match(text, /判定信号：管理员首次从该 IP 登录后台；最近窗口内出现 3 个登录 IP/);
+    assert.match(text, /最近窗口内 IP 数：3/);
+    assert.match(text, /历史常用 IP：198\.51\.100\.21、198\.51\.100\.22/);
+    assert.match(text, /处理入口：后台设置 -> 管理员访问 \/ Admin Audit Logs/);
+});
+
 test('ops alerts exports sendFeishuAlert for admin preview actions', () => {
     assert.equal(typeof sendFeishuAlert, 'function');
 });

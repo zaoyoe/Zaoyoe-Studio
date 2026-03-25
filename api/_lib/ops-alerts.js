@@ -503,6 +503,10 @@ function buildExternalAlertText(job = {}) {
     if (shopInventoryText) {
         return shopInventoryText;
     }
+    const adminLoginAnomalyText = buildAdminLoginAnomalyAlertText(job);
+    if (adminLoginAnomalyText) {
+        return adminLoginAnomalyText;
+    }
 
     const lines = [
         `[站外告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '系统通知'}`,
@@ -788,6 +792,37 @@ function buildShopInventoryAlertText(job = {}) {
     }
     if (normalizeText(payload.delivery_type)) lines.push(`发货模式：${getDeliveryTypeLabel(payload.delivery_type)}`);
     if (normalizeText(payload.updated_at)) lines.push(`最近更新时间：${formatTimestamp(payload.updated_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildAdminLoginAnomalyAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'security_admin_login_anomaly') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const reasons = Array.isArray(payload.detected_reasons)
+        ? payload.detected_reasons.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const previousIps = Array.isArray(payload.previous_ips)
+        ? payload.previous_ips.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const lines = [
+        `[管理员安全告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '管理员异常登录'}`
+    ];
+
+    if (normalizeText(payload.admin_email)) lines.push(`管理员：${normalizeText(payload.admin_email)}`);
+    if (normalizeText(payload.client_ip)) lines.push(`登录 IP：${normalizeText(payload.client_ip)}`);
+    if (normalizeText(payload.user_agent)) lines.push(`设备指纹：${normalizeText(payload.user_agent)}`);
+    if (reasons.length) lines.push(`判定信号：${reasons.join('；')}`);
+    if (Number.isFinite(Number(payload.recent_distinct_ip_count))) lines.push(`最近窗口内 IP 数：${Math.max(0, Math.round(Number(payload.recent_distinct_ip_count || 0)))}`);
+    if (Number.isFinite(Number(payload.recent_distinct_user_agent_count))) lines.push(`最近窗口内设备数：${Math.max(0, Math.round(Number(payload.recent_distinct_user_agent_count || 0)))}`);
+    if (previousIps.length) lines.push(`历史常用 IP：${previousIps.join('、')}`);
+    if (normalizeText(payload.origin)) lines.push(`Origin：${normalizeText(payload.origin)}`);
+    if (normalizeText(payload.referer)) lines.push(`Referer：${normalizeText(payload.referer)}`);
+    if (normalizeText(payload.occurred_at)) lines.push(`发生时间：${formatTimestamp(payload.occurred_at)}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
     return lines.filter(Boolean).join('\n');
