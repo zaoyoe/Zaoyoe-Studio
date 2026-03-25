@@ -17,7 +17,9 @@ const TRACKED_PAYMENT_CONFIG_ACTIONS = new Set([
 ]);
 const PAYMENT_CONFIG_STATE_TYPES = Object.freeze([
     'payment_config_changed',
-    'payment_config_recovered'
+    'payment_config_recovered',
+    'payment_config_incident',
+    'payment_config_incident_recovered'
 ]);
 const PAYMENT_SECRET_LABELS = Object.freeze({
     afdian_token: '爱发电 Token',
@@ -31,6 +33,9 @@ const DEFAULT_PAYMENT_CONFIG_CHANGE_MONITOR_CONFIG = Object.freeze({
     recent_window_minutes: 20,
     state_lookback_minutes: 24 * 60,
     dedupe_window_minutes: 5,
+    incident_enabled: true,
+    incident_min_change_count: 2,
+    incident_dedupe_window_minutes: 20,
     page_size: 500,
     max_pages: 10
 });
@@ -93,6 +98,22 @@ function normalizePaymentConfigChangeMonitorConfig(rawConfig = {}, env = process
         dedupe_window_minutes: normalizeNumber(
             source.dedupe_window_minutes,
             normalizeNumber(env?.PAYMENT_CONFIG_CHANGE_MONITOR_DEDUPE_WINDOW_MINUTES, DEFAULT_PAYMENT_CONFIG_CHANGE_MONITOR_CONFIG.dedupe_window_minutes, 1, 24 * 60),
+            1,
+            24 * 60
+        ),
+        incident_enabled: normalizeBoolean(
+            source.incident_enabled,
+            normalizeBoolean(env?.PAYMENT_CONFIG_CHANGE_INCIDENT_ENABLED, DEFAULT_PAYMENT_CONFIG_CHANGE_MONITOR_CONFIG.incident_enabled)
+        ),
+        incident_min_change_count: normalizeNumber(
+            source.incident_min_change_count,
+            normalizeNumber(env?.PAYMENT_CONFIG_CHANGE_INCIDENT_MIN_CHANGE_COUNT, DEFAULT_PAYMENT_CONFIG_CHANGE_MONITOR_CONFIG.incident_min_change_count, 2, 20),
+            2,
+            20
+        ),
+        incident_dedupe_window_minutes: normalizeNumber(
+            source.incident_dedupe_window_minutes,
+            normalizeNumber(env?.PAYMENT_CONFIG_CHANGE_INCIDENT_DEDUPE_WINDOW_MINUTES, DEFAULT_PAYMENT_CONFIG_CHANGE_MONITOR_CONFIG.incident_dedupe_window_minutes, 1, 24 * 60),
             1,
             24 * 60
         ),
@@ -171,6 +192,28 @@ function getPaymentSecretLabel(secretName) {
     return PAYMENT_SECRET_LABELS[normalized] || normalized;
 }
 
+function countLabels(values = []) {
+    const counts = new Map();
+
+    for (const value of values || []) {
+        const label = normalizeText(value);
+        if (!label) continue;
+        counts.set(label, (counts.get(label) || 0) + 1);
+    }
+
+    return Array.from(counts.entries())
+        .sort((left, right) => {
+            if (right[1] !== left[1]) return right[1] - left[1];
+            return left[0].localeCompare(right[0]);
+        });
+}
+
+function formatCountLabels(values = [], maxItems = 3) {
+    return countLabels(values)
+        .slice(0, Math.max(1, maxItems))
+        .map(([label, count]) => (count > 1 ? `${label} × ${count}` : label));
+}
+
 function buildRiskFlags(actionType, details = {}) {
     const flags = [];
     const normalizedAction = normalizeText(actionType).toLowerCase();
@@ -238,6 +281,16 @@ function getLatestPaymentConfigRecoveredJob(stateJobs = [], targetId = '') {
     const normalizedTargetId = normalizeText(targetId);
     return (stateJobs || [])
         .filter((job) => normalizeText(job.alert_type).toLowerCase() === 'payment_config_recovered')
+        .filter((job) => normalizeText(job.payload?.target_id) === normalizedTargetId)
+        .sort((left, right) => Date.parse(normalizeText(right.created_at)) - Date.parse(normalizeText(left.created_at)))
+        [0] || null;
+}
+
+function getLatestPaymentConfigIncidentStateJob(stateJobs = [], alertType, targetId = 'payment_config_incident:global') {
+    const normalizedAlertType = normalizeText(alertType).toLowerCase();
+    const normalizedTargetId = normalizeText(targetId);
+    return (stateJobs || [])
+        .filter((job) => normalizeText(job.alert_type).toLowerCase() === normalizedAlertType)
         .filter((job) => normalizeText(job.payload?.target_id) === normalizedTargetId)
         .sort((left, right) => Date.parse(normalizeText(right.created_at)) - Date.parse(normalizeText(left.created_at)))
         [0] || null;
@@ -506,6 +559,267 @@ function buildPaymentConfigChangedAlerts(auditRows = [], rawConfig = {}, options
         .filter(Boolean);
 }
 
+function buildPaymentConfigIncidentAlerts(changeAlerts = [], rawConfig = {}, options = {}) {
+    const config = normalizePaymentConfigChangeMonitorConfig(rawConfig);
+    if (!config.incident_enabled) {
+        return [];
+    }
+
+    const riskyAlerts = (changeAlerts || []).filter((alert) => {
+        const riskFlags = normalizeStringArray(alert?.payload?.risk_flags);
+        return riskFlags.length > 0;
+    });
+
+    if (riskyAlerts.length < Number(config.incident_min_change_count || DEFAULT_PAYMENT_CONFIG_CHANGE_MONITOR_CONFIG.incident_min_change_count)) {
+        return [];
+    }
+
+    const lookbackMinutes = Math.max(1, Math.round(Number(config.recent_window_minutes || DEFAULT_PAYMENT_CONFIG_CHANGE_MONITOR_CONFIG.recent_window_minutes)));
+    const adminEmails = Array.from(new Set(
+        riskyAlerts.map((alert) => normalizeText(alert.payload?.admin_email)).filter(Boolean)
+    ));
+    const actionLabels = formatCountLabels(
+        riskyAlerts.map((alert) => normalizeText(alert.payload?.action_label)).filter(Boolean),
+        4
+    );
+    const riskSignals = formatCountLabels(
+        riskyAlerts.flatMap((alert) => normalizeStringArray(alert.payload?.risk_flags)),
+        5
+    );
+    const providerLabels = formatCountLabels(
+        riskyAlerts.flatMap((alert) => {
+            const labels = normalizeStringArray(alert.payload?.updated_provider_labels);
+            const activeProviderLabel = normalizeText(alert.payload?.active_provider_label);
+            if (activeProviderLabel && !labels.includes(activeProviderLabel)) {
+                labels.unshift(activeProviderLabel);
+            }
+            return labels;
+        }),
+        4
+    );
+    const secretLabels = formatCountLabels(
+        riskyAlerts.flatMap((alert) => {
+            const labels = normalizeStringArray(alert.payload?.updated_secrets)
+                .map((item) => getPaymentSecretLabel(item))
+                .filter(Boolean);
+            const deletedSecretLabel = getPaymentSecretLabel(alert.payload?.secret_name);
+            if (deletedSecretLabel && !labels.includes(deletedSecretLabel)) {
+                labels.push(deletedSecretLabel);
+            }
+            return labels;
+        }),
+        4
+    );
+    const latestChangeAt = riskyAlerts.reduce((latest, alert) => {
+        const createdAt = normalizeText(alert.payload?.created_at || alert.created_at);
+        if (!createdAt) return latest;
+        if (!latest) return createdAt;
+        return Date.parse(createdAt) > Date.parse(latest) ? createdAt : latest;
+    }, '');
+    const auditRefs = riskyAlerts
+        .map((alert) => normalizeText(alert.payload?.audit_id))
+        .filter(Boolean);
+    const signalLabels = [
+        `最近 ${lookbackMinutes} 分钟内累计 ${riskyAlerts.length} 次高风险支付配置改动`,
+        adminEmails.length ? `涉及 ${adminEmails.length} 位管理员` : '',
+        actionLabels.length ? `核心动作：${actionLabels.join('、')}` : ''
+    ].filter(Boolean);
+    const lines = [
+        `最近 ${lookbackMinutes} 分钟内连续发生多次高风险支付配置改动，建议立即人工复核支付通道和密钥状态。`,
+        `命中次数：${riskyAlerts.length} 次`
+    ];
+
+    if (adminEmails.length) {
+        lines.push(`操作人：${adminEmails.join('、')}`);
+    }
+    if (actionLabels.length) {
+        lines.push(`变更类型：${actionLabels.join('；')}`);
+    }
+    if (riskSignals.length) {
+        lines.push(`风险信号：${riskSignals.join('；')}`);
+    }
+    if (providerLabels.length) {
+        lines.push(`涉及通道：${providerLabels.join('、')}`);
+    }
+    if (secretLabels.length) {
+        lines.push(`涉及密钥：${secretLabels.join('、')}`);
+    }
+    if (latestChangeAt) {
+        lines.push(`最近时间：${latestChangeAt}`);
+    }
+    lines.push('处理入口：后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计');
+
+    const fingerprint = auditRefs.slice().sort().join('|')
+        || riskyAlerts
+            .map((alert) => [
+                normalizeText(alert.payload?.action_type),
+                normalizeText(alert.payload?.secret_name),
+                normalizeText(alert.payload?.created_at || alert.created_at)
+            ].join(':'))
+            .sort()
+            .join('|');
+
+    return [{
+        alertType: 'payment_config_incident',
+        severity: 'critical',
+        title: `支付配置异常升级（${riskyAlerts.length} 次）`,
+        content: lines.join('\n'),
+        payload: {
+            target_id: 'payment_config_incident:global',
+            lookback_minutes: lookbackMinutes,
+            incident_change_count: riskyAlerts.length,
+            distinct_admin_count: adminEmails.length,
+            admin_emails: adminEmails,
+            action_labels: actionLabels,
+            risk_signals: riskSignals,
+            provider_labels: providerLabels,
+            secret_labels: secretLabels,
+            latest_change_at: latestChangeAt || null,
+            audit_refs: auditRefs,
+            signal_labels: signalLabels,
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计'
+        },
+        dedupeKey: crypto
+            .createHash('sha256')
+            .update(`payment_config_incident:${fingerprint || 'empty'}`)
+            .digest('hex'),
+        dedupeWindowMinutes: Number(
+            config.incident_dedupe_window_minutes
+            || DEFAULT_PAYMENT_CONFIG_CHANGE_MONITOR_CONFIG.incident_dedupe_window_minutes
+        )
+    }];
+}
+
+function buildPaymentConfigIncidentRecoveryAlerts(changeAlerts = [], stateJobs = [], rawConfig = {}, options = {}) {
+    const config = normalizePaymentConfigChangeMonitorConfig(rawConfig);
+    const activeIncidentAlerts = buildPaymentConfigIncidentAlerts(changeAlerts, config, options);
+    if (activeIncidentAlerts.length) {
+        return [];
+    }
+
+    const latestIncident = getLatestPaymentConfigIncidentStateJob(stateJobs, 'payment_config_incident');
+    if (!latestIncident) {
+        return [];
+    }
+
+    const latestRecovered = getLatestPaymentConfigIncidentStateJob(stateJobs, 'payment_config_incident_recovered');
+    const latestIncidentAt = Date.parse(normalizeText(latestIncident.created_at));
+    const latestRecoveredAt = Date.parse(normalizeText(latestRecovered?.created_at));
+    if (Number.isFinite(latestIncidentAt) && Number.isFinite(latestRecoveredAt) && latestRecoveredAt >= latestIncidentAt) {
+        return [];
+    }
+
+    const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
+    const latestIncidentPayload = normalizeJsonObject(latestIncident.payload);
+    const riskyAlerts = (changeAlerts || []).filter((alert) => normalizeStringArray(alert?.payload?.risk_flags).length > 0);
+    const remainingRiskCount = riskyAlerts.length;
+    const remainingAdminEmails = Array.from(new Set(
+        riskyAlerts.map((alert) => normalizeText(alert.payload?.admin_email)).filter(Boolean)
+    ));
+    const remainingActionLabels = formatCountLabels(
+        riskyAlerts.map((alert) => normalizeText(alert.payload?.action_label)).filter(Boolean),
+        4
+    );
+    const remainingRiskSignals = formatCountLabels(
+        riskyAlerts.flatMap((alert) => normalizeStringArray(alert.payload?.risk_flags)),
+        5
+    );
+    const remainingProviderLabels = formatCountLabels(
+        riskyAlerts.flatMap((alert) => {
+            const labels = normalizeStringArray(alert.payload?.updated_provider_labels);
+            const activeProviderLabel = normalizeText(alert.payload?.active_provider_label);
+            if (activeProviderLabel && !labels.includes(activeProviderLabel)) {
+                labels.unshift(activeProviderLabel);
+            }
+            return labels;
+        }),
+        4
+    );
+    const remainingSecretLabels = formatCountLabels(
+        riskyAlerts.flatMap((alert) => {
+            const labels = normalizeStringArray(alert.payload?.updated_secrets)
+                .map((item) => getPaymentSecretLabel(item))
+                .filter(Boolean);
+            const deletedSecretLabel = getPaymentSecretLabel(alert.payload?.secret_name);
+            if (deletedSecretLabel && !labels.includes(deletedSecretLabel)) {
+                labels.push(deletedSecretLabel);
+            }
+            return labels;
+        }),
+        4
+    );
+    const incidentRecoveredAt = nowDate.toISOString();
+    const incidentDurationMinutes = Number.isFinite(latestIncidentAt)
+        ? Math.max(0, Math.round((nowDate.getTime() - latestIncidentAt) / 60000))
+        : 0;
+    const recoverySummary = remainingRiskCount > 0
+        ? `支付配置集中事故阈值已解除，当前仍保留 ${remainingRiskCount} 次单次高风险改动`
+        : '支付配置集中事故阈值已解除，当前未发现持续中的高风险支付配置改动';
+    const lines = [
+        '支付配置已退出集中事故状态，可从应急排障切回日常观察。',
+        `恢复结论：${recoverySummary}`
+    ];
+
+    if (normalizeText(latestIncident.created_at)) {
+        lines.push(`上次升级：${normalizeText(latestIncident.created_at)}`);
+    }
+    lines.push(`恢复时间：${incidentRecoveredAt}`);
+    lines.push(`持续时长：${incidentDurationMinutes} 分钟`);
+    if (remainingRiskCount > 0) {
+        lines.push(`当前剩余高风险改动：${remainingRiskCount} 次`);
+    }
+    if (remainingAdminEmails.length) {
+        lines.push(`当前涉及管理员：${remainingAdminEmails.join('、')}`);
+    }
+    if (remainingActionLabels.length) {
+        lines.push(`当前动作：${remainingActionLabels.join('；')}`);
+    }
+    if (remainingRiskSignals.length) {
+        lines.push(`当前风险信号：${remainingRiskSignals.join('；')}`);
+    }
+    if (remainingProviderLabels.length) {
+        lines.push(`当前涉及通道：${remainingProviderLabels.join('、')}`);
+    }
+    if (remainingSecretLabels.length) {
+        lines.push(`当前涉及密钥：${remainingSecretLabels.join('、')}`);
+    }
+    lines.push('处理入口：后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计');
+
+    return [{
+        alertType: 'payment_config_incident_recovered',
+        severity: 'warning',
+        title: '支付配置事故已恢复',
+        content: lines.join('\n'),
+        payload: {
+            target_id: 'payment_config_incident:global',
+            incident_alert_job_id: normalizeText(latestIncident.id) || null,
+            incident_started_at: normalizeText(latestIncident.created_at) || null,
+            incident_recovered_at: incidentRecoveredAt,
+            incident_duration_minutes: incidentDurationMinutes,
+            previous_incident_change_count: Math.max(0, Math.round(Number(latestIncidentPayload.incident_change_count || 0))),
+            previous_distinct_admin_count: Math.max(0, Math.round(Number(latestIncidentPayload.distinct_admin_count || 0))),
+            recovery_summary: recoverySummary,
+            active_change_count: remainingRiskCount,
+            active_admin_count: remainingAdminEmails.length,
+            active_admin_emails: remainingAdminEmails,
+            active_action_labels: remainingActionLabels,
+            active_risk_signals: remainingRiskSignals,
+            active_provider_labels: remainingProviderLabels,
+            active_secret_labels: remainingSecretLabels,
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计'
+        },
+        allowedChannels: ['feishu'],
+        dedupeKey: crypto
+            .createHash('sha256')
+            .update(`payment_config_incident_recovered:${normalizeText(latestIncident.id) || normalizeText(latestIncident.created_at) || 'unknown'}`)
+            .digest('hex'),
+        dedupeWindowMinutes: Math.max(
+            Number(config.incident_dedupe_window_minutes || DEFAULT_PAYMENT_CONFIG_CHANGE_MONITOR_CONFIG.incident_dedupe_window_minutes),
+            60
+        )
+    }];
+}
+
 async function runPaymentConfigChangedSweep(supabase, options = {}) {
     const env = options.env || process.env;
     const config = normalizePaymentConfigChangeMonitorConfig(options.config, env);
@@ -514,9 +828,15 @@ async function runPaymentConfigChangedSweep(supabase, options = {}) {
         return {
             skipped: 'monitor_disabled',
             change_count: 0,
+            incident_count: 0,
+            incident_recovered_count: 0,
             recovery_count: 0,
             queued: 0,
             deduped: 0,
+            incident_queued: 0,
+            incident_deduped: 0,
+            incident_recovered_queued: 0,
+            incident_recovered_deduped: 0,
             recovered_queued: 0,
             recovered_deduped: 0
         };
@@ -527,9 +847,15 @@ async function runPaymentConfigChangedSweep(supabase, options = {}) {
         return {
             skipped: 'ops_alerts_disabled',
             change_count: 0,
+            incident_count: 0,
+            incident_recovered_count: 0,
             recovery_count: 0,
             queued: 0,
             deduped: 0,
+            incident_queued: 0,
+            incident_deduped: 0,
+            incident_recovered_queued: 0,
+            incident_recovered_deduped: 0,
             recovered_queued: 0,
             recovered_deduped: 0
         };
@@ -550,11 +876,19 @@ async function runPaymentConfigChangedSweep(supabase, options = {}) {
     const secretStatus = options.currentSecretStatus
         || await buildPaymentSecretStatus(supabase, env);
     const alerts = buildPaymentConfigChangedAlerts(recentAuditRows, config, { now: nowDate });
+    const incidentAlerts = buildPaymentConfigIncidentAlerts(alerts, config, { now: nowDate });
+    const incidentRecoveryAlerts = buildPaymentConfigIncidentRecoveryAlerts(alerts, stateJobs, config, { now: nowDate });
     const recoveryAlerts = buildPaymentConfigRecoveredAlerts(stateJobs, auditRows, paymentChannels, secretStatus, config, { now: nowDate });
 
     let queued = 0;
     let deduped = 0;
     let skippedNoChannels = 0;
+    let incidentQueued = 0;
+    let incidentDeduped = 0;
+    let incidentSkippedNoChannels = 0;
+    let incidentRecoveredQueued = 0;
+    let incidentRecoveredDeduped = 0;
+    let incidentRecoveredSkippedNoChannels = 0;
     let recoveredQueued = 0;
     let recoveredDeduped = 0;
     let recoveredSkippedNoChannels = 0;
@@ -582,6 +916,65 @@ async function runPaymentConfigChangedSweep(supabase, options = {}) {
         results.push({
             audit_id: alert.payload?.audit_id || null,
             action_type: alert.payload?.action_type || null,
+            queued: result?.queued === true,
+            reason: result?.reason || null
+        });
+    }
+
+    for (const alert of incidentAlerts) {
+        const result = await enqueueOpsAlertJob(supabase, {
+            ...alert,
+            source: 'payment_config_change_monitor'
+        }, {
+            runtime,
+            env
+        });
+
+        if (result?.queued === true) {
+            incidentQueued += 1;
+        } else if (result?.reason === 'deduped') {
+            incidentDeduped += 1;
+        } else if (result?.reason === 'no_active_channels') {
+            incidentSkippedNoChannels += 1;
+        }
+
+        results.push({
+            audit_id: Array.isArray(alert.payload?.audit_refs) ? alert.payload.audit_refs[0] || null : null,
+            action_type: 'payment_config_incident',
+            queued: result?.queued === true,
+            reason: result?.reason || null
+        });
+    }
+
+    for (const alert of incidentRecoveryAlerts) {
+        const result = await enqueueOpsAlertJob(supabase, {
+            ...alert,
+            source: 'payment_config_change_monitor'
+        }, {
+            runtime,
+            env
+        });
+
+        if (result?.queued === true) {
+            incidentRecoveredQueued += 1;
+
+            const notificationResult = await notifyActiveAdmins(supabase, {
+                title: alert.title,
+                content: alert.content,
+                type: 'success',
+                dedupeWindowMinutes: Math.max(Number(alert.dedupeWindowMinutes || 60), 60)
+            });
+            adminNotificationsCreated += Number(notificationResult?.created || 0);
+            adminNotificationsSkipped += Number(notificationResult?.skipped || 0);
+        } else if (result?.reason === 'deduped') {
+            incidentRecoveredDeduped += 1;
+        } else if (result?.reason === 'no_active_channels') {
+            incidentRecoveredSkippedNoChannels += 1;
+        }
+
+        results.push({
+            audit_id: null,
+            action_type: 'payment_config_incident_recovered',
             queued: result?.queued === true,
             reason: result?.reason || null
         });
@@ -623,10 +1016,18 @@ async function runPaymentConfigChangedSweep(supabase, options = {}) {
 
     return {
         change_count: alerts.length,
+        incident_count: incidentAlerts.length,
+        incident_recovered_count: incidentRecoveryAlerts.length,
         recovery_count: recoveryAlerts.length,
         queued,
         deduped,
         skipped_no_channels: skippedNoChannels,
+        incident_queued: incidentQueued,
+        incident_deduped: incidentDeduped,
+        incident_skipped_no_channels: incidentSkippedNoChannels,
+        incident_recovered_queued: incidentRecoveredQueued,
+        incident_recovered_deduped: incidentRecoveredDeduped,
+        incident_recovered_skipped_no_channels: incidentRecoveredSkippedNoChannels,
         recovered_queued: recoveredQueued,
         recovered_deduped: recoveredDeduped,
         recovered_skipped_no_channels: recoveredSkippedNoChannels,
@@ -639,6 +1040,8 @@ async function runPaymentConfigChangedSweep(supabase, options = {}) {
 module.exports = {
     DEFAULT_PAYMENT_CONFIG_CHANGE_MONITOR_CONFIG,
     buildPaymentConfigChangedAlerts,
+    buildPaymentConfigIncidentAlerts,
+    buildPaymentConfigIncidentRecoveryAlerts,
     buildPaymentConfigRecoveredAlerts,
     normalizePaymentConfigChangeMonitorConfig,
     runPaymentConfigChangedSweep

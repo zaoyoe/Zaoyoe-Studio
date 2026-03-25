@@ -357,6 +357,73 @@ test('buildExternalAlertText renders payment config changed details', () => {
     assert.match(text, /处理入口：后台设置 -> 管理员访问 \/ Admin Audit Logs -> 支付配置审计/);
 });
 
+test('buildExternalAlertText renders payment config incident details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'payment_config_incident',
+        severity: 'critical',
+        title: '支付配置异常升级（3 次）',
+        payload: {
+            lookback_minutes: 20,
+            incident_change_count: 3,
+            distinct_admin_count: 2,
+            admin_emails: ['admin@example.com', 'owner@example.com'],
+            action_labels: ['支付通道配置更新 × 2', '支付密钥删除'],
+            signal_labels: ['最近 20 分钟内累计 3 次高风险支付配置改动', '涉及 2 位管理员'],
+            risk_signals: ['当前活动通道已切换为模拟支付', '支付密钥 hupijiao_secret_key 已被删除'],
+            provider_labels: ['模拟支付', '虎皮椒'],
+            secret_labels: ['虎皮椒 Secret Key'],
+            latest_change_at: '2026-03-25T10:12:00.000Z',
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计'
+        }
+    });
+
+    assert.match(text, /支付配置事故/);
+    assert.match(text, /观察窗口：最近 20 分钟/);
+    assert.match(text, /命中次数：3 次/);
+    assert.match(text, /涉及管理员：2 位/);
+    assert.match(text, /操作人：admin@example.com、owner@example.com/);
+    assert.match(text, /变更类型：支付通道配置更新 × 2；支付密钥删除/);
+    assert.match(text, /风险信号：当前活动通道已切换为模拟支付；支付密钥 hupijiao_secret_key 已被删除/);
+    assert.match(text, /涉及通道：模拟支付、虎皮椒/);
+    assert.match(text, /涉及密钥：虎皮椒 Secret Key/);
+    assert.match(text, /处理入口：后台设置 -> 管理员访问 \/ Admin Audit Logs -> 支付配置审计/);
+});
+
+test('buildExternalAlertText renders payment config incident recovery details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'payment_config_incident_recovered',
+        severity: 'warning',
+        title: '支付配置事故已恢复',
+        payload: {
+            recovery_summary: '支付配置集中事故阈值已解除，当前仍保留 1 次单次高风险改动',
+            incident_started_at: '2026-03-25T10:00:00.000Z',
+            incident_recovered_at: '2026-03-25T10:32:00.000Z',
+            incident_duration_minutes: 32,
+            previous_incident_change_count: 3,
+            active_change_count: 1,
+            active_admin_emails: ['admin@example.com'],
+            active_action_labels: ['支付通道配置更新'],
+            active_risk_signals: ['本次更新包含 1 个支付密钥'],
+            active_provider_labels: ['虎皮椒'],
+            active_secret_labels: ['虎皮椒 Secret Key'],
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计'
+        }
+    });
+
+    assert.match(text, /支付配置事故恢复/);
+    assert.match(text, /恢复结论：支付配置集中事故阈值已解除，当前仍保留 1 次单次高风险改动/);
+    assert.match(text, /上次升级：2026-03-25T10:00:00\.000Z/);
+    assert.match(text, /恢复时间：2026-03-25T10:32:00\.000Z/);
+    assert.match(text, /持续时长：32 分钟/);
+    assert.match(text, /上次事故规模：3 次高风险改动/);
+    assert.match(text, /当前剩余高风险改动：1 次/);
+    assert.match(text, /当前涉及管理员：admin@example.com/);
+    assert.match(text, /当前动作：支付通道配置更新/);
+    assert.match(text, /当前风险信号：本次更新包含 1 个支付密钥/);
+    assert.match(text, /当前涉及通道：虎皮椒/);
+    assert.match(text, /当前涉及密钥：虎皮椒 Secret Key/);
+});
+
 test('buildExternalAlertText renders payment config recovery details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'payment_config_recovered',

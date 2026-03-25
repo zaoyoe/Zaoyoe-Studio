@@ -386,11 +386,32 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-payment-config-changed-sample':
                 window.sendOpsAlertPaymentConfigChangedSample?.();
                 break;
+            case 'settings-send-ops-alert-payment-config-incident-sample':
+                window.sendOpsAlertPaymentConfigIncidentSample?.();
+                break;
+            case 'settings-send-ops-alert-payment-config-incident-recovered-sample':
+                window.sendOpsAlertPaymentConfigIncidentRecoveredSample?.();
+                break;
             case 'settings-send-ops-alert-payment-config-recovered-sample':
                 window.sendOpsAlertPaymentConfigRecoveredSample?.();
                 break;
+            case 'settings-filter-ops-alert-monitor':
+                window.setOpsAlertMonitorFilter?.(
+                    actionEl.dataset.opsAlertMonitorFilterKind,
+                    actionEl.dataset.opsAlertMonitorFilterValue
+                );
+                break;
             case 'settings-open-ops-alert-workspace':
-                window.openOpsAlertWorkspace?.(actionEl.dataset.workspaceTarget);
+                window.openOpsAlertWorkspace?.(actionEl.dataset.workspaceTarget, {
+                    alertType: actionEl.dataset.workspaceAlertType,
+                    category: actionEl.dataset.workspaceCategory,
+                    referenceLabel: actionEl.dataset.workspaceReferenceLabel,
+                    referenceValue: actionEl.dataset.workspaceReferenceValue,
+                    targetId: actionEl.dataset.workspaceTargetId
+                });
+                break;
+            case 'settings-refresh-ops-alert-monitor':
+                window.refreshOpsAlertMonitorPanel?.();
                 break;
             case 'settings-delete-ops-alert-secret':
                 window.deleteOpsAlertSecret?.(actionEl.dataset.secretName);

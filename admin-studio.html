@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=57">
+    <link rel="stylesheet" href="admin-studio.css?v=58">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -1131,6 +1131,12 @@
                                         <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-changed-sample">
                                             <i class="fas fa-sliders"></i> 发送支付配置变更示例消息
                                         </button>
+                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-incident-sample">
+                                            <i class="fas fa-triangle-exclamation"></i> 发送支付配置异常升级示例消息
+                                        </button>
+                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-incident-recovered-sample">
+                                            <i class="fas fa-shield-heart"></i> 发送支付配置事故恢复示例消息
+                                        </button>
                                         <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-recovered-sample">
                                             <i class="fas fa-shield-check"></i> 发送支付配置恢复示例消息
                                         </button>
@@ -1193,6 +1199,51 @@
                                                 </div>
                                             </article>
                                         </div>
+                                    </div>
+
+                                    <div class="ops-alert-monitor-panel" id="opsAlertMonitorPanel">
+                                        <div class="ops-alert-workspace-panel__head">
+                                            <div>
+                                                <h4><i class="fas fa-chart-column"></i> 集中告警处理面板</h4>
+                                                <p>汇总支付、工单、库存、履约四类核心告警，并支持按状态、级别、模块快速收敛到要处理的那批问题。</p>
+                                            </div>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-refresh-ops-alert-monitor">
+                                                <i class="fas fa-rotate"></i> 刷新面板
+                                            </button>
+                                        </div>
+                                        <div class="ops-alert-monitor-toolbar" id="opsAlertMonitorToolbar">
+                                            <div class="ops-alert-monitor-filter-group" id="opsAlertMonitorScopeFilters">
+                                                <span class="ops-alert-monitor-filter-label">范围</span>
+                                                <div class="ops-alert-monitor-filter-actions">
+                                                    <button type="button" class="ops-alert-monitor-filter-btn active" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="scope" data-ops-alert-monitor-filter-value="all" aria-pressed="true">全部</button>
+                                                    <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="scope" data-ops-alert-monitor-filter-value="active" aria-pressed="false">仅待处理</button>
+                                                    <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="scope" data-ops-alert-monitor-filter-value="recovered" aria-pressed="false">仅已恢复</button>
+                                                </div>
+                                            </div>
+                                            <div class="ops-alert-monitor-filter-group" id="opsAlertMonitorSeverityFilters">
+                                                <span class="ops-alert-monitor-filter-label">级别</span>
+                                                <div class="ops-alert-monitor-filter-actions">
+                                                    <button type="button" class="ops-alert-monitor-filter-btn active" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="severity" data-ops-alert-monitor-filter-value="all" aria-pressed="true">全部级别</button>
+                                                    <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="severity" data-ops-alert-monitor-filter-value="critical" aria-pressed="false">仅 critical</button>
+                                                    <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="severity" data-ops-alert-monitor-filter-value="warning" aria-pressed="false">仅 warning</button>
+                                                </div>
+                                            </div>
+                                            <div class="ops-alert-monitor-filter-group" id="opsAlertMonitorCategoryFilters">
+                                                <span class="ops-alert-monitor-filter-label">模块</span>
+                                                <div class="ops-alert-monitor-filter-actions">
+                                                    <button type="button" class="ops-alert-monitor-filter-btn active" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="category" data-ops-alert-monitor-filter-value="all" aria-pressed="true">全部模块</button>
+                                                    <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="category" data-ops-alert-monitor-filter-value="payments" aria-pressed="false">支付与退款</button>
+                                                    <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="category" data-ops-alert-monitor-filter-value="tickets" aria-pressed="false">工单与售后</button>
+                                                    <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="category" data-ops-alert-monitor-filter-value="inventory" aria-pressed="false">库存与补货</button>
+                                                    <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="category" data-ops-alert-monitor-filter-value="fulfillment" aria-pressed="false">履约与死信</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="config-inline-note" id="opsAlertMonitorMeta">
+                                            <i class="fas fa-rotate fa-spin"></i>
+                                            <span>正在加载集中告警处理面板...</span>
+                                        </div>
+                                        <div class="ops-alert-monitor-grid" id="opsAlertMonitorGrid"></div>
                                     </div>
 
                                     <div class="config-row payment-channel-save-row">

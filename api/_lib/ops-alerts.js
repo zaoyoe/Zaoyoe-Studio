@@ -506,6 +506,14 @@ function buildExternalAlertText(job = {}) {
     if (refundOpsText) {
         return refundOpsText;
     }
+    const paymentConfigIncidentRecoveredText = buildPaymentConfigIncidentRecoveredAlertText(job);
+    if (paymentConfigIncidentRecoveredText) {
+        return paymentConfigIncidentRecoveredText;
+    }
+    const paymentConfigIncidentText = buildPaymentConfigIncidentAlertText(job);
+    if (paymentConfigIncidentText) {
+        return paymentConfigIncidentText;
+    }
     const paymentConfigRecoveredText = buildPaymentConfigRecoveredAlertText(job);
     if (paymentConfigRecoveredText) {
         return paymentConfigRecoveredText;
@@ -830,6 +838,103 @@ function buildPaymentConfigChangedAlertText(job = {}) {
     if (normalizeText(payload.secret_name)) lines.push(`删除密钥：${normalizeText(payload.secret_name)}`);
     if (riskFlags.length) lines.push(`风险提示：${riskFlags.join('；')}`);
     if (normalizeText(payload.created_at)) lines.push(`发生时间：${formatTimestamp(payload.created_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildPaymentConfigIncidentAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'payment_config_incident') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const adminEmails = Array.isArray(payload.admin_emails)
+        ? payload.admin_emails.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const actionLabels = Array.isArray(payload.action_labels)
+        ? payload.action_labels.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const riskSignals = Array.isArray(payload.risk_signals)
+        ? payload.risk_signals.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const providerLabels = Array.isArray(payload.provider_labels)
+        ? payload.provider_labels.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const secretLabels = Array.isArray(payload.secret_labels)
+        ? payload.secret_labels.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const signalLabels = Array.isArray(payload.signal_labels)
+        ? payload.signal_labels.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+
+    const lines = [
+        `[支付配置事故][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '支付配置异常升级'}`
+    ];
+
+    if (Number.isFinite(Number(payload.lookback_minutes))) {
+        lines.push(`观察窗口：最近 ${Math.max(1, Math.round(Number(payload.lookback_minutes || 0)))} 分钟`);
+    }
+    if (Number.isFinite(Number(payload.incident_change_count))) {
+        lines.push(`命中次数：${Math.max(0, Math.round(Number(payload.incident_change_count || 0)))} 次`);
+    }
+    if (Number.isFinite(Number(payload.distinct_admin_count))) {
+        lines.push(`涉及管理员：${Math.max(0, Math.round(Number(payload.distinct_admin_count || 0)))} 位`);
+    }
+    if (adminEmails.length) lines.push(`操作人：${adminEmails.join('、')}`);
+    if (actionLabels.length) lines.push(`变更类型：${actionLabels.join('；')}`);
+    if (signalLabels.length) lines.push(`升级信号：${signalLabels.join('；')}`);
+    if (riskSignals.length) lines.push(`风险信号：${riskSignals.join('；')}`);
+    if (providerLabels.length) lines.push(`涉及通道：${providerLabels.join('、')}`);
+    if (secretLabels.length) lines.push(`涉及密钥：${secretLabels.join('、')}`);
+    if (normalizeText(payload.latest_change_at)) lines.push(`最近时间：${formatTimestamp(payload.latest_change_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildPaymentConfigIncidentRecoveredAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'payment_config_incident_recovered') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const activeAdminEmails = Array.isArray(payload.active_admin_emails)
+        ? payload.active_admin_emails.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const activeActionLabels = Array.isArray(payload.active_action_labels)
+        ? payload.active_action_labels.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const activeRiskSignals = Array.isArray(payload.active_risk_signals)
+        ? payload.active_risk_signals.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const activeProviderLabels = Array.isArray(payload.active_provider_labels)
+        ? payload.active_provider_labels.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const activeSecretLabels = Array.isArray(payload.active_secret_labels)
+        ? payload.active_secret_labels.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const lines = [
+        `[支付配置事故恢复][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '支付配置事故已恢复'}`
+    ];
+
+    if (normalizeText(payload.recovery_summary)) lines.push(`恢复结论：${normalizeText(payload.recovery_summary)}`);
+    if (normalizeText(payload.incident_started_at)) lines.push(`上次升级：${formatTimestamp(payload.incident_started_at)}`);
+    if (normalizeText(payload.incident_recovered_at)) lines.push(`恢复时间：${formatTimestamp(payload.incident_recovered_at)}`);
+    if (Number.isFinite(Number(payload.incident_duration_minutes))) {
+        lines.push(`持续时长：${Math.max(0, Math.round(Number(payload.incident_duration_minutes || 0)))} 分钟`);
+    }
+    if (Number.isFinite(Number(payload.previous_incident_change_count))) {
+        lines.push(`上次事故规模：${Math.max(0, Math.round(Number(payload.previous_incident_change_count || 0)))} 次高风险改动`);
+    }
+    if (Number.isFinite(Number(payload.active_change_count))) {
+        lines.push(`当前剩余高风险改动：${Math.max(0, Math.round(Number(payload.active_change_count || 0)))} 次`);
+    }
+    if (activeAdminEmails.length) lines.push(`当前涉及管理员：${activeAdminEmails.join('、')}`);
+    if (activeActionLabels.length) lines.push(`当前动作：${activeActionLabels.join('；')}`);
+    if (activeRiskSignals.length) lines.push(`当前风险信号：${activeRiskSignals.join('；')}`);
+    if (activeProviderLabels.length) lines.push(`当前涉及通道：${activeProviderLabels.join('、')}`);
+    if (activeSecretLabels.length) lines.push(`当前涉及密钥：${activeSecretLabels.join('、')}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
     return lines.filter(Boolean).join('\n');
