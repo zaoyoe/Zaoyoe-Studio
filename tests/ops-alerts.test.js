@@ -357,6 +357,38 @@ test('buildExternalAlertText renders payment config changed details', () => {
     assert.match(text, /处理入口：后台设置 -> 支付通道配置 \/ Admin Audit Logs/);
 });
 
+test('buildExternalAlertText renders payment config recovery details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'payment_config_recovered',
+        severity: 'warning',
+        title: '支付配置风险已恢复（已切回真实支付）',
+        payload: {
+            recovery_summary: '当前活动通道已切回 爱发电',
+            previous_admin_email: 'admin@example.com',
+            recovery_admin_email: 'owner@example.com',
+            previous_action_label: '支付通道配置更新',
+            recovery_action_label: '支付通道配置更新',
+            current_active_provider: 'afdian',
+            current_active_provider_label: '爱发电',
+            current_enabled_provider_labels: ['爱发电', '虎皮椒'],
+            incident_started_at: '2026-03-25T10:00:00.000Z',
+            incident_recovered_at: '2026-03-25T10:18:00.000Z',
+            incident_duration_minutes: 18,
+            previous_risk_flags: ['当前活动通道已切换为模拟支付'],
+            entry_path: '后台设置 -> 支付通道配置 / Admin Audit Logs'
+        }
+    });
+
+    assert.match(text, /支付配置恢复/);
+    assert.match(text, /恢复结论：当前活动通道已切回 爱发电/);
+    assert.match(text, /上次操作人：admin@example.com/);
+    assert.match(text, /修复人：owner@example.com/);
+    assert.match(text, /当前生效通道：爱发电/);
+    assert.match(text, /当前启用通道：爱发电、虎皮椒/);
+    assert.match(text, /持续时长：18 分钟/);
+    assert.match(text, /处理入口：后台设置 -> 支付通道配置 \/ Admin Audit Logs/);
+});
+
 test('sendFeishuAlert treats non-zero webhook result codes as delivery failures', async () => {
     const result = await __testUtils.sendFeishuAlert({
         alert_type: 'payment_refund_ops',

@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { normalizeOpsAlertsConfig } = require('../api/_lib/ops-alerts');
 const {
     buildPaymentConfigChangedAlerts,
+    buildPaymentConfigRecoveredAlerts,
     normalizePaymentConfigChangeMonitorConfig,
     runPaymentConfigChangedSweep
 } = require('../api/_lib/payment-config-change-alerts');
@@ -95,6 +96,8 @@ function applyRange(rows, range) {
 function createSupabaseStub(state = {}) {
     const jobs = state.jobs || [];
     const auditRows = state.auditRows || [];
+    const adminRoles = state.adminRoles || [];
+    const systemNotifications = state.systemNotifications || [];
 
     return {
         from(table) {
@@ -122,6 +125,35 @@ function createSupabaseStub(state = {}) {
                     }));
 
                     inserted.forEach((row) => jobs.push({ ...row }));
+                    return {
+                        data: query.single ? inserted[0] : inserted,
+                        error: null
+                    };
+                }
+
+                if (table === 'admin_roles' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(adminRoles, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'system_notifications' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(systemNotifications, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'system_notifications' && query.mode === 'insert') {
+                    const payload = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    const inserted = payload.map((row, index) => ({
+                        id: row.id || `notification-${systemNotifications.length + index + 1}`,
+                        created_at: row.created_at || new Date().toISOString(),
+                        ...row
+                    }));
+
+                    inserted.forEach((row) => systemNotifications.push({ ...row }));
                     return {
                         data: query.single ? inserted[0] : inserted,
                         error: null
@@ -223,6 +255,18 @@ test('runPaymentConfigChangedSweep enqueues payment config alerts with stable de
 
     const first = await runPaymentConfigChangedSweep(supabase, {
         runtime,
+        stateJobs: [],
+        currentPaymentChannels: {
+            active_provider: 'hupijiao',
+            providers: {
+                mock: { enabled: false },
+                afdian: { enabled: true },
+                hupijiao: { enabled: true }
+            }
+        },
+        currentSecretStatus: {
+            hupijiao_secret_key: { configured: true, source: 'stored' }
+        },
         now: '2026-03-25T10:00:00.000Z'
     });
 
@@ -235,6 +279,18 @@ test('runPaymentConfigChangedSweep enqueues payment config alerts with stable de
 
     const second = await runPaymentConfigChangedSweep(supabase, {
         runtime,
+        stateJobs: [],
+        currentPaymentChannels: {
+            active_provider: 'hupijiao',
+            providers: {
+                mock: { enabled: false },
+                afdian: { enabled: true },
+                hupijiao: { enabled: true }
+            }
+        },
+        currentSecretStatus: {
+            hupijiao_secret_key: { configured: true, source: 'stored' }
+        },
         now: '2026-03-25T10:03:00.000Z'
     });
 
@@ -242,4 +298,175 @@ test('runPaymentConfigChangedSweep enqueues payment config alerts with stable de
     assert.equal(second.queued, 0);
     assert.equal(second.deduped, 1);
     assert.equal(state.jobs.length, 1);
+});
+
+test('buildPaymentConfigRecoveredAlerts emits recoveries when mock mode is rolled back and secrets are restored', () => {
+    const alerts = buildPaymentConfigRecoveredAlerts([
+        {
+            id: 'job-risk-mock',
+            alert_type: 'payment_config_changed',
+            created_at: '2026-03-25T09:20:00.000Z',
+            payload: {
+                action_type: 'admin.payment_channels.upsert',
+                admin_email: 'ops@example.com',
+                active_provider: 'mock',
+                active_provider_label: '模拟支付',
+                risk_flags: ['当前活动通道已切换为模拟支付']
+            }
+        },
+        {
+            id: 'job-risk-secret',
+            alert_type: 'payment_config_changed',
+            created_at: '2026-03-25T09:25:00.000Z',
+            payload: {
+                action_type: 'admin.payment_channels.secret.delete',
+                admin_email: 'ops@example.com',
+                secret_name: 'hupijiao_secret_key',
+                risk_flags: ['支付密钥 hupijiao_secret_key 已被删除']
+            }
+        }
+    ], [
+        {
+            id: 'audit-restore-mock',
+            action_type: 'admin.payment_channels.upsert',
+            admin_email: 'owner@example.com',
+            created_at: '2026-03-25T09:31:00.000Z',
+            details: {
+                active_provider: 'afdian',
+                updated_providers: ['afdian', 'hupijiao']
+            }
+        },
+        {
+            id: 'audit-restore-secret',
+            action_type: 'admin.payment_channels.upsert',
+            admin_email: 'owner@example.com',
+            created_at: '2026-03-25T09:34:00.000Z',
+            details: {
+                active_provider: 'afdian',
+                updated_providers: ['afdian', 'hupijiao'],
+                updated_secrets: ['hupijiao_secret_key']
+            }
+        }
+    ], {
+        active_provider: 'afdian',
+        providers: {
+            mock: { enabled: false },
+            afdian: { enabled: true },
+            hupijiao: { enabled: true }
+        }
+    }, {
+        hupijiao_secret_key: {
+            configured: true,
+            source: 'stored',
+            updatedAt: '2026-03-25T09:34:00.000Z'
+        }
+    }, normalizePaymentConfigChangeMonitorConfig(), {
+        now: '2026-03-25T09:40:00.000Z'
+    });
+
+    assert.equal(alerts.length, 2);
+    assert.equal(alerts[0].alertType, 'payment_config_recovered');
+    assert.match(alerts[0].content, /当前生效通道：爱发电/);
+    assert.equal(alerts[1].payload.restored_secret_name, 'hupijiao_secret_key');
+    assert.match(alerts[1].content, /当前密钥来源：后台密钥库/);
+});
+
+test('runPaymentConfigChangedSweep enqueues recovery notices and writes admin notifications once', async () => {
+    const state = {
+        jobs: [
+            {
+                id: 'job-risk-mock',
+                alert_type: 'payment_config_changed',
+                severity: 'critical',
+                created_at: '2026-03-25T09:20:00.000Z',
+                payload: {
+                    action_type: 'admin.payment_channels.upsert',
+                    admin_email: 'ops@example.com',
+                    active_provider: 'mock',
+                    active_provider_label: '模拟支付',
+                    risk_flags: ['当前活动通道已切换为模拟支付']
+                }
+            }
+        ],
+        auditRows: [
+            {
+                id: 'audit-risk-mock',
+                action_type: 'admin.payment_channels.upsert',
+                admin_id: 'admin-1',
+                admin_email: 'ops@example.com',
+                created_at: '2026-03-25T09:20:00.000Z',
+                details: {
+                    active_provider: 'mock',
+                    updated_providers: ['mock', 'afdian']
+                }
+            },
+            {
+                id: 'audit-restore-mock',
+                action_type: 'admin.payment_channels.upsert',
+                admin_id: 'admin-2',
+                admin_email: 'owner@example.com',
+                created_at: '2026-03-25T09:31:00.000Z',
+                details: {
+                    active_provider: 'afdian',
+                    updated_providers: ['afdian', 'hupijiao']
+                }
+            }
+        ],
+        adminRoles: [
+            { user_id: 'admin-user-1', role_name: 'admin', expires_at: null }
+        ],
+        systemNotifications: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime();
+
+    const first = await runPaymentConfigChangedSweep(supabase, {
+        runtime,
+        auditRows: state.auditRows,
+        stateJobs: state.jobs,
+        currentPaymentChannels: {
+            active_provider: 'afdian',
+            providers: {
+                mock: { enabled: false },
+                afdian: { enabled: true },
+                hupijiao: { enabled: true }
+            }
+        },
+        currentSecretStatus: {},
+        now: '2026-03-25T09:40:00.000Z'
+    });
+
+    assert.equal(first.change_count, 2);
+    assert.equal(first.queued, 2);
+    assert.equal(first.recovery_count, 1);
+    assert.equal(first.recovered_queued, 1);
+    assert.equal(first.admin_notifications_created, 1);
+    assert.equal(state.jobs.length, 4);
+    assert.equal(state.jobs[1].alert_type, 'payment_config_changed');
+    assert.equal(state.jobs[2].alert_type, 'payment_config_changed');
+    assert.equal(state.jobs[3].alert_type, 'payment_config_recovered');
+    assert.equal(state.systemNotifications.length, 1);
+    assert.match(state.systemNotifications[0].title, /支付配置风险已恢复/);
+
+    const second = await runPaymentConfigChangedSweep(supabase, {
+        runtime,
+        auditRows: state.auditRows,
+        stateJobs: state.jobs,
+        currentPaymentChannels: {
+            active_provider: 'afdian',
+            providers: {
+                mock: { enabled: false },
+                afdian: { enabled: true },
+                hupijiao: { enabled: true }
+            }
+        },
+        currentSecretStatus: {},
+        now: '2026-03-25T09:44:00.000Z'
+    });
+
+    assert.equal(second.recovery_count, 1);
+    assert.equal(second.recovered_queued, 0);
+    assert.equal(second.admin_notifications_created, 0);
+    assert.equal(state.jobs.length, 4);
+    assert.equal(state.systemNotifications.length, 1);
 });

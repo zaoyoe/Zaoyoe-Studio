@@ -2886,7 +2886,13 @@ async function sweepPaymentConfigChangeHealth() {
             env: process.env
         });
 
-        if (Number(result?.change_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+        if (
+            Number(result?.change_count || 0) > 0
+            || Number(result?.queued || 0) > 0
+            || Number(result?.recovery_count || 0) > 0
+            || Number(result?.recovered_queued || 0) > 0
+            || Number(result?.admin_notifications_created || 0) > 0
+        ) {
             console.log('[PaymentConfigChangeMonitor] Sweep complete:', JSON.stringify(result));
         }
     } catch (error) {

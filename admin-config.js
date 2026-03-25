@@ -2320,6 +2320,16 @@ async function sendOpsAlertPaymentConfigChangedSample() {
     }
 }
 
+async function sendOpsAlertPaymentConfigRecoveredSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_payment_config_recovered', '支付配置恢复示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send payment config recovered sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function deleteOpsAlertSecret(secretName) {
     const secretLabels = {
         telegram_bot_token: 'Telegram Bot Token',
@@ -4332,6 +4342,7 @@ window.sendOpsAlertShopOrderDeliveryIncidentSample = sendOpsAlertShopOrderDelive
 window.sendOpsAlertShopOrderDeliveryIncidentRecoveredSample = sendOpsAlertShopOrderDeliveryIncidentRecoveredSample;
 window.sendOpsAlertShopOrderDeliveryRecoveredSample = sendOpsAlertShopOrderDeliveryRecoveredSample;
 window.sendOpsAlertPaymentConfigChangedSample = sendOpsAlertPaymentConfigChangedSample;
+window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;

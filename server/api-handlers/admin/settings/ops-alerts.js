@@ -747,6 +747,38 @@ function buildPaymentConfigChangedSampleJob(user) {
     };
 }
 
+function buildPaymentConfigRecoveredSampleJob(user) {
+    return {
+        alert_type: 'payment_config_recovered',
+        severity: 'warning',
+        title: '支付配置风险已恢复（已切回真实支付）',
+        payload: {
+            target_id: 'payment_config:active_provider:mock',
+            config_alert_job_id: 'job-demo-payment-config-001',
+            recovery_audit_id: 'audit-demo-payment-config-restore-001',
+            risk_target_kind: 'active_provider_mock',
+            previous_action_type: 'admin.payment_channels.upsert',
+            previous_action_label: '支付通道配置更新',
+            previous_admin_email: sanitizeText(user?.email || user?.id) || 'admin@example.com',
+            recovery_action_type: 'admin.payment_channels.upsert',
+            recovery_action_label: '支付通道配置更新',
+            recovery_admin_email: sanitizeText(user?.email || user?.id) || 'admin@example.com',
+            incident_started_at: '2026-03-25T10:05:00.000Z',
+            incident_recovered_at: new Date().toISOString(),
+            incident_duration_minutes: 18,
+            recovery_summary: '当前活动通道已切回 爱发电',
+            previous_risk_flags: ['当前活动通道已切换为模拟支付'],
+            previous_active_provider: 'mock',
+            previous_active_provider_label: '模拟支付',
+            current_active_provider: 'afdian',
+            current_active_provider_label: '爱发电',
+            current_enabled_provider_labels: ['爱发电', '虎皮椒'],
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了支付配置恢复示例发送`,
+            entry_path: '后台设置 -> 支付通道配置 / Admin Audit Logs（示例）'
+        }
+    };
+}
+
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
     const { error } = await supabase
         .from('system_config')
@@ -799,6 +831,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_shop_order_delivery_incident_recovered'
                 || sanitizeText(body.action) === 'send_sample_shop_order_delivery_recovered'
                 || sanitizeText(body.action) === 'send_sample_payment_config_changed'
+                || sanitizeText(body.action) === 'send_sample_payment_config_recovered'
             ) {
                 const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase);
                 const runtime = {
@@ -841,10 +874,12 @@ module.exports = async (req, res) => {
                                                     ? buildShopOrderDeliveryIncidentSampleJob(user)
                                                 : normalizedAction === 'send_sample_shop_order_delivery_incident_recovered'
                                                     ? buildShopOrderDeliveryIncidentRecoveredSampleJob(user)
-                                                : normalizedAction === 'send_sample_shop_order_delivery_recovered'
-                                                    ? buildShopOrderDeliveryRecoveredSampleJob(user)
+                                            : normalizedAction === 'send_sample_shop_order_delivery_recovered'
+                                                ? buildShopOrderDeliveryRecoveredSampleJob(user)
                                             : normalizedAction === 'send_sample_payment_config_changed'
                                                 ? buildPaymentConfigChangedSampleJob(user)
+                                            : normalizedAction === 'send_sample_payment_config_recovered'
+                                                ? buildPaymentConfigRecoveredSampleJob(user)
                         : buildTelegramTestJob(user, runtime);
                 const result = await sendOpsAlertPreview(job, runtime);
 
@@ -889,6 +924,8 @@ module.exports = async (req, res) => {
                                                     ? 'admin.ops_alerts.shop_delivery_recovered_sample'
                                                 : normalizedAction === 'send_sample_payment_config_changed'
                                                     ? 'admin.ops_alerts.payment_config_changed_sample'
+                                                : normalizedAction === 'send_sample_payment_config_recovered'
+                                                    ? 'admin.ops_alerts.payment_config_recovered_sample'
                             : 'admin.ops_alerts.telegram_test',
                     details: {
                         ok: result?.ok === true,
@@ -945,6 +982,8 @@ module.exports = async (req, res) => {
                                                     ? `履约恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
                                                 : normalizedAction === 'send_sample_payment_config_changed'
                                                     ? `支付配置变更示例消息已发送到 ${channelLabels || '已启用通道'}`
+                                                : normalizedAction === 'send_sample_payment_config_recovered'
+                                                    ? `支付配置恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : `测试站外告警已发送到 ${channelLabels || '已启用通道'}`
                 });
             }

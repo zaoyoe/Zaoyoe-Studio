@@ -495,6 +495,10 @@ function buildExternalAlertText(job = {}) {
     if (refundOpsText) {
         return refundOpsText;
     }
+    const paymentConfigRecoveredText = buildPaymentConfigRecoveredAlertText(job);
+    if (paymentConfigRecoveredText) {
+        return paymentConfigRecoveredText;
+    }
     const paymentConfigChangedText = buildPaymentConfigChangedAlertText(job);
     if (paymentConfigChangedText) {
         return paymentConfigChangedText;
@@ -815,6 +819,50 @@ function buildPaymentConfigChangedAlertText(job = {}) {
     if (normalizeText(payload.secret_name)) lines.push(`删除密钥：${normalizeText(payload.secret_name)}`);
     if (riskFlags.length) lines.push(`风险提示：${riskFlags.join('；')}`);
     if (normalizeText(payload.created_at)) lines.push(`发生时间：${formatTimestamp(payload.created_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildPaymentConfigRecoveredAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'payment_config_recovered') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const previousRiskFlags = Array.isArray(payload.previous_risk_flags)
+        ? payload.previous_risk_flags.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const currentEnabledProviders = Array.isArray(payload.current_enabled_provider_labels)
+        ? payload.current_enabled_provider_labels.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const lines = [
+        `[支付配置恢复][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '支付配置风险已恢复'}`
+    ];
+
+    if (normalizeText(payload.recovery_summary)) lines.push(`恢复结论：${normalizeText(payload.recovery_summary)}`);
+    if (normalizeText(payload.previous_admin_email)) lines.push(`上次操作人：${normalizeText(payload.previous_admin_email)}`);
+    if (normalizeText(payload.recovery_admin_email)) lines.push(`修复人：${normalizeText(payload.recovery_admin_email)}`);
+    if (normalizeText(payload.previous_action_label)) lines.push(`上次风险动作：${normalizeText(payload.previous_action_label)}`);
+    if (normalizeText(payload.recovery_action_label)) lines.push(`修复动作：${normalizeText(payload.recovery_action_label)}`);
+    if (normalizeText(payload.current_active_provider)) {
+        lines.push(`当前生效通道：${normalizeText(payload.current_active_provider_label) || getProviderLabel(payload.current_active_provider)}`);
+    }
+    if (currentEnabledProviders.length) lines.push(`当前启用通道：${currentEnabledProviders.join('、')}`);
+    if (normalizeText(payload.restored_secret_label)) lines.push(`恢复密钥：${normalizeText(payload.restored_secret_label)}`);
+    if (normalizeText(payload.restored_secret_source)) {
+        const sourceLabel = normalizeText(payload.restored_secret_source) === 'stored'
+            ? '后台密钥库'
+            : (normalizeText(payload.restored_secret_source) === 'environment' ? '环境变量' : normalizeText(payload.restored_secret_source));
+        lines.push(`当前密钥来源：${sourceLabel}`);
+    }
+    if (normalizeText(payload.restored_secret_updated_at)) lines.push(`密钥更新时间：${formatTimestamp(payload.restored_secret_updated_at)}`);
+    if (normalizeText(payload.incident_started_at)) lines.push(`上次风险：${formatTimestamp(payload.incident_started_at)}`);
+    if (normalizeText(payload.incident_recovered_at)) lines.push(`恢复时间：${formatTimestamp(payload.incident_recovered_at)}`);
+    if (Number.isFinite(Number(payload.incident_duration_minutes))) {
+        lines.push(`持续时长：${Math.max(0, Math.round(Number(payload.incident_duration_minutes || 0)))} 分钟`);
+    }
+    if (previousRiskFlags.length) lines.push(`上次风险提示：${previousRiskFlags.join('；')}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
     return lines.filter(Boolean).join('\n');

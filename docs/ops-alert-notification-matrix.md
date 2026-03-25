@@ -67,6 +67,7 @@
 | `payment_pending_review_spike` | 待审核订单短时堆积 | `warning` | 飞书 + 站内 | 30 分钟 | 订单数、站点、通道 |
 | `payment_site_resolution_failed` | 回调无法可信解析站点 | `critical` | TG + 飞书 + 站内 | 10 分钟 | provider、订单号、host、最近错误 |
 | `payment_config_changed` | 支付配置或密钥被修改 | `critical` | TG + 飞书 + 站内 | 5 分钟 | 操作人、变更项、时间 |
+| `payment_config_recovered` | 支付配置风险已被撤销或密钥已补齐 | `warning` | 飞书 + 站内 | 每次风险 1 次 | 恢复结论、修复人、当前生效通道/密钥来源 |
 
 ### B. 商城 / 订单 / 库存
 
