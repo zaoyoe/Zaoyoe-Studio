@@ -8,7 +8,7 @@ VALUES (
         "price_per_verify": 10,
         "enabled": true,
         "verify_api_key": "ak_REPLACE_WITH_YOUR_API_KEY",
-        "verify_api_base_url": "https://iqless.icu"
+        "verify_api_base_url": "https://a8yx0rez5w.localto.net"
     }'::jsonb
 )
 ON CONFLICT (config_key) 

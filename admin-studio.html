@@ -1888,13 +1888,23 @@
                                >
                                 <div class="config-label">
                                     <span>验证 API Key</span>
-                                    <span class="config-hint">iqless.icu 用户 API 的 ak_ 密钥</span>
+                                    <span class="config-hint">上游 Google One 用户 API 的 ak_ 密钥</span>
                                 </div>
                                 <input type="password" id="cfgVerifyApiKey" class="config-input admin-studio-inline-style-attr-21"
                                     placeholder="ak_XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="new-password" readonly
                                     data-admin-focus-action="settings-verify-api-key-unlock"
                                     data-admin-blur-action="settings-verify-api-key-lock"
                                    
+                                    data-admin-change-action="settings-save-verify-config">
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>验证 API Base URL</span>
+                                    <span class="config-hint">上游域名更新时在这里改，留空则回退到服务端默认值</span>
+                                </div>
+                                <input type="url" id="cfgVerifyApiBase" class="config-input"
+                                    placeholder="https://a8yx0rez5w.localto.net"
+                                    inputmode="url"
                                     data-admin-change-action="settings-save-verify-config">
                             </div>
                             <div class="config-item-row">

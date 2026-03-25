@@ -196,7 +196,7 @@ INSERT INTO public.system_config (config_key, config_value, description) VALUES
     "price_per_verify": 10,
     "enabled": true,
     "verify_api_key": "",
-    "verify_api_base_url": "https://iqless.icu"
+    "verify_api_base_url": "https://a8yx0rez5w.localto.net"
 }'::jsonb, 'Google One 用户 API 配置')
 ON CONFLICT (config_key) DO NOTHING;
 

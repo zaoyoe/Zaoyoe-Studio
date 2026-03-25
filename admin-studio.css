@@ -22227,11 +22227,31 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     margin: 0 auto;
 }
 
+#settings-view-notifications .module-content {
+    display: block;
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px 24px 28px;
+}
+
+#settings-view-notifications .announcement-full-layout {
+    width: 100%;
+    max-width: none;
+    grid-template-columns: minmax(380px, 1.08fr) minmax(440px, 0.92fr);
+    align-items: start;
+}
+
 /* Left Preview Side */
 .announcement-preview-side {
     display: flex;
     flex-direction: column;
     align-self: stretch;
+}
+
+#settings-view-notifications .announcement-preview-side {
+    align-self: start;
+    min-width: 0;
 }
 
 .preview-side-header {
@@ -22262,12 +22282,22 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
 }
 
+#settings-view-notifications .announcement-preview-stage {
+    min-height: 640px;
+    align-items: flex-start;
+    padding: 40px 32px;
+}
+
 /* Preview Modal Override - fit within stage, no pop animation */
 .announcement-preview-modal {
     animation: none !important;
     position: relative !important;
     max-width: 100% !important;
     width: 100% !important;
+}
+
+#settings-view-notifications .announcement-preview-modal {
+    width: min(100%, 560px) !important;
 }
 
 /* Color Palette inside Preview */
@@ -22336,6 +22366,18 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
     min-width: 0;
     overflow: hidden;
+}
+
+#settings-view-notifications .announcement-editor-side {
+    min-width: 0;
+}
+
+#settings-view-notifications .announcement-type-selector {
+    flex-wrap: wrap;
+}
+
+#settings-view-notifications .editor-actions {
+    flex-wrap: wrap;
 }
 
 /* Fix textarea overflow */
@@ -22534,6 +22576,20 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
     .announcement-preview-stage {
         min-height: 240px;
+    }
+
+    #settings-view-notifications .module-content {
+        padding: 16px;
+    }
+
+    #settings-view-notifications .announcement-full-layout {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+
+    #settings-view-notifications .announcement-preview-stage {
+        min-height: 420px;
+        padding: 24px;
     }
 }
 

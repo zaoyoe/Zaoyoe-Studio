@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    window.VERIFY_SERVER_URL = 'https://zaoyoe-verify-server-production.up.railway.app';
+    window.VERIFY_SERVER_URL = window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app';
 
     function applyLoggedInPrerenderState() {
         try {
