@@ -304,6 +304,30 @@ function buildVerifyQuotaLowSampleJob(user) {
     };
 }
 
+function buildTicketSlaOverdueSampleJob(user) {
+    const createdAt = new Date(Date.now() - 195 * 60 * 1000).toISOString();
+    return {
+        alert_type: 'ticket_sla_overdue',
+        severity: 'warning',
+        title: '工单超时未处理（ticket-de）',
+        payload: {
+            target_id: 'ticket-demo-sla-001',
+            ticket_id: 'ticket-demo-sla-001',
+            order_id: 'shop-order-demo-001',
+            user_id: 'demo_ticket_user_001',
+            ticket_status: 'PENDING',
+            wait_minutes: 195,
+            wait_label: '3 小时 15 分钟',
+            responsible_label: '未分配',
+            reason: '卡密未到账，用户已重复反馈仍未处理。',
+            created_at: createdAt,
+            updated_at: createdAt,
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了工单超时示例发送`,
+            entry_path: '售后工单 -> 待处理 -> 工单详情（示例）'
+        }
+    };
+}
+
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
     const { error } = await supabase
         .from('system_config')
@@ -340,6 +364,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_refund_telegram'
                 || sanitizeText(body.action) === 'send_sample_gateway_degraded'
                 || sanitizeText(body.action) === 'send_sample_verify_quota_low'
+                || sanitizeText(body.action) === 'send_sample_ticket_sla_overdue'
             ) {
                 const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase);
                 const runtime = {
@@ -354,6 +379,8 @@ module.exports = async (req, res) => {
                         ? buildGatewayDegradedSampleJob(user)
                         : normalizedAction === 'send_sample_verify_quota_low'
                             ? buildVerifyQuotaLowSampleJob(user)
+                            : normalizedAction === 'send_sample_ticket_sla_overdue'
+                                ? buildTicketSlaOverdueSampleJob(user)
                         : buildTelegramTestJob(user, runtime);
                 const result = await sendOpsAlertPreview(job, runtime);
 
@@ -364,8 +391,10 @@ module.exports = async (req, res) => {
                         ? 'admin.ops_alerts.telegram_refund_sample'
                         : normalizedAction === 'send_sample_gateway_degraded'
                             ? 'admin.ops_alerts.gateway_degraded_sample'
-                            : normalizedAction === 'send_sample_verify_quota_low'
+                        : normalizedAction === 'send_sample_verify_quota_low'
                                 ? 'admin.ops_alerts.verify_quota_sample'
+                                : normalizedAction === 'send_sample_ticket_sla_overdue'
+                                    ? 'admin.ops_alerts.ticket_sla_sample'
                             : 'admin.ops_alerts.telegram_test',
                     details: {
                         ok: result?.ok === true,
@@ -390,6 +419,8 @@ module.exports = async (req, res) => {
                             ? `支付通道异常示例消息已发送到 ${channelLabels || '已启用通道'}`
                             : normalizedAction === 'send_sample_verify_quota_low'
                                 ? `验证额度告警示例消息已发送到 ${channelLabels || '已启用通道'}`
+                                : normalizedAction === 'send_sample_ticket_sla_overdue'
+                                    ? `工单超时示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : `测试站外告警已发送到 ${channelLabels || '已启用通道'}`
                 });
             }

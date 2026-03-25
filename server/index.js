@@ -60,6 +60,10 @@ const {
     normalizeVerifyQuotaMonitorConfig,
     runVerifyQuotaLowSweep
 } = require('../api/_lib/verify-quota-alerts');
+const {
+    normalizeTicketSlaMonitorConfig,
+    runTicketSlaOverdueSweep
+} = require('../api/_lib/ticket-sla-alerts');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -83,6 +87,8 @@ let paymentGatewaySweepTimer = null;
 let paymentGatewaySweepRunning = false;
 let verifyQuotaSweepTimer = null;
 let verifyQuotaSweepRunning = false;
+let ticketSlaSweepTimer = null;
+let ticketSlaSweepRunning = false;
 let cachedShopDeliveryStrategy = null;
 let cachedShopDeliveryStrategyAt = 0;
 const afdianProvider = getPaymentProviderAdapter('afdian');
@@ -2908,6 +2914,53 @@ function startVerifyQuotaSweep() {
     });
 }
 
+async function sweepTicketSlaHealth() {
+    if (ticketSlaSweepRunning) return;
+    ticketSlaSweepRunning = true;
+
+    try {
+        const result = await runTicketSlaOverdueSweep(supabase, {
+            env: process.env
+        });
+
+        if (Number(result?.overdue_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+            console.log('[TicketSlaMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[TicketSlaMonitor] Sweep failed:', error);
+    } finally {
+        ticketSlaSweepRunning = false;
+    }
+}
+
+async function queueNextTicketSlaSweep(delayMs = null) {
+    if (ticketSlaSweepTimer) return;
+
+    const monitorConfig = normalizeTicketSlaMonitorConfig({}, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
+
+    ticketSlaSweepTimer = setTimeout(() => {
+        ticketSlaSweepTimer = null;
+        sweepTicketSlaHealth()
+            .catch((error) => {
+                console.error('[TicketSlaMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextTicketSlaSweep().catch((error) => {
+                    console.error('[TicketSlaMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startTicketSlaSweep() {
+    if (ticketSlaSweepTimer) return;
+
+    queueNextTicketSlaSweep(5200).catch((error) => {
+        console.error('[TicketSlaMonitor] Failed to start sweep:', error);
+    });
+}
+
 async function hasLoggedJobResult(userId, jobId, site = 'cn') {
     if (!userId || !jobId) return false;
 
@@ -4103,6 +4156,7 @@ function startServer(port = PORT) {
         startOpsAlertSweep();
         startPaymentGatewaySweep();
         startVerifyQuotaSweep();
+        startTicketSlaSweep();
     });
 }
 

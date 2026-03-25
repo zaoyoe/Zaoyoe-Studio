@@ -1718,7 +1718,7 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         'admin-studio.html should load the latest admin studio stylesheet version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-studio.js?v=20260324_ADMIN_RUNTIME_STYLE_HELPERS_3'),
+        adminStudioHtml.includes('admin-studio.js?v=20260325_ADMIN_RUNTIME_STYLE_HELPERS_4'),
         true,
         'admin-studio.html should load the latest admin studio runtime version'
     );
@@ -2051,6 +2051,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'data-admin-action="settings-send-ops-alert-refund-sample"',
         'data-admin-action="settings-send-ops-alert-gateway-sample"',
         'data-admin-action="settings-send-ops-alert-verify-quota-sample"',
+        'data-admin-action="settings-send-ops-alert-ticket-sla-sample"',
         'data-admin-action="settings-delete-ops-alert-secret"',
         'id="opsAlertTelegramChatIds"',
         'id="opsAlertTelegramBotToken"',
@@ -2069,6 +2070,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         "case 'settings-send-ops-alert-refund-sample':",
         "case 'settings-send-ops-alert-gateway-sample':",
         "case 'settings-send-ops-alert-verify-quota-sample':",
+        "case 'settings-send-ops-alert-ticket-sla-sample':",
         "case 'settings-delete-ops-alert-secret':"
     ];
 
@@ -4297,7 +4299,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         'admin-studio.html should reference the updated admin stylesheet version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-config.js?v=20260324_ADMIN_CONFIG_RUNTIME_STYLE_1'),
+        adminStudioHtml.includes('admin-config.js?v=20260325_ADMIN_CONFIG_OPS_ALERT_SAMPLES_1'),
         true,
         'admin-studio.html should reference the updated admin config runtime version'
     );

@@ -442,6 +442,37 @@ test('buildExternalAlertText renders verify quota low details', () => {
     assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 当前额度 \/ 队列状态/);
 });
 
+test('buildExternalAlertText renders ticket SLA overdue details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'ticket_sla_overdue',
+        severity: 'warning',
+        title: '工单超时未处理（ticket-de）',
+        payload: {
+            ticket_id: 'ticket-demo-sla-001',
+            order_id: 'shop-order-demo-001',
+            user_id: 'demo_ticket_user_001',
+            ticket_status: 'PENDING',
+            wait_minutes: 195,
+            wait_label: '3 小时 15 分钟',
+            responsible_label: '未分配',
+            reason: '卡密未到账，用户已重复反馈仍未处理。',
+            created_at: '2026-03-25T10:00:00.000Z',
+            updated_at: '2026-03-25T10:10:00.000Z',
+            entry_path: '售后工单 -> 待处理 -> 工单详情'
+        }
+    });
+
+    assert.match(text, /工单 SLA 告警/);
+    assert.match(text, /工单号：ticket-demo-sla-001/);
+    assert.match(text, /订单号：shop-order-demo-001/);
+    assert.match(text, /用户ID：demo_ticket_user_001/);
+    assert.match(text, /等待时长：3 小时 15 分钟/);
+    assert.match(text, /责任人：未分配/);
+    assert.match(text, /当前状态：待处理/);
+    assert.match(text, /问题描述：卡密未到账，用户已重复反馈仍未处理。/);
+    assert.match(text, /处理入口：售后工单 -> 待处理 -> 工单详情/);
+});
+
 test('ops alerts exports sendFeishuAlert for admin preview actions', () => {
     assert.equal(typeof sendFeishuAlert, 'function');
 });

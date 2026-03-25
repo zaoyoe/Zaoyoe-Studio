@@ -495,6 +495,10 @@ function buildExternalAlertText(job = {}) {
     if (verifyQuotaText) {
         return verifyQuotaText;
     }
+    const ticketSlaText = buildTicketSlaOverdueAlertText(job);
+    if (ticketSlaText) {
+        return ticketSlaText;
+    }
 
     const lines = [
         `[站外告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '系统通知'}`,
@@ -700,6 +704,42 @@ function buildVerifyQuotaLowAlertText(job = {}) {
     }
     if (normalizeText(payload.queue_error)) lines.push(`队列查询：${normalizeText(payload.queue_error)}`);
     if (normalizeText(payload.checked_at)) lines.push(`检查时间：${formatTimestamp(payload.checked_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function getTicketStatusLabel(value) {
+    const normalized = normalizeText(value).toLowerCase();
+    if (!normalized) return '';
+    const labelMap = {
+        pending: '待处理',
+        open: '待处理',
+        resolved: '已解决',
+        rejected: '已拒绝'
+    };
+    return labelMap[normalized] || normalized;
+}
+
+function buildTicketSlaOverdueAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'ticket_sla_overdue') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const lines = [
+        `[工单 SLA 告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '工单超时未处理'}`
+    ];
+
+    if (normalizeText(payload.ticket_id)) lines.push(`工单号：${normalizeText(payload.ticket_id)}`);
+    if (normalizeText(payload.order_id)) lines.push(`订单号：${normalizeText(payload.order_id)}`);
+    if (normalizeText(payload.user_id)) lines.push(`用户ID：${normalizeText(payload.user_id)}`);
+    if (Number.isFinite(Number(payload.wait_minutes))) lines.push(`等待时长：${normalizeText(payload.wait_label) || `${Math.max(0, Math.round(Number(payload.wait_minutes || 0)))} 分钟`}`);
+    if (normalizeText(payload.responsible_label)) lines.push(`责任人：${normalizeText(payload.responsible_label)}`);
+    if (normalizeText(payload.ticket_status)) lines.push(`当前状态：${getTicketStatusLabel(payload.ticket_status)}`);
+    if (normalizeText(payload.reason)) lines.push(`问题描述：${normalizeText(payload.reason)}`);
+    if (normalizeText(payload.created_at)) lines.push(`创建时间：${formatTimestamp(payload.created_at)}`);
+    if (normalizeText(payload.updated_at)) lines.push(`最近更新时间：${formatTimestamp(payload.updated_at)}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
     return lines.filter(Boolean).join('\n');

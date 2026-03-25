@@ -2160,6 +2160,16 @@ async function sendOpsAlertVerifyQuotaSample() {
     }
 }
 
+async function sendOpsAlertTicketSlaSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_ticket_sla_overdue', '工单超时示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send ticket SLA sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function deleteOpsAlertSecret(secretName) {
     const secretLabels = {
         telegram_bot_token: 'Telegram Bot Token',
@@ -4156,6 +4166,7 @@ window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;
 window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;
 window.sendOpsAlertGatewaySample = sendOpsAlertGatewaySample;
 window.sendOpsAlertVerifyQuotaSample = sendOpsAlertVerifyQuotaSample;
+window.sendOpsAlertTicketSlaSample = sendOpsAlertTicketSlaSample;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;
