@@ -2996,6 +2996,126 @@ async function sendOpsAlertPaymentConfigRecoveredSample() {
     }
 }
 
+function waitForOpsAlertWorkspacePaint() {
+    return new Promise((resolve) => {
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(resolve);
+        });
+    });
+}
+
+async function settleOpsAlertWorkspace(delayMs = 60) {
+    await waitForOpsAlertWorkspacePaint();
+    if (delayMs > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+    }
+}
+
+function scrollToOpsAlertWorkspaceTarget(targetId) {
+    const target = document.getElementById(String(targetId || '').trim());
+    if (target && typeof target.scrollIntoView === 'function') {
+        window.setTimeout(() => {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 40);
+    }
+}
+
+function getOpsAlertWorkspaceSuccessLabel(workspaceKey) {
+    const normalizedKey = String(workspaceKey || '').trim().toLowerCase();
+    const labels = {
+        'payments-overview': '支付总览',
+        'payments-ops': '支付异常运维',
+        'verify-monitor': '验证服务运维面板',
+        'admin-audit-monitor': '管理员访问审计面板',
+        'tickets-pending': '待处理工单',
+        'tickets-resolved': '已处理工单',
+        'shop-inventory': '库存 / 补货',
+        'shop-fulfillment': '履约异常订单'
+    };
+    return labels[normalizedKey] || '告警处理入口';
+}
+
+async function openOpsAlertWorkspace(workspaceKey) {
+    const normalizedKey = String(workspaceKey || '').trim().toLowerCase();
+    if (!normalizedKey) {
+        showToast('缺少告警处理入口标识', 'warning');
+        return false;
+    }
+
+    try {
+        if (normalizedKey === 'verify-monitor') {
+            window.switchModule?.('settings');
+            await settleOpsAlertWorkspace();
+            window.switchSettingsView?.('security');
+            await settleOpsAlertWorkspace();
+            await window.refreshVerifyMonitor?.(true);
+            scrollToOpsAlertWorkspaceTarget('verifyMonitorPanel');
+        } else if (normalizedKey === 'admin-audit-monitor') {
+            window.switchModule?.('settings');
+            await settleOpsAlertWorkspace();
+            window.switchSettingsView?.('security');
+            await settleOpsAlertWorkspace();
+            await window.refreshAdminAuditMonitor?.(true);
+            scrollToOpsAlertWorkspaceTarget('adminAuditMonitorSection');
+        } else if (normalizedKey === 'payments-overview') {
+            window.switchModule?.('payments');
+            await settleOpsAlertWorkspace();
+            await window.AdminPayments?.init?.();
+            window.AdminPayments?.switchTab?.('overview', { reload: false });
+            await settleOpsAlertWorkspace();
+            scrollToOpsAlertWorkspaceTarget('paymentsProviderStats');
+        } else if (normalizedKey === 'payments-ops') {
+            window.switchModule?.('payments');
+            await settleOpsAlertWorkspace();
+            await window.AdminPayments?.init?.();
+            await window.AdminPayments?.focusExceptionTopic?.('all');
+        } else if (normalizedKey === 'tickets-pending' || normalizedKey === 'tickets-resolved') {
+            const nextStatus = normalizedKey === 'tickets-pending' ? 'pending' : 'resolved';
+            window.switchModule?.('tickets');
+            await settleOpsAlertWorkspace();
+            await window.AdminTickets?.init?.();
+            const searchInput = document.getElementById('ticketSearchInput');
+            if (searchInput) searchInput.value = '';
+            if (window.AdminTickets) {
+                window.AdminTickets.searchQuery = '';
+            }
+            const filterButton = document.querySelector(`[data-admin-action="tickets-filter"][data-ticket-status="${nextStatus}"]`);
+            window.AdminTickets?.filter?.(nextStatus, filterButton);
+            await settleOpsAlertWorkspace();
+            scrollToOpsAlertWorkspaceTarget('module-tickets');
+        } else if (normalizedKey === 'shop-inventory') {
+            window.switchModule?.('shop');
+            await settleOpsAlertWorkspace();
+            await window.ShopAdmin?.init?.();
+            window.ShopAdmin?.switchTab?.('inventory');
+            await settleOpsAlertWorkspace();
+            scrollToOpsAlertWorkspaceTarget('shop-view-inventory');
+        } else if (normalizedKey === 'shop-fulfillment') {
+            window.switchModule?.('shop');
+            await settleOpsAlertWorkspace();
+            await window.ShopAdmin?.init?.();
+            window.ShopAdmin?.switchTab?.('fulfillment');
+            await settleOpsAlertWorkspace();
+            if (window.ShopAdmin) {
+                window.ShopAdmin.deliveryTaskStatusFilter = 'dead_letter';
+                const taskFilter = document.getElementById('deliveryTaskStatusFilter');
+                if (taskFilter) taskFilter.value = 'dead_letter';
+                await window.ShopAdmin.loadDeliveryTasks?.(1);
+            }
+            scrollToOpsAlertWorkspaceTarget('deliveryDeadLetterSummary');
+        } else {
+            throw new Error('未识别的告警处理入口');
+        }
+
+        showToast(`已打开${getOpsAlertWorkspaceSuccessLabel(normalizedKey)}`, 'success');
+        return true;
+    } catch (error) {
+        console.error('[Config] Open ops alert workspace failed:', error);
+        showToast('打开失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function deleteOpsAlertSecret(secretName) {
     const secretLabels = {
         telegram_bot_token: 'Telegram Bot Token',
@@ -5251,6 +5371,7 @@ window.sendOpsAlertShopOrderDeliveryIncidentRecoveredSample = sendOpsAlertShopOr
 window.sendOpsAlertShopOrderDeliveryRecoveredSample = sendOpsAlertShopOrderDeliveryRecoveredSample;
 window.sendOpsAlertPaymentConfigChangedSample = sendOpsAlertPaymentConfigChangedSample;
 window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;
+window.openOpsAlertWorkspace = openOpsAlertWorkspace;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.loadVerifyMonitor = loadVerifyMonitor;
 window.refreshVerifyMonitor = refreshVerifyMonitor;

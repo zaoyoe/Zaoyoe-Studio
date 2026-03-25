@@ -351,13 +351,20 @@ function buildOpsAlertDedupeKey({ alertType = '', title = '', content = '', payl
 
 async function hasRecentOpsAlertJob(supabase, {
     dedupeKey,
-    dedupeWindowMinutes = DEFAULT_OPS_ALERTS_CONFIG.dedupe_window_minutes
+    dedupeWindowMinutes = DEFAULT_OPS_ALERTS_CONFIG.dedupe_window_minutes,
+    now = null
 }) {
     if (!supabase?.from || !normalizeText(dedupeKey)) {
         return false;
     }
 
-    const sinceIso = new Date(Date.now() - Math.max(1, dedupeWindowMinutes) * 60 * 1000).toISOString();
+    const referenceNow = now instanceof Date
+        ? now
+        : new Date(now || Date.now());
+    const referenceTimestamp = Number.isFinite(referenceNow.getTime())
+        ? referenceNow.getTime()
+        : Date.now();
+    const sinceIso = new Date(referenceTimestamp - Math.max(1, dedupeWindowMinutes) * 60 * 1000).toISOString();
     const { data, error } = await supabase
         .from('ops_alert_jobs')
         .select('id, status, created_at')
@@ -397,6 +404,10 @@ async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
         return { queued: false, reason: 'no_active_channels' };
     }
 
+    const explicitCreatedAt = normalizeText(input.createdAt || input.created_at);
+    const dedupeReferenceDate = options.now instanceof Date
+        ? options.now
+        : new Date(options.now || explicitCreatedAt || Date.now());
     const dedupeWindowMinutes = normalizeNumber(
         input.dedupeWindowMinutes,
         runtime.config?.dedupe_window_minutes || DEFAULT_OPS_ALERTS_CONFIG.dedupe_window_minutes,
@@ -411,7 +422,8 @@ async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
     });
     const exists = await hasRecentOpsAlertJob(supabase, {
         dedupeKey,
-        dedupeWindowMinutes
+        dedupeWindowMinutes,
+        now: dedupeReferenceDate
     });
 
     if (exists) {
@@ -422,7 +434,6 @@ async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
         };
     }
 
-    const explicitCreatedAt = normalizeText(input.createdAt || input.created_at);
     const nowIso = explicitCreatedAt || new Date().toISOString();
     const row = {
         alert_type: alertType,

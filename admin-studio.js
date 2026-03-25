@@ -389,6 +389,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-payment-config-recovered-sample':
                 window.sendOpsAlertPaymentConfigRecoveredSample?.();
                 break;
+            case 'settings-open-ops-alert-workspace':
+                window.openOpsAlertWorkspace?.(actionEl.dataset.workspaceTarget);
+                break;
             case 'settings-delete-ops-alert-secret':
                 window.deleteOpsAlertSecret?.(actionEl.dataset.secretName);
                 break;

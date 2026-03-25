@@ -20039,6 +20039,69 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     text-align: center;
 }
 
+.ops-alert-workspace-panel {
+    margin-top: 6px;
+    padding: 20px;
+    border-radius: 18px;
+    background: rgba(10, 19, 36, 0.52);
+    border: 1px solid rgba(107, 158, 206, 0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.ops-alert-workspace-panel__head h4 {
+    margin: 0 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1rem;
+    color: var(--text-main);
+}
+
+.ops-alert-workspace-panel__head p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    line-height: 1.6;
+}
+
+.ops-alert-workspace-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+}
+
+.ops-alert-workspace-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(107, 158, 206, 0.16);
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+.ops-alert-workspace-card__title {
+    font-size: 0.96rem;
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+.ops-alert-workspace-card__desc {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+    line-height: 1.6;
+}
+
+.ops-alert-workspace-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
 .admin-audit-monitor-item {
     padding: 14px;
     border-radius: 14px;

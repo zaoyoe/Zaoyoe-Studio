@@ -1134,6 +1134,68 @@
                                         <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-recovered-sample">
                                             <i class="fas fa-shield-check"></i> 发送支付配置恢复示例消息
                                         </button>
+                                    </div>
+
+                                    <div class="ops-alert-workspace-panel" id="opsAlertWorkspacePanel">
+                                        <div class="ops-alert-workspace-panel__head">
+                                            <div>
+                                                <h4><i class="fas fa-compass"></i> 告警处理入口</h4>
+                                                <p>一键跳到真实处理页，并自动切到对应模块、子页和常用筛选，避免只看到路径却找不到入口。</p>
+                                            </div>
+                                        </div>
+                                        <div class="ops-alert-workspace-grid" id="opsAlertWorkspaceGrid">
+                                            <article class="ops-alert-workspace-card">
+                                                <div class="ops-alert-workspace-card__title">支付与退款</div>
+                                                <p class="ops-alert-workspace-card__desc">支付通道异常、退款售后和站外告警队列都从这里进入。</p>
+                                                <div class="ops-alert-workspace-card__actions">
+                                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="payments-overview">
+                                                        <i class="fas fa-credit-card"></i> 支付总览
+                                                    </button>
+                                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="payments-ops">
+                                                        <i class="fas fa-shield-heart"></i> 异常运维
+                                                    </button>
+                                                </div>
+                                            </article>
+                                            <article class="ops-alert-workspace-card">
+                                                <div class="ops-alert-workspace-card__title">验证与审计</div>
+                                                <p class="ops-alert-workspace-card__desc">验证额度、接口状态、队列堆积，以及管理员异常登录和支付配置变更都在这里排查。</p>
+                                                <div class="ops-alert-workspace-card__actions">
+                                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="verify-monitor">
+                                                        <i class="fas fa-wave-square"></i> 验证面板
+                                                    </button>
+                                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="admin-audit-monitor">
+                                                        <i class="fas fa-user-shield"></i> 审计面板
+                                                    </button>
+                                                </div>
+                                            </article>
+                                            <article class="ops-alert-workspace-card">
+                                                <div class="ops-alert-workspace-card__title">工单与库存</div>
+                                                <p class="ops-alert-workspace-card__desc">适合处理工单超时、工单恢复、商品库存预警与补货动作。</p>
+                                                <div class="ops-alert-workspace-card__actions">
+                                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="tickets-pending">
+                                                        <i class="fas fa-ticket-alt"></i> 待处理工单
+                                                    </button>
+                                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="tickets-resolved">
+                                                        <i class="fas fa-ticket-simple"></i> 已处理工单
+                                                    </button>
+                                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="shop-inventory">
+                                                        <i class="fas fa-box-open"></i> 库存 / 补货
+                                                    </button>
+                                                </div>
+                                            </article>
+                                            <article class="ops-alert-workspace-card">
+                                                <div class="ops-alert-workspace-card__title">履约任务</div>
+                                                <p class="ops-alert-workspace-card__desc">适合处理履约失败、履约事故升级，以及死信与重试相关问题。</p>
+                                                <div class="ops-alert-workspace-card__actions">
+                                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="shop-fulfillment">
+                                                        <i class="fas fa-truck-ramp-box"></i> 异常订单 / 死信
+                                                    </button>
+                                                </div>
+                                            </article>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row payment-channel-save-row">
                                         <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="settings-delete-ops-alert-secret" data-secret-name="telegram_bot_token">
                                             删除 Telegram 密钥
                                         </button>
@@ -1299,7 +1361,7 @@
                             </div>
                         </div>
 
-                        <div class="settings-section admin-audit-monitor-section">
+                        <div class="settings-section admin-audit-monitor-section" id="adminAuditMonitorSection">
                             <div class="admin-audit-monitor-head">
                                 <div class="admin-audit-monitor-title">
                                     <h3><i class="fas fa-user-shield"></i> 管理员访问 / Admin Audit Logs</h3>
@@ -1864,7 +1926,7 @@
                                     </button>
                                 </div>
                             </div>
-                            <div class="verify-monitor-panel">
+                            <div class="verify-monitor-panel" id="verifyMonitorPanel">
                                 <div class="verify-monitor-panel__header">
                                     <div class="verify-monitor-panel__intro">
                                         <h4><i class="fas fa-wave-square"></i> 验证服务运维面板</h4>
