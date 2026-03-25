@@ -8,6 +8,7 @@ let systemConfigCache = {};
 let paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
 let paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
 let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
+let verifyMonitorState = getDefaultVerifyMonitorState();
 let paymentChannelAccordionState = {
     mock: false,
     afdian: false,
@@ -20,6 +21,26 @@ const ADMIN_CONFIG_VERIFY_QUOTA_TONE_CLASSES = [
     'verify-quota-badge--success',
     'verify-quota-badge--warning',
     'verify-quota-badge--danger'
+];
+const VERIFY_MONITOR_ACTIVE_STATUSES = new Set(['queued', 'running', 'processing', 'pending']);
+const VERIFY_MONITOR_STATUS_META = Object.freeze({
+    idle: { label: '待检测', tone: 'neutral' },
+    queued: { label: '排队中', tone: 'neutral' },
+    running: { label: '运行中', tone: 'neutral' },
+    processing: { label: '处理中', tone: 'neutral' },
+    pending: { label: '待处理', tone: 'warning' },
+    success: { label: '成功', tone: 'success' },
+    failed: { label: '失败', tone: 'danger' },
+    error: { label: '异常', tone: 'danger' },
+    cancelled: { label: '已取消', tone: 'warning' },
+    timeout: { label: '超时', tone: 'danger' },
+    unknown: { label: '未知', tone: 'warning' }
+});
+const VERIFY_MONITOR_CARD_TONE_CLASSES = [
+    'verify-monitor-card--neutral',
+    'verify-monitor-card--success',
+    'verify-monitor-card--warning',
+    'verify-monitor-card--danger'
 ];
 const ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP = Object.freeze({
     '#ffffff': 'color-swatch--white',
@@ -84,6 +105,316 @@ function renderVerifyQuotaState(quotaEl, tone, iconClass, message, options = {})
     quotaEl.innerHTML = `<i class="${iconClass} verify-quota-badge__icon" aria-hidden="true"></i> <${textTag} class="verify-quota-badge__text">${safeMessage}</${textTag}>`;
 }
 
+function normalizeVerifyMonitorStatus(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized || 'idle';
+}
+
+function getVerifyMonitorStatusMeta(status) {
+    const normalized = normalizeVerifyMonitorStatus(status);
+    return VERIFY_MONITOR_STATUS_META[normalized] || VERIFY_MONITOR_STATUS_META.unknown;
+}
+
+function formatVerifyMonitorDateTime(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+}
+
+function formatVerifyMonitorMinutes(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num) || num < 0) return '—';
+    if (num < 60) return `${Math.round(num)} 分钟`;
+    const hours = Math.floor(num / 60);
+    const minutes = Math.round(num % 60);
+    return minutes > 0 ? `${hours} 小时 ${minutes} 分钟` : `${hours} 小时`;
+}
+
+function formatVerifyMonitorInteger(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num.toLocaleString('zh-CN') : '—';
+}
+
+function formatVerifyMonitorDecimal(value, digits = 1) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '—';
+    return num.toLocaleString('zh-CN', {
+        minimumFractionDigits: Number.isInteger(num) ? 0 : digits,
+        maximumFractionDigits: digits
+    });
+}
+
+function setVerifyMonitorCardTone(card, tone = 'neutral') {
+    if (!card) return;
+    VERIFY_MONITOR_CARD_TONE_CLASSES.forEach((className) => card.classList.remove(className));
+    card.classList.add(`verify-monitor-card--${tone}`);
+}
+
+function updateVerifyMonitorOverviewCard(panelId, valueId, metaId, tone, valueText, metaText) {
+    const panel = document.getElementById(panelId);
+    const valueEl = document.getElementById(valueId);
+    const metaEl = document.getElementById(metaId);
+    setVerifyMonitorCardTone(panel, tone);
+    if (valueEl) valueEl.textContent = valueText;
+    if (metaEl) metaEl.textContent = metaText;
+}
+
+function renderVerifyMonitorEmptyState(target, message) {
+    if (!target) return;
+    target.innerHTML = `<div class="verify-monitor-empty">${escapeConfigHtml(message)}</div>`;
+}
+
+function getVerifySettingsSnapshot() {
+    const config = systemConfigCache['verify_settings'] || {};
+    const apiKeyInput = document.getElementById('cfgVerifyApiKey');
+    const hasKey = Boolean(String(config.verify_api_key || '').trim())
+        || String(apiKeyInput?.dataset?.hasKey || '').toLowerCase() === 'true';
+
+    return {
+        enabled: config.enabled !== false,
+        hasKey,
+        pricePerVerify: parseInt(config.price_per_verify, 10) || 10
+    };
+}
+
+function renderVerifyMonitorHeaderTimestamp() {
+    const target = document.getElementById('verifyMonitorLastRefresh');
+    if (!target) return;
+
+    if (verifyMonitorState.recent?.status === 'loading'
+        || verifyMonitorState.queue?.status === 'loading'
+        || verifyMonitorState.quota?.status === 'loading') {
+        target.textContent = '正在刷新...';
+        return;
+    }
+
+    const candidates = [
+        verifyMonitorState.recent?.fetched_at,
+        verifyMonitorState.queue?.checked_at,
+        verifyMonitorState.quota?.checked_at
+    ].filter(Boolean);
+    const latest = candidates[0];
+    target.textContent = latest
+        ? `上次刷新 ${formatVerifyMonitorDateTime(latest)}`
+        : '等待首次刷新';
+}
+
+function renderVerifyMonitorOverview() {
+    const quotaState = verifyMonitorState.quota || getDefaultVerifyMonitorState().quota;
+    const queueState = verifyMonitorState.queue || getDefaultVerifyMonitorState().queue;
+    const recentState = verifyMonitorState.recent || getDefaultVerifyMonitorState().recent;
+    const verifyConfig = getVerifySettingsSnapshot();
+
+    if (quotaState.status === 'ready') {
+        const balance = Number(quotaState.balance || 0);
+        const tone = balance > 10 ? 'success' : balance > 0 ? 'warning' : 'danger';
+        updateVerifyMonitorOverviewCard(
+            'verifyMonitorQuotaPanel',
+            'verifyMonitorQuotaValue',
+            'verifyMonitorQuotaMeta',
+            tone,
+            `${formatVerifyMonitorDecimal(balance)} 点`,
+            `API Key：${quotaState.key_name || '未命名'} · 已用 ${formatVerifyMonitorInteger(quotaState.total_used)} 次 · 单次成本 ${formatVerifyMonitorDecimal(quotaState.cost_per_job)}`
+        );
+    } else if (quotaState.status === 'loading') {
+        updateVerifyMonitorOverviewCard(
+            'verifyMonitorQuotaPanel',
+            'verifyMonitorQuotaValue',
+            'verifyMonitorQuotaMeta',
+            'neutral',
+            '查询中...',
+            '正在读取 API 余额与单次成本。'
+        );
+    } else if (quotaState.status === 'error') {
+        updateVerifyMonitorOverviewCard(
+            'verifyMonitorQuotaPanel',
+            'verifyMonitorQuotaValue',
+            'verifyMonitorQuotaMeta',
+            'danger',
+            '查询失败',
+            quotaState.message || '额度接口暂时不可用。'
+        );
+    } else {
+        updateVerifyMonitorOverviewCard(
+            'verifyMonitorQuotaPanel',
+            'verifyMonitorQuotaValue',
+            'verifyMonitorQuotaMeta',
+            'neutral',
+            '等待检测',
+            '保存配置后会自动读取当前额度。'
+        );
+    }
+
+    let serviceTone = 'neutral';
+    let serviceValue = '待检测';
+    let serviceMeta = '会综合启用状态、API Key 配置和最近一次接口探测结果。';
+    if (!verifyConfig.enabled) {
+        serviceTone = 'warning';
+        serviceValue = '已关闭';
+        serviceMeta = '前台验证模块已关闭，用户当前无法发起新的验证请求。';
+    } else if (!verifyConfig.hasKey) {
+        serviceTone = 'danger';
+        serviceValue = '未配置 API Key';
+        serviceMeta = '请先填写 ak_ 密钥，否则额度查询和实际验证都会失败。';
+    } else if (quotaState.status === 'error' || queueState.status === 'error') {
+        serviceTone = 'danger';
+        serviceValue = '接口异常';
+        serviceMeta = quotaState.status === 'error'
+            ? (quotaState.message || '额度接口探测失败')
+            : (queueState.message || '队列接口探测失败');
+    } else if (quotaState.status === 'ready' || queueState.status === 'ready') {
+        serviceTone = 'success';
+        serviceValue = '运行正常';
+        serviceMeta = `验证服务已启用 · 已配置 API Key · 每次验证 ${formatVerifyMonitorInteger(verifyConfig.pricePerVerify)} 积分`;
+    } else if (quotaState.status === 'loading' || queueState.status === 'loading') {
+        serviceTone = 'neutral';
+        serviceValue = '检测中...';
+        serviceMeta = '正在检查额度接口与队列接口状态。';
+    }
+    updateVerifyMonitorOverviewCard(
+        'verifyMonitorServicePanel',
+        'verifyMonitorServiceValue',
+        'verifyMonitorServiceMeta',
+        serviceTone,
+        serviceValue,
+        serviceMeta
+    );
+
+    if (queueState.status === 'ready') {
+        const oldestLabel = recentState.summary?.oldest_active_minutes != null
+            ? formatVerifyMonitorMinutes(recentState.summary.oldest_active_minutes)
+            : '—';
+        updateVerifyMonitorOverviewCard(
+            'verifyMonitorQueuePanel',
+            'verifyMonitorQueueValue',
+            'verifyMonitorQueueMeta',
+            Number(queueState.queue_size || 0) > 0 || Number(recentState.summary?.active_task_count || 0) > 0
+                ? 'warning'
+                : 'success',
+            `排队 ${formatVerifyMonitorInteger(queueState.queue_size)} / 运行 ${formatVerifyMonitorInteger(queueState.running_jobs)}`,
+            `本地活跃 ${formatVerifyMonitorInteger(recentState.summary?.active_task_count)} 个 · 最老任务 ${oldestLabel} · API Key ${queueState.key_name || quotaState.key_name || '未命名'}`
+        );
+    } else if (queueState.status === 'loading') {
+        updateVerifyMonitorOverviewCard(
+            'verifyMonitorQueuePanel',
+            'verifyMonitorQueueValue',
+            'verifyMonitorQueueMeta',
+            'neutral',
+            '查询中...',
+            '正在读取上游排队、运行中任务和本地活跃任务。'
+        );
+    } else if (queueState.status === 'error') {
+        updateVerifyMonitorOverviewCard(
+            'verifyMonitorQueuePanel',
+            'verifyMonitorQueueValue',
+            'verifyMonitorQueueMeta',
+            'danger',
+            '查询失败',
+            queueState.message || '队列接口暂时不可用。'
+        );
+    } else {
+        updateVerifyMonitorOverviewCard(
+            'verifyMonitorQueuePanel',
+            'verifyMonitorQueueValue',
+            'verifyMonitorQueueMeta',
+            'neutral',
+            '等待检测',
+            '首次刷新后会显示上游排队、运行中任务和本地活跃任务。'
+        );
+    }
+}
+
+function buildVerifyMonitorRowMarkup(row) {
+    const statusMeta = getVerifyMonitorStatusMeta(row.status);
+    const jobLabel = escapeConfigHtml(row.verification_id || row.id || 'unknown');
+    const identityParts = [
+        row.email,
+        row.user_id,
+        row.site ? String(row.site).toUpperCase() : ''
+    ].filter(Boolean).map((item) => escapeConfigHtml(item));
+    const detailParts = [];
+
+    if (row.stage_label) detailParts.push(`阶段：${escapeConfigHtml(row.stage_label)}`);
+    if (row.raw_status && row.raw_status !== row.stage_label) detailParts.push(`原始状态：${escapeConfigHtml(row.raw_status)}`);
+    if (Number(row.points_deducted) > 0) detailParts.push(`积分：${escapeConfigHtml(formatVerifyMonitorInteger(row.points_deducted))}`);
+    if (row.error_code) detailParts.push(`错误码：${escapeConfigHtml(row.error_code)}`);
+
+    return `
+        <article class="verify-monitor-item">
+            <div class="verify-monitor-item__top">
+                <span class="verify-monitor-status-badge verify-monitor-status-badge--${escapeConfigHtml(statusMeta.tone)}">${escapeConfigHtml(statusMeta.label)}</span>
+                <strong class="verify-monitor-item__job">${jobLabel}</strong>
+                <span class="verify-monitor-item__time">${escapeConfigHtml(formatVerifyMonitorDateTime(row.created_at))}</span>
+            </div>
+            <div class="verify-monitor-item__meta">${identityParts.length ? identityParts.join(' · ') : '未记录身份信息'}</div>
+            <div class="verify-monitor-item__summary">${escapeConfigHtml(row.summary || '暂无更多细节')}</div>
+            ${detailParts.length ? `<div class="verify-monitor-item__detail">${detailParts.join(' · ')}</div>` : ''}
+        </article>
+    `;
+}
+
+function renderVerifyMonitorLists() {
+    const recentState = verifyMonitorState.recent || getDefaultVerifyMonitorState().recent;
+    const tasksTarget = document.getElementById('verifyMonitorRecentTasks');
+    const failuresTarget = document.getElementById('verifyMonitorRecentFailures');
+    const tasksMeta = document.getElementById('verifyMonitorTasksMeta');
+    const failuresMeta = document.getElementById('verifyMonitorFailuresMeta');
+
+    if (tasksMeta) {
+        tasksMeta.textContent = recentState.status === 'ready'
+            ? `最近去重 ${formatVerifyMonitorInteger(recentState.summary?.deduped_task_count)} 条任务样本`
+            : (recentState.status === 'loading' ? '正在同步...' : '等待加载');
+    }
+
+    if (failuresMeta) {
+        failuresMeta.textContent = recentState.status === 'ready'
+            ? `最近失败 ${formatVerifyMonitorInteger(recentState.summary?.failure_task_count)} 条`
+            : (recentState.status === 'loading' ? '正在同步...' : '等待加载');
+    }
+
+    if (recentState.status === 'loading') {
+        renderVerifyMonitorEmptyState(tasksTarget, '正在加载最近任务...');
+        renderVerifyMonitorEmptyState(failuresTarget, '正在加载最近失败...');
+        return;
+    }
+
+    if (recentState.status === 'error') {
+        const message = recentState.message || '验证运维数据加载失败。';
+        renderVerifyMonitorEmptyState(tasksTarget, message);
+        renderVerifyMonitorEmptyState(failuresTarget, message);
+        return;
+    }
+
+    const tasks = Array.isArray(recentState.recent_tasks) ? recentState.recent_tasks : [];
+    const failures = Array.isArray(recentState.recent_failures) ? recentState.recent_failures : [];
+
+    if (!tasks.length) {
+        renderVerifyMonitorEmptyState(tasksTarget, '最近还没有可展示的验证任务。');
+    } else if (tasksTarget) {
+        tasksTarget.innerHTML = tasks.map(buildVerifyMonitorRowMarkup).join('');
+    }
+
+    if (!failures.length) {
+        renderVerifyMonitorEmptyState(failuresTarget, '最近没有新的失败结果，可以继续保持观察。');
+    } else if (failuresTarget) {
+        failuresTarget.innerHTML = failures.map(buildVerifyMonitorRowMarkup).join('');
+    }
+}
+
+function renderVerifyMonitorPanel() {
+    renderVerifyMonitorHeaderTimestamp();
+    renderVerifyMonitorOverview();
+    renderVerifyMonitorLists();
+}
+
 function getDefaultCheckinConfig() {
     return {
         base_points: 5,
@@ -132,6 +463,41 @@ function getDefaultOpsAlertSecretStatus() {
     return {
         telegram_bot_token: { configured: false, source: 'missing', updatedAt: null },
         feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+    };
+}
+
+function getDefaultVerifyMonitorState() {
+    return {
+        quota: {
+            status: 'idle',
+            balance: null,
+            total_used: null,
+            cost_per_job: null,
+            key_name: '',
+            message: '等待检测'
+        },
+        queue: {
+            status: 'idle',
+            queue_size: null,
+            running_jobs: null,
+            key_name: '',
+            message: '等待检测'
+        },
+        recent: {
+            status: 'idle',
+            fetched_at: '',
+            summary: {
+                sample_size: 80,
+                deduped_task_count: 0,
+                active_task_count: 0,
+                failure_task_count: 0,
+                oldest_active_at: null,
+                oldest_active_minutes: null
+            },
+            recent_tasks: [],
+            recent_failures: [],
+            message: '等待加载'
+        }
     };
 }
 
@@ -3530,15 +3896,19 @@ function renderVerifyConfig() {
 
     // API Key (show masked for security)
     const apiKeyInput = document.getElementById('cfgVerifyApiKey');
-    if (apiKeyInput && config.verify_api_key) {
-        // Show first 8 chars + masked rest
-        const key = config.verify_api_key;
-        apiKeyInput.value = key.length > 8 ? key.slice(0, 8) + '...' : key;
-        apiKeyInput.dataset.hasKey = 'true';
+    if (apiKeyInput) {
+        if (config.verify_api_key) {
+            const key = config.verify_api_key;
+            apiKeyInput.value = key.length > 8 ? key.slice(0, 8) + '...' : key;
+            apiKeyInput.dataset.hasKey = 'true';
+        } else {
+            apiKeyInput.value = '';
+            delete apiKeyInput.dataset.hasKey;
+        }
     }
 
-    // Auto-load API quota
-    checkVerifyQuota();
+    renderVerifyMonitorPanel();
+    refreshVerifyMonitor();
 }
 
 const REFRESH_INTERVAL_LABELS = {
@@ -3664,6 +4034,10 @@ async function saveVerifyConfig() {
 
     // Update cache
     systemConfigCache['verify_settings'] = config;
+    renderVerifyMonitorPanel();
+    refreshVerifyMonitor(true).catch((error) => {
+        console.warn('[Config] Verify monitor refresh after save failed:', error.message);
+    });
 }
 
 // Expose globally for HTML onclick handlers
@@ -3958,27 +4332,175 @@ async function checkVerifyQuota() {
     const quotaEl = document.getElementById('cfgVerifyQuota');
     if (!quotaEl) return;
 
+    verifyMonitorState.quota = {
+        ...(verifyMonitorState.quota || getDefaultVerifyMonitorState().quota),
+        status: 'loading',
+        message: '查询中...'
+    };
     renderVerifyQuotaState(quotaEl, 'neutral', 'fas fa-spinner fa-spin', '查询中...');
+    renderVerifyMonitorPanel();
 
     try {
         const headers = await getAdminConfigApiHeaders();
         const res = await fetch(`${VERIFY_SERVER_URL}/api/quota`, { headers });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
 
         if (data.success) {
             const balance = Number(data.balance ?? data.credits ?? 0);
             const tone = balance > 5 ? 'success' : balance > 0 ? 'warning' : 'danger';
             const display = Number.isInteger(balance) ? balance : balance.toFixed(1);
             renderVerifyQuotaState(quotaEl, tone, 'fas fa-gem', display, { emphasized: true });
+            verifyMonitorState.quota = {
+                status: 'ready',
+                balance,
+                total_used: Number(data.total_used || 0),
+                cost_per_job: Number(data.cost_per_job || 0),
+                key_name: String(data.key_name || '').trim(),
+                checked_at: new Date().toISOString(),
+                message: ''
+            };
         } else {
-            renderVerifyQuotaState(quotaEl, 'danger', 'fas fa-exclamation-triangle', data.message || '查询失败');
+            const message = data.message || '查询失败';
+            renderVerifyQuotaState(quotaEl, 'danger', 'fas fa-exclamation-triangle', message);
+            verifyMonitorState.quota = {
+                ...(getDefaultVerifyMonitorState().quota),
+                status: 'error',
+                checked_at: new Date().toISOString(),
+                message
+            };
         }
-    } catch (e) {
+    } catch (error) {
         renderVerifyQuotaState(quotaEl, 'danger', 'fas fa-exclamation-triangle', '网络错误');
+        verifyMonitorState.quota = {
+            ...(getDefaultVerifyMonitorState().quota),
+            status: 'error',
+            checked_at: new Date().toISOString(),
+            message: error.message || '网络错误'
+        };
+    }
+
+    renderVerifyMonitorPanel();
+    return verifyMonitorState.quota;
+}
+
+async function loadVerifyQueueState() {
+    verifyMonitorState.queue = {
+        ...(verifyMonitorState.queue || getDefaultVerifyMonitorState().queue),
+        status: 'loading',
+        message: '查询中...'
+    };
+    renderVerifyMonitorPanel();
+
+    try {
+        const headers = await getAdminConfigApiHeaders();
+        const response = await fetch(`${VERIFY_SERVER_URL}/api/queue`, { headers });
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '查询队列失败');
+        }
+
+        verifyMonitorState.queue = {
+            status: 'ready',
+            queue_size: Number(payload.queue_size || 0),
+            running_jobs: Number(payload.running_jobs || 0),
+            key_name: String(payload.key_name || '').trim(),
+            api_base_url: String(payload.api_base_url || '').trim(),
+            checked_at: new Date().toISOString(),
+            message: ''
+        };
+    } catch (error) {
+        verifyMonitorState.queue = {
+            ...(getDefaultVerifyMonitorState().queue),
+            status: 'error',
+            checked_at: new Date().toISOString(),
+            message: error.message || '查询队列失败'
+        };
+    }
+
+    renderVerifyMonitorPanel();
+    return verifyMonitorState.queue;
+}
+
+async function loadVerifyMonitor(force = false) {
+    if (loadVerifyMonitor._loadingPromise && !force) {
+        return loadVerifyMonitor._loadingPromise;
+    }
+
+    verifyMonitorState.recent = {
+        ...(verifyMonitorState.recent || getDefaultVerifyMonitorState().recent),
+        status: 'loading',
+        message: '正在加载...'
+    };
+    renderVerifyMonitorPanel();
+
+    loadVerifyMonitor._loadingPromise = (async () => {
+        try {
+            const headers = await getAdminConfigApiHeaders();
+            const response = await fetch('/api/admin/settings/verify-monitor', {
+                method: 'GET',
+                headers
+            });
+            const payload = await response.json().catch(() => ({}));
+
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || '加载验证运维数据失败');
+            }
+
+            verifyMonitorState.recent = {
+                status: 'ready',
+                fetched_at: String(payload.fetched_at || '').trim(),
+                summary: payload.summary || getDefaultVerifyMonitorState().recent.summary,
+                recent_tasks: Array.isArray(payload.recent_tasks) ? payload.recent_tasks : [],
+                recent_failures: Array.isArray(payload.recent_failures) ? payload.recent_failures : [],
+                message: ''
+            };
+            renderVerifyMonitorPanel();
+            return payload;
+        } catch (error) {
+            console.warn('[Config] Verify monitor load failed:', error.message);
+            verifyMonitorState.recent = {
+                ...getDefaultVerifyMonitorState().recent,
+                status: 'error',
+                message: error.message || '加载验证运维数据失败'
+            };
+            renderVerifyMonitorPanel();
+            return null;
+        }
+    })();
+
+    try {
+        return await loadVerifyMonitor._loadingPromise;
+    } finally {
+        loadVerifyMonitor._loadingPromise = null;
+    }
+}
+
+async function refreshVerifyMonitor(force = false) {
+    if (refreshVerifyMonitor._loadingPromise && !force) {
+        return refreshVerifyMonitor._loadingPromise;
+    }
+
+    refreshVerifyMonitor._loadingPromise = (async () => {
+        await Promise.allSettled([
+            checkVerifyQuota(),
+            loadVerifyQueueState(),
+            loadVerifyMonitor(force)
+        ]);
+        renderVerifyMonitorPanel();
+        return verifyMonitorState;
+    })();
+
+    try {
+        return await refreshVerifyMonitor._loadingPromise;
+    } finally {
+        refreshVerifyMonitor._loadingPromise = null;
     }
 }
 
 window.checkVerifyQuota = checkVerifyQuota;
+window.loadVerifyMonitor = loadVerifyMonitor;
+window.refreshVerifyMonitor = refreshVerifyMonitor;
 
 async function saveSensitiveWords() {
     const textarea = document.getElementById('cfgSensitiveWords');
@@ -4344,6 +4866,8 @@ window.sendOpsAlertShopOrderDeliveryRecoveredSample = sendOpsAlertShopOrderDeliv
 window.sendOpsAlertPaymentConfigChangedSample = sendOpsAlertPaymentConfigChangedSample;
 window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
+window.loadVerifyMonitor = loadVerifyMonitor;
+window.refreshVerifyMonitor = refreshVerifyMonitor;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;
 window.saveIpBlacklist = saveIpBlacklist;

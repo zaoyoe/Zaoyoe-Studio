@@ -3418,6 +3418,7 @@ test('admin studio security, verify, affiliate, and experiment controls route th
         'data-admin-action="settings-unlock-all-accounts"',
         'data-admin-action="settings-save-ip-blacklist"',
         'data-admin-change-action="settings-save-verify-config"',
+        'data-admin-action="settings-refresh-verify-monitor"',
         'data-admin-focus-action="settings-verify-api-key-unlock"',
         'data-admin-blur-action="settings-verify-api-key-lock"',
         'data-admin-change-action="affiliate-save-setting"',
@@ -3443,6 +3444,7 @@ test('admin studio security, verify, affiliate, and experiment controls route th
         'settings-refresh-locked-accounts',
         'settings-unlock-account',
         'settings-save-ip-blacklist',
+        'settings-refresh-verify-monitor',
         'settings-save-verify-config',
         'affiliate-save-setting',
         'affiliate-save-poster-field',
@@ -4314,11 +4316,15 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         'function showAdminConfigSaveIndicator(indicator, text = \'✓ 已保存\', durationMs = 1500)',
         'function getAdminConfigRichTextColorClass(color)',
         'function renderVerifyQuotaState(quotaEl, tone, iconClass, message, options = {})',
+        'function getDefaultVerifyMonitorState()',
         'instance.hiddenInput.hidden = true;',
         'setAdminConfigHiddenState(badgeEl, accountsWithEmail.length === 0);',
         'class="affiliate-poster-preview ${getAffiliatePosterPreviewClass(preset.id)}"',
         'class="color-swatch ${getAdminConfigRichTextColorClass(value)}"',
-        "renderVerifyQuotaState(quotaEl, 'neutral', 'fas fa-spinner fa-spin', '查询中...');"
+        "renderVerifyQuotaState(quotaEl, 'neutral', 'fas fa-spinner fa-spin', '查询中...');",
+        "fetch('/api/admin/settings/verify-monitor'",
+        'window.loadVerifyMonitor = loadVerifyMonitor;',
+        'window.refreshVerifyMonitor = refreshVerifyMonitor;'
     ];
 
     for (const marker of runtimeMarkers) {
@@ -4328,6 +4334,8 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
     const styleMarkers = [
         '#unlockAllBtn[hidden]',
         '.verify-quota-badge--success',
+        '.verify-monitor-grid',
+        '.verify-monitor-status-badge--danger',
         '.affiliate-poster-preview--midnight',
         '.affiliate-poster-preview-media',
         '.status-toggle.status-toggle--pulse',

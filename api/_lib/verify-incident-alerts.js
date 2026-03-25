@@ -353,7 +353,7 @@ function buildVerifyIncidentEscalationAlerts(signalJobs = [], rawConfig = {}) {
     if (latestSignalAt) {
         lines.push(`最新时间：${latestSignalAt}`);
     }
-    lines.push('处理入口：后台设置 -> 验证服务配置 -> 站外告警 / 最近任务状态 / 验证日志');
+    lines.push('处理入口：后台设置 -> 验证服务配置 -> 当前额度 / 接口状态 / 队列状态 / 最近失败');
 
     const fingerprint = latestJobs
         .map(buildSignalFingerprint)
@@ -376,7 +376,7 @@ function buildVerifyIncidentEscalationAlerts(signalJobs = [], rawConfig = {}) {
             signal_summaries: signalSummaries,
             signal_timeline: signalTimeline,
             latest_signal_at: latestSignalAt || null,
-            entry_path: '后台设置 -> 验证服务配置 -> 站外告警 / 最近任务状态 / 验证日志'
+            entry_path: '后台设置 -> 验证服务配置 -> 当前额度 / 接口状态 / 队列状态 / 最近失败'
         },
         dedupeKey: crypto
             .createHash('sha256')
@@ -441,7 +441,7 @@ function buildVerifyIncidentRecoveryAlerts(signalJobs = [], stateJobs = [], rawC
     if (activeSignalSummaries.length) {
         lines.push(`当前摘要：${activeSignalSummaries.join('；')}`);
     }
-    lines.push('处理入口：后台设置 -> 验证服务配置 -> 站外告警 / 最近任务状态 / 验证日志');
+    lines.push('处理入口：后台设置 -> 验证服务配置 -> 当前额度 / 接口状态 / 队列状态 / 最近失败');
 
     return [{
         alertType: 'verify_incident_recovered',
@@ -461,7 +461,7 @@ function buildVerifyIncidentRecoveryAlerts(signalJobs = [], stateJobs = [], rawC
             active_signal_types: activeSignalJobs.map((job) => normalizeText(job.alert_type).toLowerCase()).filter(Boolean),
             active_signal_labels: activeSignalLabels,
             active_signal_summaries: activeSignalSummaries,
-            entry_path: '后台设置 -> 验证服务配置 -> 站外告警 / 最近任务状态 / 验证日志'
+            entry_path: '后台设置 -> 验证服务配置 -> 当前额度 / 接口状态 / 队列状态 / 最近失败'
         },
         allowedChannels: ['feishu'],
         dedupeKey: crypto

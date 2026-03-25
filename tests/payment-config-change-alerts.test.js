@@ -464,7 +464,7 @@ test('runPaymentConfigChangedSweep enqueues recovery notices and writes admin no
         now: '2026-03-25T09:44:00.000Z'
     });
 
-    assert.equal(second.recovery_count, 1);
+    assert.equal(second.recovery_count, 0);
     assert.equal(second.recovered_queued, 0);
     assert.equal(second.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 4);

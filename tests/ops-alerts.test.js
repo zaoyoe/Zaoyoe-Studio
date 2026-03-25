@@ -593,7 +593,7 @@ test('buildExternalAlertText renders verify failure spike details', () => {
                 '受影响用户 5 人（阈值 3 人）'
             ],
             checked_at: '2026-03-25T10:00:00.000Z',
-            entry_path: '后台设置 -> 验证服务配置 -> 最近任务状态 / 验证日志'
+            entry_path: '后台设置 -> 验证服务配置 -> 最近任务 / 最近失败'
         }
     });
 
@@ -605,7 +605,7 @@ test('buildExternalAlertText renders verify failure spike details', () => {
     assert.match(text, /受影响用户数：5 人/);
     assert.match(text, /受影响用户：member1@example\.com × 2、member2@example\.com × 2、member3@example\.com × 1/);
     assert.match(text, /最近错误：otp_invalid × 4；lock_conflict × 2；upstream_timeout × 1/);
-    assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 最近任务状态 \/ 验证日志/);
+    assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 最近任务 \/ 最近失败/);
 });
 
 test('buildExternalAlertText renders verify incident escalation details', () => {
@@ -630,7 +630,7 @@ test('buildExternalAlertText renders verify incident escalation details', () => 
                 '验证任务堆积：2026-03-25T10:04:00.000Z'
             ],
             latest_signal_at: '2026-03-25T10:04:00.000Z',
-            entry_path: '后台设置 -> 验证服务配置 -> 站外告警 / 最近任务状态 / 验证日志'
+            entry_path: '后台设置 -> 验证服务配置 -> 当前额度 \/ 接口状态 \/ 队列状态 \/ 最近失败'
         }
     });
 
@@ -643,7 +643,7 @@ test('buildExternalAlertText renders verify incident escalation details', () => 
     assert.match(text, /关键摘要：服务不可用 \/ balance_http_503；失败率 77\.78%（7\/9）；排队 18 个 \/ 本地活跃 11 个/);
     assert.match(text, /最近触发：验证服务停摆：2026-03-25T10:00:00.000Z；验证失败率飙升：2026-03-25T10:02:00.000Z；验证任务堆积：2026-03-25T10:04:00.000Z/);
     assert.match(text, /最新时间：2026-03-25T10:04:00.000Z/);
-    assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 站外告警 \/ 最近任务状态 \/ 验证日志/);
+    assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 当前额度 \/ 接口状态 \/ 队列状态 \/ 最近失败/);
 });
 
 test('buildExternalAlertText renders verify incident recovery details', () => {
@@ -660,7 +660,7 @@ test('buildExternalAlertText renders verify incident recovery details', () => {
             incident_duration_minutes: 18,
             active_signal_labels: ['验证额度不足'],
             active_signal_summaries: ['剩余额度 18.00 点 / 预计 9 次'],
-            entry_path: '后台设置 -> 验证服务配置 -> 站外告警 / 最近任务状态 / 验证日志'
+            entry_path: '后台设置 -> 验证服务配置 -> 当前额度 \/ 接口状态 \/ 队列状态 \/ 最近失败'
         }
     });
 
@@ -693,7 +693,7 @@ test('buildExternalAlertText renders verify queue backlog details', () => {
                 '最近 30 分钟失败 6 次（阈值 4 次）'
             ],
             checked_at: '2026-03-25T10:00:00.000Z',
-            entry_path: '后台设置 -> 验证服务配置 -> 队列 / 最近任务状态'
+            entry_path: '后台设置 -> 验证服务配置 -> 队列状态 / 最近任务'
         }
     });
 
@@ -704,7 +704,7 @@ test('buildExternalAlertText renders verify queue backlog details', () => {
     assert.match(text, /最老活跃任务：42 分钟/);
     assert.match(text, /热点目标：member1@example\.com × 3、member2@example\.com × 2/);
     assert.match(text, /最近错误：lock_conflict × 4；otp_invalid × 2/);
-    assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 队列 \/ 最近任务状态/);
+    assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 队列状态 \/ 最近任务/);
 });
 
 test('buildExternalAlertText renders ticket SLA overdue details', () => {
