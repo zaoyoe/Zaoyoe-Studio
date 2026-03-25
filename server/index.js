@@ -73,6 +73,10 @@ const {
     runVerifyQueueBacklogSweep
 } = require('../api/_lib/verify-queue-alerts');
 const {
+    normalizeVerifyFailureMonitorConfig,
+    runVerifyFailureRateSpikeSweep
+} = require('../api/_lib/verify-failure-alerts');
+const {
     normalizeTicketSlaMonitorConfig,
     runTicketSlaOverdueSweep
 } = require('../api/_lib/ticket-sla-alerts');
@@ -117,6 +121,8 @@ let verifyServiceSweepTimer = null;
 let verifyServiceSweepRunning = false;
 let verifyQueueSweepTimer = null;
 let verifyQueueSweepRunning = false;
+let verifyFailureSweepTimer = null;
+let verifyFailureSweepRunning = false;
 let ticketSlaSweepTimer = null;
 let ticketSlaSweepRunning = false;
 let shopInventorySweepTimer = null;
@@ -262,6 +268,9 @@ async function getVerifyConfig() {
             : {},
         queueMonitorConfig: config.verify_queue_monitor && typeof config.verify_queue_monitor === 'object'
             ? config.verify_queue_monitor
+            : {},
+        failureMonitorConfig: config.verify_failure_monitor && typeof config.verify_failure_monitor === 'object'
+            ? config.verify_failure_monitor
             : {}
     };
 }
@@ -3103,6 +3112,56 @@ function startVerifyQueueSweep() {
     });
 }
 
+async function sweepVerifyFailureHealth() {
+    if (verifyFailureSweepRunning) return;
+    verifyFailureSweepRunning = true;
+
+    try {
+        const verifyConfig = await getVerifyConfig();
+        const result = await runVerifyFailureRateSpikeSweep(supabase, {
+            env: process.env,
+            verifyConfig
+        });
+
+        if (Number(result?.spike_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+            console.log('[VerifyFailureMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[VerifyFailureMonitor] Sweep failed:', error);
+    } finally {
+        verifyFailureSweepRunning = false;
+    }
+}
+
+async function queueNextVerifyFailureSweep(delayMs = null) {
+    if (verifyFailureSweepTimer) return;
+
+    const verifyConfig = await getVerifyConfig();
+    const monitorConfig = normalizeVerifyFailureMonitorConfig(verifyConfig?.failureMonitorConfig, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
+
+    verifyFailureSweepTimer = setTimeout(() => {
+        verifyFailureSweepTimer = null;
+        sweepVerifyFailureHealth()
+            .catch((error) => {
+                console.error('[VerifyFailureMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextVerifyFailureSweep().catch((error) => {
+                    console.error('[VerifyFailureMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startVerifyFailureSweep() {
+    if (verifyFailureSweepTimer) return;
+
+    queueNextVerifyFailureSweep(5700).catch((error) => {
+        console.error('[VerifyFailureMonitor] Failed to start sweep:', error);
+    });
+}
+
 async function sweepTicketSlaHealth() {
     if (ticketSlaSweepRunning) return;
     ticketSlaSweepRunning = true;
@@ -4496,6 +4555,7 @@ function startServer(port = PORT) {
         startVerifyQuotaSweep();
         startVerifyServiceSweep();
         startVerifyQueueSweep();
+        startVerifyFailureSweep();
         startTicketSlaSweep();
         startShopInventorySweep();
         startShopOrderDeliverySweep();

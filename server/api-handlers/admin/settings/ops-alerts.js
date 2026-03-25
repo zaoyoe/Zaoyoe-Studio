@@ -356,6 +356,34 @@ function buildVerifyQueueBacklogSampleJob(user) {
     };
 }
 
+function buildVerifyFailureRateSpikeSampleJob(user) {
+    return {
+        alert_type: 'verify_failure_rate_spike',
+        severity: 'critical',
+        title: '验证失败率异常（primary-key）',
+        payload: {
+            target_id: 'verify_failure:https://iqless.icu',
+            key_name: 'primary-key',
+            api_base_url: 'https://iqless.icu',
+            monitor_window_minutes: 30,
+            total_jobs: 9,
+            failed_jobs: 7,
+            success_jobs: 2,
+            failure_rate: 77.78,
+            affected_user_count: 5,
+            affected_user_labels: ['member1@example.com × 2', 'member2@example.com × 2', 'member3@example.com × 1'],
+            hot_errors: ['otp_invalid × 4', 'lock_conflict × 2', 'upstream_timeout × 1'],
+            degraded_reasons: [
+                '最近 30 分钟失败率 77.78%（7/9，阈值 60.00%）',
+                '受影响用户 5 人（阈值 3 人）'
+            ],
+            checked_at: new Date().toISOString(),
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了验证失败率异常示例发送`,
+            entry_path: '后台设置 -> 验证服务配置 -> 最近任务状态 / 验证日志（示例）'
+        }
+    };
+}
+
 function buildTicketSlaOverdueSampleJob(user) {
     const createdAt = new Date(Date.now() - 195 * 60 * 1000).toISOString();
     return {
@@ -520,6 +548,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_gateway_degraded'
                 || sanitizeText(body.action) === 'send_sample_verify_service_disabled'
                 || sanitizeText(body.action) === 'send_sample_verify_queue_backlog'
+                || sanitizeText(body.action) === 'send_sample_verify_failure_rate_spike'
                 || sanitizeText(body.action) === 'send_sample_verify_quota_low'
                 || sanitizeText(body.action) === 'send_sample_ticket_sla_overdue'
                 || sanitizeText(body.action) === 'send_sample_shop_inventory_low'
@@ -542,6 +571,8 @@ module.exports = async (req, res) => {
                             ? buildVerifyServiceDisabledSampleJob(user)
                         : normalizedAction === 'send_sample_verify_queue_backlog'
                             ? buildVerifyQueueBacklogSampleJob(user)
+                        : normalizedAction === 'send_sample_verify_failure_rate_spike'
+                            ? buildVerifyFailureRateSpikeSampleJob(user)
                         : normalizedAction === 'send_sample_verify_quota_low'
                             ? buildVerifyQuotaLowSampleJob(user)
                             : normalizedAction === 'send_sample_ticket_sla_overdue'
@@ -568,6 +599,8 @@ module.exports = async (req, res) => {
                             ? 'admin.ops_alerts.verify_service_disabled_sample'
                         : normalizedAction === 'send_sample_verify_queue_backlog'
                             ? 'admin.ops_alerts.verify_queue_backlog_sample'
+                        : normalizedAction === 'send_sample_verify_failure_rate_spike'
+                            ? 'admin.ops_alerts.verify_failure_rate_spike_sample'
                         : normalizedAction === 'send_sample_verify_quota_low'
                                 ? 'admin.ops_alerts.verify_quota_sample'
                                 : normalizedAction === 'send_sample_ticket_sla_overdue'
@@ -606,6 +639,8 @@ module.exports = async (req, res) => {
                                 ? `验证服务停摆示例消息已发送到 ${channelLabels || '已启用通道'}`
                             : normalizedAction === 'send_sample_verify_queue_backlog'
                                 ? `验证任务堆积示例消息已发送到 ${channelLabels || '已启用通道'}`
+                            : normalizedAction === 'send_sample_verify_failure_rate_spike'
+                                ? `验证失败率异常示例消息已发送到 ${channelLabels || '已启用通道'}`
                             : normalizedAction === 'send_sample_verify_quota_low'
                                 ? `验证额度告警示例消息已发送到 ${channelLabels || '已启用通道'}`
                                 : normalizedAction === 'send_sample_ticket_sla_overdue'

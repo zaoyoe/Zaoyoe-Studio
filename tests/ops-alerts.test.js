@@ -495,6 +495,41 @@ test('buildExternalAlertText renders verify service disabled details', () => {
     assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> API Key \/ 接口状态/);
 });
 
+test('buildExternalAlertText renders verify failure spike details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'verify_failure_rate_spike',
+        severity: 'critical',
+        title: '验证失败率异常（primary-key）',
+        payload: {
+            key_name: 'primary-key',
+            monitor_window_minutes: 30,
+            total_jobs: 9,
+            failed_jobs: 7,
+            success_jobs: 2,
+            failure_rate: 77.78,
+            affected_user_count: 5,
+            affected_user_labels: ['member1@example.com × 2', 'member2@example.com × 2', 'member3@example.com × 1'],
+            hot_errors: ['otp_invalid × 4', 'lock_conflict × 2', 'upstream_timeout × 1'],
+            degraded_reasons: [
+                '最近 30 分钟失败率 77.78%（7/9，阈值 60.00%）',
+                '受影响用户 5 人（阈值 3 人）'
+            ],
+            checked_at: '2026-03-25T10:00:00.000Z',
+            entry_path: '后台设置 -> 验证服务配置 -> 最近任务状态 / 验证日志'
+        }
+    });
+
+    assert.match(text, /验证失败率告警/);
+    assert.match(text, /API Key：primary-key/);
+    assert.match(text, /时间窗：最近 30 分钟/);
+    assert.match(text, /判定信号：最近 30 分钟失败率 77\.78%（7\/9，阈值 60\.00%）；受影响用户 5 人（阈值 3 人）/);
+    assert.match(text, /任务概览：总 9 次 \/ 失败 7 次 \/ 成功 2 次 \/ 失败率 77\.78%/);
+    assert.match(text, /受影响用户数：5 人/);
+    assert.match(text, /受影响用户：member1@example\.com × 2、member2@example\.com × 2、member3@example\.com × 1/);
+    assert.match(text, /最近错误：otp_invalid × 4；lock_conflict × 2；upstream_timeout × 1/);
+    assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 最近任务状态 \/ 验证日志/);
+});
+
 test('buildExternalAlertText renders verify queue backlog details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'verify_queue_backlog',

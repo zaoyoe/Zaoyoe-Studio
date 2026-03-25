@@ -499,6 +499,10 @@ function buildExternalAlertText(job = {}) {
     if (verifyServiceText) {
         return verifyServiceText;
     }
+    const verifyFailureText = buildVerifyFailureRateSpikeAlertText(job);
+    if (verifyFailureText) {
+        return verifyFailureText;
+    }
     const verifyQueueText = buildVerifyQueueBacklogAlertText(job);
     if (verifyQueueText) {
         return verifyQueueText;
@@ -782,6 +786,46 @@ function buildVerifyServiceDisabledAlertText(job = {}) {
     if (normalizeText(payload.api_base_url)) lines.push(`API Base：${normalizeText(payload.api_base_url)}`);
     if (normalizeText(payload.last_error)) lines.push(`最近错误：${normalizeText(payload.last_error)}`);
     if (Number.isFinite(responseStatus) && responseStatus > 0) lines.push(`响应状态：${responseStatus}`);
+    if (normalizeText(payload.checked_at)) lines.push(`检查时间：${formatTimestamp(payload.checked_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildVerifyFailureRateSpikeAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'verify_failure_rate_spike') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const reasons = Array.isArray(payload.degraded_reasons)
+        ? payload.degraded_reasons.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const affectedUsers = Array.isArray(payload.affected_user_labels)
+        ? payload.affected_user_labels.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const hotErrors = Array.isArray(payload.hot_errors)
+        ? payload.hot_errors.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const lines = [
+        `[验证失败率告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '验证失败率异常'}`
+    ];
+
+    if (normalizeText(payload.key_name)) lines.push(`API Key：${normalizeText(payload.key_name)}`);
+    if (Number.isFinite(Number(payload.monitor_window_minutes))) lines.push(`时间窗：最近 ${Math.max(1, Math.round(Number(payload.monitor_window_minutes)))} 分钟`);
+    if (reasons.length) lines.push(`判定信号：${reasons.join('；')}`);
+    if (
+        Number.isFinite(Number(payload.total_jobs))
+        || Number.isFinite(Number(payload.failed_jobs))
+        || Number.isFinite(Number(payload.success_jobs))
+    ) {
+        lines.push(`任务概览：总 ${Math.max(0, Math.round(Number(payload.total_jobs || 0)))} 次 / 失败 ${Math.max(0, Math.round(Number(payload.failed_jobs || 0)))} 次 / 成功 ${Math.max(0, Math.round(Number(payload.success_jobs || 0)))} 次 / 失败率 ${formatPercent(payload.failure_rate)}`);
+    }
+    if (Number.isFinite(Number(payload.affected_user_count))) {
+        lines.push(`受影响用户数：${Math.max(0, Math.round(Number(payload.affected_user_count || 0)))} 人`);
+    }
+    if (affectedUsers.length) lines.push(`受影响用户：${affectedUsers.join('、')}`);
+    if (hotErrors.length) lines.push(`最近错误：${hotErrors.join('；')}`);
     if (normalizeText(payload.checked_at)) lines.push(`检查时间：${formatTimestamp(payload.checked_at)}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 

@@ -2170,6 +2170,16 @@ async function sendOpsAlertVerifyQueueBacklogSample() {
     }
 }
 
+async function sendOpsAlertVerifyFailureRateSpikeSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_verify_failure_rate_spike', '验证失败率异常示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send verify failure rate spike sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function sendOpsAlertVerifyQuotaSample() {
     try {
         return await sendOpsAlertTelegramRequest('send_sample_verify_quota_low', '验证额度告警示例消息已发送');
@@ -4227,6 +4237,7 @@ window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;
 window.sendOpsAlertGatewaySample = sendOpsAlertGatewaySample;
 window.sendOpsAlertVerifyServiceDisabledSample = sendOpsAlertVerifyServiceDisabledSample;
 window.sendOpsAlertVerifyQueueBacklogSample = sendOpsAlertVerifyQueueBacklogSample;
+window.sendOpsAlertVerifyFailureRateSpikeSample = sendOpsAlertVerifyFailureRateSpikeSample;
 window.sendOpsAlertVerifyQuotaSample = sendOpsAlertVerifyQuotaSample;
 window.sendOpsAlertTicketSlaSample = sendOpsAlertTicketSlaSample;
 window.sendOpsAlertShopInventorySample = sendOpsAlertShopInventorySample;
