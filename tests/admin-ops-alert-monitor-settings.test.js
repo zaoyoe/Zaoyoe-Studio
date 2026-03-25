@@ -344,3 +344,34 @@ test('ops alert monitor handler includes payment config incidents in payments ca
         assert.equal(payments.items[0].title, '支付配置异常升级（3 次）');
     });
 });
+
+test('ops alert monitor handler treats payment config incident recovery as a payments recovery state', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('payment_config_incident_recovered', {
+                id: 'payment-config-incident-recovered-1',
+                severity: 'warning',
+                title: '支付配置事故已恢复',
+                content: '支付配置事故恢复\n恢复结论：阈值已解除',
+                payload: {
+                    target_id: 'payment_config_incident:global'
+                },
+                created_at: hoursAgo(1)
+            })
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+
+        const payments = payload.categories.find((item) => item.key === 'payments');
+        assert.equal(payments.active_count, 0);
+        assert.equal(payments.latest_state, 'recovered');
+        assert.equal(payments.latest_title, '支付配置事故已恢复');
+    });
+});

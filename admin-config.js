@@ -3222,6 +3222,16 @@ async function sendOpsAlertPaymentConfigIncidentSample() {
     }
 }
 
+async function sendOpsAlertPaymentConfigIncidentRecoveredSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_payment_config_incident_recovered', '支付配置事故恢复示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send payment config incident recovered sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function sendOpsAlertPaymentConfigRecoveredSample() {
     try {
         return await sendOpsAlertTelegramRequest('send_sample_payment_config_recovered', '支付配置恢复示例消息已发送');
@@ -5630,6 +5640,7 @@ window.sendOpsAlertShopOrderDeliveryIncidentRecoveredSample = sendOpsAlertShopOr
 window.sendOpsAlertShopOrderDeliveryRecoveredSample = sendOpsAlertShopOrderDeliveryRecoveredSample;
 window.sendOpsAlertPaymentConfigChangedSample = sendOpsAlertPaymentConfigChangedSample;
 window.sendOpsAlertPaymentConfigIncidentSample = sendOpsAlertPaymentConfigIncidentSample;
+window.sendOpsAlertPaymentConfigIncidentRecoveredSample = sendOpsAlertPaymentConfigIncidentRecoveredSample;
 window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;
 window.refreshOpsAlertMonitorPanel = refreshOpsAlertMonitorPanel;
 window.openOpsAlertWorkspace = openOpsAlertWorkspace;

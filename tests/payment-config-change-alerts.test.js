@@ -5,6 +5,7 @@ const { normalizeOpsAlertsConfig } = require('../api/_lib/ops-alerts');
 const {
     buildPaymentConfigChangedAlerts,
     buildPaymentConfigIncidentAlerts,
+    buildPaymentConfigIncidentRecoveryAlerts,
     buildPaymentConfigRecoveredAlerts,
     normalizePaymentConfigChangeMonitorConfig,
     runPaymentConfigChangedSweep
@@ -492,6 +493,49 @@ test('buildPaymentConfigRecoveredAlerts emits recoveries when mock mode is rolle
     assert.match(alerts[1].content, /当前密钥来源：后台密钥库/);
 });
 
+test('buildPaymentConfigIncidentRecoveryAlerts emits a recovery notice after clustered risky changes fall below the incident threshold', () => {
+    const changeAlerts = buildPaymentConfigChangedAlerts([
+        {
+            id: 'audit-remain-1',
+            action_type: 'admin.payment_channels.upsert',
+            admin_id: 'admin-1',
+            admin_email: 'admin@example.com',
+            created_at: '2026-03-25T10:12:00.000Z',
+            details: {
+                active_provider: 'hupijiao',
+                updated_providers: ['hupijiao'],
+                updated_secrets: ['hupijiao_secret_key']
+            }
+        }
+    ], normalizePaymentConfigChangeMonitorConfig(), {
+        now: '2026-03-25T10:20:00.000Z'
+    });
+
+    const alerts = buildPaymentConfigIncidentRecoveryAlerts(changeAlerts, [
+        {
+            id: 'job-payment-config-incident-1',
+            alert_type: 'payment_config_incident',
+            created_at: '2026-03-25T10:00:00.000Z',
+            payload: {
+                target_id: 'payment_config_incident:global',
+                incident_change_count: 3,
+                distinct_admin_count: 2
+            }
+        }
+    ], normalizePaymentConfigChangeMonitorConfig(), {
+        now: '2026-03-25T10:32:00.000Z'
+    });
+
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].alertType, 'payment_config_incident_recovered');
+    assert.equal(alerts[0].severity, 'warning');
+    assert.equal(alerts[0].allowedChannels.join(','), 'feishu');
+    assert.match(alerts[0].content, /支付配置已退出集中事故状态/);
+    assert.match(alerts[0].content, /当前剩余高风险改动：1 次/);
+    assert.equal(alerts[0].payload.active_change_count, 1);
+    assert.equal(alerts[0].payload.previous_incident_change_count, 3);
+});
+
 test('runPaymentConfigChangedSweep enqueues recovery notices and writes admin notifications once', async () => {
     const state = {
         jobs: [
@@ -589,5 +633,96 @@ test('runPaymentConfigChangedSweep enqueues recovery notices and writes admin no
     assert.equal(second.recovered_queued, 0);
     assert.equal(second.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 4);
+    assert.equal(state.systemNotifications.length, 1);
+});
+
+test('runPaymentConfigChangedSweep enqueues incident recovery notices and writes admin notifications once', async () => {
+    const state = {
+        jobs: [
+            {
+                id: 'job-payment-config-incident-1',
+                alert_type: 'payment_config_incident',
+                severity: 'critical',
+                created_at: '2026-03-25T10:00:00.000Z',
+                payload: {
+                    target_id: 'payment_config_incident:global',
+                    incident_change_count: 3,
+                    distinct_admin_count: 2
+                }
+            }
+        ],
+        auditRows: [
+            {
+                id: 'audit-remain-1',
+                action_type: 'admin.payment_channels.upsert',
+                admin_id: 'admin-1',
+                admin_email: 'admin@example.com',
+                created_at: '2026-03-25T10:12:00.000Z',
+                details: {
+                    active_provider: 'hupijiao',
+                    updated_providers: ['hupijiao'],
+                    updated_secrets: ['hupijiao_secret_key']
+                }
+            }
+        ],
+        adminRoles: [
+            { user_id: 'admin-user-1', role_name: 'admin', expires_at: null }
+        ],
+        systemNotifications: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime();
+
+    const first = await runPaymentConfigChangedSweep(supabase, {
+        runtime,
+        auditRows: state.auditRows,
+        stateJobs: state.jobs,
+        currentPaymentChannels: {
+            active_provider: 'hupijiao',
+            providers: {
+                mock: { enabled: false },
+                afdian: { enabled: true },
+                hupijiao: { enabled: true }
+            }
+        },
+        currentSecretStatus: {
+            hupijiao_secret_key: { configured: true, source: 'stored' }
+        },
+        now: '2026-03-25T10:32:00.000Z'
+    });
+
+    assert.equal(first.change_count, 1);
+    assert.equal(first.queued, 1);
+    assert.equal(first.incident_count, 0);
+    assert.equal(first.incident_recovered_count, 1);
+    assert.equal(first.incident_recovered_queued, 1);
+    assert.equal(first.admin_notifications_created, 1);
+    assert.equal(state.jobs.length, 3);
+    assert.equal(state.jobs[2].alert_type, 'payment_config_incident_recovered');
+    assert.equal(state.systemNotifications.length, 1);
+    assert.match(state.systemNotifications[0].title, /支付配置事故已恢复/);
+
+    const second = await runPaymentConfigChangedSweep(supabase, {
+        runtime,
+        auditRows: state.auditRows,
+        stateJobs: state.jobs,
+        currentPaymentChannels: {
+            active_provider: 'hupijiao',
+            providers: {
+                mock: { enabled: false },
+                afdian: { enabled: true },
+                hupijiao: { enabled: true }
+            }
+        },
+        currentSecretStatus: {
+            hupijiao_secret_key: { configured: true, source: 'stored' }
+        },
+        now: '2026-03-25T10:36:00.000Z'
+    });
+
+    assert.equal(second.incident_recovered_count, 0);
+    assert.equal(second.incident_recovered_queued, 0);
+    assert.equal(second.admin_notifications_created, 0);
+    assert.equal(state.jobs.length, 3);
     assert.equal(state.systemNotifications.length, 1);
 });

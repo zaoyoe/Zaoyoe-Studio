@@ -814,6 +814,33 @@ function buildPaymentConfigRecoveredSampleJob(user) {
     };
 }
 
+function buildPaymentConfigIncidentRecoveredSampleJob(user) {
+    return {
+        alert_type: 'payment_config_incident_recovered',
+        severity: 'warning',
+        title: '支付配置事故已恢复',
+        payload: {
+            target_id: 'payment_config_incident:global',
+            incident_alert_job_id: 'job-demo-payment-config-incident-001',
+            incident_started_at: '2026-03-25T10:00:00.000Z',
+            incident_recovered_at: new Date().toISOString(),
+            incident_duration_minutes: 32,
+            previous_incident_change_count: 3,
+            previous_distinct_admin_count: 2,
+            recovery_summary: '支付配置集中事故阈值已解除，当前仍保留 1 次单次高风险改动',
+            active_change_count: 1,
+            active_admin_count: 1,
+            active_admin_emails: [sanitizeText(user?.email || user?.id) || 'admin@example.com'],
+            active_action_labels: ['支付通道配置更新'],
+            active_risk_signals: ['本次更新包含 1 个支付密钥'],
+            active_provider_labels: ['虎皮椒'],
+            active_secret_labels: ['虎皮椒 Secret Key'],
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了支付配置事故恢复示例发送`,
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计（示例）'
+        }
+    };
+}
+
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
     const { error } = await supabase
         .from('system_config')
@@ -867,6 +894,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_shop_order_delivery_recovered'
                 || sanitizeText(body.action) === 'send_sample_payment_config_changed'
                 || sanitizeText(body.action) === 'send_sample_payment_config_incident'
+                || sanitizeText(body.action) === 'send_sample_payment_config_incident_recovered'
                 || sanitizeText(body.action) === 'send_sample_payment_config_recovered'
             ) {
                 const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase);
@@ -916,6 +944,8 @@ module.exports = async (req, res) => {
                                                 ? buildPaymentConfigChangedSampleJob(user)
                                             : normalizedAction === 'send_sample_payment_config_incident'
                                                 ? buildPaymentConfigIncidentSampleJob(user)
+                                            : normalizedAction === 'send_sample_payment_config_incident_recovered'
+                                                ? buildPaymentConfigIncidentRecoveredSampleJob(user)
                                             : normalizedAction === 'send_sample_payment_config_recovered'
                                                 ? buildPaymentConfigRecoveredSampleJob(user)
                         : buildTelegramTestJob(user, runtime);
@@ -964,6 +994,8 @@ module.exports = async (req, res) => {
                                                     ? 'admin.ops_alerts.payment_config_changed_sample'
                                                 : normalizedAction === 'send_sample_payment_config_incident'
                                                     ? 'admin.ops_alerts.payment_config_incident_sample'
+                                                : normalizedAction === 'send_sample_payment_config_incident_recovered'
+                                                    ? 'admin.ops_alerts.payment_config_incident_recovered_sample'
                                                 : normalizedAction === 'send_sample_payment_config_recovered'
                                                     ? 'admin.ops_alerts.payment_config_recovered_sample'
                             : 'admin.ops_alerts.telegram_test',
@@ -1024,6 +1056,8 @@ module.exports = async (req, res) => {
                                                     ? `支付配置变更示例消息已发送到 ${channelLabels || '已启用通道'}`
                                                 : normalizedAction === 'send_sample_payment_config_incident'
                                                     ? `支付配置异常升级示例消息已发送到 ${channelLabels || '已启用通道'}`
+                                                : normalizedAction === 'send_sample_payment_config_incident_recovered'
+                                                    ? `支付配置事故恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
                                                 : normalizedAction === 'send_sample_payment_config_recovered'
                                                     ? `支付配置恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : `测试站外告警已发送到 ${channelLabels || '已启用通道'}`

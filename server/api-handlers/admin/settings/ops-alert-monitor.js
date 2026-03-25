@@ -13,7 +13,7 @@ const ALERT_MONITOR_CATEGORIES = Object.freeze([
         label: '支付与退款',
         description: '聚合支付通道、退款售后和支付配置相关告警。',
         problem_types: ['payment_refund_ops', 'payment_gateway_degraded', 'payment_config_changed', 'payment_config_incident'],
-        recovery_types: ['payment_gateway_recovered', 'payment_config_recovered']
+        recovery_types: ['payment_gateway_recovered', 'payment_config_recovered', 'payment_config_incident_recovered']
     },
     {
         key: 'tickets',
