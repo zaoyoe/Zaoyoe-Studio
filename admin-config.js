@@ -1340,10 +1340,16 @@ async function initSystemConfig() {
 }
 
 async function loadAllSystemConfig() {
-    try {
-        const { data, error } = await supabaseClient.rpc('get_all_system_config');
+    const safeRender = (label, fn) => {
+        try {
+            fn();
+        } catch (error) {
+            console.warn(`[Config] ${label} render failed:`, error.message);
+        }
+    };
 
-        if (error) throw error;
+    try {
+        const data = await loadSystemConfigEntries();
 
         // Cache configs
         (data || []).forEach(item => {
@@ -1351,30 +1357,41 @@ async function loadAllSystemConfig() {
         });
 
         // Render UI
-        renderUnlockPricingConfig();
-        renderPackagesConfig();
-        renderPaymentChannelsConfig();
-        renderOpsAlertSettings();
-        renderOpsAlertHealthPanel();
-        renderOpsAlertMonitorPanel();
-        renderChannelsConfig();
-        renderRewardsConfig();
-        renderGeneralSettingsConfig();
-        renderSecurityConfig();
-        renderNotificationsConfig();
-        renderModerationConfig();
-        renderGalleryConfig();
-        renderCommentRulesConfig();
-        renderVerifyConfig();
-        loadAffiliateSettings();
-        loadPaymentChannelSettings();
-        loadOpsAlertSettings();
-        loadOpsAlertHealth();
-        loadOpsAlertMonitor();
+        safeRender('unlock pricing', renderUnlockPricingConfig);
+        safeRender('packages', renderPackagesConfig);
+        safeRender('payment channels', renderPaymentChannelsConfig);
+        safeRender('ops alert settings', renderOpsAlertSettings);
+        safeRender('ops alert health', renderOpsAlertHealthPanel);
+        safeRender('ops alert monitor', renderOpsAlertMonitorPanel);
+        safeRender('channels', renderChannelsConfig);
+        safeRender('rewards', renderRewardsConfig);
+        safeRender('general settings', renderGeneralSettingsConfig);
+        safeRender('security', renderSecurityConfig);
+        safeRender('notifications', renderNotificationsConfig);
+        safeRender('moderation', renderModerationConfig);
+        safeRender('gallery', renderGalleryConfig);
+        safeRender('comment rules', renderCommentRulesConfig);
+        safeRender('verify', renderVerifyConfig);
+        safeRender('affiliate', loadAffiliateSettings);
+
+        [
+            loadPaymentChannelSettings,
+            loadOpsAlertSettings,
+            loadOpsAlertHealth,
+            loadOpsAlertMonitor
+        ].forEach((loader) => {
+            Promise.resolve()
+                .then(() => loader())
+                .catch((error) => {
+                    console.warn('[Config] Deferred settings loader failed:', error.message);
+                });
+        });
 
     } catch (err) {
         console.warn('[Config] Load error:', err.message);
-        // Use defaults on error
+        if (typeof showToast === 'function') {
+            showToast(`后台配置加载失败: ${err.message || '未知错误'}`, 'error');
+        }
     }
 }
 
@@ -2699,17 +2716,27 @@ function renderAffiliatePosterTemplates(config = normalizeAffiliatePosterConfig(
 
 async function saveConfig(key, value) {
     try {
-        const { error } = await supabaseClient.rpc('update_system_config', {
-            p_key: key,
-            p_value: value
-        });
-
-        if (error) throw error;
+        let savedViaApi = false;
+        try {
+            await saveSystemConfigViaApi(key, value);
+            savedViaApi = true;
+        } catch (apiError) {
+            console.warn('[Config] System config API save failed, falling back to RPC:', apiError.message);
+            const { error } = await withPromiseTimeout(
+                supabaseClient.rpc('update_system_config', {
+                    p_key: key,
+                    p_value: value
+                }),
+                8000,
+                '保存超时，请稍后重试'
+            );
+            if (error) throw error;
+        }
 
         systemConfigCache[key] = value;
 
         // Sync packages to points_packages table
-        if (key === 'packages') {
+        if (!savedViaApi && key === 'packages') {
             await syncPackagesToDatabase(value);
         }
 
@@ -2734,6 +2761,22 @@ async function getAdminConfigApiHeaders() {
     }
 
     return headers;
+}
+
+async function withPromiseTimeout(promise, timeoutMs = 8000, message = '请求超时，请稍后重试') {
+    let timer = null;
+    try {
+        return await Promise.race([
+            promise,
+            new Promise((_, reject) => {
+                timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+            })
+        ]);
+    } finally {
+        if (timer) {
+            window.clearTimeout(timer);
+        }
+    }
 }
 
 async function fetchAdminConfigJsonWithTimeout(url, options = {}, timeoutMs = 8000) {
@@ -2763,6 +2806,53 @@ async function fetchAdminConfigJsonWithTimeout(url, options = {}, timeoutMs = 80
     }
 }
 
+async function loadSystemConfigEntriesViaApi() {
+    const headers = await getAdminConfigApiHeaders();
+    const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/system-config', {
+        method: 'GET',
+        headers
+    }, 10000);
+
+    if (!response.ok || !payload.success) {
+        throw new Error(payload.message || '加载后台配置失败');
+    }
+
+    return Array.isArray(payload.items) ? payload.items : [];
+}
+
+async function loadSystemConfigEntries() {
+    try {
+        return await loadSystemConfigEntriesViaApi();
+    } catch (apiError) {
+        console.warn('[Config] System config API load failed, falling back to RPC:', apiError.message);
+        const { data, error } = await withPromiseTimeout(
+            supabaseClient.rpc('get_all_system_config'),
+            8000,
+            '加载后台配置超时，请稍后重试'
+        );
+        if (error) throw error;
+        return Array.isArray(data) ? data : [];
+    }
+}
+
+async function saveSystemConfigViaApi(key, value) {
+    const headers = await getAdminConfigApiHeaders();
+    const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/system-config', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+            key,
+            value
+        })
+    }, 10000);
+
+    if (!response.ok || !payload.success) {
+        throw new Error(payload.message || '保存后台配置失败');
+    }
+
+    return payload;
+}
+
 async function loadPaymentChannelSettings(force = false) {
     if (loadPaymentChannelSettings._loadingPromise && !force) {
         return loadPaymentChannelSettings._loadingPromise;
@@ -2771,12 +2861,10 @@ async function loadPaymentChannelSettings(force = false) {
     loadPaymentChannelSettings._loadingPromise = (async () => {
         try {
             const headers = await getAdminConfigApiHeaders();
-            const response = await fetch('/api/admin/settings/payment-channels', {
+            const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/payment-channels', {
                 method: 'GET',
                 headers
             });
-
-            const payload = await response.json().catch(() => ({}));
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载支付通道配置失败');
             }
@@ -2814,12 +2902,10 @@ async function loadOpsAlertSettings(force = false) {
     loadOpsAlertSettings._loadingPromise = (async () => {
         try {
             const headers = await getAdminConfigApiHeaders();
-            const response = await fetch('/api/admin/settings/ops-alerts', {
+            const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/ops-alerts', {
                 method: 'GET',
                 headers
             });
-
-            const payload = await response.json().catch(() => ({}));
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载站外告警配置失败');
             }
@@ -5963,8 +6049,9 @@ async function checkVerifyQuota() {
 
     try {
         const headers = await getAdminConfigApiHeaders();
-        const res = await fetch(`${VERIFY_SERVER_URL}/api/quota`, { headers });
-        const data = await res.json().catch(() => ({}));
+        const { response: res, payload: data } = await fetchAdminConfigJsonWithTimeout(`${VERIFY_SERVER_URL}/api/quota`, {
+            headers
+        }, 8000);
 
         if (data.success) {
             const balance = Number(data.balance ?? data.credits ?? 0);
@@ -6014,8 +6101,9 @@ async function loadVerifyQueueState() {
 
     try {
         const headers = await getAdminConfigApiHeaders();
-        const response = await fetch(`${VERIFY_SERVER_URL}/api/queue`, { headers });
-        const payload = await response.json().catch(() => ({}));
+        const { response, payload } = await fetchAdminConfigJsonWithTimeout(`${VERIFY_SERVER_URL}/api/queue`, {
+            headers
+        }, 8000);
 
         if (!response.ok || !payload.success) {
             throw new Error(payload.message || '查询队列失败');
@@ -6058,11 +6146,10 @@ async function loadVerifyMonitor(force = false) {
     loadVerifyMonitor._loadingPromise = (async () => {
         try {
             const headers = await getAdminConfigApiHeaders();
-            const response = await fetch('/api/admin/settings/verify-monitor', {
+            const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/verify-monitor', {
                 method: 'GET',
                 headers
             });
-            const payload = await response.json().catch(() => ({}));
 
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载验证运维数据失败');
@@ -6134,11 +6221,10 @@ async function loadAdminAuditMonitor(force = false) {
     loadAdminAuditMonitor._loadingPromise = (async () => {
         try {
             const headers = await getAdminConfigApiHeaders();
-            const response = await fetch('/api/admin/settings/admin-audit-monitor', {
+            const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/admin-audit-monitor', {
                 method: 'GET',
                 headers
             });
-            const payload = await response.json().catch(() => ({}));
 
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载管理员访问审计失败');
