@@ -501,6 +501,33 @@ function buildTicketSlaOverdueSampleJob(user) {
     };
 }
 
+function buildTicketSlaRecoveredSampleJob(user) {
+    return {
+        alert_type: 'ticket_sla_recovered',
+        severity: 'warning',
+        title: '工单超时已恢复（ticket-de）',
+        payload: {
+            target_id: 'ticket-demo-sla-001',
+            ticket_id: 'ticket-demo-sla-001',
+            order_id: 'shop-order-demo-001',
+            user_id: 'demo_ticket_user_001',
+            incident_alert_job_id: 'ticket-sla-overdue-demo-001',
+            incident_started_at: '2026-03-25T10:00:00.000Z',
+            incident_recovered_at: new Date().toISOString(),
+            incident_duration_minutes: 42,
+            previous_wait_minutes: 195,
+            previous_wait_label: '3 小时 15 分钟',
+            ticket_status: 'RESOLVED',
+            recovery_summary: '工单已解决，已退出超时未处理状态',
+            reason: '已人工补发卡密并回复用户，当前无需继续催办。',
+            created_at: '2026-03-25T06:45:00.000Z',
+            updated_at: new Date().toISOString(),
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了工单恢复示例发送`,
+            entry_path: '售后工单 -> 已处理 -> 工单详情（示例）'
+        }
+    };
+}
+
 function buildShopInventoryLowSampleJob(user) {
     return {
         alert_type: 'shop_inventory_low',
@@ -647,6 +674,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_verify_incident_recovered'
                 || sanitizeText(body.action) === 'send_sample_verify_quota_low'
                 || sanitizeText(body.action) === 'send_sample_ticket_sla_overdue'
+                || sanitizeText(body.action) === 'send_sample_ticket_sla_recovered'
                 || sanitizeText(body.action) === 'send_sample_shop_inventory_low'
                 || sanitizeText(body.action) === 'send_sample_admin_login_anomaly'
                 || sanitizeText(body.action) === 'send_sample_shop_order_delivery_failed'
@@ -678,7 +706,9 @@ module.exports = async (req, res) => {
                         : normalizedAction === 'send_sample_verify_quota_low'
                                 ? buildVerifyQuotaLowSampleJob(user)
                                 : normalizedAction === 'send_sample_ticket_sla_overdue'
-                                ? buildTicketSlaOverdueSampleJob(user)
+                                    ? buildTicketSlaOverdueSampleJob(user)
+                                    : normalizedAction === 'send_sample_ticket_sla_recovered'
+                                        ? buildTicketSlaRecoveredSampleJob(user)
                                 : normalizedAction === 'send_sample_shop_inventory_low'
                                     ? buildShopInventoryLowSampleJob(user)
                                     : normalizedAction === 'send_sample_admin_login_anomaly'
@@ -713,6 +743,8 @@ module.exports = async (req, res) => {
                                 ? 'admin.ops_alerts.verify_quota_sample'
                                 : normalizedAction === 'send_sample_ticket_sla_overdue'
                                     ? 'admin.ops_alerts.ticket_sla_sample'
+                                    : normalizedAction === 'send_sample_ticket_sla_recovered'
+                                        ? 'admin.ops_alerts.ticket_sla_recovered_sample'
                                     : normalizedAction === 'send_sample_shop_inventory_low'
                                         ? 'admin.ops_alerts.shop_inventory_sample'
                                         : normalizedAction === 'send_sample_admin_login_anomaly'
@@ -759,6 +791,8 @@ module.exports = async (req, res) => {
                                 ? `验证额度告警示例消息已发送到 ${channelLabels || '已启用通道'}`
                                 : normalizedAction === 'send_sample_ticket_sla_overdue'
                                     ? `工单超时示例消息已发送到 ${channelLabels || '已启用通道'}`
+                                    : normalizedAction === 'send_sample_ticket_sla_recovered'
+                                        ? `工单恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
                                     : normalizedAction === 'send_sample_shop_inventory_low'
                                         ? `库存预警示例消息已发送到 ${channelLabels || '已启用通道'}`
                                         : normalizedAction === 'send_sample_admin_login_anomaly'

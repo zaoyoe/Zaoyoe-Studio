@@ -85,6 +85,7 @@
 | `ticket_new` | 新售后工单创建 | `info` | 飞书 + 站内 | 不去重 | 工单号、订单号、用户ID、原因 |
 | `ticket_refund_related` | 退款相关工单 | `warning` | 飞书 + 站内 | 30 分钟 | 工单号、订单号、支付通道 |
 | `ticket_sla_overdue` | 工单超时未处理 | `warning` | 飞书 + 站内 | 1 小时 | 工单号、等待时长、责任人 |
+| `ticket_sla_recovered` | 工单退出超时未处理状态 | `warning` | 飞书 + 站内 | 每次事故 1 次 | 工单号、恢复结论、持续时长 |
 | `ticket_repeat_complaint` | 同订单重复投诉 | `warning` | 飞书 + 站内 | 6 小时 | 工单数、订单号、用户ID |
 | `ticket_high_risk_escalation` | 高危投诉或人工升级 | `critical` | TG + 飞书 + 站内 | 30 分钟 | 工单号、原因、备注 |
 

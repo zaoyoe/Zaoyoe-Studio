@@ -2230,6 +2230,16 @@ async function sendOpsAlertTicketSlaSample() {
     }
 }
 
+async function sendOpsAlertTicketSlaRecoveredSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_ticket_sla_recovered', '工单恢复示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send ticket SLA recovery sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function sendOpsAlertShopInventorySample() {
     try {
         return await sendOpsAlertTelegramRequest('send_sample_shop_inventory_low', '库存预警示例消息已发送');
@@ -4273,6 +4283,7 @@ window.sendOpsAlertVerifyIncidentEscalatedSample = sendOpsAlertVerifyIncidentEsc
 window.sendOpsAlertVerifyIncidentRecoveredSample = sendOpsAlertVerifyIncidentRecoveredSample;
 window.sendOpsAlertVerifyQuotaSample = sendOpsAlertVerifyQuotaSample;
 window.sendOpsAlertTicketSlaSample = sendOpsAlertTicketSlaSample;
+window.sendOpsAlertTicketSlaRecoveredSample = sendOpsAlertTicketSlaRecoveredSample;
 window.sendOpsAlertShopInventorySample = sendOpsAlertShopInventorySample;
 window.sendOpsAlertAdminLoginAnomalySample = sendOpsAlertAdminLoginAnomalySample;
 window.sendOpsAlertShopOrderDeliveryFailedSample = sendOpsAlertShopOrderDeliveryFailedSample;

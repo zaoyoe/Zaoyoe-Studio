@@ -359,6 +359,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-ticket-sla-sample':
                 window.sendOpsAlertTicketSlaSample?.();
                 break;
+            case 'settings-send-ops-alert-ticket-sla-recovered-sample':
+                window.sendOpsAlertTicketSlaRecoveredSample?.();
+                break;
             case 'settings-send-ops-alert-shop-inventory-sample':
                 window.sendOpsAlertShopInventorySample?.();
                 break;

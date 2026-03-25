@@ -3,16 +3,24 @@ const {
     enqueueOpsAlertJob,
     loadOpsAlertsRuntimeConfig
 } = require('./ops-alerts');
+const {
+    notifyActiveAdmins
+} = require('./admin-notifications');
 
 const DEFAULT_TICKET_SLA_MONITOR_CONFIG = Object.freeze({
     enabled: true,
     sweep_interval_ms: 10 * 60 * 1000,
     pending_overdue_minutes: 120,
     critical_overdue_minutes: 12 * 60,
+    state_lookback_minutes: 24 * 60,
     dedupe_window_minutes: 60,
     page_size: 500,
     max_pages: 10
 });
+const TICKET_SLA_STATE_TYPES = Object.freeze([
+    'ticket_sla_overdue',
+    'ticket_sla_recovered'
+]);
 
 function normalizeText(value) {
     return String(value || '').trim();
@@ -58,6 +66,12 @@ function normalizeTicketSlaMonitorConfig(rawConfig = {}, env = process.env) {
             normalizeNumber(env?.TICKET_SLA_MONITOR_CRITICAL_OVERDUE_MINUTES, DEFAULT_TICKET_SLA_MONITOR_CONFIG.critical_overdue_minutes, 30, 30 * 24 * 60),
             30,
             30 * 24 * 60
+        ),
+        state_lookback_minutes: normalizeNumber(
+            source.state_lookback_minutes,
+            normalizeNumber(env?.TICKET_SLA_MONITOR_STATE_LOOKBACK_MINUTES, DEFAULT_TICKET_SLA_MONITOR_CONFIG.state_lookback_minutes, 30, 7 * 24 * 60),
+            30,
+            7 * 24 * 60
         ),
         dedupe_window_minutes: normalizeNumber(
             source.dedupe_window_minutes,
@@ -109,6 +123,33 @@ function formatWaitLabel(waitMinutes) {
     return `${minutes} 分钟`;
 }
 
+function getTicketTargetId(value = {}) {
+    if (!value || typeof value !== 'object') {
+        return '';
+    }
+
+    if (normalizeText(value.target_id)) {
+        return normalizeText(value.target_id);
+    }
+
+    return normalizeText(value.ticket_id || value.id);
+}
+
+function compareCreatedAtDescending(left = {}, right = {}) {
+    const leftTime = Date.parse(normalizeText(left.created_at));
+    const rightTime = Date.parse(normalizeText(right.created_at));
+    return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+}
+
+function getLatestTicketStateJob(stateJobs = [], alertType, targetId = '') {
+    const normalizedType = normalizeText(alertType).toLowerCase();
+    const normalizedTargetId = normalizeText(targetId);
+    return (stateJobs || [])
+        .filter((job) => normalizeText(job.alert_type).toLowerCase() === normalizedType)
+        .filter((job) => !normalizedTargetId || getTicketTargetId(job.payload) === normalizedTargetId)
+        .sort(compareCreatedAtDescending)[0] || null;
+}
+
 async function fetchPagedRows(buildQuery, pageSize = 500, maxPages = 10) {
     const rows = [];
 
@@ -138,6 +179,41 @@ async function fetchPendingTickets(client, thresholdIso, config) {
         .select('id, order_id, user_id, status, reason, description, admin_notes, created_at, updated_at')
         .lte('created_at', thresholdIso)
         .order('created_at', { ascending: true }), config.page_size, config.max_pages);
+}
+
+async function fetchRecentTicketSlaStateJobs(client, sinceIso, config) {
+    return fetchPagedRows(() => client
+        .from('ops_alert_jobs')
+        .select('id, alert_type, severity, title, payload, created_at')
+        .in('alert_type', TICKET_SLA_STATE_TYPES)
+        .gte('created_at', sinceIso)
+        .order('created_at', { ascending: false }), config.page_size, config.max_pages);
+}
+
+async function fetchTicketsByIds(client, ticketIds = [], config = {}) {
+    const normalizedIds = Array.from(new Set((ticketIds || []).map((ticketId) => normalizeText(ticketId)).filter(Boolean)));
+    if (!normalizedIds.length) {
+        return [];
+    }
+
+    const chunkSize = Math.max(1, Math.min(Number(config.page_size || DEFAULT_TICKET_SLA_MONITOR_CONFIG.page_size), 200));
+    const rows = [];
+
+    for (let index = 0; index < normalizedIds.length; index += chunkSize) {
+        const batch = normalizedIds.slice(index, index + chunkSize);
+        const { data, error } = await client
+            .from('shop_tickets')
+            .select('id, order_id, user_id, status, reason, description, admin_notes, created_at, updated_at')
+            .in('id', batch);
+
+        if (error) {
+            throw error;
+        }
+
+        rows.push(...(Array.isArray(data) ? data : []));
+    }
+
+    return rows;
 }
 
 function buildTicketSlaOverdueAlerts(tickets = [], rawConfig = {}, options = {}) {
@@ -217,6 +293,124 @@ function buildTicketSlaOverdueAlerts(tickets = [], rawConfig = {}, options = {})
         .filter(Boolean);
 }
 
+function buildTicketSlaRecoveryAlerts(tickets = [], stateJobs = [], rawConfig = {}, options = {}) {
+    const config = normalizeTicketSlaMonitorConfig(rawConfig);
+    const activeOverdueAlerts = buildTicketSlaOverdueAlerts(tickets, config, options);
+    const activeTargetIds = new Set(activeOverdueAlerts.map((alert) => getTicketTargetId(alert.payload)));
+    const overdueTargetIds = Array.from(new Set(
+        (stateJobs || [])
+            .filter((job) => normalizeText(job.alert_type).toLowerCase() === 'ticket_sla_overdue')
+            .map((job) => getTicketTargetId(job.payload))
+            .filter(Boolean)
+    ));
+    const ticketsById = new Map((tickets || []).map((ticket) => [normalizeText(ticket.id), ticket]));
+    const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
+
+    return overdueTargetIds.map((targetId) => {
+        const latestOverdue = getLatestTicketStateJob(stateJobs, 'ticket_sla_overdue', targetId);
+        if (!latestOverdue) {
+            return null;
+        }
+
+        const latestRecovered = getLatestTicketStateJob(stateJobs, 'ticket_sla_recovered', targetId);
+        const latestOverdueAt = Date.parse(normalizeText(latestOverdue.created_at));
+        const latestRecoveredAt = Date.parse(normalizeText(latestRecovered?.created_at));
+        if (Number.isFinite(latestOverdueAt) && Number.isFinite(latestRecoveredAt) && latestRecoveredAt >= latestOverdueAt) {
+            return null;
+        }
+        if (activeTargetIds.has(targetId)) {
+            return null;
+        }
+
+        const currentTicket = ticketsById.get(targetId);
+        if (!currentTicket) {
+            return null;
+        }
+
+        const currentStatus = getTicketStatus(currentTicket);
+        if (shouldTrackTicketStatus(currentStatus)) {
+            return null;
+        }
+
+        const overduePayload = latestOverdue.payload && typeof latestOverdue.payload === 'object' ? latestOverdue.payload : {};
+        const shortTicketId = targetId.slice(0, 8) || 'unknown';
+        const incidentRecoveredAt = nowDate.toISOString();
+        const incidentDurationMinutes = Number.isFinite(latestOverdueAt)
+            ? Math.max(0, Math.round((nowDate.getTime() - latestOverdueAt) / 60000))
+            : 0;
+        const orderId = normalizeText(currentTicket.order_id || overduePayload.order_id);
+        const userId = normalizeText(currentTicket.user_id || overduePayload.user_id);
+        const currentReason = getTicketReason(currentTicket) || normalizeText(overduePayload.reason);
+        const currentUpdatedAt = normalizeText(currentTicket.updated_at);
+        const recoverySummary = currentStatus === 'RESOLVED'
+            ? '工单已解决，已退出超时未处理状态'
+            : currentStatus === 'REJECTED'
+                ? '工单已拒绝，已退出超时未处理状态'
+                : `工单当前状态已变更为 ${currentStatus || 'UNKNOWN'}，已退出超时未处理状态`;
+        const lines = [
+            `工单 ${shortTicketId} 已退出超时未处理状态，可从催办处理切回正常跟进。`,
+            `恢复结论：${recoverySummary}`
+        ];
+
+        if (orderId) {
+            lines.push(`订单号：${orderId}`);
+        }
+        if (userId) {
+            lines.push(`用户ID：${userId}`);
+        }
+        if (normalizeText(overduePayload.wait_label)) {
+            lines.push(`上次超时等待：${normalizeText(overduePayload.wait_label)}`);
+        }
+        lines.push(`当前状态：${currentStatus}`);
+        if (normalizeText(latestOverdue.created_at)) {
+            lines.push(`上次超时：${normalizeText(latestOverdue.created_at)}`);
+        }
+        if (currentUpdatedAt) {
+            lines.push(`最近更新时间：${currentUpdatedAt}`);
+        }
+        lines.push(`恢复时间：${incidentRecoveredAt}`);
+        lines.push(`持续时长：${formatWaitLabel(incidentDurationMinutes)}`);
+        if (currentReason) {
+            lines.push(`问题描述：${currentReason}`);
+        }
+        lines.push('处理入口：售后工单 -> 已处理 -> 工单详情');
+
+        return {
+            alertType: 'ticket_sla_recovered',
+            severity: 'warning',
+            title: `工单超时已恢复（${shortTicketId}）`,
+            content: lines.join('\n'),
+            payload: {
+                target_id: targetId,
+                ticket_id: targetId,
+                order_id: orderId || null,
+                user_id: userId || null,
+                incident_alert_job_id: normalizeText(latestOverdue.id) || null,
+                incident_started_at: normalizeText(latestOverdue.created_at) || null,
+                incident_recovered_at: incidentRecoveredAt,
+                incident_duration_minutes: incidentDurationMinutes,
+                previous_wait_minutes: Number(overduePayload.wait_minutes || 0) || null,
+                previous_wait_label: normalizeText(overduePayload.wait_label) || null,
+                ticket_status: currentStatus,
+                recovery_summary: recoverySummary,
+                reason: currentReason || null,
+                created_at: normalizeText(currentTicket.created_at) || normalizeText(overduePayload.created_at) || null,
+                updated_at: currentUpdatedAt || null,
+                entry_path: '售后工单 -> 已处理 -> 工单详情'
+            },
+            allowedChannels: ['feishu'],
+            dedupeKey: crypto
+                .createHash('sha256')
+                .update(`ticket_sla_recovered:${targetId}:${normalizeText(latestOverdue.id) || normalizeText(latestOverdue.created_at) || 'unknown'}`)
+                .digest('hex'),
+            dedupeWindowMinutes: Math.max(
+                Number(config.dedupe_window_minutes || DEFAULT_TICKET_SLA_MONITOR_CONFIG.dedupe_window_minutes),
+                60
+            )
+        };
+    }).filter(Boolean);
+}
+
 async function runTicketSlaOverdueSweep(supabase, options = {}) {
     const env = options.env || process.env;
     const config = normalizeTicketSlaMonitorConfig(options.config, env);
@@ -242,12 +436,29 @@ async function runTicketSlaOverdueSweep(supabase, options = {}) {
 
     const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
     const thresholdIso = new Date(nowDate.getTime() - Number(config.pending_overdue_minutes || DEFAULT_TICKET_SLA_MONITOR_CONFIG.pending_overdue_minutes) * 60 * 1000).toISOString();
-    const tickets = await fetchPendingTickets(supabase, thresholdIso, config);
+    const stateSinceIso = new Date(nowDate.getTime() - Number(config.state_lookback_minutes || DEFAULT_TICKET_SLA_MONITOR_CONFIG.state_lookback_minutes) * 60 * 1000).toISOString();
+    const [tickets, stateJobs] = await Promise.all([
+        fetchPendingTickets(supabase, thresholdIso, config),
+        fetchRecentTicketSlaStateJobs(supabase, stateSinceIso, config)
+    ]);
     const alerts = buildTicketSlaOverdueAlerts(tickets, config, { now: nowDate });
+    const trackedTicketIds = Array.from(new Set(
+        (stateJobs || [])
+            .filter((job) => normalizeText(job.alert_type).toLowerCase() === 'ticket_sla_overdue')
+            .map((job) => getTicketTargetId(job.payload))
+            .filter(Boolean)
+    ));
+    const trackedTickets = await fetchTicketsByIds(supabase, trackedTicketIds, config);
+    const recoveryAlerts = buildTicketSlaRecoveryAlerts(trackedTickets, stateJobs, config, { now: nowDate });
 
     let queued = 0;
     let deduped = 0;
     let skippedNoChannels = 0;
+    let recoveredQueued = 0;
+    let recoveredDeduped = 0;
+    let recoveredSkippedNoChannels = 0;
+    let adminNotificationsCreated = 0;
+    let adminNotificationsSkipped = 0;
     const results = [];
 
     for (const alert of alerts) {
@@ -275,25 +486,80 @@ async function runTicketSlaOverdueSweep(supabase, options = {}) {
         });
     }
 
+    for (const alert of recoveryAlerts) {
+        const result = await enqueueOpsAlertJob(supabase, {
+            ...alert,
+            createdAt: nowDate.toISOString(),
+            source: 'ticket_sla_monitor'
+        }, {
+            runtime,
+            env
+        });
+
+        if (result?.queued === true) {
+            recoveredQueued += 1;
+        } else if (result?.reason === 'deduped') {
+            recoveredDeduped += 1;
+        } else if (result?.reason === 'no_active_channels') {
+            recoveredSkippedNoChannels += 1;
+        }
+
+        const adminNotificationResult = await notifyActiveAdmins(supabase, {
+            title: alert.title,
+            content: alert.content,
+            type: 'success',
+            dedupeWindowMinutes: Math.max(
+                Number(alert.dedupeWindowMinutes || 0),
+                60
+            )
+        }).catch((error) => ({
+            error: error.message || 'notify_failed'
+        }));
+
+        adminNotificationsCreated += Number(adminNotificationResult?.created || 0);
+        adminNotificationsSkipped += Number(adminNotificationResult?.skipped || 0);
+
+        results.push({
+            ticket_id: alert.payload?.ticket_id || null,
+            severity: alert.severity,
+            queued: result?.queued === true,
+            reason: result?.reason || null,
+            admin_notification_created: Number(adminNotificationResult?.created || 0),
+            admin_notification_error: normalizeText(adminNotificationResult?.error) || null
+        });
+    }
+
     return {
         overdue_count: alerts.length,
+        recovered_count: recoveryAlerts.length,
         queued,
         deduped,
+        recovered_queued: recoveredQueued,
+        recovered_deduped: recoveredDeduped,
         skipped_no_channels: skippedNoChannels,
+        recovered_skipped_no_channels: recoveredSkippedNoChannels,
+        admin_notifications_created: adminNotificationsCreated,
+        admin_notifications_skipped: adminNotificationsSkipped,
+        state_job_count: stateJobs.length,
         results
     };
 }
 
 module.exports = {
     DEFAULT_TICKET_SLA_MONITOR_CONFIG,
+    TICKET_SLA_STATE_TYPES,
     buildTicketSlaOverdueAlerts,
+    buildTicketSlaRecoveryAlerts,
     normalizeTicketSlaMonitorConfig,
     runTicketSlaOverdueSweep,
     __testUtils: {
+        compareCreatedAtDescending,
         fetchPagedRows,
         formatWaitLabel,
+        getLatestTicketStateJob,
         getTicketReason,
         getTicketStatus,
+        getTicketTargetId,
         shouldTrackTicketStatus
     }
 };

@@ -535,6 +535,10 @@ function buildExternalAlertText(job = {}) {
     if (ticketSlaText) {
         return ticketSlaText;
     }
+    const ticketSlaRecoveredText = buildTicketSlaRecoveredAlertText(job);
+    if (ticketSlaRecoveredText) {
+        return ticketSlaRecoveredText;
+    }
     const shopInventoryText = buildShopInventoryAlertText(job);
     if (shopInventoryText) {
         return shopInventoryText;
@@ -1051,6 +1055,34 @@ function buildTicketSlaOverdueAlertText(job = {}) {
     if (normalizeText(payload.reason)) lines.push(`问题描述：${normalizeText(payload.reason)}`);
     if (normalizeText(payload.created_at)) lines.push(`创建时间：${formatTimestamp(payload.created_at)}`);
     if (normalizeText(payload.updated_at)) lines.push(`最近更新时间：${formatTimestamp(payload.updated_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildTicketSlaRecoveredAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'ticket_sla_recovered') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const lines = [
+        `[工单 SLA 恢复][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '工单超时已恢复'}`
+    ];
+
+    if (normalizeText(payload.ticket_id)) lines.push(`工单号：${normalizeText(payload.ticket_id)}`);
+    if (normalizeText(payload.order_id)) lines.push(`订单号：${normalizeText(payload.order_id)}`);
+    if (normalizeText(payload.user_id)) lines.push(`用户ID：${normalizeText(payload.user_id)}`);
+    if (normalizeText(payload.recovery_summary)) lines.push(`恢复结论：${normalizeText(payload.recovery_summary)}`);
+    if (normalizeText(payload.previous_wait_label)) lines.push(`上次超时等待：${normalizeText(payload.previous_wait_label)}`);
+    if (normalizeText(payload.ticket_status)) lines.push(`当前状态：${getTicketStatusLabel(payload.ticket_status)}`);
+    if (normalizeText(payload.incident_started_at)) lines.push(`上次超时：${formatTimestamp(payload.incident_started_at)}`);
+    if (normalizeText(payload.updated_at)) lines.push(`最近更新时间：${formatTimestamp(payload.updated_at)}`);
+    if (normalizeText(payload.incident_recovered_at)) lines.push(`恢复时间：${formatTimestamp(payload.incident_recovered_at)}`);
+    if (Number.isFinite(Number(payload.incident_duration_minutes))) {
+        lines.push(`持续时长：${Math.max(0, Math.round(Number(payload.incident_duration_minutes || 0)))} 分钟`);
+    }
+    if (normalizeText(payload.reason)) lines.push(`问题描述：${normalizeText(payload.reason)}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
     return lines.filter(Boolean).join('\n');

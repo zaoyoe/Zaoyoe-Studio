@@ -706,6 +706,38 @@ test('buildExternalAlertText renders ticket SLA overdue details', () => {
     assert.match(text, /处理入口：售后工单 -> 待处理 -> 工单详情/);
 });
 
+test('buildExternalAlertText renders ticket SLA recovery details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'ticket_sla_recovered',
+        severity: 'warning',
+        title: '工单超时已恢复（ticket-de）',
+        payload: {
+            ticket_id: 'ticket-demo-sla-001',
+            order_id: 'shop-order-demo-001',
+            user_id: 'demo_ticket_user_001',
+            recovery_summary: '工单已解决，已退出超时未处理状态',
+            previous_wait_label: '3 小时 15 分钟',
+            ticket_status: 'RESOLVED',
+            incident_started_at: '2026-03-25T10:00:00.000Z',
+            updated_at: '2026-03-25T10:42:00.000Z',
+            incident_recovered_at: '2026-03-25T10:42:00.000Z',
+            incident_duration_minutes: 42,
+            reason: '已人工补发卡密并回复用户，当前无需继续催办。',
+            entry_path: '售后工单 -> 已处理 -> 工单详情'
+        }
+    });
+
+    assert.match(text, /工单 SLA 恢复/);
+    assert.match(text, /工单号：ticket-demo-sla-001/);
+    assert.match(text, /订单号：shop-order-demo-001/);
+    assert.match(text, /用户ID：demo_ticket_user_001/);
+    assert.match(text, /恢复结论：工单已解决，已退出超时未处理状态/);
+    assert.match(text, /上次超时等待：3 小时 15 分钟/);
+    assert.match(text, /当前状态：已解决/);
+    assert.match(text, /持续时长：42 分钟/);
+    assert.match(text, /处理入口：售后工单 -> 已处理 -> 工单详情/);
+});
+
 test('buildExternalAlertText renders shop inventory low details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'shop_inventory_low',
