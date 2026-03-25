@@ -1713,7 +1713,7 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=57'),
+        adminStudioHtml.includes('admin-studio.css?v=58'),
         true,
         'admin-studio.html should load the latest admin studio stylesheet version'
     );
@@ -2080,6 +2080,11 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'id="opsAlertMonitorPanel"',
         'id="opsAlertMonitorGrid"',
         'id="opsAlertMonitorMeta"',
+        'id="opsAlertMonitorToolbar"',
+        'id="opsAlertMonitorScopeFilters"',
+        'id="opsAlertMonitorSeverityFilters"',
+        'id="opsAlertMonitorCategoryFilters"',
+        'data-admin-action="settings-filter-ops-alert-monitor"',
         'data-workspace-target="payments-overview"',
         'data-workspace-target="payments-ops"',
         'data-workspace-target="verify-monitor"',
@@ -2124,6 +2129,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         "case 'settings-send-ops-alert-payment-config-incident-sample':",
         "case 'settings-send-ops-alert-payment-config-incident-recovered-sample':",
         "case 'settings-send-ops-alert-payment-config-recovered-sample':",
+        "case 'settings-filter-ops-alert-monitor':",
         "case 'settings-refresh-ops-alert-monitor':",
         "case 'settings-open-ops-alert-workspace':",
         "case 'settings-delete-ops-alert-secret':"
@@ -2157,11 +2163,13 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;',
         "fetch('/api/admin/settings/ops-alert-monitor'",
         'function getDefaultOpsAlertMonitorState()',
+        'function getDefaultOpsAlertMonitorViewState()',
         'function renderOpsAlertMonitorPanel()',
         'async function loadOpsAlertMonitor(force = false)',
+        'window.setOpsAlertMonitorFilter = setOpsAlertMonitorFilter;',
         'window.loadOpsAlertMonitor = loadOpsAlertMonitor;',
         'window.refreshOpsAlertMonitorPanel = refreshOpsAlertMonitorPanel;',
-        'async function openOpsAlertWorkspace(workspaceKey)',
+        'async function openOpsAlertWorkspace(workspaceKey, context = {})',
         'window.openOpsAlertWorkspace = openOpsAlertWorkspace;',
         'window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;',
         'window.saveOpsAlertSettings = saveOpsAlertSettings;',
@@ -2182,9 +2190,12 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         '.ops-alert-workspace-grid',
         '.ops-alert-workspace-card',
         '.ops-alert-workspace-card__actions',
+        '.ops-alert-monitor-toolbar',
+        '.ops-alert-monitor-filter-btn',
         '.ops-alert-monitor-grid',
         '.ops-alert-monitor-card',
-        '.ops-alert-monitor-card__actions'
+        '.ops-alert-monitor-card__actions',
+        '.ops-alert-monitor-item__actions'
     ];
 
     for (const marker of workspaceCssMarkers) {
@@ -2738,7 +2749,7 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=57'),
+        adminStudioSource.includes('admin-studio.css?v=58'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -3392,7 +3403,7 @@ test('discount admin runtime renderers externalize table states, copy toast, and
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=57'),
+        adminStudioSource.includes('admin-studio.css?v=58'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -3459,7 +3470,7 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=57'),
+        adminStudioSource.includes('admin-studio.css?v=58'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -4366,7 +4377,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
     }
 
     const htmlMarkers = [
-        'admin-studio.css?v=57',
+        'admin-studio.css?v=58',
         '<div class="anomaly-alerts-area" id="anomalyAlertsArea" hidden>',
         '<div class="ab-results-chart" id="abResultsChart" hidden>',
         'admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1'
@@ -4442,7 +4453,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=57'),
+        adminStudioHtml.includes('admin-studio.css?v=58'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -4706,7 +4717,7 @@ test('payments runtime renderers externalize tooltip, tab, and trend styling', (
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=57'),
+        adminStudioHtml.includes('admin-studio.css?v=58'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
