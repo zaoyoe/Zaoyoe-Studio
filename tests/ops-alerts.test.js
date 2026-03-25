@@ -495,6 +495,38 @@ test('buildExternalAlertText renders verify service disabled details', () => {
     assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> API Key \/ 接口状态/);
 });
 
+test('buildExternalAlertText renders verify queue backlog details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'verify_queue_backlog',
+        severity: 'warning',
+        title: '验证任务堆积预警（primary-key）',
+        payload: {
+            key_name: 'primary-key',
+            queue_size: 18,
+            running_jobs: 4,
+            active_job_count: 11,
+            oldest_pending_label: '42 分钟',
+            hot_targets: ['member1@example.com × 3', 'member2@example.com × 2'],
+            hot_errors: ['lock_conflict × 4', 'otp_invalid × 2'],
+            degraded_reasons: [
+                '上游队列已堆积 18 个任务（阈值 10 个）',
+                '最近 30 分钟失败 6 次（阈值 4 次）'
+            ],
+            checked_at: '2026-03-25T10:00:00.000Z',
+            entry_path: '后台设置 -> 验证服务配置 -> 队列 / 最近任务状态'
+        }
+    });
+
+    assert.match(text, /验证队列告警/);
+    assert.match(text, /API Key：primary-key/);
+    assert.match(text, /判定信号：上游队列已堆积 18 个任务（阈值 10 个）；最近 30 分钟失败 6 次（阈值 4 次）/);
+    assert.match(text, /队列概览：上游排队 18 个 \/ 运行中 4 个 \/ 本地活跃 11 个/);
+    assert.match(text, /最老活跃任务：42 分钟/);
+    assert.match(text, /热点目标：member1@example\.com × 3、member2@example\.com × 2/);
+    assert.match(text, /最近错误：lock_conflict × 4；otp_invalid × 2/);
+    assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 队列 \/ 最近任务状态/);
+});
+
 test('buildExternalAlertText renders ticket SLA overdue details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'ticket_sla_overdue',

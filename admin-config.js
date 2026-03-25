@@ -2160,6 +2160,16 @@ async function sendOpsAlertVerifyServiceDisabledSample() {
     }
 }
 
+async function sendOpsAlertVerifyQueueBacklogSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_verify_queue_backlog', '验证任务堆积示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send verify queue backlog sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function sendOpsAlertVerifyQuotaSample() {
     try {
         return await sendOpsAlertTelegramRequest('send_sample_verify_quota_low', '验证额度告警示例消息已发送');
@@ -4216,6 +4226,7 @@ window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;
 window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;
 window.sendOpsAlertGatewaySample = sendOpsAlertGatewaySample;
 window.sendOpsAlertVerifyServiceDisabledSample = sendOpsAlertVerifyServiceDisabledSample;
+window.sendOpsAlertVerifyQueueBacklogSample = sendOpsAlertVerifyQueueBacklogSample;
 window.sendOpsAlertVerifyQuotaSample = sendOpsAlertVerifyQuotaSample;
 window.sendOpsAlertTicketSlaSample = sendOpsAlertTicketSlaSample;
 window.sendOpsAlertShopInventorySample = sendOpsAlertShopInventorySample;

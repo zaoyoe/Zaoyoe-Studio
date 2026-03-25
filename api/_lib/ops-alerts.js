@@ -499,6 +499,10 @@ function buildExternalAlertText(job = {}) {
     if (verifyServiceText) {
         return verifyServiceText;
     }
+    const verifyQueueText = buildVerifyQueueBacklogAlertText(job);
+    if (verifyQueueText) {
+        return verifyQueueText;
+    }
     const verifyQuotaText = buildVerifyQuotaLowAlertText(job);
     if (verifyQuotaText) {
         return verifyQuotaText;
@@ -778,6 +782,44 @@ function buildVerifyServiceDisabledAlertText(job = {}) {
     if (normalizeText(payload.api_base_url)) lines.push(`API Base：${normalizeText(payload.api_base_url)}`);
     if (normalizeText(payload.last_error)) lines.push(`最近错误：${normalizeText(payload.last_error)}`);
     if (Number.isFinite(responseStatus) && responseStatus > 0) lines.push(`响应状态：${responseStatus}`);
+    if (normalizeText(payload.checked_at)) lines.push(`检查时间：${formatTimestamp(payload.checked_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildVerifyQueueBacklogAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'verify_queue_backlog') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const reasons = Array.isArray(payload.degraded_reasons)
+        ? payload.degraded_reasons.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const hotTargets = Array.isArray(payload.hot_targets)
+        ? payload.hot_targets.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const hotErrors = Array.isArray(payload.hot_errors)
+        ? payload.hot_errors.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const lines = [
+        `[验证队列告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '验证任务堆积'}`
+    ];
+
+    if (normalizeText(payload.key_name)) lines.push(`API Key：${normalizeText(payload.key_name)}`);
+    if (reasons.length) lines.push(`判定信号：${reasons.join('；')}`);
+    if (
+        Number.isFinite(Number(payload.queue_size))
+        || Number.isFinite(Number(payload.running_jobs))
+        || Number.isFinite(Number(payload.active_job_count))
+    ) {
+        lines.push(`队列概览：上游排队 ${Math.max(0, Math.round(Number(payload.queue_size || 0)))} 个 / 运行中 ${Math.max(0, Math.round(Number(payload.running_jobs || 0)))} 个 / 本地活跃 ${Math.max(0, Math.round(Number(payload.active_job_count || 0)))} 个`);
+    }
+    if (normalizeText(payload.oldest_pending_label)) lines.push(`最老活跃任务：${normalizeText(payload.oldest_pending_label)}`);
+    if (hotTargets.length) lines.push(`热点目标：${hotTargets.join('、')}`);
+    if (hotErrors.length) lines.push(`最近错误：${hotErrors.join('；')}`);
+    if (normalizeText(payload.queue_error)) lines.push(`队列查询：${normalizeText(payload.queue_error)}`);
     if (normalizeText(payload.checked_at)) lines.push(`检查时间：${formatTimestamp(payload.checked_at)}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 

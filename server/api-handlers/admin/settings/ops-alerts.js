@@ -325,6 +325,37 @@ function buildVerifyServiceDisabledSampleJob(user) {
     };
 }
 
+function buildVerifyQueueBacklogSampleJob(user) {
+    return {
+        alert_type: 'verify_queue_backlog',
+        severity: 'warning',
+        title: '验证任务堆积预警（primary-key）',
+        payload: {
+            target_id: 'verify_queue:https://iqless.icu',
+            key_name: 'primary-key',
+            api_base_url: 'https://iqless.icu',
+            queue_size: 18,
+            running_jobs: 4,
+            active_job_count: 11,
+            oldest_pending_minutes: 42,
+            oldest_pending_label: '42 分钟',
+            recent_failure_count: 6,
+            recent_failure_window_minutes: 30,
+            hot_targets: ['member1@example.com × 3', 'member2@example.com × 2'],
+            hot_errors: ['lock_conflict × 4', 'otp_invalid × 2'],
+            degraded_reasons: [
+                '上游队列已堆积 18 个任务（阈值 10 个）',
+                '本地活跃任务 11 个（阈值 8 个）',
+                '最老活跃任务已等待 42 分钟（阈值 20 分钟）',
+                '最近 30 分钟失败 6 次（阈值 4 次）'
+            ],
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了验证任务堆积示例发送`,
+            checked_at: new Date().toISOString(),
+            entry_path: '后台设置 -> 验证服务配置 -> 队列 / 最近任务状态（示例）'
+        }
+    };
+}
+
 function buildTicketSlaOverdueSampleJob(user) {
     const createdAt = new Date(Date.now() - 195 * 60 * 1000).toISOString();
     return {
@@ -488,6 +519,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_refund_telegram'
                 || sanitizeText(body.action) === 'send_sample_gateway_degraded'
                 || sanitizeText(body.action) === 'send_sample_verify_service_disabled'
+                || sanitizeText(body.action) === 'send_sample_verify_queue_backlog'
                 || sanitizeText(body.action) === 'send_sample_verify_quota_low'
                 || sanitizeText(body.action) === 'send_sample_ticket_sla_overdue'
                 || sanitizeText(body.action) === 'send_sample_shop_inventory_low'
@@ -508,6 +540,8 @@ module.exports = async (req, res) => {
                         ? buildGatewayDegradedSampleJob(user)
                         : normalizedAction === 'send_sample_verify_service_disabled'
                             ? buildVerifyServiceDisabledSampleJob(user)
+                        : normalizedAction === 'send_sample_verify_queue_backlog'
+                            ? buildVerifyQueueBacklogSampleJob(user)
                         : normalizedAction === 'send_sample_verify_quota_low'
                             ? buildVerifyQuotaLowSampleJob(user)
                             : normalizedAction === 'send_sample_ticket_sla_overdue'
@@ -532,6 +566,8 @@ module.exports = async (req, res) => {
                             ? 'admin.ops_alerts.gateway_degraded_sample'
                         : normalizedAction === 'send_sample_verify_service_disabled'
                             ? 'admin.ops_alerts.verify_service_disabled_sample'
+                        : normalizedAction === 'send_sample_verify_queue_backlog'
+                            ? 'admin.ops_alerts.verify_queue_backlog_sample'
                         : normalizedAction === 'send_sample_verify_quota_low'
                                 ? 'admin.ops_alerts.verify_quota_sample'
                                 : normalizedAction === 'send_sample_ticket_sla_overdue'
@@ -568,6 +604,8 @@ module.exports = async (req, res) => {
                             ? `支付通道异常示例消息已发送到 ${channelLabels || '已启用通道'}`
                             : normalizedAction === 'send_sample_verify_service_disabled'
                                 ? `验证服务停摆示例消息已发送到 ${channelLabels || '已启用通道'}`
+                            : normalizedAction === 'send_sample_verify_queue_backlog'
+                                ? `验证任务堆积示例消息已发送到 ${channelLabels || '已启用通道'}`
                             : normalizedAction === 'send_sample_verify_quota_low'
                                 ? `验证额度告警示例消息已发送到 ${channelLabels || '已启用通道'}`
                                 : normalizedAction === 'send_sample_ticket_sla_overdue'

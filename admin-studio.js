@@ -338,6 +338,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-verify-service-disabled-sample':
                 window.sendOpsAlertVerifyServiceDisabledSample?.();
                 break;
+            case 'settings-send-ops-alert-verify-queue-backlog-sample':
+                window.sendOpsAlertVerifyQueueBacklogSample?.();
+                break;
             case 'settings-send-ops-alert-verify-quota-sample':
                 window.sendOpsAlertVerifyQuotaSample?.();
                 break;
