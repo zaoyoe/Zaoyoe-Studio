@@ -101,7 +101,8 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Upstream API base URL
-const VERIFY_API_BASE = process.env.VERIFY_API_BASE_URL || 'https://iqless.icu';
+const DEFAULT_VERIFY_API_BASE_URL = 'https://a8yx0rez5w.localto.net';
+const VERIFY_API_BASE = process.env.VERIFY_API_BASE_URL || DEFAULT_VERIFY_API_BASE_URL;
 const HEALTHCHECK_UPSTREAM_TIMEOUT_MS = Math.max(1000, Number(process.env.HEALTHCHECK_UPSTREAM_TIMEOUT_MS || 5000));
 const ACTIVE_TRACKED_JOB_STATUSES = ['queued', 'running', 'processing', 'pending'];
 const TERMINAL_TRACKED_JOB_STATUSES = ['success', 'failed'];

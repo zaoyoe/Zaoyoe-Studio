@@ -4313,7 +4313,8 @@ function renderVerifyConfig() {
     const config = systemConfigCache['verify_settings'] || {
         price_per_verify: 10,
         enabled: true,
-        verify_api_key: ''
+        verify_api_key: '',
+        verify_api_base_url: ''
     };
 
     // Price input
@@ -4335,6 +4336,11 @@ function renderVerifyConfig() {
             apiKeyInput.value = '';
             delete apiKeyInput.dataset.hasKey;
         }
+    }
+
+    const apiBaseInput = document.getElementById('cfgVerifyApiBase');
+    if (apiBaseInput) {
+        apiBaseInput.value = String(config.verify_api_base_url || '').trim().replace(/\/+$/, '');
     }
 
     renderVerifyMonitorPanel();
@@ -4435,6 +4441,7 @@ async function saveVerifyConfig() {
     const priceInput = document.getElementById('cfgVerifyPrice');
     const enabledToggle = document.getElementById('cfgVerifyEnabled');
     const apiKeyInput = document.getElementById('cfgVerifyApiKey');
+    const apiBaseInput = document.getElementById('cfgVerifyApiBase');
 
     const config = systemConfigCache['verify_settings'] || {};
 
@@ -4454,6 +4461,11 @@ async function saveVerifyConfig() {
         if (newKey) {
             config.verify_api_key = newKey;
         }
+    }
+
+    if (apiBaseInput) {
+        config.verify_api_base_url = String(apiBaseInput.value || '').trim().replace(/\/+$/, '');
+        apiBaseInput.value = config.verify_api_base_url;
     }
 
     const success = await saveConfig('verify_settings', config);
