@@ -367,6 +367,50 @@ test('sendFeishuAlert treats non-zero webhook result codes as delivery failures'
     assert.match(result.error || '', /Key Words Not Found|feishu_error_19024/);
 });
 
+test('buildExternalAlertText renders provider degradation details for payment gateway alerts', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'payment_gateway_degraded',
+        severity: 'critical',
+        title: '爱发电 支付通道异常波动（CN）',
+        payload: {
+            provider: 'afdian',
+            site: 'cn',
+            monitor_window_minutes: 30,
+            degraded_reasons: [
+                '支付成功率仅 16.67%（1/6）',
+                '回调 5xx 已累计 3 次'
+            ],
+            total_orders: 6,
+            paid_orders: 1,
+            review_orders: 4,
+            failed_orders: 2,
+            paid_rate: 16.67,
+            webhook_total: 5,
+            webhook_success: 2,
+            webhook_failed: 3,
+            webhook_4xx: 0,
+            webhook_5xx: 3,
+            webhook_success_rate: 40,
+            query_total: 5,
+            query_success: 2,
+            query_failed: 3,
+            query_4xx: 0,
+            query_5xx: 2,
+            query_success_rate: 40,
+            entry_path: '支付对账 -> 支付总览 -> 通道表现 / 最近24小时异常趋势'
+        }
+    });
+
+    assert.match(text, /支付通道告警/);
+    assert.match(text, /支付通道：爱发电/);
+    assert.match(text, /站点：CN/);
+    assert.match(text, /巡检窗口：最近 30 分钟/);
+    assert.match(text, /判定信号：支付成功率仅 16\.67%（1\/6）；回调 5xx 已累计 3 次/);
+    assert.match(text, /订单概览：总 6 笔 \/ 成功 1 笔 \/ 待审核 4 笔 \/ 失败 2 笔 \/ 成功率 16\.67%/);
+    assert.match(text, /回调概览：总 5 次 \/ 成功 2 次 \/ 失败 3 次 \/ 4xx 0 次 \/ 5xx 3 次 \/ 成功率 40\.00%/);
+    assert.match(text, /处理入口：支付对账 -> 支付总览 -> 通道表现 \/ 最近24小时异常趋势/);
+});
+
 test('ops alerts exports sendFeishuAlert for admin preview actions', () => {
     assert.equal(typeof sendFeishuAlert, 'function');
 });
