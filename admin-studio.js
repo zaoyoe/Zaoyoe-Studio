@@ -329,6 +329,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-telegram-test':
                 window.sendOpsAlertTelegramTest?.();
                 break;
+            case 'settings-send-ops-alert-refund-sample':
+                window.sendOpsAlertRefundSample?.();
+                break;
             case 'settings-delete-ops-alert-secret':
                 window.deleteOpsAlertSecret?.(actionEl.dataset.secretName);
                 break;

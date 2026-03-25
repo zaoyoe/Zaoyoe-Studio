@@ -101,6 +101,44 @@ function buildTelegramTestJob(user, runtime) {
     };
 }
 
+function buildTelegramRefundSampleJob(user) {
+    const nowIso = new Date().toISOString();
+
+    return {
+        alert_type: 'payment_refund_ops',
+        severity: 'critical',
+        title: '支付退款积分回滚失败',
+        payload: {
+            topic_label: '回滚失败',
+            processing_result: 'admin_refund_compensation_failed',
+            site: 'cn',
+            provider: 'hupijiao',
+            provider_order_no: 'DEMO_HJ_ORDER_20260325',
+            target_id: 'order-demo-refund-telegram',
+            user_id: 'demo_buyer_001',
+            order_status: 'redeemed',
+            refund_status: 'paid',
+            expected_amount: 29.9,
+            paid_amount: 29.9,
+            points_amount: 1200,
+            credited: true,
+            refund_reclaimed_points: 1200,
+            refund_reclaimed_paid_points: 1000,
+            refund_reclaimed_bonus_points: 200,
+            compensation_restored_paid_points: 1000,
+            compensation_restored_bonus_points: 200,
+            gateway_open_order_id: 'HJ-GATEWAY-DEMO-20260325',
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了退款详情示例发送`,
+            last_error: '示例：网关退款失败后，积分回滚链路未完成，需要人工复核。',
+            response_status: 500,
+            detail: '这是一条退款详情示例消息，用于验证 Telegram 是否能完整展示订单号、付款者、金额与积分明细。',
+            claimed_at: nowIso,
+            paid_at: nowIso,
+            entry_path: '支付对账 -> 异常运维 -> 回滚失败（示例）'
+        }
+    };
+}
+
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
     const { error } = await supabase
         .from('system_config')
@@ -132,7 +170,7 @@ module.exports = async (req, res) => {
 
         if (req.method === 'POST') {
             const body = await parseJsonBody(req);
-            if (sanitizeText(body.action) === 'send_test_telegram') {
+            if (sanitizeText(body.action) === 'send_test_telegram' || sanitizeText(body.action) === 'send_sample_refund_telegram') {
                 const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase);
                 const runtime = {
                     config: normalizeOpsAlertsConfig(body.config),
@@ -156,15 +194,18 @@ module.exports = async (req, res) => {
                     });
                 }
 
-                const result = await sendTelegramAlert(
-                    buildTelegramTestJob(user, runtime),
-                    runtime
-                );
+                const normalizedAction = sanitizeText(body.action);
+                const job = normalizedAction === 'send_sample_refund_telegram'
+                    ? buildTelegramRefundSampleJob(user)
+                    : buildTelegramTestJob(user, runtime);
+                const result = await sendTelegramAlert(job, runtime);
 
                 await writeAdminAuditLog({
                     supabase,
                     adminId: user.id,
-                    actionType: 'admin.ops_alerts.telegram_test',
+                    actionType: normalizedAction === 'send_sample_refund_telegram'
+                        ? 'admin.ops_alerts.telegram_refund_sample'
+                        : 'admin.ops_alerts.telegram_test',
                     details: {
                         ok: result?.ok === true,
                         status: Number(result?.status || 0) || null,
@@ -181,7 +222,9 @@ module.exports = async (req, res) => {
 
                 return sendJson(res, 200, {
                     success: true,
-                    message: `测试 Telegram 告警已发送到 ${chatIds.length} 个 chat`
+                    message: normalizedAction === 'send_sample_refund_telegram'
+                        ? `退款详情示例消息已发送到 ${chatIds.length} 个 chat`
+                        : `测试 Telegram 告警已发送到 ${chatIds.length} 个 chat`
                 });
             }
 

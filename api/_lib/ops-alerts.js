@@ -586,7 +586,7 @@ function buildRefundOpsAlertText(job = {}) {
     if (providerLabel) lines.push(`支付通道：${providerLabel}`);
     if (normalizeText(payload.provider_order_no)) lines.push(`订单号：${normalizeText(payload.provider_order_no)}`);
     if (normalizeText(payload.target_id)) lines.push(`订单ID：${normalizeText(payload.target_id)}`);
-    if (normalizeText(payload.user_id)) lines.push(`用户ID：${normalizeText(payload.user_id)}`);
+    if (normalizeText(payload.user_id)) lines.push(`付款者/用户ID：${normalizeText(payload.user_id)}`);
     if (orderStatusLabel) lines.push(`订单状态：${orderStatusLabel}`);
     if (refundStatusLabel) lines.push(`退款状态：${refundStatusLabel}`);
     if (amountLine.length === 2) {
