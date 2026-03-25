@@ -19545,6 +19545,42 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     margin-left: auto;
 }
 
+.ops-alert-actions-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.ops-alert-actions-row .btn-add-config {
+    margin-left: 0;
+}
+
+.ops-alert-actions-row__save {
+    align-self: flex-start;
+}
+
+.ops-alert-actions-grid {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+
+.ops-alert-actions-grid .btn-add-config {
+    width: 100%;
+    min-height: 54px;
+    justify-content: flex-start;
+    text-align: left;
+    white-space: normal;
+    line-height: 1.45;
+    padding: 12px 16px;
+}
+
+.ops-alert-actions-grid .btn-add-config i {
+    flex: 0 0 auto;
+    margin-top: 1px;
+}
+
 /* Config Row */
 .config-row {
     display: flex;
@@ -20591,6 +20627,18 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     .payment-channel-save-row .btn-add-config {
         width: 100%;
         justify-content: center;
+    }
+
+    .ops-alert-actions-row__save {
+        align-self: stretch;
+    }
+
+    .ops-alert-actions-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ops-alert-actions-grid .btn-add-config {
+        justify-content: flex-start;
     }
 }
 

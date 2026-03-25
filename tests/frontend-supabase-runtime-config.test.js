@@ -1713,7 +1713,7 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=58'),
+        adminStudioHtml.includes('admin-studio.css?v=59'),
         true,
         'admin-studio.html should load the latest admin studio stylesheet version'
     );
@@ -2760,7 +2760,7 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=58'),
+        adminStudioSource.includes('admin-studio.css?v=59'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -3414,7 +3414,7 @@ test('discount admin runtime renderers externalize table states, copy toast, and
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=58'),
+        adminStudioSource.includes('admin-studio.css?v=59'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -3481,7 +3481,7 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=58'),
+        adminStudioSource.includes('admin-studio.css?v=59'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -4388,7 +4388,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
     }
 
     const htmlMarkers = [
-        'admin-studio.css?v=58',
+        'admin-studio.css?v=59',
         '<div class="anomaly-alerts-area" id="anomalyAlertsArea" hidden>',
         '<div class="ab-results-chart" id="abResultsChart" hidden>',
         'admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1'
@@ -4464,7 +4464,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=58'),
+        adminStudioHtml.includes('admin-studio.css?v=59'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
@@ -4728,7 +4728,7 @@ test('payments runtime renderers externalize tooltip, tab, and trend styling', (
     }
 
     assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=58'),
+        adminStudioHtml.includes('admin-studio.css?v=59'),
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
