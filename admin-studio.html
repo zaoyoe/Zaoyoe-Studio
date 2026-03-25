@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=58">
+    <link rel="stylesheet" href="admin-studio.css?v=59">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -1067,79 +1067,81 @@
                                         </div>
                                     </div>
 
-                                    <div class="config-row payment-channel-save-row">
-                                        <button type="button" class="btn-add-config" data-admin-action="settings-save-ops-alerts">
+                                    <div class="config-row payment-channel-save-row ops-alert-actions-row">
+                                        <button type="button" class="btn-add-config ops-alert-actions-row__save" data-admin-action="settings-save-ops-alerts">
                                             <i class="fas fa-save"></i> 保存站外告警配置
                                         </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-telegram-test">
-                                            <i class="fas fa-paper-plane"></i> 发送测试站外告警
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-refund-sample">
-                                            <i class="fas fa-receipt"></i> 发送退款详情示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-gateway-sample">
-                                            <i class="fas fa-wave-square"></i> 发送支付通道异常示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-gateway-recovered-sample">
-                                            <i class="fas fa-heart-pulse"></i> 发送支付通道恢复示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-service-disabled-sample">
-                                            <i class="fas fa-power-off"></i> 发送验证服务停摆示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-queue-backlog-sample">
-                                            <i class="fas fa-list-check"></i> 发送验证任务堆积示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-failure-rate-spike-sample">
-                                            <i class="fas fa-chart-line"></i> 发送验证失败率异常示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-incident-escalated-sample">
-                                            <i class="fas fa-triangle-exclamation"></i> 发送验证综合异常示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-incident-recovered-sample">
-                                            <i class="fas fa-circle-check"></i> 发送验证恢复示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-quota-sample">
-                                            <i class="fas fa-gauge-high"></i> 发送验证额度告警示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-ticket-sla-sample">
-                                            <i class="fas fa-ticket-alt"></i> 发送工单超时示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-ticket-sla-recovered-sample">
-                                            <i class="fas fa-ticket-simple"></i> 发送工单恢复示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-inventory-sample">
-                                            <i class="fas fa-box-open"></i> 发送库存预警示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-inventory-recovered-sample">
-                                            <i class="fas fa-boxes-stacked"></i> 发送库存恢复示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-admin-login-anomaly-sample">
-                                            <i class="fas fa-user-shield"></i> 发送管理员异常登录示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-failed-sample">
-                                            <i class="fas fa-truck-ramp-box"></i> 发送履约失败示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-incident-sample">
-                                            <i class="fas fa-triangle-exclamation"></i> 发送履约异常升级示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-incident-recovered-sample">
-                                            <i class="fas fa-shield-heart"></i> 发送履约事故恢复示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-recovered-sample">
-                                            <i class="fas fa-truck-fast"></i> 发送履约恢复示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-changed-sample">
-                                            <i class="fas fa-sliders"></i> 发送支付配置变更示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-incident-sample">
-                                            <i class="fas fa-triangle-exclamation"></i> 发送支付配置异常升级示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-incident-recovered-sample">
-                                            <i class="fas fa-shield-heart"></i> 发送支付配置事故恢复示例消息
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-recovered-sample">
-                                            <i class="fas fa-shield-check"></i> 发送支付配置恢复示例消息
-                                        </button>
+                                        <div class="ops-alert-actions-grid">
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-telegram-test">
+                                                <i class="fas fa-paper-plane"></i> 发送测试站外告警
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-refund-sample">
+                                                <i class="fas fa-receipt"></i> 发送退款详情示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-gateway-sample">
+                                                <i class="fas fa-wave-square"></i> 发送支付通道异常示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-gateway-recovered-sample">
+                                                <i class="fas fa-heart-pulse"></i> 发送支付通道恢复示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-service-disabled-sample">
+                                                <i class="fas fa-power-off"></i> 发送验证服务停摆示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-queue-backlog-sample">
+                                                <i class="fas fa-list-check"></i> 发送验证任务堆积示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-failure-rate-spike-sample">
+                                                <i class="fas fa-chart-line"></i> 发送验证失败率异常示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-incident-escalated-sample">
+                                                <i class="fas fa-triangle-exclamation"></i> 发送验证综合异常示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-incident-recovered-sample">
+                                                <i class="fas fa-circle-check"></i> 发送验证恢复示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-quota-sample">
+                                                <i class="fas fa-gauge-high"></i> 发送验证额度告警示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-ticket-sla-sample">
+                                                <i class="fas fa-ticket-alt"></i> 发送工单超时示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-ticket-sla-recovered-sample">
+                                                <i class="fas fa-ticket-simple"></i> 发送工单恢复示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-inventory-sample">
+                                                <i class="fas fa-box-open"></i> 发送库存预警示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-inventory-recovered-sample">
+                                                <i class="fas fa-boxes-stacked"></i> 发送库存恢复示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-admin-login-anomaly-sample">
+                                                <i class="fas fa-user-shield"></i> 发送管理员异常登录示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-failed-sample">
+                                                <i class="fas fa-truck-ramp-box"></i> 发送履约失败示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-incident-sample">
+                                                <i class="fas fa-triangle-exclamation"></i> 发送履约异常升级示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-incident-recovered-sample">
+                                                <i class="fas fa-shield-heart"></i> 发送履约事故恢复示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-recovered-sample">
+                                                <i class="fas fa-truck-fast"></i> 发送履约恢复示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-changed-sample">
+                                                <i class="fas fa-sliders"></i> 发送支付配置变更示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-incident-sample">
+                                                <i class="fas fa-triangle-exclamation"></i> 发送支付配置异常升级示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-incident-recovered-sample">
+                                                <i class="fas fa-shield-heart"></i> 发送支付配置事故恢复示例消息
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-recovered-sample">
+                                                <i class="fas fa-shield-check"></i> 发送支付配置恢复示例消息
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div class="ops-alert-workspace-panel" id="opsAlertWorkspacePanel">
