@@ -223,7 +223,7 @@ function buildAdminLoginAnomalyAlerts(auditRows = [], rawConfig = {}, options = 
                 lines.push(`来源 Referer：${normalizeText(details.referer)}`);
             }
             lines.push(`发生时间：${createdAt}`);
-            lines.push('处理入口：后台设置 -> 管理员访问 / Admin Audit Logs');
+            lines.push('处理入口：后台设置 -> 管理员访问 / Admin Audit Logs -> 异常登录信号');
 
             return {
                 alertType: 'security_admin_login_anomaly',
@@ -243,7 +243,7 @@ function buildAdminLoginAnomalyAlerts(auditRows = [], rawConfig = {}, options = 
                     detected_reasons: reasons,
                     origin: normalizeText(details.origin) || null,
                     referer: normalizeText(details.referer) || null,
-                    entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs'
+                    entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 异常登录信号'
                 },
                 dedupeKey: crypto
                     .createHash('sha256')

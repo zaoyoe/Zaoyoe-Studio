@@ -9,6 +9,7 @@ let paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
 let paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
 let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
 let verifyMonitorState = getDefaultVerifyMonitorState();
+let adminAuditMonitorState = getDefaultAdminAuditMonitorState();
 let paymentChannelAccordionState = {
     mock: false,
     afdian: false,
@@ -41,6 +42,12 @@ const VERIFY_MONITOR_CARD_TONE_CLASSES = [
     'verify-monitor-card--success',
     'verify-monitor-card--warning',
     'verify-monitor-card--danger'
+];
+const ADMIN_AUDIT_MONITOR_CARD_TONE_CLASSES = [
+    'admin-audit-monitor-card--neutral',
+    'admin-audit-monitor-card--success',
+    'admin-audit-monitor-card--warning',
+    'admin-audit-monitor-card--danger'
 ];
 const ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP = Object.freeze({
     '#ffffff': 'color-swatch--white',
@@ -415,6 +422,275 @@ function renderVerifyMonitorPanel() {
     renderVerifyMonitorLists();
 }
 
+function setAdminAuditMonitorCardTone(card, tone = 'neutral') {
+    if (!card) return;
+    ADMIN_AUDIT_MONITOR_CARD_TONE_CLASSES.forEach((className) => card.classList.remove(className));
+    card.classList.add(`admin-audit-monitor-card--${tone}`);
+}
+
+function updateAdminAuditMonitorOverviewCard(panelId, valueId, metaId, tone, valueText, metaText) {
+    const panel = document.getElementById(panelId);
+    const valueEl = document.getElementById(valueId);
+    const metaEl = document.getElementById(metaId);
+    setAdminAuditMonitorCardTone(panel, tone);
+    if (valueEl) valueEl.textContent = valueText;
+    if (metaEl) metaEl.textContent = metaText;
+}
+
+function renderAdminAuditMonitorEmptyState(target, message) {
+    if (!target) return;
+    target.innerHTML = `<div class="admin-audit-monitor-empty">${escapeConfigHtml(message)}</div>`;
+}
+
+function getAdminAuditMonitorBadgeTone(type) {
+    const normalized = String(type || '').trim().toLowerCase();
+    if (['success', 'resolved', 'recovered'].includes(normalized)) return 'success';
+    if (['warning', 'pending', 'open'].includes(normalized)) return 'warning';
+    if (['critical', 'danger', 'failed', 'error'].includes(normalized)) return 'danger';
+    return 'neutral';
+}
+
+function buildAdminAuditMonitorBadge(label, tone = 'neutral') {
+    return `<span class="admin-audit-monitor-badge admin-audit-monitor-badge--${escapeConfigHtml(tone)}">${escapeConfigHtml(label)}</span>`;
+}
+
+function renderAdminAuditMonitorTimestamp() {
+    const target = document.getElementById('adminAuditMonitorLastRefresh');
+    if (!target) return;
+
+    if (adminAuditMonitorState.status === 'loading') {
+        target.textContent = '正在刷新...';
+        return;
+    }
+
+    target.textContent = adminAuditMonitorState.fetched_at
+        ? `上次刷新 ${formatVerifyMonitorDateTime(adminAuditMonitorState.fetched_at)}`
+        : '等待首次刷新';
+}
+
+function renderAdminAuditMonitorOverview() {
+    const state = adminAuditMonitorState || getDefaultAdminAuditMonitorState();
+    const accessSummary = state.access_summary || getDefaultAdminAuditMonitorState().access_summary;
+    const configSummary = state.config_summary || getDefaultAdminAuditMonitorState().config_summary;
+    const anomalies = Array.isArray(state.access_anomalies) ? state.access_anomalies : [];
+    const latestAnomaly = anomalies[0] || null;
+
+    if (state.status === 'loading') {
+        updateAdminAuditMonitorOverviewCard(
+            'adminAuditMonitorAccessCard',
+            'adminAuditMonitorAccessValue',
+            'adminAuditMonitorAccessMeta',
+            'neutral',
+            '查询中...',
+            '正在读取最近后台访问。'
+        );
+        updateAdminAuditMonitorOverviewCard(
+            'adminAuditMonitorAnomalyCard',
+            'adminAuditMonitorAnomalyValue',
+            'adminAuditMonitorAnomalyMeta',
+            'neutral',
+            '查询中...',
+            '正在分析最近异常登录信号。'
+        );
+        updateAdminAuditMonitorOverviewCard(
+            'adminAuditMonitorConfigCard',
+            'adminAuditMonitorConfigValue',
+            'adminAuditMonitorConfigMeta',
+            'neutral',
+            '查询中...',
+            '正在同步支付配置审计。'
+        );
+        return;
+    }
+
+    if (state.status === 'error') {
+        const message = state.message || '管理员访问审计加载失败。';
+        updateAdminAuditMonitorOverviewCard(
+            'adminAuditMonitorAccessCard',
+            'adminAuditMonitorAccessValue',
+            'adminAuditMonitorAccessMeta',
+            'danger',
+            '加载失败',
+            message
+        );
+        updateAdminAuditMonitorOverviewCard(
+            'adminAuditMonitorAnomalyCard',
+            'adminAuditMonitorAnomalyValue',
+            'adminAuditMonitorAnomalyMeta',
+            'danger',
+            '加载失败',
+            message
+        );
+        updateAdminAuditMonitorOverviewCard(
+            'adminAuditMonitorConfigCard',
+            'adminAuditMonitorConfigValue',
+            'adminAuditMonitorConfigMeta',
+            'danger',
+            '加载失败',
+            message
+        );
+        return;
+    }
+
+    updateAdminAuditMonitorOverviewCard(
+        'adminAuditMonitorAccessCard',
+        'adminAuditMonitorAccessValue',
+        'adminAuditMonitorAccessMeta',
+        accessSummary.access_count > 0 ? 'success' : 'neutral',
+        accessSummary.access_count > 0 ? `${formatVerifyMonitorInteger(accessSummary.access_count)} 次访问` : '暂无访问',
+        accessSummary.access_count > 0
+            ? `${formatVerifyMonitorInteger(accessSummary.distinct_admin_count)} 位管理员 · ${formatVerifyMonitorInteger(accessSummary.distinct_ip_count)} 个 IP`
+            : '最近没有新的后台访问记录。'
+    );
+
+    updateAdminAuditMonitorOverviewCard(
+        'adminAuditMonitorAnomalyCard',
+        'adminAuditMonitorAnomalyValue',
+        'adminAuditMonitorAnomalyMeta',
+        accessSummary.anomaly_count > 0 ? 'danger' : 'success',
+        accessSummary.anomaly_count > 0 ? `${formatVerifyMonitorInteger(accessSummary.anomaly_count)} 条异常信号` : '暂无异常信号',
+        latestAnomaly
+            ? `${latestAnomaly.admin_email || latestAnomaly.admin_id || 'unknown-admin'} · ${latestAnomaly.client_ip || '未知 IP'} · ${formatVerifyMonitorDateTime(latestAnomaly.created_at)}`
+            : '最近窗口内没有发现新的 IP / 设备漂移。'
+    );
+
+    const configTone = configSummary.secret_delete_count > 0 || configSummary.mock_switch_count > 0
+        ? 'warning'
+        : (configSummary.config_change_count > 0 ? 'success' : 'neutral');
+    updateAdminAuditMonitorOverviewCard(
+        'adminAuditMonitorConfigCard',
+        'adminAuditMonitorConfigValue',
+        'adminAuditMonitorConfigMeta',
+        configTone,
+        configSummary.config_change_count > 0 ? `${formatVerifyMonitorInteger(configSummary.config_change_count)} 条配置审计` : '暂无配置变更',
+        configSummary.config_change_count > 0
+            ? `删密钥 ${formatVerifyMonitorInteger(configSummary.secret_delete_count)} 次 · mock 切换 ${formatVerifyMonitorInteger(configSummary.mock_switch_count)} 次`
+            : '最近没有新的支付通道配置变更。'
+    );
+}
+
+function buildAdminAuditAccessRowMarkup(row) {
+    const identity = [
+        row.admin_email || row.admin_id || 'unknown-admin',
+        row.client_ip || '未知 IP'
+    ].filter(Boolean).map((item) => escapeConfigHtml(item)).join(' · ');
+    const detailParts = [];
+    if (row.origin) detailParts.push(`Origin：${escapeConfigHtml(row.origin)}`);
+    if (row.referer) detailParts.push(`Referer：${escapeConfigHtml(row.referer)}`);
+    if (row.user_agent_summary) detailParts.push(`设备：${escapeConfigHtml(row.user_agent_summary)}`);
+
+    return `
+        <article class="admin-audit-monitor-item">
+            <div class="admin-audit-monitor-item__top">
+                ${buildAdminAuditMonitorBadge(row.granted ? '已签发' : '记录', row.granted ? 'success' : 'neutral')}
+                <strong class="admin-audit-monitor-item__title">${escapeConfigHtml(row.admin_email || row.admin_id || 'unknown-admin')}</strong>
+                <span class="admin-audit-monitor-item__time">${escapeConfigHtml(formatVerifyMonitorDateTime(row.created_at))}</span>
+            </div>
+            <div class="admin-audit-monitor-item__summary">${identity || '未记录管理员身份'}</div>
+            ${detailParts.length ? `<div class="admin-audit-monitor-item__detail">${detailParts.join(' · ')}</div>` : ''}
+        </article>
+    `;
+}
+
+function buildAdminAuditAnomalyRowMarkup(row) {
+    const reasons = Array.isArray(row.anomaly_reasons) ? row.anomaly_reasons : [];
+    const detailParts = [];
+    if (row.client_ip) detailParts.push(`登录 IP：${escapeConfigHtml(row.client_ip)}`);
+    if (row.user_agent_summary) detailParts.push(`设备：${escapeConfigHtml(row.user_agent_summary)}`);
+    if (row.origin) detailParts.push(`Origin：${escapeConfigHtml(row.origin)}`);
+
+    return `
+        <article class="admin-audit-monitor-item">
+            <div class="admin-audit-monitor-item__top">
+                ${buildAdminAuditMonitorBadge('异常登录', 'danger')}
+                <strong class="admin-audit-monitor-item__title">${escapeConfigHtml(row.admin_email || row.admin_id || 'unknown-admin')}</strong>
+                <span class="admin-audit-monitor-item__time">${escapeConfigHtml(formatVerifyMonitorDateTime(row.created_at))}</span>
+            </div>
+            <div class="admin-audit-monitor-item__summary">${escapeConfigHtml(row.title || '管理员异常登录')}</div>
+            <div class="admin-audit-monitor-item__meta">${reasons.length ? reasons.map((item) => escapeConfigHtml(item)).join('；') : '未记录详细判定信号'}</div>
+            ${detailParts.length ? `<div class="admin-audit-monitor-item__detail">${detailParts.join(' · ')}</div>` : ''}
+        </article>
+    `;
+}
+
+function buildAdminAuditConfigRowMarkup(row) {
+    const providerSummary = row.updated_provider_labels?.length
+        ? `启用通道：${row.updated_provider_labels.join('、')}`
+        : (row.active_provider_label ? `当前生效通道：${row.active_provider_label}` : '');
+    const secretSummary = row.secret_name
+        ? `删除密钥：${row.secret_name}`
+        : (row.updated_secrets?.length ? `更新密钥：${row.updated_secrets.join('、')}` : '');
+    const riskSummary = row.risk_flags?.length
+        ? `风险提示：${row.risk_flags.join('；')}`
+        : '当前没有额外风险提示。';
+    const detailParts = [providerSummary, secretSummary, riskSummary].filter(Boolean);
+    const tone = getAdminAuditMonitorBadgeTone(
+        row.risk_flags?.length ? 'warning' : row.severity
+    );
+
+    return `
+        <article class="admin-audit-monitor-item">
+            <div class="admin-audit-monitor-item__top">
+                ${buildAdminAuditMonitorBadge(row.action_label || '配置变更', tone)}
+                <strong class="admin-audit-monitor-item__title">${escapeConfigHtml(row.admin_email || row.admin_id || 'unknown-admin')}</strong>
+                <span class="admin-audit-monitor-item__time">${escapeConfigHtml(formatVerifyMonitorDateTime(row.created_at))}</span>
+            </div>
+            <div class="admin-audit-monitor-item__summary">${escapeConfigHtml(row.title || '支付配置审计')}</div>
+            <div class="admin-audit-monitor-item__detail">${detailParts.map((item) => escapeConfigHtml(item)).join(' · ')}</div>
+        </article>
+    `;
+}
+
+function renderAdminAuditMonitorLists() {
+    const state = adminAuditMonitorState || getDefaultAdminAuditMonitorState();
+    const accessTarget = document.getElementById('adminAuditMonitorRecentAccess');
+    const anomalyTarget = document.getElementById('adminAuditMonitorAnomalyList');
+    const configTarget = document.getElementById('adminAuditMonitorConfigList');
+
+    if (state.status === 'loading') {
+        renderAdminAuditMonitorEmptyState(accessTarget, '正在加载最近后台访问...');
+        renderAdminAuditMonitorEmptyState(anomalyTarget, '正在加载异常登录信号...');
+        renderAdminAuditMonitorEmptyState(configTarget, '正在加载支付配置审计...');
+        return;
+    }
+
+    if (state.status === 'error') {
+        const message = state.message || '管理员访问审计加载失败。';
+        renderAdminAuditMonitorEmptyState(accessTarget, message);
+        renderAdminAuditMonitorEmptyState(anomalyTarget, message);
+        renderAdminAuditMonitorEmptyState(configTarget, message);
+        return;
+    }
+
+    const accessRows = Array.isArray(state.recent_accesses) ? state.recent_accesses : [];
+    const anomalies = Array.isArray(state.access_anomalies) ? state.access_anomalies : [];
+    const configEvents = Array.isArray(state.payment_config_events) ? state.payment_config_events : [];
+
+    if (!accessRows.length) {
+        renderAdminAuditMonitorEmptyState(accessTarget, '最近没有新的后台访问记录。');
+    } else if (accessTarget) {
+        accessTarget.innerHTML = accessRows.map(buildAdminAuditAccessRowMarkup).join('');
+    }
+
+    if (!anomalies.length) {
+        renderAdminAuditMonitorEmptyState(anomalyTarget, '最近窗口内没有新的异常登录信号。');
+    } else if (anomalyTarget) {
+        anomalyTarget.innerHTML = anomalies.map(buildAdminAuditAnomalyRowMarkup).join('');
+    }
+
+    if (!configEvents.length) {
+        renderAdminAuditMonitorEmptyState(configTarget, '最近没有新的支付配置审计记录。');
+    } else if (configTarget) {
+        configTarget.innerHTML = configEvents.map(buildAdminAuditConfigRowMarkup).join('');
+    }
+}
+
+function renderAdminAuditMonitorPanel() {
+    renderAdminAuditMonitorTimestamp();
+    renderAdminAuditMonitorOverview();
+    renderAdminAuditMonitorLists();
+}
+
 function getDefaultCheckinConfig() {
     return {
         base_points: 5,
@@ -498,6 +774,30 @@ function getDefaultVerifyMonitorState() {
             recent_failures: [],
             message: '等待加载'
         }
+    };
+}
+
+function getDefaultAdminAuditMonitorState() {
+    return {
+        status: 'idle',
+        fetched_at: '',
+        access_summary: {
+            access_count: 0,
+            distinct_admin_count: 0,
+            distinct_ip_count: 0,
+            anomaly_count: 0,
+            latest_access_at: null
+        },
+        config_summary: {
+            config_change_count: 0,
+            secret_delete_count: 0,
+            mock_switch_count: 0,
+            latest_config_change_at: null
+        },
+        recent_accesses: [],
+        access_anomalies: [],
+        payment_config_events: [],
+        message: '等待加载'
     };
 }
 
@@ -2836,6 +3136,11 @@ function renderSecurityConfig() {
         const ips = config.ip_blacklist || [];
         blacklistTextarea.value = ips.join('\n');
     }
+
+    renderAdminAuditMonitorPanel();
+    refreshAdminAuditMonitor().catch((error) => {
+        console.warn('[Config] Admin audit monitor refresh failed:', error.message);
+    });
 }
 
 async function saveIpBlacklist() {
@@ -2861,7 +3166,12 @@ function setupSecurityEventListeners() {
     // Load locked accounts when security settings view is shown
     document.querySelectorAll('[data-settings-view="security"]').forEach(btn => {
         btn.addEventListener('click', () => {
-            setTimeout(refreshLockedAccounts, 300);
+            setTimeout(() => {
+                refreshLockedAccounts();
+                refreshAdminAuditMonitor().catch((error) => {
+                    console.warn('[Config] Admin audit monitor refresh on security switch failed:', error.message);
+                });
+            }, 300);
         });
     });
 }
@@ -4498,9 +4808,85 @@ async function refreshVerifyMonitor(force = false) {
     }
 }
 
+async function loadAdminAuditMonitor(force = false) {
+    if (loadAdminAuditMonitor._loadingPromise && !force) {
+        return loadAdminAuditMonitor._loadingPromise;
+    }
+
+    adminAuditMonitorState = {
+        ...(adminAuditMonitorState || getDefaultAdminAuditMonitorState()),
+        status: 'loading',
+        message: '正在加载...'
+    };
+    renderAdminAuditMonitorPanel();
+
+    loadAdminAuditMonitor._loadingPromise = (async () => {
+        try {
+            const headers = await getAdminConfigApiHeaders();
+            const response = await fetch('/api/admin/settings/admin-audit-monitor', {
+                method: 'GET',
+                headers
+            });
+            const payload = await response.json().catch(() => ({}));
+
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || '加载管理员访问审计失败');
+            }
+
+            adminAuditMonitorState = {
+                status: 'ready',
+                fetched_at: String(payload.fetched_at || '').trim(),
+                access_summary: payload.access_summary || getDefaultAdminAuditMonitorState().access_summary,
+                config_summary: payload.config_summary || getDefaultAdminAuditMonitorState().config_summary,
+                recent_accesses: Array.isArray(payload.recent_accesses) ? payload.recent_accesses : [],
+                access_anomalies: Array.isArray(payload.access_anomalies) ? payload.access_anomalies : [],
+                payment_config_events: Array.isArray(payload.payment_config_events) ? payload.payment_config_events : [],
+                message: ''
+            };
+            renderAdminAuditMonitorPanel();
+            return payload;
+        } catch (error) {
+            console.warn('[Config] Admin audit monitor load failed:', error.message);
+            adminAuditMonitorState = {
+                ...getDefaultAdminAuditMonitorState(),
+                status: 'error',
+                message: error.message || '加载管理员访问审计失败'
+            };
+            renderAdminAuditMonitorPanel();
+            return null;
+        }
+    })();
+
+    try {
+        return await loadAdminAuditMonitor._loadingPromise;
+    } finally {
+        loadAdminAuditMonitor._loadingPromise = null;
+    }
+}
+
+async function refreshAdminAuditMonitor(force = false) {
+    if (refreshAdminAuditMonitor._loadingPromise && !force) {
+        return refreshAdminAuditMonitor._loadingPromise;
+    }
+
+    refreshAdminAuditMonitor._loadingPromise = (async () => {
+        const result = await loadAdminAuditMonitor(force);
+        renderAdminAuditMonitorPanel();
+        return result;
+    })();
+
+    try {
+        return await refreshAdminAuditMonitor._loadingPromise;
+    } finally {
+        refreshAdminAuditMonitor._loadingPromise = null;
+    }
+}
+
 window.checkVerifyQuota = checkVerifyQuota;
 window.loadVerifyMonitor = loadVerifyMonitor;
 window.refreshVerifyMonitor = refreshVerifyMonitor;
+window.loadAdminAuditMonitor = loadAdminAuditMonitor;
+window.refreshAdminAuditMonitor = refreshAdminAuditMonitor;
 
 async function saveSensitiveWords() {
     const textarea = document.getElementById('cfgSensitiveWords');
@@ -4868,6 +5254,8 @@ window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecov
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.loadVerifyMonitor = loadVerifyMonitor;
 window.refreshVerifyMonitor = refreshVerifyMonitor;
+window.loadAdminAuditMonitor = loadAdminAuditMonitor;
+window.refreshAdminAuditMonitor = refreshAdminAuditMonitor;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;
 window.saveIpBlacklist = saveIpBlacklist;

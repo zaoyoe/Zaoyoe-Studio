@@ -884,6 +884,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-refresh-verify-monitor':
                 window.refreshVerifyMonitor?.();
                 break;
+            case 'settings-refresh-admin-audit-monitor':
+                window.refreshAdminAuditMonitor?.();
+                break;
             case 'settings-add-api-key':
                 window.addNewApiKey?.();
                 break;

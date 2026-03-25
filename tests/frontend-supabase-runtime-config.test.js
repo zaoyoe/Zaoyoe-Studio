@@ -2146,6 +2146,55 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     );
 });
 
+test('admin audit monitor exposes delegated settings actions and runtime wiring', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioCss = readRepoFile('admin-studio.css');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminConfigSource = readRepoFile('admin-config.js');
+
+    const htmlMarkers = [
+        'id="adminAuditMonitorLastRefresh"',
+        'data-admin-action="settings-refresh-admin-audit-monitor"',
+        'id="adminAuditMonitorAccessCard"',
+        'id="adminAuditMonitorRecentAccess"',
+        'id="adminAuditMonitorAnomalyList"',
+        'id="adminAuditMonitorConfigList"'
+    ];
+
+    for (const marker of htmlMarkers) {
+        assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+
+    const handlerMarkers = [
+        "case 'settings-refresh-admin-audit-monitor':"
+    ];
+
+    for (const marker of handlerMarkers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'function getDefaultAdminAuditMonitorState()',
+        "fetch('/api/admin/settings/admin-audit-monitor'",
+        'window.loadAdminAuditMonitor = loadAdminAuditMonitor;',
+        'window.refreshAdminAuditMonitor = refreshAdminAuditMonitor;'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '.admin-audit-monitor-grid',
+        '.admin-audit-monitor-card--danger',
+        '.admin-audit-monitor-panel--wide'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(adminStudioCss.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+});
+
 test('shop admin pagination renderer no longer emits inline handler attributes', () => {
     const source = readRepoFile('js/admin-shop.js');
     const start = source.indexOf('renderPagination: function');

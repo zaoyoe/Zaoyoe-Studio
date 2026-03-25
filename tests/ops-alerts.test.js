@@ -343,7 +343,7 @@ test('buildExternalAlertText renders payment config changed details', () => {
             updated_secrets: ['hupijiao_secret_key'],
             risk_flags: ['当前活动通道已切换为模拟支付', '本次更新包含 1 个支付密钥'],
             created_at: '2026-03-25T10:00:00.000Z',
-            entry_path: '后台设置 -> 支付通道配置 / Admin Audit Logs'
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计'
         }
     });
 
@@ -354,7 +354,7 @@ test('buildExternalAlertText renders payment config changed details', () => {
     assert.match(text, /启用通道：模拟支付、虎皮椒/);
     assert.match(text, /更新密钥：hupijiao_secret_key/);
     assert.match(text, /风险提示：当前活动通道已切换为模拟支付；本次更新包含 1 个支付密钥/);
-    assert.match(text, /处理入口：后台设置 -> 支付通道配置 \/ Admin Audit Logs/);
+    assert.match(text, /处理入口：后台设置 -> 管理员访问 \/ Admin Audit Logs -> 支付配置审计/);
 });
 
 test('buildExternalAlertText renders payment config recovery details', () => {
@@ -375,7 +375,7 @@ test('buildExternalAlertText renders payment config recovery details', () => {
             incident_recovered_at: '2026-03-25T10:18:00.000Z',
             incident_duration_minutes: 18,
             previous_risk_flags: ['当前活动通道已切换为模拟支付'],
-            entry_path: '后台设置 -> 支付通道配置 / Admin Audit Logs'
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计'
         }
     });
 
@@ -386,7 +386,7 @@ test('buildExternalAlertText renders payment config recovery details', () => {
     assert.match(text, /当前生效通道：爱发电/);
     assert.match(text, /当前启用通道：爱发电、虎皮椒/);
     assert.match(text, /持续时长：18 分钟/);
-    assert.match(text, /处理入口：后台设置 -> 支付通道配置 \/ Admin Audit Logs/);
+    assert.match(text, /处理入口：后台设置 -> 管理员访问 \/ Admin Audit Logs -> 支付配置审计/);
 });
 
 test('sendFeishuAlert treats non-zero webhook result codes as delivery failures', async () => {
@@ -998,7 +998,7 @@ test('buildExternalAlertText renders admin login anomaly details', () => {
             ],
             origin: 'https://www.zaoyoe.com',
             referer: 'https://www.zaoyoe.com/admin-entry.html',
-            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs'
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 异常登录信号'
         }
     });
 
@@ -1008,7 +1008,7 @@ test('buildExternalAlertText renders admin login anomaly details', () => {
     assert.match(text, /判定信号：管理员首次从该 IP 登录后台；最近窗口内出现 3 个登录 IP/);
     assert.match(text, /最近窗口内 IP 数：3/);
     assert.match(text, /历史常用 IP：198\.51\.100\.21、198\.51\.100\.22/);
-    assert.match(text, /处理入口：后台设置 -> 管理员访问 \/ Admin Audit Logs/);
+    assert.match(text, /处理入口：后台设置 -> 管理员访问 \/ Admin Audit Logs -> 异常登录信号/);
 });
 
 test('ops alerts exports sendFeishuAlert for admin preview actions', () => {
