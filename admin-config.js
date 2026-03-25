@@ -2150,6 +2150,16 @@ async function sendOpsAlertGatewaySample() {
     }
 }
 
+async function sendOpsAlertVerifyQuotaSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_verify_quota_low', '验证额度告警示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send verify quota sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function deleteOpsAlertSecret(secretName) {
     const secretLabels = {
         telegram_bot_token: 'Telegram Bot Token',
@@ -4145,6 +4155,7 @@ window.saveOpsAlertSettings = saveOpsAlertSettings;
 window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;
 window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;
 window.sendOpsAlertGatewaySample = sendOpsAlertGatewaySample;
+window.sendOpsAlertVerifyQuotaSample = sendOpsAlertVerifyQuotaSample;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;

@@ -491,6 +491,10 @@ function buildExternalAlertText(job = {}) {
     if (gatewayAlertText) {
         return gatewayAlertText;
     }
+    const verifyQuotaText = buildVerifyQuotaLowAlertText(job);
+    if (verifyQuotaText) {
+        return verifyQuotaText;
+    }
 
     const lines = [
         `[站外告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '系统通知'}`,
@@ -667,6 +671,35 @@ function buildPaymentGatewayDegradedAlertText(job = {}) {
     if (Number(payload.query_total || 0) > 0) {
         lines.push(`查码概览：总 ${Number(payload.query_total || 0)} 次 / 成功 ${Number(payload.query_success || 0)} 次 / 失败 ${Number(payload.query_failed || 0)} 次 / 4xx ${Number(payload.query_4xx || 0)} 次 / 5xx ${Number(payload.query_5xx || 0)} 次 / 成功率 ${formatPercent(payload.query_success_rate)}`);
     }
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildVerifyQuotaLowAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'verify_quota_low') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const reasons = Array.isArray(payload.degraded_reasons)
+        ? payload.degraded_reasons.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const lines = [
+        `[验证额度告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '验证额度不足'}`
+    ];
+
+    if (normalizeText(payload.key_name)) lines.push(`API Key：${normalizeText(payload.key_name)}`);
+    if (Number.isFinite(Number(payload.balance))) lines.push(`剩余额度：${Number(payload.balance).toFixed(2)} 点`);
+    if (Number.isFinite(Number(payload.cost_per_job))) lines.push(`单次成本：${Number(payload.cost_per_job).toFixed(2)} 点`);
+    if (Number.isFinite(Number(payload.remaining_jobs))) lines.push(`预计剩余：${Math.max(0, Math.floor(Number(payload.remaining_jobs)))} 次`);
+    if (Number.isFinite(Number(payload.total_used))) lines.push(`累计消耗：${Number(payload.total_used).toFixed(2)} 点`);
+    if (reasons.length) lines.push(`判定信号：${reasons.join('；')}`);
+    if (Number.isFinite(Number(payload.queue_size)) || Number.isFinite(Number(payload.running_jobs))) {
+        lines.push(`队列概览：排队 ${Math.max(0, Math.round(Number(payload.queue_size || 0)))} 个 / 运行中 ${Math.max(0, Math.round(Number(payload.running_jobs || 0)))} 个`);
+    }
+    if (normalizeText(payload.queue_error)) lines.push(`队列查询：${normalizeText(payload.queue_error)}`);
+    if (normalizeText(payload.checked_at)) lines.push(`检查时间：${formatTimestamp(payload.checked_at)}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
     return lines.filter(Boolean).join('\n');
