@@ -3299,6 +3299,9 @@ async function sweepShopInventoryHealth() {
             Number(result?.low_stock_count || 0) > 0
             || Number(result?.empty_stock_count || 0) > 0
             || Number(result?.queued || 0) > 0
+            || Number(result?.recovered_count || 0) > 0
+            || Number(result?.recovered_queued || 0) > 0
+            || Number(result?.admin_notifications_created || 0) > 0
         ) {
             console.log('[ShopInventoryMonitor] Sweep complete:', JSON.stringify(result));
         }

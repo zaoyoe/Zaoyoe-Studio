@@ -76,6 +76,7 @@
 | `shop_order_high_value` | 高价值订单成交 | `info` | 飞书 | 立即发送 | 订单号、金额、商品、渠道 |
 | `shop_inventory_low` | 库存低于阈值 | `warning` | 飞书 + 站内 | 6 小时 | 商品、剩余库存、近 7 天销量 |
 | `shop_inventory_empty` | 商品售罄 | `warning` | 飞书 + 站内 | 6 小时 | 商品、最近下单数 |
+| `shop_inventory_recovered` | 商品退出库存预警 / 售罄状态 | `warning` | 飞书 + 站内 | 每次事故 1 次 | 商品、恢复结论、当前库存 |
 | `shop_orphan_order_detected` | 订单与库存/商品关联丢失 | `critical` | TG + 飞书 + 站内 | 30 分钟 | 订单号、用户ID、商品、异常原因 |
 
 ### C. 售后工单

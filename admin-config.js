@@ -2250,6 +2250,16 @@ async function sendOpsAlertShopInventorySample() {
     }
 }
 
+async function sendOpsAlertShopInventoryRecoveredSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_shop_inventory_recovered', '库存恢复示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send shop inventory recovery sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function sendOpsAlertAdminLoginAnomalySample() {
     try {
         return await sendOpsAlertTelegramRequest('send_sample_admin_login_anomaly', '管理员异常登录示例消息已发送');
@@ -4285,6 +4295,7 @@ window.sendOpsAlertVerifyQuotaSample = sendOpsAlertVerifyQuotaSample;
 window.sendOpsAlertTicketSlaSample = sendOpsAlertTicketSlaSample;
 window.sendOpsAlertTicketSlaRecoveredSample = sendOpsAlertTicketSlaRecoveredSample;
 window.sendOpsAlertShopInventorySample = sendOpsAlertShopInventorySample;
+window.sendOpsAlertShopInventoryRecoveredSample = sendOpsAlertShopInventoryRecoveredSample;
 window.sendOpsAlertAdminLoginAnomalySample = sendOpsAlertAdminLoginAnomalySample;
 window.sendOpsAlertShopOrderDeliveryFailedSample = sendOpsAlertShopOrderDeliveryFailedSample;
 window.sendOpsAlertPaymentConfigChangedSample = sendOpsAlertPaymentConfigChangedSample;

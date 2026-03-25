@@ -365,6 +365,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-shop-inventory-sample':
                 window.sendOpsAlertShopInventorySample?.();
                 break;
+            case 'settings-send-ops-alert-shop-inventory-recovered-sample':
+                window.sendOpsAlertShopInventoryRecoveredSample?.();
+                break;
             case 'settings-send-ops-alert-admin-login-anomaly-sample':
                 window.sendOpsAlertAdminLoginAnomalySample?.();
                 break;

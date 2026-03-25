@@ -765,6 +765,40 @@ test('buildExternalAlertText renders shop inventory low details', () => {
     assert.match(text, /处理入口：商城管理 -> 商品列表 -> 库存 \/ 补货/);
 });
 
+test('buildExternalAlertText renders shop inventory recovery details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'shop_inventory_recovered',
+        severity: 'warning',
+        title: 'Prompt Pro 月卡 库存已恢复',
+        payload: {
+            product_name: 'Prompt Pro 月卡',
+            category: '提示词',
+            recovery_summary: '商品库存已高于阈值，当前可售库存 18 件',
+            stock_count: 18,
+            previous_stock_count: 3,
+            low_stock_threshold: 5,
+            recent_sales_days: 7,
+            recent_sales_count: 12,
+            delivery_type: 'KEY',
+            incident_started_at: '2026-03-25T10:00:00.000Z',
+            updated_at: '2026-03-25T10:54:00.000Z',
+            incident_recovered_at: '2026-03-25T10:54:00.000Z',
+            incident_duration_minutes: 54,
+            entry_path: '商城管理 -> 商品列表 -> 库存 / 补货'
+        }
+    });
+
+    assert.match(text, /商城库存恢复/);
+    assert.match(text, /商品：Prompt Pro 月卡/);
+    assert.match(text, /分类：提示词/);
+    assert.match(text, /恢复结论：商品库存已高于阈值，当前可售库存 18 件/);
+    assert.match(text, /当前库存：18 件（阈值 5 件）/);
+    assert.match(text, /上次告警库存：3 件/);
+    assert.match(text, /近 7 天销量：12 件/);
+    assert.match(text, /持续时长：54 分钟/);
+    assert.match(text, /处理入口：商城管理 -> 商品列表 -> 库存 \/ 补货/);
+});
+
 test('buildExternalAlertText renders shop order delivery failure details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'shop_order_delivery_failed',

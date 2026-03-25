@@ -543,6 +543,10 @@ function buildExternalAlertText(job = {}) {
     if (shopInventoryText) {
         return shopInventoryText;
     }
+    const shopInventoryRecoveredText = buildShopInventoryRecoveredAlertText(job);
+    if (shopInventoryRecoveredText) {
+        return shopInventoryRecoveredText;
+    }
     const shopOrderDeliveryText = buildShopOrderDeliveryFailedAlertText(job);
     if (shopOrderDeliveryText) {
         return shopOrderDeliveryText;
@@ -1127,6 +1131,43 @@ function buildShopInventoryAlertText(job = {}) {
     }
     if (normalizeText(payload.delivery_type)) lines.push(`发货模式：${getDeliveryTypeLabel(payload.delivery_type)}`);
     if (normalizeText(payload.updated_at)) lines.push(`最近更新时间：${formatTimestamp(payload.updated_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildShopInventoryRecoveredAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'shop_inventory_recovered') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const lines = [
+        `[商城库存恢复][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '库存已恢复'}`
+    ];
+
+    if (normalizeText(payload.product_name)) lines.push(`商品：${normalizeText(payload.product_name)}`);
+    if (normalizeText(payload.category)) lines.push(`分类：${normalizeText(payload.category)}`);
+    if (normalizeText(payload.recovery_summary)) lines.push(`恢复结论：${normalizeText(payload.recovery_summary)}`);
+    if (Number.isFinite(Number(payload.stock_count))) {
+        const stockCount = Math.max(0, Math.round(Number(payload.stock_count || 0)));
+        const threshold = Math.max(0, Math.round(Number(payload.low_stock_threshold || 0)));
+        lines.push(`当前库存：${stockCount} 件（阈值 ${threshold} 件）`);
+    }
+    if (Number.isFinite(Number(payload.previous_stock_count))) {
+        lines.push(`上次告警库存：${Math.max(0, Math.round(Number(payload.previous_stock_count || 0)))} 件`);
+    }
+    if (Number.isFinite(Number(payload.recent_sales_count))) {
+        const salesWindow = Math.max(1, Math.round(Number(payload.recent_sales_days || 7)));
+        lines.push(`近 ${salesWindow} 天销量：${Math.max(0, Math.round(Number(payload.recent_sales_count || 0)))} 件`);
+    }
+    if (normalizeText(payload.delivery_type)) lines.push(`发货模式：${getDeliveryTypeLabel(payload.delivery_type)}`);
+    if (normalizeText(payload.incident_started_at)) lines.push(`上次告警：${formatTimestamp(payload.incident_started_at)}`);
+    if (normalizeText(payload.updated_at)) lines.push(`最近更新时间：${formatTimestamp(payload.updated_at)}`);
+    if (normalizeText(payload.incident_recovered_at)) lines.push(`恢复时间：${formatTimestamp(payload.incident_recovered_at)}`);
+    if (Number.isFinite(Number(payload.incident_duration_minutes))) {
+        lines.push(`持续时长：${Math.max(0, Math.round(Number(payload.incident_duration_minutes || 0)))} 分钟`);
+    }
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
     return lines.filter(Boolean).join('\n');

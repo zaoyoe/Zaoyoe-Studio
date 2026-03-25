@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { normalizeOpsAlertsConfig } = require('../api/_lib/ops-alerts');
 const {
     buildShopInventoryLowAlerts,
+    buildShopInventoryRecoveredAlerts,
     normalizeShopInventoryMonitorConfig,
     runShopInventoryLowSweep
 } = require('../api/_lib/shop-inventory-alerts');
@@ -32,6 +33,10 @@ function createQueryBuilder(executor) {
         },
         lte(column, value) {
             state.filters.push({ op: 'lte', column, value });
+            return builder;
+        },
+        in(column, values) {
+            state.filters.push({ op: 'in', column, value: Array.isArray(values) ? values : [] });
             return builder;
         },
         order(column, options = {}) {
@@ -81,6 +86,7 @@ function applyFilters(rows, filters) {
         if (op === 'eq') return row[column] === value;
         if (op === 'gte') return compareValue(row[column], value) >= 0;
         if (op === 'lte') return compareValue(row[column], value) <= 0;
+        if (op === 'in') return Array.isArray(value) && value.includes(row[column]);
         return true;
     }));
 }
@@ -104,6 +110,8 @@ function createSupabaseStub(state = {}) {
     const jobs = state.jobs || [];
     const products = state.products || [];
     const orders = state.orders || [];
+    const adminRoles = state.adminRoles || [];
+    const systemNotifications = state.systemNotifications || [];
 
     return {
         from(table) {
@@ -139,6 +147,38 @@ function createSupabaseStub(state = {}) {
 
                     inserted.forEach((row) => {
                         jobs.push({ ...row });
+                    });
+
+                    return {
+                        data: query.single ? inserted[0] : inserted,
+                        error: null
+                    };
+                }
+
+                if (table === 'admin_roles' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(adminRoles, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'system_notifications' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(systemNotifications, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'system_notifications' && query.mode === 'insert') {
+                    const payload = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    const inserted = payload.map((row, index) => ({
+                        id: row.id || `notification-${systemNotifications.length + index + 1}`,
+                        created_at: row.created_at || new Date().toISOString(),
+                        ...row
+                    }));
+
+                    inserted.forEach((row) => {
+                        systemNotifications.push({ ...row });
                     });
 
                     return {
@@ -291,4 +331,127 @@ test('runShopInventoryLowSweep enqueues key-product low stock alerts with stable
     assert.equal(second.queued, 0);
     assert.equal(second.deduped, 1);
     assert.equal(state.jobs.length, 1);
+});
+
+test('buildShopInventoryRecoveredAlerts emits a recovery notice after a product is replenished', () => {
+    const alerts = buildShopInventoryRecoveredAlerts([
+        {
+            id: 'product-low',
+            name: 'Prompt Pro 月卡',
+            category: '提示词',
+            stock_count: 18,
+            is_active: true,
+            delivery_type: 'KEY',
+            updated_at: '2026-03-25T10:54:00.000Z'
+        }
+    ], [
+        {
+            id: 'order-1',
+            product_id: 'product-low',
+            item_count: 12,
+            refund_status: 'none',
+            created_at: '2026-03-24T09:00:00.000Z'
+        }
+    ], [
+        {
+            id: 'inventory-low-1',
+            alert_type: 'shop_inventory_low',
+            severity: 'warning',
+            title: 'Prompt Pro 月卡 库存不足',
+            created_at: '2026-03-25T10:00:00.000Z',
+            payload: {
+                target_id: 'product-low',
+                product_id: 'product-low',
+                product_name: 'Prompt Pro 月卡',
+                stock_count: 3,
+                low_stock_threshold: 5
+            }
+        }
+    ], normalizeShopInventoryMonitorConfig(), {
+        now: '2026-03-25T10:54:00.000Z'
+    });
+
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].alertType, 'shop_inventory_recovered');
+    assert.equal(alerts[0].severity, 'warning');
+    assert.deepEqual(alerts[0].allowedChannels, ['feishu']);
+    assert.match(alerts[0].content, /恢复结论：商品库存已高于阈值，当前可售库存 18 件/);
+    assert.equal(alerts[0].payload.incident_alert_job_id, 'inventory-low-1');
+    assert.equal(alerts[0].payload.previous_stock_count, 3);
+    assert.equal(alerts[0].payload.incident_duration_minutes, 54);
+});
+
+test('runShopInventoryLowSweep enqueues recovery notices and writes admin notifications once', async () => {
+    const state = {
+        jobs: [
+            {
+                id: 'inventory-low-1',
+                alert_type: 'shop_inventory_low',
+                severity: 'warning',
+                title: 'Prompt Pro 月卡 库存不足',
+                created_at: '2026-03-25T10:00:00.000Z',
+                payload: {
+                    target_id: 'product-low',
+                    product_id: 'product-low',
+                    product_name: 'Prompt Pro 月卡',
+                    stock_count: 3,
+                    low_stock_threshold: 5
+                }
+            }
+        ],
+        products: [
+            {
+                id: 'product-low',
+                name: 'Prompt Pro 月卡',
+                category: '提示词',
+                stock_count: 18,
+                is_active: true,
+                delivery_type: 'KEY',
+                updated_at: '2026-03-25T10:54:00.000Z'
+            }
+        ],
+        orders: [
+            {
+                id: 'order-1',
+                product_id: 'product-low',
+                item_count: 12,
+                refund_status: 'none',
+                created_at: '2026-03-24T09:00:00.000Z'
+            }
+        ],
+        adminRoles: [
+            { user_id: 'admin-1', role_name: 'admin', expires_at: null },
+            { user_id: 'admin-2', role_name: 'super_admin', expires_at: null }
+        ],
+        systemNotifications: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime();
+
+    const first = await runShopInventoryLowSweep(supabase, {
+        runtime,
+        now: '2026-03-25T10:54:00.000Z'
+    });
+
+    assert.equal(first.low_stock_count, 0);
+    assert.equal(first.empty_stock_count, 0);
+    assert.equal(first.recovered_count, 1);
+    assert.equal(first.recovered_queued, 1);
+    assert.equal(first.admin_notifications_created, 2);
+    assert.equal(state.jobs.length, 2);
+    assert.equal(state.jobs[1].alert_type, 'shop_inventory_recovered');
+    assert.deepEqual(state.jobs[1].channels, ['feishu']);
+    assert.equal(state.systemNotifications.length, 2);
+    assert.match(state.systemNotifications[0].title, /库存已恢复/);
+
+    const second = await runShopInventoryLowSweep(supabase, {
+        runtime,
+        now: '2026-03-25T10:55:00.000Z'
+    });
+
+    assert.equal(second.recovered_count, 0);
+    assert.equal(second.recovered_queued, 0);
+    assert.equal(second.admin_notifications_created, 0);
+    assert.equal(state.jobs.length, 2);
+    assert.equal(state.systemNotifications.length, 2);
 });

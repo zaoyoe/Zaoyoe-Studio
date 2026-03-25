@@ -550,6 +550,34 @@ function buildShopInventoryLowSampleJob(user) {
     };
 }
 
+function buildShopInventoryRecoveredSampleJob(user) {
+    return {
+        alert_type: 'shop_inventory_recovered',
+        severity: 'warning',
+        title: 'Prompt Pro 月卡 库存已恢复',
+        payload: {
+            target_id: 'shop-product-demo-low-stock',
+            product_id: 'shop-product-demo-low-stock',
+            product_name: 'Prompt Pro 月卡',
+            category: '提示词',
+            stock_count: 18,
+            previous_stock_count: 3,
+            low_stock_threshold: 5,
+            recent_sales_days: 7,
+            recent_sales_count: 12,
+            delivery_type: 'KEY',
+            incident_alert_job_id: 'inventory-low-demo-001',
+            incident_started_at: '2026-03-25T09:00:00.000Z',
+            incident_recovered_at: new Date().toISOString(),
+            incident_duration_minutes: 54,
+            recovery_summary: '商品库存已高于阈值，当前可售库存 18 件',
+            updated_at: new Date().toISOString(),
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了库存恢复示例发送`,
+            entry_path: '商城管理 -> 商品列表 -> 库存 / 补货（示例）'
+        }
+    };
+}
+
 function buildAdminLoginAnomalySampleJob(user) {
     return {
         alert_type: 'security_admin_login_anomaly',
@@ -676,6 +704,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_ticket_sla_overdue'
                 || sanitizeText(body.action) === 'send_sample_ticket_sla_recovered'
                 || sanitizeText(body.action) === 'send_sample_shop_inventory_low'
+                || sanitizeText(body.action) === 'send_sample_shop_inventory_recovered'
                 || sanitizeText(body.action) === 'send_sample_admin_login_anomaly'
                 || sanitizeText(body.action) === 'send_sample_shop_order_delivery_failed'
                 || sanitizeText(body.action) === 'send_sample_payment_config_changed'
@@ -711,6 +740,8 @@ module.exports = async (req, res) => {
                                         ? buildTicketSlaRecoveredSampleJob(user)
                                 : normalizedAction === 'send_sample_shop_inventory_low'
                                     ? buildShopInventoryLowSampleJob(user)
+                                    : normalizedAction === 'send_sample_shop_inventory_recovered'
+                                        ? buildShopInventoryRecoveredSampleJob(user)
                                     : normalizedAction === 'send_sample_admin_login_anomaly'
                                         ? buildAdminLoginAnomalySampleJob(user)
                                         : normalizedAction === 'send_sample_shop_order_delivery_failed'
@@ -747,6 +778,8 @@ module.exports = async (req, res) => {
                                         ? 'admin.ops_alerts.ticket_sla_recovered_sample'
                                     : normalizedAction === 'send_sample_shop_inventory_low'
                                         ? 'admin.ops_alerts.shop_inventory_sample'
+                                        : normalizedAction === 'send_sample_shop_inventory_recovered'
+                                            ? 'admin.ops_alerts.shop_inventory_recovered_sample'
                                         : normalizedAction === 'send_sample_admin_login_anomaly'
                                             ? 'admin.ops_alerts.admin_login_anomaly_sample'
                                             : normalizedAction === 'send_sample_shop_order_delivery_failed'
@@ -795,6 +828,8 @@ module.exports = async (req, res) => {
                                         ? `工单恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
                                     : normalizedAction === 'send_sample_shop_inventory_low'
                                         ? `库存预警示例消息已发送到 ${channelLabels || '已启用通道'}`
+                                        : normalizedAction === 'send_sample_shop_inventory_recovered'
+                                            ? `库存恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
                                         : normalizedAction === 'send_sample_admin_login_anomaly'
                                             ? `管理员异常登录示例消息已发送到 ${channelLabels || '已启用通道'}`
                                             : normalizedAction === 'send_sample_shop_order_delivery_failed'
