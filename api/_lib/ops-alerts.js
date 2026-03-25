@@ -379,6 +379,9 @@ async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
     const content = normalizeText(input.content);
     const severity = normalizeSeverity(input.severity, 'warning');
     const payload = input.payload && typeof input.payload === 'object' ? input.payload : {};
+    const requestedChannels = Array.isArray(input.allowedChannels)
+        ? input.allowedChannels.map((item) => normalizeChannelName(item)).filter(Boolean)
+        : [];
 
     if (!supabase?.from) {
         return { queued: false, reason: 'supabase_unavailable' };
@@ -388,7 +391,8 @@ async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
         return { queued: false, reason: 'missing_fields' };
     }
 
-    const channels = resolveEnabledChannels(runtime, severity);
+    const channels = resolveEnabledChannels(runtime, severity)
+        .filter((channel) => !requestedChannels.length || requestedChannels.includes(channel));
     if (!channels.length) {
         return { queued: false, reason: 'no_active_channels' };
     }
@@ -418,7 +422,8 @@ async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
         };
     }
 
-    const nowIso = new Date().toISOString();
+    const explicitCreatedAt = normalizeText(input.createdAt || input.created_at);
+    const nowIso = explicitCreatedAt || new Date().toISOString();
     const row = {
         alert_type: alertType,
         severity,
@@ -441,6 +446,9 @@ async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
         created_by: normalizeText(input.createdBy) || null,
         updated_at: nowIso
     };
+    if (explicitCreatedAt) {
+        row.created_at = explicitCreatedAt;
+    }
 
     const { data, error } = await supabase
         .from('ops_alert_jobs')
@@ -506,6 +514,10 @@ function buildExternalAlertText(job = {}) {
     const verifyIncidentText = buildVerifyIncidentEscalatedAlertText(job);
     if (verifyIncidentText) {
         return verifyIncidentText;
+    }
+    const verifyIncidentRecoveredText = buildVerifyIncidentRecoveredAlertText(job);
+    if (verifyIncidentRecoveredText) {
+        return verifyIncidentRecoveredText;
     }
     const verifyQueueText = buildVerifyQueueBacklogAlertText(job);
     if (verifyQueueText) {
@@ -863,6 +875,37 @@ function buildVerifyIncidentEscalatedAlertText(job = {}) {
     if (signalSummaries.length) lines.push(`关键摘要：${signalSummaries.join('；')}`);
     if (signalTimeline.length) lines.push(`最近触发：${signalTimeline.join('；')}`);
     if (normalizeText(payload.latest_signal_at)) lines.push(`最新时间：${formatTimestamp(payload.latest_signal_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildVerifyIncidentRecoveredAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'verify_incident_recovered') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const activeSignalLabels = Array.isArray(payload.active_signal_labels)
+        ? payload.active_signal_labels.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const activeSignalSummaries = Array.isArray(payload.active_signal_summaries)
+        ? payload.active_signal_summaries.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const lines = [
+        `[验证恢复通知][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '验证综合异常已恢复'}`
+    ];
+
+    if (normalizeText(payload.key_name)) lines.push(`API Key：${normalizeText(payload.key_name)}`);
+    if (normalizeText(payload.api_base_url)) lines.push(`API Base：${normalizeText(payload.api_base_url)}`);
+    if (normalizeText(payload.recovery_summary)) lines.push(`恢复结论：${normalizeText(payload.recovery_summary)}`);
+    if (normalizeText(payload.incident_started_at)) lines.push(`上次升级：${formatTimestamp(payload.incident_started_at)}`);
+    if (normalizeText(payload.incident_recovered_at)) lines.push(`恢复时间：${formatTimestamp(payload.incident_recovered_at)}`);
+    if (Number.isFinite(Number(payload.incident_duration_minutes))) {
+        lines.push(`持续时长：${Math.max(0, Math.round(Number(payload.incident_duration_minutes || 0)))} 分钟`);
+    }
+    if (activeSignalLabels.length) lines.push(`当前仍有信号：${activeSignalLabels.join('、')}`);
+    if (activeSignalSummaries.length) lines.push(`当前摘要：${activeSignalSummaries.join('；')}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
     return lines.filter(Boolean).join('\n');

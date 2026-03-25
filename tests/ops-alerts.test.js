@@ -568,6 +568,35 @@ test('buildExternalAlertText renders verify incident escalation details', () => 
     assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 站外告警 \/ 最近任务状态 \/ 验证日志/);
 });
 
+test('buildExternalAlertText renders verify incident recovery details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'verify_incident_recovered',
+        severity: 'warning',
+        title: '验证综合异常已恢复（primary-key）',
+        payload: {
+            key_name: 'primary-key',
+            api_base_url: 'https://iqless.icu',
+            recovery_summary: '验证综合高危组合已解除，当前仍保留 1 类低优先级信号',
+            incident_started_at: '2026-03-25T10:00:00.000Z',
+            incident_recovered_at: '2026-03-25T10:18:00.000Z',
+            incident_duration_minutes: 18,
+            active_signal_labels: ['验证额度不足'],
+            active_signal_summaries: ['剩余额度 18.00 点 / 预计 9 次'],
+            entry_path: '后台设置 -> 验证服务配置 -> 站外告警 / 最近任务状态 / 验证日志'
+        }
+    });
+
+    assert.match(text, /验证恢复通知/);
+    assert.match(text, /API Key：primary-key/);
+    assert.match(text, /API Base：https:\/\/iqless\.icu/);
+    assert.match(text, /恢复结论：验证综合高危组合已解除，当前仍保留 1 类低优先级信号/);
+    assert.match(text, /上次升级：2026-03-25T10:00:00.000Z/);
+    assert.match(text, /恢复时间：2026-03-25T10:18:00.000Z/);
+    assert.match(text, /持续时长：18 分钟/);
+    assert.match(text, /当前仍有信号：验证额度不足/);
+    assert.match(text, /当前摘要：剩余额度 18.00 点 \/ 预计 9 次/);
+});
+
 test('buildExternalAlertText renders verify queue backlog details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'verify_queue_backlog',
@@ -728,6 +757,28 @@ test('buildExternalAlertText renders admin login anomaly details', () => {
 
 test('ops alerts exports sendFeishuAlert for admin preview actions', () => {
     assert.equal(typeof sendFeishuAlert, 'function');
+});
+
+test('enqueueOpsAlertJob can restrict delivery to selected channels', async () => {
+    const state = { jobs: [] };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig();
+
+    const result = await enqueueOpsAlertJob(supabase, {
+        alertType: 'verify_incident_recovered',
+        severity: 'warning',
+        title: '验证综合异常已恢复（primary-key）',
+        content: '恢复结论：验证综合高危组合已解除',
+        payload: {
+            target_id: 'verify_incident:https://verify.test'
+        },
+        allowedChannels: ['feishu']
+    }, { runtime });
+
+    assert.equal(result.queued, true);
+    assert.equal(state.jobs.length, 1);
+    assert.deepEqual(state.jobs[0].channels, ['feishu']);
+    assert.deepEqual(state.jobs[0].remaining_channels, ['feishu']);
 });
 
 test('sweepOpsAlertJobs delivers queued alerts and records per-channel attempts', async () => {

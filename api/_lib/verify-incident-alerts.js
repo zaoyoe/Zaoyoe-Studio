@@ -3,12 +3,19 @@ const {
     enqueueOpsAlertJob,
     loadOpsAlertsRuntimeConfig
 } = require('./ops-alerts');
+const {
+    notifyActiveAdmins
+} = require('./admin-notifications');
 
 const VERIFY_INCIDENT_SIGNAL_TYPES = Object.freeze([
     'verify_service_disabled',
     'verify_failure_rate_spike',
     'verify_queue_backlog',
     'verify_quota_low'
+]);
+const VERIFY_INCIDENT_STATE_TYPES = Object.freeze([
+    'verify_incident_escalated',
+    'verify_incident_recovered'
 ]);
 const PRIMARY_VERIFY_INCIDENT_SIGNAL_TYPES = Object.freeze([
     'verify_service_disabled',
@@ -18,6 +25,7 @@ const DEFAULT_VERIFY_INCIDENT_MONITOR_CONFIG = Object.freeze({
     enabled: true,
     sweep_interval_ms: 10 * 60 * 1000,
     lookback_minutes: 30,
+    state_lookback_minutes: 24 * 60,
     min_signal_count: 2,
     dedupe_window_minutes: 20,
     page_size: 200,
@@ -82,6 +90,12 @@ function normalizeVerifyIncidentMonitorConfig(rawConfig = {}, env = process.env)
             5,
             24 * 60
         ),
+        state_lookback_minutes: normalizeNumber(
+            source.state_lookback_minutes,
+            normalizeNumber(env?.VERIFY_INCIDENT_MONITOR_STATE_LOOKBACK_MINUTES, DEFAULT_VERIFY_INCIDENT_MONITOR_CONFIG.state_lookback_minutes, 30, 7 * 24 * 60),
+            30,
+            7 * 24 * 60
+        ),
         min_signal_count: normalizeNumber(
             source.min_signal_count,
             normalizeNumber(env?.VERIFY_INCIDENT_MONITOR_MIN_SIGNAL_COUNT, DEFAULT_VERIFY_INCIDENT_MONITOR_CONFIG.min_signal_count, 2, 10),
@@ -137,6 +151,15 @@ async function fetchRecentVerifySignalJobs(client, sinceIso, config) {
         .from('ops_alert_jobs')
         .select('id, alert_type, severity, title, payload, created_at')
         .in('alert_type', VERIFY_INCIDENT_SIGNAL_TYPES)
+        .gte('created_at', sinceIso)
+        .order('created_at', { ascending: false }), config.page_size, config.max_pages);
+}
+
+async function fetchRecentVerifyIncidentStateJobs(client, sinceIso, config) {
+    return fetchPagedRows(() => client
+        .from('ops_alert_jobs')
+        .select('id, alert_type, severity, title, payload, created_at')
+        .in('alert_type', VERIFY_INCIDENT_STATE_TYPES)
         .gte('created_at', sinceIso)
         .order('created_at', { ascending: false }), config.page_size, config.max_pages);
 }
@@ -233,8 +256,7 @@ function summarizeSignalTimeline(jobs = []) {
     });
 }
 
-function buildVerifyIncidentEscalationAlerts(signalJobs = [], rawConfig = {}) {
-    const config = normalizeVerifyIncidentMonitorConfig(rawConfig);
+function getLatestVerifySignalJobs(signalJobs = []) {
     const latestByType = new Map();
 
     for (const job of signalJobs || []) {
@@ -245,7 +267,48 @@ function buildVerifyIncidentEscalationAlerts(signalJobs = [], rawConfig = {}) {
         }
     }
 
-    const latestJobs = Array.from(latestByType.values());
+    return Array.from(latestByType.values());
+}
+
+function getTargetIdFromPayload(payload = {}) {
+    const normalizedPayload = normalizeJsonObject(payload);
+    const targetId = normalizeText(normalizedPayload.target_id);
+    if (targetId) {
+        return targetId;
+    }
+
+    const keyName = normalizeText(normalizedPayload.key_name);
+    const apiBaseUrl = normalizeText(normalizedPayload.api_base_url);
+    return `verify_incident:${apiBaseUrl || keyName || 'default'}`;
+}
+
+function compareCreatedAtDescending(left = {}, right = {}) {
+    const leftTime = Date.parse(normalizeText(left.created_at));
+    const rightTime = Date.parse(normalizeText(right.created_at));
+    return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+}
+
+function getLatestIncidentStateJob(stateJobs = [], alertType, targetId = '') {
+    const normalizedTargetId = normalizeText(targetId);
+    return (stateJobs || [])
+        .filter((job) => normalizeText(job.alert_type).toLowerCase() === normalizeText(alertType).toLowerCase())
+        .filter((job) => !normalizedTargetId || getTargetIdFromPayload(job.payload) === normalizedTargetId)
+        .sort(compareCreatedAtDescending)[0] || null;
+}
+
+function formatDurationMinutes(totalMinutes) {
+    const numeric = Math.max(0, Math.round(Number(totalMinutes || 0)));
+    if (numeric >= 60) {
+        const hours = Math.floor(numeric / 60);
+        const minutes = numeric % 60;
+        return minutes ? `${hours} 小时 ${minutes} 分钟` : `${hours} 小时`;
+    }
+    return `${numeric} 分钟`;
+}
+
+function buildVerifyIncidentEscalationAlerts(signalJobs = [], rawConfig = {}) {
+    const config = normalizeVerifyIncidentMonitorConfig(rawConfig);
+    const latestJobs = getLatestVerifySignalJobs(signalJobs);
     if (latestJobs.length < Number(config.min_signal_count || 0)) {
         return [];
     }
@@ -323,6 +386,95 @@ function buildVerifyIncidentEscalationAlerts(signalJobs = [], rawConfig = {}) {
     }];
 }
 
+function buildVerifyIncidentRecoveryAlerts(signalJobs = [], stateJobs = [], rawConfig = {}, options = {}) {
+    const config = normalizeVerifyIncidentMonitorConfig(rawConfig);
+    const activeSignalJobs = getLatestVerifySignalJobs(signalJobs);
+    const activeEscalationAlerts = buildVerifyIncidentEscalationAlerts(signalJobs, config);
+    if (activeEscalationAlerts.length) {
+        return [];
+    }
+
+    const latestEscalated = getLatestIncidentStateJob(stateJobs, 'verify_incident_escalated');
+    if (!latestEscalated) {
+        return [];
+    }
+
+    const incidentPayload = normalizeJsonObject(latestEscalated.payload);
+    const targetId = getTargetIdFromPayload(incidentPayload);
+    const latestRecovered = getLatestIncidentStateJob(stateJobs, 'verify_incident_recovered', targetId);
+    const latestEscalatedAt = Date.parse(normalizeText(latestEscalated.created_at));
+    const latestRecoveredAt = Date.parse(normalizeText(latestRecovered?.created_at));
+
+    if (Number.isFinite(latestEscalatedAt) && Number.isFinite(latestRecoveredAt) && latestRecoveredAt >= latestEscalatedAt) {
+        return [];
+    }
+
+    const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
+    const keyName = normalizeText(incidentPayload.key_name);
+    const apiBaseUrl = normalizeText(incidentPayload.api_base_url);
+    const activeSignalLabels = activeSignalJobs.map((job) => getSignalLabel(job.alert_type));
+    const activeSignalSummaries = activeSignalJobs.map(getSignalSummary).filter(Boolean);
+    const incidentStartedAt = normalizeText(latestEscalated.created_at);
+    const incidentRecoveredAt = nowDate.toISOString();
+    const incidentDurationMinutes = Number.isFinite(latestEscalatedAt)
+        ? Math.max(0, Math.round((nowDate.getTime() - latestEscalatedAt) / 60000))
+        : 0;
+    const recoverySummary = activeSignalLabels.length
+        ? `验证综合高危组合已解除，当前仍保留 ${activeSignalLabels.length} 类低优先级信号`
+        : '验证综合高危组合已解除，当前未发现持续中的验证异常信号';
+    const lines = [
+        `${keyName || '验证服务'} 的综合高危组合已退出升级状态，可从应急排障切回观察模式。`,
+        `恢复结论：${recoverySummary}`
+    ];
+
+    if (apiBaseUrl) {
+        lines.push(`API Base：${apiBaseUrl}`);
+    }
+    if (incidentStartedAt) {
+        lines.push(`上次升级：${incidentStartedAt}`);
+    }
+    lines.push(`恢复时间：${incidentRecoveredAt}`);
+    lines.push(`持续时长：${formatDurationMinutes(incidentDurationMinutes)}`);
+    if (activeSignalLabels.length) {
+        lines.push(`当前仍有信号：${activeSignalLabels.join('、')}`);
+    }
+    if (activeSignalSummaries.length) {
+        lines.push(`当前摘要：${activeSignalSummaries.join('；')}`);
+    }
+    lines.push('处理入口：后台设置 -> 验证服务配置 -> 站外告警 / 最近任务状态 / 验证日志');
+
+    return [{
+        alertType: 'verify_incident_recovered',
+        severity: 'warning',
+        title: `验证综合异常已恢复${keyName ? `（${keyName}）` : ''}`,
+        content: lines.join('\n'),
+        payload: {
+            target_id: targetId,
+            key_name: keyName || null,
+            api_base_url: apiBaseUrl || null,
+            incident_alert_job_id: normalizeText(latestEscalated.id) || null,
+            incident_started_at: incidentStartedAt || null,
+            incident_recovered_at: incidentRecoveredAt,
+            incident_duration_minutes: incidentDurationMinutes,
+            recovery_summary: recoverySummary,
+            active_signal_count: activeSignalLabels.length,
+            active_signal_types: activeSignalJobs.map((job) => normalizeText(job.alert_type).toLowerCase()).filter(Boolean),
+            active_signal_labels: activeSignalLabels,
+            active_signal_summaries: activeSignalSummaries,
+            entry_path: '后台设置 -> 验证服务配置 -> 站外告警 / 最近任务状态 / 验证日志'
+        },
+        allowedChannels: ['feishu'],
+        dedupeKey: crypto
+            .createHash('sha256')
+            .update(`verify_incident_recovered:${targetId}:${normalizeText(latestEscalated.id) || incidentStartedAt || 'unknown'}`)
+            .digest('hex'),
+        dedupeWindowMinutes: Math.max(
+            Number(config.dedupe_window_minutes || DEFAULT_VERIFY_INCIDENT_MONITOR_CONFIG.dedupe_window_minutes),
+            60
+        )
+    }];
+}
+
 async function runVerifyIncidentEscalationSweep(supabase, options = {}) {
     const env = options.env || process.env;
     const verifyConfig = options.verifyConfig || {};
@@ -352,17 +504,26 @@ async function runVerifyIncidentEscalationSweep(supabase, options = {}) {
 
     const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
     const sinceIso = new Date(nowDate.getTime() - Number(config.lookback_minutes || 0) * 60 * 1000).toISOString();
+    const stateSinceIso = new Date(nowDate.getTime() - Number(config.state_lookback_minutes || 0) * 60 * 1000).toISOString();
     const signalJobs = await fetchRecentVerifySignalJobs(supabase, sinceIso, config);
+    const stateJobs = await fetchRecentVerifyIncidentStateJobs(supabase, stateSinceIso, config);
     const alerts = buildVerifyIncidentEscalationAlerts(signalJobs, config);
+    const recoveryAlerts = buildVerifyIncidentRecoveryAlerts(signalJobs, stateJobs, config, { now: nowDate });
 
     let queued = 0;
     let deduped = 0;
     let skippedNoChannels = 0;
+    let recoveryQueued = 0;
+    let recoveryDeduped = 0;
+    let recoverySkippedNoChannels = 0;
+    let adminNotificationsCreated = 0;
+    let adminNotificationsSkipped = 0;
     const results = [];
 
     for (const alert of alerts) {
         const result = await enqueueOpsAlertJob(supabase, {
             ...alert,
+            createdAt: nowDate.toISOString(),
             source: 'verify_incident_monitor'
         }, {
             runtime,
@@ -385,12 +546,62 @@ async function runVerifyIncidentEscalationSweep(supabase, options = {}) {
         });
     }
 
+    for (const alert of recoveryAlerts) {
+        const result = await enqueueOpsAlertJob(supabase, {
+            ...alert,
+            createdAt: nowDate.toISOString(),
+            source: 'verify_incident_monitor'
+        }, {
+            runtime,
+            env
+        });
+
+        if (result?.queued === true) {
+            recoveryQueued += 1;
+        } else if (result?.reason === 'deduped') {
+            recoveryDeduped += 1;
+        } else if (result?.reason === 'no_active_channels') {
+            recoverySkippedNoChannels += 1;
+        }
+
+        const adminNotificationResult = await notifyActiveAdmins(supabase, {
+            title: alert.title,
+            content: alert.content,
+            type: 'success',
+            dedupeWindowMinutes: Math.max(
+                Number(alert.dedupeWindowMinutes || 0),
+                60
+            )
+        }).catch((error) => ({
+            error: error.message || 'notify_failed'
+        }));
+
+        adminNotificationsCreated += Number(adminNotificationResult?.created || 0);
+        adminNotificationsSkipped += Number(adminNotificationResult?.skipped || 0);
+
+        results.push({
+            title: alert.title,
+            severity: alert.severity,
+            queued: result?.queued === true,
+            reason: result?.reason || null,
+            admin_notification_created: Number(adminNotificationResult?.created || 0),
+            admin_notification_error: normalizeText(adminNotificationResult?.error) || null
+        });
+    }
+
     return {
         incident_count: alerts.length,
+        recovered_count: recoveryAlerts.length,
         queued,
         deduped,
+        recovered_queued: recoveryQueued,
+        recovered_deduped: recoveryDeduped,
         skipped_no_channels: skippedNoChannels,
+        recovered_skipped_no_channels: recoverySkippedNoChannels,
+        admin_notifications_created: adminNotificationsCreated,
+        admin_notifications_skipped: adminNotificationsSkipped,
         signal_job_count: signalJobs.length,
+        state_job_count: stateJobs.length,
         results
     };
 }
@@ -399,13 +610,19 @@ module.exports = {
     DEFAULT_VERIFY_INCIDENT_MONITOR_CONFIG,
     PRIMARY_VERIFY_INCIDENT_SIGNAL_TYPES,
     VERIFY_INCIDENT_SIGNAL_TYPES,
+    VERIFY_INCIDENT_STATE_TYPES,
     buildVerifyIncidentEscalationAlerts,
+    buildVerifyIncidentRecoveryAlerts,
     normalizeVerifyIncidentMonitorConfig,
     runVerifyIncidentEscalationSweep,
     __testUtils: {
         buildSignalFingerprint,
+        formatDurationMinutes,
+        getLatestIncidentStateJob,
+        getLatestVerifySignalJobs,
         getSignalLabel,
         getSignalSummary,
+        getTargetIdFromPayload,
         summarizeSignalTimeline
     }
 };

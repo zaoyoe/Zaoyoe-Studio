@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { normalizeOpsAlertsConfig } = require('../api/_lib/ops-alerts');
 const {
     buildVerifyIncidentEscalationAlerts,
+    buildVerifyIncidentRecoveryAlerts,
     normalizeVerifyIncidentMonitorConfig,
     runVerifyIncidentEscalationSweep
 } = require('../api/_lib/verify-incident-alerts');
@@ -102,6 +103,8 @@ function applyRange(rows, range) {
 
 function createSupabaseStub(state = {}) {
     const jobs = state.jobs || [];
+    const adminRoles = state.adminRoles || [];
+    const systemNotifications = state.systemNotifications || [];
 
     return {
         from(table) {
@@ -122,6 +125,36 @@ function createSupabaseStub(state = {}) {
                     }));
 
                     inserted.forEach((row) => jobs.push({ ...row }));
+
+                    return {
+                        data: query.single ? inserted[0] : inserted,
+                        error: null
+                    };
+                }
+
+                if (table === 'admin_roles' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(adminRoles, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'system_notifications' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(systemNotifications, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'system_notifications' && query.mode === 'insert') {
+                    const payload = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    const inserted = payload.map((row, index) => ({
+                        id: row.id || `notification-${systemNotifications.length + index + 1}`,
+                        created_at: row.created_at || new Date().toISOString(),
+                        ...row
+                    }));
+
+                    inserted.forEach((row) => systemNotifications.push({ ...row }));
 
                     return {
                         data: query.single ? inserted[0] : inserted,
@@ -210,6 +243,45 @@ test('buildVerifyIncidentEscalationAlerts escalates when multiple high-risk veri
     ]);
 });
 
+test('buildVerifyIncidentRecoveryAlerts emits a recovery notice after composite verify risk clears', () => {
+    const alerts = buildVerifyIncidentRecoveryAlerts([
+        {
+            id: 'quota-1',
+            alert_type: 'verify_quota_low',
+            created_at: '2026-03-25T10:16:00.000Z',
+            payload: {
+                key_name: 'primary-key',
+                api_base_url: 'https://verify.test',
+                balance: 18,
+                remaining_jobs: 9
+            }
+        }
+    ], [
+        {
+            id: 'incident-1',
+            alert_type: 'verify_incident_escalated',
+            created_at: '2026-03-25T10:00:00.000Z',
+            payload: {
+                target_id: 'verify_incident:https://verify.test',
+                key_name: 'primary-key',
+                api_base_url: 'https://verify.test'
+            }
+        }
+    ], normalizeVerifyIncidentMonitorConfig(), {
+        now: '2026-03-25T10:18:00.000Z'
+    });
+
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].alertType, 'verify_incident_recovered');
+    assert.equal(alerts[0].severity, 'warning');
+    assert.deepEqual(alerts[0].allowedChannels, ['feishu']);
+    assert.match(alerts[0].content, /恢复结论：验证综合高危组合已解除，当前仍保留 1 类低优先级信号/);
+    assert.match(alerts[0].content, /当前仍有信号：验证额度不足/);
+    assert.equal(alerts[0].payload.incident_alert_job_id, 'incident-1');
+    assert.equal(alerts[0].payload.incident_duration_minutes, 18);
+    assert.deepEqual(alerts[0].payload.active_signal_types, ['verify_quota_low']);
+});
+
 test('runVerifyIncidentEscalationSweep enqueues escalated verify incidents with stable dedupe', async () => {
     const state = {
         jobs: [
@@ -279,4 +351,70 @@ test('runVerifyIncidentEscalationSweep enqueues escalated verify incidents with 
     assert.equal(second.queued, 0);
     assert.equal(second.deduped, 1);
     assert.equal(state.jobs.length, 4);
+});
+
+test('runVerifyIncidentEscalationSweep enqueues recovery notices and writes admin notifications once', async () => {
+    const state = {
+        jobs: [
+            {
+                id: 'incident-1',
+                alert_type: 'verify_incident_escalated',
+                severity: 'critical',
+                title: '验证综合异常升级（primary-key）',
+                created_at: '2026-03-25T10:00:00.000Z',
+                payload: {
+                    target_id: 'verify_incident:https://verify.test',
+                    key_name: 'primary-key',
+                    api_base_url: 'https://verify.test'
+                }
+            },
+            {
+                id: 'quota-1',
+                alert_type: 'verify_quota_low',
+                severity: 'warning',
+                title: '验证额度告警（primary-key）',
+                created_at: '2026-03-25T10:14:00.000Z',
+                payload: {
+                    target_id: 'verify_quota:https://verify.test',
+                    key_name: 'primary-key',
+                    api_base_url: 'https://verify.test',
+                    balance: 18,
+                    remaining_jobs: 9
+                }
+            }
+        ],
+        adminRoles: [
+            { user_id: 'admin-1', role_name: 'admin', expires_at: null },
+            { user_id: 'admin-2', role_name: 'super_admin', expires_at: null }
+        ],
+        systemNotifications: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime();
+
+    const first = await runVerifyIncidentEscalationSweep(supabase, {
+        runtime,
+        now: '2026-03-25T10:18:00.000Z'
+    });
+
+    assert.equal(first.incident_count, 0);
+    assert.equal(first.recovered_count, 1);
+    assert.equal(first.recovered_queued, 1);
+    assert.equal(first.admin_notifications_created, 2);
+    assert.equal(state.jobs.length, 3);
+    assert.equal(state.jobs[2].alert_type, 'verify_incident_recovered');
+    assert.deepEqual(state.jobs[2].channels, ['feishu']);
+    assert.equal(state.systemNotifications.length, 2);
+    assert.match(state.systemNotifications[0].title, /验证综合异常已恢复/);
+
+    const second = await runVerifyIncidentEscalationSweep(supabase, {
+        runtime,
+        now: '2026-03-25T10:19:00.000Z'
+    });
+
+    assert.equal(second.recovered_count, 0);
+    assert.equal(second.recovered_queued, 0);
+    assert.equal(second.admin_notifications_created, 0);
+    assert.equal(state.jobs.length, 3);
+    assert.equal(state.systemNotifications.length, 2);
 });
