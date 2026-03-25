@@ -14,6 +14,7 @@ const {
     loadOpsAlertsRuntimeConfig,
     normalizeOpsAlertsConfig,
     OPS_ALERTS_CONFIG_KEY,
+    sendFeishuAlert,
     sendTelegramAlert
 } = require('../../../../api/_lib/ops-alerts');
 
@@ -80,6 +81,99 @@ function extractTelegramFailureMessage(result = {}) {
     }
 
     return body.slice(0, 500);
+}
+
+function getConfiguredPreviewChannels(runtime) {
+    const channels = [];
+    if (runtime?.config?.channels?.telegram?.enabled === true) {
+        channels.push('telegram');
+    }
+    if (runtime?.config?.channels?.feishu?.enabled === true) {
+        channels.push('feishu');
+    }
+    return channels;
+}
+
+function validatePreviewRuntime(runtime, channels) {
+    if (!channels.length) {
+        return '请先启用至少一个站外告警通道';
+    }
+
+    if (channels.includes('telegram')) {
+        const chatIds = Array.isArray(runtime?.config?.channels?.telegram?.chat_ids)
+            ? runtime.config.channels.telegram.chat_ids
+            : [];
+        if (!sanitizeText(runtime?.secrets?.telegram_bot_token)) {
+            return '已启用 Telegram 告警，但 Telegram Bot Token 未配置';
+        }
+        if (!chatIds.length) {
+            return '已启用 Telegram 告警，但 Telegram Chat ID 未填写';
+        }
+    }
+
+    if (channels.includes('feishu') && !sanitizeText(runtime?.secrets?.feishu_webhook_url)) {
+        return '已启用飞书告警，但飞书 Webhook 未配置';
+    }
+
+    return '';
+}
+
+function extractDeliveryFailureMessage(channel, result = {}) {
+    const message = extractTelegramFailureMessage(result);
+    return `${channel}：${message}`;
+}
+
+function formatPreviewChannelLabels(channels = []) {
+    const labels = channels.map((channel) => {
+        if (channel === 'telegram') return 'Telegram';
+        if (channel === 'feishu') return '飞书';
+        return sanitizeText(channel) || channel;
+    }).filter(Boolean);
+
+    return labels.join('、');
+}
+
+async function sendOpsAlertPreview(job, runtime) {
+    const channels = getConfiguredPreviewChannels(runtime);
+    const validationError = validatePreviewRuntime(runtime, channels);
+    if (validationError) {
+        return {
+            ok: false,
+            channels,
+            message: validationError
+        };
+    }
+
+    const deliveries = [];
+    for (const channel of channels) {
+        let result;
+        if (channel === 'telegram') {
+            result = await sendTelegramAlert(job, runtime);
+        } else if (channel === 'feishu') {
+            result = await sendFeishuAlert(job, runtime);
+        } else {
+            result = {
+                ok: false,
+                status: 0,
+                error: 'unsupported_channel'
+            };
+        }
+
+        deliveries.push({
+            channel,
+            ...result
+        });
+    }
+
+    const failed = deliveries.filter((item) => item.ok !== true);
+    return {
+        ok: failed.length === 0,
+        channels,
+        deliveries,
+        message: failed.length
+            ? failed.map((item) => extractDeliveryFailureMessage(item.channel, item)).join(' | ')
+            : ''
+    };
 }
 
 function buildTelegramTestJob(user, runtime) {
@@ -176,29 +270,12 @@ module.exports = async (req, res) => {
                     config: normalizeOpsAlertsConfig(body.config),
                     secrets: mergeRuntimeSecrets(storedRuntime?.secrets, body.secrets)
                 };
-                const chatIds = Array.isArray(runtime.config?.channels?.telegram?.chat_ids)
-                    ? runtime.config.channels.telegram.chat_ids
-                    : [];
-
-                if (!sanitizeText(runtime.secrets.telegram_bot_token)) {
-                    return sendJson(res, 400, {
-                        success: false,
-                        message: '请先配置 Telegram Bot Token'
-                    });
-                }
-
-                if (!chatIds.length) {
-                    return sendJson(res, 400, {
-                        success: false,
-                        message: '请先填写至少一个 Telegram Chat ID'
-                    });
-                }
 
                 const normalizedAction = sanitizeText(body.action);
                 const job = normalizedAction === 'send_sample_refund_telegram'
                     ? buildTelegramRefundSampleJob(user)
                     : buildTelegramTestJob(user, runtime);
-                const result = await sendTelegramAlert(job, runtime);
+                const result = await sendOpsAlertPreview(job, runtime);
 
                 await writeAdminAuditLog({
                     supabase,
@@ -208,23 +285,24 @@ module.exports = async (req, res) => {
                         : 'admin.ops_alerts.telegram_test',
                     details: {
                         ok: result?.ok === true,
-                        status: Number(result?.status || 0) || null,
-                        chat_count: chatIds.length
+                        channels: result?.channels || [],
+                        delivery_count: Array.isArray(result?.deliveries) ? result.deliveries.length : 0
                     }
                 });
 
                 if (!result?.ok) {
                     return sendJson(res, 502, {
                         success: false,
-                        message: `Telegram 测试告警发送失败：${extractTelegramFailureMessage(result)}`
+                        message: `站外测试消息发送失败：${result.message || '未知错误'}`
                     });
                 }
 
+                const channelLabels = formatPreviewChannelLabels(result.channels);
                 return sendJson(res, 200, {
                     success: true,
                     message: normalizedAction === 'send_sample_refund_telegram'
-                        ? `退款详情示例消息已发送到 ${chatIds.length} 个 chat`
-                        : `测试 Telegram 告警已发送到 ${chatIds.length} 个 chat`
+                        ? `退款详情示例消息已发送到 ${channelLabels || '已启用通道'}`
+                        : `测试站外告警已发送到 ${channelLabels || '已启用通道'}`
                 });
             }
 
