@@ -366,7 +366,7 @@ function buildPaymentConfigRecoveredAlerts(stateJobs = [], auditRows = [], payme
         if (changedRiskFlags.length) {
             lines.push(`上次风险提示：${changedRiskFlags.join('；')}`);
         }
-        lines.push('处理入口：后台设置 -> 支付通道配置 / Admin Audit Logs');
+        lines.push('处理入口：后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计');
 
         return {
             alertType: 'payment_config_recovered',
@@ -400,7 +400,7 @@ function buildPaymentConfigRecoveredAlerts(stateJobs = [], auditRows = [], payme
                 restored_secret_label: target.secretName ? getPaymentSecretLabel(target.secretName) : null,
                 restored_secret_source: normalizeText(currentSecret.source) || null,
                 restored_secret_updated_at: normalizeText(currentSecret.updatedAt) || null,
-                entry_path: '后台设置 -> 支付通道配置 / Admin Audit Logs'
+                entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计'
             },
             allowedChannels: ['feishu'],
             dedupeKey: crypto
@@ -472,7 +472,7 @@ function buildPaymentConfigChangedAlerts(auditRows = [], rawConfig = {}, options
             if (createdAt) {
                 lines.push(`发生时间：${createdAt}`);
             }
-            lines.push('处理入口：后台设置 -> 支付通道配置 / Admin Audit Logs');
+            lines.push('处理入口：后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计');
 
             return {
                 alertType: 'payment_config_changed',
@@ -494,7 +494,7 @@ function buildPaymentConfigChangedAlerts(auditRows = [], rawConfig = {}, options
                     secret_name: normalizeText(details.secret_name) || null,
                     risk_flags: riskFlags,
                     created_at: createdAt || nowDate.toISOString(),
-                    entry_path: '后台设置 -> 支付通道配置 / Admin Audit Logs'
+                    entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计'
                 },
                 dedupeKey: crypto
                     .createHash('sha256')

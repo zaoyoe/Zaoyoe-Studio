@@ -634,7 +634,7 @@ function buildAdminLoginAnomalySampleJob(user) {
             ],
             origin: 'https://www.zaoyoe.com',
             referer: 'https://www.zaoyoe.com/admin-entry.html',
-            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs（示例）'
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 异常登录信号（示例）'
         }
     };
 }
@@ -742,7 +742,7 @@ function buildPaymentConfigChangedSampleJob(user) {
             updated_secrets: ['hupijiao_secret_key'],
             risk_flags: ['当前活动通道已切换为模拟支付', '本次更新包含 1 个支付密钥'],
             created_at: new Date().toISOString(),
-            entry_path: '后台设置 -> 支付通道配置 / Admin Audit Logs（示例）'
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计（示例）'
         }
     };
 }
@@ -774,7 +774,7 @@ function buildPaymentConfigRecoveredSampleJob(user) {
             current_active_provider_label: '爱发电',
             current_enabled_provider_labels: ['爱发电', '虎皮椒'],
             note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了支付配置恢复示例发送`,
-            entry_path: '后台设置 -> 支付通道配置 / Admin Audit Logs（示例）'
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计（示例）'
         }
     };
 }

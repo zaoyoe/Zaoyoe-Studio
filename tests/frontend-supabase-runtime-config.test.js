@@ -2044,9 +2044,14 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     const delegatedHtmlMarkers = [
         'id="opsAlertSummary"',
         'id="opsAlertEnabledToggle"',
+        'id="opsAlertWorkspacePanel"',
+        'id="opsAlertWorkspaceGrid"',
+        'id="verifyMonitorPanel"',
+        'id="adminAuditMonitorSection"',
         'data-admin-action="settings-toggle-ops-alerts-enabled"',
         'data-admin-action="settings-toggle-ops-alert-channel"',
         'data-admin-action="settings-save-ops-alerts"',
+        'data-admin-action="settings-open-ops-alert-workspace"',
         'data-admin-action="settings-send-ops-alert-telegram-test"',
         'data-admin-action="settings-send-ops-alert-refund-sample"',
         'data-admin-action="settings-send-ops-alert-gateway-sample"',
@@ -2069,6 +2074,14 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'data-admin-action="settings-send-ops-alert-payment-config-changed-sample"',
         'data-admin-action="settings-send-ops-alert-payment-config-recovered-sample"',
         'data-admin-action="settings-delete-ops-alert-secret"',
+        'data-workspace-target="payments-overview"',
+        'data-workspace-target="payments-ops"',
+        'data-workspace-target="verify-monitor"',
+        'data-workspace-target="admin-audit-monitor"',
+        'data-workspace-target="tickets-pending"',
+        'data-workspace-target="tickets-resolved"',
+        'data-workspace-target="shop-inventory"',
+        'data-workspace-target="shop-fulfillment"',
         'id="opsAlertTelegramChatIds"',
         'id="opsAlertTelegramBotToken"',
         'id="opsAlertFeishuWebhookUrl"'
@@ -2103,6 +2116,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         "case 'settings-send-ops-alert-shop-order-delivery-recovered-sample':",
         "case 'settings-send-ops-alert-payment-config-changed-sample':",
         "case 'settings-send-ops-alert-payment-config-recovered-sample':",
+        "case 'settings-open-ops-alert-workspace':",
         "case 'settings-delete-ops-alert-secret':"
     ];
 
@@ -2130,6 +2144,8 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.sendOpsAlertShopOrderDeliveryRecoveredSample = sendOpsAlertShopOrderDeliveryRecoveredSample;',
         'window.sendOpsAlertPaymentConfigChangedSample = sendOpsAlertPaymentConfigChangedSample;',
         'window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;',
+        'async function openOpsAlertWorkspace(workspaceKey)',
+        'window.openOpsAlertWorkspace = openOpsAlertWorkspace;',
         'window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;',
         'window.saveOpsAlertSettings = saveOpsAlertSettings;',
         'window.deleteOpsAlertSecret = deleteOpsAlertSecret;'
@@ -2144,6 +2160,65 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         true,
         'admin-studio.css should allow the ops alert settings card to grow beyond the shared 500px config body cap'
     );
+
+    const workspaceCssMarkers = [
+        '.ops-alert-workspace-grid',
+        '.ops-alert-workspace-card',
+        '.ops-alert-workspace-card__actions'
+    ];
+
+    for (const marker of workspaceCssMarkers) {
+        assert.equal(adminStudioCss.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+});
+
+test('admin audit monitor exposes delegated settings actions and runtime wiring', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminStudioCss = readRepoFile('admin-studio.css');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminConfigSource = readRepoFile('admin-config.js');
+
+    const htmlMarkers = [
+        'id="adminAuditMonitorLastRefresh"',
+        'data-admin-action="settings-refresh-admin-audit-monitor"',
+        'id="adminAuditMonitorAccessCard"',
+        'id="adminAuditMonitorRecentAccess"',
+        'id="adminAuditMonitorAnomalyList"',
+        'id="adminAuditMonitorConfigList"'
+    ];
+
+    for (const marker of htmlMarkers) {
+        assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+
+    const handlerMarkers = [
+        "case 'settings-refresh-admin-audit-monitor':"
+    ];
+
+    for (const marker of handlerMarkers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    const runtimeMarkers = [
+        'function getDefaultAdminAuditMonitorState()',
+        "fetch('/api/admin/settings/admin-audit-monitor'",
+        'window.loadAdminAuditMonitor = loadAdminAuditMonitor;',
+        'window.refreshAdminAuditMonitor = refreshAdminAuditMonitor;'
+    ];
+
+    for (const marker of runtimeMarkers) {
+        assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should contain ${marker}`);
+    }
+
+    const cssMarkers = [
+        '.admin-audit-monitor-grid',
+        '.admin-audit-monitor-card--danger',
+        '.admin-audit-monitor-panel--wide'
+    ];
+
+    for (const marker of cssMarkers) {
+        assert.equal(adminStudioCss.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
 });
 
 test('shop admin pagination renderer no longer emits inline handler attributes', () => {
