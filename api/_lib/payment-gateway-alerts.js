@@ -3,10 +3,14 @@ const {
     enqueueOpsAlertJob,
     loadOpsAlertsRuntimeConfig
 } = require('./ops-alerts');
+const {
+    notifyActiveAdmins
+} = require('./admin-notifications');
 
 const DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG = Object.freeze({
     enabled: true,
     window_minutes: 30,
+    state_lookback_minutes: 24 * 60,
     sweep_interval_ms: 5 * 60 * 1000,
     min_order_volume: 6,
     min_review_orders: 4,
@@ -23,6 +27,10 @@ const DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG = Object.freeze({
     page_size: 500,
     max_pages: 20
 });
+const PAYMENT_GATEWAY_STATE_TYPES = Object.freeze([
+    'payment_gateway_degraded',
+    'payment_gateway_recovered'
+]);
 
 function normalizeText(value) {
     return String(value || '').trim();
@@ -148,6 +156,7 @@ function normalizePaymentGatewayMonitorConfig(rawConfig = {}, env = process.env)
     return {
         enabled: normalizeBoolean(source.enabled, normalizeBoolean(env?.PAYMENT_GATEWAY_MONITOR_ENABLED, DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.enabled)),
         window_minutes: normalizeNumber(source.window_minutes, normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_WINDOW_MINUTES, DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.window_minutes, 5, 24 * 60), 5, 24 * 60),
+        state_lookback_minutes: normalizeNumber(source.state_lookback_minutes, normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_STATE_LOOKBACK_MINUTES, DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.state_lookback_minutes, 30, 7 * 24 * 60), 30, 7 * 24 * 60),
         sweep_interval_ms: normalizeNumber(source.sweep_interval_ms, normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_SWEEP_INTERVAL_MS, DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.sweep_interval_ms, 10000, 60 * 60 * 1000), 10000, 60 * 60 * 1000),
         min_order_volume: normalizeNumber(source.min_order_volume, normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_ORDER_VOLUME, DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.min_order_volume, 1, 200), 1, 200),
         min_review_orders: normalizeNumber(source.min_review_orders, normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_REVIEW_ORDERS, DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.min_review_orders, 1, 100), 1, 100),
@@ -376,6 +385,161 @@ function buildPaymentGatewayDegradedAlerts(providerStats = [], config = {}) {
         .filter(Boolean);
 }
 
+function getGatewayTargetId(value = {}) {
+    if (!value || typeof value !== 'object') {
+        return 'payment_gateway:unknown:all';
+    }
+
+    if (normalizeText(value.target_id)) {
+        return normalizeText(value.target_id);
+    }
+
+    const provider = normalizeText(value.provider).toLowerCase() || 'unknown';
+    const site = normalizeText(value.site).toLowerCase() || 'all';
+    return `payment_gateway:${provider}:${site}`;
+}
+
+function hasGatewayActivity(stats = {}) {
+    return Number(stats.total_orders || 0) > 0
+        || Number(stats.webhook_total || 0) > 0
+        || Number(stats.query_total || 0) > 0;
+}
+
+function getLatestGatewayStateJob(stateJobs = [], alertType, targetId = '') {
+    const normalizedType = normalizeText(alertType).toLowerCase();
+    const normalizedTargetId = normalizeText(targetId);
+
+    return (stateJobs || [])
+        .filter((job) => normalizeText(job.alert_type).toLowerCase() === normalizedType)
+        .filter((job) => !normalizedTargetId || getGatewayTargetId(job.payload) === normalizedTargetId)
+        .sort((left, right) => Date.parse(normalizeText(right.created_at)) - Date.parse(normalizeText(left.created_at)))
+        [0] || null;
+}
+
+function buildGatewayStatsMap(providerStats = []) {
+    const map = new Map();
+    for (const stats of providerStats || []) {
+        map.set(getGatewayTargetId(stats), stats);
+    }
+    return map;
+}
+
+function buildPaymentGatewayRecoveredAlerts(providerStats = [], stateJobs = [], config = {}, options = {}) {
+    const monitorConfig = normalizePaymentGatewayMonitorConfig(config);
+    const activeDegradedAlerts = buildPaymentGatewayDegradedAlerts(providerStats, monitorConfig);
+    const activeTargetIds = new Set(activeDegradedAlerts.map((alert) => getGatewayTargetId(alert.payload)));
+    const statsMap = buildGatewayStatsMap(providerStats);
+    const degradedTargets = Array.from(new Set(
+        (stateJobs || [])
+            .filter((job) => normalizeText(job.alert_type).toLowerCase() === 'payment_gateway_degraded')
+            .map((job) => getGatewayTargetId(job.payload))
+            .filter(Boolean)
+    ));
+    const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
+
+    return degradedTargets.map((targetId) => {
+        const latestDegraded = getLatestGatewayStateJob(stateJobs, 'payment_gateway_degraded', targetId);
+        if (!latestDegraded) {
+            return null;
+        }
+
+        const latestRecovered = getLatestGatewayStateJob(stateJobs, 'payment_gateway_recovered', targetId);
+        const latestDegradedAt = Date.parse(normalizeText(latestDegraded.created_at));
+        const latestRecoveredAt = Date.parse(normalizeText(latestRecovered?.created_at));
+        if (Number.isFinite(latestRecoveredAt) && Number.isFinite(latestDegradedAt) && latestRecoveredAt >= latestDegradedAt) {
+            return null;
+        }
+        if (activeTargetIds.has(targetId)) {
+            return null;
+        }
+
+        const currentStats = statsMap.get(targetId);
+        if (!currentStats || !hasGatewayActivity(currentStats)) {
+            return null;
+        }
+
+        const degradedPayload = latestDegraded.payload && typeof latestDegraded.payload === 'object' ? latestDegraded.payload : {};
+        const provider = normalizeText(currentStats.provider || degradedPayload.provider).toLowerCase();
+        const site = normalizeText(currentStats.site || degradedPayload.site).toLowerCase() || null;
+        const providerLabel = getProviderLabel(provider);
+        const siteLabel = formatSiteLabel(site);
+        const incidentRecoveredAt = nowDate.toISOString();
+        const incidentDurationMinutes = Number.isFinite(latestDegradedAt)
+            ? Math.max(0, Math.round((nowDate.getTime() - latestDegradedAt) / 60000))
+            : 0;
+        const previousReasons = Array.isArray(degradedPayload.degraded_reasons)
+            ? degradedPayload.degraded_reasons.map((item) => normalizeText(item)).filter(Boolean)
+            : [];
+        const lines = [
+            `${providerLabel} 在最近 ${monitorConfig.window_minutes} 分钟内未再命中支付通道异常阈值，可从应急处理切回观察状态。`,
+            '恢复结论：支付通道异常阈值已解除'
+        ];
+
+        if (siteLabel) {
+            lines.push(`站点：${siteLabel}`);
+        }
+        if (normalizeText(latestDegraded.created_at)) {
+            lines.push(`上次异常：${normalizeText(latestDegraded.created_at)}`);
+        }
+        lines.push(`恢复时间：${incidentRecoveredAt}`);
+        lines.push(`持续时长：${incidentDurationMinutes} 分钟`);
+        if (previousReasons.length) {
+            lines.push(`上次异常信号：${previousReasons.join('；')}`);
+        }
+        if (Number(currentStats.total_orders || 0) > 0) {
+            lines.push(`当前订单概览：总 ${Number(currentStats.total_orders || 0)} 笔 / 成功 ${Number(currentStats.paid_orders || 0)} 笔 / 待审核 ${Number(currentStats.review_orders || 0)} 笔 / 失败 ${Number(currentStats.failed_orders || 0)} 笔 / 成功率 ${formatPercent(currentStats.paid_rate)}`);
+        }
+        if (Number(currentStats.webhook_total || 0) > 0) {
+            lines.push(`当前回调概览：总 ${Number(currentStats.webhook_total || 0)} 次 / 成功 ${Number(currentStats.webhook_success || 0)} 次 / 失败 ${Number(currentStats.webhook_failed || 0)} 次 / 5xx ${Number(currentStats.webhook_5xx || 0)} 次 / 成功率 ${formatPercent(currentStats.webhook_success_rate)}`);
+        }
+        if (Number(currentStats.query_total || 0) > 0) {
+            lines.push(`当前查码概览：总 ${Number(currentStats.query_total || 0)} 次 / 成功 ${Number(currentStats.query_success || 0)} 次 / 失败 ${Number(currentStats.query_failed || 0)} 次 / 5xx ${Number(currentStats.query_5xx || 0)} 次 / 成功率 ${formatPercent(currentStats.query_success_rate)}`);
+        }
+        lines.push('处理入口：支付对账 -> 支付总览 -> 通道表现 / 最近24小时异常趋势');
+
+        return {
+            alertType: 'payment_gateway_recovered',
+            severity: 'warning',
+            title: `${providerLabel} 支付通道已恢复${siteLabel ? `（${siteLabel}）` : ''}`,
+            content: lines.join('\n'),
+            payload: {
+                provider,
+                site,
+                target_id: targetId,
+                monitor_window_minutes: monitorConfig.window_minutes,
+                gateway_alert_job_id: normalizeText(latestDegraded.id) || null,
+                incident_started_at: normalizeText(latestDegraded.created_at) || null,
+                incident_recovered_at: incidentRecoveredAt,
+                incident_duration_minutes: incidentDurationMinutes,
+                recovery_summary: '支付通道异常阈值已解除',
+                previous_degraded_reasons: previousReasons,
+                total_orders: Number(currentStats.total_orders || 0),
+                paid_orders: Number(currentStats.paid_orders || 0),
+                review_orders: Number(currentStats.review_orders || 0),
+                failed_orders: Number(currentStats.failed_orders || 0),
+                paid_rate: Number(currentStats.paid_rate || 0),
+                webhook_total: Number(currentStats.webhook_total || 0),
+                webhook_success: Number(currentStats.webhook_success || 0),
+                webhook_failed: Number(currentStats.webhook_failed || 0),
+                webhook_5xx: Number(currentStats.webhook_5xx || 0),
+                webhook_success_rate: Number(currentStats.webhook_success_rate || 0),
+                query_total: Number(currentStats.query_total || 0),
+                query_success: Number(currentStats.query_success || 0),
+                query_failed: Number(currentStats.query_failed || 0),
+                query_5xx: Number(currentStats.query_5xx || 0),
+                query_success_rate: Number(currentStats.query_success_rate || 0),
+                entry_path: '支付对账 -> 支付总览 -> 通道表现 / 最近24小时异常趋势'
+            },
+            allowedChannels: ['feishu'],
+            dedupeKey: crypto
+                .createHash('sha256')
+                .update(`payment_gateway_recovered:${targetId}:${normalizeText(latestDegraded.id) || normalizeText(latestDegraded.created_at) || 'unknown'}`)
+                .digest('hex'),
+            dedupeWindowMinutes: 60
+        };
+    }).filter(Boolean);
+}
+
 async function fetchPagedRows(buildQuery, pageSize = 500, maxPages = 20) {
     const rows = [];
 
@@ -430,6 +594,15 @@ async function fetchRecentPaymentQueryAttempts(client, sinceIso, config) {
     }
 }
 
+async function fetchRecentPaymentGatewayStateJobs(client, sinceIso, config) {
+    return fetchPagedRows(() => client
+        .from('ops_alert_jobs')
+        .select('id, alert_type, severity, title, payload, created_at')
+        .in('alert_type', PAYMENT_GATEWAY_STATE_TYPES)
+        .gte('created_at', sinceIso)
+        .order('created_at', { ascending: false }), config.page_size, config.max_pages);
+}
+
 async function runPaymentGatewayDegradationSweep(supabase, options = {}) {
     const env = options.env || process.env;
     const config = normalizePaymentGatewayMonitorConfig(options.config, env);
@@ -455,11 +628,13 @@ async function runPaymentGatewayDegradationSweep(supabase, options = {}) {
 
     const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
     const sinceIso = new Date(nowDate.getTime() - Number(config.window_minutes || DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.window_minutes) * 60 * 1000).toISOString();
+    const stateSinceIso = new Date(nowDate.getTime() - Number(config.state_lookback_minutes || DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.state_lookback_minutes) * 60 * 1000).toISOString();
 
-    const [orders, events, queryAttempts] = await Promise.all([
+    const [orders, events, queryAttempts, stateJobs] = await Promise.all([
         fetchRecentPaymentOrders(supabase, sinceIso, config),
         fetchRecentPaymentEvents(supabase, sinceIso, config),
-        fetchRecentPaymentQueryAttempts(supabase, sinceIso, config)
+        fetchRecentPaymentQueryAttempts(supabase, sinceIso, config),
+        fetchRecentPaymentGatewayStateJobs(supabase, stateSinceIso, config)
     ]);
 
     const providerStats = buildGatewayProviderStats({
@@ -468,14 +643,25 @@ async function runPaymentGatewayDegradationSweep(supabase, options = {}) {
         queryAttempts
     });
     const alerts = buildPaymentGatewayDegradedAlerts(providerStats, config);
+    const recoveryAlerts = buildPaymentGatewayRecoveredAlerts(providerStats, stateJobs, config, {
+        now: nowDate
+    });
 
     let queued = 0;
     let deduped = 0;
     let skippedNoChannels = 0;
+    let recoveredQueued = 0;
+    let recoveredDeduped = 0;
+    let recoveredSkippedNoChannels = 0;
+    let adminNotificationsCreated = 0;
+    let adminNotificationsSkipped = 0;
     const results = [];
 
     for (const alert of alerts) {
-        const result = await enqueueOpsAlertJob(supabase, alert, {
+        const result = await enqueueOpsAlertJob(supabase, {
+            ...alert,
+            createdAt: nowDate.toISOString()
+        }, {
             runtime,
             env
         });
@@ -496,28 +682,80 @@ async function runPaymentGatewayDegradationSweep(supabase, options = {}) {
         });
     }
 
+    for (const alert of recoveryAlerts) {
+        const result = await enqueueOpsAlertJob(supabase, {
+            ...alert,
+            createdAt: nowDate.toISOString()
+        }, {
+            runtime,
+            env
+        });
+        if (result?.queued === true) {
+            recoveredQueued += 1;
+        } else if (result?.reason === 'deduped') {
+            recoveredDeduped += 1;
+        } else if (result?.reason === 'no_active_channels') {
+            recoveredSkippedNoChannels += 1;
+        }
+
+        const adminNotificationResult = await notifyActiveAdmins(supabase, {
+            title: alert.title,
+            content: alert.content,
+            type: 'success',
+            dedupeWindowMinutes: Math.max(Number(alert.dedupeWindowMinutes || 0), 60)
+        }).catch((error) => ({
+            error: error.message || 'notify_failed'
+        }));
+
+        adminNotificationsCreated += Number(adminNotificationResult?.created || 0);
+        adminNotificationsSkipped += Number(adminNotificationResult?.skipped || 0);
+
+        results.push({
+            provider: alert.payload?.provider || null,
+            site: alert.payload?.site || null,
+            title: alert.title,
+            queued: result?.queued === true,
+            reason: result?.reason || null,
+            admin_notification_created: Number(adminNotificationResult?.created || 0),
+            admin_notification_error: normalizeText(adminNotificationResult?.error) || null
+        });
+    }
+
     return {
         window_minutes: Number(config.window_minutes || 0),
         provider_count: providerStats.length,
         degraded_count: alerts.length,
+        recovered_count: recoveryAlerts.length,
         queued,
         deduped,
+        recovered_queued: recoveredQueued,
+        recovered_deduped: recoveredDeduped,
         skipped_no_channels: skippedNoChannels,
+        recovered_skipped_no_channels: recoveredSkippedNoChannels,
+        admin_notifications_created: adminNotificationsCreated,
+        admin_notifications_skipped: adminNotificationsSkipped,
+        state_job_count: stateJobs.length,
         results
     };
 }
 
 module.exports = {
     DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG,
+    PAYMENT_GATEWAY_STATE_TYPES,
     buildGatewayProviderStats,
     buildPaymentGatewayDegradedAlerts,
+    buildPaymentGatewayRecoveredAlerts,
     normalizePaymentGatewayMonitorConfig,
     runPaymentGatewayDegradationSweep,
     __testUtils: {
         buildGatewayDegradedReasons,
+        buildGatewayStatsMap,
         detectScopeSite,
         fetchPagedRows,
+        getGatewayTargetId,
+        getLatestGatewayStateJob,
         getProviderLabel,
+        hasGatewayActivity,
         isSuccessfulWebhookEvent
     }
 };

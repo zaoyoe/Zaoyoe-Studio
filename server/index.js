@@ -53,6 +53,10 @@ const {
     sweepOpsAlertJobs
 } = require('../api/_lib/ops-alerts');
 const {
+    normalizePaymentConfigChangeMonitorConfig,
+    runPaymentConfigChangedSweep
+} = require('../api/_lib/payment-config-change-alerts');
+const {
     normalizePaymentGatewayMonitorConfig,
     runPaymentGatewayDegradationSweep
 } = require('../api/_lib/payment-gateway-alerts');
@@ -60,6 +64,38 @@ const {
     normalizeVerifyQuotaMonitorConfig,
     runVerifyQuotaLowSweep
 } = require('../api/_lib/verify-quota-alerts');
+const {
+    normalizeVerifyServiceMonitorConfig,
+    runVerifyServiceDisabledSweep
+} = require('../api/_lib/verify-service-alerts');
+const {
+    normalizeVerifyQueueMonitorConfig,
+    runVerifyQueueBacklogSweep
+} = require('../api/_lib/verify-queue-alerts');
+const {
+    normalizeVerifyFailureMonitorConfig,
+    runVerifyFailureRateSpikeSweep
+} = require('../api/_lib/verify-failure-alerts');
+const {
+    normalizeVerifyIncidentMonitorConfig,
+    runVerifyIncidentEscalationSweep
+} = require('../api/_lib/verify-incident-alerts');
+const {
+    normalizeTicketSlaMonitorConfig,
+    runTicketSlaOverdueSweep
+} = require('../api/_lib/ticket-sla-alerts');
+const {
+    normalizeShopInventoryMonitorConfig,
+    runShopInventoryLowSweep
+} = require('../api/_lib/shop-inventory-alerts');
+const {
+    normalizeShopOrderDeliveryMonitorConfig,
+    runShopOrderDeliveryFailedSweep
+} = require('../api/_lib/shop-order-delivery-alerts');
+const {
+    normalizeAdminLoginAnomalyMonitorConfig,
+    runAdminLoginAnomalySweep
+} = require('../api/_lib/admin-login-anomaly-alerts');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -79,10 +115,28 @@ let shopDeliverySweepTimer = null;
 let shopDeliverySweepRunning = false;
 let opsAlertSweepTimer = null;
 let opsAlertSweepRunning = false;
+let paymentConfigChangeSweepTimer = null;
+let paymentConfigChangeSweepRunning = false;
 let paymentGatewaySweepTimer = null;
 let paymentGatewaySweepRunning = false;
 let verifyQuotaSweepTimer = null;
 let verifyQuotaSweepRunning = false;
+let verifyServiceSweepTimer = null;
+let verifyServiceSweepRunning = false;
+let verifyQueueSweepTimer = null;
+let verifyQueueSweepRunning = false;
+let verifyFailureSweepTimer = null;
+let verifyFailureSweepRunning = false;
+let verifyIncidentSweepTimer = null;
+let verifyIncidentSweepRunning = false;
+let ticketSlaSweepTimer = null;
+let ticketSlaSweepRunning = false;
+let shopInventorySweepTimer = null;
+let shopInventorySweepRunning = false;
+let shopOrderDeliverySweepTimer = null;
+let shopOrderDeliverySweepRunning = false;
+let adminLoginAnomalySweepTimer = null;
+let adminLoginAnomalySweepRunning = false;
 let cachedShopDeliveryStrategy = null;
 let cachedShopDeliveryStrategyAt = 0;
 const afdianProvider = getPaymentProviderAdapter('afdian');
@@ -214,6 +268,18 @@ async function getVerifyConfig() {
         apiBaseUrl: String(config.verify_api_base_url || process.env.VERIFY_API_BASE_URL || VERIFY_API_BASE).replace(/\/+$/, ''),
         monitorConfig: config.verify_quota_monitor && typeof config.verify_quota_monitor === 'object'
             ? config.verify_quota_monitor
+            : {},
+        serviceMonitorConfig: config.verify_service_monitor && typeof config.verify_service_monitor === 'object'
+            ? config.verify_service_monitor
+            : {},
+        queueMonitorConfig: config.verify_queue_monitor && typeof config.verify_queue_monitor === 'object'
+            ? config.verify_queue_monitor
+            : {},
+        failureMonitorConfig: config.verify_failure_monitor && typeof config.verify_failure_monitor === 'object'
+            ? config.verify_failure_monitor
+            : {},
+        incidentMonitorConfig: config.verify_incident_monitor && typeof config.verify_incident_monitor === 'object'
+            ? config.verify_incident_monitor
             : {}
     };
 }
@@ -2811,6 +2877,59 @@ function startOpsAlertSweep() {
     });
 }
 
+async function sweepPaymentConfigChangeHealth() {
+    if (paymentConfigChangeSweepRunning) return;
+    paymentConfigChangeSweepRunning = true;
+
+    try {
+        const result = await runPaymentConfigChangedSweep(supabase, {
+            env: process.env
+        });
+
+        if (
+            Number(result?.change_count || 0) > 0
+            || Number(result?.queued || 0) > 0
+            || Number(result?.recovery_count || 0) > 0
+            || Number(result?.recovered_queued || 0) > 0
+            || Number(result?.admin_notifications_created || 0) > 0
+        ) {
+            console.log('[PaymentConfigChangeMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[PaymentConfigChangeMonitor] Sweep failed:', error);
+    } finally {
+        paymentConfigChangeSweepRunning = false;
+    }
+}
+
+async function queueNextPaymentConfigChangeSweep(delayMs = null) {
+    if (paymentConfigChangeSweepTimer) return;
+
+    const monitorConfig = normalizePaymentConfigChangeMonitorConfig({}, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
+
+    paymentConfigChangeSweepTimer = setTimeout(() => {
+        paymentConfigChangeSweepTimer = null;
+        sweepPaymentConfigChangeHealth()
+            .catch((error) => {
+                console.error('[PaymentConfigChangeMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextPaymentConfigChangeSweep().catch((error) => {
+                    console.error('[PaymentConfigChangeMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startPaymentConfigChangeSweep() {
+    if (paymentConfigChangeSweepTimer) return;
+
+    queueNextPaymentConfigChangeSweep(2800).catch((error) => {
+        console.error('[PaymentConfigChangeMonitor] Failed to start sweep:', error);
+    });
+}
+
 async function sweepPaymentGatewayHealth() {
     if (paymentGatewaySweepRunning) return;
     paymentGatewaySweepRunning = true;
@@ -2820,7 +2939,13 @@ async function sweepPaymentGatewayHealth() {
             env: process.env
         });
 
-        if (Number(result?.degraded_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+        if (
+            Number(result?.degraded_count || 0) > 0
+            || Number(result?.queued || 0) > 0
+            || Number(result?.recovered_count || 0) > 0
+            || Number(result?.recovered_queued || 0) > 0
+            || Number(result?.admin_notifications_created || 0) > 0
+        ) {
             console.log('[PaymentGatewayMonitor] Sweep complete:', JSON.stringify(result));
         }
     } catch (error) {
@@ -2905,6 +3030,420 @@ function startVerifyQuotaSweep() {
 
     queueNextVerifyQuotaSweep(4200).catch((error) => {
         console.error('[VerifyQuotaMonitor] Failed to start sweep:', error);
+    });
+}
+
+async function sweepVerifyServiceHealth() {
+    if (verifyServiceSweepRunning) return;
+    verifyServiceSweepRunning = true;
+
+    try {
+        const verifyConfig = await getVerifyConfig();
+        const result = await runVerifyServiceDisabledSweep(supabase, {
+            env: process.env,
+            verifyConfig
+        });
+
+        if (Number(result?.disabled_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+            console.log('[VerifyServiceMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[VerifyServiceMonitor] Sweep failed:', error);
+    } finally {
+        verifyServiceSweepRunning = false;
+    }
+}
+
+async function queueNextVerifyServiceSweep(delayMs = null) {
+    if (verifyServiceSweepTimer) return;
+
+    const verifyConfig = await getVerifyConfig();
+    const monitorConfig = normalizeVerifyServiceMonitorConfig(verifyConfig?.serviceMonitorConfig, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
+
+    verifyServiceSweepTimer = setTimeout(() => {
+        verifyServiceSweepTimer = null;
+        sweepVerifyServiceHealth()
+            .catch((error) => {
+                console.error('[VerifyServiceMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextVerifyServiceSweep().catch((error) => {
+                    console.error('[VerifyServiceMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startVerifyServiceSweep() {
+    if (verifyServiceSweepTimer) return;
+
+    queueNextVerifyServiceSweep(4700).catch((error) => {
+        console.error('[VerifyServiceMonitor] Failed to start sweep:', error);
+    });
+}
+
+async function sweepVerifyQueueHealth() {
+    if (verifyQueueSweepRunning) return;
+    verifyQueueSweepRunning = true;
+
+    try {
+        const verifyConfig = await getVerifyConfig();
+        const result = await runVerifyQueueBacklogSweep(supabase, {
+            env: process.env,
+            verifyConfig
+        });
+
+        if (Number(result?.backlog_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+            console.log('[VerifyQueueMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[VerifyQueueMonitor] Sweep failed:', error);
+    } finally {
+        verifyQueueSweepRunning = false;
+    }
+}
+
+async function queueNextVerifyQueueSweep(delayMs = null) {
+    if (verifyQueueSweepTimer) return;
+
+    const verifyConfig = await getVerifyConfig();
+    const monitorConfig = normalizeVerifyQueueMonitorConfig(verifyConfig?.queueMonitorConfig, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
+
+    verifyQueueSweepTimer = setTimeout(() => {
+        verifyQueueSweepTimer = null;
+        sweepVerifyQueueHealth()
+            .catch((error) => {
+                console.error('[VerifyQueueMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextVerifyQueueSweep().catch((error) => {
+                    console.error('[VerifyQueueMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startVerifyQueueSweep() {
+    if (verifyQueueSweepTimer) return;
+
+    queueNextVerifyQueueSweep(5200).catch((error) => {
+        console.error('[VerifyQueueMonitor] Failed to start sweep:', error);
+    });
+}
+
+async function sweepVerifyFailureHealth() {
+    if (verifyFailureSweepRunning) return;
+    verifyFailureSweepRunning = true;
+
+    try {
+        const verifyConfig = await getVerifyConfig();
+        const result = await runVerifyFailureRateSpikeSweep(supabase, {
+            env: process.env,
+            verifyConfig
+        });
+
+        if (Number(result?.spike_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+            console.log('[VerifyFailureMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[VerifyFailureMonitor] Sweep failed:', error);
+    } finally {
+        verifyFailureSweepRunning = false;
+    }
+}
+
+async function queueNextVerifyFailureSweep(delayMs = null) {
+    if (verifyFailureSweepTimer) return;
+
+    const verifyConfig = await getVerifyConfig();
+    const monitorConfig = normalizeVerifyFailureMonitorConfig(verifyConfig?.failureMonitorConfig, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
+
+    verifyFailureSweepTimer = setTimeout(() => {
+        verifyFailureSweepTimer = null;
+        sweepVerifyFailureHealth()
+            .catch((error) => {
+                console.error('[VerifyFailureMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextVerifyFailureSweep().catch((error) => {
+                    console.error('[VerifyFailureMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startVerifyFailureSweep() {
+    if (verifyFailureSweepTimer) return;
+
+    queueNextVerifyFailureSweep(5700).catch((error) => {
+        console.error('[VerifyFailureMonitor] Failed to start sweep:', error);
+    });
+}
+
+async function sweepVerifyIncidentHealth() {
+    if (verifyIncidentSweepRunning) return;
+    verifyIncidentSweepRunning = true;
+
+    try {
+        const verifyConfig = await getVerifyConfig();
+        const result = await runVerifyIncidentEscalationSweep(supabase, {
+            env: process.env,
+            verifyConfig
+        });
+
+        if (
+            Number(result?.incident_count || 0) > 0
+            || Number(result?.queued || 0) > 0
+            || Number(result?.recovered_count || 0) > 0
+            || Number(result?.recovered_queued || 0) > 0
+            || Number(result?.admin_notifications_created || 0) > 0
+        ) {
+            console.log('[VerifyIncidentMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[VerifyIncidentMonitor] Sweep failed:', error);
+    } finally {
+        verifyIncidentSweepRunning = false;
+    }
+}
+
+async function queueNextVerifyIncidentSweep(delayMs = null) {
+    if (verifyIncidentSweepTimer) return;
+
+    const verifyConfig = await getVerifyConfig();
+    const monitorConfig = normalizeVerifyIncidentMonitorConfig(verifyConfig?.incidentMonitorConfig, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
+
+    verifyIncidentSweepTimer = setTimeout(() => {
+        verifyIncidentSweepTimer = null;
+        sweepVerifyIncidentHealth()
+            .catch((error) => {
+                console.error('[VerifyIncidentMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextVerifyIncidentSweep().catch((error) => {
+                    console.error('[VerifyIncidentMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startVerifyIncidentSweep() {
+    if (verifyIncidentSweepTimer) return;
+
+    queueNextVerifyIncidentSweep(6200).catch((error) => {
+        console.error('[VerifyIncidentMonitor] Failed to start sweep:', error);
+    });
+}
+
+async function sweepTicketSlaHealth() {
+    if (ticketSlaSweepRunning) return;
+    ticketSlaSweepRunning = true;
+
+    try {
+        const result = await runTicketSlaOverdueSweep(supabase, {
+            env: process.env
+        });
+
+        if (
+            Number(result?.overdue_count || 0) > 0
+            || Number(result?.queued || 0) > 0
+            || Number(result?.recovered_count || 0) > 0
+            || Number(result?.recovered_queued || 0) > 0
+            || Number(result?.admin_notifications_created || 0) > 0
+        ) {
+            console.log('[TicketSlaMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[TicketSlaMonitor] Sweep failed:', error);
+    } finally {
+        ticketSlaSweepRunning = false;
+    }
+}
+
+async function queueNextTicketSlaSweep(delayMs = null) {
+    if (ticketSlaSweepTimer) return;
+
+    const monitorConfig = normalizeTicketSlaMonitorConfig({}, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
+
+    ticketSlaSweepTimer = setTimeout(() => {
+        ticketSlaSweepTimer = null;
+        sweepTicketSlaHealth()
+            .catch((error) => {
+                console.error('[TicketSlaMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextTicketSlaSweep().catch((error) => {
+                    console.error('[TicketSlaMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startTicketSlaSweep() {
+    if (ticketSlaSweepTimer) return;
+
+    queueNextTicketSlaSweep(5200).catch((error) => {
+        console.error('[TicketSlaMonitor] Failed to start sweep:', error);
+    });
+}
+
+async function sweepShopInventoryHealth() {
+    if (shopInventorySweepRunning) return;
+    shopInventorySweepRunning = true;
+
+    try {
+        const result = await runShopInventoryLowSweep(supabase, {
+            env: process.env
+        });
+
+        if (
+            Number(result?.low_stock_count || 0) > 0
+            || Number(result?.empty_stock_count || 0) > 0
+            || Number(result?.queued || 0) > 0
+            || Number(result?.recovered_count || 0) > 0
+            || Number(result?.recovered_queued || 0) > 0
+            || Number(result?.admin_notifications_created || 0) > 0
+        ) {
+            console.log('[ShopInventoryMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[ShopInventoryMonitor] Sweep failed:', error);
+    } finally {
+        shopInventorySweepRunning = false;
+    }
+}
+
+async function queueNextShopInventorySweep(delayMs = null) {
+    if (shopInventorySweepTimer) return;
+
+    const monitorConfig = normalizeShopInventoryMonitorConfig({}, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 15 * 60 * 1000));
+
+    shopInventorySweepTimer = setTimeout(() => {
+        shopInventorySweepTimer = null;
+        sweepShopInventoryHealth()
+            .catch((error) => {
+                console.error('[ShopInventoryMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextShopInventorySweep().catch((error) => {
+                    console.error('[ShopInventoryMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startShopInventorySweep() {
+    if (shopInventorySweepTimer) return;
+
+    queueNextShopInventorySweep(6200).catch((error) => {
+        console.error('[ShopInventoryMonitor] Failed to start sweep:', error);
+    });
+}
+
+async function sweepShopOrderDeliveryHealth() {
+    if (shopOrderDeliverySweepRunning) return;
+    shopOrderDeliverySweepRunning = true;
+
+    try {
+        const result = await runShopOrderDeliveryFailedSweep(supabase, {
+            env: process.env
+        });
+
+        if (
+            Number(result?.failure_count || 0) > 0
+            || Number(result?.queued || 0) > 0
+            || Number(result?.incident_count || 0) > 0
+            || Number(result?.incident_recovered_count || 0) > 0
+            || Number(result?.recovered_count || 0) > 0
+            || Number(result?.admin_notifications_created || 0) > 0
+        ) {
+            console.log('[ShopOrderDeliveryMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[ShopOrderDeliveryMonitor] Sweep failed:', error);
+    } finally {
+        shopOrderDeliverySweepRunning = false;
+    }
+}
+
+async function queueNextShopOrderDeliverySweep(delayMs = null) {
+    if (shopOrderDeliverySweepTimer) return;
+
+    const monitorConfig = normalizeShopOrderDeliveryMonitorConfig({}, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
+
+    shopOrderDeliverySweepTimer = setTimeout(() => {
+        shopOrderDeliverySweepTimer = null;
+        sweepShopOrderDeliveryHealth()
+            .catch((error) => {
+                console.error('[ShopOrderDeliveryMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextShopOrderDeliverySweep().catch((error) => {
+                    console.error('[ShopOrderDeliveryMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startShopOrderDeliverySweep() {
+    if (shopOrderDeliverySweepTimer) return;
+
+    queueNextShopOrderDeliverySweep(6700).catch((error) => {
+        console.error('[ShopOrderDeliveryMonitor] Failed to start sweep:', error);
+    });
+}
+
+async function sweepAdminLoginAnomalyHealth() {
+    if (adminLoginAnomalySweepRunning) return;
+    adminLoginAnomalySweepRunning = true;
+
+    try {
+        const result = await runAdminLoginAnomalySweep(supabase, {
+            env: process.env
+        });
+
+        if (Number(result?.anomaly_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+            console.log('[AdminLoginAnomalyMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[AdminLoginAnomalyMonitor] Sweep failed:', error);
+    } finally {
+        adminLoginAnomalySweepRunning = false;
+    }
+}
+
+async function queueNextAdminLoginAnomalySweep(delayMs = null) {
+    if (adminLoginAnomalySweepTimer) return;
+
+    const monitorConfig = normalizeAdminLoginAnomalyMonitorConfig({}, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
+
+    adminLoginAnomalySweepTimer = setTimeout(() => {
+        adminLoginAnomalySweepTimer = null;
+        sweepAdminLoginAnomalyHealth()
+            .catch((error) => {
+                console.error('[AdminLoginAnomalyMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextAdminLoginAnomalySweep().catch((error) => {
+                    console.error('[AdminLoginAnomalyMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startAdminLoginAnomalySweep() {
+    if (adminLoginAnomalySweepTimer) return;
+
+    queueNextAdminLoginAnomalySweep(7200).catch((error) => {
+        console.error('[AdminLoginAnomalyMonitor] Failed to start sweep:', error);
     });
 }
 
@@ -4101,8 +4640,17 @@ function startServer(port = PORT) {
         startPendingJobSweep();
         startShopDeliverySweep();
         startOpsAlertSweep();
+        startPaymentConfigChangeSweep();
         startPaymentGatewaySweep();
         startVerifyQuotaSweep();
+        startVerifyServiceSweep();
+        startVerifyQueueSweep();
+        startVerifyFailureSweep();
+        startVerifyIncidentSweep();
+        startTicketSlaSweep();
+        startShopInventorySweep();
+        startShopOrderDeliverySweep();
+        startAdminLoginAnomalySweep();
     });
 }
 

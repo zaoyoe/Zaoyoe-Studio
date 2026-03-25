@@ -629,6 +629,63 @@ test('ops alert settings POST can send a payment gateway degradation sample with
     });
 });
 
+test('ops alert settings POST can send a payment gateway recovery sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_gateway_recovered',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /支付通道恢复示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'payment_gateway_recovered');
+        assert.equal(state.telegramTests[0].job.payload.provider, 'hupijiao');
+        assert.equal(state.telegramTests[0].job.payload.site, 'cn');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.gateway_recovered_sample');
+    });
+});
+
 test('ops alert settings POST can send a verify quota low sample without persisting config changes', async () => {
     await withOpsAlertsSettingsHandler({
         config: createNormalizedConfig({
@@ -683,6 +740,929 @@ test('ops alert settings POST can send a verify quota low sample without persist
         assert.equal(state.telegramTests[0].job.payload.queue_size, 7);
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.verify_quota_sample');
+    });
+});
+
+test('ops alert settings POST can send a verify service disabled sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_verify_service_disabled',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /验证服务停摆示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'verify_service_disabled');
+        assert.equal(state.telegramTests[0].job.payload.service_status, 'unavailable');
+        assert.equal(state.telegramTests[0].job.payload.response_status, 503);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.verify_service_disabled_sample');
+    });
+});
+
+test('ops alert settings POST can send a verify queue backlog sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_verify_queue_backlog',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /验证任务堆积示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'verify_queue_backlog');
+        assert.equal(state.telegramTests[0].job.payload.queue_size, 18);
+        assert.equal(state.telegramTests[0].job.payload.active_job_count, 11);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.verify_queue_backlog_sample');
+    });
+});
+
+test('ops alert settings POST can send a verify failure rate spike sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_verify_failure_rate_spike',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /验证失败率异常示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'verify_failure_rate_spike');
+        assert.equal(state.telegramTests[0].job.payload.failed_jobs, 7);
+        assert.equal(state.telegramTests[0].job.payload.affected_user_count, 5);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.verify_failure_rate_spike_sample');
+    });
+});
+
+test('ops alert settings POST can send a verify incident escalation sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_verify_incident_escalated',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /验证综合异常示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'verify_incident_escalated');
+        assert.equal(state.telegramTests[0].job.payload.triggered_signal_count, 3);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.verify_incident_escalated_sample');
+    });
+});
+
+test('ops alert settings POST can send a verify incident recovery sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_verify_incident_recovered',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /验证恢复示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'verify_incident_recovered');
+        assert.equal(state.telegramTests[0].job.payload.incident_duration_minutes, 18);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.verify_incident_recovered_sample');
+    });
+});
+
+test('ops alert settings POST can send a ticket SLA overdue sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_ticket_sla_overdue',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /工单超时示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'ticket_sla_overdue');
+        assert.equal(state.telegramTests[0].job.payload.ticket_status, 'PENDING');
+        assert.equal(state.telegramTests[0].job.payload.wait_minutes, 195);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.ticket_sla_sample');
+    });
+});
+
+test('ops alert settings POST can send a ticket SLA recovery sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_ticket_sla_recovered',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /工单恢复示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'ticket_sla_recovered');
+        assert.equal(state.telegramTests[0].job.payload.ticket_status, 'RESOLVED');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.ticket_sla_recovered_sample');
+    });
+});
+
+test('ops alert settings POST can send a shop inventory low sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_shop_inventory_low',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /库存预警示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'shop_inventory_low');
+        assert.equal(state.telegramTests[0].job.payload.stock_count, 3);
+        assert.equal(state.telegramTests[0].job.payload.recent_sales_count, 12);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.shop_inventory_sample');
+    });
+});
+
+test('ops alert settings POST can send a shop inventory recovery sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_shop_inventory_recovered',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /库存恢复示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'shop_inventory_recovered');
+        assert.equal(state.telegramTests[0].job.payload.stock_count, 18);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.shop_inventory_recovered_sample');
+    });
+});
+
+test('ops alert settings POST can send an admin login anomaly sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_admin_login_anomaly',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /管理员异常登录示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'security_admin_login_anomaly');
+        assert.equal(state.telegramTests[0].job.payload.client_ip, '203.0.113.88');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.admin_login_anomaly_sample');
+    });
+});
+
+test('ops alert settings POST can send a shop order delivery failed sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_shop_order_delivery_failed',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /履约失败示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'shop_order_delivery_failed');
+        assert.equal(state.telegramTests[0].job.payload.delivery_status, 'dead_letter');
+        assert.equal(state.telegramTests[0].job.payload.delivery_attempt_count, 4);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.shop_delivery_failed_sample');
+    });
+});
+
+test('ops alert settings POST can send a shop order delivery incident sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_shop_order_delivery_incident',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /履约异常升级示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'shop_order_delivery_incident');
+        assert.equal(state.telegramTests[0].job.payload.incident_order_count, 4);
+        assert.equal(state.telegramTests[0].job.payload.dead_letter_count, 2);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.shop_delivery_incident_sample');
+    });
+});
+
+test('ops alert settings POST can send a shop order delivery incident recovery sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_shop_order_delivery_incident_recovered',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /履约事故恢复示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'shop_order_delivery_incident_recovered');
+        assert.equal(state.telegramTests[0].job.payload.previous_incident_order_count, 4);
+        assert.equal(state.telegramTests[0].job.payload.active_order_count, 1);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.shop_delivery_incident_recovered_sample');
+    });
+});
+
+test('ops alert settings POST can send a shop order delivery recovered sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                },
+                feishu: {
+                    enabled: true,
+                    minimum_severity: 'warning'
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: 'https://open.feishu.cn/open-apis/bot/v2/hook/demo'
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_shop_order_delivery_recovered',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        },
+                        feishu: {
+                            enabled: true,
+                            minimum_severity: 'warning'
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /履约恢复示例消息已发送到 Telegram、飞书/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.feishuTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'shop_order_delivery_recovered');
+        assert.equal(state.telegramTests[0].job.payload.delivery_status, 'delivered');
+        assert.equal(state.telegramTests[0].job.payload.previous_delivery_status, 'dead_letter');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.shop_delivery_recovered_sample');
+    });
+});
+
+test('ops alert settings POST can send a payment config changed sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_payment_config_changed',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /支付配置变更示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'payment_config_changed');
+        assert.equal(state.telegramTests[0].job.payload.active_provider, 'mock');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.payment_config_changed_sample');
+    });
+});
+
+test('ops alert settings POST can send a payment config recovered sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                },
+                feishu: {
+                    enabled: true,
+                    minimum_severity: 'warning'
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: 'https://open.feishu.cn/open-apis/bot/v2/hook/demo'
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_payment_config_recovered',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        },
+                        feishu: {
+                            enabled: true,
+                            minimum_severity: 'warning'
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /支付配置恢复示例消息已发送到 Telegram、飞书/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.feishuTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'payment_config_recovered');
+        assert.equal(state.telegramTests[0].job.payload.current_active_provider, 'afdian');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.payment_config_recovered_sample');
     });
 });
 

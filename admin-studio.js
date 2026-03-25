@@ -335,8 +335,59 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-gateway-sample':
                 window.sendOpsAlertGatewaySample?.();
                 break;
+            case 'settings-send-ops-alert-gateway-recovered-sample':
+                window.sendOpsAlertGatewayRecoveredSample?.();
+                break;
+            case 'settings-send-ops-alert-verify-service-disabled-sample':
+                window.sendOpsAlertVerifyServiceDisabledSample?.();
+                break;
+            case 'settings-send-ops-alert-verify-queue-backlog-sample':
+                window.sendOpsAlertVerifyQueueBacklogSample?.();
+                break;
+            case 'settings-send-ops-alert-verify-failure-rate-spike-sample':
+                window.sendOpsAlertVerifyFailureRateSpikeSample?.();
+                break;
+            case 'settings-send-ops-alert-verify-incident-escalated-sample':
+                window.sendOpsAlertVerifyIncidentEscalatedSample?.();
+                break;
+            case 'settings-send-ops-alert-verify-incident-recovered-sample':
+                window.sendOpsAlertVerifyIncidentRecoveredSample?.();
+                break;
             case 'settings-send-ops-alert-verify-quota-sample':
                 window.sendOpsAlertVerifyQuotaSample?.();
+                break;
+            case 'settings-send-ops-alert-ticket-sla-sample':
+                window.sendOpsAlertTicketSlaSample?.();
+                break;
+            case 'settings-send-ops-alert-ticket-sla-recovered-sample':
+                window.sendOpsAlertTicketSlaRecoveredSample?.();
+                break;
+            case 'settings-send-ops-alert-shop-inventory-sample':
+                window.sendOpsAlertShopInventorySample?.();
+                break;
+            case 'settings-send-ops-alert-shop-inventory-recovered-sample':
+                window.sendOpsAlertShopInventoryRecoveredSample?.();
+                break;
+            case 'settings-send-ops-alert-admin-login-anomaly-sample':
+                window.sendOpsAlertAdminLoginAnomalySample?.();
+                break;
+            case 'settings-send-ops-alert-shop-order-delivery-failed-sample':
+                window.sendOpsAlertShopOrderDeliveryFailedSample?.();
+                break;
+            case 'settings-send-ops-alert-shop-order-delivery-incident-sample':
+                window.sendOpsAlertShopOrderDeliveryIncidentSample?.();
+                break;
+            case 'settings-send-ops-alert-shop-order-delivery-incident-recovered-sample':
+                window.sendOpsAlertShopOrderDeliveryIncidentRecoveredSample?.();
+                break;
+            case 'settings-send-ops-alert-shop-order-delivery-recovered-sample':
+                window.sendOpsAlertShopOrderDeliveryRecoveredSample?.();
+                break;
+            case 'settings-send-ops-alert-payment-config-changed-sample':
+                window.sendOpsAlertPaymentConfigChangedSample?.();
+                break;
+            case 'settings-send-ops-alert-payment-config-recovered-sample':
+                window.sendOpsAlertPaymentConfigRecoveredSample?.();
                 break;
             case 'settings-delete-ops-alert-secret':
                 window.deleteOpsAlertSecret?.(actionEl.dataset.secretName);

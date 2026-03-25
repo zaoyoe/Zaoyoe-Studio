@@ -2150,11 +2150,181 @@ async function sendOpsAlertGatewaySample() {
     }
 }
 
+async function sendOpsAlertGatewayRecoveredSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_gateway_recovered', '支付通道恢复示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send payment gateway recovery sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertVerifyServiceDisabledSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_verify_service_disabled', '验证服务停摆示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send verify service disabled sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertVerifyQueueBacklogSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_verify_queue_backlog', '验证任务堆积示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send verify queue backlog sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertVerifyFailureRateSpikeSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_verify_failure_rate_spike', '验证失败率异常示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send verify failure rate spike sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertVerifyIncidentEscalatedSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_verify_incident_escalated', '验证综合异常示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send verify incident escalation sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertVerifyIncidentRecoveredSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_verify_incident_recovered', '验证恢复示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send verify incident recovered sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function sendOpsAlertVerifyQuotaSample() {
     try {
         return await sendOpsAlertTelegramRequest('send_sample_verify_quota_low', '验证额度告警示例消息已发送');
     } catch (error) {
         console.error('[Config] Send verify quota sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertTicketSlaSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_ticket_sla_overdue', '工单超时示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send ticket SLA sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertTicketSlaRecoveredSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_ticket_sla_recovered', '工单恢复示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send ticket SLA recovery sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertShopInventorySample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_shop_inventory_low', '库存预警示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send shop inventory sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertShopInventoryRecoveredSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_shop_inventory_recovered', '库存恢复示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send shop inventory recovery sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertAdminLoginAnomalySample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_admin_login_anomaly', '管理员异常登录示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send admin login anomaly sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertShopOrderDeliveryFailedSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_failed', '履约失败示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send shop order delivery failed sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertShopOrderDeliveryIncidentSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_incident', '履约异常升级示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send shop order delivery incident sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertShopOrderDeliveryIncidentRecoveredSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_incident_recovered', '履约事故恢复示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send shop order delivery incident recovery sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertShopOrderDeliveryRecoveredSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_recovered', '履约恢复示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send shop order delivery recovered sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertPaymentConfigChangedSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_payment_config_changed', '支付配置变更示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send payment config changed sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertPaymentConfigRecoveredSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_payment_config_recovered', '支付配置恢复示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send payment config recovered sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
         return false;
     }
@@ -4155,7 +4325,24 @@ window.saveOpsAlertSettings = saveOpsAlertSettings;
 window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;
 window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;
 window.sendOpsAlertGatewaySample = sendOpsAlertGatewaySample;
+window.sendOpsAlertGatewayRecoveredSample = sendOpsAlertGatewayRecoveredSample;
+window.sendOpsAlertVerifyServiceDisabledSample = sendOpsAlertVerifyServiceDisabledSample;
+window.sendOpsAlertVerifyQueueBacklogSample = sendOpsAlertVerifyQueueBacklogSample;
+window.sendOpsAlertVerifyFailureRateSpikeSample = sendOpsAlertVerifyFailureRateSpikeSample;
+window.sendOpsAlertVerifyIncidentEscalatedSample = sendOpsAlertVerifyIncidentEscalatedSample;
+window.sendOpsAlertVerifyIncidentRecoveredSample = sendOpsAlertVerifyIncidentRecoveredSample;
 window.sendOpsAlertVerifyQuotaSample = sendOpsAlertVerifyQuotaSample;
+window.sendOpsAlertTicketSlaSample = sendOpsAlertTicketSlaSample;
+window.sendOpsAlertTicketSlaRecoveredSample = sendOpsAlertTicketSlaRecoveredSample;
+window.sendOpsAlertShopInventorySample = sendOpsAlertShopInventorySample;
+window.sendOpsAlertShopInventoryRecoveredSample = sendOpsAlertShopInventoryRecoveredSample;
+window.sendOpsAlertAdminLoginAnomalySample = sendOpsAlertAdminLoginAnomalySample;
+window.sendOpsAlertShopOrderDeliveryFailedSample = sendOpsAlertShopOrderDeliveryFailedSample;
+window.sendOpsAlertShopOrderDeliveryIncidentSample = sendOpsAlertShopOrderDeliveryIncidentSample;
+window.sendOpsAlertShopOrderDeliveryIncidentRecoveredSample = sendOpsAlertShopOrderDeliveryIncidentRecoveredSample;
+window.sendOpsAlertShopOrderDeliveryRecoveredSample = sendOpsAlertShopOrderDeliveryRecoveredSample;
+window.sendOpsAlertPaymentConfigChangedSample = sendOpsAlertPaymentConfigChangedSample;
+window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;

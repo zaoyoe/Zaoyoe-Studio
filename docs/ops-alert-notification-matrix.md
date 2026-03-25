@@ -63,18 +63,24 @@
 | --- | --- | --- | --- | --- | --- |
 | `payment_refund_ops` | 退款失败、扣回失败、补回失败 | `critical` | TG + 飞书 + 站内 | 45 分钟 | 订单号、用户ID、金额、积分、通道、最近错误 |
 | `payment_gateway_degraded` | 支付成功率骤降 / 回调异常暴涨 | `critical` | TG + 飞书 + 站内 | 15 分钟 | 站点、通道、时间窗、失败率 |
+| `payment_gateway_recovered` | 支付通道退出异常阈值，转入恢复观察 | `warning` | 飞书 + 站内 | 每次事故 1 次 | 站点、通道、持续时长、当前健康概览 |
 | `payment_pending_review_spike` | 待审核订单短时堆积 | `warning` | 飞书 + 站内 | 30 分钟 | 订单数、站点、通道 |
 | `payment_site_resolution_failed` | 回调无法可信解析站点 | `critical` | TG + 飞书 + 站内 | 10 分钟 | provider、订单号、host、最近错误 |
 | `payment_config_changed` | 支付配置或密钥被修改 | `critical` | TG + 飞书 + 站内 | 5 分钟 | 操作人、变更项、时间 |
+| `payment_config_recovered` | 支付配置风险已被撤销或密钥已补齐 | `warning` | 飞书 + 站内 | 每次风险 1 次 | 恢复结论、修复人、当前生效通道/密钥来源 |
 
 ### B. 商城 / 订单 / 库存
 
 | alert_type | 场景 | 默认级别 | 默认通道 | 去重建议 | 关键字段 |
 | --- | --- | --- | --- | --- | --- |
 | `shop_order_delivery_failed` | 发货失败 / 库存出库失败 | `warning` | 飞书 + 站内 | 30 分钟 | 订单号、商品、用户ID、错误 |
+| `shop_order_delivery_incident` | 短时间多笔履约失败 / 死信堆积，升级成集中排障事件 | `critical` | TG + 飞书 + 站内 | 20 分钟 | 异常订单数、死信数、热点商品、热点错误 |
+| `shop_order_delivery_incident_recovered` | 履约集中事故退出升级状态，转入观察 | `warning` | 飞书 + 站内 | 每次事故 1 次 | 恢复结论、持续时长、剩余异常 |
+| `shop_order_delivery_recovered` | 订单退出履约失败状态并完成发货/退款关闭 | `warning` | 飞书 + 站内 | 每次事故 1 次 | 订单号、恢复结论、当前状态、持续时长 |
 | `shop_order_high_value` | 高价值订单成交 | `info` | 飞书 | 立即发送 | 订单号、金额、商品、渠道 |
 | `shop_inventory_low` | 库存低于阈值 | `warning` | 飞书 + 站内 | 6 小时 | 商品、剩余库存、近 7 天销量 |
 | `shop_inventory_empty` | 商品售罄 | `warning` | 飞书 + 站内 | 6 小时 | 商品、最近下单数 |
+| `shop_inventory_recovered` | 商品退出库存预警 / 售罄状态 | `warning` | 飞书 + 站内 | 每次事故 1 次 | 商品、恢复结论、当前库存 |
 | `shop_orphan_order_detected` | 订单与库存/商品关联丢失 | `critical` | TG + 飞书 + 站内 | 30 分钟 | 订单号、用户ID、商品、异常原因 |
 
 ### C. 售后工单
@@ -84,6 +90,7 @@
 | `ticket_new` | 新售后工单创建 | `info` | 飞书 + 站内 | 不去重 | 工单号、订单号、用户ID、原因 |
 | `ticket_refund_related` | 退款相关工单 | `warning` | 飞书 + 站内 | 30 分钟 | 工单号、订单号、支付通道 |
 | `ticket_sla_overdue` | 工单超时未处理 | `warning` | 飞书 + 站内 | 1 小时 | 工单号、等待时长、责任人 |
+| `ticket_sla_recovered` | 工单退出超时未处理状态 | `warning` | 飞书 + 站内 | 每次事故 1 次 | 工单号、恢复结论、持续时长 |
 | `ticket_repeat_complaint` | 同订单重复投诉 | `warning` | 飞书 + 站内 | 6 小时 | 工单数、订单号、用户ID |
 | `ticket_high_risk_escalation` | 高危投诉或人工升级 | `critical` | TG + 飞书 + 站内 | 30 分钟 | 工单号、原因、备注 |
 
@@ -94,6 +101,8 @@
 | `verify_quota_low` | 验证额度低于阈值 | `warning` | 飞书 + 站内 | 6 小时 | 剩余额度、预计可用时长 |
 | `verify_service_disabled` | 验证服务被关闭或不可用 | `critical` | TG + 飞书 + 站内 | 15 分钟 | 当前状态、最近错误 |
 | `verify_failure_rate_spike` | 验证失败率飙升 | `critical` | TG + 飞书 + 站内 | 15 分钟 | 时间窗、失败率、受影响用户 |
+| `verify_incident_escalated` | 多类验证高危信号叠加，升级成综合告警 | `critical` | TG + 飞书 + 站内 | 20 分钟 | 命中信号、关键摘要、最新时间 |
+| `verify_incident_recovered` | 验证综合异常退出升级状态，进入恢复观察 | `warning` | 飞书 + 站内 | 每次事故 1 次 | 恢复结论、持续时长、剩余信号 |
 | `verify_latency_spike` | 耗时异常升高 | `warning` | 飞书 + 站内 | 30 分钟 | p95/p99 耗时 |
 | `verify_queue_backlog` | 任务堆积 / 并发锁冲突放大 | `warning` | 飞书 + 站内 | 30 分钟 | 任务数、热点目标、最近错误 |
 
@@ -180,10 +189,11 @@
 ### P1：第二批
 
 1. `shop_order_delivery_failed`
-2. `payment_pending_review_spike`
-3. `verify_failure_rate_spike`
-4. `affiliate_abuse_suspected`
-5. `content_spam_spike`
+2. `shop_order_delivery_incident`
+3. `payment_pending_review_spike`
+4. `verify_failure_rate_spike`
+5. `affiliate_abuse_suspected`
+6. `content_spam_spike`
 
 ### P2：增强项
 
