@@ -495,6 +495,10 @@ function buildExternalAlertText(job = {}) {
     if (gatewayAlertText) {
         return gatewayAlertText;
     }
+    const verifyServiceText = buildVerifyServiceDisabledAlertText(job);
+    if (verifyServiceText) {
+        return verifyServiceText;
+    }
     const verifyQuotaText = buildVerifyQuotaLowAlertText(job);
     if (verifyQuotaText) {
         return verifyQuotaText;
@@ -752,6 +756,28 @@ function buildVerifyQuotaLowAlertText(job = {}) {
         lines.push(`队列概览：排队 ${Math.max(0, Math.round(Number(payload.queue_size || 0)))} 个 / 运行中 ${Math.max(0, Math.round(Number(payload.running_jobs || 0)))} 个`);
     }
     if (normalizeText(payload.queue_error)) lines.push(`队列查询：${normalizeText(payload.queue_error)}`);
+    if (normalizeText(payload.checked_at)) lines.push(`检查时间：${formatTimestamp(payload.checked_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildVerifyServiceDisabledAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'verify_service_disabled') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const lines = [
+        `[验证服务告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '验证服务不可用'}`
+    ];
+    const responseStatus = Number(payload.response_status);
+
+    if (normalizeText(payload.service_status_label)) lines.push(`当前状态：${normalizeText(payload.service_status_label)}`);
+    if (normalizeText(payload.key_name)) lines.push(`API Key：${normalizeText(payload.key_name)}`);
+    if (normalizeText(payload.api_base_url)) lines.push(`API Base：${normalizeText(payload.api_base_url)}`);
+    if (normalizeText(payload.last_error)) lines.push(`最近错误：${normalizeText(payload.last_error)}`);
+    if (Number.isFinite(responseStatus) && responseStatus > 0) lines.push(`响应状态：${responseStatus}`);
     if (normalizeText(payload.checked_at)) lines.push(`检查时间：${formatTimestamp(payload.checked_at)}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 

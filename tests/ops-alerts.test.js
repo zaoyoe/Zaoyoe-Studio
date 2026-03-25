@@ -470,6 +470,31 @@ test('buildExternalAlertText renders verify quota low details', () => {
     assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 当前额度 \/ 队列状态/);
 });
 
+test('buildExternalAlertText renders verify service disabled details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'verify_service_disabled',
+        severity: 'critical',
+        title: '验证服务不可用（primary-key）',
+        payload: {
+            service_status_label: '服务不可用',
+            key_name: 'primary-key',
+            api_base_url: 'https://iqless.icu',
+            last_error: '上游验证服务返回 503',
+            response_status: 503,
+            checked_at: '2026-03-25T10:00:00.000Z',
+            entry_path: '后台设置 -> 验证服务配置 -> API Key / 接口状态'
+        }
+    });
+
+    assert.match(text, /验证服务告警/);
+    assert.match(text, /当前状态：服务不可用/);
+    assert.match(text, /API Key：primary-key/);
+    assert.match(text, /API Base：https:\/\/iqless\.icu/);
+    assert.match(text, /最近错误：上游验证服务返回 503/);
+    assert.match(text, /响应状态：503/);
+    assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> API Key \/ 接口状态/);
+});
+
 test('buildExternalAlertText renders ticket SLA overdue details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'ticket_sla_overdue',

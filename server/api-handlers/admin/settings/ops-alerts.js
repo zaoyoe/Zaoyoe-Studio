@@ -304,6 +304,27 @@ function buildVerifyQuotaLowSampleJob(user) {
     };
 }
 
+function buildVerifyServiceDisabledSampleJob(user) {
+    return {
+        alert_type: 'verify_service_disabled',
+        severity: 'critical',
+        title: '验证服务不可用（primary-key）',
+        payload: {
+            target_id: 'verify_service:https://iqless.icu',
+            service_status: 'unavailable',
+            service_status_label: '服务不可用',
+            key_name: 'primary-key',
+            api_base_url: 'https://iqless.icu',
+            last_error: '示例：上游验证服务返回 503，当前无法创建新验证任务。',
+            response_status: 503,
+            checked_at: new Date().toISOString(),
+            reason: 'balance_http_503',
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了验证服务停摆示例发送`,
+            entry_path: '后台设置 -> 验证服务配置 -> API Key / 接口状态（示例）'
+        }
+    };
+}
+
 function buildTicketSlaOverdueSampleJob(user) {
     const createdAt = new Date(Date.now() - 195 * 60 * 1000).toISOString();
     return {
@@ -466,6 +487,7 @@ module.exports = async (req, res) => {
                 sanitizeText(body.action) === 'send_test_telegram'
                 || sanitizeText(body.action) === 'send_sample_refund_telegram'
                 || sanitizeText(body.action) === 'send_sample_gateway_degraded'
+                || sanitizeText(body.action) === 'send_sample_verify_service_disabled'
                 || sanitizeText(body.action) === 'send_sample_verify_quota_low'
                 || sanitizeText(body.action) === 'send_sample_ticket_sla_overdue'
                 || sanitizeText(body.action) === 'send_sample_shop_inventory_low'
@@ -481,9 +503,11 @@ module.exports = async (req, res) => {
 
                 const normalizedAction = sanitizeText(body.action);
                 const job = normalizedAction === 'send_sample_refund_telegram'
-                    ? buildTelegramRefundSampleJob(user)
+                        ? buildTelegramRefundSampleJob(user)
                     : normalizedAction === 'send_sample_gateway_degraded'
                         ? buildGatewayDegradedSampleJob(user)
+                        : normalizedAction === 'send_sample_verify_service_disabled'
+                            ? buildVerifyServiceDisabledSampleJob(user)
                         : normalizedAction === 'send_sample_verify_quota_low'
                             ? buildVerifyQuotaLowSampleJob(user)
                             : normalizedAction === 'send_sample_ticket_sla_overdue'
@@ -506,6 +530,8 @@ module.exports = async (req, res) => {
                         ? 'admin.ops_alerts.telegram_refund_sample'
                         : normalizedAction === 'send_sample_gateway_degraded'
                             ? 'admin.ops_alerts.gateway_degraded_sample'
+                        : normalizedAction === 'send_sample_verify_service_disabled'
+                            ? 'admin.ops_alerts.verify_service_disabled_sample'
                         : normalizedAction === 'send_sample_verify_quota_low'
                                 ? 'admin.ops_alerts.verify_quota_sample'
                                 : normalizedAction === 'send_sample_ticket_sla_overdue'
@@ -540,6 +566,8 @@ module.exports = async (req, res) => {
                         ? `退款详情示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : normalizedAction === 'send_sample_gateway_degraded'
                             ? `支付通道异常示例消息已发送到 ${channelLabels || '已启用通道'}`
+                            : normalizedAction === 'send_sample_verify_service_disabled'
+                                ? `验证服务停摆示例消息已发送到 ${channelLabels || '已启用通道'}`
                             : normalizedAction === 'send_sample_verify_quota_low'
                                 ? `验证额度告警示例消息已发送到 ${channelLabels || '已启用通道'}`
                                 : normalizedAction === 'send_sample_ticket_sla_overdue'

@@ -65,6 +65,10 @@ const {
     runVerifyQuotaLowSweep
 } = require('../api/_lib/verify-quota-alerts');
 const {
+    normalizeVerifyServiceMonitorConfig,
+    runVerifyServiceDisabledSweep
+} = require('../api/_lib/verify-service-alerts');
+const {
     normalizeTicketSlaMonitorConfig,
     runTicketSlaOverdueSweep
 } = require('../api/_lib/ticket-sla-alerts');
@@ -105,6 +109,8 @@ let paymentGatewaySweepTimer = null;
 let paymentGatewaySweepRunning = false;
 let verifyQuotaSweepTimer = null;
 let verifyQuotaSweepRunning = false;
+let verifyServiceSweepTimer = null;
+let verifyServiceSweepRunning = false;
 let ticketSlaSweepTimer = null;
 let ticketSlaSweepRunning = false;
 let shopInventorySweepTimer = null;
@@ -244,6 +250,9 @@ async function getVerifyConfig() {
         apiBaseUrl: String(config.verify_api_base_url || process.env.VERIFY_API_BASE_URL || VERIFY_API_BASE).replace(/\/+$/, ''),
         monitorConfig: config.verify_quota_monitor && typeof config.verify_quota_monitor === 'object'
             ? config.verify_quota_monitor
+            : {},
+        serviceMonitorConfig: config.verify_service_monitor && typeof config.verify_service_monitor === 'object'
+            ? config.verify_service_monitor
             : {}
     };
 }
@@ -2985,6 +2994,56 @@ function startVerifyQuotaSweep() {
     });
 }
 
+async function sweepVerifyServiceHealth() {
+    if (verifyServiceSweepRunning) return;
+    verifyServiceSweepRunning = true;
+
+    try {
+        const verifyConfig = await getVerifyConfig();
+        const result = await runVerifyServiceDisabledSweep(supabase, {
+            env: process.env,
+            verifyConfig
+        });
+
+        if (Number(result?.disabled_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+            console.log('[VerifyServiceMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[VerifyServiceMonitor] Sweep failed:', error);
+    } finally {
+        verifyServiceSweepRunning = false;
+    }
+}
+
+async function queueNextVerifyServiceSweep(delayMs = null) {
+    if (verifyServiceSweepTimer) return;
+
+    const verifyConfig = await getVerifyConfig();
+    const monitorConfig = normalizeVerifyServiceMonitorConfig(verifyConfig?.serviceMonitorConfig, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
+
+    verifyServiceSweepTimer = setTimeout(() => {
+        verifyServiceSweepTimer = null;
+        sweepVerifyServiceHealth()
+            .catch((error) => {
+                console.error('[VerifyServiceMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextVerifyServiceSweep().catch((error) => {
+                    console.error('[VerifyServiceMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startVerifyServiceSweep() {
+    if (verifyServiceSweepTimer) return;
+
+    queueNextVerifyServiceSweep(4700).catch((error) => {
+        console.error('[VerifyServiceMonitor] Failed to start sweep:', error);
+    });
+}
+
 async function sweepTicketSlaHealth() {
     if (ticketSlaSweepRunning) return;
     ticketSlaSweepRunning = true;
@@ -4376,6 +4435,7 @@ function startServer(port = PORT) {
         startPaymentConfigChangeSweep();
         startPaymentGatewaySweep();
         startVerifyQuotaSweep();
+        startVerifyServiceSweep();
         startTicketSlaSweep();
         startShopInventorySweep();
         startShopOrderDeliverySweep();
