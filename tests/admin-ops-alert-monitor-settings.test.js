@@ -36,6 +36,7 @@ function createState(overrides = {}) {
     return {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
         jobs: [],
+        auditLogs: [],
         ...overrides
     };
 }
@@ -53,6 +54,9 @@ function compareValue(left, right) {
 
 function applyFilters(rows, filters) {
     return rows.filter((row) => filters.every(({ op, column, value }) => {
+        if (op === 'eq') {
+            return row[column] === value;
+        }
         if (op === 'in') {
             return Array.isArray(value) ? value.includes(row[column]) : false;
         }
@@ -86,13 +90,24 @@ function createSupabaseStub(state) {
             }
 
             const queryState = {
+                mode: 'select',
                 filters: [],
                 order: null,
-                range: null
+                range: null,
+                payload: null
             };
 
             const query = {
                 select() {
+                    return query;
+                },
+                update(payload) {
+                    queryState.mode = 'update';
+                    queryState.payload = payload;
+                    return query;
+                },
+                eq(column, value) {
+                    queryState.filters.push({ op: 'eq', column, value });
                     return query;
                 },
                 in(column, value) {
@@ -111,10 +126,23 @@ function createSupabaseStub(state) {
                     return query;
                 },
                 async range(from, to) {
+                    if (queryState.mode !== 'select') {
+                        throw new Error('range is only supported for select queries');
+                    }
                     return {
                         data: applyRange(sortRows(applyFilters(state.jobs || [], queryState.filters), queryState.order), { from, to }),
                         error: null
                     };
+                },
+                then(resolve, reject) {
+                    if (queryState.mode === 'update') {
+                        const rows = applyFilters(state.jobs || [], queryState.filters);
+                        rows.forEach((row) => {
+                            Object.assign(row, queryState.payload || {});
+                        });
+                        return Promise.resolve({ data: rows, error: null }).then(resolve, reject);
+                    }
+                    return Promise.resolve({ data: [], error: null }).then(resolve, reject);
                 }
             };
 
@@ -131,9 +159,16 @@ function createAdminModule(state) {
                 user: state.user
             };
         },
+        async parseJsonBody(req) {
+            return req.body || {};
+        },
         sendJson(res, status, payload) {
             res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
             res.end(JSON.stringify(payload));
+        },
+        async writeAdminAuditLog(entry) {
+            state.auditLogs = state.auditLogs || [];
+            state.auditLogs.push(entry);
         }
     };
 }
@@ -299,9 +334,9 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, and fulfi
     });
 });
 
-test('ops alert monitor handler rejects non-GET methods', async () => {
+test('ops alert monitor handler rejects unsupported methods', async () => {
     await withHandler({}, async (handler) => {
-        const req = { method: 'POST', headers: {} };
+        const req = { method: 'PATCH', headers: {} };
         const res = createMockResponse();
 
         await handler(req, res);
@@ -373,5 +408,72 @@ test('ops alert monitor handler treats payment config incident recovery as a pay
         assert.equal(payments.active_count, 0);
         assert.equal(payments.latest_state, 'recovered');
         assert.equal(payments.latest_title, '支付配置事故已恢复');
+    });
+});
+
+test('ops alert monitor handler excludes handled alerts from active counts and supports mark_handled', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('payment_refund_ops', {
+                id: 'refund-active-1',
+                severity: 'critical',
+                title: '退款失败（订单 2001）',
+                payload: {
+                    target_id: 'payment_refund:2001',
+                    provider_order_no: 'HP-2001'
+                },
+                status: 'delivered',
+                created_at: hoursAgo(1)
+            }),
+            buildJob('payment_refund_ops', {
+                id: 'refund-handled-1',
+                severity: 'warning',
+                title: '退款失败（订单 2002）',
+                payload: {
+                    target_id: 'payment_refund:2002',
+                    provider_order_no: 'HP-2002'
+                },
+                status: 'handled',
+                created_at: hoursAgo(2)
+            })
+        ]
+    }, async (handler, state) => {
+        const getReq = { method: 'GET', headers: {} };
+        const getRes = createMockResponse();
+
+        await handler(getReq, getRes);
+        const initialPayload = getRes.json();
+        const payments = initialPayload.categories.find((item) => item.key === 'payments');
+        assert.equal(payments.active_count, 1);
+
+        const postReq = {
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'mark_handled',
+                jobIds: ['refund-active-1'],
+                category: 'payments',
+                scope: 'active',
+                severity: 'all'
+            }
+        };
+        const postRes = createMockResponse();
+
+        await handler(postReq, postRes);
+        const postPayload = postRes.json();
+
+        assert.equal(postRes.statusCode, 200);
+        assert.equal(postPayload.success, true);
+        assert.equal(postPayload.updated_count, 1);
+        assert.equal(state.jobs.find((item) => item.id === 'refund-active-1').status, 'handled');
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin_ops_alert_monitor_mark_handled');
+
+        const refreshedRes = createMockResponse();
+        await handler(getReq, refreshedRes);
+        const refreshedPayload = refreshedRes.json();
+        const refreshedPayments = refreshedPayload.categories.find((item) => item.key === 'payments');
+        assert.equal(refreshedPayments.active_count, 0);
+        assert.equal(refreshedPayments.latest_state, 'handled');
     });
 });
