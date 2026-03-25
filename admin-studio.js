@@ -881,6 +881,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-check-verify-quota':
                 window.checkVerifyQuota?.();
                 break;
+            case 'settings-refresh-verify-monitor':
+                window.refreshVerifyMonitor?.();
+                break;
             case 'settings-add-api-key':
                 window.addNewApiKey?.();
                 break;

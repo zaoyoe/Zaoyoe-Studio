@@ -235,7 +235,7 @@ function buildVerifyFailureRateSpikeAlerts(snapshot = {}, recentLogs = [], rawCo
     if (normalizeText(snapshot.checked_at)) {
         lines.push(`检查时间：${normalizeText(snapshot.checked_at)}`);
     }
-    lines.push('处理入口：后台设置 -> 验证服务配置 -> 最近任务状态 / 验证日志');
+    lines.push('处理入口：后台设置 -> 验证服务配置 -> 最近任务 / 最近失败');
 
     return [{
         alertType: 'verify_failure_rate_spike',
@@ -256,7 +256,7 @@ function buildVerifyFailureRateSpikeAlerts(snapshot = {}, recentLogs = [], rawCo
             hot_errors: hotErrors,
             degraded_reasons: reasons,
             checked_at: normalizeText(snapshot.checked_at) || null,
-            entry_path: '后台设置 -> 验证服务配置 -> 最近任务状态 / 验证日志'
+            entry_path: '后台设置 -> 验证服务配置 -> 最近任务 / 最近失败'
         },
         dedupeKey: crypto
             .createHash('sha256')

@@ -390,7 +390,7 @@ function buildVerifyQueueBacklogSampleJob(user) {
             ],
             note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了验证任务堆积示例发送`,
             checked_at: new Date().toISOString(),
-            entry_path: '后台设置 -> 验证服务配置 -> 队列 / 最近任务状态（示例）'
+            entry_path: '后台设置 -> 验证服务配置 -> 队列状态 / 最近任务（示例）'
         }
     };
 }
@@ -418,7 +418,7 @@ function buildVerifyFailureRateSpikeSampleJob(user) {
             ],
             checked_at: new Date().toISOString(),
             note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了验证失败率异常示例发送`,
-            entry_path: '后台设置 -> 验证服务配置 -> 最近任务状态 / 验证日志（示例）'
+            entry_path: '后台设置 -> 验证服务配置 -> 最近任务 / 最近失败（示例）'
         }
     };
 }
@@ -448,7 +448,7 @@ function buildVerifyIncidentEscalatedSampleJob(user) {
             ],
             latest_signal_at: '2026-03-25T10:04:00.000Z',
             note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了验证综合异常示例发送`,
-            entry_path: '后台设置 -> 验证服务配置 -> 站外告警 / 最近任务状态 / 验证日志（示例）'
+            entry_path: '后台设置 -> 验证服务配置 -> 当前额度 / 接口状态 / 队列状态 / 最近失败（示例）'
         }
     };
 }
@@ -472,7 +472,7 @@ function buildVerifyIncidentRecoveredSampleJob(user) {
             active_signal_labels: ['验证额度不足'],
             active_signal_summaries: ['剩余额度 18.00 点 / 预计 9 次'],
             note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了验证恢复示例发送`,
-            entry_path: '后台设置 -> 验证服务配置 -> 站外告警 / 最近任务状态 / 验证日志（示例）'
+            entry_path: '后台设置 -> 验证服务配置 -> 当前额度 / 接口状态 / 队列状态 / 最近失败（示例）'
         }
     };
 }

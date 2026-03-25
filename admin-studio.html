@@ -1799,6 +1799,63 @@
                                     </button>
                                 </div>
                             </div>
+                            <div class="verify-monitor-panel">
+                                <div class="verify-monitor-panel__header">
+                                    <div class="verify-monitor-panel__intro">
+                                        <h4><i class="fas fa-wave-square"></i> 验证服务运维面板</h4>
+                                        <p>验证相关告警会优先指向这里，集中查看当前额度、接口状态、上游队列、最近任务与最近失败。</p>
+                                    </div>
+                                    <div class="verify-monitor-panel__toolbar">
+                                        <span id="verifyMonitorLastRefresh" class="verify-monitor-panel__timestamp">等待首次刷新</span>
+                                        <button type="button" class="btn-sm btn-secondary" data-admin-action="settings-refresh-verify-monitor">
+                                            <i class="fas fa-sync-alt"></i> 刷新状态
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="verify-monitor-grid">
+                                    <section class="verify-monitor-card" id="verifyMonitorQuotaPanel">
+                                        <div class="verify-monitor-card__eyebrow">当前额度</div>
+                                        <div class="verify-monitor-card__value" id="verifyMonitorQuotaValue">查询中...</div>
+                                        <div class="verify-monitor-card__meta" id="verifyMonitorQuotaMeta">正在读取 API 余额与单次成本。</div>
+                                    </section>
+                                    <section class="verify-monitor-card" id="verifyMonitorServicePanel">
+                                        <div class="verify-monitor-card__eyebrow">接口状态</div>
+                                        <div class="verify-monitor-card__value" id="verifyMonitorServiceValue">等待检测</div>
+                                        <div class="verify-monitor-card__meta" id="verifyMonitorServiceMeta">会综合启用状态、API Key 配置和最近一次接口探测结果。</div>
+                                    </section>
+                                    <section class="verify-monitor-card" id="verifyMonitorQueuePanel">
+                                        <div class="verify-monitor-card__eyebrow">队列状态</div>
+                                        <div class="verify-monitor-card__value" id="verifyMonitorQueueValue">等待检测</div>
+                                        <div class="verify-monitor-card__meta" id="verifyMonitorQueueMeta">会显示上游排队、运行中任务和本地活跃任务情况。</div>
+                                    </section>
+                                </div>
+                                <div class="verify-monitor-columns">
+                                    <section class="verify-monitor-list-card" id="verifyMonitorTasksPanel">
+                                        <div class="verify-monitor-list-card__header">
+                                            <div>
+                                                <h5>最近任务</h5>
+                                                <p>最近去重后的验证任务轨迹，适合排查堆积、卡住和重复重试。</p>
+                                            </div>
+                                            <span id="verifyMonitorTasksMeta" class="verify-monitor-list-card__meta">等待加载</span>
+                                        </div>
+                                        <div id="verifyMonitorRecentTasks" class="verify-monitor-list">
+                                            <div class="verify-monitor-empty">正在加载最近任务...</div>
+                                        </div>
+                                    </section>
+                                    <section class="verify-monitor-list-card" id="verifyMonitorFailuresPanel">
+                                        <div class="verify-monitor-list-card__header">
+                                            <div>
+                                                <h5>最近失败</h5>
+                                                <p>优先展示最近失败和异常结果，方便对照告警里的错误原因快速排障。</p>
+                                            </div>
+                                            <span id="verifyMonitorFailuresMeta" class="verify-monitor-list-card__meta">等待加载</span>
+                                        </div>
+                                        <div id="verifyMonitorRecentFailures" class="verify-monitor-list">
+                                            <div class="verify-monitor-empty">正在加载最近失败...</div>
+                                        </div>
+                                    </section>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Comments Rules -->
