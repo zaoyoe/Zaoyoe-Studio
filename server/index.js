@@ -69,6 +69,10 @@ const {
     runShopInventoryLowSweep
 } = require('../api/_lib/shop-inventory-alerts');
 const {
+    normalizeShopOrderDeliveryMonitorConfig,
+    runShopOrderDeliveryFailedSweep
+} = require('../api/_lib/shop-order-delivery-alerts');
+const {
     normalizeAdminLoginAnomalyMonitorConfig,
     runAdminLoginAnomalySweep
 } = require('../api/_lib/admin-login-anomaly-alerts');
@@ -99,6 +103,8 @@ let ticketSlaSweepTimer = null;
 let ticketSlaSweepRunning = false;
 let shopInventorySweepTimer = null;
 let shopInventorySweepRunning = false;
+let shopOrderDeliverySweepTimer = null;
+let shopOrderDeliverySweepRunning = false;
 let adminLoginAnomalySweepTimer = null;
 let adminLoginAnomalySweepRunning = false;
 let cachedShopDeliveryStrategy = null;
@@ -3024,6 +3030,56 @@ function startShopInventorySweep() {
     });
 }
 
+async function sweepShopOrderDeliveryHealth() {
+    if (shopOrderDeliverySweepRunning) return;
+    shopOrderDeliverySweepRunning = true;
+
+    try {
+        const result = await runShopOrderDeliveryFailedSweep(supabase, {
+            env: process.env
+        });
+
+        if (
+            Number(result?.failure_count || 0) > 0
+            || Number(result?.queued || 0) > 0
+        ) {
+            console.log('[ShopOrderDeliveryMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[ShopOrderDeliveryMonitor] Sweep failed:', error);
+    } finally {
+        shopOrderDeliverySweepRunning = false;
+    }
+}
+
+async function queueNextShopOrderDeliverySweep(delayMs = null) {
+    if (shopOrderDeliverySweepTimer) return;
+
+    const monitorConfig = normalizeShopOrderDeliveryMonitorConfig({}, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
+
+    shopOrderDeliverySweepTimer = setTimeout(() => {
+        shopOrderDeliverySweepTimer = null;
+        sweepShopOrderDeliveryHealth()
+            .catch((error) => {
+                console.error('[ShopOrderDeliveryMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextShopOrderDeliverySweep().catch((error) => {
+                    console.error('[ShopOrderDeliveryMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startShopOrderDeliverySweep() {
+    if (shopOrderDeliverySweepTimer) return;
+
+    queueNextShopOrderDeliverySweep(6700).catch((error) => {
+        console.error('[ShopOrderDeliveryMonitor] Failed to start sweep:', error);
+    });
+}
+
 async function sweepAdminLoginAnomalyHealth() {
     if (adminLoginAnomalySweepRunning) return;
     adminLoginAnomalySweepRunning = true;
@@ -4268,6 +4324,7 @@ function startServer(port = PORT) {
         startVerifyQuotaSweep();
         startTicketSlaSweep();
         startShopInventorySweep();
+        startShopOrderDeliverySweep();
         startAdminLoginAnomalySweep();
     });
 }

@@ -500,6 +500,42 @@ test('buildExternalAlertText renders shop inventory low details', () => {
     assert.match(text, /处理入口：商城管理 -> 商品列表 -> 库存 \/ 补货/);
 });
 
+test('buildExternalAlertText renders shop order delivery failure details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'shop_order_delivery_failed',
+        severity: 'critical',
+        title: '商城履约失败（shop-ord）',
+        payload: {
+            order_id: 'shop-order-demo-delivery-001',
+            product_name: 'Prompt Pro 年卡',
+            user_id: 'demo_delivery_user_001',
+            item_count: 2,
+            total_price: 59.8,
+            delivery_status: 'dead_letter',
+            delivery_status_label: '死信待处理',
+            delivery_attempt_count: 4,
+            delivery_last_error: '目标履约地址连续超时',
+            refund_status: 'none',
+            refund_status_label: '正常',
+            created_at: '2026-03-25T10:00:00.000Z',
+            delivery_updated_at: '2026-03-25T10:15:00.000Z',
+            entry_path: '商城管理 -> 履约任务 / 异常订单'
+        }
+    });
+
+    assert.match(text, /商城履约告警/);
+    assert.match(text, /订单号：shop-order-demo-delivery-001/);
+    assert.match(text, /商品：Prompt Pro 年卡/);
+    assert.match(text, /用户ID：demo_delivery_user_001/);
+    assert.match(text, /购买数量：2 件/);
+    assert.match(text, /订单金额：59\.80 元/);
+    assert.match(text, /履约状态：死信待处理/);
+    assert.match(text, /失败次数：4/);
+    assert.match(text, /退款状态：正常/);
+    assert.match(text, /最近错误：目标履约地址连续超时/);
+    assert.match(text, /处理入口：商城管理 -> 履约任务 \/ 异常订单/);
+});
+
 test('buildExternalAlertText renders admin login anomaly details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'security_admin_login_anomaly',

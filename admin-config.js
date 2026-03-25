@@ -2190,6 +2190,16 @@ async function sendOpsAlertAdminLoginAnomalySample() {
     }
 }
 
+async function sendOpsAlertShopOrderDeliveryFailedSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_failed', '履约失败示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send shop order delivery failed sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function deleteOpsAlertSecret(secretName) {
     const secretLabels = {
         telegram_bot_token: 'Telegram Bot Token',
@@ -4189,6 +4199,7 @@ window.sendOpsAlertVerifyQuotaSample = sendOpsAlertVerifyQuotaSample;
 window.sendOpsAlertTicketSlaSample = sendOpsAlertTicketSlaSample;
 window.sendOpsAlertShopInventorySample = sendOpsAlertShopInventorySample;
 window.sendOpsAlertAdminLoginAnomalySample = sendOpsAlertAdminLoginAnomalySample;
+window.sendOpsAlertShopOrderDeliveryFailedSample = sendOpsAlertShopOrderDeliveryFailedSample;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;

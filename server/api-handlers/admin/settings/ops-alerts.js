@@ -377,6 +377,36 @@ function buildAdminLoginAnomalySampleJob(user) {
     };
 }
 
+function buildShopOrderDeliveryFailedSampleJob(user) {
+    const createdAt = new Date(Date.now() - 95 * 60 * 1000).toISOString();
+    const updatedAt = new Date(Date.now() - 12 * 60 * 1000).toISOString();
+
+    return {
+        alert_type: 'shop_order_delivery_failed',
+        severity: 'critical',
+        title: '商城履约失败（shop-ord）',
+        payload: {
+            target_id: 'shop-order-demo-delivery-001',
+            order_id: 'shop-order-demo-delivery-001',
+            user_id: 'demo_delivery_user_001',
+            product_name: 'Prompt Pro 年卡',
+            item_count: 2,
+            total_price: 59.8,
+            price_paid: 59.8,
+            delivery_status: 'dead_letter',
+            delivery_status_label: '死信待处理',
+            delivery_attempt_count: 4,
+            delivery_last_error: '示例：库存已锁定，但目标履约地址连续超时，任务已进入死信队列。',
+            refund_status: 'none',
+            refund_status_label: '正常',
+            created_at: createdAt,
+            delivery_updated_at: updatedAt,
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了履约失败示例发送`,
+            entry_path: '商城管理 -> 履约任务 / 异常订单（示例）'
+        }
+    };
+}
+
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
     const { error } = await supabase
         .from('system_config')
@@ -416,6 +446,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_ticket_sla_overdue'
                 || sanitizeText(body.action) === 'send_sample_shop_inventory_low'
                 || sanitizeText(body.action) === 'send_sample_admin_login_anomaly'
+                || sanitizeText(body.action) === 'send_sample_shop_order_delivery_failed'
             ) {
                 const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase);
                 const runtime = {
@@ -436,6 +467,8 @@ module.exports = async (req, res) => {
                                     ? buildShopInventoryLowSampleJob(user)
                                     : normalizedAction === 'send_sample_admin_login_anomaly'
                                         ? buildAdminLoginAnomalySampleJob(user)
+                                        : normalizedAction === 'send_sample_shop_order_delivery_failed'
+                                            ? buildShopOrderDeliveryFailedSampleJob(user)
                         : buildTelegramTestJob(user, runtime);
                 const result = await sendOpsAlertPreview(job, runtime);
 
@@ -454,6 +487,8 @@ module.exports = async (req, res) => {
                                         ? 'admin.ops_alerts.shop_inventory_sample'
                                         : normalizedAction === 'send_sample_admin_login_anomaly'
                                             ? 'admin.ops_alerts.admin_login_anomaly_sample'
+                                            : normalizedAction === 'send_sample_shop_order_delivery_failed'
+                                                ? 'admin.ops_alerts.shop_delivery_failed_sample'
                             : 'admin.ops_alerts.telegram_test',
                     details: {
                         ok: result?.ok === true,
@@ -484,6 +519,8 @@ module.exports = async (req, res) => {
                                         ? `库存预警示例消息已发送到 ${channelLabels || '已启用通道'}`
                                         : normalizedAction === 'send_sample_admin_login_anomaly'
                                             ? `管理员异常登录示例消息已发送到 ${channelLabels || '已启用通道'}`
+                                            : normalizedAction === 'send_sample_shop_order_delivery_failed'
+                                                ? `履约失败示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : `测试站外告警已发送到 ${channelLabels || '已启用通道'}`
                 });
             }

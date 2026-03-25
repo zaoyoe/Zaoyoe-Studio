@@ -503,6 +503,10 @@ function buildExternalAlertText(job = {}) {
     if (shopInventoryText) {
         return shopInventoryText;
     }
+    const shopOrderDeliveryText = buildShopOrderDeliveryFailedAlertText(job);
+    if (shopOrderDeliveryText) {
+        return shopOrderDeliveryText;
+    }
     const adminLoginAnomalyText = buildAdminLoginAnomalyAlertText(job);
     if (adminLoginAnomalyText) {
         return adminLoginAnomalyText;
@@ -729,6 +733,34 @@ function getTicketStatusLabel(value) {
     return labelMap[normalized] || normalized;
 }
 
+function getShopDeliveryStatusLabel(value) {
+    const normalized = normalizeText(value).toLowerCase();
+    if (!normalized) return '';
+    const labelMap = {
+        pending: '待发货',
+        processing: '处理中',
+        retry_waiting: '重试中',
+        requeued: '已重排队',
+        dead_letter: '死信待处理',
+        delivered: '已发货'
+    };
+    return labelMap[normalized] || normalized;
+}
+
+function getRefundStatusLabel(value) {
+    const normalized = normalizeText(value).toLowerCase();
+    if (!normalized) return '';
+    const labelMap = {
+        none: '正常',
+        no_refund: '正常',
+        refunded: '已退款',
+        full_refund: '已全额退款',
+        partial_refund: '部分退款',
+        refund_pending: '退款处理中'
+    };
+    return labelMap[normalized] || normalized;
+}
+
 function buildTicketSlaOverdueAlertText(job = {}) {
     if (normalizeText(job.alert_type).toLowerCase() !== 'ticket_sla_overdue') {
         return '';
@@ -792,6 +824,34 @@ function buildShopInventoryAlertText(job = {}) {
     }
     if (normalizeText(payload.delivery_type)) lines.push(`发货模式：${getDeliveryTypeLabel(payload.delivery_type)}`);
     if (normalizeText(payload.updated_at)) lines.push(`最近更新时间：${formatTimestamp(payload.updated_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildShopOrderDeliveryFailedAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'shop_order_delivery_failed') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const lines = [
+        `[商城履约告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '订单履约失败'}`
+    ];
+
+    if (normalizeText(payload.order_id)) lines.push(`订单号：${normalizeText(payload.order_id)}`);
+    if (normalizeText(payload.product_name)) lines.push(`商品：${normalizeText(payload.product_name)}`);
+    if (normalizeText(payload.user_id)) lines.push(`用户ID：${normalizeText(payload.user_id)}`);
+    if (Number.isFinite(Number(payload.item_count))) lines.push(`购买数量：${Math.max(1, Math.round(Number(payload.item_count || 1)))} 件`);
+    if (Number.isFinite(Number(payload.total_price)) || Number.isFinite(Number(payload.price_paid))) {
+        lines.push(`订单金额：${formatCurrencyAmount(payload.total_price ?? payload.price_paid)}`);
+    }
+    if (normalizeText(payload.delivery_status)) lines.push(`履约状态：${normalizeText(payload.delivery_status_label) || getShopDeliveryStatusLabel(payload.delivery_status)}`);
+    if (Number.isFinite(Number(payload.delivery_attempt_count))) lines.push(`失败次数：${Math.max(0, Math.round(Number(payload.delivery_attempt_count || 0)))}`);
+    if (normalizeText(payload.refund_status)) lines.push(`退款状态：${normalizeText(payload.refund_status_label) || getRefundStatusLabel(payload.refund_status)}`);
+    if (normalizeText(payload.delivery_last_error)) lines.push(`最近错误：${normalizeText(payload.delivery_last_error)}`);
+    if (normalizeText(payload.created_at)) lines.push(`下单时间：${formatTimestamp(payload.created_at)}`);
+    if (normalizeText(payload.delivery_updated_at)) lines.push(`最近履约更新时间：${formatTimestamp(payload.delivery_updated_at)}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
     return lines.filter(Boolean).join('\n');
