@@ -64,6 +64,10 @@ const {
     normalizeTicketSlaMonitorConfig,
     runTicketSlaOverdueSweep
 } = require('../api/_lib/ticket-sla-alerts');
+const {
+    normalizeShopInventoryMonitorConfig,
+    runShopInventoryLowSweep
+} = require('../api/_lib/shop-inventory-alerts');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -89,6 +93,8 @@ let verifyQuotaSweepTimer = null;
 let verifyQuotaSweepRunning = false;
 let ticketSlaSweepTimer = null;
 let ticketSlaSweepRunning = false;
+let shopInventorySweepTimer = null;
+let shopInventorySweepRunning = false;
 let cachedShopDeliveryStrategy = null;
 let cachedShopDeliveryStrategyAt = 0;
 const afdianProvider = getPaymentProviderAdapter('afdian');
@@ -2961,6 +2967,57 @@ function startTicketSlaSweep() {
     });
 }
 
+async function sweepShopInventoryHealth() {
+    if (shopInventorySweepRunning) return;
+    shopInventorySweepRunning = true;
+
+    try {
+        const result = await runShopInventoryLowSweep(supabase, {
+            env: process.env
+        });
+
+        if (
+            Number(result?.low_stock_count || 0) > 0
+            || Number(result?.empty_stock_count || 0) > 0
+            || Number(result?.queued || 0) > 0
+        ) {
+            console.log('[ShopInventoryMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[ShopInventoryMonitor] Sweep failed:', error);
+    } finally {
+        shopInventorySweepRunning = false;
+    }
+}
+
+async function queueNextShopInventorySweep(delayMs = null) {
+    if (shopInventorySweepTimer) return;
+
+    const monitorConfig = normalizeShopInventoryMonitorConfig({}, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 15 * 60 * 1000));
+
+    shopInventorySweepTimer = setTimeout(() => {
+        shopInventorySweepTimer = null;
+        sweepShopInventoryHealth()
+            .catch((error) => {
+                console.error('[ShopInventoryMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextShopInventorySweep().catch((error) => {
+                    console.error('[ShopInventoryMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startShopInventorySweep() {
+    if (shopInventorySweepTimer) return;
+
+    queueNextShopInventorySweep(6200).catch((error) => {
+        console.error('[ShopInventoryMonitor] Failed to start sweep:', error);
+    });
+}
+
 async function hasLoggedJobResult(userId, jobId, site = 'cn') {
     if (!userId || !jobId) return false;
 
@@ -4157,6 +4214,7 @@ function startServer(port = PORT) {
         startPaymentGatewaySweep();
         startVerifyQuotaSweep();
         startTicketSlaSweep();
+        startShopInventorySweep();
     });
 }
 

@@ -328,6 +328,28 @@ function buildTicketSlaOverdueSampleJob(user) {
     };
 }
 
+function buildShopInventoryLowSampleJob(user) {
+    return {
+        alert_type: 'shop_inventory_low',
+        severity: 'warning',
+        title: 'Prompt Pro 月卡 库存不足',
+        payload: {
+            target_id: 'shop-product-demo-low-stock',
+            product_id: 'shop-product-demo-low-stock',
+            product_name: 'Prompt Pro 月卡',
+            category: '提示词',
+            stock_count: 3,
+            low_stock_threshold: 5,
+            recent_sales_days: 7,
+            recent_sales_count: 12,
+            delivery_type: 'KEY',
+            updated_at: new Date().toISOString(),
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了库存预警示例发送`,
+            entry_path: '商城管理 -> 商品列表 -> 库存 / 补货（示例）'
+        }
+    };
+}
+
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
     const { error } = await supabase
         .from('system_config')
@@ -365,6 +387,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_gateway_degraded'
                 || sanitizeText(body.action) === 'send_sample_verify_quota_low'
                 || sanitizeText(body.action) === 'send_sample_ticket_sla_overdue'
+                || sanitizeText(body.action) === 'send_sample_shop_inventory_low'
             ) {
                 const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase);
                 const runtime = {
@@ -381,6 +404,8 @@ module.exports = async (req, res) => {
                             ? buildVerifyQuotaLowSampleJob(user)
                             : normalizedAction === 'send_sample_ticket_sla_overdue'
                                 ? buildTicketSlaOverdueSampleJob(user)
+                                : normalizedAction === 'send_sample_shop_inventory_low'
+                                    ? buildShopInventoryLowSampleJob(user)
                         : buildTelegramTestJob(user, runtime);
                 const result = await sendOpsAlertPreview(job, runtime);
 
@@ -395,6 +420,8 @@ module.exports = async (req, res) => {
                                 ? 'admin.ops_alerts.verify_quota_sample'
                                 : normalizedAction === 'send_sample_ticket_sla_overdue'
                                     ? 'admin.ops_alerts.ticket_sla_sample'
+                                    : normalizedAction === 'send_sample_shop_inventory_low'
+                                        ? 'admin.ops_alerts.shop_inventory_sample'
                             : 'admin.ops_alerts.telegram_test',
                     details: {
                         ok: result?.ok === true,
@@ -421,6 +448,8 @@ module.exports = async (req, res) => {
                                 ? `验证额度告警示例消息已发送到 ${channelLabels || '已启用通道'}`
                                 : normalizedAction === 'send_sample_ticket_sla_overdue'
                                     ? `工单超时示例消息已发送到 ${channelLabels || '已启用通道'}`
+                                    : normalizedAction === 'send_sample_shop_inventory_low'
+                                        ? `库存预警示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : `测试站外告警已发送到 ${channelLabels || '已启用通道'}`
                 });
             }

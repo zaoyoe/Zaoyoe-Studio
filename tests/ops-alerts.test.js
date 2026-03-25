@@ -473,6 +473,33 @@ test('buildExternalAlertText renders ticket SLA overdue details', () => {
     assert.match(text, /处理入口：售后工单 -> 待处理 -> 工单详情/);
 });
 
+test('buildExternalAlertText renders shop inventory low details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'shop_inventory_low',
+        severity: 'warning',
+        title: 'Prompt Pro 月卡 库存不足',
+        payload: {
+            product_name: 'Prompt Pro 月卡',
+            category: '提示词',
+            stock_count: 3,
+            low_stock_threshold: 5,
+            recent_sales_days: 7,
+            recent_sales_count: 12,
+            delivery_type: 'KEY',
+            updated_at: '2026-03-25T10:00:00.000Z',
+            entry_path: '商城管理 -> 商品列表 -> 库存 / 补货'
+        }
+    });
+
+    assert.match(text, /商城库存告警/);
+    assert.match(text, /商品：Prompt Pro 月卡/);
+    assert.match(text, /分类：提示词/);
+    assert.match(text, /当前库存：3 件（阈值 5 件）/);
+    assert.match(text, /近 7 天销量：12 件/);
+    assert.match(text, /发货模式：卡密直发/);
+    assert.match(text, /处理入口：商城管理 -> 商品列表 -> 库存 \/ 补货/);
+});
+
 test('ops alerts exports sendFeishuAlert for admin preview actions', () => {
     assert.equal(typeof sendFeishuAlert, 'function');
 });

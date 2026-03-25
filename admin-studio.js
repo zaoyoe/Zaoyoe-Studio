@@ -341,6 +341,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-ticket-sla-sample':
                 window.sendOpsAlertTicketSlaSample?.();
                 break;
+            case 'settings-send-ops-alert-shop-inventory-sample':
+                window.sendOpsAlertShopInventorySample?.();
+                break;
             case 'settings-delete-ops-alert-secret':
                 window.deleteOpsAlertSecret?.(actionEl.dataset.secretName);
                 break;

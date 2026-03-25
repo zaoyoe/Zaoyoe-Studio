@@ -743,6 +743,63 @@ test('ops alert settings POST can send a ticket SLA overdue sample without persi
     });
 });
 
+test('ops alert settings POST can send a shop inventory low sample without persisting config changes', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_sample_shop_inventory_low',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /库存预警示例消息已发送到 Telegram/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.telegramTests[0].job.alert_type, 'shop_inventory_low');
+        assert.equal(state.telegramTests[0].job.payload.stock_count, 3);
+        assert.equal(state.telegramTests[0].job.payload.recent_sales_count, 12);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.shop_inventory_sample');
+    });
+});
+
 test('ops alert settings preview actions fan out to Feishu when the channel is enabled', async () => {
     await withOpsAlertsSettingsHandler({
         config: createNormalizedConfig({

@@ -2170,6 +2170,16 @@ async function sendOpsAlertTicketSlaSample() {
     }
 }
 
+async function sendOpsAlertShopInventorySample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_shop_inventory_low', '库存预警示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send shop inventory sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function deleteOpsAlertSecret(secretName) {
     const secretLabels = {
         telegram_bot_token: 'Telegram Bot Token',
@@ -4167,6 +4177,7 @@ window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;
 window.sendOpsAlertGatewaySample = sendOpsAlertGatewaySample;
 window.sendOpsAlertVerifyQuotaSample = sendOpsAlertVerifyQuotaSample;
 window.sendOpsAlertTicketSlaSample = sendOpsAlertTicketSlaSample;
+window.sendOpsAlertShopInventorySample = sendOpsAlertShopInventorySample;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;

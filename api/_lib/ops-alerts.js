@@ -499,6 +499,10 @@ function buildExternalAlertText(job = {}) {
     if (ticketSlaText) {
         return ticketSlaText;
     }
+    const shopInventoryText = buildShopInventoryAlertText(job);
+    if (shopInventoryText) {
+        return shopInventoryText;
+    }
 
     const lines = [
         `[站外告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '系统通知'}`,
@@ -739,6 +743,50 @@ function buildTicketSlaOverdueAlertText(job = {}) {
     if (normalizeText(payload.ticket_status)) lines.push(`当前状态：${getTicketStatusLabel(payload.ticket_status)}`);
     if (normalizeText(payload.reason)) lines.push(`问题描述：${normalizeText(payload.reason)}`);
     if (normalizeText(payload.created_at)) lines.push(`创建时间：${formatTimestamp(payload.created_at)}`);
+    if (normalizeText(payload.updated_at)) lines.push(`最近更新时间：${formatTimestamp(payload.updated_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function getDeliveryTypeLabel(value) {
+    const normalized = normalizeText(value).toUpperCase();
+    if (!normalized || normalized === 'KEY') {
+        return '卡密直发';
+    }
+    if (normalized === 'API') {
+        return '接口发货';
+    }
+    return normalized;
+}
+
+function buildShopInventoryAlertText(job = {}) {
+    const alertType = normalizeText(job.alert_type).toLowerCase();
+    if (alertType !== 'shop_inventory_low' && alertType !== 'shop_inventory_empty') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const lines = [
+        `[商城库存告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '库存预警'}`
+    ];
+
+    if (normalizeText(payload.product_name)) lines.push(`商品：${normalizeText(payload.product_name)}`);
+    if (normalizeText(payload.category)) lines.push(`分类：${normalizeText(payload.category)}`);
+    if (Number.isFinite(Number(payload.stock_count))) {
+        const stockCount = Math.max(0, Math.round(Number(payload.stock_count || 0)));
+        const threshold = Math.max(0, Math.round(Number(payload.low_stock_threshold || 0)));
+        lines.push(
+            stockCount <= 0
+                ? '当前库存：0 件（已售罄）'
+                : `当前库存：${stockCount} 件（阈值 ${threshold} 件）`
+        );
+    }
+    if (Number.isFinite(Number(payload.recent_sales_count))) {
+        const salesWindow = Math.max(1, Math.round(Number(payload.recent_sales_days || 7)));
+        lines.push(`近 ${salesWindow} 天销量：${Math.max(0, Math.round(Number(payload.recent_sales_count || 0)))} 件`);
+    }
+    if (normalizeText(payload.delivery_type)) lines.push(`发货模式：${getDeliveryTypeLabel(payload.delivery_type)}`);
     if (normalizeText(payload.updated_at)) lines.push(`最近更新时间：${formatTimestamp(payload.updated_at)}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
