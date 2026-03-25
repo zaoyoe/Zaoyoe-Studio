@@ -395,10 +395,25 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-payment-config-recovered-sample':
                 window.sendOpsAlertPaymentConfigRecoveredSample?.();
                 break;
+            case 'settings-refresh-ops-alert-health':
+                window.refreshOpsAlertHealthPanel?.();
+                break;
             case 'settings-filter-ops-alert-monitor':
                 window.setOpsAlertMonitorFilter?.(
                     actionEl.dataset.opsAlertMonitorFilterKind,
                     actionEl.dataset.opsAlertMonitorFilterValue
+                );
+                break;
+            case 'settings-mark-ops-alert-monitor-handled':
+                window.markOpsAlertMonitorHandled?.();
+                break;
+            case 'settings-mark-ops-alert-monitor-category-handled':
+                window.markOpsAlertMonitorHandled?.(actionEl.dataset.opsAlertMonitorCategoryKey);
+                break;
+            case 'settings-mark-ops-alert-monitor-item-handled':
+                window.markOpsAlertMonitorHandled?.(
+                    actionEl.dataset.opsAlertMonitorCategoryKey,
+                    [actionEl.dataset.opsAlertJobId]
                 );
                 break;
             case 'settings-open-ops-alert-workspace':

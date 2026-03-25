@@ -8,6 +8,7 @@ let systemConfigCache = {};
 let paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
 let paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
 let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
+let opsAlertHealthState = getDefaultOpsAlertHealthState();
 let opsAlertMonitorState = getDefaultOpsAlertMonitorState();
 let opsAlertMonitorViewState = getDefaultOpsAlertMonitorViewState();
 let verifyMonitorState = getDefaultVerifyMonitorState();
@@ -746,7 +747,25 @@ function getDefaultPaymentChannelRuntimeState() {
 function getDefaultOpsAlertSecretStatus() {
     return {
         telegram_bot_token: { configured: false, source: 'missing', updatedAt: null },
-        feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null },
+        email_api_key: { configured: false, source: 'missing', updatedAt: null }
+    };
+}
+
+function getDefaultOpsAlertHealthState() {
+    return {
+        status: 'idle',
+        fetched_at: '',
+        summary: {
+            lookback_days: 7,
+            total_job_count: 0,
+            total_attempt_count: 0,
+            enabled_channel_count: 0,
+            configured_channel_count: 0
+        },
+        channels: [],
+        recent_failures: [],
+        message: '等待加载'
     };
 }
 
@@ -852,6 +871,13 @@ function getDefaultOpsAlertConfig() {
             feishu: {
                 enabled: false,
                 minimum_severity: 'warning'
+            },
+            email: {
+                enabled: false,
+                minimum_severity: 'critical',
+                recipients: [],
+                from_address: '',
+                subject_prefix: '[Zaoyoe] '
             }
         }
     };
@@ -1210,6 +1236,9 @@ function normalizeOpsAlertConfig(raw) {
     const feishuSource = sourceChannels.feishu && typeof sourceChannels.feishu === 'object' && !Array.isArray(sourceChannels.feishu)
         ? sourceChannels.feishu
         : {};
+    const emailSource = sourceChannels.email && typeof sourceChannels.email === 'object' && !Array.isArray(sourceChannels.email)
+        ? sourceChannels.email
+        : {};
 
     return {
         enabled: normalizeConfigBoolean(source.enabled, defaults.enabled),
@@ -1233,6 +1262,13 @@ function normalizeOpsAlertConfig(raw) {
             feishu: {
                 enabled: normalizeConfigBoolean(feishuSource.enabled, defaults.channels.feishu.enabled),
                 minimum_severity: normalizeOpsAlertSeverity(feishuSource.minimum_severity, defaults.channels.feishu.minimum_severity)
+            },
+            email: {
+                enabled: normalizeConfigBoolean(emailSource.enabled, defaults.channels.email.enabled),
+                minimum_severity: normalizeOpsAlertSeverity(emailSource.minimum_severity, defaults.channels.email.minimum_severity),
+                recipients: normalizeConfigStringArray(emailSource.recipients),
+                from_address: String(emailSource.from_address ?? defaults.channels.email.from_address).trim(),
+                subject_prefix: String(emailSource.subject_prefix ?? defaults.channels.email.subject_prefix).trim() || defaults.channels.email.subject_prefix
             }
         }
     };
@@ -1319,6 +1355,7 @@ async function loadAllSystemConfig() {
         renderPackagesConfig();
         renderPaymentChannelsConfig();
         renderOpsAlertSettings();
+        renderOpsAlertHealthPanel();
         renderOpsAlertMonitorPanel();
         renderChannelsConfig();
         renderRewardsConfig();
@@ -1332,6 +1369,7 @@ async function loadAllSystemConfig() {
         loadAffiliateSettings();
         loadPaymentChannelSettings();
         loadOpsAlertSettings();
+        loadOpsAlertHealth();
         loadOpsAlertMonitor();
 
     } catch (err) {
@@ -1641,7 +1679,9 @@ function applyOpsAlertOverview(config) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const telegramSecret = opsAlertSecretStatus?.telegram_bot_token || getDefaultOpsAlertSecretStatus().telegram_bot_token;
     const feishuSecret = opsAlertSecretStatus?.feishu_webhook_url || getDefaultOpsAlertSecretStatus().feishu_webhook_url;
+    const emailSecret = opsAlertSecretStatus?.email_api_key || getDefaultOpsAlertSecretStatus().email_api_key;
     const telegramChatCount = normalizedConfig.channels.telegram.chat_ids.length;
+    const emailRecipientCount = normalizedConfig.channels.email.recipients.length;
     const channelStates = [];
     const deliveryIssues = [];
 
@@ -1666,6 +1706,18 @@ function applyOpsAlertOverview(config) {
         }
     }
 
+    if (normalizedConfig.channels.email.enabled) {
+        const emailSummary = `邮件 · ${normalizedConfig.channels.email.minimum_severity}+ · ${emailRecipientCount || 0} 个收件人`;
+        if (emailSecret.configured && emailRecipientCount > 0 && normalizedConfig.channels.email.from_address) {
+            channelStates.push(`${emailSummary} · 已就绪`);
+        } else {
+            channelStates.push(`${emailSummary} · 待补充配置`);
+            if (!emailSecret.configured) deliveryIssues.push('Email API Key 未配置');
+            if (!emailRecipientCount) deliveryIssues.push('邮件收件人未填写');
+            if (!normalizedConfig.channels.email.from_address) deliveryIssues.push('发件地址未填写');
+        }
+    }
+
     const summaryEl = document.getElementById('opsAlertSummary');
     if (summaryEl) {
         const isEnabled = normalizedConfig.enabled;
@@ -1679,12 +1731,12 @@ function applyOpsAlertOverview(config) {
         if (isEnabled && !hasChannels) {
             summaryText = '已启用站外退款告警，但还没有打开任何外部通道。';
         } else if (isEnabled) {
-            summaryText = `已启用站外退款告警：${channelStates.join('；')}。发送采用异步队列，不阻塞退款主流程。`;
+            summaryText = `已启用站外告警：${channelStates.join('；')}。发送采用异步队列，不阻塞退款主流程。`;
             if (deliveryIssues.length) {
                 summaryText += ` 当前待补充：${deliveryIssues.join('、')}。`;
             }
         } else if (hasChannels) {
-            summaryText = `当前未启用站外退款告警，已预设通道：${channelStates.join('；')}。保存后启用即可生效。`;
+            summaryText = `当前未启用站外告警，已预设通道：${channelStates.join('；')}。保存后启用即可生效。`;
         }
 
         summaryEl.innerHTML = `
@@ -1708,6 +1760,11 @@ function applyOpsAlertOverview(config) {
         feishuToggle.classList.toggle('active', normalizedConfig.channels.feishu.enabled);
     }
 
+    const emailToggle = document.getElementById('opsAlertEmailEnabledToggle');
+    if (emailToggle) {
+        emailToggle.classList.toggle('active', normalizedConfig.channels.email.enabled);
+    }
+
     const telegramInputIds = [
         'opsAlertTelegramChatIds',
         'opsAlertTelegramSeverity',
@@ -1727,6 +1784,18 @@ function applyOpsAlertOverview(config) {
         if (input) input.disabled = !normalizedConfig.channels.feishu.enabled;
     });
 
+    const emailInputIds = [
+        'opsAlertEmailSeverity',
+        'opsAlertEmailRecipients',
+        'opsAlertEmailFromAddress',
+        'opsAlertEmailSubjectPrefix',
+        'opsAlertEmailApiKey'
+    ];
+    emailInputIds.forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !normalizedConfig.channels.email.enabled;
+    });
+
     const telegramStatus = document.getElementById('opsAlertTelegramBotTokenStatus');
     if (telegramStatus) {
         telegramStatus.textContent = getOpsAlertSecretStatusMessage('telegram_bot_token');
@@ -1737,8 +1806,14 @@ function applyOpsAlertOverview(config) {
         feishuStatus.textContent = getOpsAlertSecretStatusMessage('feishu_webhook_url');
     }
 
+    const emailStatus = document.getElementById('opsAlertEmailApiKeyStatus');
+    if (emailStatus) {
+        emailStatus.textContent = getOpsAlertSecretStatusMessage('email_api_key');
+    }
+
     setOpsAlertDeleteButtonState('telegram_bot_token', telegramSecret);
     setOpsAlertDeleteButtonState('feishu_webhook_url', feishuSecret);
+    setOpsAlertDeleteButtonState('email_api_key', emailSecret);
 }
 
 function renderOpsAlertSettings() {
@@ -1759,7 +1834,162 @@ function renderOpsAlertSettings() {
         feishuSeverity.value = config.channels.feishu.minimum_severity;
     }
 
+    const emailRecipients = document.getElementById('opsAlertEmailRecipients');
+    if (emailRecipients) {
+        emailRecipients.value = config.channels.email.recipients.join('\n');
+    }
+
+    const emailSeverity = document.getElementById('opsAlertEmailSeverity');
+    if (emailSeverity) {
+        emailSeverity.value = config.channels.email.minimum_severity;
+    }
+
+    const emailFromAddress = document.getElementById('opsAlertEmailFromAddress');
+    if (emailFromAddress) {
+        emailFromAddress.value = config.channels.email.from_address || '';
+    }
+
+    const emailSubjectPrefix = document.getElementById('opsAlertEmailSubjectPrefix');
+    if (emailSubjectPrefix) {
+        emailSubjectPrefix.value = config.channels.email.subject_prefix || '';
+    }
+
     applyOpsAlertOverview(config);
+}
+
+function getOpsAlertHealthTone(channel = {}) {
+    const tone = String(channel.health_tone || 'neutral').trim().toLowerCase();
+    return ['neutral', 'success', 'warning', 'danger'].includes(tone) ? tone : 'neutral';
+}
+
+function buildOpsAlertHealthBadge(label, tone = 'neutral') {
+    return `<span class="ops-alert-health-badge ops-alert-health-badge--${escapeConfigHtml(tone)}">${escapeConfigHtml(label)}</span>`;
+}
+
+function buildOpsAlertHealthCardMarkup(channel = {}) {
+    const tone = getOpsAlertHealthTone(channel);
+    const metrics = [];
+
+    if (Number.isFinite(Number(channel.delivery_rate))) {
+        metrics.push(`送达率 ${Number(channel.delivery_rate).toFixed(1)}%`);
+    }
+    if (Number(channel.dead_letter_job_count || 0) > 0) {
+        metrics.push(`死信 ${formatVerifyMonitorInteger(channel.dead_letter_job_count)}`);
+    } else if (Number(channel.retry_job_count || 0) > 0) {
+        metrics.push(`重试 ${formatVerifyMonitorInteger(channel.retry_job_count)}`);
+    } else if (Number(channel.pending_job_count || 0) > 0) {
+        metrics.push(`待发 ${formatVerifyMonitorInteger(channel.pending_job_count)}`);
+    }
+
+    const configMeta = [];
+    if (channel.key === 'telegram' && Number(channel.chat_count || 0) > 0) {
+        configMeta.push(`${formatVerifyMonitorInteger(channel.chat_count)} 个 chat`);
+    }
+    if (channel.key === 'email') {
+        if (Number(channel.recipient_count || 0) > 0) {
+            configMeta.push(`${formatVerifyMonitorInteger(channel.recipient_count)} 个收件人`);
+        }
+        if (channel.from_address) {
+            configMeta.push(`发件地址：${channel.from_address}`);
+        }
+    }
+    if (channel.updated_at) {
+        configMeta.push(`密钥更新：${formatVerifyMonitorDateTime(channel.updated_at)}`);
+    }
+
+    return `
+        <article class="ops-alert-health-card ops-alert-health-card--${escapeConfigHtml(tone)}">
+            <div class="ops-alert-health-card__head">
+                <div class="ops-alert-health-card__title">${escapeConfigHtml(channel.label || '通道')}</div>
+                <div class="ops-alert-health-card__badges">
+                    ${buildOpsAlertHealthBadge(channel.enabled ? '已启用' : '未启用', channel.enabled ? tone : 'neutral')}
+                    ${buildOpsAlertHealthBadge(channel.configured ? '已配置' : '未配置', channel.configured ? 'success' : 'warning')}
+                </div>
+            </div>
+            <div class="ops-alert-health-card__summary">${escapeConfigHtml(channel.health_summary || '最近暂无足够数据。')}</div>
+            <div class="ops-alert-health-card__metrics">
+                <div><strong>${escapeConfigHtml(formatVerifyMonitorInteger(channel.attempt_count || 0))}</strong><span>总投递</span></div>
+                <div><strong>${escapeConfigHtml(formatVerifyMonitorInteger(channel.delivered_count || 0))}</strong><span>已送达</span></div>
+                <div><strong>${escapeConfigHtml(formatVerifyMonitorInteger(channel.failed_count || 0))}</strong><span>失败</span></div>
+            </div>
+            <div class="ops-alert-health-card__meta">
+                <span>最低级别：${escapeConfigHtml(channel.minimum_severity || 'warning')}</span>
+                <span>来源：${escapeConfigHtml(channel.source || 'missing')}</span>
+                ${metrics.map((item) => `<span>${escapeConfigHtml(item)}</span>`).join('')}
+                ${configMeta.map((item) => `<span>${escapeConfigHtml(item)}</span>`).join('')}
+            </div>
+            ${Array.isArray(channel.top_errors) && channel.top_errors.length ? `
+                <div class="ops-alert-health-card__errors">
+                    ${channel.top_errors.map((entry) => `
+                        <div class="ops-alert-health-card__error">
+                            <strong>${escapeConfigHtml(formatVerifyMonitorInteger(entry.count || 0))} 次</strong>
+                            <span>${escapeConfigHtml(entry.message || '未知错误')}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            ` : '<div class="ops-alert-health-card__empty">最近没有失败记录。</div>'}
+        </article>
+    `;
+}
+
+function renderOpsAlertHealthPanel() {
+    const panel = document.getElementById('opsAlertHealthPanel');
+    const meta = document.getElementById('opsAlertHealthMeta');
+    const grid = document.getElementById('opsAlertHealthGrid');
+    const failures = document.getElementById('opsAlertHealthFailures');
+    if (!panel || !meta || !grid || !failures) return;
+
+    const state = opsAlertHealthState || getDefaultOpsAlertHealthState();
+    panel.hidden = false;
+
+    if (state.status === 'loading') {
+        meta.innerHTML = '<i class="fas fa-rotate fa-spin"></i><span>正在汇总站外告警通道健康状态...</span>';
+        grid.innerHTML = '<div class="ops-alert-health-empty">正在加载通道健康状态...</div>';
+        failures.innerHTML = '';
+        return;
+    }
+
+    if (state.status === 'error') {
+        meta.innerHTML = `<i class="fas fa-triangle-exclamation"></i><span>${escapeConfigHtml(state.message || '站外告警通道健康状态加载失败。')}</span>`;
+        grid.innerHTML = `<div class="ops-alert-health-empty">${escapeConfigHtml(state.message || '站外告警通道健康状态加载失败。')}</div>`;
+        failures.innerHTML = '';
+        return;
+    }
+
+    const channels = Array.isArray(state.channels) ? state.channels : [];
+    meta.innerHTML = `
+        <i class="fas fa-heart-pulse"></i>
+        <span>最近 ${escapeConfigHtml(formatVerifyMonitorInteger(state.summary?.lookback_days || 7))} 天共采样 ${escapeConfigHtml(formatVerifyMonitorInteger(state.summary?.total_attempt_count || 0))} 次投递；已启用 ${escapeConfigHtml(formatVerifyMonitorInteger(state.summary?.enabled_channel_count || 0))} 个通道，已配置 ${escapeConfigHtml(formatVerifyMonitorInteger(state.summary?.configured_channel_count || 0))} 个。</span>
+    `;
+
+    grid.innerHTML = channels.length
+        ? channels.map((channel) => buildOpsAlertHealthCardMarkup(channel)).join('')
+        : '<div class="ops-alert-health-empty">当前还没有可展示的通道健康数据。</div>';
+
+    const recentFailures = Array.isArray(state.recent_failures) ? state.recent_failures : [];
+    failures.innerHTML = recentFailures.length
+        ? `
+            <div class="ops-alert-health-failures__head">
+                <h5><i class="fas fa-bug"></i> 最近投递失败</h5>
+                <span>${escapeConfigHtml(formatVerifyMonitorInteger(recentFailures.length))} 条</span>
+            </div>
+            <div class="ops-alert-health-failures__list">
+                ${recentFailures.map((item) => `
+                    <article class="ops-alert-health-failure-item">
+                        <div class="ops-alert-health-failure-item__top">
+                            ${buildOpsAlertHealthBadge(item.channel_label || item.channel || '通道', 'warning')}
+                            <strong>${escapeConfigHtml(item.error_message || '未知错误')}</strong>
+                        </div>
+                        <div class="ops-alert-health-failure-item__meta">
+                            <span>任务：${escapeConfigHtml(item.job_id || 'unknown')}</span>
+                            ${item.response_status ? `<span>HTTP ${escapeConfigHtml(String(item.response_status))}</span>` : ''}
+                            ${item.created_at ? `<span>${escapeConfigHtml(formatVerifyMonitorDateTime(item.created_at))}</span>` : ''}
+                        </div>
+                    </article>
+                `).join('')}
+            </div>
+        `
+        : '<div class="ops-alert-health-empty">最近没有投递失败记录。</div>';
 }
 
 function getOpsAlertMonitorCategoryActions(categoryKey) {
@@ -1901,6 +2131,7 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
     const severity = String(item.severity || 'warning').trim().toLowerCase();
     const severityTone = getOpsAlertMonitorSeverityTone(severity);
     const itemAction = getOpsAlertMonitorItemAction(category, item);
+    const canMarkHandled = Boolean(item.id);
     const metaParts = [
         item.reference_label && item.reference_value
             ? `${escapeConfigHtml(item.reference_label)}：${escapeConfigHtml(item.reference_value)}`
@@ -1918,6 +2149,17 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
             <div class="ops-alert-monitor-item__meta">${metaParts.length ? metaParts.join(' · ') : '等待更多上下文'}</div>
             ${itemAction ? `
                 <div class="ops-alert-monitor-item__actions">
+                    ${canMarkHandled ? `
+                        <button
+                            type="button"
+                            class="btn-add-config btn-add-config--compact"
+                            data-admin-action="settings-mark-ops-alert-monitor-item-handled"
+                            data-ops-alert-job-id="${escapeConfigHtml(item.id || '')}"
+                            data-ops-alert-monitor-category-key="${escapeConfigHtml(category.key || '')}"
+                        >
+                            <i class="fas fa-check-double"></i> 标记已复核
+                        </button>
+                    ` : ''}
                     <button
                         type="button"
                         class="btn-add-config btn-add-config--compact"
@@ -2178,15 +2420,29 @@ function buildOpsAlertMonitorCategoryMarkup(category = {}, filters = getOpsAlert
         : `<div class="ops-alert-monitor-empty">${escapeConfigHtml(
             String(category.latest_state || '').toLowerCase() === 'recovered'
                 ? '最近一条同类告警已经恢复，可进入对应模块做一次复核。'
-                : (String(filters.severity || 'all') === 'all'
-                    ? '当前没有持续中的待处理告警。'
-                    : `当前筛选条件下没有命中的 ${filters.severity} 告警。`)
+                : (String(category.latest_state || '').toLowerCase() === 'handled'
+                    ? '最近一条同类告警已标记为已复核，可按需进入模块做补充检查。'
+                    : (String(category.latest_state || '').toLowerCase() === 'ignored'
+                        ? '最近一条同类告警已忽略，必要时可进入对应模块补做复核。'
+                        : (String(filters.severity || 'all') === 'all'
+                            ? '当前没有持续中的待处理告警。'
+                            : `当前筛选条件下没有命中的 ${filters.severity} 告警。`))
         )}</div>`}
             </div>
             ${hiddenItemCount > 0 ? `
                 <div class="ops-alert-monitor-card__hint">当前卡片仅展示前 3 项，另有 ${escapeConfigHtml(formatVerifyMonitorInteger(hiddenItemCount))} 项可通过“复制清单 / 导出 CSV”带走处理。</div>
             ` : ''}
             <div class="ops-alert-monitor-card__actions">
+                ${getOpsAlertMonitorDisplayActiveCount(category) > 0 ? `
+                    <button
+                        type="button"
+                        class="btn-add-config btn-add-config--compact"
+                        data-admin-action="settings-mark-ops-alert-monitor-category-handled"
+                        data-ops-alert-monitor-category-key="${escapeConfigHtml(category.key || '')}"
+                    >
+                        <i class="fas fa-check-double"></i> 本类标记已复核
+                    </button>
+                ` : ''}
                 <button
                     type="button"
                     class="btn-add-config btn-add-config--compact"
@@ -2558,6 +2814,60 @@ async function loadOpsAlertSettings(force = false) {
         return await loadOpsAlertSettings._loadingPromise;
     } finally {
         loadOpsAlertSettings._loadingPromise = null;
+    }
+}
+
+async function loadOpsAlertHealth(force = false) {
+    if (loadOpsAlertHealth._loadingPromise && !force) {
+        return loadOpsAlertHealth._loadingPromise;
+    }
+
+    opsAlertHealthState = {
+        ...(opsAlertHealthState || getDefaultOpsAlertHealthState()),
+        status: 'loading',
+        message: '正在加载站外告警通道健康状态...'
+    };
+    renderOpsAlertHealthPanel();
+
+    loadOpsAlertHealth._loadingPromise = (async () => {
+        try {
+            const headers = await getAdminConfigApiHeaders();
+            const response = await fetch('/api/admin/settings/ops-alert-health', {
+                method: 'GET',
+                headers
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || '加载站外告警通道健康状态失败');
+            }
+
+            opsAlertHealthState = {
+                status: 'ready',
+                fetched_at: payload.fetched_at || '',
+                summary: payload.summary || getDefaultOpsAlertHealthState().summary,
+                channels: Array.isArray(payload.channels) ? payload.channels : [],
+                recent_failures: Array.isArray(payload.recent_failures) ? payload.recent_failures : [],
+                message: ''
+            };
+            renderOpsAlertHealthPanel();
+            return payload;
+        } catch (error) {
+            console.warn('[Config] Ops alert health load failed:', error.message);
+            opsAlertHealthState = {
+                ...getDefaultOpsAlertHealthState(),
+                status: 'error',
+                message: error.message || '加载站外告警通道健康状态失败'
+            };
+            renderOpsAlertHealthPanel();
+            return null;
+        }
+    })();
+
+    try {
+        return await loadOpsAlertHealth._loadingPromise;
+    } finally {
+        loadOpsAlertHealth._loadingPromise = null;
     }
 }
 
@@ -3301,6 +3611,9 @@ function collectOpsAlertConfigFromForm() {
             },
             feishu: {
                 ...currentConfig.channels.feishu
+            },
+            email: {
+                ...currentConfig.channels.email
             }
         }
     };
@@ -3321,6 +3634,21 @@ function collectOpsAlertConfigFromForm() {
         document.getElementById('opsAlertFeishuSeverity')?.value,
         currentConfig.channels.feishu.minimum_severity
     );
+    nextConfig.channels.email.enabled = document.getElementById('opsAlertEmailEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.channels.email.enabled;
+    nextConfig.channels.email.minimum_severity = normalizeOpsAlertSeverity(
+        document.getElementById('opsAlertEmailSeverity')?.value,
+        currentConfig.channels.email.minimum_severity
+    );
+    nextConfig.channels.email.recipients = normalizeConfigStringArray(
+        document.getElementById('opsAlertEmailRecipients')?.value ?? currentConfig.channels.email.recipients
+    );
+    nextConfig.channels.email.from_address = String(
+        document.getElementById('opsAlertEmailFromAddress')?.value ?? currentConfig.channels.email.from_address
+    ).trim();
+    nextConfig.channels.email.subject_prefix = String(
+        document.getElementById('opsAlertEmailSubjectPrefix')?.value ?? currentConfig.channels.email.subject_prefix
+    ).trim() || currentConfig.channels.email.subject_prefix;
 
     return normalizeOpsAlertConfig(nextConfig);
 }
@@ -3328,7 +3656,8 @@ function collectOpsAlertConfigFromForm() {
 function clearOpsAlertSecretInputs() {
     [
         'opsAlertTelegramBotToken',
-        'opsAlertFeishuWebhookUrl'
+        'opsAlertFeishuWebhookUrl',
+        'opsAlertEmailApiKey'
     ].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.value = '';
@@ -3343,7 +3672,8 @@ async function saveOpsAlertSettings() {
             config,
             secrets: {
                 telegram_bot_token: document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '',
-                feishu_webhook_url: document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || ''
+                feishu_webhook_url: document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || '',
+                email_api_key: document.getElementById('opsAlertEmailApiKey')?.value?.trim() || ''
             }
         };
 
@@ -3361,6 +3691,9 @@ async function saveOpsAlertSettings() {
         systemConfigCache['ops_alerts'] = normalizeOpsAlertConfig(payload.config);
         opsAlertSecretStatus = payload.secrets || getDefaultOpsAlertSecretStatus();
         renderOpsAlertSettings();
+        loadOpsAlertHealth(true).catch((healthError) => {
+            console.warn('[Config] Ops alert health refresh after save failed:', healthError);
+        });
         clearOpsAlertSecretInputs();
         showConfigSavedToast(payload.message || '站外退款告警配置已保存');
         return true;
@@ -3372,19 +3705,25 @@ async function saveOpsAlertSettings() {
     }
 }
 
-async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
+async function sendOpsAlertPreviewRequest(action, fallbackMessage) {
     const config = collectOpsAlertConfigFromForm();
     const telegramEnabled = config.channels?.telegram?.enabled === true;
     const feishuEnabled = config.channels?.feishu?.enabled === true;
+    const emailEnabled = config.channels?.email?.enabled === true;
     const chatIds = Array.isArray(config.channels?.telegram?.chat_ids)
         ? config.channels.telegram.chat_ids
         : [];
+    const emailRecipients = Array.isArray(config.channels?.email?.recipients)
+        ? config.channels.email.recipients
+        : [];
     const hasStoredTelegramToken = Boolean(opsAlertSecretStatus?.telegram_bot_token?.configured);
     const hasStoredFeishuWebhook = Boolean(opsAlertSecretStatus?.feishu_webhook_url?.configured);
+    const hasStoredEmailApiKey = Boolean(opsAlertSecretStatus?.email_api_key?.configured);
     const providedTelegramToken = document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '';
     const providedFeishuWebhook = document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || '';
+    const providedEmailApiKey = document.getElementById('opsAlertEmailApiKey')?.value?.trim() || '';
 
-    if (!telegramEnabled && !feishuEnabled) {
+    if (!telegramEnabled && !feishuEnabled && !emailEnabled) {
         throw new Error('请先启用至少一个站外告警通道');
     }
 
@@ -3402,6 +3741,18 @@ async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
         throw new Error('已启用飞书告警，请先填写飞书 Webhook，或先保存已配置的后台密钥');
     }
 
+    if (emailEnabled) {
+        if (!emailRecipients.length) {
+            throw new Error('已启用邮件告警，请先填写至少一个收件邮箱');
+        }
+        if (!config.channels?.email?.from_address) {
+            throw new Error('已启用邮件告警，请先填写发件地址');
+        }
+        if (!providedEmailApiKey && !hasStoredEmailApiKey) {
+            throw new Error('已启用邮件告警，请先填写 Email API Key，或先保存已配置的后台密钥');
+        }
+    }
+
     const headers = await getAdminConfigApiHeaders();
     const response = await fetch('/api/admin/settings/ops-alerts', {
         method: 'POST',
@@ -3411,7 +3762,8 @@ async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
             config,
             secrets: {
                 telegram_bot_token: providedTelegramToken,
-                feishu_webhook_url: providedFeishuWebhook
+                feishu_webhook_url: providedFeishuWebhook,
+                email_api_key: providedEmailApiKey
             }
         })
     });
@@ -3427,7 +3779,7 @@ async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
 
 async function sendOpsAlertTelegramTest() {
     try {
-        return await sendOpsAlertTelegramRequest('send_test_telegram', '测试站外告警已发送');
+        return await sendOpsAlertPreviewRequest('send_test_telegram', '测试站外告警已发送');
     } catch (error) {
         console.error('[Config] Send ops alert test failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3437,7 +3789,7 @@ async function sendOpsAlertTelegramTest() {
 
 async function sendOpsAlertRefundSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_refund_telegram', '退款详情示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_refund_telegram', '退款详情示例消息已发送');
     } catch (error) {
         console.error('[Config] Send Telegram refund sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3447,7 +3799,7 @@ async function sendOpsAlertRefundSample() {
 
 async function sendOpsAlertGatewaySample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_gateway_degraded', '支付通道异常示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_gateway_degraded', '支付通道异常示例消息已发送');
     } catch (error) {
         console.error('[Config] Send payment gateway degraded sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3457,7 +3809,7 @@ async function sendOpsAlertGatewaySample() {
 
 async function sendOpsAlertGatewayRecoveredSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_gateway_recovered', '支付通道恢复示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_gateway_recovered', '支付通道恢复示例消息已发送');
     } catch (error) {
         console.error('[Config] Send payment gateway recovery sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3467,7 +3819,7 @@ async function sendOpsAlertGatewayRecoveredSample() {
 
 async function sendOpsAlertVerifyServiceDisabledSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_verify_service_disabled', '验证服务停摆示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_verify_service_disabled', '验证服务停摆示例消息已发送');
     } catch (error) {
         console.error('[Config] Send verify service disabled sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3477,7 +3829,7 @@ async function sendOpsAlertVerifyServiceDisabledSample() {
 
 async function sendOpsAlertVerifyQueueBacklogSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_verify_queue_backlog', '验证任务堆积示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_verify_queue_backlog', '验证任务堆积示例消息已发送');
     } catch (error) {
         console.error('[Config] Send verify queue backlog sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3487,7 +3839,7 @@ async function sendOpsAlertVerifyQueueBacklogSample() {
 
 async function sendOpsAlertVerifyFailureRateSpikeSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_verify_failure_rate_spike', '验证失败率异常示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_verify_failure_rate_spike', '验证失败率异常示例消息已发送');
     } catch (error) {
         console.error('[Config] Send verify failure rate spike sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3497,7 +3849,7 @@ async function sendOpsAlertVerifyFailureRateSpikeSample() {
 
 async function sendOpsAlertVerifyIncidentEscalatedSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_verify_incident_escalated', '验证综合异常示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_verify_incident_escalated', '验证综合异常示例消息已发送');
     } catch (error) {
         console.error('[Config] Send verify incident escalation sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3507,7 +3859,7 @@ async function sendOpsAlertVerifyIncidentEscalatedSample() {
 
 async function sendOpsAlertVerifyIncidentRecoveredSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_verify_incident_recovered', '验证恢复示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_verify_incident_recovered', '验证恢复示例消息已发送');
     } catch (error) {
         console.error('[Config] Send verify incident recovered sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3517,7 +3869,7 @@ async function sendOpsAlertVerifyIncidentRecoveredSample() {
 
 async function sendOpsAlertVerifyQuotaSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_verify_quota_low', '验证额度告警示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_verify_quota_low', '验证额度告警示例消息已发送');
     } catch (error) {
         console.error('[Config] Send verify quota sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3527,7 +3879,7 @@ async function sendOpsAlertVerifyQuotaSample() {
 
 async function sendOpsAlertTicketSlaSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_ticket_sla_overdue', '工单超时示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_ticket_sla_overdue', '工单超时示例消息已发送');
     } catch (error) {
         console.error('[Config] Send ticket SLA sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3537,7 +3889,7 @@ async function sendOpsAlertTicketSlaSample() {
 
 async function sendOpsAlertTicketSlaRecoveredSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_ticket_sla_recovered', '工单恢复示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_ticket_sla_recovered', '工单恢复示例消息已发送');
     } catch (error) {
         console.error('[Config] Send ticket SLA recovery sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3547,7 +3899,7 @@ async function sendOpsAlertTicketSlaRecoveredSample() {
 
 async function sendOpsAlertShopInventorySample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_shop_inventory_low', '库存预警示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_shop_inventory_low', '库存预警示例消息已发送');
     } catch (error) {
         console.error('[Config] Send shop inventory sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3557,7 +3909,7 @@ async function sendOpsAlertShopInventorySample() {
 
 async function sendOpsAlertShopInventoryRecoveredSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_shop_inventory_recovered', '库存恢复示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_shop_inventory_recovered', '库存恢复示例消息已发送');
     } catch (error) {
         console.error('[Config] Send shop inventory recovery sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3567,7 +3919,7 @@ async function sendOpsAlertShopInventoryRecoveredSample() {
 
 async function sendOpsAlertAdminLoginAnomalySample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_admin_login_anomaly', '管理员异常登录示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_admin_login_anomaly', '管理员异常登录示例消息已发送');
     } catch (error) {
         console.error('[Config] Send admin login anomaly sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3577,7 +3929,7 @@ async function sendOpsAlertAdminLoginAnomalySample() {
 
 async function sendOpsAlertShopOrderDeliveryFailedSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_failed', '履约失败示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_shop_order_delivery_failed', '履约失败示例消息已发送');
     } catch (error) {
         console.error('[Config] Send shop order delivery failed sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3587,7 +3939,7 @@ async function sendOpsAlertShopOrderDeliveryFailedSample() {
 
 async function sendOpsAlertShopOrderDeliveryIncidentSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_incident', '履约异常升级示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_shop_order_delivery_incident', '履约异常升级示例消息已发送');
     } catch (error) {
         console.error('[Config] Send shop order delivery incident sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3597,7 +3949,7 @@ async function sendOpsAlertShopOrderDeliveryIncidentSample() {
 
 async function sendOpsAlertShopOrderDeliveryIncidentRecoveredSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_incident_recovered', '履约事故恢复示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_shop_order_delivery_incident_recovered', '履约事故恢复示例消息已发送');
     } catch (error) {
         console.error('[Config] Send shop order delivery incident recovery sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3607,7 +3959,7 @@ async function sendOpsAlertShopOrderDeliveryIncidentRecoveredSample() {
 
 async function sendOpsAlertShopOrderDeliveryRecoveredSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_shop_order_delivery_recovered', '履约恢复示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_shop_order_delivery_recovered', '履约恢复示例消息已发送');
     } catch (error) {
         console.error('[Config] Send shop order delivery recovered sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3617,7 +3969,7 @@ async function sendOpsAlertShopOrderDeliveryRecoveredSample() {
 
 async function sendOpsAlertPaymentConfigChangedSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_payment_config_changed', '支付配置变更示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_payment_config_changed', '支付配置变更示例消息已发送');
     } catch (error) {
         console.error('[Config] Send payment config changed sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3627,7 +3979,7 @@ async function sendOpsAlertPaymentConfigChangedSample() {
 
 async function sendOpsAlertPaymentConfigIncidentSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_payment_config_incident', '支付配置异常升级示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_payment_config_incident', '支付配置异常升级示例消息已发送');
     } catch (error) {
         console.error('[Config] Send payment config incident sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3637,7 +3989,7 @@ async function sendOpsAlertPaymentConfigIncidentSample() {
 
 async function sendOpsAlertPaymentConfigIncidentRecoveredSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_payment_config_incident_recovered', '支付配置事故恢复示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_payment_config_incident_recovered', '支付配置事故恢复示例消息已发送');
     } catch (error) {
         console.error('[Config] Send payment config incident recovered sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3647,7 +3999,7 @@ async function sendOpsAlertPaymentConfigIncidentRecoveredSample() {
 
 async function sendOpsAlertPaymentConfigRecoveredSample() {
     try {
-        return await sendOpsAlertTelegramRequest('send_sample_payment_config_recovered', '支付配置恢复示例消息已发送');
+        return await sendOpsAlertPreviewRequest('send_sample_payment_config_recovered', '支付配置恢复示例消息已发送');
     } catch (error) {
         console.error('[Config] Send payment config recovered sample failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
@@ -3663,6 +4015,75 @@ async function refreshOpsAlertMonitorPanel() {
     }
     showToast('刷新失败: 请稍后重试', 'error');
     return false;
+}
+
+async function refreshOpsAlertHealthPanel() {
+    const result = await loadOpsAlertHealth(true);
+    if (result?.success) {
+        showConfigSavedToast('告警通道健康状态已刷新');
+        return true;
+    }
+    showToast('刷新失败: 请稍后重试', 'error');
+    return false;
+}
+
+function getOpsAlertMonitorBatchTargetJobIds(categoryKey = '') {
+    const filters = getOpsAlertMonitorViewFilters();
+    const categories = getOpsAlertMonitorPreparedCategories(filters);
+    const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
+    const selectedCategories = normalizedCategoryKey
+        ? categories.filter((category) => String(category.key || '').trim().toLowerCase() === normalizedCategoryKey)
+        : categories;
+
+    return Array.from(new Set(
+        selectedCategories.flatMap((category) => (
+            Array.isArray(category.visible_items)
+                ? category.visible_items.map((item) => String(item.id || '').trim()).filter(Boolean)
+                : []
+        ))
+    ));
+}
+
+async function markOpsAlertMonitorHandled(categoryKey = '', jobIds = []) {
+    const normalizedIds = Array.from(new Set(
+        (Array.isArray(jobIds) ? jobIds : getOpsAlertMonitorBatchTargetJobIds(categoryKey))
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)
+    ));
+
+    if (!normalizedIds.length) {
+        showToast('当前筛选条件下没有可复核的告警', 'info');
+        return false;
+    }
+
+    try {
+        const headers = await getAdminConfigApiHeaders();
+        const filters = getOpsAlertMonitorViewFilters();
+        const response = await fetch('/api/admin/settings/ops-alert-monitor', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                action: 'mark_handled',
+                jobIds: normalizedIds,
+                category: categoryKey || filters.category,
+                scope: filters.scope,
+                severity: filters.severity
+            })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '批量复核失败');
+        }
+
+        await loadOpsAlertMonitor(true);
+        showConfigSavedToast(payload.message || `已复核 ${normalizedIds.length} 条告警`);
+        return true;
+    } catch (error) {
+        console.error('[Config] Mark ops alert monitor handled failed:', error);
+        showToast('处理失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
 }
 
 function waitForOpsAlertWorkspacePaint() {
@@ -3849,7 +4270,8 @@ async function openOpsAlertWorkspace(workspaceKey, context = {}) {
 async function deleteOpsAlertSecret(secretName) {
     const secretLabels = {
         telegram_bot_token: 'Telegram Bot Token',
-        feishu_webhook_url: '飞书 Webhook'
+        feishu_webhook_url: '飞书 Webhook',
+        email_api_key: 'Email API Key'
     };
     const normalizedSecretName = String(secretName || '').trim();
     if (!secretLabels[normalizedSecretName]) {
@@ -3883,6 +4305,9 @@ async function deleteOpsAlertSecret(secretName) {
         systemConfigCache['ops_alerts'] = normalizeOpsAlertConfig(payload.config);
         opsAlertSecretStatus = payload.secrets || getDefaultOpsAlertSecretStatus();
         renderOpsAlertSettings();
+        loadOpsAlertHealth(true).catch((healthError) => {
+            console.warn('[Config] Ops alert health refresh after secret deletion failed:', healthError);
+        });
         clearOpsAlertSecretInputs();
         showConfigSavedToast(payload.message || '站外告警密钥已删除');
         return true;
@@ -3906,7 +4331,8 @@ function toggleOpsAlertsEnabled() {
 function toggleOpsAlertChannelEnabled(channelKey) {
     const toggleMap = {
         telegram: 'opsAlertTelegramEnabledToggle',
-        feishu: 'opsAlertFeishuEnabledToggle'
+        feishu: 'opsAlertFeishuEnabledToggle',
+        email: 'opsAlertEmailEnabledToggle'
     };
     const toggleEl = document.getElementById(toggleMap[channelKey]);
     if (!toggleEl) return;
@@ -6089,6 +6515,7 @@ window.togglePaymentProviderPanel = togglePaymentProviderPanel;
 window.handlePaymentChannelActiveChange = handlePaymentChannelActiveChange;
 window.savePaymentChannelSettings = savePaymentChannelSettings;
 window.loadOpsAlertSettings = loadOpsAlertSettings;
+window.loadOpsAlertHealth = loadOpsAlertHealth;
 window.loadOpsAlertMonitor = loadOpsAlertMonitor;
 window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;
 window.toggleOpsAlertChannelEnabled = toggleOpsAlertChannelEnabled;
@@ -6116,8 +6543,10 @@ window.sendOpsAlertPaymentConfigChangedSample = sendOpsAlertPaymentConfigChanged
 window.sendOpsAlertPaymentConfigIncidentSample = sendOpsAlertPaymentConfigIncidentSample;
 window.sendOpsAlertPaymentConfigIncidentRecoveredSample = sendOpsAlertPaymentConfigIncidentRecoveredSample;
 window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;
+window.refreshOpsAlertHealthPanel = refreshOpsAlertHealthPanel;
 window.refreshOpsAlertMonitorPanel = refreshOpsAlertMonitorPanel;
 window.setOpsAlertMonitorFilter = setOpsAlertMonitorFilter;
+window.markOpsAlertMonitorHandled = markOpsAlertMonitorHandled;
 window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;
 window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;
 window.openOpsAlertWorkspace = openOpsAlertWorkspace;

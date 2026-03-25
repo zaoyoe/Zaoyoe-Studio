@@ -19581,6 +19581,19 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     margin-top: 1px;
 }
 
+#settings-view-pricing .config-card[data-config="ops-alerts"] .config-input-wrapper .config-input,
+#settings-view-pricing .config-card[data-config="ops-alerts"] .config-input-wrapper textarea.config-input,
+#settings-view-pricing .config-card[data-config="ops-alerts"] .config-input-wrapper select.config-input {
+    width: min(100%, 320px);
+    min-width: 220px;
+    text-align: left;
+}
+
+#settings-view-pricing .config-card[data-config="ops-alerts"] .config-input-wrapper textarea.config-input {
+    min-height: 88px;
+    resize: vertical;
+}
+
 /* Config Row */
 .config-row {
     display: flex;
@@ -20084,6 +20097,244 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: flex;
     flex-direction: column;
     gap: 16px;
+}
+
+.ops-alert-health-panel {
+    margin-top: 6px;
+    padding: 20px;
+    border-radius: 18px;
+    background: rgba(6, 16, 31, 0.6);
+    border: 1px solid rgba(107, 158, 206, 0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.ops-alert-health-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 14px;
+}
+
+.ops-alert-health-card {
+    border-radius: 16px;
+    padding: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.03);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+.ops-alert-health-card--neutral {
+    border-color: rgba(107, 158, 206, 0.18);
+}
+
+.ops-alert-health-card--success {
+    border-color: rgba(88, 196, 135, 0.34);
+    box-shadow: inset 0 0 0 1px rgba(88, 196, 135, 0.08);
+}
+
+.ops-alert-health-card--warning {
+    border-color: rgba(246, 189, 96, 0.36);
+    box-shadow: inset 0 0 0 1px rgba(246, 189, 96, 0.08);
+}
+
+.ops-alert-health-card--danger {
+    border-color: rgba(240, 98, 108, 0.36);
+    box-shadow: inset 0 0 0 1px rgba(240, 98, 108, 0.08);
+}
+
+.ops-alert-health-card__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.ops-alert-health-card__title {
+    font-size: 0.96rem;
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+.ops-alert-health-card__badges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.ops-alert-health-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+}
+
+.ops-alert-health-badge--neutral {
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.ops-alert-health-badge--success {
+    color: #c7f9d8;
+    background: rgba(88, 196, 135, 0.12);
+    border-color: rgba(88, 196, 135, 0.28);
+}
+
+.ops-alert-health-badge--warning {
+    color: #ffe6a3;
+    background: rgba(246, 189, 96, 0.12);
+    border-color: rgba(246, 189, 96, 0.28);
+}
+
+.ops-alert-health-badge--danger {
+    color: #ffd1d8;
+    background: rgba(240, 98, 108, 0.12);
+    border-color: rgba(240, 98, 108, 0.28);
+}
+
+.ops-alert-health-card__summary,
+.ops-alert-health-card__empty {
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+    line-height: 1.6;
+}
+
+.ops-alert-health-card__metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.ops-alert-health-card__metrics > div {
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ops-alert-health-card__metrics strong {
+    color: var(--text-main);
+    font-size: 1rem;
+}
+
+.ops-alert-health-card__metrics span,
+.ops-alert-health-card__meta span {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.ops-alert-health-card__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+}
+
+.ops-alert-health-card__errors {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ops-alert-health-card__error {
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ops-alert-health-card__error strong {
+    color: var(--text-main);
+    font-size: 0.82rem;
+}
+
+.ops-alert-health-card__error span {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+.ops-alert-health-failures {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.ops-alert-health-failures__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.ops-alert-health-failures__head h5 {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ops-alert-health-failures__head span {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}
+
+.ops-alert-health-failures__list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ops-alert-health-failure-item {
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.045);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ops-alert-health-failure-item__top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.ops-alert-health-failure-item__top strong {
+    color: var(--text-main);
+    font-size: 0.88rem;
+}
+
+.ops-alert-health-failure-item__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+}
+
+.ops-alert-health-failure-item__meta span,
+.ops-alert-health-empty {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    line-height: 1.55;
 }
 
 .ops-alert-workspace-panel__head {

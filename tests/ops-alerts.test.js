@@ -7,6 +7,7 @@ const {
     __testUtils,
     enqueueOpsAlertJob,
     normalizeOpsAlertsConfig,
+    sendEmailAlert,
     sendFeishuAlert,
     sweepOpsAlertJobs
 } = require('../api/_lib/ops-alerts');
@@ -492,6 +493,84 @@ test('sendFeishuAlert treats non-zero webhook result codes as delivery failures'
     assert.equal(result.ok, false);
     assert.equal(result.status, 200);
     assert.match(result.error || '', /Key Words Not Found|feishu_error_19024/);
+});
+
+test('sendEmailAlert reports missing configuration when API key or recipients are absent', async () => {
+    const result = await sendEmailAlert({
+        alert_type: 'payment_refund_ops',
+        severity: 'critical',
+        title: '支付退款积分回滚失败'
+    }, {
+        config: normalizeOpsAlertsConfig({
+            channels: {
+                email: {
+                    enabled: true,
+                    minimum_severity: 'critical',
+                    recipients: [],
+                    from_address: ''
+                }
+            }
+        }),
+        secrets: {
+            email_api_key: ''
+        }
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 0);
+    assert.equal(result.error, 'email_not_configured');
+});
+
+test('sendEmailAlert posts Resend-compatible payloads with bearer auth', async () => {
+    const calls = [];
+    const result = await sendEmailAlert({
+        alert_type: 'payment_config_incident',
+        severity: 'critical',
+        title: '支付配置异常升级（3 次）',
+        payload: {
+            lookback_minutes: 20,
+            incident_change_count: 3,
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计'
+        }
+    }, {
+        config: normalizeOpsAlertsConfig({
+            channels: {
+                email: {
+                    enabled: true,
+                    minimum_severity: 'critical',
+                    recipients: ['ops@example.com', 'owner@example.com'],
+                    from_address: 'Zaoyoe Alerts <alerts@zaoyoe.com>',
+                    subject_prefix: '[Zaoyoe] '
+                }
+            }
+        }),
+        secrets: {
+            email_api_key: 'resend-secret'
+        }
+    }, {
+        fetchImpl: async (url, options) => {
+            calls.push({ url, options });
+            return {
+                ok: true,
+                status: 200,
+                async text() {
+                    return JSON.stringify({ id: 'email_123' });
+                }
+            };
+        }
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, 'https://api.resend.com/emails');
+    assert.equal(calls[0].options.method, 'POST');
+    assert.equal(calls[0].options.headers.Authorization, 'Bearer resend-secret');
+
+    const body = JSON.parse(calls[0].options.body);
+    assert.equal(body.from, 'Zaoyoe Alerts <alerts@zaoyoe.com>');
+    assert.deepEqual(body.to, ['ops@example.com', 'owner@example.com']);
+    assert.match(body.subject, /^\[Zaoyoe\]/);
+    assert.match(body.text, /支付配置事故/);
 });
 
 test('buildExternalAlertText renders provider degradation details for payment gateway alerts', () => {
