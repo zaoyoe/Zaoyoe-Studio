@@ -63,6 +63,7 @@
 | --- | --- | --- | --- | --- | --- |
 | `payment_refund_ops` | 退款失败、扣回失败、补回失败 | `critical` | TG + 飞书 + 站内 | 45 分钟 | 订单号、用户ID、金额、积分、通道、最近错误 |
 | `payment_gateway_degraded` | 支付成功率骤降 / 回调异常暴涨 | `critical` | TG + 飞书 + 站内 | 15 分钟 | 站点、通道、时间窗、失败率 |
+| `payment_gateway_recovered` | 支付通道退出异常阈值，转入恢复观察 | `warning` | 飞书 + 站内 | 每次事故 1 次 | 站点、通道、持续时长、当前健康概览 |
 | `payment_pending_review_spike` | 待审核订单短时堆积 | `warning` | 飞书 + 站内 | 30 分钟 | 订单数、站点、通道 |
 | `payment_site_resolution_failed` | 回调无法可信解析站点 | `critical` | TG + 飞书 + 站内 | 10 分钟 | provider、订单号、host、最近错误 |
 | `payment_config_changed` | 支付配置或密钥被修改 | `critical` | TG + 飞书 + 站内 | 5 分钟 | 操作人、变更项、时间 |

@@ -2933,7 +2933,13 @@ async function sweepPaymentGatewayHealth() {
             env: process.env
         });
 
-        if (Number(result?.degraded_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+        if (
+            Number(result?.degraded_count || 0) > 0
+            || Number(result?.queued || 0) > 0
+            || Number(result?.recovered_count || 0) > 0
+            || Number(result?.recovered_queued || 0) > 0
+            || Number(result?.admin_notifications_created || 0) > 0
+        ) {
             console.log('[PaymentGatewayMonitor] Sweep complete:', JSON.stringify(result));
         }
     } catch (error) {

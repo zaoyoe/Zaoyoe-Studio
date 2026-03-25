@@ -335,6 +335,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-gateway-sample':
                 window.sendOpsAlertGatewaySample?.();
                 break;
+            case 'settings-send-ops-alert-gateway-recovered-sample':
+                window.sendOpsAlertGatewayRecoveredSample?.();
+                break;
             case 'settings-send-ops-alert-verify-service-disabled-sample':
                 window.sendOpsAlertVerifyServiceDisabledSample?.();
                 break;

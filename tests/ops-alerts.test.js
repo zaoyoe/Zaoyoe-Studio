@@ -439,6 +439,52 @@ test('buildExternalAlertText renders provider degradation details for payment ga
     assert.match(text, /处理入口：支付对账 -> 支付总览 -> 通道表现 \/ 最近24小时异常趋势/);
 });
 
+test('buildExternalAlertText renders payment gateway recovery details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'payment_gateway_recovered',
+        severity: 'warning',
+        title: '爱发电 支付通道已恢复（CN）',
+        payload: {
+            provider: 'afdian',
+            site: 'cn',
+            recovery_summary: '支付通道异常阈值已解除',
+            incident_started_at: '2026-03-25T09:30:00.000Z',
+            incident_recovered_at: '2026-03-25T09:54:00.000Z',
+            incident_duration_minutes: 24,
+            previous_degraded_reasons: [
+                '支付成功率仅 16.67%（1/6）',
+                '回调 5xx 已累计 3 次'
+            ],
+            total_orders: 8,
+            paid_orders: 7,
+            review_orders: 1,
+            failed_orders: 0,
+            paid_rate: 87.5,
+            webhook_total: 6,
+            webhook_success: 6,
+            webhook_failed: 0,
+            webhook_5xx: 0,
+            webhook_success_rate: 100,
+            query_total: 6,
+            query_success: 6,
+            query_failed: 0,
+            query_5xx: 0,
+            query_success_rate: 100,
+            entry_path: '支付对账 -> 支付总览 -> 通道表现 / 最近24小时异常趋势'
+        }
+    });
+
+    assert.match(text, /支付通道恢复/);
+    assert.match(text, /支付通道：爱发电/);
+    assert.match(text, /站点：CN/);
+    assert.match(text, /恢复结论：支付通道异常阈值已解除/);
+    assert.match(text, /上次异常：2026-03-25T09:30:00.000Z/);
+    assert.match(text, /恢复时间：2026-03-25T09:54:00.000Z/);
+    assert.match(text, /持续时长：24 分钟/);
+    assert.match(text, /上次异常信号：支付成功率仅 16.67%（1\/6）；回调 5xx 已累计 3 次/);
+    assert.match(text, /当前订单概览：总 8 笔 \/ 成功 7 笔 \/ 待审核 1 笔 \/ 失败 0 笔 \/ 成功率 87\.50%/);
+});
+
 test('buildExternalAlertText renders verify quota low details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'verify_quota_low',

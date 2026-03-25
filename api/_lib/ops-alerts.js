@@ -503,6 +503,10 @@ function buildExternalAlertText(job = {}) {
     if (gatewayAlertText) {
         return gatewayAlertText;
     }
+    const gatewayRecoveredText = buildPaymentGatewayRecoveredAlertText(job);
+    if (gatewayRecoveredText) {
+        return gatewayRecoveredText;
+    }
     const verifyServiceText = buildVerifyServiceDisabledAlertText(job);
     if (verifyServiceText) {
         return verifyServiceText;
@@ -718,6 +722,45 @@ function buildPaymentGatewayDegradedAlertText(job = {}) {
     }
     if (Number(payload.query_total || 0) > 0) {
         lines.push(`查码概览：总 ${Number(payload.query_total || 0)} 次 / 成功 ${Number(payload.query_success || 0)} 次 / 失败 ${Number(payload.query_failed || 0)} 次 / 4xx ${Number(payload.query_4xx || 0)} 次 / 5xx ${Number(payload.query_5xx || 0)} 次 / 成功率 ${formatPercent(payload.query_success_rate)}`);
+    }
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildPaymentGatewayRecoveredAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'payment_gateway_recovered') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const providerLabel = getProviderLabel(payload.provider);
+    const siteLabel = normalizeText(payload.site).toUpperCase();
+    const previousReasons = Array.isArray(payload.previous_degraded_reasons)
+        ? payload.previous_degraded_reasons.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+
+    const lines = [
+        `[支付通道恢复][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '支付通道已恢复'}`
+    ];
+
+    if (providerLabel) lines.push(`支付通道：${providerLabel}`);
+    if (siteLabel) lines.push(`站点：${siteLabel}`);
+    if (normalizeText(payload.recovery_summary)) lines.push(`恢复结论：${normalizeText(payload.recovery_summary)}`);
+    if (normalizeText(payload.incident_started_at)) lines.push(`上次异常：${formatTimestamp(payload.incident_started_at)}`);
+    if (normalizeText(payload.incident_recovered_at)) lines.push(`恢复时间：${formatTimestamp(payload.incident_recovered_at)}`);
+    if (Number.isFinite(Number(payload.incident_duration_minutes))) {
+        lines.push(`持续时长：${Math.max(0, Math.round(Number(payload.incident_duration_minutes || 0)))} 分钟`);
+    }
+    if (previousReasons.length) lines.push(`上次异常信号：${previousReasons.join('；')}`);
+    if (Number(payload.total_orders || 0) > 0) {
+        lines.push(`当前订单概览：总 ${Number(payload.total_orders || 0)} 笔 / 成功 ${Number(payload.paid_orders || 0)} 笔 / 待审核 ${Number(payload.review_orders || 0)} 笔 / 失败 ${Number(payload.failed_orders || 0)} 笔 / 成功率 ${formatPercent(payload.paid_rate)}`);
+    }
+    if (Number(payload.webhook_total || 0) > 0) {
+        lines.push(`当前回调概览：总 ${Number(payload.webhook_total || 0)} 次 / 成功 ${Number(payload.webhook_success || 0)} 次 / 失败 ${Number(payload.webhook_failed || 0)} 次 / 5xx ${Number(payload.webhook_5xx || 0)} 次 / 成功率 ${formatPercent(payload.webhook_success_rate)}`);
+    }
+    if (Number(payload.query_total || 0) > 0) {
+        lines.push(`当前查码概览：总 ${Number(payload.query_total || 0)} 次 / 成功 ${Number(payload.query_success || 0)} 次 / 失败 ${Number(payload.query_failed || 0)} 次 / 5xx ${Number(payload.query_5xx || 0)} 次 / 成功率 ${formatPercent(payload.query_success_rate)}`);
     }
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 

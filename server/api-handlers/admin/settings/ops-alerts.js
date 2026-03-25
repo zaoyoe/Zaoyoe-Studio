@@ -273,6 +273,45 @@ function buildGatewayDegradedSampleJob(user) {
     };
 }
 
+function buildGatewayRecoveredSampleJob(user) {
+    return {
+        alert_type: 'payment_gateway_recovered',
+        severity: 'warning',
+        title: '虎皮椒 支付通道已恢复（CN）',
+        payload: {
+            provider: 'hupijiao',
+            site: 'cn',
+            target_id: 'payment_gateway:hupijiao:cn',
+            gateway_alert_job_id: 'payment-gateway-demo-001',
+            incident_started_at: '2026-03-25T09:30:00.000Z',
+            incident_recovered_at: new Date().toISOString(),
+            incident_duration_minutes: 24,
+            recovery_summary: '支付通道异常阈值已解除',
+            previous_degraded_reasons: [
+                '支付成功率仅 33.33%（2/6）',
+                '回调成功率仅 40.00%（失败 3，5xx 3）'
+            ],
+            total_orders: 8,
+            paid_orders: 7,
+            review_orders: 1,
+            failed_orders: 0,
+            paid_rate: 87.5,
+            webhook_total: 6,
+            webhook_success: 6,
+            webhook_failed: 0,
+            webhook_5xx: 0,
+            webhook_success_rate: 100,
+            query_total: 6,
+            query_success: 6,
+            query_failed: 0,
+            query_5xx: 0,
+            query_success_rate: 100,
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了支付通道恢复示例发送`,
+            entry_path: '支付对账 -> 支付总览 -> 通道表现 / 最近24小时异常趋势（示例）'
+        }
+    };
+}
+
 function buildVerifyQuotaLowSampleJob(user) {
     return {
         alert_type: 'verify_quota_low',
@@ -600,6 +639,7 @@ module.exports = async (req, res) => {
                 sanitizeText(body.action) === 'send_test_telegram'
                 || sanitizeText(body.action) === 'send_sample_refund_telegram'
                 || sanitizeText(body.action) === 'send_sample_gateway_degraded'
+                || sanitizeText(body.action) === 'send_sample_gateway_recovered'
                 || sanitizeText(body.action) === 'send_sample_verify_service_disabled'
                 || sanitizeText(body.action) === 'send_sample_verify_queue_backlog'
                 || sanitizeText(body.action) === 'send_sample_verify_failure_rate_spike'
@@ -623,6 +663,8 @@ module.exports = async (req, res) => {
                         ? buildTelegramRefundSampleJob(user)
                     : normalizedAction === 'send_sample_gateway_degraded'
                         ? buildGatewayDegradedSampleJob(user)
+                    : normalizedAction === 'send_sample_gateway_recovered'
+                        ? buildGatewayRecoveredSampleJob(user)
                         : normalizedAction === 'send_sample_verify_service_disabled'
                             ? buildVerifyServiceDisabledSampleJob(user)
                         : normalizedAction === 'send_sample_verify_queue_backlog'
@@ -655,6 +697,8 @@ module.exports = async (req, res) => {
                         ? 'admin.ops_alerts.telegram_refund_sample'
                         : normalizedAction === 'send_sample_gateway_degraded'
                             ? 'admin.ops_alerts.gateway_degraded_sample'
+                        : normalizedAction === 'send_sample_gateway_recovered'
+                            ? 'admin.ops_alerts.gateway_recovered_sample'
                         : normalizedAction === 'send_sample_verify_service_disabled'
                             ? 'admin.ops_alerts.verify_service_disabled_sample'
                         : normalizedAction === 'send_sample_verify_queue_backlog'
@@ -699,7 +743,9 @@ module.exports = async (req, res) => {
                         ? `退款详情示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : normalizedAction === 'send_sample_gateway_degraded'
                             ? `支付通道异常示例消息已发送到 ${channelLabels || '已启用通道'}`
-                            : normalizedAction === 'send_sample_verify_service_disabled'
+                        : normalizedAction === 'send_sample_gateway_recovered'
+                            ? `支付通道恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
+                        : normalizedAction === 'send_sample_verify_service_disabled'
                                 ? `验证服务停摆示例消息已发送到 ${channelLabels || '已启用通道'}`
                             : normalizedAction === 'send_sample_verify_queue_backlog'
                                 ? `验证任务堆积示例消息已发送到 ${channelLabels || '已启用通道'}`

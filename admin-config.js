@@ -2150,6 +2150,16 @@ async function sendOpsAlertGatewaySample() {
     }
 }
 
+async function sendOpsAlertGatewayRecoveredSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_gateway_recovered', '支付通道恢复示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send payment gateway recovery sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function sendOpsAlertVerifyServiceDisabledSample() {
     try {
         return await sendOpsAlertTelegramRequest('send_sample_verify_service_disabled', '验证服务停摆示例消息已发送');
@@ -4255,6 +4265,7 @@ window.saveOpsAlertSettings = saveOpsAlertSettings;
 window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;
 window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;
 window.sendOpsAlertGatewaySample = sendOpsAlertGatewaySample;
+window.sendOpsAlertGatewayRecoveredSample = sendOpsAlertGatewayRecoveredSample;
 window.sendOpsAlertVerifyServiceDisabledSample = sendOpsAlertVerifyServiceDisabledSample;
 window.sendOpsAlertVerifyQueueBacklogSample = sendOpsAlertVerifyQueueBacklogSample;
 window.sendOpsAlertVerifyFailureRateSpikeSample = sendOpsAlertVerifyFailureRateSpikeSample;
