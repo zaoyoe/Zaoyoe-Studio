@@ -503,6 +503,10 @@ function buildExternalAlertText(job = {}) {
     if (verifyFailureText) {
         return verifyFailureText;
     }
+    const verifyIncidentText = buildVerifyIncidentEscalatedAlertText(job);
+    if (verifyIncidentText) {
+        return verifyIncidentText;
+    }
     const verifyQueueText = buildVerifyQueueBacklogAlertText(job);
     if (verifyQueueText) {
         return verifyQueueText;
@@ -827,6 +831,38 @@ function buildVerifyFailureRateSpikeAlertText(job = {}) {
     if (affectedUsers.length) lines.push(`受影响用户：${affectedUsers.join('、')}`);
     if (hotErrors.length) lines.push(`最近错误：${hotErrors.join('；')}`);
     if (normalizeText(payload.checked_at)) lines.push(`检查时间：${formatTimestamp(payload.checked_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildVerifyIncidentEscalatedAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'verify_incident_escalated') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const signalLabels = Array.isArray(payload.signal_labels)
+        ? payload.signal_labels.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const signalSummaries = Array.isArray(payload.signal_summaries)
+        ? payload.signal_summaries.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const signalTimeline = Array.isArray(payload.signal_timeline)
+        ? payload.signal_timeline.map((item) => normalizeText(item)).filter(Boolean)
+        : [];
+    const lines = [
+        `[验证综合告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '验证异常升级'}`
+    ];
+
+    if (normalizeText(payload.key_name)) lines.push(`API Key：${normalizeText(payload.key_name)}`);
+    if (normalizeText(payload.api_base_url)) lines.push(`API Base：${normalizeText(payload.api_base_url)}`);
+    if (Number.isFinite(Number(payload.lookback_minutes))) lines.push(`时间窗：最近 ${Math.max(1, Math.round(Number(payload.lookback_minutes)))} 分钟`);
+    if (signalLabels.length) lines.push(`升级信号：${signalLabels.join('、')}`);
+    if (Number.isFinite(Number(payload.triggered_signal_count))) lines.push(`命中数量：${Math.max(0, Math.round(Number(payload.triggered_signal_count || 0)))} 类`);
+    if (signalSummaries.length) lines.push(`关键摘要：${signalSummaries.join('；')}`);
+    if (signalTimeline.length) lines.push(`最近触发：${signalTimeline.join('；')}`);
+    if (normalizeText(payload.latest_signal_at)) lines.push(`最新时间：${formatTimestamp(payload.latest_signal_at)}`);
     if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
 
     return lines.filter(Boolean).join('\n');

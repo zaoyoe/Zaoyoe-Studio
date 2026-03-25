@@ -384,6 +384,36 @@ function buildVerifyFailureRateSpikeSampleJob(user) {
     };
 }
 
+function buildVerifyIncidentEscalatedSampleJob(user) {
+    return {
+        alert_type: 'verify_incident_escalated',
+        severity: 'critical',
+        title: '验证综合异常升级（primary-key）',
+        payload: {
+            target_id: 'verify_incident:https://iqless.icu',
+            key_name: 'primary-key',
+            api_base_url: 'https://iqless.icu',
+            lookback_minutes: 30,
+            triggered_signal_count: 3,
+            signal_types: ['verify_service_disabled', 'verify_failure_rate_spike', 'verify_queue_backlog'],
+            signal_labels: ['验证服务停摆', '验证失败率飙升', '验证任务堆积'],
+            signal_summaries: [
+                '服务不可用 / balance_http_503',
+                '失败率 77.78%（7/9）',
+                '排队 18 个 / 本地活跃 11 个'
+            ],
+            signal_timeline: [
+                '验证服务停摆：2026-03-25T10:00:00.000Z',
+                '验证失败率飙升：2026-03-25T10:02:00.000Z',
+                '验证任务堆积：2026-03-25T10:04:00.000Z'
+            ],
+            latest_signal_at: '2026-03-25T10:04:00.000Z',
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了验证综合异常示例发送`,
+            entry_path: '后台设置 -> 验证服务配置 -> 站外告警 / 最近任务状态 / 验证日志（示例）'
+        }
+    };
+}
+
 function buildTicketSlaOverdueSampleJob(user) {
     const createdAt = new Date(Date.now() - 195 * 60 * 1000).toISOString();
     return {
@@ -549,6 +579,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_verify_service_disabled'
                 || sanitizeText(body.action) === 'send_sample_verify_queue_backlog'
                 || sanitizeText(body.action) === 'send_sample_verify_failure_rate_spike'
+                || sanitizeText(body.action) === 'send_sample_verify_incident_escalated'
                 || sanitizeText(body.action) === 'send_sample_verify_quota_low'
                 || sanitizeText(body.action) === 'send_sample_ticket_sla_overdue'
                 || sanitizeText(body.action) === 'send_sample_shop_inventory_low'
@@ -573,6 +604,8 @@ module.exports = async (req, res) => {
                             ? buildVerifyQueueBacklogSampleJob(user)
                         : normalizedAction === 'send_sample_verify_failure_rate_spike'
                             ? buildVerifyFailureRateSpikeSampleJob(user)
+                        : normalizedAction === 'send_sample_verify_incident_escalated'
+                            ? buildVerifyIncidentEscalatedSampleJob(user)
                         : normalizedAction === 'send_sample_verify_quota_low'
                             ? buildVerifyQuotaLowSampleJob(user)
                             : normalizedAction === 'send_sample_ticket_sla_overdue'
@@ -601,6 +634,8 @@ module.exports = async (req, res) => {
                             ? 'admin.ops_alerts.verify_queue_backlog_sample'
                         : normalizedAction === 'send_sample_verify_failure_rate_spike'
                             ? 'admin.ops_alerts.verify_failure_rate_spike_sample'
+                        : normalizedAction === 'send_sample_verify_incident_escalated'
+                            ? 'admin.ops_alerts.verify_incident_escalated_sample'
                         : normalizedAction === 'send_sample_verify_quota_low'
                                 ? 'admin.ops_alerts.verify_quota_sample'
                                 : normalizedAction === 'send_sample_ticket_sla_overdue'
@@ -641,6 +676,8 @@ module.exports = async (req, res) => {
                                 ? `验证任务堆积示例消息已发送到 ${channelLabels || '已启用通道'}`
                             : normalizedAction === 'send_sample_verify_failure_rate_spike'
                                 ? `验证失败率异常示例消息已发送到 ${channelLabels || '已启用通道'}`
+                            : normalizedAction === 'send_sample_verify_incident_escalated'
+                                ? `验证综合异常示例消息已发送到 ${channelLabels || '已启用通道'}`
                             : normalizedAction === 'send_sample_verify_quota_low'
                                 ? `验证额度告警示例消息已发送到 ${channelLabels || '已启用通道'}`
                                 : normalizedAction === 'send_sample_ticket_sla_overdue'

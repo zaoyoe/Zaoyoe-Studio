@@ -530,6 +530,44 @@ test('buildExternalAlertText renders verify failure spike details', () => {
     assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 最近任务状态 \/ 验证日志/);
 });
 
+test('buildExternalAlertText renders verify incident escalation details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'verify_incident_escalated',
+        severity: 'critical',
+        title: '验证综合异常升级（primary-key）',
+        payload: {
+            key_name: 'primary-key',
+            api_base_url: 'https://iqless.icu',
+            lookback_minutes: 30,
+            triggered_signal_count: 3,
+            signal_labels: ['验证服务停摆', '验证失败率飙升', '验证任务堆积'],
+            signal_summaries: [
+                '服务不可用 / balance_http_503',
+                '失败率 77.78%（7/9）',
+                '排队 18 个 / 本地活跃 11 个'
+            ],
+            signal_timeline: [
+                '验证服务停摆：2026-03-25T10:00:00.000Z',
+                '验证失败率飙升：2026-03-25T10:02:00.000Z',
+                '验证任务堆积：2026-03-25T10:04:00.000Z'
+            ],
+            latest_signal_at: '2026-03-25T10:04:00.000Z',
+            entry_path: '后台设置 -> 验证服务配置 -> 站外告警 / 最近任务状态 / 验证日志'
+        }
+    });
+
+    assert.match(text, /验证综合告警/);
+    assert.match(text, /API Key：primary-key/);
+    assert.match(text, /API Base：https:\/\/iqless\.icu/);
+    assert.match(text, /时间窗：最近 30 分钟/);
+    assert.match(text, /升级信号：验证服务停摆、验证失败率飙升、验证任务堆积/);
+    assert.match(text, /命中数量：3 类/);
+    assert.match(text, /关键摘要：服务不可用 \/ balance_http_503；失败率 77\.78%（7\/9）；排队 18 个 \/ 本地活跃 11 个/);
+    assert.match(text, /最近触发：验证服务停摆：2026-03-25T10:00:00.000Z；验证失败率飙升：2026-03-25T10:02:00.000Z；验证任务堆积：2026-03-25T10:04:00.000Z/);
+    assert.match(text, /最新时间：2026-03-25T10:04:00.000Z/);
+    assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 站外告警 \/ 最近任务状态 \/ 验证日志/);
+});
+
 test('buildExternalAlertText renders verify queue backlog details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'verify_queue_backlog',

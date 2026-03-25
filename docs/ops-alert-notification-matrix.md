@@ -94,6 +94,7 @@
 | `verify_quota_low` | 验证额度低于阈值 | `warning` | 飞书 + 站内 | 6 小时 | 剩余额度、预计可用时长 |
 | `verify_service_disabled` | 验证服务被关闭或不可用 | `critical` | TG + 飞书 + 站内 | 15 分钟 | 当前状态、最近错误 |
 | `verify_failure_rate_spike` | 验证失败率飙升 | `critical` | TG + 飞书 + 站内 | 15 分钟 | 时间窗、失败率、受影响用户 |
+| `verify_incident_escalated` | 多类验证高危信号叠加，升级成综合告警 | `critical` | TG + 飞书 + 站内 | 20 分钟 | 命中信号、关键摘要、最新时间 |
 | `verify_latency_spike` | 耗时异常升高 | `warning` | 飞书 + 站内 | 30 分钟 | p95/p99 耗时 |
 | `verify_queue_backlog` | 任务堆积 / 并发锁冲突放大 | `warning` | 飞书 + 站内 | 30 分钟 | 任务数、热点目标、最近错误 |
 

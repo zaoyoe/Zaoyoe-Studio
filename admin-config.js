@@ -2180,6 +2180,16 @@ async function sendOpsAlertVerifyFailureRateSpikeSample() {
     }
 }
 
+async function sendOpsAlertVerifyIncidentEscalatedSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_verify_incident_escalated', '验证综合异常示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send verify incident escalation sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function sendOpsAlertVerifyQuotaSample() {
     try {
         return await sendOpsAlertTelegramRequest('send_sample_verify_quota_low', '验证额度告警示例消息已发送');
@@ -4238,6 +4248,7 @@ window.sendOpsAlertGatewaySample = sendOpsAlertGatewaySample;
 window.sendOpsAlertVerifyServiceDisabledSample = sendOpsAlertVerifyServiceDisabledSample;
 window.sendOpsAlertVerifyQueueBacklogSample = sendOpsAlertVerifyQueueBacklogSample;
 window.sendOpsAlertVerifyFailureRateSpikeSample = sendOpsAlertVerifyFailureRateSpikeSample;
+window.sendOpsAlertVerifyIncidentEscalatedSample = sendOpsAlertVerifyIncidentEscalatedSample;
 window.sendOpsAlertVerifyQuotaSample = sendOpsAlertVerifyQuotaSample;
 window.sendOpsAlertTicketSlaSample = sendOpsAlertTicketSlaSample;
 window.sendOpsAlertShopInventorySample = sendOpsAlertShopInventorySample;

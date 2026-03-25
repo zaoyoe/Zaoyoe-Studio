@@ -344,6 +344,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-verify-failure-rate-spike-sample':
                 window.sendOpsAlertVerifyFailureRateSpikeSample?.();
                 break;
+            case 'settings-send-ops-alert-verify-incident-escalated-sample':
+                window.sendOpsAlertVerifyIncidentEscalatedSample?.();
+                break;
             case 'settings-send-ops-alert-verify-quota-sample':
                 window.sendOpsAlertVerifyQuotaSample?.();
                 break;
