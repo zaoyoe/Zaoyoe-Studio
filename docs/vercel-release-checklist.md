@@ -5,6 +5,10 @@
 1. 减少 Vercel 免费额度被 `Preview` 自动部署吃满
 2. 保证 `main` 上线前后的安全检查不会漏掉
 
+如果这次是“第一阶段正式收官”发布，先配合看：
+
+- [stage-one-launch-checklist.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/stage-one-launch-checklist.md)
+
 ## 1. 当前分支策略
 
 - `main`

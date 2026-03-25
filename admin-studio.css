@@ -20127,6 +20127,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 12px;
 }
 
+.ops-alert-monitor-batch-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
 .ops-alert-monitor-filter-group {
     display: flex;
     flex-wrap: wrap;
@@ -20275,6 +20281,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
+}
+
+.ops-alert-monitor-card__hint {
+    color: var(--text-secondary);
+    font-size: 0.81rem;
+    line-height: 1.5;
 }
 
 .ops-alert-monitor-item__actions {

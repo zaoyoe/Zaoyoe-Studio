@@ -1812,6 +1812,12 @@ function getOpsAlertMonitorViewFilters() {
     };
 }
 
+function getOpsAlertMonitorPreparedCategories(filters = getOpsAlertMonitorViewFilters()) {
+    return (Array.isArray(opsAlertMonitorState?.categories) ? opsAlertMonitorState.categories : [])
+        .map((category) => buildOpsAlertMonitorCategoryView(category, filters))
+        .filter(Boolean);
+}
+
 function syncOpsAlertMonitorFilterToolbar(filters = getOpsAlertMonitorViewFilters()) {
     document.querySelectorAll('[data-ops-alert-monitor-filter-kind]').forEach((button) => {
         const kind = String(button.dataset.opsAlertMonitorFilterKind || '').trim().toLowerCase();
@@ -1960,6 +1966,7 @@ function buildOpsAlertMonitorCategoryView(category = {}, filters = getOpsAlertMo
                 ? true
                 : String(item.severity || '').trim().toLowerCase() === filters.severity
         ));
+    const previewItems = visibleItems.slice(0, 3);
     const displayActiveCount = filters.scope === 'recovered'
         ? 0
         : (filters.severity === 'all' ? activeCount : visibleItems.length);
@@ -1976,7 +1983,9 @@ function buildOpsAlertMonitorCategoryView(category = {}, filters = getOpsAlertMo
 
     return {
         ...category,
-        items: visibleItems.slice(0, 3),
+        items: previewItems,
+        visible_items: visibleItems,
+        hidden_item_count: Math.max(0, visibleItems.length - previewItems.length),
         display_active_count: displayActiveCount,
         display_critical_count: displayCriticalCount,
         filtered_note: filteredNote
@@ -1999,10 +2008,142 @@ function getOpsAlertMonitorFilterSummaryLabel(filters = getOpsAlertMonitorViewFi
         .join(' · ');
 }
 
+function buildOpsAlertMonitorRecoveryRow(category = {}) {
+    const fallbackAction = getOpsAlertMonitorCategoryActions(category.key)[0] || {};
+    const workspaceTarget = String(fallbackAction.target || '').trim();
+    return {
+        模块: category.label || '告警分类',
+        状态: '已恢复',
+        级别: 'recovered',
+        告警类型: 'recovered',
+        标题: category.latest_title || `${category.label || '模块'}已恢复`,
+        摘要: category.latest_message || '',
+        引用标签: '',
+        引用值: '',
+        处理动作: fallbackAction.label || '进入复核页',
+        处理入口: workspaceTarget ? getOpsAlertWorkspaceSuccessLabel(workspaceTarget) : '',
+        入口标识: workspaceTarget,
+        创建时间: category.latest_at || '',
+        目标标识: ''
+    };
+}
+
+function buildOpsAlertMonitorBatchRows(categories = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
+    const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
+    const selectedCategories = normalizedCategoryKey
+        ? categories.filter((category) => String(category.key || '').trim().toLowerCase() === normalizedCategoryKey)
+        : categories;
+
+    return selectedCategories.flatMap((category) => {
+        const visibleItems = Array.isArray(category.visible_items) ? category.visible_items : [];
+        if (visibleItems.length > 0) {
+            return visibleItems.map((item) => {
+                const action = getOpsAlertMonitorItemAction(category, item) || {};
+                const workspaceTarget = String(action.target || '').trim();
+                return {
+                    模块: category.label || '告警分类',
+                    状态: '待处理',
+                    级别: String(item.severity || 'warning').trim().toLowerCase() || 'warning',
+                    告警类型: item.alert_type || '',
+                    标题: item.title || '系统告警',
+                    摘要: item.message || '',
+                    引用标签: item.reference_label || '',
+                    引用值: item.reference_value || '',
+                    处理动作: action.label || '进入处理页',
+                    处理入口: workspaceTarget ? getOpsAlertWorkspaceSuccessLabel(workspaceTarget) : '',
+                    入口标识: workspaceTarget,
+                    创建时间: item.created_at || '',
+                    目标标识: item.target_id || ''
+                };
+            });
+        }
+
+        if (String(category.latest_state || '').trim().toLowerCase() === 'recovered') {
+            return [buildOpsAlertMonitorRecoveryRow(category)];
+        }
+
+        return [];
+    });
+}
+
+async function writeAdminConfigClipboard(text) {
+    const normalizedText = String(text || '');
+    if (!normalizedText) {
+        throw new Error('没有可复制的内容');
+    }
+
+    if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(normalizedText);
+        return true;
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = normalizedText;
+    textarea.setAttribute('readonly', 'readonly');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, normalizedText.length);
+
+    try {
+        const succeeded = document.execCommand('copy');
+        if (!succeeded) {
+            throw new Error('浏览器不支持复制到剪贴板');
+        }
+        return true;
+    } finally {
+        document.body.removeChild(textarea);
+    }
+}
+
+function buildOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
+    const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
+    const categoryLabelMap = {
+        payments: '支付与退款',
+        tickets: '工单与售后',
+        inventory: '库存与补货',
+        fulfillment: '履约与死信'
+    };
+    const lines = [
+        '第一阶段集中告警处理清单',
+        `生成时间：${formatVerifyMonitorDateTime(new Date().toISOString())}`,
+        `当前筛选：${getOpsAlertMonitorFilterSummaryLabel(filters)}`
+    ];
+
+    if (normalizedCategoryKey && categoryLabelMap[normalizedCategoryKey]) {
+        lines.push(`当前模块：${categoryLabelMap[normalizedCategoryKey]}`);
+    }
+
+    lines.push(`命中记录：${formatVerifyMonitorInteger(rows.length)} 条`, '');
+
+    rows.forEach((row, index) => {
+        lines.push(`${index + 1}. [${row.模块}] ${row.标题}`);
+        lines.push(`   状态：${row.状态} · 级别：${row.级别 || 'warning'} · 类型：${row.告警类型 || 'unknown'}`);
+        if (row.引用标签 && row.引用值) {
+            lines.push(`   ${row.引用标签}：${row.引用值}`);
+        }
+        if (row.摘要) {
+            lines.push(`   摘要：${row.摘要}`);
+        }
+        if (row.处理入口 || row.处理动作) {
+            lines.push(`   处理入口：${row.处理入口 || '—'}${row.处理动作 ? ` · ${row.处理动作}` : ''}`);
+        }
+        if (row.创建时间) {
+            lines.push(`   时间：${formatVerifyMonitorDateTime(row.创建时间)}`);
+        }
+        lines.push('');
+    });
+
+    return lines.join('\n').trim();
+}
+
 function buildOpsAlertMonitorCategoryMarkup(category = {}, filters = getOpsAlertMonitorViewFilters()) {
     const tone = getOpsAlertMonitorCardTone(category);
     const actions = getOpsAlertMonitorCategoryActions(category.key);
     const items = Array.isArray(category.items) ? category.items : [];
+    const hiddenItemCount = Number(category.hidden_item_count || 0);
     const latestSummary = category.latest_title
         ? `${category.latest_title}${category.latest_at ? ` · ${formatVerifyMonitorDateTime(category.latest_at)}` : ''}`
         : '最近还没有收集到这类告警。';
@@ -2042,7 +2183,18 @@ function buildOpsAlertMonitorCategoryMarkup(category = {}, filters = getOpsAlert
                     : `当前筛选条件下没有命中的 ${filters.severity} 告警。`)
         )}</div>`}
             </div>
+            ${hiddenItemCount > 0 ? `
+                <div class="ops-alert-monitor-card__hint">当前卡片仅展示前 3 项，另有 ${escapeConfigHtml(formatVerifyMonitorInteger(hiddenItemCount))} 项可通过“复制清单 / 导出 CSV”带走处理。</div>
+            ` : ''}
             <div class="ops-alert-monitor-card__actions">
+                <button
+                    type="button"
+                    class="btn-add-config btn-add-config--compact"
+                    data-admin-action="settings-copy-ops-alert-monitor-category"
+                    data-ops-alert-monitor-category-key="${escapeConfigHtml(category.key || '')}"
+                >
+                    <i class="fas fa-list-check"></i> 复制清单
+                </button>
                 ${actions.map((action) => `
                     <button
                         type="button"
@@ -2097,9 +2249,7 @@ function renderOpsAlertMonitorPanel() {
         return;
     }
 
-    const categories = (Array.isArray(state.categories) ? state.categories : [])
-        .map((category) => buildOpsAlertMonitorCategoryView(category, filters))
-        .filter(Boolean);
+    const categories = getOpsAlertMonitorPreparedCategories(filters);
 
     const filteredActiveCount = categories.reduce((sum, category) => sum + Number(category.display_active_count || 0), 0);
     const filteredCriticalCount = categories.reduce((sum, category) => sum + Number(category.display_critical_count || 0), 0);
@@ -2119,6 +2269,49 @@ function renderOpsAlertMonitorPanel() {
     }
 
     grid.innerHTML = categories.map((category) => buildOpsAlertMonitorCategoryMarkup(category, filters)).join('');
+}
+
+async function copyOpsAlertMonitorChecklist(categoryKey = '') {
+    const filters = getOpsAlertMonitorViewFilters();
+    const categories = getOpsAlertMonitorPreparedCategories(filters);
+    const rows = buildOpsAlertMonitorBatchRows(categories, filters, categoryKey);
+
+    if (!rows.length) {
+        showToast('当前筛选条件下没有可复制的告警清单', 'info');
+        return false;
+    }
+
+    try {
+        const text = buildOpsAlertMonitorChecklistText(rows, filters, categoryKey);
+        await writeAdminConfigClipboard(text);
+        showToast(`已复制 ${rows.length} 条集中告警清单`, 'success');
+        return true;
+    } catch (error) {
+        console.error('[Config] Copy ops alert checklist failed:', error);
+        showToast(`复制失败: ${error.message || '未知错误'}`, 'error');
+        return false;
+    }
+}
+
+function exportOpsAlertMonitorCsv(categoryKey = '') {
+    const filters = getOpsAlertMonitorViewFilters();
+    const categories = getOpsAlertMonitorPreparedCategories(filters);
+    const rows = buildOpsAlertMonitorBatchRows(categories, filters, categoryKey);
+
+    if (!rows.length) {
+        showToast('当前筛选条件下没有可导出的告警清单', 'info');
+        return false;
+    }
+
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const suffix = String(categoryKey || '').trim().toLowerCase() || 'all';
+    const csv = convertRowsToCsv(rows);
+    downloadExportBlob(
+        new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }),
+        `ops_alert_monitor_${suffix}_${timestamp}.csv`
+    );
+    showToast(`已导出 ${rows.length} 条集中告警清单`, 'success');
+    return true;
 }
 
 function renderChannelsConfig() {
@@ -5925,6 +6118,8 @@ window.sendOpsAlertPaymentConfigIncidentRecoveredSample = sendOpsAlertPaymentCon
 window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;
 window.refreshOpsAlertMonitorPanel = refreshOpsAlertMonitorPanel;
 window.setOpsAlertMonitorFilter = setOpsAlertMonitorFilter;
+window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;
+window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;
 window.openOpsAlertWorkspace = openOpsAlertWorkspace;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.loadVerifyMonitor = loadVerifyMonitor;

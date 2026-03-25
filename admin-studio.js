@@ -413,6 +413,15 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-refresh-ops-alert-monitor':
                 window.refreshOpsAlertMonitorPanel?.();
                 break;
+            case 'settings-copy-ops-alert-monitor-checklist':
+                window.copyOpsAlertMonitorChecklist?.();
+                break;
+            case 'settings-export-ops-alert-monitor-csv':
+                window.exportOpsAlertMonitorCsv?.();
+                break;
+            case 'settings-copy-ops-alert-monitor-category':
+                window.copyOpsAlertMonitorChecklist?.(actionEl.dataset.opsAlertMonitorCategoryKey);
+                break;
             case 'settings-delete-ops-alert-secret':
                 window.deleteOpsAlertSecret?.(actionEl.dataset.secretName);
                 break;
