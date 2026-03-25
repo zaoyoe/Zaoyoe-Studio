@@ -328,6 +328,44 @@ test('buildExternalAlertText renders rich refund details for payment refund ops 
     assert.match(text, /处理入口：支付对账 -> 异常运维 -> 回滚失败/);
 });
 
+test('sendFeishuAlert treats non-zero webhook result codes as delivery failures', async () => {
+    const result = await __testUtils.sendFeishuAlert({
+        alert_type: 'payment_refund_ops',
+        severity: 'critical',
+        title: '支付退款积分回滚失败',
+        payload: {
+            topic_label: '回滚失败',
+            processing_result: 'admin_refund_compensation_failed',
+            site: 'cn',
+            provider_order_no: 'HJ_ORDER_99'
+        }
+    }, {
+        config: normalizeOpsAlertsConfig({
+            channels: {
+                feishu: {
+                    enabled: true,
+                    minimum_severity: 'warning'
+                }
+            }
+        }),
+        secrets: {
+            feishu_webhook_url: 'https://open.feishu.cn/open-apis/bot/v2/hook/demo'
+        }
+    }, {
+        fetchImpl: async () => ({
+            ok: true,
+            status: 200,
+            async text() {
+                return JSON.stringify({ code: 19024, msg: 'Key Words Not Found' });
+            }
+        })
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 200);
+    assert.match(result.error || '', /Key Words Not Found|feishu_error_19024/);
+});
+
 test('sweepOpsAlertJobs delivers queued alerts and records per-channel attempts', async () => {
     const state = {
         jobs: [

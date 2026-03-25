@@ -2069,18 +2069,32 @@ async function saveOpsAlertSettings() {
 
 async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
     const config = collectOpsAlertConfigFromForm();
+    const telegramEnabled = config.channels?.telegram?.enabled === true;
+    const feishuEnabled = config.channels?.feishu?.enabled === true;
     const chatIds = Array.isArray(config.channels?.telegram?.chat_ids)
         ? config.channels.telegram.chat_ids
         : [];
-    const hasStoredToken = Boolean(opsAlertSecretStatus?.telegram_bot_token?.configured);
-    const providedToken = document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '';
+    const hasStoredTelegramToken = Boolean(opsAlertSecretStatus?.telegram_bot_token?.configured);
+    const hasStoredFeishuWebhook = Boolean(opsAlertSecretStatus?.feishu_webhook_url?.configured);
+    const providedTelegramToken = document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '';
+    const providedFeishuWebhook = document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || '';
 
-    if (!chatIds.length) {
-        throw new Error('请先填写至少一个 Telegram Chat ID');
+    if (!telegramEnabled && !feishuEnabled) {
+        throw new Error('请先启用至少一个站外告警通道');
     }
 
-    if (!providedToken && !hasStoredToken) {
-        throw new Error('请先填写 Telegram Bot Token，或先保存已配置的后台密钥');
+    if (telegramEnabled) {
+        if (!chatIds.length) {
+            throw new Error('已启用 Telegram 告警，请先填写至少一个 Telegram Chat ID');
+        }
+
+        if (!providedTelegramToken && !hasStoredTelegramToken) {
+            throw new Error('已启用 Telegram 告警，请先填写 Telegram Bot Token，或先保存已配置的后台密钥');
+        }
+    }
+
+    if (feishuEnabled && !providedFeishuWebhook && !hasStoredFeishuWebhook) {
+        throw new Error('已启用飞书告警，请先填写飞书 Webhook，或先保存已配置的后台密钥');
     }
 
     const headers = await getAdminConfigApiHeaders();
@@ -2091,8 +2105,8 @@ async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
             action,
             config,
             secrets: {
-                telegram_bot_token: providedToken,
-                feishu_webhook_url: document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || ''
+                telegram_bot_token: providedTelegramToken,
+                feishu_webhook_url: providedFeishuWebhook
             }
         })
     });
@@ -2108,9 +2122,9 @@ async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
 
 async function sendOpsAlertTelegramTest() {
     try {
-        return await sendOpsAlertTelegramRequest('send_test_telegram', '测试 Telegram 告警已发送');
+        return await sendOpsAlertTelegramRequest('send_test_telegram', '测试站外告警已发送');
     } catch (error) {
-        console.error('[Config] Send Telegram ops alert test failed:', error);
+        console.error('[Config] Send ops alert test failed:', error);
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
         return false;
     }

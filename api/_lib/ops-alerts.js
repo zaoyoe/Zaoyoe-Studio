@@ -717,6 +717,26 @@ async function sendFeishuAlert(job, runtime, options = {}) {
         options
     );
 
+    if (result.ok) {
+        const body = normalizeText(result.body, 4000);
+        if (body) {
+            try {
+                const parsed = JSON.parse(body);
+                const code = Number(parsed?.code ?? parsed?.StatusCode);
+                if (Number.isFinite(code) && code !== 0) {
+                    return {
+                        ok: false,
+                        status: result.status,
+                        body: result.body,
+                        error: normalizeText(parsed?.msg || parsed?.StatusMessage || parsed?.message) || `feishu_error_${code}`
+                    };
+                }
+            } catch (error) {
+                // Keep HTTP success semantics for non-JSON webhook responses.
+            }
+        }
+    }
+
     return result;
 }
 

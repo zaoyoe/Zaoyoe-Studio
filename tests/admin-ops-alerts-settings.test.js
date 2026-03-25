@@ -64,7 +64,8 @@ function createDefaultState() {
         upsertedSecrets: [],
         deletedSecrets: [],
         auditLogs: [],
-        telegramTests: []
+        telegramTests: [],
+        feishuTests: []
     };
 }
 
@@ -256,6 +257,32 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
                         status: 200,
                         body: JSON.stringify([{ chatId: '5104238366', ok: true, status: 200 }])
                     };
+                },
+                async sendFeishuAlert(job, runtime) {
+                    state.feishuTests.push({
+                        job: cloneValue(job),
+                        runtime: cloneValue(runtime)
+                    });
+
+                    return {
+                        ok: true,
+                        status: 200,
+                        body: JSON.stringify({ code: 0, msg: 'success' })
+                    };
+                },
+                resolveEnabledChannels(runtime, severity) {
+                    const channels = [];
+                    const normalizedSeverity = String(severity || '').trim().toLowerCase() || 'warning';
+                    const rank = { info: 10, warning: 20, critical: 30 };
+                    if (runtime?.config?.channels?.telegram?.enabled) {
+                        const min = String(runtime.config.channels.telegram.minimum_severity || 'warning').trim().toLowerCase();
+                        if ((rank[normalizedSeverity] || 20) >= (rank[min] || 20)) channels.push('telegram');
+                    }
+                    if (runtime?.config?.channels?.feishu?.enabled) {
+                        const min = String(runtime.config.channels.feishu.minimum_severity || 'warning').trim().toLowerCase();
+                        if ((rank[normalizedSeverity] || 20) >= (rank[min] || 20)) channels.push('feishu');
+                    }
+                    return channels;
                 }
             };
         }
@@ -454,10 +481,10 @@ test('ops alert settings POST can send a Telegram self-check without persisting 
             body: {
                 action: 'send_test_telegram',
                 config: {
-                    enabled: false,
+                    enabled: true,
                     channels: {
                         telegram: {
-                            enabled: false,
+                            enabled: true,
                             minimum_severity: 'critical',
                             chat_ids: ['5104238366', '5104238367']
                         }
@@ -475,10 +502,11 @@ test('ops alert settings POST can send a Telegram self-check without persisting 
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
-        assert.match(payload.message, /2 个 chat/);
+        assert.match(payload.message, /Telegram/);
         assert.equal(state.systemConfigUpserts.length, 0);
         assert.equal(state.upsertedSecrets.length, 0);
         assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.feishuTests.length, 0);
         assert.deepEqual(state.telegramTests[0].runtime.config.channels.telegram.chat_ids, ['5104238366', '5104238367']);
         assert.equal(state.telegramTests[0].runtime.secrets.telegram_bot_token, 'temporary-telegram-token');
         assert.match(state.telegramTests[0].job.title, /Telegram 自检/);
@@ -532,7 +560,7 @@ test('ops alert settings POST can send a refund detail sample to Telegram withou
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
-        assert.match(payload.message, /退款详情示例消息已发送到 1 个 chat/);
+        assert.match(payload.message, /退款详情示例消息已发送到 Telegram/);
         assert.equal(state.systemConfigUpserts.length, 0);
         assert.equal(state.upsertedSecrets.length, 0);
         assert.equal(state.telegramTests.length, 1);
@@ -541,5 +569,64 @@ test('ops alert settings POST can send a refund detail sample to Telegram withou
         assert.equal(state.telegramTests[0].job.payload.user_id, 'demo_buyer_001');
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.telegram_refund_sample');
+    });
+});
+
+test('ops alert settings preview actions fan out to Feishu when the channel is enabled', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                },
+                feishu: {
+                    enabled: true,
+                    minimum_severity: 'warning'
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: 'https://open.feishu.cn/webhook/demo'
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_test_telegram',
+                config: {
+                    enabled: true,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        },
+                        feishu: {
+                            enabled: true,
+                            minimum_severity: 'warning'
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /Telegram、飞书/);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.feishuTests.length, 1);
     });
 });
