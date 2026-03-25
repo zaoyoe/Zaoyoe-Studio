@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { normalizeOpsAlertsConfig } = require('../api/_lib/ops-alerts');
 const {
     buildPaymentConfigChangedAlerts,
+    buildPaymentConfigIncidentAlerts,
     buildPaymentConfigRecoveredAlerts,
     normalizePaymentConfigChangeMonitorConfig,
     runPaymentConfigChangedSweep
@@ -232,6 +233,49 @@ test('buildPaymentConfigChangedAlerts flags payment channel updates and secret d
     assert.match(alerts[1].content, /删除密钥：hupijiao_secret_key/);
 });
 
+test('buildPaymentConfigIncidentAlerts escalates clustered risky changes', () => {
+    const changeAlerts = buildPaymentConfigChangedAlerts([
+        {
+            id: 'audit-incident-1',
+            action_type: 'admin.payment_channels.upsert',
+            admin_id: 'admin-1',
+            admin_email: 'admin@example.com',
+            created_at: '2026-03-25T09:45:00.000Z',
+            details: {
+                active_provider: 'mock',
+                updated_providers: ['mock', 'hupijiao'],
+                updated_secrets: ['hupijiao_secret_key']
+            }
+        },
+        {
+            id: 'audit-incident-2',
+            action_type: 'admin.payment_channels.secret.delete',
+            admin_id: 'admin-2',
+            admin_email: 'owner@example.com',
+            created_at: '2026-03-25T09:50:00.000Z',
+            details: {
+                secret_name: 'hupijiao_secret_key'
+            }
+        }
+    ], normalizePaymentConfigChangeMonitorConfig(), {
+        now: '2026-03-25T10:00:00.000Z'
+    });
+
+    const alerts = buildPaymentConfigIncidentAlerts(changeAlerts, normalizePaymentConfigChangeMonitorConfig(), {
+        now: '2026-03-25T10:00:00.000Z'
+    });
+
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].alertType, 'payment_config_incident');
+    assert.equal(alerts[0].severity, 'critical');
+    assert.match(alerts[0].content, /最近 20 分钟内连续发生多次高风险支付配置改动/);
+    assert.match(alerts[0].content, /变更类型：支付密钥删除；支付通道配置更新/);
+    assert.match(alerts[0].content, /涉及通道：模拟支付、虎皮椒/);
+    assert.match(alerts[0].content, /涉及密钥：虎皮椒 Secret Key/);
+    assert.equal(alerts[0].payload.incident_change_count, 2);
+    assert.equal(alerts[0].payload.distinct_admin_count, 2);
+});
+
 test('runPaymentConfigChangedSweep enqueues payment config alerts with stable dedupe', async () => {
     const state = {
         jobs: [],
@@ -298,6 +342,83 @@ test('runPaymentConfigChangedSweep enqueues payment config alerts with stable de
     assert.equal(second.queued, 0);
     assert.equal(second.deduped, 1);
     assert.equal(state.jobs.length, 1);
+});
+
+test('runPaymentConfigChangedSweep enqueues payment config incident alerts with stable dedupe', async () => {
+    const state = {
+        jobs: [],
+        auditRows: [
+            {
+                id: 'audit-risk-1',
+                action_type: 'admin.payment_channels.upsert',
+                admin_id: 'admin-1',
+                admin_email: 'admin@example.com',
+                created_at: '2026-03-25T09:45:00.000Z',
+                details: {
+                    active_provider: 'mock',
+                    updated_providers: ['mock', 'hupijiao'],
+                    updated_secrets: ['hupijiao_secret_key']
+                }
+            },
+            {
+                id: 'audit-risk-2',
+                action_type: 'admin.payment_channels.secret.delete',
+                admin_id: 'admin-2',
+                admin_email: 'owner@example.com',
+                created_at: '2026-03-25T09:50:00.000Z',
+                details: {
+                    secret_name: 'hupijiao_secret_key'
+                }
+            }
+        ]
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime();
+
+    const first = await runPaymentConfigChangedSweep(supabase, {
+        runtime,
+        currentPaymentChannels: {
+            active_provider: 'mock',
+            providers: {
+                mock: { enabled: true },
+                afdian: { enabled: true },
+                hupijiao: { enabled: true }
+            }
+        },
+        currentSecretStatus: {
+            hupijiao_secret_key: { configured: false, source: 'missing' }
+        },
+        now: '2026-03-25T10:00:00.000Z'
+    });
+
+    assert.equal(first.change_count, 2);
+    assert.equal(first.queued, 2);
+    assert.equal(first.incident_count, 1);
+    assert.equal(first.incident_queued, 1);
+    assert.equal(first.incident_deduped, 0);
+    assert.equal(state.jobs.length, 3);
+    assert.equal(state.jobs[2].alert_type, 'payment_config_incident');
+
+    const second = await runPaymentConfigChangedSweep(supabase, {
+        runtime,
+        currentPaymentChannels: {
+            active_provider: 'mock',
+            providers: {
+                mock: { enabled: true },
+                afdian: { enabled: true },
+                hupijiao: { enabled: true }
+            }
+        },
+        currentSecretStatus: {
+            hupijiao_secret_key: { configured: false, source: 'missing' }
+        },
+        now: '2026-03-25T10:03:00.000Z'
+    });
+
+    assert.equal(second.incident_count, 1);
+    assert.equal(second.incident_queued, 0);
+    assert.equal(second.incident_deduped, 1);
+    assert.equal(state.jobs.length, 3);
 });
 
 test('buildPaymentConfigRecoveredAlerts emits recoveries when mock mode is rolled back and secrets are restored', () => {

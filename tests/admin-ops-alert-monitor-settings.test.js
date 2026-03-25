@@ -312,3 +312,35 @@ test('ops alert monitor handler rejects non-GET methods', async () => {
         assert.equal(payload.message, 'Method not allowed');
     });
 });
+
+test('ops alert monitor handler includes payment config incidents in payments category', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('payment_config_incident', {
+                id: 'payment-config-incident-1',
+                severity: 'critical',
+                title: '支付配置异常升级（3 次）',
+                content: '支付配置事故\n风险信号：当前活动通道已切换为模拟支付',
+                payload: {
+                    target_id: 'payment_config_incident:global'
+                },
+                created_at: hoursAgo(1)
+            })
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+
+        const payments = payload.categories.find((item) => item.key === 'payments');
+        assert.equal(payments.active_count, 1);
+        assert.equal(payments.critical_count, 1);
+        assert.equal(payments.latest_state, 'problem');
+        assert.equal(payments.items[0].title, '支付配置异常升级（3 次）');
+    });
+});

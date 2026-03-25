@@ -2890,6 +2890,8 @@ async function sweepPaymentConfigChangeHealth() {
         if (
             Number(result?.change_count || 0) > 0
             || Number(result?.queued || 0) > 0
+            || Number(result?.incident_count || 0) > 0
+            || Number(result?.incident_queued || 0) > 0
             || Number(result?.recovery_count || 0) > 0
             || Number(result?.recovered_queued || 0) > 0
             || Number(result?.admin_notifications_created || 0) > 0

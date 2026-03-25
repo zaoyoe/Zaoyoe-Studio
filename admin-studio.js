@@ -386,6 +386,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-payment-config-changed-sample':
                 window.sendOpsAlertPaymentConfigChangedSample?.();
                 break;
+            case 'settings-send-ops-alert-payment-config-incident-sample':
+                window.sendOpsAlertPaymentConfigIncidentSample?.();
+                break;
             case 'settings-send-ops-alert-payment-config-recovered-sample':
                 window.sendOpsAlertPaymentConfigRecoveredSample?.();
                 break;

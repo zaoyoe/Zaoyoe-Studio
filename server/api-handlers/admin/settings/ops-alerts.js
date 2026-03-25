@@ -747,6 +747,41 @@ function buildPaymentConfigChangedSampleJob(user) {
     };
 }
 
+function buildPaymentConfigIncidentSampleJob(user) {
+    return {
+        alert_type: 'payment_config_incident',
+        severity: 'critical',
+        title: '支付配置异常升级（3 次）',
+        payload: {
+            target_id: 'payment_config_incident:global',
+            lookback_minutes: 20,
+            incident_change_count: 3,
+            distinct_admin_count: 2,
+            admin_emails: [
+                sanitizeText(user?.email || user?.id) || 'admin@example.com',
+                'owner@example.com'
+            ],
+            action_labels: ['支付通道配置更新 × 2', '支付密钥删除'],
+            signal_labels: [
+                '最近 20 分钟内累计 3 次高风险支付配置改动',
+                '涉及 2 位管理员',
+                '核心动作：支付通道配置更新 × 2、支付密钥删除'
+            ],
+            risk_signals: [
+                '当前活动通道已切换为模拟支付',
+                '支付密钥 hupijiao_secret_key 已被删除',
+                '本次更新包含 2 个支付密钥'
+            ],
+            provider_labels: ['模拟支付', '虎皮椒', '爱发电'],
+            secret_labels: ['虎皮椒 Secret Key', '爱发电 Token'],
+            latest_change_at: new Date().toISOString(),
+            audit_refs: ['audit-demo-payment-config-001', 'audit-demo-payment-config-002', 'audit-demo-payment-config-003'],
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了支付配置异常升级示例发送`,
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计（示例）'
+        }
+    };
+}
+
 function buildPaymentConfigRecoveredSampleJob(user) {
     return {
         alert_type: 'payment_config_recovered',
@@ -831,6 +866,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_shop_order_delivery_incident_recovered'
                 || sanitizeText(body.action) === 'send_sample_shop_order_delivery_recovered'
                 || sanitizeText(body.action) === 'send_sample_payment_config_changed'
+                || sanitizeText(body.action) === 'send_sample_payment_config_incident'
                 || sanitizeText(body.action) === 'send_sample_payment_config_recovered'
             ) {
                 const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase);
@@ -878,6 +914,8 @@ module.exports = async (req, res) => {
                                                 ? buildShopOrderDeliveryRecoveredSampleJob(user)
                                             : normalizedAction === 'send_sample_payment_config_changed'
                                                 ? buildPaymentConfigChangedSampleJob(user)
+                                            : normalizedAction === 'send_sample_payment_config_incident'
+                                                ? buildPaymentConfigIncidentSampleJob(user)
                                             : normalizedAction === 'send_sample_payment_config_recovered'
                                                 ? buildPaymentConfigRecoveredSampleJob(user)
                         : buildTelegramTestJob(user, runtime);
@@ -924,6 +962,8 @@ module.exports = async (req, res) => {
                                                     ? 'admin.ops_alerts.shop_delivery_recovered_sample'
                                                 : normalizedAction === 'send_sample_payment_config_changed'
                                                     ? 'admin.ops_alerts.payment_config_changed_sample'
+                                                : normalizedAction === 'send_sample_payment_config_incident'
+                                                    ? 'admin.ops_alerts.payment_config_incident_sample'
                                                 : normalizedAction === 'send_sample_payment_config_recovered'
                                                     ? 'admin.ops_alerts.payment_config_recovered_sample'
                             : 'admin.ops_alerts.telegram_test',
@@ -982,6 +1022,8 @@ module.exports = async (req, res) => {
                                                     ? `履约恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
                                                 : normalizedAction === 'send_sample_payment_config_changed'
                                                     ? `支付配置变更示例消息已发送到 ${channelLabels || '已启用通道'}`
+                                                : normalizedAction === 'send_sample_payment_config_incident'
+                                                    ? `支付配置异常升级示例消息已发送到 ${channelLabels || '已启用通道'}`
                                                 : normalizedAction === 'send_sample_payment_config_recovered'
                                                     ? `支付配置恢复示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : `测试站外告警已发送到 ${channelLabels || '已启用通道'}`

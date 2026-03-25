@@ -357,6 +357,38 @@ test('buildExternalAlertText renders payment config changed details', () => {
     assert.match(text, /处理入口：后台设置 -> 管理员访问 \/ Admin Audit Logs -> 支付配置审计/);
 });
 
+test('buildExternalAlertText renders payment config incident details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'payment_config_incident',
+        severity: 'critical',
+        title: '支付配置异常升级（3 次）',
+        payload: {
+            lookback_minutes: 20,
+            incident_change_count: 3,
+            distinct_admin_count: 2,
+            admin_emails: ['admin@example.com', 'owner@example.com'],
+            action_labels: ['支付通道配置更新 × 2', '支付密钥删除'],
+            signal_labels: ['最近 20 分钟内累计 3 次高风险支付配置改动', '涉及 2 位管理员'],
+            risk_signals: ['当前活动通道已切换为模拟支付', '支付密钥 hupijiao_secret_key 已被删除'],
+            provider_labels: ['模拟支付', '虎皮椒'],
+            secret_labels: ['虎皮椒 Secret Key'],
+            latest_change_at: '2026-03-25T10:12:00.000Z',
+            entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 支付配置审计'
+        }
+    });
+
+    assert.match(text, /支付配置事故/);
+    assert.match(text, /观察窗口：最近 20 分钟/);
+    assert.match(text, /命中次数：3 次/);
+    assert.match(text, /涉及管理员：2 位/);
+    assert.match(text, /操作人：admin@example.com、owner@example.com/);
+    assert.match(text, /变更类型：支付通道配置更新 × 2；支付密钥删除/);
+    assert.match(text, /风险信号：当前活动通道已切换为模拟支付；支付密钥 hupijiao_secret_key 已被删除/);
+    assert.match(text, /涉及通道：模拟支付、虎皮椒/);
+    assert.match(text, /涉及密钥：虎皮椒 Secret Key/);
+    assert.match(text, /处理入口：后台设置 -> 管理员访问 \/ Admin Audit Logs -> 支付配置审计/);
+});
+
 test('buildExternalAlertText renders payment config recovery details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'payment_config_recovered',
