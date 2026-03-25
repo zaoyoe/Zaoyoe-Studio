@@ -1331,8 +1331,8 @@ function normalizeAffiliatePosterConfig(raw) {
 async function initSystemConfig() {
     console.log('[Config] Initializing system config...');
     try {
-        await loadAllSystemConfig();
         setupConfigEventListeners();
+        await loadAllSystemConfig();
         console.log('[Config] Initialized successfully');
     } catch (err) {
         console.error('[Config] Init error:', err);
@@ -2755,9 +2755,21 @@ async function getAdminConfigApiHeaders() {
         'Content-Type': 'application/json'
     };
 
-    const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
-    if (session?.access_token) {
-        headers.Authorization = `Bearer ${session.access_token}`;
+    try {
+        if (!window.supabaseClient?.auth?.getSession) {
+            return headers;
+        }
+
+        const { data: { session } = {} } = await withPromiseTimeout(
+            window.supabaseClient.auth.getSession(),
+            2000,
+            '读取管理员登录状态超时'
+        );
+        if (session?.access_token) {
+            headers.Authorization = `Bearer ${session.access_token}`;
+        }
+    } catch (error) {
+        console.warn('[Config] Admin API headers falling back to cookie auth:', error.message);
     }
 
     return headers;
@@ -2790,6 +2802,7 @@ async function fetchAdminConfigJsonWithTimeout(url, options = {}, timeoutMs = 80
     try {
         const response = await fetch(url, {
             ...options,
+            credentials: options.credentials || 'same-origin',
             signal: controller?.signal
         });
         const payload = await response.json().catch(() => ({}));
@@ -6033,177 +6046,143 @@ async function exportSettingsData(dataset, format = 'json') {
     }
 }
 
-const VERIFY_SERVER_URL = window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app';
+async function loadVerifyRuntimeSnapshot(force = false) {
+    if (loadVerifyRuntimeSnapshot._loadingPromise && !force) {
+        return loadVerifyRuntimeSnapshot._loadingPromise;
+    }
 
-async function checkVerifyQuota() {
     const quotaEl = document.getElementById('cfgVerifyQuota');
-    if (!quotaEl) return;
-
     verifyMonitorState.quota = {
         ...(verifyMonitorState.quota || getDefaultVerifyMonitorState().quota),
         status: 'loading',
         message: '查询中...'
     };
-    renderVerifyQuotaState(quotaEl, 'neutral', 'fas fa-spinner fa-spin', '查询中...');
-    renderVerifyMonitorPanel();
-
-    try {
-        const headers = await getAdminConfigApiHeaders();
-        const { response: res, payload: data } = await fetchAdminConfigJsonWithTimeout(`${VERIFY_SERVER_URL}/api/quota`, {
-            headers
-        }, 8000);
-
-        if (data.success) {
-            const balance = Number(data.balance ?? data.credits ?? 0);
-            const tone = balance > 5 ? 'success' : balance > 0 ? 'warning' : 'danger';
-            const display = Number.isInteger(balance) ? balance : balance.toFixed(1);
-            renderVerifyQuotaState(quotaEl, tone, 'fas fa-gem', display, { emphasized: true });
-            verifyMonitorState.quota = {
-                status: 'ready',
-                balance,
-                total_used: Number(data.total_used || 0),
-                cost_per_job: Number(data.cost_per_job || 0),
-                key_name: String(data.key_name || '').trim(),
-                checked_at: new Date().toISOString(),
-                message: ''
-            };
-        } else {
-            const message = data.message || '查询失败';
-            renderVerifyQuotaState(quotaEl, 'danger', 'fas fa-exclamation-triangle', message);
-            verifyMonitorState.quota = {
-                ...(getDefaultVerifyMonitorState().quota),
-                status: 'error',
-                checked_at: new Date().toISOString(),
-                message
-            };
-        }
-    } catch (error) {
-        renderVerifyQuotaState(quotaEl, 'danger', 'fas fa-exclamation-triangle', '网络错误');
-        verifyMonitorState.quota = {
-            ...(getDefaultVerifyMonitorState().quota),
-            status: 'error',
-            checked_at: new Date().toISOString(),
-            message: error.message || '网络错误'
-        };
-    }
-
-    renderVerifyMonitorPanel();
-    return verifyMonitorState.quota;
-}
-
-async function loadVerifyQueueState() {
     verifyMonitorState.queue = {
         ...(verifyMonitorState.queue || getDefaultVerifyMonitorState().queue),
         status: 'loading',
         message: '查询中...'
     };
-    renderVerifyMonitorPanel();
-
-    try {
-        const headers = await getAdminConfigApiHeaders();
-        const { response, payload } = await fetchAdminConfigJsonWithTimeout(`${VERIFY_SERVER_URL}/api/queue`, {
-            headers
-        }, 8000);
-
-        if (!response.ok || !payload.success) {
-            throw new Error(payload.message || '查询队列失败');
-        }
-
-        verifyMonitorState.queue = {
-            status: 'ready',
-            queue_size: Number(payload.queue_size || 0),
-            running_jobs: Number(payload.running_jobs || 0),
-            key_name: String(payload.key_name || '').trim(),
-            api_base_url: String(payload.api_base_url || '').trim(),
-            checked_at: new Date().toISOString(),
-            message: ''
-        };
-    } catch (error) {
-        verifyMonitorState.queue = {
-            ...(getDefaultVerifyMonitorState().queue),
-            status: 'error',
-            checked_at: new Date().toISOString(),
-            message: error.message || '查询队列失败'
-        };
-    }
-
-    renderVerifyMonitorPanel();
-    return verifyMonitorState.queue;
-}
-
-async function loadVerifyMonitor(force = false) {
-    if (loadVerifyMonitor._loadingPromise && !force) {
-        return loadVerifyMonitor._loadingPromise;
-    }
-
     verifyMonitorState.recent = {
         ...(verifyMonitorState.recent || getDefaultVerifyMonitorState().recent),
         status: 'loading',
         message: '正在加载...'
     };
+
+    if (quotaEl) {
+        renderVerifyQuotaState(quotaEl, 'neutral', 'fas fa-spinner fa-spin', '查询中...');
+    }
     renderVerifyMonitorPanel();
 
-    loadVerifyMonitor._loadingPromise = (async () => {
+    loadVerifyRuntimeSnapshot._loadingPromise = (async () => {
         try {
             const headers = await getAdminConfigApiHeaders();
             const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/verify-monitor', {
                 method: 'GET',
                 headers
-            });
+            }, 10000);
 
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载验证运维数据失败');
             }
 
-            verifyMonitorState.recent = {
-                status: 'ready',
-                fetched_at: String(payload.fetched_at || '').trim(),
-                summary: payload.summary || getDefaultVerifyMonitorState().recent.summary,
-                recent_tasks: Array.isArray(payload.recent_tasks) ? payload.recent_tasks : [],
-                recent_failures: Array.isArray(payload.recent_failures) ? payload.recent_failures : [],
-                message: ''
+            const nextQuota = payload.quota && typeof payload.quota === 'object'
+                ? payload.quota
+                : {};
+            const nextQueue = payload.queue && typeof payload.queue === 'object'
+                ? payload.queue
+                : {};
+            const nextRecent = payload.summary || payload.recent_tasks || payload.recent_failures
+                ? payload
+                : {};
+
+            verifyMonitorState.quota = {
+                ...getDefaultVerifyMonitorState().quota,
+                ...nextQuota,
+                status: String(nextQuota.status || 'idle')
             };
+            verifyMonitorState.queue = {
+                ...getDefaultVerifyMonitorState().queue,
+                ...nextQueue,
+                status: String(nextQueue.status || 'idle')
+            };
+            verifyMonitorState.recent = {
+                ...getDefaultVerifyMonitorState().recent,
+                fetched_at: String(nextRecent.fetched_at || '').trim(),
+                summary: nextRecent.summary || getDefaultVerifyMonitorState().recent.summary,
+                recent_tasks: Array.isArray(nextRecent.recent_tasks) ? nextRecent.recent_tasks : [],
+                recent_failures: Array.isArray(nextRecent.recent_failures) ? nextRecent.recent_failures : [],
+                message: '',
+                status: 'ready'
+            };
+
+            if (quotaEl) {
+                if (verifyMonitorState.quota.status === 'ready') {
+                    const balance = Number(verifyMonitorState.quota.balance || 0);
+                    const tone = balance > 5 ? 'success' : balance > 0 ? 'warning' : 'danger';
+                    const display = Number.isInteger(balance) ? balance : balance.toFixed(1);
+                    renderVerifyQuotaState(quotaEl, tone, 'fas fa-gem', display, { emphasized: true });
+                } else if (verifyMonitorState.quota.status === 'error') {
+                    renderVerifyQuotaState(quotaEl, 'danger', 'fas fa-exclamation-triangle', verifyMonitorState.quota.message || '查询失败');
+                } else {
+                    renderVerifyQuotaState(quotaEl, 'neutral', 'fas fa-circle-info', verifyMonitorState.quota.message || '等待检测');
+                }
+            }
+
             renderVerifyMonitorPanel();
-            return payload;
+            return verifyMonitorState;
         } catch (error) {
-            console.warn('[Config] Verify monitor load failed:', error.message);
+            const message = error.message || '加载验证运维数据失败';
+
+            verifyMonitorState.quota = {
+                ...getDefaultVerifyMonitorState().quota,
+                status: 'error',
+                checked_at: new Date().toISOString(),
+                message
+            };
+            verifyMonitorState.queue = {
+                ...getDefaultVerifyMonitorState().queue,
+                status: 'error',
+                checked_at: new Date().toISOString(),
+                message
+            };
             verifyMonitorState.recent = {
                 ...getDefaultVerifyMonitorState().recent,
                 status: 'error',
-                message: error.message || '加载验证运维数据失败'
+                message
             };
+
+            if (quotaEl) {
+                renderVerifyQuotaState(quotaEl, 'danger', 'fas fa-exclamation-triangle', message);
+            }
             renderVerifyMonitorPanel();
             return null;
         }
     })();
 
     try {
-        return await loadVerifyMonitor._loadingPromise;
+        return await loadVerifyRuntimeSnapshot._loadingPromise;
     } finally {
-        loadVerifyMonitor._loadingPromise = null;
+        loadVerifyRuntimeSnapshot._loadingPromise = null;
     }
 }
 
+async function checkVerifyQuota() {
+    await loadVerifyRuntimeSnapshot(true);
+    return verifyMonitorState.quota;
+}
+
+async function loadVerifyQueueState() {
+    await loadVerifyRuntimeSnapshot(true);
+    return verifyMonitorState.queue;
+}
+
+async function loadVerifyMonitor(force = false) {
+    await loadVerifyRuntimeSnapshot(force);
+    return verifyMonitorState.recent;
+}
+
 async function refreshVerifyMonitor(force = false) {
-    if (refreshVerifyMonitor._loadingPromise && !force) {
-        return refreshVerifyMonitor._loadingPromise;
-    }
-
-    refreshVerifyMonitor._loadingPromise = (async () => {
-        await Promise.allSettled([
-            checkVerifyQuota(),
-            loadVerifyQueueState(),
-            loadVerifyMonitor(force)
-        ]);
-        renderVerifyMonitorPanel();
-        return verifyMonitorState;
-    })();
-
-    try {
-        return await refreshVerifyMonitor._loadingPromise;
-    } finally {
-        refreshVerifyMonitor._loadingPromise = null;
-    }
+    return loadVerifyRuntimeSnapshot(force);
 }
 
 async function loadAdminAuditMonitor(force = false) {
