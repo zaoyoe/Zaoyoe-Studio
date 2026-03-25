@@ -56,6 +56,10 @@ const {
     normalizePaymentGatewayMonitorConfig,
     runPaymentGatewayDegradationSweep
 } = require('../api/_lib/payment-gateway-alerts');
+const {
+    normalizeVerifyQuotaMonitorConfig,
+    runVerifyQuotaLowSweep
+} = require('../api/_lib/verify-quota-alerts');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -77,6 +81,8 @@ let opsAlertSweepTimer = null;
 let opsAlertSweepRunning = false;
 let paymentGatewaySweepTimer = null;
 let paymentGatewaySweepRunning = false;
+let verifyQuotaSweepTimer = null;
+let verifyQuotaSweepRunning = false;
 let cachedShopDeliveryStrategy = null;
 let cachedShopDeliveryStrategyAt = 0;
 const afdianProvider = getPaymentProviderAdapter('afdian');
@@ -205,7 +211,10 @@ async function getVerifyConfig() {
     return {
         pricePerVerify: Number(config.price_per_verify) || 10,
         apiKey: String(config.verify_api_key || process.env.VERIFY_API_KEY || '').trim(),
-        apiBaseUrl: String(config.verify_api_base_url || process.env.VERIFY_API_BASE_URL || VERIFY_API_BASE).replace(/\/+$/, '')
+        apiBaseUrl: String(config.verify_api_base_url || process.env.VERIFY_API_BASE_URL || VERIFY_API_BASE).replace(/\/+$/, ''),
+        monitorConfig: config.verify_quota_monitor && typeof config.verify_quota_monitor === 'object'
+            ? config.verify_quota_monitor
+            : {}
     };
 }
 
@@ -2849,6 +2858,56 @@ function startPaymentGatewaySweep() {
     });
 }
 
+async function sweepVerifyQuotaHealth() {
+    if (verifyQuotaSweepRunning) return;
+    verifyQuotaSweepRunning = true;
+
+    try {
+        const verifyConfig = await getVerifyConfig();
+        const result = await runVerifyQuotaLowSweep(supabase, {
+            env: process.env,
+            verifyConfig
+        });
+
+        if (Number(result?.low_quota_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+            console.log('[VerifyQuotaMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[VerifyQuotaMonitor] Sweep failed:', error);
+    } finally {
+        verifyQuotaSweepRunning = false;
+    }
+}
+
+async function queueNextVerifyQuotaSweep(delayMs = null) {
+    if (verifyQuotaSweepTimer) return;
+
+    const verifyConfig = await getVerifyConfig();
+    const monitorConfig = normalizeVerifyQuotaMonitorConfig(verifyConfig?.monitorConfig, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 15 * 60 * 1000));
+
+    verifyQuotaSweepTimer = setTimeout(() => {
+        verifyQuotaSweepTimer = null;
+        sweepVerifyQuotaHealth()
+            .catch((error) => {
+                console.error('[VerifyQuotaMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextVerifyQuotaSweep().catch((error) => {
+                    console.error('[VerifyQuotaMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startVerifyQuotaSweep() {
+    if (verifyQuotaSweepTimer) return;
+
+    queueNextVerifyQuotaSweep(4200).catch((error) => {
+        console.error('[VerifyQuotaMonitor] Failed to start sweep:', error);
+    });
+}
+
 async function hasLoggedJobResult(userId, jobId, site = 'cn') {
     if (!userId || !jobId) return false;
 
@@ -4043,6 +4102,7 @@ function startServer(port = PORT) {
         startShopDeliverySweep();
         startOpsAlertSweep();
         startPaymentGatewaySweep();
+        startVerifyQuotaSweep();
     });
 }
 

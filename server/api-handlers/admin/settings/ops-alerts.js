@@ -273,6 +273,37 @@ function buildGatewayDegradedSampleJob(user) {
     };
 }
 
+function buildVerifyQuotaLowSampleJob(user) {
+    return {
+        alert_type: 'verify_quota_low',
+        severity: 'warning',
+        title: '验证额度不足预警（primary-key）',
+        payload: {
+            target_id: 'verify_quota:primary-key',
+            key_name: 'primary-key',
+            balance: 11,
+            credits: 11,
+            total_used: 324,
+            cost_per_job: 1,
+            remaining_jobs: 11,
+            queue_size: 7,
+            running_jobs: 2,
+            low_balance_threshold: 20,
+            low_remaining_jobs_threshold: 20,
+            critical_balance_threshold: 5,
+            critical_remaining_jobs_threshold: 5,
+            degraded_reasons: [
+                '剩余额度 11.00 点（阈值 20.00 点）',
+                '预计仅可继续 11 次验证（阈值 20 次）',
+                '剩余额度仅够覆盖约 11 次验证，当前队列 7 个、运行中 2 个'
+            ],
+            note: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了验证额度示例发送`,
+            checked_at: new Date().toISOString(),
+            entry_path: '后台设置 -> 验证服务配置 -> 当前额度 / 队列状态（示例）'
+        }
+    };
+}
+
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
     const { error } = await supabase
         .from('system_config')
@@ -308,6 +339,7 @@ module.exports = async (req, res) => {
                 sanitizeText(body.action) === 'send_test_telegram'
                 || sanitizeText(body.action) === 'send_sample_refund_telegram'
                 || sanitizeText(body.action) === 'send_sample_gateway_degraded'
+                || sanitizeText(body.action) === 'send_sample_verify_quota_low'
             ) {
                 const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase);
                 const runtime = {
@@ -320,6 +352,8 @@ module.exports = async (req, res) => {
                     ? buildTelegramRefundSampleJob(user)
                     : normalizedAction === 'send_sample_gateway_degraded'
                         ? buildGatewayDegradedSampleJob(user)
+                        : normalizedAction === 'send_sample_verify_quota_low'
+                            ? buildVerifyQuotaLowSampleJob(user)
                         : buildTelegramTestJob(user, runtime);
                 const result = await sendOpsAlertPreview(job, runtime);
 
@@ -330,6 +364,8 @@ module.exports = async (req, res) => {
                         ? 'admin.ops_alerts.telegram_refund_sample'
                         : normalizedAction === 'send_sample_gateway_degraded'
                             ? 'admin.ops_alerts.gateway_degraded_sample'
+                            : normalizedAction === 'send_sample_verify_quota_low'
+                                ? 'admin.ops_alerts.verify_quota_sample'
                             : 'admin.ops_alerts.telegram_test',
                     details: {
                         ok: result?.ok === true,
@@ -352,6 +388,8 @@ module.exports = async (req, res) => {
                         ? `退款详情示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : normalizedAction === 'send_sample_gateway_degraded'
                             ? `支付通道异常示例消息已发送到 ${channelLabels || '已启用通道'}`
+                            : normalizedAction === 'send_sample_verify_quota_low'
+                                ? `验证额度告警示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : `测试站外告警已发送到 ${channelLabels || '已启用通道'}`
                 });
             }

@@ -2050,6 +2050,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'data-admin-action="settings-send-ops-alert-telegram-test"',
         'data-admin-action="settings-send-ops-alert-refund-sample"',
         'data-admin-action="settings-send-ops-alert-gateway-sample"',
+        'data-admin-action="settings-send-ops-alert-verify-quota-sample"',
         'data-admin-action="settings-delete-ops-alert-secret"',
         'id="opsAlertTelegramChatIds"',
         'id="opsAlertTelegramBotToken"',
@@ -2067,6 +2068,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         "case 'settings-send-ops-alert-telegram-test':",
         "case 'settings-send-ops-alert-refund-sample':",
         "case 'settings-send-ops-alert-gateway-sample':",
+        "case 'settings-send-ops-alert-verify-quota-sample':",
         "case 'settings-delete-ops-alert-secret':"
     ];
 

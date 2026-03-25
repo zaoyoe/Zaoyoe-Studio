@@ -411,6 +411,37 @@ test('buildExternalAlertText renders provider degradation details for payment ga
     assert.match(text, /处理入口：支付对账 -> 支付总览 -> 通道表现 \/ 最近24小时异常趋势/);
 });
 
+test('buildExternalAlertText renders verify quota low details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'verify_quota_low',
+        severity: 'warning',
+        title: '验证额度不足预警（primary-key）',
+        payload: {
+            key_name: 'primary-key',
+            balance: 11,
+            total_used: 324,
+            cost_per_job: 1,
+            remaining_jobs: 11,
+            queue_size: 7,
+            running_jobs: 2,
+            degraded_reasons: [
+                '剩余额度 11.00 点（阈值 20.00 点）',
+                '预计仅可继续 11 次验证（阈值 20 次）'
+            ],
+            checked_at: '2026-03-25T10:00:00.000Z',
+            entry_path: '后台设置 -> 验证服务配置 -> 当前额度 / 队列状态'
+        }
+    });
+
+    assert.match(text, /验证额度告警/);
+    assert.match(text, /API Key：primary-key/);
+    assert.match(text, /剩余额度：11\.00 点/);
+    assert.match(text, /预计剩余：11 次/);
+    assert.match(text, /判定信号：剩余额度 11\.00 点（阈值 20\.00 点）；预计仅可继续 11 次验证（阈值 20 次）/);
+    assert.match(text, /队列概览：排队 7 个 \/ 运行中 2 个/);
+    assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 当前额度 \/ 队列状态/);
+});
+
 test('ops alerts exports sendFeishuAlert for admin preview actions', () => {
     assert.equal(typeof sendFeishuAlert, 'function');
 });
