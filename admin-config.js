@@ -8,6 +8,7 @@ let systemConfigCache = {};
 let paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
 let paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
 let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
+let opsAlertMonitorState = getDefaultOpsAlertMonitorState();
 let verifyMonitorState = getDefaultVerifyMonitorState();
 let adminAuditMonitorState = getDefaultAdminAuditMonitorState();
 let paymentChannelAccordionState = {
@@ -48,6 +49,12 @@ const ADMIN_AUDIT_MONITOR_CARD_TONE_CLASSES = [
     'admin-audit-monitor-card--success',
     'admin-audit-monitor-card--warning',
     'admin-audit-monitor-card--danger'
+];
+const OPS_ALERT_MONITOR_CARD_TONE_CLASSES = [
+    'ops-alert-monitor-card--neutral',
+    'ops-alert-monitor-card--success',
+    'ops-alert-monitor-card--warning',
+    'ops-alert-monitor-card--danger'
 ];
 const ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP = Object.freeze({
     '#ffffff': 'color-swatch--white',
@@ -742,6 +749,22 @@ function getDefaultOpsAlertSecretStatus() {
     };
 }
 
+function getDefaultOpsAlertMonitorState() {
+    return {
+        status: 'idle',
+        fetched_at: '',
+        summary: {
+            lookback_hours: 7 * 24,
+            total_job_count: 0,
+            total_active_count: 0,
+            total_critical_count: 0,
+            active_category_count: 0
+        },
+        categories: [],
+        message: '等待加载'
+    };
+}
+
 function getDefaultVerifyMonitorState() {
     return {
         quota: {
@@ -1287,6 +1310,7 @@ async function loadAllSystemConfig() {
         renderPackagesConfig();
         renderPaymentChannelsConfig();
         renderOpsAlertSettings();
+        renderOpsAlertMonitorPanel();
         renderChannelsConfig();
         renderRewardsConfig();
         renderGeneralSettingsConfig();
@@ -1299,6 +1323,7 @@ async function loadAllSystemConfig() {
         loadAffiliateSettings();
         loadPaymentChannelSettings();
         loadOpsAlertSettings();
+        loadOpsAlertMonitor();
 
     } catch (err) {
         console.warn('[Config] Load error:', err.message);
@@ -1728,6 +1753,154 @@ function renderOpsAlertSettings() {
     applyOpsAlertOverview(config);
 }
 
+function getOpsAlertMonitorCategoryActions(categoryKey) {
+    const normalizedKey = String(categoryKey || '').trim().toLowerCase();
+    const actionMap = {
+        payments: [
+            { target: 'payments-ops', label: '异常运维', icon: 'fas fa-shield-heart' },
+            { target: 'payments-overview', label: '支付总览', icon: 'fas fa-credit-card' }
+        ],
+        tickets: [
+            { target: 'tickets-pending', label: '待处理工单', icon: 'fas fa-ticket-alt' },
+            { target: 'tickets-resolved', label: '已处理工单', icon: 'fas fa-ticket-simple' }
+        ],
+        inventory: [
+            { target: 'shop-inventory', label: '库存 / 补货', icon: 'fas fa-box-open' }
+        ],
+        fulfillment: [
+            { target: 'shop-fulfillment', label: '履约死信', icon: 'fas fa-truck-ramp-box' }
+        ]
+    };
+    return actionMap[normalizedKey] || [];
+}
+
+function getOpsAlertMonitorCardTone(category = {}) {
+    if (Number(category.critical_count || 0) > 0) return 'danger';
+    if (Number(category.active_count || 0) > 0) return 'warning';
+    if (String(category.latest_state || '').toLowerCase() === 'recovered') return 'success';
+    return 'neutral';
+}
+
+function renderOpsAlertMonitorEmptyState(target, message) {
+    if (!target) return;
+    target.innerHTML = `<div class="ops-alert-monitor-empty">${escapeConfigHtml(message)}</div>`;
+}
+
+function buildOpsAlertMonitorBadge(label, tone = 'neutral') {
+    return `<span class="ops-alert-monitor-badge ops-alert-monitor-badge--${escapeConfigHtml(tone)}">${escapeConfigHtml(label)}</span>`;
+}
+
+function buildOpsAlertMonitorItemMarkup(item = {}) {
+    const severity = String(item.severity || 'warning').trim().toLowerCase();
+    const severityTone = severity === 'critical' ? 'danger' : (severity === 'warning' ? 'warning' : 'neutral');
+    const metaParts = [
+        item.reference_label && item.reference_value
+            ? `${escapeConfigHtml(item.reference_label)}：${escapeConfigHtml(item.reference_value)}`
+            : '',
+        item.created_at ? formatVerifyMonitorDateTime(item.created_at) : ''
+    ].filter(Boolean);
+
+    return `
+        <article class="ops-alert-monitor-item">
+            <div class="ops-alert-monitor-item__top">
+                ${buildOpsAlertMonitorBadge(severity === 'critical' ? 'critical' : 'warning', severityTone)}
+                <strong class="ops-alert-monitor-item__title">${escapeConfigHtml(item.title || '系统告警')}</strong>
+            </div>
+            ${item.message ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(item.message)}</div>` : ''}
+            <div class="ops-alert-monitor-item__meta">${metaParts.length ? metaParts.join(' · ') : '等待更多上下文'}</div>
+        </article>
+    `;
+}
+
+function buildOpsAlertMonitorCategoryMarkup(category = {}) {
+    const tone = getOpsAlertMonitorCardTone(category);
+    const actions = getOpsAlertMonitorCategoryActions(category.key);
+    const items = Array.isArray(category.items) ? category.items : [];
+    const latestSummary = category.latest_title
+        ? `${category.latest_title}${category.latest_at ? ` · ${formatVerifyMonitorDateTime(category.latest_at)}` : ''}`
+        : '最近还没有收集到这类告警。';
+    const latestMessage = category.latest_message
+        || (Number(category.active_count || 0) > 0
+            ? `当前有 ${formatVerifyMonitorInteger(category.active_count)} 项待关注告警。`
+            : '当前没有持续中的待关注告警。');
+
+    return `
+        <article class="ops-alert-monitor-card ops-alert-monitor-card--${escapeConfigHtml(tone)}">
+            <div class="ops-alert-monitor-card__head">
+                <div class="ops-alert-monitor-card__copy">
+                    <div class="ops-alert-monitor-card__title">${escapeConfigHtml(category.label || '告警分类')}</div>
+                    <div class="ops-alert-monitor-card__desc">${escapeConfigHtml(category.description || '')}</div>
+                </div>
+                <div class="ops-alert-monitor-card__stats">
+                    ${buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(category.active_count || 0)} 待关注`, Number(category.active_count || 0) > 0 ? 'warning' : 'neutral')}
+                    ${Number(category.critical_count || 0) > 0 ? buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(category.critical_count || 0)} critical`, 'danger') : ''}
+                </div>
+            </div>
+            <div class="ops-alert-monitor-card__latest">
+                <strong>${escapeConfigHtml(latestSummary)}</strong>
+                <span>${escapeConfigHtml(latestMessage)}</span>
+            </div>
+            <div class="ops-alert-monitor-card__items">
+                ${items.length
+        ? items.map(buildOpsAlertMonitorItemMarkup).join('')
+        : `<div class="ops-alert-monitor-empty">${escapeConfigHtml(
+            String(category.latest_state || '').toLowerCase() === 'recovered'
+                ? '最近一条同类告警已经恢复，可进入对应模块做一次复核。'
+                : '当前没有持续中的待处理告警。'
+        )}</div>`}
+            </div>
+            <div class="ops-alert-monitor-card__actions">
+                ${actions.map((action) => `
+                    <button
+                        type="button"
+                        class="btn-add-config btn-add-config--compact"
+                        data-admin-action="settings-open-ops-alert-workspace"
+                        data-workspace-target="${escapeConfigHtml(action.target)}"
+                    >
+                        <i class="${escapeConfigHtml(action.icon)}"></i> ${escapeConfigHtml(action.label)}
+                    </button>
+                `).join('')}
+            </div>
+        </article>
+    `;
+}
+
+function renderOpsAlertMonitorPanel() {
+    const panel = document.getElementById('opsAlertMonitorPanel');
+    const meta = document.getElementById('opsAlertMonitorMeta');
+    const grid = document.getElementById('opsAlertMonitorGrid');
+    if (!panel || !meta || !grid) return;
+
+    const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
+    const summary = state.summary || getDefaultOpsAlertMonitorState().summary;
+
+    panel.hidden = false;
+
+    if (state.status === 'loading') {
+        meta.innerHTML = '<i class="fas fa-rotate fa-spin"></i><span>正在汇总支付、工单、库存、履约四类告警...</span>';
+        renderOpsAlertMonitorEmptyState(grid, '正在加载集中告警处理面板...');
+        return;
+    }
+
+    if (state.status === 'error') {
+        meta.innerHTML = `<i class="fas fa-triangle-exclamation"></i><span>${escapeConfigHtml(state.message || '集中告警处理面板加载失败。')}</span>`;
+        renderOpsAlertMonitorEmptyState(grid, state.message || '集中告警处理面板加载失败。');
+        return;
+    }
+
+    meta.innerHTML = Number(summary.total_active_count || 0) > 0
+        ? `<i class="fas fa-siren-on"></i><span>当前共有 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.total_active_count || 0))} 项待关注告警，涉及 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.active_category_count || 0))} 个模块，其中 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.total_critical_count || 0))} 项为 critical。</span>`
+        : `<i class="fas fa-circle-check"></i><span>当前四类核心运维面板没有持续中的待关注告警；最近 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.lookback_hours || 0))} 小时内的告警轨迹仍可在下方模块里复核。</span>`;
+
+    const categories = Array.isArray(state.categories) ? state.categories : [];
+    if (!categories.length) {
+        renderOpsAlertMonitorEmptyState(grid, '最近窗口内还没有可展示的集中告警数据。');
+        return;
+    }
+
+    grid.innerHTML = categories.map(buildOpsAlertMonitorCategoryMarkup).join('');
+}
+
 function renderChannelsConfig() {
     const channels = systemConfigCache['channels'] || [];
     const container = document.getElementById('channelTags');
@@ -1972,6 +2145,59 @@ async function loadOpsAlertSettings(force = false) {
         return await loadOpsAlertSettings._loadingPromise;
     } finally {
         loadOpsAlertSettings._loadingPromise = null;
+    }
+}
+
+async function loadOpsAlertMonitor(force = false) {
+    if (loadOpsAlertMonitor._loadingPromise && !force) {
+        return loadOpsAlertMonitor._loadingPromise;
+    }
+
+    opsAlertMonitorState = {
+        ...(opsAlertMonitorState || getDefaultOpsAlertMonitorState()),
+        status: 'loading',
+        message: '正在加载集中告警处理面板...'
+    };
+    renderOpsAlertMonitorPanel();
+
+    loadOpsAlertMonitor._loadingPromise = (async () => {
+        try {
+            const headers = await getAdminConfigApiHeaders();
+            const response = await fetch('/api/admin/settings/ops-alert-monitor', {
+                method: 'GET',
+                headers
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || '加载集中告警处理面板失败');
+            }
+
+            opsAlertMonitorState = {
+                status: 'ready',
+                fetched_at: payload.fetched_at || '',
+                summary: payload.summary || getDefaultOpsAlertMonitorState().summary,
+                categories: Array.isArray(payload.categories) ? payload.categories : [],
+                message: ''
+            };
+            renderOpsAlertMonitorPanel();
+            return payload;
+        } catch (error) {
+            console.warn('[Config] Ops alert monitor load failed:', error.message);
+            opsAlertMonitorState = {
+                ...getDefaultOpsAlertMonitorState(),
+                status: 'error',
+                message: error.message || '加载集中告警处理面板失败'
+            };
+            renderOpsAlertMonitorPanel();
+            return null;
+        }
+    })();
+
+    try {
+        return await loadOpsAlertMonitor._loadingPromise;
+    } finally {
+        loadOpsAlertMonitor._loadingPromise = null;
     }
 }
 
@@ -2994,6 +3220,16 @@ async function sendOpsAlertPaymentConfigRecoveredSample() {
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
         return false;
     }
+}
+
+async function refreshOpsAlertMonitorPanel() {
+    const result = await loadOpsAlertMonitor(true);
+    if (result?.success) {
+        showConfigSavedToast('集中告警处理面板已刷新');
+        return true;
+    }
+    showToast('刷新失败: 请稍后重试', 'error');
+    return false;
 }
 
 function waitForOpsAlertWorkspacePaint() {
@@ -5359,6 +5595,7 @@ window.togglePaymentProviderPanel = togglePaymentProviderPanel;
 window.handlePaymentChannelActiveChange = handlePaymentChannelActiveChange;
 window.savePaymentChannelSettings = savePaymentChannelSettings;
 window.loadOpsAlertSettings = loadOpsAlertSettings;
+window.loadOpsAlertMonitor = loadOpsAlertMonitor;
 window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;
 window.toggleOpsAlertChannelEnabled = toggleOpsAlertChannelEnabled;
 window.saveOpsAlertSettings = saveOpsAlertSettings;
@@ -5383,6 +5620,7 @@ window.sendOpsAlertShopOrderDeliveryIncidentRecoveredSample = sendOpsAlertShopOr
 window.sendOpsAlertShopOrderDeliveryRecoveredSample = sendOpsAlertShopOrderDeliveryRecoveredSample;
 window.sendOpsAlertPaymentConfigChangedSample = sendOpsAlertPaymentConfigChangedSample;
 window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;
+window.refreshOpsAlertMonitorPanel = refreshOpsAlertMonitorPanel;
 window.openOpsAlertWorkspace = openOpsAlertWorkspace;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.loadVerifyMonitor = loadVerifyMonitor;

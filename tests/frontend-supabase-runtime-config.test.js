@@ -2073,7 +2073,11 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'data-admin-action="settings-send-ops-alert-shop-order-delivery-recovered-sample"',
         'data-admin-action="settings-send-ops-alert-payment-config-changed-sample"',
         'data-admin-action="settings-send-ops-alert-payment-config-recovered-sample"',
+        'data-admin-action="settings-refresh-ops-alert-monitor"',
         'data-admin-action="settings-delete-ops-alert-secret"',
+        'id="opsAlertMonitorPanel"',
+        'id="opsAlertMonitorGrid"',
+        'id="opsAlertMonitorMeta"',
         'data-workspace-target="payments-overview"',
         'data-workspace-target="payments-ops"',
         'data-workspace-target="verify-monitor"',
@@ -2116,6 +2120,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         "case 'settings-send-ops-alert-shop-order-delivery-recovered-sample':",
         "case 'settings-send-ops-alert-payment-config-changed-sample':",
         "case 'settings-send-ops-alert-payment-config-recovered-sample':",
+        "case 'settings-refresh-ops-alert-monitor':",
         "case 'settings-open-ops-alert-workspace':",
         "case 'settings-delete-ops-alert-secret':"
     ];
@@ -2144,6 +2149,12 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.sendOpsAlertShopOrderDeliveryRecoveredSample = sendOpsAlertShopOrderDeliveryRecoveredSample;',
         'window.sendOpsAlertPaymentConfigChangedSample = sendOpsAlertPaymentConfigChangedSample;',
         'window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;',
+        "fetch('/api/admin/settings/ops-alert-monitor'",
+        'function getDefaultOpsAlertMonitorState()',
+        'function renderOpsAlertMonitorPanel()',
+        'async function loadOpsAlertMonitor(force = false)',
+        'window.loadOpsAlertMonitor = loadOpsAlertMonitor;',
+        'window.refreshOpsAlertMonitorPanel = refreshOpsAlertMonitorPanel;',
         'async function openOpsAlertWorkspace(workspaceKey)',
         'window.openOpsAlertWorkspace = openOpsAlertWorkspace;',
         'window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;',
@@ -2164,7 +2175,10 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     const workspaceCssMarkers = [
         '.ops-alert-workspace-grid',
         '.ops-alert-workspace-card',
-        '.ops-alert-workspace-card__actions'
+        '.ops-alert-workspace-card__actions',
+        '.ops-alert-monitor-grid',
+        '.ops-alert-monitor-card',
+        '.ops-alert-monitor-card__actions'
     ];
 
     for (const marker of workspaceCssMarkers) {
