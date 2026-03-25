@@ -1718,7 +1718,7 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         'admin-studio.html should load the latest admin studio stylesheet version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-studio.js?v=20260325_ADMIN_RUNTIME_STYLE_HELPERS_21'),
+        adminStudioHtml.includes('admin-studio.js?v=20260325_ADMIN_RUNTIME_STYLE_HELPERS_22'),
         true,
         'admin-studio.html should load the latest admin studio runtime version'
     );
@@ -2243,7 +2243,7 @@ test('admin audit monitor exposes delegated settings actions and runtime wiring'
 
     const runtimeMarkers = [
         'function getDefaultAdminAuditMonitorState()',
-        "fetch('/api/admin/settings/admin-audit-monitor'",
+        "fetchAdminConfigJsonWithTimeout('/api/admin/settings/admin-audit-monitor'",
         'window.loadAdminAuditMonitor = loadAdminAuditMonitor;',
         'window.refreshAdminAuditMonitor = refreshAdminAuditMonitor;'
     ];
@@ -4439,7 +4439,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         'class="affiliate-poster-preview ${getAffiliatePosterPreviewClass(preset.id)}"',
         'class="color-swatch ${getAdminConfigRichTextColorClass(value)}"',
         "renderVerifyQuotaState(quotaEl, 'neutral', 'fas fa-spinner fa-spin', '查询中...');",
-        "fetch('/api/admin/settings/verify-monitor'",
+        "fetchAdminConfigJsonWithTimeout('/api/admin/settings/verify-monitor'",
         'window.loadVerifyMonitor = loadVerifyMonitor;',
         'window.refreshVerifyMonitor = refreshVerifyMonitor;'
     ];
@@ -4469,7 +4469,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         'admin-studio.html should reference the updated admin stylesheet version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-config.js?v=20260325_ADMIN_CONFIG_OPS_ALERT_EMAIL_HEALTH_18'),
+        adminStudioHtml.includes('admin-config.js?v=20260325_ADMIN_CONFIG_SYSTEM_CONFIG_API_19'),
         true,
         'admin-studio.html should reference the updated admin config runtime version'
     );
