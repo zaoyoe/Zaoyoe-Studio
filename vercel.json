@@ -25,12 +25,8 @@
     ],
     "rewrites": [
         {
-            "source": "/api/admin/:group/:route",
-            "destination": "/api/admin?route=:group/:route"
-        },
-        {
-            "source": "/api/admin/:route",
-            "destination": "/api/admin?route=:route"
+            "source": "/api/admin/:path*",
+            "destination": "/api/admin?route=:path*"
         },
         {
             "source": "/api/:path*",

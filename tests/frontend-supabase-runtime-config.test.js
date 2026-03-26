@@ -156,6 +156,15 @@ test('vercel config disables automatic preview deployments for codex work branch
     assert.equal(vercelConfig.git?.deploymentEnabled?.['codex/*'], false);
 });
 
+test('vercel admin rewrite supports nested admin settings routes', () => {
+    const vercelConfig = readVercelConfig();
+    const rewrites = Array.isArray(vercelConfig.rewrites) ? vercelConfig.rewrites : [];
+    const adminRewrite = rewrites.find((entry) => entry?.source === '/api/admin/:path*');
+
+    assert.ok(adminRewrite, 'vercel.json should include a catch-all /api/admin rewrite');
+    assert.equal(adminRewrite.destination, '/api/admin?route=:path*');
+});
+
 test('frontend entry pages load the shared Supabase runtime config before initialization', () => {
     const missing = [];
 
