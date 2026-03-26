@@ -332,6 +332,15 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-refund-sample':
                 window.sendOpsAlertRefundSample?.();
                 break;
+            case 'settings-send-ops-alert-customer-chat-message-sample':
+                window.sendOpsAlertCustomerChatMessageSample?.();
+                break;
+            case 'settings-send-ops-alert-shop-purchase-succeeded-sample':
+                window.sendOpsAlertShopPurchaseSucceededSample?.();
+                break;
+            case 'settings-send-ops-alert-wallet-recharge-succeeded-sample':
+                window.sendOpsAlertWalletRechargeSucceededSample?.();
+                break;
             case 'settings-send-ops-alert-gateway-sample':
                 window.sendOpsAlertGatewaySample?.();
                 break;
