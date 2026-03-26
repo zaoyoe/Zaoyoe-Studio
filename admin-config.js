@@ -1866,6 +1866,152 @@ function updateOpsAlertOverviewCard(cardId, titleId, bodyId, tone, titleText, bo
     if (bodyEl) bodyEl.textContent = bodyText;
 }
 
+function formatOpsAlertTrendBucketLabel(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hour = String(date.getHours()).padStart(2, '0');
+    return `${month}/${day} ${hour}:00`;
+}
+
+function buildOpsAlertTrendGradient(bucket = {}) {
+    const delivered = Math.max(0, Number(bucket.delivered_count || 0));
+    const failed = Math.max(0, Number(bucket.failed_count || 0));
+    const deadLetter = Math.max(0, Number(bucket.dead_letter_count || 0));
+    const total = delivered + failed + deadLetter;
+    if (total <= 0) {
+        return '';
+    }
+
+    const segments = [
+        { value: delivered, color: 'rgba(52, 211, 153, 0.96)' },
+        { value: failed, color: 'rgba(251, 191, 36, 0.96)' },
+        { value: deadLetter, color: 'rgba(248, 113, 113, 0.96)' }
+    ];
+    const stops = [];
+    let cursor = 0;
+
+    segments.forEach((segment) => {
+        if (segment.value <= 0) return;
+        const next = cursor + ((segment.value / total) * 100);
+        stops.push(`${segment.color} ${cursor.toFixed(2)}% ${next.toFixed(2)}%`);
+        cursor = next;
+    });
+
+    if (cursor < 100) {
+        stops.push(`rgba(107, 158, 206, 0.18) ${cursor.toFixed(2)}% 100%`);
+    }
+
+    return `linear-gradient(to top, ${stops.join(', ')})`;
+}
+
+function renderOpsAlertOverviewRecentVisuals(summary = {}, status = 'idle') {
+    const trendEl = document.getElementById('opsAlertOverviewRecentTrend');
+    const segmentsEl = document.getElementById('opsAlertOverviewRecentSegments');
+    if (!trendEl || !segmentsEl) {
+        return;
+    }
+
+    trendEl.hidden = true;
+    trendEl.innerHTML = '';
+    segmentsEl.hidden = true;
+    segmentsEl.innerHTML = '';
+
+    if (status !== 'ready') {
+        return;
+    }
+
+    const trendBuckets = Array.isArray(summary.recent_trend_buckets) ? summary.recent_trend_buckets : [];
+    const maxBucketTotal = trendBuckets.reduce((max, bucket) => (
+        Math.max(max, Number(bucket?.total_count || 0))
+    ), 0);
+
+    if (trendBuckets.length > 0 && maxBucketTotal > 0) {
+        const bars = trendBuckets.map((bucket) => {
+            const delivered = Math.max(0, Number(bucket?.delivered_count || 0));
+            const failed = Math.max(0, Number(bucket?.failed_count || 0));
+            const deadLetter = Math.max(0, Number(bucket?.dead_letter_count || 0));
+            const total = delivered + failed + deadLetter;
+            const heightPercent = total > 0
+                ? Math.max(10, Math.round((total / maxBucketTotal) * 100))
+                : 0;
+            const tooltip = [
+                `${formatOpsAlertTrendBucketLabel(bucket?.bucket_start_at)} - ${formatOpsAlertTrendBucketLabel(bucket?.bucket_end_at)}`,
+                `送达 ${formatVerifyMonitorInteger(delivered)} 次`,
+                `失败 ${formatVerifyMonitorInteger(failed)} 次`,
+                `死信 ${formatVerifyMonitorInteger(deadLetter)} 项`
+            ].join(' · ');
+            const backgroundStyle = total > 0
+                ? `height:${heightPercent}%;background:${buildOpsAlertTrendGradient(bucket)};`
+                : '';
+
+            return `
+                <div class="ops-alert-overview-trend__bucket" title="${escapeConfigHtml(tooltip)}">
+                    <div class="ops-alert-overview-trend__track">
+                        <div class="ops-alert-overview-trend__fill${total > 0 ? '' : ' ops-alert-overview-trend__fill--empty'}" style="${backgroundStyle}"></div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        const middleIndex = Math.floor((trendBuckets.length - 1) / 2);
+        trendEl.innerHTML = `
+            <div class="ops-alert-overview-trend">
+                <div class="ops-alert-overview-trend__meta">72 小时趋势 · 每 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.trend_bucket_hours || 6))} 小时一段</div>
+                <div class="ops-alert-overview-trend__bars">${bars}</div>
+                <div class="ops-alert-overview-trend__footer">
+                    <span>${escapeConfigHtml(formatOpsAlertTrendBucketLabel(trendBuckets[0]?.bucket_start_at))}</span>
+                    <span>${escapeConfigHtml(formatOpsAlertTrendBucketLabel(trendBuckets[middleIndex]?.bucket_start_at))}</span>
+                    <span>${escapeConfigHtml(formatOpsAlertTrendBucketLabel(trendBuckets[trendBuckets.length - 1]?.bucket_end_at))}</span>
+                </div>
+            </div>
+        `;
+        trendEl.hidden = false;
+    }
+
+    const deliveredCount = Math.max(0, Number(summary.delivered_count || 0));
+    const failedCount = Math.max(0, Number(summary.failed_count || 0));
+    const deadLetterCount = Math.max(0, Number(summary.dead_letter_count || 0));
+    const segmentTotal = deliveredCount + failedCount + deadLetterCount;
+
+    if (segmentTotal > 0) {
+        const segments = [
+            {
+                label: '送达',
+                value: deliveredCount,
+                tone: 'success'
+            },
+            {
+                label: '失败',
+                value: failedCount,
+                tone: 'warning'
+            },
+            {
+                label: '死信',
+                value: deadLetterCount,
+                tone: 'danger'
+            }
+        ].map((segment) => {
+            const share = segmentTotal > 0 ? Math.round((segment.value / segmentTotal) * 100) : 0;
+            return `
+                <div class="ops-alert-overview-segment ops-alert-overview-segment--${escapeConfigHtml(segment.tone)}">
+                    <span>${escapeConfigHtml(segment.label)}</span>
+                    <strong>${escapeConfigHtml(formatVerifyMonitorInteger(segment.value))}</strong>
+                    <em>${escapeConfigHtml(formatVerifyMonitorInteger(share))}%</em>
+                </div>
+            `;
+        }).join('');
+
+        segmentsEl.innerHTML = `
+            <div class="ops-alert-overview-segments__meta">分段统计</div>
+            <div class="ops-alert-overview-segments">${segments}</div>
+        `;
+        segmentsEl.hidden = false;
+    }
+}
+
 function getOpsAlertOverviewStatus(config) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const telegramSecret = opsAlertSecretStatus?.telegram_bot_token || getDefaultOpsAlertSecretStatus().telegram_bot_token;
@@ -2037,7 +2183,9 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
             limit: 3,
             includeChannel: true
         });
+        const recentDeliveryTypeSummary = buildOpsAlertDeliveryTypeSummary(summary.recent_delivery_types, 3);
         const recentErrorSummary = buildOpsAlertRecentErrorSummary(summary.recent_errors, 2);
+        const recentErrorChannelSummary = buildOpsAlertErrorSourceSummary(summary.recent_error_channels, 3);
         if (Number(summary.total_attempt_count || 0) > 0) {
             if (Number(summary.dead_letter_count || 0) > 0) {
                 recentTone = 'danger';
@@ -2047,7 +2195,7 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
                 recentTone = 'success';
             }
             recentTitle = `近 ${lookbackHours} 小时`;
-            recentBody = `送达 ${formatVerifyMonitorInteger(summary.delivered_count || 0)} 次，失败 ${formatVerifyMonitorInteger(summary.failed_count || 0)} 次，死信 ${formatVerifyMonitorInteger(summary.dead_letter_count || 0)} 项。${recentDeliverySummary ? ` 最近投递：${recentDeliverySummary}。` : ''}${recentErrorSummary ? ` 最近失败：${recentErrorSummary}。` : ''}${healthState.fetched_at ? ` 刷新于 ${formatVerifyMonitorDateTime(healthState.fetched_at)}。` : ''}`;
+            recentBody = `送达 ${formatVerifyMonitorInteger(summary.delivered_count || 0)} 次，失败 ${formatVerifyMonitorInteger(summary.failed_count || 0)} 次，死信 ${formatVerifyMonitorInteger(summary.dead_letter_count || 0)} 项。${recentDeliverySummary ? ` 最近投递：${recentDeliverySummary}。` : ''}${recentDeliveryTypeSummary ? ` 成功类型：${recentDeliveryTypeSummary}。` : ''}${recentErrorSummary ? ` 最近失败：${recentErrorSummary}。` : ''}${recentErrorChannelSummary ? ` 异常来源：${recentErrorChannelSummary}。` : ''}${healthState.fetched_at ? ` 刷新于 ${formatVerifyMonitorDateTime(healthState.fetched_at)}。` : ''}`;
         } else if (Array.isArray(healthState.channels) && healthState.channels.length > 0) {
             recentTitle = `近 ${lookbackHours} 小时`;
             recentBody = '最近没有新的站外投递记录，但通道健康信息已经刷新。';
@@ -2064,6 +2212,7 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
         recentTitle,
         recentBody
     );
+    renderOpsAlertOverviewRecentVisuals(summary, healthState.status);
 }
 
 function buildOpsAlertRecentDeliverySummary(items = [], options = {}) {
@@ -2106,6 +2255,32 @@ function buildOpsAlertRecentErrorSummary(items = [], limit = 2) {
                 parts.push(`· ${formatVerifyMonitorInteger(count)} 次`);
             }
             return parts.join(' ');
+        })
+        .filter(Boolean)
+        .join('；');
+}
+
+function buildOpsAlertDeliveryTypeSummary(items = [], limit = 3) {
+    const normalizedItems = Array.isArray(items) ? items : [];
+    return normalizedItems
+        .slice(0, Math.max(1, Number(limit) || 3))
+        .map((item) => {
+            const title = String(item?.title || item?.alert_type || '系统告警').trim();
+            const count = Number(item?.count || 0);
+            return count > 0 ? `${title} ${formatVerifyMonitorInteger(count)} 次` : title;
+        })
+        .filter(Boolean)
+        .join('；');
+}
+
+function buildOpsAlertErrorSourceSummary(items = [], limit = 3) {
+    const normalizedItems = Array.isArray(items) ? items : [];
+    return normalizedItems
+        .slice(0, Math.max(1, Number(limit) || 3))
+        .map((item) => {
+            const channelLabel = String(item?.channel_label || item?.channel || '未知通道').trim();
+            const count = Number(item?.count || 0);
+            return count > 0 ? `${channelLabel} ${formatVerifyMonitorInteger(count)} 次` : channelLabel;
         })
         .filter(Boolean)
         .join('；');

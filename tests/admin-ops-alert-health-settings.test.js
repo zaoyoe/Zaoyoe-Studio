@@ -299,11 +299,33 @@ test('ops alert health handler summarizes recent channel delivery health', async
         assert.equal(payload.summary.recent_deliveries.length, 1);
         assert.equal(payload.summary.recent_deliveries[0].alert_type, 'wallet_recharge_succeeded');
         assert.equal(payload.summary.recent_deliveries[0].target_summary, '林白');
+        assert.equal(payload.summary.recent_delivery_types.length, 1);
+        assert.equal(payload.summary.recent_delivery_types[0].title, '充值成功');
+        assert.equal(payload.summary.recent_delivery_types[0].count, 1);
         assert.equal(payload.summary.recent_errors.length, 2);
         assert.equal(payload.summary.recent_errors[0].channel_label, 'Telegram');
         assert.equal(payload.summary.recent_errors[0].message, 'telegram timeout');
         assert.equal(payload.summary.recent_errors[1].channel_label, '飞书');
         assert.equal(payload.summary.recent_errors[1].message, 'feishu rate limit');
+        assert.equal(payload.summary.recent_error_channels.length, 2);
+        assert.equal(payload.summary.recent_error_channels[0].channel_label, 'Telegram');
+        assert.equal(payload.summary.recent_error_channels[0].count, 1);
+        assert.equal(payload.summary.recent_error_channels[1].channel_label, '飞书');
+        assert.equal(payload.summary.recent_error_channels[1].count, 1);
+        assert.equal(payload.summary.trend_bucket_hours, 6);
+        assert.equal(payload.summary.recent_trend_buckets.length, 12);
+        assert.equal(
+            payload.summary.recent_trend_buckets.reduce((sum, bucket) => sum + Number(bucket.delivered_count || 0), 0),
+            1
+        );
+        assert.equal(
+            payload.summary.recent_trend_buckets.reduce((sum, bucket) => sum + Number(bucket.failed_count || 0), 0),
+            2
+        );
+        assert.equal(
+            payload.summary.recent_trend_buckets.reduce((sum, bucket) => sum + Number(bucket.dead_letter_count || 0), 0),
+            1
+        );
 
         const telegram = payload.channels.find((channel) => channel.key === 'telegram');
         const feishu = payload.channels.find((channel) => channel.key === 'feishu');
