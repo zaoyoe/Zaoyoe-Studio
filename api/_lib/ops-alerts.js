@@ -7,9 +7,10 @@ const {
 const OPS_ALERTS_CONFIG_KEY = 'ops_alerts';
 const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
     telegram_bot_token: 'ops_alert_telegram_bot_token',
-    feishu_webhook_url: 'ops_alert_feishu_webhook_url'
+    feishu_webhook_url: 'ops_alert_feishu_webhook_url',
+    email_api_key: 'ops_alert_email_api_key'
 });
-const SUPPORTED_CHANNELS = Object.freeze(['telegram', 'feishu']);
+const SUPPORTED_CHANNELS = Object.freeze(['telegram', 'feishu', 'email']);
 const SEVERITY_RANK = Object.freeze({
     info: 10,
     warning: 20,
@@ -33,6 +34,14 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         feishu: Object.freeze({
             enabled: false,
             minimum_severity: 'warning'
+        }),
+        email: Object.freeze({
+            enabled: false,
+            minimum_severity: 'warning',
+            recipients: Object.freeze([]),
+            from_address: '',
+            reply_to: '',
+            subject_prefix: '[Zaoyoe告警]'
         })
     })
 });
@@ -123,6 +132,14 @@ function cloneDefaultConfig() {
             feishu: {
                 enabled: DEFAULT_OPS_ALERTS_CONFIG.channels.feishu.enabled,
                 minimum_severity: DEFAULT_OPS_ALERTS_CONFIG.channels.feishu.minimum_severity
+            },
+            email: {
+                enabled: DEFAULT_OPS_ALERTS_CONFIG.channels.email.enabled,
+                minimum_severity: DEFAULT_OPS_ALERTS_CONFIG.channels.email.minimum_severity,
+                recipients: [...DEFAULT_OPS_ALERTS_CONFIG.channels.email.recipients],
+                from_address: DEFAULT_OPS_ALERTS_CONFIG.channels.email.from_address,
+                reply_to: DEFAULT_OPS_ALERTS_CONFIG.channels.email.reply_to,
+                subject_prefix: DEFAULT_OPS_ALERTS_CONFIG.channels.email.subject_prefix
             }
         }
     };
@@ -137,6 +154,9 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         : {};
     const feishuConfig = channelConfig.feishu && typeof channelConfig.feishu === 'object'
         ? channelConfig.feishu
+        : {};
+    const emailConfig = channelConfig.email && typeof channelConfig.email === 'object'
+        ? channelConfig.email
         : {};
 
     config.enabled = normalizeBoolean(source.enabled, normalizeBoolean(env?.OPS_ALERTS_ENABLED, config.enabled));
@@ -206,6 +226,29 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         normalizeSeverity(env?.OPS_ALERTS_FEISHU_MINIMUM_SEVERITY, config.channels.feishu.minimum_severity)
     );
 
+    config.channels.email.enabled = normalizeBoolean(
+        emailConfig.enabled,
+        normalizeBoolean(env?.OPS_ALERTS_EMAIL_ENABLED, config.channels.email.enabled)
+    );
+    config.channels.email.minimum_severity = normalizeSeverity(
+        emailConfig.minimum_severity,
+        normalizeSeverity(env?.OPS_ALERTS_EMAIL_MINIMUM_SEVERITY, config.channels.email.minimum_severity)
+    );
+    config.channels.email.recipients = normalizeStringArray(
+        emailConfig.recipients && emailConfig.recipients.length
+            ? emailConfig.recipients
+            : env?.OPS_ALERTS_EMAIL_RECIPIENTS
+    );
+    config.channels.email.from_address = normalizeText(
+        emailConfig.from_address || env?.OPS_ALERTS_EMAIL_FROM_ADDRESS || config.channels.email.from_address
+    );
+    config.channels.email.reply_to = normalizeText(
+        emailConfig.reply_to || env?.OPS_ALERTS_EMAIL_REPLY_TO || config.channels.email.reply_to
+    );
+    config.channels.email.subject_prefix = normalizeText(
+        emailConfig.subject_prefix || env?.OPS_ALERTS_EMAIL_SUBJECT_PREFIX || config.channels.email.subject_prefix
+    ) || DEFAULT_OPS_ALERTS_CONFIG.channels.email.subject_prefix;
+
     return config;
 }
 
@@ -263,6 +306,12 @@ async function resolveOpsAlertSecrets(supabase, env = process.env) {
         'OPS_ALERTS_FEISHU_WEBHOOK_URL',
         env
     );
+    const email = await loadSecretValue(
+        supabase,
+        secretKeys.email_api_key,
+        'OPS_ALERTS_EMAIL_API_KEY',
+        env
+    );
 
     return {
         telegram_bot_token: telegram.value,
@@ -270,7 +319,10 @@ async function resolveOpsAlertSecrets(supabase, env = process.env) {
         telegram_bot_token_updated_at: telegram.updatedAt,
         feishu_webhook_url: feishu.value,
         feishu_webhook_url_source: feishu.source,
-        feishu_webhook_url_updated_at: feishu.updatedAt
+        feishu_webhook_url_updated_at: feishu.updatedAt,
+        email_api_key: email.value,
+        email_api_key_source: email.source,
+        email_api_key_updated_at: email.updatedAt
     };
 }
 
@@ -297,6 +349,11 @@ function buildOpsAlertSecretStatus(runtime = {}) {
             configured: Boolean(normalizeText(secrets.feishu_webhook_url)),
             source: normalizeText(secrets.feishu_webhook_url_source) || 'missing',
             updatedAt: secrets.feishu_webhook_url_updated_at || null
+        },
+        email_api_key: {
+            configured: Boolean(normalizeText(secrets.email_api_key)),
+            source: normalizeText(secrets.email_api_key_source) || 'missing',
+            updatedAt: secrets.email_api_key_updated_at || null
         }
     };
 }
@@ -330,6 +387,16 @@ function resolveEnabledChannels(runtime = {}, alertSeverity = 'warning') {
         && isSeverityAllowed(config.channels.feishu.minimum_severity, alertSeverity)
     ) {
         channels.push('feishu');
+    }
+
+    if (
+        config.channels.email.enabled
+        && normalizeText(secrets.email_api_key)
+        && normalizeStringArray(config.channels.email.recipients).length
+        && normalizeText(config.channels.email.from_address)
+        && isSeverityAllowed(config.channels.email.minimum_severity, alertSeverity)
+    ) {
+        channels.push('email');
     }
 
     return channels;
@@ -1539,7 +1606,8 @@ function buildAdminLoginAnomalyAlertText(job = {}) {
 
 async function postJson(url, body, {
     timeoutMs = DEFAULT_OPS_ALERTS_CONFIG.timeout_ms,
-    fetchImpl = global.fetch
+    fetchImpl = global.fetch,
+    headers = {}
 } = {}) {
     if (typeof fetchImpl !== 'function') {
         throw new Error('Fetch is unavailable');
@@ -1552,7 +1620,8 @@ async function postJson(url, body, {
         const response = await fetchImpl(url, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json; charset=utf-8'
+                'Content-Type': 'application/json; charset=utf-8',
+                ...headers
             },
             body: JSON.stringify(body),
             signal: controller.signal
@@ -1566,6 +1635,14 @@ async function postJson(url, body, {
     } finally {
         clearTimeout(timer);
     }
+}
+
+function buildEmailAlertSubject(job = {}, runtime = {}) {
+    const prefix = normalizeText(runtime?.config?.channels?.email?.subject_prefix)
+        || DEFAULT_OPS_ALERTS_CONFIG.channels.email.subject_prefix;
+    const severity = normalizeSeverity(job?.severity, 'warning').toUpperCase();
+    const title = normalizeText(job?.title) || normalizeText(job?.alert_type) || '系统告警';
+    return [prefix, `[${severity}]`, title].filter(Boolean).join(' ');
 }
 
 async function sendTelegramAlert(job, runtime, options = {}) {
@@ -1646,6 +1723,42 @@ async function sendFeishuAlert(job, runtime, options = {}) {
     }
 
     return result;
+}
+
+async function sendEmailAlert(job, runtime, options = {}) {
+    const apiKey = normalizeText(runtime?.secrets?.email_api_key);
+    const recipients = normalizeStringArray(runtime?.config?.channels?.email?.recipients);
+    const fromAddress = normalizeText(runtime?.config?.channels?.email?.from_address);
+    const replyTo = normalizeText(runtime?.config?.channels?.email?.reply_to);
+
+    if (!apiKey || !recipients.length || !fromAddress) {
+        return {
+            ok: false,
+            status: 0,
+            error: 'email_not_configured'
+        };
+    }
+
+    const payload = {
+        from: fromAddress,
+        to: recipients,
+        subject: buildEmailAlertSubject(job, runtime),
+        text: buildExternalAlertText(job)
+    };
+    if (replyTo) {
+        payload.reply_to = replyTo;
+    }
+
+    return postJson(
+        'https://api.resend.com/emails',
+        payload,
+        {
+            ...options,
+            headers: {
+                Authorization: `Bearer ${apiKey}`
+            }
+        }
+    );
 }
 
 async function recordOpsAlertAttempt(supabase, {
@@ -1796,6 +1909,8 @@ async function processOpsAlertJob(supabase, job, runtime, options = {}) {
                 result = await sendTelegramAlert(job, runtime, options);
             } else if (channel === 'feishu') {
                 result = await sendFeishuAlert(job, runtime, options);
+            } else if (channel === 'email') {
+                result = await sendEmailAlert(job, runtime, options);
             } else {
                 result = {
                     ok: false,
@@ -1893,6 +2008,7 @@ module.exports = {
     normalizeOpsAlertsConfig,
     processOpsAlertJob,
     resolveEnabledChannels,
+    sendEmailAlert,
     sendFeishuAlert,
     sendTelegramAlert,
     sweepOpsAlertJobs,
@@ -1903,10 +2019,12 @@ module.exports = {
         getRetryDelayMs,
         hasRecentOpsAlertJob,
         normalizeChannelName,
+        resolveEnabledChannels,
         normalizeSeverity,
         normalizeStringArray,
         recordOpsAlertAttempt,
         resolveOpsAlertSecrets,
+        sendEmailAlert,
         sendFeishuAlert,
         sendTelegramAlert
     }

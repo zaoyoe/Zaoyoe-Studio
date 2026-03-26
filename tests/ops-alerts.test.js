@@ -208,6 +208,14 @@ function createRuntimeConfig(overrides = {}) {
                 feishu: {
                     enabled: true,
                     minimum_severity: 'warning'
+                },
+                email: {
+                    enabled: false,
+                    minimum_severity: 'warning',
+                    recipients: [],
+                    from_address: '',
+                    reply_to: '',
+                    subject_prefix: '[Zaoyoe告警]'
                 }
             },
             ...overrides.config
@@ -215,6 +223,7 @@ function createRuntimeConfig(overrides = {}) {
         secrets: {
             telegram_bot_token: 'telegram-token',
             feishu_webhook_url: 'https://open.feishu.example/hook',
+            email_api_key: '',
             ...overrides.secrets
         }
     };
@@ -1234,12 +1243,149 @@ test('ops alerts runtime secret resolution falls back to default secret keys whe
             }
         }, {
             OPS_ALERTS_TELEGRAM_BOT_TOKEN: 'telegram-token-from-env',
-            OPS_ALERTS_FEISHU_WEBHOOK_URL: 'https://open.feishu.example/hook'
+            OPS_ALERTS_FEISHU_WEBHOOK_URL: 'https://open.feishu.example/hook',
+            OPS_ALERTS_EMAIL_API_KEY: 're_test_email_key'
         });
 
         assert.equal(runtime.secrets.telegram_bot_token, 'telegram-token-from-env');
         assert.equal(runtime.secrets.telegram_bot_token_source, 'environment');
         assert.equal(runtime.secrets.feishu_webhook_url, 'https://open.feishu.example/hook');
         assert.equal(runtime.secrets.feishu_webhook_url_source, 'environment');
+        assert.equal(runtime.secrets.email_api_key, 're_test_email_key');
+        assert.equal(runtime.secrets.email_api_key_source, 'environment');
     });
+});
+
+test('resolveEnabledChannels includes email only when the backend email channel is fully configured', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            channels: {
+                telegram: { enabled: false },
+                feishu: { enabled: false },
+                email: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    recipients: ['ops@example.com', 'owner@example.com'],
+                    from_address: 'Zaoyoe Ops <alerts@zaoyoe.com>',
+                    reply_to: 'owner@zaoyoe.com',
+                    subject_prefix: '[Zaoyoe告警]'
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: '',
+            feishu_webhook_url: '',
+            email_api_key: 're_email_key'
+        }
+    });
+
+    assert.deepEqual(__testUtils.resolveEnabledChannels(runtime, 'critical'), ['email']);
+});
+
+test('sendEmailAlert uses Resend with recipients, sender, and severity subject', async () => {
+    let request = null;
+    const result = await __testUtils.sendEmailAlert({
+        alert_type: 'payment_gateway_degraded',
+        severity: 'critical',
+        title: '虎皮椒 支付通道异常波动（CN）',
+        content: '支付通道异常'
+    }, {
+        config: normalizeOpsAlertsConfig({
+            channels: {
+                email: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    recipients: ['ops@example.com', 'owner@example.com'],
+                    from_address: 'Zaoyoe Ops <alerts@zaoyoe.com>',
+                    reply_to: 'owner@zaoyoe.com',
+                    subject_prefix: '[Zaoyoe告警]'
+                }
+            }
+        }),
+        secrets: {
+            email_api_key: 're_email_key'
+        }
+    }, {
+        fetchImpl: async (url, options) => {
+            request = { url, options };
+            return {
+                ok: true,
+                status: 200,
+                async text() {
+                    return JSON.stringify({ id: 'email_123' });
+                }
+            };
+        }
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(request.url, 'https://api.resend.com/emails');
+    assert.equal(request.options.headers.Authorization, 'Bearer re_email_key');
+    const body = JSON.parse(request.options.body);
+    assert.deepEqual(body.to, ['ops@example.com', 'owner@example.com']);
+    assert.equal(body.from, 'Zaoyoe Ops <alerts@zaoyoe.com>');
+    assert.equal(body.reply_to, 'owner@zaoyoe.com');
+    assert.match(body.subject, /\[Zaoyoe告警\] \[CRITICAL\] 虎皮椒 支付通道异常波动（CN）/);
+});
+
+test('sweepOpsAlertJobs can deliver email-only queued alerts', async () => {
+    const state = {
+        jobs: [
+            {
+                id: 'job-email-1',
+                alert_type: 'verify_quota_low',
+                severity: 'warning',
+                title: '验证额度不足',
+                content: '验证额度不足',
+                payload: {},
+                status: 'pending',
+                channels: ['email'],
+                remaining_channels: ['email'],
+                attempt_count: 0,
+                max_attempts: 3,
+                next_retry_at: new Date(Date.now() - 1000).toISOString(),
+                created_at: new Date(Date.now() - 2000).toISOString()
+            }
+        ],
+        attempts: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            channels: {
+                telegram: { enabled: false },
+                feishu: { enabled: false },
+                email: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    recipients: ['ops@example.com'],
+                    from_address: 'Zaoyoe Ops <alerts@zaoyoe.com>'
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: '',
+            feishu_webhook_url: '',
+            email_api_key: 're_email_key'
+        }
+    });
+
+    const result = await sweepOpsAlertJobs(supabase, {
+        runtime,
+        fetchImpl: async (url) => ({
+            ok: url === 'https://api.resend.com/emails',
+            status: 200,
+            async text() {
+                return '{"id":"email_123"}';
+            }
+        })
+    });
+
+    assert.equal(result.claimed, 1);
+    assert.equal(result.delivered, 1);
+    assert.equal(result.retried, 0);
+    assert.equal(state.jobs[0].status, 'delivered');
+    assert.equal(state.attempts.length, 1);
+    assert.equal(state.attempts[0].channel, 'email');
+    assert.equal(state.attempts[0].status, 'delivered');
 });

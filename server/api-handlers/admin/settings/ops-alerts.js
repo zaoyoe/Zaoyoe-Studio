@@ -13,6 +13,7 @@ const {
     buildOpsAlertSecretStatus,
     loadOpsAlertsRuntimeConfig,
     normalizeOpsAlertsConfig,
+    sendEmailAlert,
     OPS_ALERTS_CONFIG_KEY,
     sendFeishuAlert,
     sendTelegramAlert
@@ -20,7 +21,8 @@ const {
 
 const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
     telegram_bot_token: 'ops_alert_telegram_bot_token',
-    feishu_webhook_url: 'ops_alert_feishu_webhook_url'
+    feishu_webhook_url: 'ops_alert_feishu_webhook_url',
+    email_api_key: 'ops_alert_email_api_key'
 });
 
 function sanitizeText(value, maxLength = 4000) {
@@ -39,7 +41,8 @@ function getOpsAlertSecretKeys() {
 function mergeRuntimeSecrets(baseSecrets = {}, incomingSecrets = {}) {
     const nextSecrets = {
         telegram_bot_token: sanitizeText(baseSecrets.telegram_bot_token, 4000),
-        feishu_webhook_url: sanitizeText(baseSecrets.feishu_webhook_url, 4000)
+        feishu_webhook_url: sanitizeText(baseSecrets.feishu_webhook_url, 4000),
+        email_api_key: sanitizeText(baseSecrets.email_api_key, 4000)
     };
 
     for (const [secretName] of Object.entries(getOpsAlertSecretKeys())) {
@@ -91,6 +94,9 @@ function getConfiguredPreviewChannels(runtime) {
     if (runtime?.config?.channels?.feishu?.enabled === true) {
         channels.push('feishu');
     }
+    if (runtime?.config?.channels?.email?.enabled === true) {
+        channels.push('email');
+    }
     return channels;
 }
 
@@ -115,6 +121,21 @@ function validatePreviewRuntime(runtime, channels) {
         return '已启用飞书告警，但飞书 Webhook 未配置';
     }
 
+    if (channels.includes('email')) {
+        const recipients = Array.isArray(runtime?.config?.channels?.email?.recipients)
+            ? runtime.config.channels.email.recipients
+            : [];
+        if (!sanitizeText(runtime?.secrets?.email_api_key)) {
+            return '已启用邮件告警，但 Email API Key 未配置';
+        }
+        if (!recipients.length) {
+            return '已启用邮件告警，但收件人未填写';
+        }
+        if (!sanitizeText(runtime?.config?.channels?.email?.from_address)) {
+            return '已启用邮件告警，但发件地址未填写';
+        }
+    }
+
     return '';
 }
 
@@ -127,6 +148,7 @@ function formatPreviewChannelLabels(channels = []) {
     const labels = channels.map((channel) => {
         if (channel === 'telegram') return 'Telegram';
         if (channel === 'feishu') return '飞书';
+        if (channel === 'email') return '邮件';
         return sanitizeText(channel) || channel;
     }).filter(Boolean);
 
@@ -151,6 +173,8 @@ async function sendOpsAlertPreview(job, runtime) {
             result = await sendTelegramAlert(job, runtime);
         } else if (channel === 'feishu') {
             result = await sendFeishuAlert(job, runtime);
+        } else if (channel === 'email') {
+            result = await sendEmailAlert(job, runtime);
         } else {
             result = {
                 ok: false,
@@ -1105,6 +1129,7 @@ module.exports = async (req, res) => {
                     enabled: nextConfig.enabled,
                     telegram_enabled: nextConfig.channels?.telegram?.enabled === true,
                     feishu_enabled: nextConfig.channels?.feishu?.enabled === true,
+                    email_enabled: nextConfig.channels?.email?.enabled === true,
                     updated_secrets: updatedSecrets
                 }
             });

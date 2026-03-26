@@ -49,23 +49,34 @@ function createDefaultState() {
                 feishu: {
                     enabled: false,
                     minimum_severity: 'warning'
+                },
+                email: {
+                    enabled: false,
+                    minimum_severity: 'warning',
+                    recipients: [],
+                    from_address: '',
+                    reply_to: '',
+                    subject_prefix: '[Zaoyoe告警]'
                 }
             }
         },
         secretStatus: {
             telegram_bot_token: { configured: false, source: 'missing', updatedAt: null },
-            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null },
+            email_api_key: { configured: false, source: 'missing', updatedAt: null }
         },
         runtimeSecrets: {
             telegram_bot_token: '',
-            feishu_webhook_url: ''
+            feishu_webhook_url: '',
+            email_api_key: ''
         },
         systemConfigUpserts: [],
         upsertedSecrets: [],
         deletedSecrets: [],
         auditLogs: [],
         telegramTests: [],
-        feishuTests: []
+        feishuTests: [],
+        emailTests: []
     };
 }
 
@@ -104,6 +115,7 @@ function createNormalizedConfig(raw) {
     const channels = source.channels && typeof source.channels === 'object' ? source.channels : {};
     const telegram = channels.telegram && typeof channels.telegram === 'object' ? channels.telegram : {};
     const feishu = channels.feishu && typeof channels.feishu === 'object' ? channels.feishu : {};
+    const email = channels.email && typeof channels.email === 'object' ? channels.email : {};
 
     return {
         enabled: normalizeBoolean(source.enabled, false),
@@ -120,6 +132,16 @@ function createNormalizedConfig(raw) {
                 minimum_severity: ['info', 'warning', 'critical'].includes(String(feishu.minimum_severity || '').trim())
                     ? String(feishu.minimum_severity).trim()
                     : 'warning'
+            },
+            email: {
+                enabled: normalizeBoolean(email.enabled, false),
+                minimum_severity: ['info', 'warning', 'critical'].includes(String(email.minimum_severity || '').trim())
+                    ? String(email.minimum_severity).trim()
+                    : 'warning',
+                recipients: normalizeStringArray(email.recipients),
+                from_address: String(email.from_address || '').trim(),
+                reply_to: String(email.reply_to || '').trim(),
+                subject_prefix: String(email.subject_prefix || '').trim() || '[Zaoyoe告警]'
             }
         }
     };
@@ -167,7 +189,12 @@ function createMockAdminModule(state) {
 }
 
 function buildSecretStatus(state) {
-    return cloneValue(state.secretStatus);
+    return {
+        telegram_bot_token: { configured: false, source: 'missing', updatedAt: null },
+        feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null },
+        email_api_key: { configured: false, source: 'missing', updatedAt: null },
+        ...cloneValue(state.secretStatus)
+    };
 }
 
 async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
@@ -186,7 +213,8 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
                 ? undefined
                 : {
                     telegram_bot_token: 'ops_alert_telegram_bot_token',
-                    feishu_webhook_url: 'ops_alert_feishu_webhook_url'
+                    feishu_webhook_url: 'ops_alert_feishu_webhook_url',
+                    email_api_key: 'ops_alert_email_api_key'
                 };
             return {
                 OPS_ALERT_SECRET_KEYS: secretKeyMap,
@@ -208,6 +236,14 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
                             updatedAt: '2026-03-24T10:00:00.000Z'
                         };
                     }
+                    if (secretKey === 'ops_alert_email_api_key') {
+                        state.runtimeSecrets.email_api_key = secretValue;
+                        state.secretStatus.email_api_key = {
+                            configured: true,
+                            source: 'stored',
+                            updatedAt: '2026-03-24T10:00:00.000Z'
+                        };
+                    }
                 },
                 async deleteStoredAdminSecret(_supabase, secretKey) {
                     state.deletedSecrets.push(secretKey);
@@ -222,6 +258,14 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
                     if (secretKey === 'ops_alert_feishu_webhook_url') {
                         state.runtimeSecrets.feishu_webhook_url = '';
                         state.secretStatus.feishu_webhook_url = {
+                            configured: false,
+                            source: 'missing',
+                            updatedAt: null
+                        };
+                    }
+                    if (secretKey === 'ops_alert_email_api_key') {
+                        state.runtimeSecrets.email_api_key = '';
+                        state.secretStatus.email_api_key = {
                             configured: false,
                             source: 'missing',
                             updatedAt: null
@@ -270,6 +314,18 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
                         body: JSON.stringify({ code: 0, msg: 'success' })
                     };
                 },
+                async sendEmailAlert(job, runtime) {
+                    state.emailTests.push({
+                        job: cloneValue(job),
+                        runtime: cloneValue(runtime)
+                    });
+
+                    return {
+                        ok: true,
+                        status: 200,
+                        body: JSON.stringify({ id: 'email_123' })
+                    };
+                },
                 resolveEnabledChannels(runtime, severity) {
                     const channels = [];
                     const normalizedSeverity = String(severity || '').trim().toLowerCase() || 'warning';
@@ -281,6 +337,10 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
                     if (runtime?.config?.channels?.feishu?.enabled) {
                         const min = String(runtime.config.channels.feishu.minimum_severity || 'warning').trim().toLowerCase();
                         if ((rank[normalizedSeverity] || 20) >= (rank[min] || 20)) channels.push('feishu');
+                    }
+                    if (runtime?.config?.channels?.email?.enabled) {
+                        const min = String(runtime.config.channels.email.minimum_severity || 'warning').trim().toLowerCase();
+                        if ((rank[normalizedSeverity] || 20) >= (rank[min] || 20)) channels.push('email');
                     }
                     return channels;
                 }
@@ -336,6 +396,7 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.telegram_bot_token.source, 'stored');
         assert.equal(payload.secrets.feishu_webhook_url.configured, false);
+        assert.equal(payload.secrets.email_api_key.configured, false);
     });
 });
 
@@ -420,6 +481,51 @@ test('ops alert settings POST falls back to default secret keys when the shared 
                 secretValue: 'telegram-secret-token'
             }
         ]);
+    });
+});
+
+test('ops alert settings POST can store the backend email alert secret without touching the frontend', async () => {
+    await withOpsAlertsSettingsHandler({}, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                config: {
+                    enabled: true,
+                    channels: {
+                        email: {
+                            enabled: true,
+                            minimum_severity: 'critical',
+                            recipients: ['ops@example.com', 'owner@example.com'],
+                            from_address: 'Zaoyoe Ops <alerts@zaoyoe.com>',
+                            reply_to: 'owner@zaoyoe.com',
+                            subject_prefix: '[Zaoyoe告警]'
+                        }
+                    }
+                },
+                secrets: {
+                    email_api_key: 're_email_key'
+                }
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.config.channels.email.enabled, true);
+        assert.deepEqual(payload.config.channels.email.recipients, ['ops@example.com', 'owner@example.com']);
+        assert.equal(payload.config.channels.email.from_address, 'Zaoyoe Ops <alerts@zaoyoe.com>');
+        assert.equal(payload.secrets.email_api_key.configured, true);
+        assert.deepEqual(state.upsertedSecrets, [
+            {
+                secretKey: 'ops_alert_email_api_key',
+                secretValue: 're_email_key'
+            }
+        ]);
+        assert.equal(state.auditLogs[0].details.email_enabled, true);
+        assert.deepEqual(state.auditLogs[0].details.updated_secrets, ['email_api_key']);
     });
 });
 
