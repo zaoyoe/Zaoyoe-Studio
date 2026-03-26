@@ -2037,7 +2037,9 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
             limit: 3,
             includeChannel: true
         });
+        const recentDeliveryTypeSummary = buildOpsAlertDeliveryTypeSummary(summary.recent_delivery_types, 3);
         const recentErrorSummary = buildOpsAlertRecentErrorSummary(summary.recent_errors, 2);
+        const recentErrorChannelSummary = buildOpsAlertErrorSourceSummary(summary.recent_error_channels, 3);
         if (Number(summary.total_attempt_count || 0) > 0) {
             if (Number(summary.dead_letter_count || 0) > 0) {
                 recentTone = 'danger';
@@ -2047,7 +2049,7 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
                 recentTone = 'success';
             }
             recentTitle = `近 ${lookbackHours} 小时`;
-            recentBody = `送达 ${formatVerifyMonitorInteger(summary.delivered_count || 0)} 次，失败 ${formatVerifyMonitorInteger(summary.failed_count || 0)} 次，死信 ${formatVerifyMonitorInteger(summary.dead_letter_count || 0)} 项。${recentDeliverySummary ? ` 最近投递：${recentDeliverySummary}。` : ''}${recentErrorSummary ? ` 最近失败：${recentErrorSummary}。` : ''}${healthState.fetched_at ? ` 刷新于 ${formatVerifyMonitorDateTime(healthState.fetched_at)}。` : ''}`;
+            recentBody = `送达 ${formatVerifyMonitorInteger(summary.delivered_count || 0)} 次，失败 ${formatVerifyMonitorInteger(summary.failed_count || 0)} 次，死信 ${formatVerifyMonitorInteger(summary.dead_letter_count || 0)} 项。${recentDeliverySummary ? ` 最近投递：${recentDeliverySummary}。` : ''}${recentDeliveryTypeSummary ? ` 成功类型：${recentDeliveryTypeSummary}。` : ''}${recentErrorSummary ? ` 最近失败：${recentErrorSummary}。` : ''}${recentErrorChannelSummary ? ` 异常来源：${recentErrorChannelSummary}。` : ''}${healthState.fetched_at ? ` 刷新于 ${formatVerifyMonitorDateTime(healthState.fetched_at)}。` : ''}`;
         } else if (Array.isArray(healthState.channels) && healthState.channels.length > 0) {
             recentTitle = `近 ${lookbackHours} 小时`;
             recentBody = '最近没有新的站外投递记录，但通道健康信息已经刷新。';
@@ -2106,6 +2108,32 @@ function buildOpsAlertRecentErrorSummary(items = [], limit = 2) {
                 parts.push(`· ${formatVerifyMonitorInteger(count)} 次`);
             }
             return parts.join(' ');
+        })
+        .filter(Boolean)
+        .join('；');
+}
+
+function buildOpsAlertDeliveryTypeSummary(items = [], limit = 3) {
+    const normalizedItems = Array.isArray(items) ? items : [];
+    return normalizedItems
+        .slice(0, Math.max(1, Number(limit) || 3))
+        .map((item) => {
+            const title = String(item?.title || item?.alert_type || '系统告警').trim();
+            const count = Number(item?.count || 0);
+            return count > 0 ? `${title} ${formatVerifyMonitorInteger(count)} 次` : title;
+        })
+        .filter(Boolean)
+        .join('；');
+}
+
+function buildOpsAlertErrorSourceSummary(items = [], limit = 3) {
+    const normalizedItems = Array.isArray(items) ? items : [];
+    return normalizedItems
+        .slice(0, Math.max(1, Number(limit) || 3))
+        .map((item) => {
+            const channelLabel = String(item?.channel_label || item?.channel || '未知通道').trim();
+            const count = Number(item?.count || 0);
+            return count > 0 ? `${channelLabel} ${formatVerifyMonitorInteger(count)} 次` : channelLabel;
         })
         .filter(Boolean)
         .join('；');

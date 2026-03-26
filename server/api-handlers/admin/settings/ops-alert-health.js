@@ -241,6 +241,58 @@ function buildRecentErrorEntries(channels = [], limit = 5) {
         .slice(0, Math.max(0, limit));
 }
 
+function buildRecentDeliveryTypeStats(entries = [], limit = 5) {
+    const normalizedEntries = Array.isArray(entries) ? entries : [];
+    const stats = new Map();
+
+    for (const entry of normalizedEntries) {
+        const alertType = normalizeText(entry.alert_type, 120).toLowerCase() || 'system_alert';
+        const title = normalizeText(entry.title, 160) || alertType || '系统告警';
+        const current = stats.get(alertType) || {
+            alert_type: alertType,
+            title,
+            count: 0
+        };
+        current.count += 1;
+        stats.set(alertType, current);
+    }
+
+    return Array.from(stats.values())
+        .sort((left, right) => {
+            if (right.count !== left.count) {
+                return right.count - left.count;
+            }
+            return String(left.title || '').localeCompare(String(right.title || ''));
+        })
+        .slice(0, Math.max(0, limit));
+}
+
+function buildRecentErrorChannelStats(entries = [], limit = 5) {
+    const normalizedEntries = Array.isArray(entries) ? entries : [];
+    const stats = new Map();
+
+    for (const entry of normalizedEntries) {
+        const channel = normalizeText(entry.channel, 40).toLowerCase() || 'unknown';
+        const channelLabel = normalizeText(entry.channel_label, 40) || channel || '未知通道';
+        const current = stats.get(channel) || {
+            channel,
+            channel_label: channelLabel,
+            count: 0
+        };
+        current.count += Number(entry.count || 0) || 0;
+        stats.set(channel, current);
+    }
+
+    return Array.from(stats.values())
+        .sort((left, right) => {
+            if (right.count !== left.count) {
+                return right.count - left.count;
+            }
+            return String(left.channel_label || '').localeCompare(String(right.channel_label || ''));
+        })
+        .slice(0, Math.max(0, limit));
+}
+
 function buildChannelStatus(channelKey, config = {}, secretStatus = {}, jobs = [], attempts = []) {
     const enabled = config.enabled === true;
     const configured = secretStatus.configured === true;
@@ -359,6 +411,8 @@ module.exports = async (req, res) => {
             };
         });
 
+        const recentDeliveries = buildRecentDeliveryEntries(jobs, attempts, 5);
+        const recentErrors = buildRecentErrorEntries(channels, 5);
         const summary = {
             lookback_hours: OPS_ALERT_HEALTH_LOOKBACK_HOURS,
             total_job_count: jobs.length,
@@ -367,8 +421,10 @@ module.exports = async (req, res) => {
             failed_count: channels.reduce((sum, channel) => sum + Number(channel.failed_count || 0), 0),
             dead_letter_count: channels.reduce((sum, channel) => sum + Number(channel.dead_letter_count || 0), 0),
             enabled_channel_count: channels.filter((channel) => channel.enabled).length,
-            recent_deliveries: buildRecentDeliveryEntries(jobs, attempts, 5),
-            recent_errors: buildRecentErrorEntries(channels, 5)
+            recent_deliveries: recentDeliveries,
+            recent_delivery_types: buildRecentDeliveryTypeStats(recentDeliveries, 5),
+            recent_errors: recentErrors,
+            recent_error_channels: buildRecentErrorChannelStats(recentErrors, 5)
         };
 
         return sendJson(res, 200, {
