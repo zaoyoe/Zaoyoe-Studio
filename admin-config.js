@@ -756,7 +756,8 @@ function getDefaultPaymentChannelRuntimeState() {
 function getDefaultOpsAlertSecretStatus() {
     return {
         telegram_bot_token: { configured: false, source: 'missing', updatedAt: null },
-        feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null },
+        email_api_key: { configured: false, source: 'missing', updatedAt: null }
     };
 }
 
@@ -880,6 +881,14 @@ function getDefaultOpsAlertConfig() {
             feishu: {
                 enabled: false,
                 minimum_severity: 'warning'
+            },
+            email: {
+                enabled: false,
+                minimum_severity: 'warning',
+                recipients: [],
+                from_address: '',
+                reply_to: '',
+                subject_prefix: '[Zaoyoe告警]'
             }
         }
     };
@@ -1238,6 +1247,9 @@ function normalizeOpsAlertConfig(raw) {
     const feishuSource = sourceChannels.feishu && typeof sourceChannels.feishu === 'object' && !Array.isArray(sourceChannels.feishu)
         ? sourceChannels.feishu
         : {};
+    const emailSource = sourceChannels.email && typeof sourceChannels.email === 'object' && !Array.isArray(sourceChannels.email)
+        ? sourceChannels.email
+        : {};
 
     return {
         enabled: normalizeConfigBoolean(source.enabled, defaults.enabled),
@@ -1261,6 +1273,14 @@ function normalizeOpsAlertConfig(raw) {
             feishu: {
                 enabled: normalizeConfigBoolean(feishuSource.enabled, defaults.channels.feishu.enabled),
                 minimum_severity: normalizeOpsAlertSeverity(feishuSource.minimum_severity, defaults.channels.feishu.minimum_severity)
+            },
+            email: {
+                enabled: normalizeConfigBoolean(emailSource.enabled, defaults.channels.email.enabled),
+                minimum_severity: normalizeOpsAlertSeverity(emailSource.minimum_severity, defaults.channels.email.minimum_severity),
+                recipients: normalizeConfigStringArray(emailSource.recipients),
+                from_address: String(emailSource.from_address || defaults.channels.email.from_address).trim(),
+                reply_to: String(emailSource.reply_to || defaults.channels.email.reply_to).trim(),
+                subject_prefix: String(emailSource.subject_prefix || defaults.channels.email.subject_prefix).trim() || defaults.channels.email.subject_prefix
             }
         }
     };
@@ -1671,6 +1691,7 @@ function applyOpsAlertOverview(config) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const telegramSecret = opsAlertSecretStatus?.telegram_bot_token || getDefaultOpsAlertSecretStatus().telegram_bot_token;
     const feishuSecret = opsAlertSecretStatus?.feishu_webhook_url || getDefaultOpsAlertSecretStatus().feishu_webhook_url;
+    const emailSecret = opsAlertSecretStatus?.email_api_key || getDefaultOpsAlertSecretStatus().email_api_key;
     const telegramChatCount = normalizedConfig.channels.telegram.chat_ids.length;
     const channelStates = [];
     const deliveryIssues = [];
@@ -1693,6 +1714,19 @@ function applyOpsAlertOverview(config) {
         } else {
             channelStates.push(`${feishuSummary} · 待补充配置`);
             deliveryIssues.push('飞书 Webhook 未配置');
+        }
+    }
+
+    if (normalizedConfig.channels.email.enabled) {
+        const emailRecipientCount = normalizedConfig.channels.email.recipients.length;
+        const emailSummary = `邮件 · ${normalizedConfig.channels.email.minimum_severity}+ · ${emailRecipientCount || 0} 个收件人`;
+        if (emailSecret.configured && emailRecipientCount > 0 && normalizedConfig.channels.email.from_address) {
+            channelStates.push(`${emailSummary} · 已就绪`);
+        } else {
+            channelStates.push(`${emailSummary} · 待补充配置`);
+            if (!emailSecret.configured) deliveryIssues.push('Email API Key 未配置');
+            if (!emailRecipientCount) deliveryIssues.push('邮件收件人未填写');
+            if (!normalizedConfig.channels.email.from_address) deliveryIssues.push('邮件发件地址未填写');
         }
     }
 
@@ -1738,6 +1772,11 @@ function applyOpsAlertOverview(config) {
         feishuToggle.classList.toggle('active', normalizedConfig.channels.feishu.enabled);
     }
 
+    const emailToggle = document.getElementById('opsAlertEmailEnabledToggle');
+    if (emailToggle) {
+        emailToggle.classList.toggle('active', normalizedConfig.channels.email.enabled);
+    }
+
     const telegramInputIds = [
         'opsAlertTelegramChatIds',
         'opsAlertTelegramSeverity',
@@ -1757,6 +1796,19 @@ function applyOpsAlertOverview(config) {
         if (input) input.disabled = !normalizedConfig.channels.feishu.enabled;
     });
 
+    const emailInputIds = [
+        'opsAlertEmailSeverity',
+        'opsAlertEmailRecipients',
+        'opsAlertEmailFromAddress',
+        'opsAlertEmailReplyTo',
+        'opsAlertEmailSubjectPrefix',
+        'opsAlertEmailApiKey'
+    ];
+    emailInputIds.forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !normalizedConfig.channels.email.enabled;
+    });
+
     const telegramStatus = document.getElementById('opsAlertTelegramBotTokenStatus');
     if (telegramStatus) {
         telegramStatus.textContent = getOpsAlertSecretStatusMessage('telegram_bot_token');
@@ -1767,8 +1819,14 @@ function applyOpsAlertOverview(config) {
         feishuStatus.textContent = getOpsAlertSecretStatusMessage('feishu_webhook_url');
     }
 
+    const emailStatus = document.getElementById('opsAlertEmailApiKeyStatus');
+    if (emailStatus) {
+        emailStatus.textContent = getOpsAlertSecretStatusMessage('email_api_key');
+    }
+
     setOpsAlertDeleteButtonState('telegram_bot_token', telegramSecret);
     setOpsAlertDeleteButtonState('feishu_webhook_url', feishuSecret);
+    setOpsAlertDeleteButtonState('email_api_key', emailSecret);
 }
 
 function renderOpsAlertSettings() {
@@ -1787,6 +1845,31 @@ function renderOpsAlertSettings() {
     const feishuSeverity = document.getElementById('opsAlertFeishuSeverity');
     if (feishuSeverity) {
         feishuSeverity.value = config.channels.feishu.minimum_severity;
+    }
+
+    const emailSeverity = document.getElementById('opsAlertEmailSeverity');
+    if (emailSeverity) {
+        emailSeverity.value = config.channels.email.minimum_severity;
+    }
+
+    const emailRecipients = document.getElementById('opsAlertEmailRecipients');
+    if (emailRecipients) {
+        emailRecipients.value = config.channels.email.recipients.join('\n');
+    }
+
+    const emailFromAddress = document.getElementById('opsAlertEmailFromAddress');
+    if (emailFromAddress) {
+        emailFromAddress.value = config.channels.email.from_address;
+    }
+
+    const emailReplyTo = document.getElementById('opsAlertEmailReplyTo');
+    if (emailReplyTo) {
+        emailReplyTo.value = config.channels.email.reply_to;
+    }
+
+    const emailSubjectPrefix = document.getElementById('opsAlertEmailSubjectPrefix');
+    if (emailSubjectPrefix) {
+        emailSubjectPrefix.value = config.channels.email.subject_prefix;
     }
 
     applyOpsAlertOverview(config);
@@ -3540,6 +3623,9 @@ function collectOpsAlertConfigFromForm() {
             },
             feishu: {
                 ...currentConfig.channels.feishu
+            },
+            email: {
+                ...currentConfig.channels.email
             }
         }
     };
@@ -3560,6 +3646,24 @@ function collectOpsAlertConfigFromForm() {
         document.getElementById('opsAlertFeishuSeverity')?.value,
         currentConfig.channels.feishu.minimum_severity
     );
+    nextConfig.channels.email.enabled = document.getElementById('opsAlertEmailEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.channels.email.enabled;
+    nextConfig.channels.email.minimum_severity = normalizeOpsAlertSeverity(
+        document.getElementById('opsAlertEmailSeverity')?.value,
+        currentConfig.channels.email.minimum_severity
+    );
+    nextConfig.channels.email.recipients = normalizeConfigStringArray(
+        document.getElementById('opsAlertEmailRecipients')?.value ?? currentConfig.channels.email.recipients
+    );
+    nextConfig.channels.email.from_address = String(
+        document.getElementById('opsAlertEmailFromAddress')?.value ?? currentConfig.channels.email.from_address
+    ).trim();
+    nextConfig.channels.email.reply_to = String(
+        document.getElementById('opsAlertEmailReplyTo')?.value ?? currentConfig.channels.email.reply_to
+    ).trim();
+    nextConfig.channels.email.subject_prefix = String(
+        document.getElementById('opsAlertEmailSubjectPrefix')?.value ?? currentConfig.channels.email.subject_prefix
+    ).trim() || currentConfig.channels.email.subject_prefix;
 
     return normalizeOpsAlertConfig(nextConfig);
 }
@@ -3567,7 +3671,8 @@ function collectOpsAlertConfigFromForm() {
 function clearOpsAlertSecretInputs() {
     [
         'opsAlertTelegramBotToken',
-        'opsAlertFeishuWebhookUrl'
+        'opsAlertFeishuWebhookUrl',
+        'opsAlertEmailApiKey'
     ].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.value = '';
@@ -3582,7 +3687,8 @@ async function saveOpsAlertSettings() {
             config,
             secrets: {
                 telegram_bot_token: document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '',
-                feishu_webhook_url: document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || ''
+                feishu_webhook_url: document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || '',
+                email_api_key: document.getElementById('opsAlertEmailApiKey')?.value?.trim() || ''
             }
         };
 
@@ -3615,15 +3721,18 @@ async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
     const config = collectOpsAlertConfigFromForm();
     const telegramEnabled = config.channels?.telegram?.enabled === true;
     const feishuEnabled = config.channels?.feishu?.enabled === true;
+    const emailEnabled = config.channels?.email?.enabled === true;
     const chatIds = Array.isArray(config.channels?.telegram?.chat_ids)
         ? config.channels.telegram.chat_ids
         : [];
     const hasStoredTelegramToken = Boolean(opsAlertSecretStatus?.telegram_bot_token?.configured);
     const hasStoredFeishuWebhook = Boolean(opsAlertSecretStatus?.feishu_webhook_url?.configured);
+    const hasStoredEmailApiKey = Boolean(opsAlertSecretStatus?.email_api_key?.configured);
     const providedTelegramToken = document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '';
     const providedFeishuWebhook = document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || '';
+    const providedEmailApiKey = document.getElementById('opsAlertEmailApiKey')?.value?.trim() || '';
 
-    if (!telegramEnabled && !feishuEnabled) {
+    if (!telegramEnabled && !feishuEnabled && !emailEnabled) {
         throw new Error('请先启用至少一个站外告警通道');
     }
 
@@ -3641,6 +3750,19 @@ async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
         throw new Error('已启用飞书告警，请先填写飞书 Webhook，或先保存已配置的后台密钥');
     }
 
+    if (emailEnabled) {
+        const recipients = Array.isArray(config.channels?.email?.recipients) ? config.channels.email.recipients : [];
+        if (!recipients.length) {
+            throw new Error('已启用邮件告警，请先填写至少一个收件人');
+        }
+        if (!config.channels?.email?.from_address) {
+            throw new Error('已启用邮件告警，请先填写发件地址');
+        }
+        if (!providedEmailApiKey && !hasStoredEmailApiKey) {
+            throw new Error('已启用邮件告警，请先填写 Email API Key，或先保存已配置的后台密钥');
+        }
+    }
+
     const headers = await getAdminConfigApiHeaders();
     const response = await fetch('/api/admin/settings/ops-alerts', {
         method: 'POST',
@@ -3650,7 +3772,8 @@ async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
             config,
             secrets: {
                 telegram_bot_token: providedTelegramToken,
-                feishu_webhook_url: providedFeishuWebhook
+                feishu_webhook_url: providedFeishuWebhook,
+                email_api_key: providedEmailApiKey
             }
         })
     });
@@ -4098,7 +4221,8 @@ async function openOpsAlertWorkspace(workspaceKey, context = {}) {
 async function deleteOpsAlertSecret(secretName) {
     const secretLabels = {
         telegram_bot_token: 'Telegram Bot Token',
-        feishu_webhook_url: '飞书 Webhook'
+        feishu_webhook_url: '飞书 Webhook',
+        email_api_key: 'Email API Key'
     };
     const normalizedSecretName = String(secretName || '').trim();
     if (!secretLabels[normalizedSecretName]) {
@@ -4155,7 +4279,8 @@ function toggleOpsAlertsEnabled() {
 function toggleOpsAlertChannelEnabled(channelKey) {
     const toggleMap = {
         telegram: 'opsAlertTelegramEnabledToggle',
-        feishu: 'opsAlertFeishuEnabledToggle'
+        feishu: 'opsAlertFeishuEnabledToggle',
+        email: 'opsAlertEmailEnabledToggle'
     };
     const toggleEl = document.getElementById(toggleMap[channelKey]);
     if (!toggleEl) return;

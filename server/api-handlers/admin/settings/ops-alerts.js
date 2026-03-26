@@ -204,15 +204,17 @@ function buildTelegramTestJob(user, runtime) {
     const chatCount = Array.isArray(runtime?.config?.channels?.telegram?.chat_ids)
         ? runtime.config.channels.telegram.chat_ids.length
         : 0;
+    const channels = getConfiguredPreviewChannels(runtime);
 
     return {
         alert_type: 'ops_alert_test',
         severity: 'warning',
-        title: '站外退款告警 Telegram 自检',
+        title: '站外告警通道自检',
         content: [
-            '这是一条 Telegram 通道自检消息。',
+            '这是一条站外告警通道自检消息。',
             `触发管理员：${sanitizeText(user?.email || user?.id) || 'unknown'}`,
-            `目标 chat 数量：${chatCount}`,
+            `已启用通道：${formatPreviewChannelLabels(channels) || '未启用'}`,
+            `Telegram 目标 chat 数量：${chatCount}`,
             `发送时间：${new Date().toISOString()}`,
             '说明：该消息不会写入退款异常队列，也不会受 45 分钟去重限制。'
         ].join('\n')

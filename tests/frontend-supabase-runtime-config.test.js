@@ -2109,9 +2109,16 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'data-workspace-target="tickets-resolved"',
         'data-workspace-target="shop-inventory"',
         'data-workspace-target="shop-fulfillment"',
+        'id="opsAlertEmailEnabledToggle"',
+        'id="opsAlertEmailRecipients"',
+        'id="opsAlertEmailFromAddress"',
+        'id="opsAlertEmailReplyTo"',
+        'id="opsAlertEmailSubjectPrefix"',
+        'id="opsAlertEmailApiKey"',
         'id="opsAlertTelegramChatIds"',
         'id="opsAlertTelegramBotToken"',
-        'id="opsAlertFeishuWebhookUrl"'
+        'id="opsAlertFeishuWebhookUrl"',
+        'data-secret-name="email_api_key"'
     ];
 
     for (const marker of delegatedHtmlMarkers) {
@@ -2204,6 +2211,8 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;',
         'async function openOpsAlertWorkspace(workspaceKey, context = {})',
         'window.openOpsAlertWorkspace = openOpsAlertWorkspace;',
+        'email_api_key: { configured: false, source: \'missing\', updatedAt: null }',
+        'subject_prefix: \'[Zaoyoe告警]\'',
         "fetch('/api/admin/settings/verify-monitor/quota'",
         "fetch('/api/admin/settings/verify-monitor/queue'",
         'window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;',
