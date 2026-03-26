@@ -16,6 +16,10 @@
 - [ops-alert-notification-matrix.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/ops-alert-notification-matrix.md)
 - [admin-studio-safe-rebuild-plan.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/admin-studio-safe-rebuild-plan.md)
 
+当前推荐稳定锚点：
+
+- `856f70a`
+
 ## 1. 代码准备
 
 1. 确认待发布范围：
