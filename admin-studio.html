@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=62">
+    <link rel="stylesheet" href="admin-studio.css?v=63">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -1049,6 +1049,24 @@
                                     <div class="config-inline-note" id="opsAlertSummary">
                                         <i class="fas fa-satellite-dish"></i>
                                         <span>当前未启用站外退款告警。</span>
+                                    </div>
+
+                                    <div class="ops-alert-overview-grid">
+                                        <article class="ops-alert-overview-card" id="opsAlertOverviewChannelsCard">
+                                            <div class="ops-alert-overview-card__eyebrow">通道状态</div>
+                                            <div class="ops-alert-overview-card__title" id="opsAlertOverviewChannelsTitle">等待配置</div>
+                                            <div class="ops-alert-overview-card__body" id="opsAlertOverviewChannels">尚未启用任何站外通道。</div>
+                                        </article>
+                                        <article class="ops-alert-overview-card" id="opsAlertOverviewTargetsCard">
+                                            <div class="ops-alert-overview-card__eyebrow">投递目标</div>
+                                            <div class="ops-alert-overview-card__title" id="opsAlertOverviewTargetsTitle">等待配置</div>
+                                            <div class="ops-alert-overview-card__body" id="opsAlertOverviewTargets">保存后会在这里显示 chat、邮箱和群机器人摘要。</div>
+                                        </article>
+                                        <article class="ops-alert-overview-card" id="opsAlertOverviewRecentCard">
+                                            <div class="ops-alert-overview-card__eyebrow">最近投递</div>
+                                            <div class="ops-alert-overview-card__title" id="opsAlertOverviewRecentTitle">等待刷新</div>
+                                            <div class="ops-alert-overview-card__body" id="opsAlertOverviewRecent">告警通道健康页加载后，会在这里显示最近投递摘要。</div>
+                                        </article>
                                     </div>
 
                                     <div class="config-row">
@@ -6369,7 +6387,7 @@
     <script src="admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1"></script>
     <script src="admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_2"></script>
-    <script src="admin-config.js?v=20260326_ADMIN_VERIFY_MONITOR_PROXY_20"></script>
+    <script src="admin-config.js?v=20260326_OPS_ALERT_OVERVIEW_SUMMARY_21"></script>
     <script src="admin-homepage.js?v=20260324_HOMEPAGE_RUNTIME_STYLE_2"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>

@@ -19634,6 +19634,58 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     align-self: flex-start;
 }
 
+.ops-alert-overview-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.ops-alert-overview-card {
+    min-width: 0;
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(107, 158, 206, 0.16);
+    background: rgba(10, 19, 36, 0.4);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ops-alert-overview-card__eyebrow {
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.ops-alert-overview-card__title {
+    color: var(--text-main);
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.ops-alert-overview-card__body {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    line-height: 1.65;
+}
+
+.ops-alert-overview-card--success {
+    border-color: rgba(39, 174, 96, 0.32);
+    box-shadow: inset 0 0 0 1px rgba(39, 174, 96, 0.08);
+}
+
+.ops-alert-overview-card--warning {
+    border-color: rgba(243, 156, 18, 0.32);
+    box-shadow: inset 0 0 0 1px rgba(243, 156, 18, 0.08);
+}
+
+.ops-alert-overview-card--danger {
+    border-color: rgba(231, 76, 60, 0.32);
+    box-shadow: inset 0 0 0 1px rgba(231, 76, 60, 0.08);
+}
+
 .ops-alert-actions-grid {
     width: 100%;
     display: grid;
@@ -20998,6 +21050,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     #settings-view-ops-alerts .config-row {
         grid-template-columns: 1fr;
         gap: 12px;
+    }
+
+    .ops-alert-overview-grid {
+        grid-template-columns: 1fr;
     }
 
     #settings-view-ops-alerts .config-row > label {

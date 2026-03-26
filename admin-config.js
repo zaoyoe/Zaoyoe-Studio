@@ -64,6 +64,11 @@ const OPS_ALERT_HEALTH_CARD_TONE_CLASSES = [
     'ops-alert-health-card--warning',
     'ops-alert-health-card--danger'
 ];
+const OPS_ALERT_OVERVIEW_CARD_TONE_CLASSES = [
+    'ops-alert-overview-card--success',
+    'ops-alert-overview-card--warning',
+    'ops-alert-overview-card--danger'
+];
 const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 8000;
 const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 8000;
 const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 8000;
@@ -1689,46 +1694,14 @@ function renderPaymentChannelsConfig() {
 
 function applyOpsAlertOverview(config) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
-    const telegramSecret = opsAlertSecretStatus?.telegram_bot_token || getDefaultOpsAlertSecretStatus().telegram_bot_token;
-    const feishuSecret = opsAlertSecretStatus?.feishu_webhook_url || getDefaultOpsAlertSecretStatus().feishu_webhook_url;
-    const emailSecret = opsAlertSecretStatus?.email_api_key || getDefaultOpsAlertSecretStatus().email_api_key;
-    const telegramChatCount = normalizedConfig.channels.telegram.chat_ids.length;
-    const channelStates = [];
-    const deliveryIssues = [];
-
-    if (normalizedConfig.channels.telegram.enabled) {
-        const telegramSummary = `Telegram · ${normalizedConfig.channels.telegram.minimum_severity}+ · ${telegramChatCount || 0} 个 chat`;
-        if (telegramSecret.configured && telegramChatCount > 0) {
-            channelStates.push(`${telegramSummary} · 已就绪`);
-        } else {
-            channelStates.push(`${telegramSummary} · 待补充配置`);
-            if (!telegramSecret.configured) deliveryIssues.push('Telegram Bot Token 未配置');
-            if (!telegramChatCount) deliveryIssues.push('Telegram Chat ID 未填写');
-        }
-    }
-
-    if (normalizedConfig.channels.feishu.enabled) {
-        const feishuSummary = `飞书 · ${normalizedConfig.channels.feishu.minimum_severity}+`;
-        if (feishuSecret.configured) {
-            channelStates.push(`${feishuSummary} · 已就绪`);
-        } else {
-            channelStates.push(`${feishuSummary} · 待补充配置`);
-            deliveryIssues.push('飞书 Webhook 未配置');
-        }
-    }
-
-    if (normalizedConfig.channels.email.enabled) {
-        const emailRecipientCount = normalizedConfig.channels.email.recipients.length;
-        const emailSummary = `邮件 · ${normalizedConfig.channels.email.minimum_severity}+ · ${emailRecipientCount || 0} 个收件人`;
-        if (emailSecret.configured && emailRecipientCount > 0 && normalizedConfig.channels.email.from_address) {
-            channelStates.push(`${emailSummary} · 已就绪`);
-        } else {
-            channelStates.push(`${emailSummary} · 待补充配置`);
-            if (!emailSecret.configured) deliveryIssues.push('Email API Key 未配置');
-            if (!emailRecipientCount) deliveryIssues.push('邮件收件人未填写');
-            if (!normalizedConfig.channels.email.from_address) deliveryIssues.push('邮件发件地址未填写');
-        }
-    }
+    const overviewStatus = getOpsAlertOverviewStatus(normalizedConfig);
+    const {
+        channelStates,
+        deliveryIssues,
+        telegramSecret,
+        feishuSecret,
+        emailSecret
+    } = overviewStatus;
 
     const summaryEl = document.getElementById('opsAlertSummary');
     if (summaryEl) {
@@ -1827,6 +1800,7 @@ function applyOpsAlertOverview(config) {
     setOpsAlertDeleteButtonState('telegram_bot_token', telegramSecret);
     setOpsAlertDeleteButtonState('feishu_webhook_url', feishuSecret);
     setOpsAlertDeleteButtonState('email_api_key', emailSecret);
+    renderOpsAlertOverviewCards(normalizedConfig);
 }
 
 function renderOpsAlertSettings() {
@@ -1873,6 +1847,214 @@ function renderOpsAlertSettings() {
     }
 
     applyOpsAlertOverview(config);
+}
+
+function setOpsAlertOverviewCardTone(card, tone = 'neutral') {
+    if (!card) return;
+    OPS_ALERT_OVERVIEW_CARD_TONE_CLASSES.forEach((className) => card.classList.remove(className));
+    if (tone !== 'neutral') {
+        card.classList.add(`ops-alert-overview-card--${tone}`);
+    }
+}
+
+function updateOpsAlertOverviewCard(cardId, titleId, bodyId, tone, titleText, bodyText) {
+    const card = document.getElementById(cardId);
+    const titleEl = document.getElementById(titleId);
+    const bodyEl = document.getElementById(bodyId);
+    setOpsAlertOverviewCardTone(card, tone);
+    if (titleEl) titleEl.textContent = titleText;
+    if (bodyEl) bodyEl.textContent = bodyText;
+}
+
+function getOpsAlertOverviewStatus(config) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const telegramSecret = opsAlertSecretStatus?.telegram_bot_token || getDefaultOpsAlertSecretStatus().telegram_bot_token;
+    const feishuSecret = opsAlertSecretStatus?.feishu_webhook_url || getDefaultOpsAlertSecretStatus().feishu_webhook_url;
+    const emailSecret = opsAlertSecretStatus?.email_api_key || getDefaultOpsAlertSecretStatus().email_api_key;
+    const telegramChatCount = normalizedConfig.channels.telegram.chat_ids.length;
+    const emailRecipientCount = normalizedConfig.channels.email.recipients.length;
+    const channelStates = [];
+    const deliveryIssues = [];
+    const targetSummaries = [];
+    let enabledChannelCount = 0;
+    let readyChannelCount = 0;
+    let configuredTargetChannelCount = 0;
+
+    if (normalizedConfig.channels.telegram.enabled) {
+        enabledChannelCount += 1;
+        const telegramSummary = `Telegram · ${normalizedConfig.channels.telegram.minimum_severity}+ · ${telegramChatCount || 0} 个 chat`;
+        if (telegramSecret.configured && telegramChatCount > 0) {
+            readyChannelCount += 1;
+            channelStates.push(`${telegramSummary} · 已就绪`);
+        } else {
+            channelStates.push(`${telegramSummary} · 待补充配置`);
+            if (!telegramSecret.configured) deliveryIssues.push('Telegram Bot Token 未配置');
+            if (!telegramChatCount) deliveryIssues.push('Telegram Chat ID 未填写');
+        }
+    }
+    if (telegramChatCount > 0) {
+        configuredTargetChannelCount += 1;
+        targetSummaries.push(`Telegram：${telegramChatCount} 个 chat`);
+    }
+
+    if (normalizedConfig.channels.feishu.enabled) {
+        enabledChannelCount += 1;
+        const feishuSummary = `飞书 · ${normalizedConfig.channels.feishu.minimum_severity}+`;
+        if (feishuSecret.configured) {
+            readyChannelCount += 1;
+            channelStates.push(`${feishuSummary} · 已就绪`);
+        } else {
+            channelStates.push(`${feishuSummary} · 待补充配置`);
+            deliveryIssues.push('飞书 Webhook 未配置');
+        }
+    }
+    if (feishuSecret.configured) {
+        configuredTargetChannelCount += 1;
+        targetSummaries.push('飞书：Webhook 已配置');
+    }
+
+    if (normalizedConfig.channels.email.enabled) {
+        enabledChannelCount += 1;
+        const emailSummary = `邮件 · ${normalizedConfig.channels.email.minimum_severity}+ · ${emailRecipientCount || 0} 个收件人`;
+        if (emailSecret.configured && emailRecipientCount > 0 && normalizedConfig.channels.email.from_address) {
+            readyChannelCount += 1;
+            channelStates.push(`${emailSummary} · 已就绪`);
+        } else {
+            channelStates.push(`${emailSummary} · 待补充配置`);
+            if (!emailSecret.configured) deliveryIssues.push('Email API Key 未配置');
+            if (!emailRecipientCount) deliveryIssues.push('邮件收件人未填写');
+            if (!normalizedConfig.channels.email.from_address) deliveryIssues.push('邮件发件地址未填写');
+        }
+    }
+    if (emailRecipientCount > 0) {
+        configuredTargetChannelCount += 1;
+        const recipientPreview = normalizedConfig.channels.email.recipients
+            .slice(0, 2)
+            .join('、');
+        const recipientSuffix = emailRecipientCount > 2 ? ' 等' : '';
+        targetSummaries.push(`邮件：${emailRecipientCount} 个收件人（${recipientPreview}${recipientSuffix}）`);
+    }
+    if (normalizedConfig.channels.email.from_address) {
+        targetSummaries.push(`发件地址：${normalizedConfig.channels.email.from_address}`);
+    }
+    if (normalizedConfig.channels.email.reply_to) {
+        targetSummaries.push(`Reply-To：${normalizedConfig.channels.email.reply_to}`);
+    }
+
+    return {
+        normalizedConfig,
+        telegramSecret,
+        feishuSecret,
+        emailSecret,
+        telegramChatCount,
+        emailRecipientCount,
+        channelStates,
+        deliveryIssues,
+        targetSummaries,
+        enabledChannelCount,
+        readyChannelCount,
+        configuredTargetChannelCount
+    };
+}
+
+function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const {
+        normalizedConfig,
+        channelStates,
+        deliveryIssues,
+        targetSummaries,
+        enabledChannelCount,
+        readyChannelCount,
+        configuredTargetChannelCount
+    } = getOpsAlertOverviewStatus(config);
+
+    let channelsTone = 'neutral';
+    let channelsTitle = '未启用';
+    let channelsBody = '当前未启用站外告警，退款和异常消息仍会保留在站内后台。';
+
+    if (normalizedConfig.enabled && enabledChannelCount === 0) {
+        channelsTone = 'warning';
+        channelsTitle = '0 / 3 已打开';
+        channelsBody = '已启用站外告警，但还没有打开任何外部通道。';
+    } else if (enabledChannelCount > 0 && deliveryIssues.length > 0) {
+        channelsTone = normalizedConfig.enabled ? 'warning' : 'neutral';
+        channelsTitle = `${readyChannelCount} / ${enabledChannelCount} 已就绪`;
+        channelsBody = `${channelStates.join('；')}。待补充：${deliveryIssues.join('、')}。`;
+    } else if (enabledChannelCount > 0) {
+        channelsTone = normalizedConfig.enabled ? 'success' : 'neutral';
+        channelsTitle = `${readyChannelCount} / ${enabledChannelCount} 已就绪`;
+        channelsBody = channelStates.join('；');
+        if (!normalizedConfig.enabled) {
+            channelsBody += '。当前仍处于预设状态，保存并启用后才会真正开始站外投递。';
+        }
+    }
+    updateOpsAlertOverviewCard(
+        'opsAlertOverviewChannelsCard',
+        'opsAlertOverviewChannelsTitle',
+        'opsAlertOverviewChannels',
+        channelsTone,
+        channelsTitle,
+        channelsBody
+    );
+
+    let targetsTone = 'neutral';
+    let targetsTitle = '等待配置';
+    let targetsBody = '保存后会在这里显示 chat、邮箱和群机器人摘要。';
+    if (configuredTargetChannelCount > 0 || targetSummaries.length > 0) {
+        targetsTone = deliveryIssues.length > 0 ? 'warning' : 'success';
+        targetsTitle = `已配置 ${configuredTargetChannelCount || 0} / 3`;
+        targetsBody = targetSummaries.join('；');
+    }
+    updateOpsAlertOverviewCard(
+        'opsAlertOverviewTargetsCard',
+        'opsAlertOverviewTargetsTitle',
+        'opsAlertOverviewTargets',
+        targetsTone,
+        targetsTitle,
+        targetsBody
+    );
+
+    const healthState = opsAlertHealthState || getDefaultOpsAlertHealthState();
+    const summary = healthState.summary || getDefaultOpsAlertHealthState().summary;
+    let recentTone = 'neutral';
+    let recentTitle = '等待刷新';
+    let recentBody = '告警通道健康页加载后，会在这里显示最近投递摘要。';
+
+    if (healthState.status === 'loading') {
+        recentTitle = '正在刷新';
+        recentBody = healthState.message || '正在加载站外告警通道健康状态...';
+    } else if (healthState.status === 'error') {
+        recentTone = 'danger';
+        recentTitle = '查询失败';
+        recentBody = healthState.message || '加载站外告警通道健康状态失败。';
+    } else if (healthState.status === 'ready') {
+        const lookbackHours = formatVerifyMonitorInteger(summary.lookback_hours || 0);
+        if (Number(summary.total_attempt_count || 0) > 0) {
+            if (Number(summary.dead_letter_count || 0) > 0) {
+                recentTone = 'danger';
+            } else if (Number(summary.failed_count || 0) > 0) {
+                recentTone = 'warning';
+            } else {
+                recentTone = 'success';
+            }
+            recentTitle = `近 ${lookbackHours} 小时`;
+            recentBody = `送达 ${formatVerifyMonitorInteger(summary.delivered_count || 0)} 次，失败 ${formatVerifyMonitorInteger(summary.failed_count || 0)} 次，死信 ${formatVerifyMonitorInteger(summary.dead_letter_count || 0)} 项。${healthState.fetched_at ? ` 刷新于 ${formatVerifyMonitorDateTime(healthState.fetched_at)}。` : ''}`;
+        } else if (Array.isArray(healthState.channels) && healthState.channels.length > 0) {
+            recentTitle = `近 ${lookbackHours} 小时`;
+            recentBody = '最近没有新的站外投递记录，但通道健康信息已经刷新。';
+        } else {
+            recentTitle = '暂无投递';
+            recentBody = '最近没有可用于评估的站外告警通道数据。';
+        }
+    }
+    updateOpsAlertOverviewCard(
+        'opsAlertOverviewRecentCard',
+        'opsAlertOverviewRecentTitle',
+        'opsAlertOverviewRecent',
+        recentTone,
+        recentTitle,
+        recentBody
+    );
 }
 
 function setOpsAlertHealthCardTone(card, tone = 'neutral') {
@@ -2040,12 +2222,14 @@ function renderOpsAlertHealthPanel() {
     panel.hidden = false;
 
     if (state.status === 'loading') {
+        renderOpsAlertOverviewCards();
         meta.innerHTML = '<i class="fas fa-rotate fa-spin"></i><span>正在加载站外告警通道健康状态...</span>';
         renderOpsAlertHealthEmptyState(grid, '正在加载站外告警通道健康状态...');
         return;
     }
 
     if (state.status === 'error') {
+        renderOpsAlertOverviewCards();
         meta.innerHTML = `<i class="fas fa-triangle-exclamation"></i><span>${escapeConfigHtml(state.message || '加载告警通道健康状态失败。')}</span>`;
         renderOpsAlertHealthEmptyState(grid, state.message || '加载告警通道健康状态失败。');
         return;
@@ -2053,11 +2237,13 @@ function renderOpsAlertHealthPanel() {
 
     const channels = Array.isArray(state.channels) ? state.channels : [];
     if (!channels.length) {
+        renderOpsAlertOverviewCards();
         meta.innerHTML = '<i class="fas fa-circle-info"></i><span>最近没有可用于评估的站外告警通道数据。</span>';
         renderOpsAlertHealthEmptyState(grid, '最近没有可用于评估的站外告警通道数据。');
         return;
     }
 
+    renderOpsAlertOverviewCards();
     meta.innerHTML = `<i class="fas fa-heart-pulse"></i><span>最近 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.lookback_hours || 0))} 小时共记录 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.total_attempt_count || 0))} 次投递，送达 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.delivered_count || 0))} 次，失败 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.failed_count || 0))} 次，死信 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.dead_letter_count || 0))} 项。</span>`;
     grid.innerHTML = channels.map((channel) => buildOpsAlertHealthCardMarkup(channel)).join('');
 }
