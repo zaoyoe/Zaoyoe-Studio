@@ -203,6 +203,44 @@ function buildRecentDeliveryEntries(jobs = [], attempts = [], limit = 5) {
         .slice(0, Math.max(0, limit));
 }
 
+function buildRecentErrorEntries(channels = [], limit = 5) {
+    const normalizedChannels = Array.isArray(channels) ? channels : [];
+    const errorMap = new Map();
+
+    for (const channel of normalizedChannels) {
+        const channelLabel = normalizeText(channel.label, 40) || normalizeText(channel.key, 40) || '通道';
+        const recentErrors = Array.isArray(channel.recent_errors) ? channel.recent_errors : [];
+        for (const item of recentErrors) {
+            const message = normalizeText(item.message, 240) || '未知错误';
+            const key = `${normalizeText(channel.key, 40)}::${message}`;
+            const current = errorMap.get(key) || {
+                channel: normalizeText(channel.key, 40).toLowerCase(),
+                channel_label: channelLabel,
+                message,
+                count: 0,
+                last_seen_at: ''
+            };
+
+            current.count += Number(item.count || 0) || 0;
+            const lastSeenAt = normalizeText(item.last_seen_at, 80);
+            if (!current.last_seen_at || compareValue(current.last_seen_at, lastSeenAt) < 0) {
+                current.last_seen_at = lastSeenAt;
+            }
+
+            errorMap.set(key, current);
+        }
+    }
+
+    return Array.from(errorMap.values())
+        .sort((left, right) => {
+            if (right.count !== left.count) {
+                return right.count - left.count;
+            }
+            return compareValue(right.last_seen_at, left.last_seen_at);
+        })
+        .slice(0, Math.max(0, limit));
+}
+
 function buildChannelStatus(channelKey, config = {}, secretStatus = {}, jobs = [], attempts = []) {
     const enabled = config.enabled === true;
     const configured = secretStatus.configured === true;
@@ -329,7 +367,8 @@ module.exports = async (req, res) => {
             failed_count: channels.reduce((sum, channel) => sum + Number(channel.failed_count || 0), 0),
             dead_letter_count: channels.reduce((sum, channel) => sum + Number(channel.dead_letter_count || 0), 0),
             enabled_channel_count: channels.filter((channel) => channel.enabled).length,
-            recent_deliveries: buildRecentDeliveryEntries(jobs, attempts, 5)
+            recent_deliveries: buildRecentDeliveryEntries(jobs, attempts, 5),
+            recent_errors: buildRecentErrorEntries(channels, 5)
         };
 
         return sendJson(res, 200, {

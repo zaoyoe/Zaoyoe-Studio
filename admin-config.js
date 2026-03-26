@@ -1971,6 +1971,7 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
     let channelsTone = 'neutral';
     let channelsTitle = '未启用';
     let channelsBody = '当前未启用站外告警，退款和异常消息仍会保留在站内后台。';
+    const enabledSeveritySummary = buildOpsAlertEnabledSeveritySummary(normalizedConfig);
 
     if (normalizedConfig.enabled && enabledChannelCount === 0) {
         channelsTone = 'warning';
@@ -1987,6 +1988,9 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
         if (!normalizedConfig.enabled) {
             channelsBody += '。当前仍处于预设状态，保存并启用后才会真正开始站外投递。';
         }
+    }
+    if (enabledSeveritySummary) {
+        channelsBody += `${channelsBody.endsWith('。') ? '' : '。'} 当前级别：${enabledSeveritySummary}。`;
     }
     updateOpsAlertOverviewCard(
         'opsAlertOverviewChannelsCard',
@@ -2033,6 +2037,7 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
             limit: 3,
             includeChannel: true
         });
+        const recentErrorSummary = buildOpsAlertRecentErrorSummary(summary.recent_errors, 2);
         if (Number(summary.total_attempt_count || 0) > 0) {
             if (Number(summary.dead_letter_count || 0) > 0) {
                 recentTone = 'danger';
@@ -2042,7 +2047,7 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
                 recentTone = 'success';
             }
             recentTitle = `近 ${lookbackHours} 小时`;
-            recentBody = `送达 ${formatVerifyMonitorInteger(summary.delivered_count || 0)} 次，失败 ${formatVerifyMonitorInteger(summary.failed_count || 0)} 次，死信 ${formatVerifyMonitorInteger(summary.dead_letter_count || 0)} 项。${recentDeliverySummary ? ` 最近投递：${recentDeliverySummary}。` : ''}${healthState.fetched_at ? ` 刷新于 ${formatVerifyMonitorDateTime(healthState.fetched_at)}。` : ''}`;
+            recentBody = `送达 ${formatVerifyMonitorInteger(summary.delivered_count || 0)} 次，失败 ${formatVerifyMonitorInteger(summary.failed_count || 0)} 次，死信 ${formatVerifyMonitorInteger(summary.dead_letter_count || 0)} 项。${recentDeliverySummary ? ` 最近投递：${recentDeliverySummary}。` : ''}${recentErrorSummary ? ` 最近失败：${recentErrorSummary}。` : ''}${healthState.fetched_at ? ` 刷新于 ${formatVerifyMonitorDateTime(healthState.fetched_at)}。` : ''}`;
         } else if (Array.isArray(healthState.channels) && healthState.channels.length > 0) {
             recentTitle = `近 ${lookbackHours} 小时`;
             recentBody = '最近没有新的站外投递记录，但通道健康信息已经刷新。';
@@ -2080,6 +2085,48 @@ function buildOpsAlertRecentDeliverySummary(items = [], options = {}) {
                 parts.push(`· ${channel}`);
             }
             return parts.join(' ');
+        })
+        .filter(Boolean)
+        .join('；');
+}
+
+function buildOpsAlertRecentErrorSummary(items = [], limit = 2) {
+    const normalizedItems = Array.isArray(items) ? items : [];
+    return normalizedItems
+        .slice(0, Math.max(1, Number(limit) || 2))
+        .map((item) => {
+            const message = String(item?.message || '未知错误').trim();
+            const channelLabel = String(item?.channel_label || item?.channel || '').trim();
+            const count = Number(item?.count || 0);
+            const parts = [message];
+            if (channelLabel) {
+                parts.push(`(${channelLabel})`);
+            }
+            if (count > 0) {
+                parts.push(`· ${formatVerifyMonitorInteger(count)} 次`);
+            }
+            return parts.join(' ');
+        })
+        .filter(Boolean)
+        .join('；');
+}
+
+function buildOpsAlertEnabledSeveritySummary(config = {}) {
+    const normalizedConfig = config && typeof config === 'object' ? config : {};
+    const channels = [
+        { label: 'Telegram', key: 'telegram' },
+        { label: '飞书', key: 'feishu' },
+        { label: '邮件', key: 'email' }
+    ];
+
+    return channels
+        .map((channel) => {
+            const channelConfig = normalizedConfig?.channels?.[channel.key];
+            if (!channelConfig || channelConfig.enabled !== true) {
+                return '';
+            }
+            const minimumSeverity = String(channelConfig.minimum_severity || 'warning').trim().toLowerCase() || 'warning';
+            return `${channel.label} ${minimumSeverity}`;
         })
         .filter(Boolean)
         .join('；');
