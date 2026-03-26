@@ -66,6 +66,7 @@ const OPS_ALERT_HEALTH_CARD_TONE_CLASSES = [
 ];
 const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 8000;
 const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 8000;
+const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 8000;
 const ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP = Object.freeze({
     '#ffffff': 'color-swatch--white',
     '#ffeb3b': 'color-swatch--yellow',
@@ -5746,8 +5747,6 @@ async function exportSettingsData(dataset, format = 'json') {
     }
 }
 
-const VERIFY_SERVER_URL = window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app';
-
 async function checkVerifyQuota() {
     const quotaEl = document.getElementById('cfgVerifyQuota');
     if (!quotaEl) return;
@@ -5760,12 +5759,21 @@ async function checkVerifyQuota() {
     renderVerifyQuotaState(quotaEl, 'neutral', 'fas fa-spinner fa-spin', '查询中...');
     renderVerifyMonitorPanel();
 
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timeoutId = controller
+        ? window.setTimeout(() => controller.abort(), VERIFY_MONITOR_FETCH_TIMEOUT_MS)
+        : 0;
+
     try {
         const headers = await getAdminConfigApiHeaders();
-        const res = await fetch(`${VERIFY_SERVER_URL}/api/quota`, { headers });
+        const res = await fetch('/api/admin/settings/verify-monitor/quota', {
+            method: 'GET',
+            headers,
+            signal: controller?.signal
+        });
         const data = await res.json().catch(() => ({}));
 
-        if (data.success) {
+        if (res.ok && data.success) {
             const balance = Number(data.balance ?? data.credits ?? 0);
             const tone = balance > 5 ? 'success' : balance > 0 ? 'warning' : 'danger';
             const display = Number.isInteger(balance) ? balance : balance.toFixed(1);
@@ -5790,13 +5798,20 @@ async function checkVerifyQuota() {
             };
         }
     } catch (error) {
-        renderVerifyQuotaState(quotaEl, 'danger', 'fas fa-exclamation-triangle', '网络错误');
+        const message = error?.name === 'AbortError'
+            ? '查询超时'
+            : (error.message || '网络错误');
+        renderVerifyQuotaState(quotaEl, 'danger', 'fas fa-exclamation-triangle', message);
         verifyMonitorState.quota = {
             ...(getDefaultVerifyMonitorState().quota),
             status: 'error',
             checked_at: new Date().toISOString(),
-            message: error.message || '网络错误'
+            message
         };
+    } finally {
+        if (timeoutId) {
+            window.clearTimeout(timeoutId);
+        }
     }
 
     renderVerifyMonitorPanel();
@@ -5811,9 +5826,18 @@ async function loadVerifyQueueState() {
     };
     renderVerifyMonitorPanel();
 
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timeoutId = controller
+        ? window.setTimeout(() => controller.abort(), VERIFY_MONITOR_FETCH_TIMEOUT_MS)
+        : 0;
+
     try {
         const headers = await getAdminConfigApiHeaders();
-        const response = await fetch(`${VERIFY_SERVER_URL}/api/queue`, { headers });
+        const response = await fetch('/api/admin/settings/verify-monitor/queue', {
+            method: 'GET',
+            headers,
+            signal: controller?.signal
+        });
         const payload = await response.json().catch(() => ({}));
 
         if (!response.ok || !payload.success) {
@@ -5830,12 +5854,19 @@ async function loadVerifyQueueState() {
             message: ''
         };
     } catch (error) {
+        const message = error?.name === 'AbortError'
+            ? '查询队列超时，请稍后重试'
+            : (error.message || '查询队列失败');
         verifyMonitorState.queue = {
             ...(getDefaultVerifyMonitorState().queue),
             status: 'error',
             checked_at: new Date().toISOString(),
-            message: error.message || '查询队列失败'
+            message
         };
+    } finally {
+        if (timeoutId) {
+            window.clearTimeout(timeoutId);
+        }
     }
 
     renderVerifyMonitorPanel();
@@ -5855,11 +5886,16 @@ async function loadVerifyMonitor(force = false) {
     renderVerifyMonitorPanel();
 
     loadVerifyMonitor._loadingPromise = (async () => {
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
+        const timeoutId = controller
+            ? window.setTimeout(() => controller.abort(), VERIFY_MONITOR_FETCH_TIMEOUT_MS)
+            : 0;
         try {
             const headers = await getAdminConfigApiHeaders();
             const response = await fetch('/api/admin/settings/verify-monitor', {
                 method: 'GET',
-                headers
+                headers,
+                signal: controller?.signal
             });
             const payload = await response.json().catch(() => ({}));
 
@@ -5878,14 +5914,21 @@ async function loadVerifyMonitor(force = false) {
             renderVerifyMonitorPanel();
             return payload;
         } catch (error) {
-            console.warn('[Config] Verify monitor load failed:', error.message);
+            const message = error?.name === 'AbortError'
+                ? '加载验证运维数据超时，请稍后重试'
+                : (error.message || '加载验证运维数据失败');
+            console.warn('[Config] Verify monitor load failed:', message);
             verifyMonitorState.recent = {
                 ...getDefaultVerifyMonitorState().recent,
                 status: 'error',
-                message: error.message || '加载验证运维数据失败'
+                message
             };
             renderVerifyMonitorPanel();
             return null;
+        } finally {
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
         }
     })();
 
