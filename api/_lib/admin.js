@@ -7,7 +7,6 @@ const {
 
 let supabaseAdmin = null;
 let supabasePublic = null;
-let adminStudioAccessHelpersPromise = null;
 
 function getEnv(name) {
     const value = process.env[name];
@@ -106,68 +105,6 @@ function getBearerToken(req) {
     return authHeader.slice('Bearer '.length).trim();
 }
 
-function parseCookieHeader(cookieHeader) {
-    return String(cookieHeader || '')
-        .split(';')
-        .map((part) => part.trim())
-        .filter(Boolean)
-        .reduce((acc, pair) => {
-            const separatorIndex = pair.indexOf('=');
-            if (separatorIndex <= 0) return acc;
-            const key = pair.slice(0, separatorIndex).trim();
-            const rawValue = pair.slice(separatorIndex + 1).trim();
-            if (!key) return acc;
-            try {
-                acc[key] = decodeURIComponent(rawValue);
-            } catch (_) {
-                acc[key] = rawValue;
-            }
-            return acc;
-        }, {});
-}
-
-async function loadAdminStudioAccessHelpers() {
-    if (!adminStudioAccessHelpersPromise) {
-        adminStudioAccessHelpersPromise = import('./admin-studio-access.mjs');
-    }
-    return adminStudioAccessHelpersPromise;
-}
-
-async function getAdminStudioCookieUser(req) {
-    if (!getSupabaseServiceRoleKey()) {
-        return { user: null, error: null };
-    }
-
-    const cookieHeader = req?.headers?.cookie || req?.headers?.Cookie || '';
-    if (!cookieHeader) {
-        return { user: null, error: null };
-    }
-
-    const {
-        getAdminStudioCookieName,
-        verifyAdminStudioToken
-    } = await loadAdminStudioAccessHelpers();
-    const cookies = parseCookieHeader(cookieHeader);
-    const token = String(cookies[getAdminStudioCookieName()] || '').trim();
-    if (!token) {
-        return { user: null, error: null };
-    }
-
-    const payload = await verifyAdminStudioToken(token);
-    if (!payload?.sub) {
-        return { user: null, error: null };
-    }
-
-    const adminClient = getSupabaseAdmin();
-    const { data, error } = await adminClient.auth.admin.getUserById(String(payload.sub));
-    return {
-        user: data?.user || null,
-        error: error || null,
-        token,
-        payload
-    };
-}
-
 async function parseJsonBody(req) {
     if (req.body && typeof req.body === 'object') {
         return req.body;
@@ -243,32 +180,18 @@ async function requireAuthenticatedUser(req) {
 }
 
 async function requireAdmin(req) {
-    const authResult = await getAuthenticatedUser(req);
-    let user = authResult?.user || null;
-    const error = authResult?.error || null;
-    const authenticatedViaBearer = Boolean(user);
-    let adminStudioCookieAuth = null;
-
-    if (!user) {
-        adminStudioCookieAuth = await getAdminStudioCookieUser(req);
-        user = adminStudioCookieAuth?.user || null;
-    }
-
+    const { user, error } = await getAuthenticatedUser(req);
     if (!user) {
         const authError = new Error(error?.message || 'Unauthorized');
         authError.statusCode = 401;
         throw authError;
     }
 
-    const requestClient = authenticatedViaBearer && hasSupabasePublicClientConfig()
+    const requestClient = hasSupabasePublicClientConfig()
         ? createSupabaseRequestClient(req)
         : null;
     const hasServiceRole = Boolean(getSupabaseServiceRoleKey());
     const adminSupabase = hasServiceRole ? getSupabaseAdmin() : null;
-    // Admin handlers usually need a server-side client so they can read and write
-    // configuration, audit, and monitoring tables without being blocked by
-    // browser-scoped RLS policies. Keep the request-scoped client available
-    // separately for callers that explicitly need end-user context.
     const supabase = adminSupabase || requestClient;
     const permissionClient = requestClient || adminSupabase;
     let activeRoles = [];
@@ -320,8 +243,7 @@ async function requireAdmin(req) {
         requestSupabase: requestClient,
         adminSupabase,
         user,
-        roles: activeRoles,
-        authSource: authenticatedViaBearer ? 'bearer' : (adminStudioCookieAuth?.user ? 'admin_studio_cookie' : 'unknown')
+        roles: activeRoles
     };
 }
 

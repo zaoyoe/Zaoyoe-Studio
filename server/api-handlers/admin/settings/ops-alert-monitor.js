@@ -1,14 +1,11 @@
 const {
-    parseJsonBody,
     requireAdmin,
-    sendJson,
-    writeAdminAuditLog
+    sendJson
 } = require('../../../../api/_lib/admin');
 
 const OPS_ALERT_MONITOR_LOOKBACK_HOURS = 7 * 24;
-const OPS_ALERT_MONITOR_PAGE_SIZE = 120;
-const OPS_ALERT_MONITOR_MAX_PAGES = 2;
-const OPS_ALERT_MONITOR_TIMEOUT_MS = 4000;
+const OPS_ALERT_MONITOR_PAGE_SIZE = 200;
+const OPS_ALERT_MONITOR_MAX_PAGES = 5;
 
 const ALERT_MONITOR_CATEGORIES = Object.freeze([
     {
@@ -47,7 +44,6 @@ const ALL_MONITOR_ALERT_TYPES = Object.freeze(
         ...(category.recovery_types || [])
     ]))]
 );
-const SILENCED_MONITOR_STATUSES = new Set(['handled', 'ignored']);
 
 function normalizeText(value, maxLength = 400) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -59,10 +55,6 @@ function normalizeSeverity(value) {
         return normalized;
     }
     return 'warning';
-}
-
-function normalizeJobStatus(value) {
-    return normalizeText(value, 60).toLowerCase() || 'unknown';
 }
 
 function normalizePayload(value) {
@@ -92,24 +84,6 @@ async function fetchPagedRows(buildQuery, pageSize = OPS_ALERT_MONITOR_PAGE_SIZE
     }
 
     return rows;
-}
-
-async function withTimeout(promise, timeoutMs, message) {
-    let timer = null;
-    try {
-        return await Promise.race([
-            promise,
-            new Promise((_, reject) => {
-                timer = setTimeout(() => {
-                    const error = new Error(message);
-                    error.statusCode = 503;
-                    reject(error);
-                }, timeoutMs);
-            })
-        ]);
-    } finally {
-        if (timer) clearTimeout(timer);
-    }
 }
 
 async function fetchRecentOpsAlertJobs(supabase, sinceIso) {
@@ -198,7 +172,6 @@ function buildAlertItem(job = {}) {
         id: normalizeText(job.id, 160),
         alert_type: normalizeText(job.alert_type, 120).toLowerCase(),
         severity: normalizeSeverity(job.severity),
-        status: normalizeJobStatus(job.status),
         title: normalizeText(job.title, 240) || '系统告警',
         message: getAlertExcerpt(job),
         created_at: normalizeText(job.created_at, 80) || null,
@@ -206,24 +179,6 @@ function buildAlertItem(job = {}) {
         reference_label: reference.label,
         reference_value: reference.value
     };
-}
-
-function getLatestCategoryState(category, latestJob) {
-    if (!latestJob) {
-        return 'idle';
-    }
-
-    const alertType = normalizeText(latestJob.alert_type, 120).toLowerCase();
-    if (category.recovery_types.includes(alertType)) {
-        return 'recovered';
-    }
-
-    const status = normalizeJobStatus(latestJob.status);
-    if (SILENCED_MONITOR_STATUSES.has(status)) {
-        return status;
-    }
-
-    return category.problem_types.includes(alertType) ? 'problem' : 'idle';
 }
 
 function buildCategorySnapshot(category, jobs = []) {
@@ -243,14 +198,13 @@ function buildCategorySnapshot(category, jobs = []) {
     }
 
     const activeJobs = Array.from(latestByTarget.values())
-        .filter((job) => (
-            category.problem_types.includes(normalizeText(job.alert_type, 120).toLowerCase())
-            && !SILENCED_MONITOR_STATUSES.has(normalizeJobStatus(job.status))
-        ))
+        .filter((job) => category.problem_types.includes(normalizeText(job.alert_type, 120).toLowerCase()))
         .sort((left, right) => getCreatedAtTime(right) - getCreatedAtTime(left));
     const criticalCount = activeJobs.filter((job) => normalizeSeverity(job.severity) === 'critical').length;
     const latestJob = filteredJobs[0] || null;
-    const latestState = getLatestCategoryState(category, latestJob);
+    const latestState = latestJob
+        ? (category.problem_types.includes(normalizeText(latestJob.alert_type, 120).toLowerCase()) ? 'problem' : 'recovered')
+        : 'idle';
 
     return {
         key: category.key,
@@ -267,93 +221,12 @@ function buildCategorySnapshot(category, jobs = []) {
     };
 }
 
-function normalizeJobIds(value) {
-    if (!Array.isArray(value)) {
-        return [];
-    }
-
-    return Array.from(new Set(
-        value
-            .map((item) => normalizeText(item, 160))
-            .filter(Boolean)
-    )).slice(0, 200);
-}
-
-async function markOpsAlertJobsHandled(supabase, jobIds = []) {
-    const updatedIds = [];
-    const nowIso = new Date().toISOString();
-
-    for (const jobId of jobIds) {
-        const { error } = await supabase
-            .from('ops_alert_jobs')
-            .update({
-                status: 'handled',
-                updated_at: nowIso,
-                remaining_channels: []
-            })
-            .eq('id', jobId);
-
-        if (!error) {
-            updatedIds.push(jobId);
-        }
-    }
-
-    return updatedIds;
-}
-
 module.exports = async (req, res) => {
     try {
-        const { supabase, user } = await requireAdmin(req);
-
-        if (req.method === 'POST') {
-            const body = await parseJsonBody(req).catch(() => ({}));
-            const action = normalizeText(body?.action, 80).toLowerCase();
-
-            if (action !== 'mark_handled') {
-                return sendJson(res, 400, {
-                    success: false,
-                    message: '不支持的集中告警处理动作'
-                });
-            }
-
-            const jobIds = normalizeJobIds(body?.jobIds);
-            if (!jobIds.length) {
-                return sendJson(res, 400, {
-                    success: false,
-                    message: '请先选择至少一条需要复核的告警'
-                });
-            }
-
-            const updatedIds = await markOpsAlertJobsHandled(supabase, jobIds);
-
-            await writeAdminAuditLog({
-                supabase,
-                adminId: user.id,
-                actionType: 'admin_ops_alert_monitor_mark_handled',
-                targetType: 'ops_alert_jobs',
-                targetId: updatedIds[0] || jobIds[0],
-                details: {
-                    requested_count: jobIds.length,
-                    updated_count: updatedIds.length,
-                    category: normalizeText(body?.category, 80) || null,
-                    filter_scope: normalizeText(body?.scope, 40) || null,
-                    filter_severity: normalizeText(body?.severity, 40) || null,
-                    job_ids: updatedIds
-                }
-            });
-
-            return sendJson(res, 200, {
-                success: true,
-                updated_count: updatedIds.length,
-                job_ids: updatedIds,
-                message: updatedIds.length
-                    ? `已将 ${updatedIds.length} 条告警标记为已复核`
-                    : '本次没有命中可更新的告警'
-            });
-        }
+        const { supabase } = await requireAdmin(req);
 
         if (req.method !== 'GET') {
-            res.setHeader('Allow', 'GET, POST');
+            res.setHeader('Allow', 'GET');
             return sendJson(res, 405, {
                 success: false,
                 message: 'Method not allowed'
@@ -362,11 +235,7 @@ module.exports = async (req, res) => {
 
         const now = new Date();
         const sinceIso = new Date(now.getTime() - OPS_ALERT_MONITOR_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
-        const jobs = await withTimeout(
-            fetchRecentOpsAlertJobs(supabase, sinceIso),
-            OPS_ALERT_MONITOR_TIMEOUT_MS,
-            '集中告警处理面板加载超时，请先执行最新索引 migration 后重试'
-        );
+        const jobs = await fetchRecentOpsAlertJobs(supabase, sinceIso);
         const categories = ALERT_MONITOR_CATEGORIES.map((category) => buildCategorySnapshot(category, jobs));
         const totalActiveCount = categories.reduce((sum, category) => sum + Number(category.active_count || 0), 0);
         const totalCriticalCount = categories.reduce((sum, category) => sum + Number(category.critical_count || 0), 0);

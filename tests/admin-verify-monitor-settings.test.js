@@ -36,16 +36,6 @@ function createState(overrides = {}) {
     return {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
         verificationLogs: [],
-        systemConfig: [
-            {
-                config_key: 'verify_settings',
-                config_value: {
-                    enabled: true,
-                    verify_api_key: 'verify-api-key',
-                    verify_api_base_url: 'https://verify.test'
-                }
-            }
-        ],
         ...overrides
     };
 }
@@ -53,47 +43,26 @@ function createState(overrides = {}) {
 function createSupabaseStub(state) {
     return {
         from(table) {
-            if (table === 'verification_logs') {
-                const query = {
-                    async limit(limitValue) {
-                        return {
-                            data: (state.verificationLogs || []).slice(0, limitValue),
-                            error: null
-                        };
-                    },
-                    order() {
-                        return query;
-                    },
-                    select() {
-                        return query;
-                    }
-                };
-
-                return query;
+            if (table !== 'verification_logs') {
+                throw new Error(`Unexpected table access: ${table}`);
             }
 
-            if (table === 'system_config') {
-                const query = {
-                    limit(limitValue) {
-                        return Promise.resolve({
-                            data: (state.systemConfig || []).slice(0, limitValue).map((row) => ({
-                                config_value: row.config_value
-                            })),
-                            error: null
-                        });
-                    },
-                    eq() {
-                        return query;
-                    },
-                    select() {
-                        return query;
-                    }
-                };
+            const query = {
+                async limit(limitValue) {
+                    return {
+                        data: (state.verificationLogs || []).slice(0, limitValue),
+                        error: null
+                    };
+                },
+                order() {
+                    return query;
+                },
+                select() {
+                    return query;
+                }
+            };
 
-                return query;
-            }
-
-            throw new Error(`Unexpected table access: ${table}`);
+            return query;
         }
     };
 }
@@ -126,44 +95,10 @@ async function withHandler(stateOverrides, callback) {
         return originalLoad(request, parent, isMain);
     };
 
-    const originalFetch = global.fetch;
-    global.fetch = async (url) => {
-        if (url === 'https://verify.test/api/balance') {
-            return {
-                ok: true,
-                async json() {
-                    return {
-                        balance: 27,
-                        total_used: 4,
-                        cost_per_job: 1,
-                        name: 'google-one-primary'
-                    };
-                }
-            };
-        }
-
-        if (url === 'https://verify.test/api/queue') {
-            return {
-                ok: true,
-                async json() {
-                    return {
-                        queue_size: 3,
-                        running_jobs: 1,
-                        key_name: 'google-one-primary',
-                        api_base_url: 'https://verify.test'
-                    };
-                }
-            };
-        }
-
-        throw new Error(`Unexpected fetch: ${url}`);
-    };
-
     try {
         const handler = require(handlerPath);
         await callback(handler, state);
     } finally {
-        global.fetch = originalFetch;
         Module._load = originalLoad;
         delete require.cache[handlerPath];
     }
@@ -234,10 +169,6 @@ test('verify monitor settings handler returns recent tasks, recent failures, and
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
-        assert.equal(payload.quota.status, 'ready');
-        assert.equal(payload.quota.balance, 27);
-        assert.equal(payload.queue.status, 'ready');
-        assert.equal(payload.queue.queue_size, 3);
         assert.equal(payload.summary.active_task_count, 1);
         assert.equal(payload.summary.failure_task_count, 1);
         assert.equal(Array.isArray(payload.recent_tasks), true);

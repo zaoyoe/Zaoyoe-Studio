@@ -7,10 +7,9 @@ const {
 const OPS_ALERTS_CONFIG_KEY = 'ops_alerts';
 const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
     telegram_bot_token: 'ops_alert_telegram_bot_token',
-    feishu_webhook_url: 'ops_alert_feishu_webhook_url',
-    email_api_key: 'ops_alert_email_api_key'
+    feishu_webhook_url: 'ops_alert_feishu_webhook_url'
 });
-const SUPPORTED_CHANNELS = Object.freeze(['telegram', 'feishu', 'email']);
+const SUPPORTED_CHANNELS = Object.freeze(['telegram', 'feishu']);
 const SEVERITY_RANK = Object.freeze({
     info: 10,
     warning: 20,
@@ -25,25 +24,18 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
     retry_base_delay_ms: 60000,
     retry_max_delay_ms: 1800000,
     timeout_ms: 5000,
-        channels: Object.freeze({
-            telegram: Object.freeze({
-                enabled: false,
-                minimum_severity: 'warning',
-                chat_ids: Object.freeze([])
-            }),
-            feishu: Object.freeze({
-                enabled: false,
-                minimum_severity: 'warning'
-            }),
-            email: Object.freeze({
-                enabled: false,
-                minimum_severity: 'critical',
-                recipients: Object.freeze([]),
-                from_address: '',
-                subject_prefix: '[Zaoyoe] '
-            })
+    channels: Object.freeze({
+        telegram: Object.freeze({
+            enabled: false,
+            minimum_severity: 'warning',
+            chat_ids: Object.freeze([])
+        }),
+        feishu: Object.freeze({
+            enabled: false,
+            minimum_severity: 'warning'
         })
-    });
+    })
+});
 
 function getOpsAlertSecretKeys() {
     const secretKeys = CONFIGURED_OPS_ALERT_SECRET_KEYS;
@@ -131,13 +123,6 @@ function cloneDefaultConfig() {
             feishu: {
                 enabled: DEFAULT_OPS_ALERTS_CONFIG.channels.feishu.enabled,
                 minimum_severity: DEFAULT_OPS_ALERTS_CONFIG.channels.feishu.minimum_severity
-            },
-            email: {
-                enabled: DEFAULT_OPS_ALERTS_CONFIG.channels.email.enabled,
-                minimum_severity: DEFAULT_OPS_ALERTS_CONFIG.channels.email.minimum_severity,
-                recipients: [...DEFAULT_OPS_ALERTS_CONFIG.channels.email.recipients],
-                from_address: DEFAULT_OPS_ALERTS_CONFIG.channels.email.from_address,
-                subject_prefix: DEFAULT_OPS_ALERTS_CONFIG.channels.email.subject_prefix
             }
         }
     };
@@ -152,9 +137,6 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         : {};
     const feishuConfig = channelConfig.feishu && typeof channelConfig.feishu === 'object'
         ? channelConfig.feishu
-        : {};
-    const emailConfig = channelConfig.email && typeof channelConfig.email === 'object'
-        ? channelConfig.email
         : {};
 
     config.enabled = normalizeBoolean(source.enabled, normalizeBoolean(env?.OPS_ALERTS_ENABLED, config.enabled));
@@ -224,28 +206,6 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         normalizeSeverity(env?.OPS_ALERTS_FEISHU_MINIMUM_SEVERITY, config.channels.feishu.minimum_severity)
     );
 
-    config.channels.email.enabled = normalizeBoolean(
-        emailConfig.enabled,
-        normalizeBoolean(env?.OPS_ALERTS_EMAIL_ENABLED, config.channels.email.enabled)
-    );
-    config.channels.email.minimum_severity = normalizeSeverity(
-        emailConfig.minimum_severity,
-        normalizeSeverity(env?.OPS_ALERTS_EMAIL_MINIMUM_SEVERITY, config.channels.email.minimum_severity)
-    );
-    config.channels.email.recipients = normalizeStringArray(
-        emailConfig.recipients && emailConfig.recipients.length
-            ? emailConfig.recipients
-            : env?.OPS_ALERTS_EMAIL_RECIPIENTS
-    );
-    config.channels.email.from_address = normalizeText(
-        emailConfig.from_address || env?.OPS_ALERTS_EMAIL_FROM_ADDRESS,
-        320
-    );
-    config.channels.email.subject_prefix = normalizeText(
-        emailConfig.subject_prefix || env?.OPS_ALERTS_EMAIL_SUBJECT_PREFIX,
-        160
-    ) || DEFAULT_OPS_ALERTS_CONFIG.channels.email.subject_prefix;
-
     return config;
 }
 
@@ -303,12 +263,6 @@ async function resolveOpsAlertSecrets(supabase, env = process.env) {
         'OPS_ALERTS_FEISHU_WEBHOOK_URL',
         env
     );
-    const emailApiKey = await loadSecretValue(
-        supabase,
-        secretKeys.email_api_key,
-        'OPS_ALERTS_EMAIL_API_KEY',
-        env
-    );
 
     return {
         telegram_bot_token: telegram.value,
@@ -316,10 +270,7 @@ async function resolveOpsAlertSecrets(supabase, env = process.env) {
         telegram_bot_token_updated_at: telegram.updatedAt,
         feishu_webhook_url: feishu.value,
         feishu_webhook_url_source: feishu.source,
-        feishu_webhook_url_updated_at: feishu.updatedAt,
-        email_api_key: emailApiKey.value,
-        email_api_key_source: emailApiKey.source,
-        email_api_key_updated_at: emailApiKey.updatedAt
+        feishu_webhook_url_updated_at: feishu.updatedAt
     };
 }
 
@@ -346,11 +297,6 @@ function buildOpsAlertSecretStatus(runtime = {}) {
             configured: Boolean(normalizeText(secrets.feishu_webhook_url)),
             source: normalizeText(secrets.feishu_webhook_url_source) || 'missing',
             updatedAt: secrets.feishu_webhook_url_updated_at || null
-        },
-        email_api_key: {
-            configured: Boolean(normalizeText(secrets.email_api_key)),
-            source: normalizeText(secrets.email_api_key_source) || 'missing',
-            updatedAt: secrets.email_api_key_updated_at || null
         }
     };
 }
@@ -384,16 +330,6 @@ function resolveEnabledChannels(runtime = {}, alertSeverity = 'warning') {
         && isSeverityAllowed(config.channels.feishu.minimum_severity, alertSeverity)
     ) {
         channels.push('feishu');
-    }
-
-    if (
-        config.channels.email.enabled
-        && normalizeText(secrets.email_api_key)
-        && normalizeStringArray(config.channels.email.recipients).length
-        && normalizeText(config.channels.email.from_address)
-        && isSeverityAllowed(config.channels.email.minimum_severity, alertSeverity)
-    ) {
-        channels.push('email');
     }
 
     return channels;
@@ -1603,9 +1539,7 @@ function buildAdminLoginAnomalyAlertText(job = {}) {
 
 async function postJson(url, body, {
     timeoutMs = DEFAULT_OPS_ALERTS_CONFIG.timeout_ms,
-    fetchImpl = global.fetch,
-    headers = {},
-    method = 'POST'
+    fetchImpl = global.fetch
 } = {}) {
     if (typeof fetchImpl !== 'function') {
         throw new Error('Fetch is unavailable');
@@ -1616,10 +1550,9 @@ async function postJson(url, body, {
 
     try {
         const response = await fetchImpl(url, {
-            method,
+            method: 'POST',
             headers: {
-                'Content-Type': 'application/json; charset=utf-8',
-                ...headers
+                'Content-Type': 'application/json; charset=utf-8'
             },
             body: JSON.stringify(body),
             signal: controller.signal
@@ -1633,13 +1566,6 @@ async function postJson(url, body, {
     } finally {
         clearTimeout(timer);
     }
-}
-
-function buildEmailAlertSubject(job = {}, runtime = {}) {
-    const severity = normalizeSeverity(job?.severity, 'warning').toUpperCase();
-    const prefix = normalizeText(runtime?.config?.channels?.email?.subject_prefix, 160);
-    const title = normalizeText(job?.title, 180) || '站外告警通知';
-    return `${prefix}${severity} ${title}`.trim().slice(0, 200);
 }
 
 async function sendTelegramAlert(job, runtime, options = {}) {
@@ -1715,58 +1641,6 @@ async function sendFeishuAlert(job, runtime, options = {}) {
                 }
             } catch (error) {
                 // Keep HTTP success semantics for non-JSON webhook responses.
-            }
-        }
-    }
-
-    return result;
-}
-
-async function sendEmailAlert(job, runtime, options = {}) {
-    const apiKey = normalizeText(runtime?.secrets?.email_api_key, 4000);
-    const recipients = normalizeStringArray(runtime?.config?.channels?.email?.recipients);
-    const fromAddress = normalizeText(runtime?.config?.channels?.email?.from_address, 320);
-
-    if (!apiKey || !recipients.length || !fromAddress) {
-        return {
-            ok: false,
-            status: 0,
-            error: 'email_not_configured'
-        };
-    }
-
-    const result = await postJson(
-        'https://api.resend.com/emails',
-        {
-            from: fromAddress,
-            to: recipients,
-            subject: buildEmailAlertSubject(job, runtime),
-            text: buildExternalAlertText(job)
-        },
-        {
-            ...options,
-            headers: {
-                Authorization: `Bearer ${apiKey}`
-            }
-        }
-    );
-
-    if (result.ok) {
-        const body = normalizeText(result.body, 4000);
-        if (body) {
-            try {
-                const parsed = JSON.parse(body);
-                const message = normalizeText(parsed?.error?.message || parsed?.message || parsed?.name, 500);
-                if (message && message.toLowerCase() !== 'success') {
-                    return {
-                        ok: false,
-                        status: result.status,
-                        body: result.body,
-                        error: message
-                    };
-                }
-            } catch (error) {
-                // Keep HTTP success semantics for non-JSON email responses.
             }
         }
     }
@@ -1922,8 +1796,6 @@ async function processOpsAlertJob(supabase, job, runtime, options = {}) {
                 result = await sendTelegramAlert(job, runtime, options);
             } else if (channel === 'feishu') {
                 result = await sendFeishuAlert(job, runtime, options);
-            } else if (channel === 'email') {
-                result = await sendEmailAlert(job, runtime, options);
             } else {
                 result = {
                     ok: false,
@@ -2021,7 +1893,6 @@ module.exports = {
     normalizeOpsAlertsConfig,
     processOpsAlertJob,
     resolveEnabledChannels,
-    sendEmailAlert,
     sendFeishuAlert,
     sendTelegramAlert,
     sweepOpsAlertJobs,
@@ -2036,7 +1907,6 @@ module.exports = {
         normalizeStringArray,
         recordOpsAlertAttempt,
         resolveOpsAlertSecrets,
-        sendEmailAlert,
         sendFeishuAlert,
         sendTelegramAlert
     }
