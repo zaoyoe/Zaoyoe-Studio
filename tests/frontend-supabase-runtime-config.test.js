@@ -2179,6 +2179,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.loadOpsAlertHealth = loadOpsAlertHealth;',
         'window.refreshOpsAlertHealthPanel = refreshOpsAlertHealthPanel;',
         "fetch('/api/admin/settings/ops-alert-monitor'",
+        'const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 8000;',
         'function getDefaultOpsAlertMonitorState()',
         'function getDefaultOpsAlertMonitorViewState()',
         'function renderOpsAlertMonitorPanel()',
@@ -4484,7 +4485,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         'admin-studio.html should reference the updated admin stylesheet version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-config.js?v=20260326_ADMIN_OPS_ALERT_HEALTH_18'),
+        adminStudioHtml.includes('admin-config.js?v=20260326_ADMIN_OPS_ALERT_MONITOR_TIMEOUT_19'),
         true,
         'admin-studio.html should reference the updated admin config runtime version'
     );

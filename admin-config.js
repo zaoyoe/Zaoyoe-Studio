@@ -65,6 +65,7 @@ const OPS_ALERT_HEALTH_CARD_TONE_CLASSES = [
     'ops-alert-health-card--danger'
 ];
 const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 8000;
+const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 8000;
 const ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP = Object.freeze({
     '#ffffff': 'color-swatch--white',
     '#ffeb3b': 'color-swatch--yellow',
@@ -2798,11 +2799,17 @@ async function loadOpsAlertMonitor(force = false) {
     renderOpsAlertMonitorPanel();
 
     loadOpsAlertMonitor._loadingPromise = (async () => {
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
+        const timeoutId = controller
+            ? window.setTimeout(() => controller.abort(), OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS)
+            : 0;
+
         try {
             const headers = await getAdminConfigApiHeaders();
             const response = await fetch('/api/admin/settings/ops-alert-monitor', {
                 method: 'GET',
-                headers
+                headers,
+                signal: controller?.signal
             });
 
             const payload = await response.json().catch(() => ({}));
@@ -2820,14 +2827,21 @@ async function loadOpsAlertMonitor(force = false) {
             renderOpsAlertMonitorPanel();
             return payload;
         } catch (error) {
-            console.warn('[Config] Ops alert monitor load failed:', error.message);
+            const message = error?.name === 'AbortError'
+                ? '加载集中告警处理面板超时，请稍后重试'
+                : (error.message || '加载集中告警处理面板失败');
+            console.warn('[Config] Ops alert monitor load failed:', message);
             opsAlertMonitorState = {
                 ...getDefaultOpsAlertMonitorState(),
                 status: 'error',
-                message: error.message || '加载集中告警处理面板失败'
+                message
             };
             renderOpsAlertMonitorPanel();
             return null;
+        } finally {
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
         }
     })();
 
