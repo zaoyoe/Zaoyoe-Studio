@@ -8,6 +8,7 @@ let systemConfigCache = {};
 let paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
 let paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
 let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
+let opsAlertHealthState = getDefaultOpsAlertHealthState();
 let opsAlertMonitorState = getDefaultOpsAlertMonitorState();
 let opsAlertMonitorViewState = getDefaultOpsAlertMonitorViewState();
 let verifyMonitorState = getDefaultVerifyMonitorState();
@@ -57,6 +58,13 @@ const OPS_ALERT_MONITOR_CARD_TONE_CLASSES = [
     'ops-alert-monitor-card--warning',
     'ops-alert-monitor-card--danger'
 ];
+const OPS_ALERT_HEALTH_CARD_TONE_CLASSES = [
+    'ops-alert-health-card--neutral',
+    'ops-alert-health-card--success',
+    'ops-alert-health-card--warning',
+    'ops-alert-health-card--danger'
+];
+const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 8000;
 const ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP = Object.freeze({
     '#ffffff': 'color-swatch--white',
     '#ffeb3b': 'color-swatch--yellow',
@@ -750,6 +758,24 @@ function getDefaultOpsAlertSecretStatus() {
     };
 }
 
+function getDefaultOpsAlertHealthState() {
+    return {
+        status: 'idle',
+        fetched_at: '',
+        summary: {
+            lookback_hours: 72,
+            total_job_count: 0,
+            total_attempt_count: 0,
+            delivered_count: 0,
+            failed_count: 0,
+            dead_letter_count: 0,
+            enabled_channel_count: 0
+        },
+        channels: [],
+        message: '等待加载'
+    };
+}
+
 function getDefaultOpsAlertMonitorState() {
     return {
         status: 'idle',
@@ -1319,6 +1345,7 @@ async function loadAllSystemConfig() {
         renderPackagesConfig();
         renderPaymentChannelsConfig();
         renderOpsAlertSettings();
+        renderOpsAlertHealthPanel();
         renderOpsAlertMonitorPanel();
         renderChannelsConfig();
         renderRewardsConfig();
@@ -1332,6 +1359,7 @@ async function loadAllSystemConfig() {
         loadAffiliateSettings();
         loadPaymentChannelSettings();
         loadOpsAlertSettings();
+        loadOpsAlertHealth();
         loadOpsAlertMonitor();
 
     } catch (err) {
@@ -1760,6 +1788,136 @@ function renderOpsAlertSettings() {
     }
 
     applyOpsAlertOverview(config);
+}
+
+function setOpsAlertHealthCardTone(card, tone = 'neutral') {
+    if (!card) return;
+    OPS_ALERT_HEALTH_CARD_TONE_CLASSES.forEach((className) => card.classList.remove(className));
+    card.classList.add(`ops-alert-health-card--${tone}`);
+}
+
+function renderOpsAlertHealthEmptyState(target, message) {
+    if (!target) return;
+    target.innerHTML = `<div class="ops-alert-monitor-empty">${escapeConfigHtml(message)}</div>`;
+}
+
+function buildOpsAlertHealthBadge(label, tone = 'neutral') {
+    return `<span class="ops-alert-monitor-badge ops-alert-monitor-badge--${escapeConfigHtml(tone)}">${escapeConfigHtml(label)}</span>`;
+}
+
+function getOpsAlertHealthSourceLabel(source) {
+    const normalizedSource = String(source || '').trim().toLowerCase();
+    if (normalizedSource === 'stored') return '后台密钥仓';
+    if (normalizedSource === 'environment') return '环境变量';
+    return '未配置';
+}
+
+function getOpsAlertHealthMetaLine(channel = {}) {
+    const metaParts = [
+        `最小级别：${channel.minimum_severity || 'warning'}`,
+        `配置来源：${getOpsAlertHealthSourceLabel(channel.source)}`
+    ];
+
+    if (channel.recipient_summary) {
+        metaParts.push(channel.recipient_summary);
+    }
+
+    if (channel.updated_at) {
+        metaParts.push(`更新于 ${formatVerifyMonitorDateTime(channel.updated_at)}`);
+    }
+
+    return metaParts.join(' · ');
+}
+
+function getOpsAlertHealthLastErrorLine(channel = {}) {
+    if (channel.last_error) {
+        return `最近错误：${channel.last_error}`;
+    }
+    if (channel.last_attempt_at) {
+        return `最近投递：${formatVerifyMonitorDateTime(channel.last_attempt_at)}`;
+    }
+    return '最近 72 小时内暂无投递记录';
+}
+
+function buildOpsAlertHealthRecentErrorMarkup(channel = {}) {
+    const recentErrors = Array.isArray(channel.recent_errors) ? channel.recent_errors : [];
+    if (!recentErrors.length) {
+        return '<div class="ops-alert-health-card__errors empty">最近没有失败明细。</div>';
+    }
+
+    return `
+        <div class="ops-alert-health-card__errors">
+            ${recentErrors.map((item) => `
+                <div class="ops-alert-health-card__error-item">
+                    <strong>${escapeConfigHtml(item.message || '未知错误')}</strong>
+                    <span>${escapeConfigHtml(formatVerifyMonitorInteger(item.count || 0))} 次 · ${item.last_seen_at ? formatVerifyMonitorDateTime(item.last_seen_at) : '时间未知'}</span>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function buildOpsAlertHealthCardMarkup(channel = {}) {
+    const tone = String(channel.tone || 'neutral').trim().toLowerCase() || 'neutral';
+    const deliveryRate = Number(channel.delivery_rate);
+    const deliveryRateText = Number.isFinite(deliveryRate) ? `${deliveryRate.toFixed(1)}%` : '—';
+
+    return `
+        <article class="ops-alert-health-card ops-alert-health-card--${escapeConfigHtml(tone)}">
+            <div class="ops-alert-health-card__head">
+                <div>
+                    <div class="ops-alert-health-card__title">${escapeConfigHtml(channel.label || '通道')}</div>
+                    <div class="ops-alert-health-card__meta">${escapeConfigHtml(getOpsAlertHealthMetaLine(channel))}</div>
+                </div>
+                <div class="ops-alert-health-card__status">
+                    ${buildOpsAlertHealthBadge(channel.enabled ? '已启用' : '未启用', channel.enabled ? (channel.configured ? 'success' : 'warning') : 'neutral')}
+                    ${buildOpsAlertHealthBadge(channel.health_label || '未启用', tone)}
+                </div>
+            </div>
+            <div class="ops-alert-health-card__stats">
+                <div><strong>${escapeConfigHtml(formatVerifyMonitorInteger(channel.total_attempts || 0))}</strong><span>近窗投递</span></div>
+                <div><strong>${escapeConfigHtml(deliveryRateText)}</strong><span>送达率</span></div>
+                <div><strong>${escapeConfigHtml(formatVerifyMonitorInteger(channel.dead_letter_count || 0))}</strong><span>死信</span></div>
+                <div><strong>${escapeConfigHtml(formatVerifyMonitorInteger(channel.retry_count || 0))}</strong><span>重试</span></div>
+            </div>
+            <div class="ops-alert-health-card__summary">${escapeConfigHtml(getOpsAlertHealthLastErrorLine(channel))}</div>
+            ${buildOpsAlertHealthRecentErrorMarkup(channel)}
+        </article>
+    `;
+}
+
+function renderOpsAlertHealthPanel() {
+    const panel = document.getElementById('opsAlertHealthPanel');
+    const meta = document.getElementById('opsAlertHealthMeta');
+    const grid = document.getElementById('opsAlertHealthGrid');
+    if (!panel || !meta || !grid) return;
+
+    const state = opsAlertHealthState || getDefaultOpsAlertHealthState();
+    const summary = state.summary || getDefaultOpsAlertHealthState().summary;
+
+    panel.hidden = false;
+
+    if (state.status === 'loading') {
+        meta.innerHTML = '<i class="fas fa-rotate fa-spin"></i><span>正在加载站外告警通道健康状态...</span>';
+        renderOpsAlertHealthEmptyState(grid, '正在加载站外告警通道健康状态...');
+        return;
+    }
+
+    if (state.status === 'error') {
+        meta.innerHTML = `<i class="fas fa-triangle-exclamation"></i><span>${escapeConfigHtml(state.message || '加载告警通道健康状态失败。')}</span>`;
+        renderOpsAlertHealthEmptyState(grid, state.message || '加载告警通道健康状态失败。');
+        return;
+    }
+
+    const channels = Array.isArray(state.channels) ? state.channels : [];
+    if (!channels.length) {
+        meta.innerHTML = '<i class="fas fa-circle-info"></i><span>最近没有可用于评估的站外告警通道数据。</span>';
+        renderOpsAlertHealthEmptyState(grid, '最近没有可用于评估的站外告警通道数据。');
+        return;
+    }
+
+    meta.innerHTML = `<i class="fas fa-heart-pulse"></i><span>最近 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.lookback_hours || 0))} 小时共记录 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.total_attempt_count || 0))} 次投递，送达 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.delivered_count || 0))} 次，失败 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.failed_count || 0))} 次，死信 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.dead_letter_count || 0))} 项。</span>`;
+    grid.innerHTML = channels.map((channel) => buildOpsAlertHealthCardMarkup(channel)).join('');
 }
 
 function getOpsAlertMonitorCategoryActions(categoryKey) {
@@ -2558,6 +2716,72 @@ async function loadOpsAlertSettings(force = false) {
         return await loadOpsAlertSettings._loadingPromise;
     } finally {
         loadOpsAlertSettings._loadingPromise = null;
+    }
+}
+
+async function loadOpsAlertHealth(force = false) {
+    if (loadOpsAlertHealth._loadingPromise && !force) {
+        return loadOpsAlertHealth._loadingPromise;
+    }
+
+    opsAlertHealthState = {
+        ...(opsAlertHealthState || getDefaultOpsAlertHealthState()),
+        status: 'loading',
+        message: '正在加载站外告警通道健康状态...'
+    };
+    renderOpsAlertHealthPanel();
+
+    loadOpsAlertHealth._loadingPromise = (async () => {
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
+        const timeoutId = controller
+            ? window.setTimeout(() => controller.abort(), OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS)
+            : 0;
+
+        try {
+            const headers = await getAdminConfigApiHeaders();
+            const response = await fetch('/api/admin/settings/ops-alert-health', {
+                method: 'GET',
+                headers,
+                signal: controller?.signal
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || '加载站外告警通道健康状态失败');
+            }
+
+            opsAlertHealthState = {
+                status: 'ready',
+                fetched_at: payload.fetched_at || '',
+                summary: payload.summary || getDefaultOpsAlertHealthState().summary,
+                channels: Array.isArray(payload.channels) ? payload.channels : [],
+                message: ''
+            };
+            renderOpsAlertHealthPanel();
+            return payload;
+        } catch (error) {
+            const message = error?.name === 'AbortError'
+                ? '加载站外告警通道健康状态超时，请稍后重试'
+                : (error.message || '加载站外告警通道健康状态失败');
+            console.warn('[Config] Ops alert health load failed:', message);
+            opsAlertHealthState = {
+                ...getDefaultOpsAlertHealthState(),
+                status: 'error',
+                message
+            };
+            renderOpsAlertHealthPanel();
+            return null;
+        } finally {
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
+        }
+    })();
+
+    try {
+        return await loadOpsAlertHealth._loadingPromise;
+    } finally {
+        loadOpsAlertHealth._loadingPromise = null;
     }
 }
 
@@ -3653,6 +3877,16 @@ async function sendOpsAlertPaymentConfigRecoveredSample() {
         showToast('发送失败: ' + (error.message || '未知错误'), 'error');
         return false;
     }
+}
+
+async function refreshOpsAlertHealthPanel() {
+    const result = await loadOpsAlertHealth(true);
+    if (result?.success) {
+        showConfigSavedToast('告警通道健康页已刷新');
+        return true;
+    }
+    showToast('刷新失败: 请稍后重试', 'error');
+    return false;
 }
 
 async function refreshOpsAlertMonitorPanel() {
@@ -6089,6 +6323,7 @@ window.togglePaymentProviderPanel = togglePaymentProviderPanel;
 window.handlePaymentChannelActiveChange = handlePaymentChannelActiveChange;
 window.savePaymentChannelSettings = savePaymentChannelSettings;
 window.loadOpsAlertSettings = loadOpsAlertSettings;
+window.loadOpsAlertHealth = loadOpsAlertHealth;
 window.loadOpsAlertMonitor = loadOpsAlertMonitor;
 window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;
 window.toggleOpsAlertChannelEnabled = toggleOpsAlertChannelEnabled;
@@ -6116,6 +6351,7 @@ window.sendOpsAlertPaymentConfigChangedSample = sendOpsAlertPaymentConfigChanged
 window.sendOpsAlertPaymentConfigIncidentSample = sendOpsAlertPaymentConfigIncidentSample;
 window.sendOpsAlertPaymentConfigIncidentRecoveredSample = sendOpsAlertPaymentConfigIncidentRecoveredSample;
 window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;
+window.refreshOpsAlertHealthPanel = refreshOpsAlertHealthPanel;
 window.refreshOpsAlertMonitorPanel = refreshOpsAlertMonitorPanel;
 window.setOpsAlertMonitorFilter = setOpsAlertMonitorFilter;
 window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;

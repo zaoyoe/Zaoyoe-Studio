@@ -395,6 +395,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-payment-config-recovered-sample':
                 window.sendOpsAlertPaymentConfigRecoveredSample?.();
                 break;
+            case 'settings-refresh-ops-alert-health':
+                window.refreshOpsAlertHealthPanel?.();
+                break;
             case 'settings-filter-ops-alert-monitor':
                 window.setOpsAlertMonitorFilter?.(
                     actionEl.dataset.opsAlertMonitorFilterKind,

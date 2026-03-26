@@ -9,6 +9,7 @@ const paymentsCleanupHandler = require('../server/api-handlers/admin/payments/cl
 const paymentsSummaryHandler = require('../server/api-handlers/admin/payments/summary');
 const settingsGeminiKeyHandler = require('../server/api-handlers/admin/settings/gemini-key');
 const settingsAdminAuditMonitorHandler = require('../server/api-handlers/admin/settings/admin-audit-monitor');
+const settingsOpsAlertHealthHandler = require('../server/api-handlers/admin/settings/ops-alert-health');
 const settingsOpsAlertsHandler = require('../server/api-handlers/admin/settings/ops-alerts');
 const settingsOpsAlertMonitorHandler = require('../server/api-handlers/admin/settings/ops-alert-monitor');
 const settingsPaymentChannelsHandler = require('../server/api-handlers/admin/settings/payment-channels');
@@ -20,6 +21,7 @@ const ROUTE_HANDLERS = {
     'access/session': accessSessionHandler,
     'settings/admin-audit-monitor': settingsAdminAuditMonitorHandler,
     'settings/gemini-key': settingsGeminiKeyHandler,
+    'settings/ops-alert-health': settingsOpsAlertHealthHandler,
     'settings/ops-alerts': settingsOpsAlertsHandler,
     'settings/ops-alert-monitor': settingsOpsAlertMonitorHandler,
     'settings/payment-channels': settingsPaymentChannelsHandler,
