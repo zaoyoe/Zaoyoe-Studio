@@ -338,6 +338,87 @@ test('buildExternalAlertText renders rich refund details for payment refund ops 
     assert.match(text, /处理入口：支付对账 -> 异常运维 -> 回滚失败/);
 });
 
+test('buildExternalAlertText renders customer chat message details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'customer_chat_message_received',
+        severity: 'warning',
+        title: '客服新消息（阿木）',
+        payload: {
+            sender_label: '阿木',
+            user_id: 'user-001',
+            session_id: 'guest@example.com',
+            sender_email: 'guest@example.com',
+            message_type: 'text',
+            message_type_label: '文本消息',
+            content_preview: '你好，想咨询一下购买后多久发货？',
+            created_at: '2026-03-26T05:00:00.000Z',
+            entry_path: '客服消息 -> 会话详情'
+        }
+    });
+
+    assert.match(text, /发送者：阿木/);
+    assert.match(text, /用户ID：user-001/);
+    assert.match(text, /消息内容：你好，想咨询一下购买后多久发货/);
+    assert.match(text, /处理入口：客服消息 -> 会话详情/);
+});
+
+test('buildExternalAlertText renders shop purchase success details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'shop_purchase_succeeded',
+        severity: 'warning',
+        title: '商城购买成功（Prompt Pro 年卡）',
+        payload: {
+            order_id: 'shop-order-001',
+            buyer_label: '小羽',
+            user_id: 'user-001',
+            site: 'cn',
+            product_name: 'Prompt Pro 年卡',
+            item_count: 1,
+            total_price: 59.8,
+            delivery_status: 'pending',
+            delivery_status_label: '待发货',
+            refund_status: 'none',
+            refund_status_label: '正常',
+            created_at: '2026-03-26T05:10:00.000Z',
+            entry_path: '商城管理 -> 订单列表'
+        }
+    });
+
+    assert.match(text, /订单号：shop-order-001/);
+    assert.match(text, /购买者：小羽/);
+    assert.match(text, /商品：Prompt Pro 年卡/);
+    assert.match(text, /订单金额：59.80 元/);
+});
+
+test('buildExternalAlertText renders wallet recharge success details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'wallet_recharge_succeeded',
+        severity: 'warning',
+        title: '充值成功（50元充值）',
+        payload: {
+            payment_order_id: 'payment-order-001',
+            provider_order_no: 'HPJ001',
+            buyer_label: '小羽',
+            user_id: 'user-001',
+            site: 'cn',
+            provider: 'hupijiao',
+            package_name: '50元充值',
+            expected_amount: 50,
+            paid_amount: 50,
+            points_amount: 500,
+            status: 'redeemed',
+            paid_at: '2026-03-26T05:12:00.000Z',
+            claimed_at: '2026-03-26T05:13:00.000Z',
+            entry_path: '支付对账 -> 最近订单'
+        }
+    });
+
+    assert.match(text, /充值单号：payment-order-001/);
+    assert.match(text, /付款者：小羽/);
+    assert.match(text, /到账积分：500 点/);
+    assert.match(text, /处理入口：支付对账 -> 最近订单/);
+});
+
 test('buildExternalAlertText renders payment config changed details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'payment_config_changed',
