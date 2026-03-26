@@ -19641,6 +19641,42 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 12px;
 }
 
+.ops-alert-action-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.ops-alert-action-group {
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(107, 158, 206, 0.16);
+    background: rgba(10, 19, 36, 0.4);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.ops-alert-action-group__header {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ops-alert-action-group__header h4 {
+    margin: 0;
+    color: var(--text-main);
+    font-size: 0.98rem;
+    font-weight: 600;
+}
+
+.ops-alert-action-group__header p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+    line-height: 1.6;
+}
+
 .ops-alert-actions-grid .btn-add-config {
     width: 100%;
     min-height: 54px;
