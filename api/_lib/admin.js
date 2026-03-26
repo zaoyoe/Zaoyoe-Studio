@@ -265,7 +265,11 @@ async function requireAdmin(req) {
         : null;
     const hasServiceRole = Boolean(getSupabaseServiceRoleKey());
     const adminSupabase = hasServiceRole ? getSupabaseAdmin() : null;
-    const supabase = requestClient || adminSupabase;
+    // Admin handlers usually need a server-side client so they can read and write
+    // configuration, audit, and monitoring tables without being blocked by
+    // browser-scoped RLS policies. Keep the request-scoped client available
+    // separately for callers that explicitly need end-user context.
+    const supabase = adminSupabase || requestClient;
     const permissionClient = requestClient || adminSupabase;
     let activeRoles = [];
 

@@ -363,7 +363,7 @@ test('requireAdmin also falls back to admin client when no public client config 
     });
 });
 
-test('requireAdmin prefers the request-scoped client when bearer auth is available', async () => {
+test('requireAdmin keeps request context for permission lookup but prefers admin client for handler DB access', async () => {
     await withEnv({
         SUPABASE_URL: 'https://example.supabase.co',
         SUPABASE_PUBLISHABLE_KEY: 'public-key',
@@ -427,7 +427,7 @@ test('requireAdmin prefers the request-scoped client when bearer auth is availab
             });
 
             assert.equal(result.user.id, 'admin-2');
-            assert.equal(result.supabase.kind, 'request');
+            assert.equal(result.supabase.kind, 'admin');
             assert.equal(result.requestSupabase.kind, 'request');
             assert.equal(result.adminSupabase.kind, 'admin');
             assert.equal(result.authSource, 'bearer');
