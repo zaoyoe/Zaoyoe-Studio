@@ -363,6 +363,78 @@ test('requireAdmin also falls back to admin client when no public client config 
     });
 });
 
+test('requireAdmin prefers the request-scoped client when bearer auth is available', async () => {
+    await withEnv({
+        SUPABASE_URL: 'https://example.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: 'public-key',
+        SUPABASE_SERVICE_ROLE_KEY: 'service-key'
+    }, async () => {
+        await withAdminModule(({ key, options }) => {
+            if (key === 'public-key') {
+                return {
+                    kind: 'request',
+                    auth: {
+                        async getUser(token) {
+                            assert.equal(token, 'member-admin-token');
+                            return {
+                                data: {
+                                    user: {
+                                        id: 'admin-2',
+                                        email: 'admin2@example.com'
+                                    }
+                                },
+                                error: null
+                            };
+                        }
+                    },
+                    async rpc(name, args) {
+                        assert.equal(name, 'get_user_permissions');
+                        assert.deepEqual(args, { p_user_id: 'admin-2' });
+                        return {
+                            data: {
+                                is_admin: true,
+                                is_super_admin: false,
+                                role: 'admin',
+                                permissions: ['*'],
+                                expires_at: null
+                            },
+                            error: null
+                        };
+                    }
+                };
+            }
+
+            if (key === 'service-key') {
+                return {
+                    kind: 'admin',
+                    auth: {
+                        async getUser() {
+                            return {
+                                data: { user: null },
+                                error: { message: 'should not be used for bearer auth user lookup' }
+                            };
+                        }
+                    }
+                };
+            }
+
+            throw new Error(`Unexpected key: ${key}`);
+        }, async ({ adminModule }) => {
+            const result = await adminModule.requireAdmin({
+                headers: {
+                    authorization: 'Bearer member-admin-token'
+                }
+            });
+
+            assert.equal(result.user.id, 'admin-2');
+            assert.equal(result.supabase.kind, 'request');
+            assert.equal(result.requestSupabase.kind, 'request');
+            assert.equal(result.adminSupabase.kind, 'admin');
+            assert.equal(result.authSource, 'bearer');
+        });
+    });
+});
+
 test('requireAdmin accepts a valid admin studio cookie when bearer auth is unavailable', async () => {
     await withEnv({
         SUPABASE_URL: 'https://example.supabase.co',

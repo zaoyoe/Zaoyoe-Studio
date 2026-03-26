@@ -13,6 +13,8 @@ let opsAlertMonitorState = getDefaultOpsAlertMonitorState();
 let opsAlertMonitorViewState = getDefaultOpsAlertMonitorViewState();
 let verifyMonitorState = getDefaultVerifyMonitorState();
 let adminAuditMonitorState = getDefaultAdminAuditMonitorState();
+let adminConfigSessionReady = false;
+let adminConfigSessionPromise = null;
 let paymentChannelAccordionState = {
     mock: false,
     afdian: false,
@@ -1332,6 +1334,7 @@ async function initSystemConfig() {
     console.log('[Config] Initializing system config...');
     try {
         setupConfigEventListeners();
+        await ensureAdminConfigSession();
         await loadAllSystemConfig();
         console.log('[Config] Initialized successfully');
     } catch (err) {
@@ -1347,6 +1350,15 @@ async function loadAllSystemConfig() {
             console.warn(`[Config] ${label} render failed:`, error.message);
         }
     };
+
+    const deferredLoaders = [
+        loadPaymentChannelSettings,
+        loadOpsAlertSettings,
+        loadOpsAlertHealth,
+        loadOpsAlertMonitor,
+        () => refreshVerifyMonitor(true),
+        () => loadAdminAuditMonitor(true)
+    ];
 
     try {
         const data = await loadSystemConfigEntries();
@@ -1373,25 +1385,19 @@ async function loadAllSystemConfig() {
         safeRender('comment rules', renderCommentRulesConfig);
         safeRender('verify', renderVerifyConfig);
         safeRender('affiliate', loadAffiliateSettings);
-
-        [
-            loadPaymentChannelSettings,
-            loadOpsAlertSettings,
-            loadOpsAlertHealth,
-            loadOpsAlertMonitor
-        ].forEach((loader) => {
+    } catch (err) {
+        console.warn('[Config] Load error:', err.message);
+        if (typeof showToast === 'function') {
+            showToast(`后台配置加载失败: ${err.message || '未知错误'}`, 'error');
+        }
+    } finally {
+        deferredLoaders.forEach((loader) => {
             Promise.resolve()
                 .then(() => loader())
                 .catch((error) => {
                     console.warn('[Config] Deferred settings loader failed:', error.message);
                 });
         });
-
-    } catch (err) {
-        console.warn('[Config] Load error:', err.message);
-        if (typeof showToast === 'function') {
-            showToast(`后台配置加载失败: ${err.message || '未知错误'}`, 'error');
-        }
     }
 }
 
@@ -2775,6 +2781,59 @@ async function getAdminConfigApiHeaders() {
     return headers;
 }
 
+function isAdminConfigAuthFailure(response, payload = {}, error = null) {
+    if (error) {
+        const message = String(error?.message || '').toLowerCase();
+        return /unauthorized|admin access required|permission denied|missing_session|invalid.*token|jwt/i.test(message);
+    }
+
+    const status = Number(response?.status || 0);
+    if (status === 401 || status === 403) {
+        return true;
+    }
+
+    const message = String(payload?.message || '').toLowerCase();
+    return /unauthorized|admin access required|permission denied|missing_session|invalid.*token|jwt/i.test(message);
+}
+
+async function ensureAdminConfigSession(force = false) {
+    if (adminConfigSessionPromise && !force) {
+        return adminConfigSessionPromise;
+    }
+
+    if (adminConfigSessionReady && !force) {
+        return true;
+    }
+
+    if (!window.adminStudioAccessGranted || !window.AdminAccess?.createAdminStudioSession) {
+        return false;
+    }
+
+    adminConfigSessionPromise = (async () => {
+        try {
+            const result = await withPromiseTimeout(
+                window.AdminAccess.createAdminStudioSession({ supabaseClient: window.supabaseClient || null }),
+                6000,
+                '刷新后台访问会话超时，请稍后重试'
+            );
+
+            adminConfigSessionReady = Boolean(result?.ok);
+            if (!adminConfigSessionReady) {
+                console.warn('[Config] Failed to refresh Admin Studio session:', result?.reason || result?.payload?.message || 'unknown');
+            }
+            return adminConfigSessionReady;
+        } catch (error) {
+            console.warn('[Config] Failed to refresh Admin Studio session:', error.message);
+            adminConfigSessionReady = false;
+            return false;
+        } finally {
+            adminConfigSessionPromise = null;
+        }
+    })();
+
+    return adminConfigSessionPromise;
+}
+
 async function withPromiseTimeout(promise, timeoutMs = 8000, message = '请求超时，请稍后重试') {
     let timer = null;
     try {
@@ -2819,11 +2878,31 @@ async function fetchAdminConfigJsonWithTimeout(url, options = {}, timeoutMs = 80
     }
 }
 
+async function fetchAdminConfigApiJson(url, options = {}, timeoutMs = 8000) {
+    const execute = async () => {
+        const headers = {
+            ...(await getAdminConfigApiHeaders()),
+            ...(options.headers || {})
+        };
+        return fetchAdminConfigJsonWithTimeout(url, {
+            ...options,
+            headers
+        }, timeoutMs);
+    };
+
+    let result = await execute();
+    if (isAdminConfigAuthFailure(result.response, result.payload)) {
+        const refreshed = await ensureAdminConfigSession(true);
+        if (refreshed) {
+            result = await execute();
+        }
+    }
+    return result;
+}
+
 async function loadSystemConfigEntriesViaApi() {
-    const headers = await getAdminConfigApiHeaders();
-    const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/system-config', {
-        method: 'GET',
-        headers
+    const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/system-config', {
+        method: 'GET'
     }, 10000);
 
     if (!response.ok || !payload.success) {
@@ -2839,7 +2918,7 @@ async function loadSystemConfigEntries() {
     } catch (apiError) {
         console.warn('[Config] System config API load failed, falling back to RPC:', apiError.message);
         const { data, error } = await withPromiseTimeout(
-            supabaseClient.rpc('get_all_system_config'),
+            window.supabaseClient.rpc('get_all_system_config'),
             8000,
             '加载后台配置超时，请稍后重试'
         );
@@ -2849,10 +2928,8 @@ async function loadSystemConfigEntries() {
 }
 
 async function saveSystemConfigViaApi(key, value) {
-    const headers = await getAdminConfigApiHeaders();
-    const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/system-config', {
+    const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/system-config', {
         method: 'POST',
-        headers,
         body: JSON.stringify({
             key,
             value
@@ -2873,10 +2950,8 @@ async function loadPaymentChannelSettings(force = false) {
 
     loadPaymentChannelSettings._loadingPromise = (async () => {
         try {
-            const headers = await getAdminConfigApiHeaders();
-            const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/payment-channels', {
-                method: 'GET',
-                headers
+            const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/payment-channels', {
+                method: 'GET'
             });
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载支付通道配置失败');
@@ -2914,10 +2989,8 @@ async function loadOpsAlertSettings(force = false) {
 
     loadOpsAlertSettings._loadingPromise = (async () => {
         try {
-            const headers = await getAdminConfigApiHeaders();
-            const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/ops-alerts', {
-                method: 'GET',
-                headers
+            const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/ops-alerts', {
+                method: 'GET'
             });
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载站外告警配置失败');
@@ -2957,10 +3030,8 @@ async function loadOpsAlertHealth(force = false) {
 
     loadOpsAlertHealth._loadingPromise = (async () => {
         try {
-            const headers = await getAdminConfigApiHeaders();
-            const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/ops-alert-health', {
-                method: 'GET',
-                headers
+            const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/ops-alert-health', {
+                method: 'GET'
             });
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载站外告警通道健康状态失败');
@@ -3009,10 +3080,8 @@ async function loadOpsAlertMonitor(force = false) {
 
     loadOpsAlertMonitor._loadingPromise = (async () => {
         try {
-            const headers = await getAdminConfigApiHeaders();
-            const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/ops-alert-monitor', {
-                method: 'GET',
-                headers
+            const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/ops-alert-monitor', {
+                method: 'GET'
             });
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载集中告警处理面板失败');
@@ -3626,7 +3695,6 @@ async function savePaymentChannelSettings(options = {}) {
         const config = options.configOverride
             ? normalizePaymentChannelsConfig(options.configOverride)
             : collectPaymentChannelsConfigFromForm();
-        const headers = await getAdminConfigApiHeaders();
         const body = {
             config,
             secrets: {
@@ -3636,13 +3704,10 @@ async function savePaymentChannelSettings(options = {}) {
             }
         };
 
-        const response = await fetch('/api/admin/settings/payment-channels', {
+        const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/payment-channels', {
             method: 'POST',
-            headers,
             body: JSON.stringify(body)
-        });
-
-        const payload = await response.json().catch(() => ({}));
+        }, 10000);
         if (!response.ok || !payload.success) {
             throw new Error(payload.message || '保存支付通道配置失败');
         }
@@ -3789,7 +3854,6 @@ function clearOpsAlertSecretInputs() {
 async function saveOpsAlertSettings() {
     try {
         const config = collectOpsAlertConfigFromForm();
-        const headers = await getAdminConfigApiHeaders();
         const body = {
             config,
             secrets: {
@@ -3799,13 +3863,10 @@ async function saveOpsAlertSettings() {
             }
         };
 
-        const response = await fetch('/api/admin/settings/ops-alerts', {
+        const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/ops-alerts', {
             method: 'POST',
-            headers,
             body: JSON.stringify(body)
-        });
-
-        const payload = await response.json().catch(() => ({}));
+        }, 10000);
         if (!response.ok || !payload.success) {
             throw new Error(payload.message || '保存站外退款告警配置失败');
         }
@@ -3875,10 +3936,8 @@ async function sendOpsAlertPreviewRequest(action, fallbackMessage) {
         }
     }
 
-    const headers = await getAdminConfigApiHeaders();
-    const response = await fetch('/api/admin/settings/ops-alerts', {
+    const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/ops-alerts', {
         method: 'POST',
-        headers,
         body: JSON.stringify({
             action,
             config,
@@ -3888,9 +3947,7 @@ async function sendOpsAlertPreviewRequest(action, fallbackMessage) {
                 email_api_key: providedEmailApiKey
             }
         })
-    });
-
-    const payload = await response.json().catch(() => ({}));
+    }, 10000);
     if (!response.ok || !payload.success) {
         throw new Error(payload.message || fallbackMessage);
     }
@@ -4179,11 +4236,9 @@ async function markOpsAlertMonitorHandled(categoryKey = '', jobIds = []) {
     }
 
     try {
-        const headers = await getAdminConfigApiHeaders();
         const filters = getOpsAlertMonitorViewFilters();
-        const response = await fetch('/api/admin/settings/ops-alert-monitor', {
+        const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/ops-alert-monitor', {
             method: 'POST',
-            headers,
             body: JSON.stringify({
                 action: 'mark_handled',
                 jobIds: normalizedIds,
@@ -4191,9 +4246,7 @@ async function markOpsAlertMonitorHandled(categoryKey = '', jobIds = []) {
                 scope: filters.scope,
                 severity: filters.severity
             })
-        });
-
-        const payload = await response.json().catch(() => ({}));
+        }, 10000);
         if (!response.ok || !payload.success) {
             throw new Error(payload.message || '批量复核失败');
         }
@@ -4412,14 +4465,10 @@ async function deleteOpsAlertSecret(secretName) {
     }
 
     try {
-        const headers = await getAdminConfigApiHeaders();
-        const response = await fetch('/api/admin/settings/ops-alerts', {
+        const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/ops-alerts', {
             method: 'DELETE',
-            headers,
             body: JSON.stringify({ secretName: normalizedSecretName })
-        });
-
-        const payload = await response.json().catch(() => ({}));
+        }, 10000);
         if (!response.ok || !payload.success) {
             throw new Error(payload.message || '删除站外告警密钥失败');
         }
@@ -6075,10 +6124,8 @@ async function loadVerifyRuntimeSnapshot(force = false) {
 
     loadVerifyRuntimeSnapshot._loadingPromise = (async () => {
         try {
-            const headers = await getAdminConfigApiHeaders();
-            const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/verify-monitor', {
-                method: 'GET',
-                headers
+            const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/verify-monitor', {
+                method: 'GET'
             }, 10000);
 
             if (!response.ok || !payload.success) {
@@ -6199,10 +6246,8 @@ async function loadAdminAuditMonitor(force = false) {
 
     loadAdminAuditMonitor._loadingPromise = (async () => {
         try {
-            const headers = await getAdminConfigApiHeaders();
-            const { response, payload } = await fetchAdminConfigJsonWithTimeout('/api/admin/settings/admin-audit-monitor', {
-                method: 'GET',
-                headers
+            const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/admin-audit-monitor', {
+                method: 'GET'
             });
 
             if (!response.ok || !payload.success) {

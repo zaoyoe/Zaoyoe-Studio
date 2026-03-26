@@ -201,6 +201,18 @@ async function requireAdminStudioAccess() {
     }
 
     applyResolvedAdminAccess(access);
+
+    try {
+        const sessionResult = await accessClient.createAdminStudioSession?.({
+            supabaseClient: window.supabaseClient || null
+        });
+        if (!sessionResult?.ok) {
+            console.warn('[AdminStudio] Failed to refresh Admin Studio session cookie:', sessionResult?.reason || sessionResult?.payload?.message || 'unknown');
+        }
+    } catch (sessionError) {
+        console.warn('[AdminStudio] Failed to refresh Admin Studio session cookie:', sessionError.message);
+    }
+
     renderAdminStudioAccessGate('granted');
     return access;
 }

@@ -1718,7 +1718,7 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         'admin-studio.html should load the latest admin studio stylesheet version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-studio.js?v=20260325_ADMIN_RUNTIME_STYLE_HELPERS_22'),
+        adminStudioHtml.includes('admin-studio.js?v=20260326_ADMIN_SESSION_REFRESH_23'),
         true,
         'admin-studio.html should load the latest admin studio runtime version'
     );
@@ -2151,7 +2151,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'function renderOpsAlertSettings()',
         'function applyOpsAlertOverview(config)',
         'function collectOpsAlertConfigFromForm()',
-        "fetch('/api/admin/settings/ops-alerts'",
+        "fetchAdminConfigApiJson('/api/admin/settings/ops-alerts'",
         'window.sendOpsAlertGatewayRecoveredSample = sendOpsAlertGatewayRecoveredSample;',
         'window.sendOpsAlertVerifyFailureRateSpikeSample = sendOpsAlertVerifyFailureRateSpikeSample;',
         'window.sendOpsAlertVerifyIncidentEscalatedSample = sendOpsAlertVerifyIncidentEscalatedSample;',
@@ -2167,7 +2167,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.sendOpsAlertPaymentConfigIncidentSample = sendOpsAlertPaymentConfigIncidentSample;',
         'window.sendOpsAlertPaymentConfigIncidentRecoveredSample = sendOpsAlertPaymentConfigIncidentRecoveredSample;',
         'window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;',
-        "fetch('/api/admin/settings/ops-alert-monitor'",
+        "fetchAdminConfigApiJson('/api/admin/settings/ops-alert-monitor'",
         'function getDefaultOpsAlertMonitorState()',
         'function getDefaultOpsAlertMonitorViewState()',
         'function renderOpsAlertMonitorPanel()',
@@ -2184,7 +2184,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.openOpsAlertWorkspace = openOpsAlertWorkspace;',
         'window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;',
         'window.saveOpsAlertSettings = saveOpsAlertSettings;',
-        'window.deleteOpsAlertSecret = deleteOpsAlertSecret;'
+        'window.deleteOpsAlertSecret = deleteOpsAlertSecret;',
+        "fetchAdminConfigApiJson('/api/admin/settings/ops-alerts'",
+        'async function ensureAdminConfigSession(force = false)'
     ];
 
     for (const marker of runtimeMarkers) {
@@ -2242,8 +2244,11 @@ test('admin audit monitor exposes delegated settings actions and runtime wiring'
     }
 
     const runtimeMarkers = [
+        'async function ensureAdminConfigSession(force = false)',
+        "window.AdminAccess.createAdminStudioSession({ supabaseClient: window.supabaseClient || null })",
+        'async function fetchAdminConfigApiJson(url, options = {}, timeoutMs = 8000)',
         'function getDefaultAdminAuditMonitorState()',
-        "fetchAdminConfigJsonWithTimeout('/api/admin/settings/admin-audit-monitor'",
+        "fetchAdminConfigApiJson('/api/admin/settings/admin-audit-monitor'",
         'window.loadAdminAuditMonitor = loadAdminAuditMonitor;',
         'window.refreshAdminAuditMonitor = refreshAdminAuditMonitor;'
     ];
@@ -4431,6 +4436,8 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         'function pulseAdminConfigToggle(toggleEl)',
         "toggleEl.classList.add(ADMIN_CONFIG_TOGGLE_PULSE_CLASS);",
         'function showAdminConfigSaveIndicator(indicator, text = \'✓ 已保存\', durationMs = 1500)',
+        'async function ensureAdminConfigSession(force = false)',
+        'async function fetchAdminConfigApiJson(url, options = {}, timeoutMs = 8000)',
         'function getAdminConfigRichTextColorClass(color)',
         'function renderVerifyQuotaState(quotaEl, tone, iconClass, message, options = {})',
         'function getDefaultVerifyMonitorState()',
@@ -4439,7 +4446,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         'class="affiliate-poster-preview ${getAffiliatePosterPreviewClass(preset.id)}"',
         'class="color-swatch ${getAdminConfigRichTextColorClass(value)}"',
         "renderVerifyQuotaState(quotaEl, 'neutral', 'fas fa-spinner fa-spin', '查询中...');",
-        "fetchAdminConfigJsonWithTimeout('/api/admin/settings/verify-monitor'",
+        "fetchAdminConfigApiJson('/api/admin/settings/verify-monitor'",
         'window.loadVerifyMonitor = loadVerifyMonitor;',
         'window.refreshVerifyMonitor = refreshVerifyMonitor;'
     ];
@@ -4469,9 +4476,14 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         'admin-studio.html should reference the updated admin stylesheet version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-config.js?v=20260325_ADMIN_CONFIG_SYSTEM_CONFIG_API_19'),
+        adminStudioHtml.includes('admin-config.js?v=20260326_ADMIN_CONFIG_SESSION_RETRY_20'),
         true,
         'admin-studio.html should reference the updated admin config runtime version'
+    );
+    assert.equal(
+        adminStudioHtml.includes('admin-studio.js?v=20260326_ADMIN_SESSION_REFRESH_23'),
+        true,
+        'admin-studio.html should reference the updated admin studio runtime version'
     );
     assert.equal(
         adminStudioHtml.includes('id="lockedCountBadge" hidden'),
