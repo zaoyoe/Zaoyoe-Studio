@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=59">
+    <link rel="stylesheet" href="admin-studio.css?v=60">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -1201,6 +1201,23 @@
                                                 </div>
                                             </article>
                                         </div>
+                                    </div>
+
+                                    <div class="ops-alert-health-panel" id="opsAlertHealthPanel">
+                                        <div class="ops-alert-workspace-panel__head">
+                                            <div>
+                                                <h4><i class="fas fa-heart-pulse"></i> 告警通道健康页</h4>
+                                                <p>只读汇总 Telegram、飞书、邮件三条通道的送达率、重试、死信和最近失败原因，帮助快速判断是业务异常还是通道异常。</p>
+                                            </div>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-refresh-ops-alert-health">
+                                                <i class="fas fa-rotate"></i> 刷新健康页
+                                            </button>
+                                        </div>
+                                        <div class="config-inline-note" id="opsAlertHealthMeta">
+                                            <i class="fas fa-rotate fa-spin"></i>
+                                            <span>正在加载站外告警通道健康状态...</span>
+                                        </div>
+                                        <div class="ops-alert-health-grid" id="opsAlertHealthGrid"></div>
                                     </div>
 
                                     <div class="ops-alert-monitor-panel" id="opsAlertMonitorPanel">
@@ -6160,13 +6177,13 @@
     <script src="admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1"></script>
     <script src="admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_2"></script>
-    <script src="admin-config.js?v=20260325_ADMIN_CONFIG_OPS_ALERT_SAMPLES_17"></script>
+    <script src="admin-config.js?v=20260326_ADMIN_OPS_ALERT_HEALTH_18"></script>
     <script src="admin-homepage.js?v=20260324_HOMEPAGE_RUNTIME_STYLE_2"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
     <script src="js/admin-tickets.js?v=20260324_ADMIN_TICKETS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-access.js"></script>
-    <script src="admin-studio.js?v=20260325_ADMIN_RUNTIME_STYLE_HELPERS_20"></script>
+    <script src="admin-studio.js?v=20260326_ADMIN_RUNTIME_STYLE_HELPERS_21"></script>
     <script src="js/admin-shop.js?v=20260324_SHOP_RUNTIME_STYLE_ZERO_1"></script>
 </body>
 
