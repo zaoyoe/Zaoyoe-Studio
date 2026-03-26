@@ -2179,6 +2179,8 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.loadOpsAlertHealth = loadOpsAlertHealth;',
         'window.refreshOpsAlertHealthPanel = refreshOpsAlertHealthPanel;',
         "fetch('/api/admin/settings/ops-alert-monitor'",
+        'const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 8000;',
+        'const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 8000;',
         'function getDefaultOpsAlertMonitorState()',
         'function getDefaultOpsAlertMonitorViewState()',
         'function renderOpsAlertMonitorPanel()',
@@ -2193,6 +2195,8 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;',
         'async function openOpsAlertWorkspace(workspaceKey, context = {})',
         'window.openOpsAlertWorkspace = openOpsAlertWorkspace;',
+        "fetch('/api/admin/settings/verify-monitor/quota'",
+        "fetch('/api/admin/settings/verify-monitor/queue'",
         'window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;',
         'window.saveOpsAlertSettings = saveOpsAlertSettings;',
         'window.deleteOpsAlertSecret = deleteOpsAlertSecret;'
@@ -4484,7 +4488,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         'admin-studio.html should reference the updated admin stylesheet version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-config.js?v=20260326_ADMIN_OPS_ALERT_HEALTH_18'),
+        adminStudioHtml.includes('admin-config.js?v=20260326_ADMIN_VERIFY_MONITOR_PROXY_20'),
         true,
         'admin-studio.html should reference the updated admin config runtime version'
     );
