@@ -218,6 +218,13 @@ const ShopAdmin = {
         wrapper.classList.add('shop-form-section--expanded');
     },
 
+    setOptionalInputValue: function (inputId, value) {
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.value = value;
+        }
+    },
+
     // Translate Chinese text to English using Gemini API
     translateToEnglish: async function (name, description) {
         if (!window.AdminAI?.configured) {
@@ -3524,10 +3531,10 @@ Example output format:
             document.getElementById('prodDesc').value = '';
             document.getElementById('prodSort').value = '0';
             document.getElementById('prodMaxPurchaseQuantity').value = '';
-            document.getElementById('prodPurchaseLimit24hQuantity').value = '';
-            document.getElementById('prodPurchaseLimitWindowQuantity').value = '';
-            document.getElementById('prodPurchaseLimitWindowMinutes').value = '';
-            document.getElementById('prodPerAccountPurchaseLimit').value = '';
+            this.setOptionalInputValue('prodPurchaseLimit24hQuantity', '');
+            this.setOptionalInputValue('prodPurchaseLimitWindowQuantity', '');
+            this.setOptionalInputValue('prodPurchaseLimitWindowMinutes', '');
+            this.setOptionalInputValue('prodPerAccountPurchaseLimit', '');
 
             document.getElementById('prodSort').value = '0';
 
@@ -3581,18 +3588,22 @@ Example output format:
             document.getElementById('prodMaxPurchaseQuantity').value = data.max_purchase_quantity != null
                 ? data.max_purchase_quantity
                 : '';
-            document.getElementById('prodPurchaseLimit24hQuantity').value = data.purchase_limit_24h_quantity != null
-                ? data.purchase_limit_24h_quantity
-                : '';
-            document.getElementById('prodPurchaseLimitWindowQuantity').value = data.purchase_limit_window_quantity != null
-                ? data.purchase_limit_window_quantity
-                : '';
-            document.getElementById('prodPurchaseLimitWindowMinutes').value = data.purchase_limit_window_minutes != null
-                ? data.purchase_limit_window_minutes
-                : '';
-            document.getElementById('prodPerAccountPurchaseLimit').value = data.per_account_purchase_limit != null
-                ? data.per_account_purchase_limit
-                : '';
+            this.setOptionalInputValue(
+                'prodPurchaseLimit24hQuantity',
+                data.purchase_limit_24h_quantity != null ? data.purchase_limit_24h_quantity : ''
+            );
+            this.setOptionalInputValue(
+                'prodPurchaseLimitWindowQuantity',
+                data.purchase_limit_window_quantity != null ? data.purchase_limit_window_quantity : ''
+            );
+            this.setOptionalInputValue(
+                'prodPurchaseLimitWindowMinutes',
+                data.purchase_limit_window_minutes != null ? data.purchase_limit_window_minutes : ''
+            );
+            this.setOptionalInputValue(
+                'prodPerAccountPurchaseLimit',
+                data.per_account_purchase_limit != null ? data.per_account_purchase_limit : ''
+            );
 
             // Populate marketing fields (Phase 2)
             let parsedRules = [];
@@ -3692,10 +3703,10 @@ Example output format:
             const parsedSort = Number.parseInt(sortInput, 10);
             const normalizedSort = Number.isFinite(parsedSort) ? parsedSort : 0;
             const maxPurchaseQuantityRaw = (document.getElementById('prodMaxPurchaseQuantity').value || '').trim();
-            const purchaseLimit24hQuantityRaw = (document.getElementById('prodPurchaseLimit24hQuantity').value || '').trim();
-            const purchaseLimitWindowQuantityRaw = (document.getElementById('prodPurchaseLimitWindowQuantity').value || '').trim();
-            const purchaseLimitWindowMinutesRaw = (document.getElementById('prodPurchaseLimitWindowMinutes').value || '').trim();
-            const perAccountPurchaseLimitRaw = (document.getElementById('prodPerAccountPurchaseLimit').value || '').trim();
+            const purchaseLimit24hQuantityRaw = (document.getElementById('prodPurchaseLimit24hQuantity')?.value || '').trim();
+            const purchaseLimitWindowQuantityRaw = (document.getElementById('prodPurchaseLimitWindowQuantity')?.value || '').trim();
+            const purchaseLimitWindowMinutesRaw = (document.getElementById('prodPurchaseLimitWindowMinutes')?.value || '').trim();
+            const perAccountPurchaseLimitRaw = (document.getElementById('prodPerAccountPurchaseLimit')?.value || '').trim();
             let normalizedMaxPurchaseQuantity = null;
             let normalizedPurchaseLimit24hQuantity = null;
             let normalizedPurchaseLimitWindowQuantity = null;
@@ -3757,18 +3768,22 @@ Example output format:
             document.getElementById('prodMaxPurchaseQuantity').value = normalizedMaxPurchaseQuantity == null
                 ? ''
                 : String(normalizedMaxPurchaseQuantity);
-            document.getElementById('prodPurchaseLimit24hQuantity').value = normalizedPurchaseLimit24hQuantity == null
-                ? ''
-                : String(normalizedPurchaseLimit24hQuantity);
-            document.getElementById('prodPurchaseLimitWindowQuantity').value = normalizedPurchaseLimitWindowQuantity == null
-                ? ''
-                : String(normalizedPurchaseLimitWindowQuantity);
-            document.getElementById('prodPurchaseLimitWindowMinutes').value = normalizedPurchaseLimitWindowMinutes == null
-                ? ''
-                : String(normalizedPurchaseLimitWindowMinutes);
-            document.getElementById('prodPerAccountPurchaseLimit').value = normalizedPerAccountPurchaseLimit == null
-                ? ''
-                : String(normalizedPerAccountPurchaseLimit);
+            this.setOptionalInputValue(
+                'prodPurchaseLimit24hQuantity',
+                normalizedPurchaseLimit24hQuantity == null ? '' : String(normalizedPurchaseLimit24hQuantity)
+            );
+            this.setOptionalInputValue(
+                'prodPurchaseLimitWindowQuantity',
+                normalizedPurchaseLimitWindowQuantity == null ? '' : String(normalizedPurchaseLimitWindowQuantity)
+            );
+            this.setOptionalInputValue(
+                'prodPurchaseLimitWindowMinutes',
+                normalizedPurchaseLimitWindowMinutes == null ? '' : String(normalizedPurchaseLimitWindowMinutes)
+            );
+            this.setOptionalInputValue(
+                'prodPerAccountPurchaseLimit',
+                normalizedPerAccountPurchaseLimit == null ? '' : String(normalizedPerAccountPurchaseLimit)
+            );
 
             if (this.purchaseNotesSchemaAvailable === false && (showPurchaseNotes || normalizedPurchaseNotes)) {
                 alert('保存失败：当前 Supabase 数据库还没有“注意事项”字段。请先执行 `supabase/add_purchase_notes.sql`，再保存商品。');
