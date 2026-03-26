@@ -201,18 +201,6 @@ async function requireAdminStudioAccess() {
     }
 
     applyResolvedAdminAccess(access);
-
-    try {
-        const sessionResult = await accessClient.createAdminStudioSession?.({
-            supabaseClient: window.supabaseClient || null
-        });
-        if (!sessionResult?.ok) {
-            console.warn('[AdminStudio] Failed to refresh Admin Studio session cookie:', sessionResult?.reason || sessionResult?.payload?.message || 'unknown');
-        }
-    } catch (sessionError) {
-        console.warn('[AdminStudio] Failed to refresh Admin Studio session cookie:', sessionError.message);
-    }
-
     renderAdminStudioAccessGate('granted');
     return access;
 }
@@ -407,25 +395,10 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-send-ops-alert-payment-config-recovered-sample':
                 window.sendOpsAlertPaymentConfigRecoveredSample?.();
                 break;
-            case 'settings-refresh-ops-alert-health':
-                window.refreshOpsAlertHealthPanel?.();
-                break;
             case 'settings-filter-ops-alert-monitor':
                 window.setOpsAlertMonitorFilter?.(
                     actionEl.dataset.opsAlertMonitorFilterKind,
                     actionEl.dataset.opsAlertMonitorFilterValue
-                );
-                break;
-            case 'settings-mark-ops-alert-monitor-handled':
-                window.markOpsAlertMonitorHandled?.();
-                break;
-            case 'settings-mark-ops-alert-monitor-category-handled':
-                window.markOpsAlertMonitorHandled?.(actionEl.dataset.opsAlertMonitorCategoryKey);
-                break;
-            case 'settings-mark-ops-alert-monitor-item-handled':
-                window.markOpsAlertMonitorHandled?.(
-                    actionEl.dataset.opsAlertMonitorCategoryKey,
-                    [actionEl.dataset.opsAlertJobId]
                 );
                 break;
             case 'settings-open-ops-alert-workspace':

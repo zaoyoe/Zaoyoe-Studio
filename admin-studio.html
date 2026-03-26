@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=60">
+    <link rel="stylesheet" href="admin-studio.css?v=59">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -1067,57 +1067,6 @@
                                         </div>
                                     </div>
 
-                                    <div class="config-row">
-                                        <div class="config-info">
-                                            <div class="config-label">邮件告警（Resend）</div>
-                                            <div class="config-desc">适合作为 Telegram / 飞书之外的第三通道，保留更长链路的告警留痕。</div>
-                                        </div>
-                                        <div class="config-input-wrapper">
-                                            <div class="status-toggle" id="opsAlertEmailEnabledToggle" data-admin-action="settings-toggle-ops-alert-channel" data-alert-channel="email"></div>
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <label>邮件最低级别</label>
-                                        <div class="config-input-wrapper">
-                                            <select class="config-input" id="opsAlertEmailSeverity">
-                                                <option value="warning">warning</option>
-                                                <option value="critical">critical</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <label>收件邮箱</label>
-                                        <div class="config-input-wrapper">
-                                            <textarea class="config-input" id="opsAlertEmailRecipients" rows="3" placeholder="ops@example.com&#10;owner@example.com"></textarea>
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <label>发件地址</label>
-                                        <div class="config-input-wrapper">
-                                            <input type="email" class="config-input" id="opsAlertEmailFromAddress" placeholder="Zaoyoe Alerts &lt;alerts@zaoyoe.com&gt;">
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <label>邮件主题前缀</label>
-                                        <div class="config-input-wrapper">
-                                            <input type="text" class="config-input" id="opsAlertEmailSubjectPrefix" placeholder="[Zaoyoe] ">
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <div class="config-info">
-                                            <div class="config-label">Email API Key</div>
-                                            <div class="config-desc" id="opsAlertEmailApiKeyStatus">未配置后台安全密钥</div>
-                                        </div>
-                                        <div class="config-input-wrapper">
-                                            <input type="password" class="config-input" id="opsAlertEmailApiKey" placeholder="留空表示保持现有密钥不变">
-                                        </div>
-                                    </div>
-
                                     <div class="config-row payment-channel-save-row ops-alert-actions-row">
                                         <button type="button" class="btn-add-config ops-alert-actions-row__save" data-admin-action="settings-save-ops-alerts">
                                             <i class="fas fa-save"></i> 保存站外告警配置
@@ -1193,24 +1142,6 @@
                                                 <i class="fas fa-shield-check"></i> 发送支付配置恢复示例消息
                                             </button>
                                         </div>
-                                    </div>
-
-                                    <div class="ops-alert-health-panel" id="opsAlertHealthPanel">
-                                        <div class="ops-alert-workspace-panel__head">
-                                            <div>
-                                                <h4><i class="fas fa-heart-pulse"></i> 告警通道健康页</h4>
-                                                <p>汇总 Telegram、飞书、邮件三条通道的送达率、重试、死信和最近失败原因，方便快速判断是业务异常还是通道异常。</p>
-                                            </div>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-refresh-ops-alert-health">
-                                                <i class="fas fa-rotate"></i> 刷新健康页
-                                            </button>
-                                        </div>
-                                        <div class="config-inline-note" id="opsAlertHealthMeta">
-                                            <i class="fas fa-rotate fa-spin"></i>
-                                            <span>正在加载站外告警通道健康状态...</span>
-                                        </div>
-                                        <div class="ops-alert-health-grid" id="opsAlertHealthGrid"></div>
-                                        <div class="ops-alert-health-failures" id="opsAlertHealthFailures"></div>
                                     </div>
 
                                     <div class="ops-alert-workspace-panel" id="opsAlertWorkspacePanel">
@@ -1311,9 +1242,6 @@
                                             </div>
                                         </div>
                                         <div class="ops-alert-monitor-batch-actions" id="opsAlertMonitorBatchActions">
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-mark-ops-alert-monitor-handled">
-                                                <i class="fas fa-check-double"></i> 批量标记当前筛选已复核
-                                            </button>
                                             <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-copy-ops-alert-monitor-checklist">
                                                 <i class="fas fa-clipboard-check"></i> 复制当前筛选清单
                                             </button>
@@ -1334,9 +1262,6 @@
                                         </button>
                                         <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="settings-delete-ops-alert-secret" data-secret-name="feishu_webhook_url">
                                             删除飞书密钥
-                                        </button>
-                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="settings-delete-ops-alert-secret" data-secret-name="email_api_key">
-                                            删除邮件密钥
                                         </button>
                                     </div>
                                 </div>
@@ -6235,13 +6160,13 @@
     <script src="admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1"></script>
     <script src="admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_2"></script>
-    <script src="admin-config.js?v=20260326_ADMIN_CONFIG_DIRECT_FALLBACK_21"></script>
+    <script src="admin-config.js?v=20260325_ADMIN_CONFIG_OPS_ALERT_SAMPLES_17"></script>
     <script src="admin-homepage.js?v=20260324_HOMEPAGE_RUNTIME_STYLE_2"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
     <script src="js/admin-tickets.js?v=20260324_ADMIN_TICKETS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-access.js"></script>
-    <script src="admin-studio.js?v=20260326_ADMIN_SESSION_REFRESH_23"></script>
+    <script src="admin-studio.js?v=20260325_ADMIN_RUNTIME_STYLE_HELPERS_20"></script>
     <script src="js/admin-shop.js?v=20260324_SHOP_RUNTIME_STYLE_ZERO_1"></script>
 </body>
 

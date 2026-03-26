@@ -49,33 +49,23 @@ function createDefaultState() {
                 feishu: {
                     enabled: false,
                     minimum_severity: 'warning'
-                },
-                email: {
-                    enabled: false,
-                    minimum_severity: 'critical',
-                    recipients: [],
-                    from_address: '',
-                    subject_prefix: '[Zaoyoe] '
                 }
             }
         },
         secretStatus: {
             telegram_bot_token: { configured: false, source: 'missing', updatedAt: null },
-            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null },
-            email_api_key: { configured: false, source: 'missing', updatedAt: null }
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
         },
         runtimeSecrets: {
             telegram_bot_token: '',
-            feishu_webhook_url: '',
-            email_api_key: ''
+            feishu_webhook_url: ''
         },
         systemConfigUpserts: [],
         upsertedSecrets: [],
         deletedSecrets: [],
         auditLogs: [],
         telegramTests: [],
-        feishuTests: [],
-        emailTests: []
+        feishuTests: []
     };
 }
 
@@ -114,7 +104,6 @@ function createNormalizedConfig(raw) {
     const channels = source.channels && typeof source.channels === 'object' ? source.channels : {};
     const telegram = channels.telegram && typeof channels.telegram === 'object' ? channels.telegram : {};
     const feishu = channels.feishu && typeof channels.feishu === 'object' ? channels.feishu : {};
-    const email = channels.email && typeof channels.email === 'object' ? channels.email : {};
 
     return {
         enabled: normalizeBoolean(source.enabled, false),
@@ -131,15 +120,6 @@ function createNormalizedConfig(raw) {
                 minimum_severity: ['info', 'warning', 'critical'].includes(String(feishu.minimum_severity || '').trim())
                     ? String(feishu.minimum_severity).trim()
                     : 'warning'
-            },
-            email: {
-                enabled: normalizeBoolean(email.enabled, false),
-                minimum_severity: ['info', 'warning', 'critical'].includes(String(email.minimum_severity || '').trim())
-                    ? String(email.minimum_severity).trim()
-                    : 'critical',
-                recipients: normalizeStringArray(email.recipients),
-                from_address: String(email.from_address || '').trim(),
-                subject_prefix: String(email.subject_prefix || '[Zaoyoe] ').trim() || '[Zaoyoe] '
             }
         }
     };
@@ -206,8 +186,7 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
                 ? undefined
                 : {
                     telegram_bot_token: 'ops_alert_telegram_bot_token',
-                    feishu_webhook_url: 'ops_alert_feishu_webhook_url',
-                    email_api_key: 'ops_alert_email_api_key'
+                    feishu_webhook_url: 'ops_alert_feishu_webhook_url'
                 };
             return {
                 OPS_ALERT_SECRET_KEYS: secretKeyMap,
@@ -229,14 +208,6 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
                             updatedAt: '2026-03-24T10:00:00.000Z'
                         };
                     }
-                    if (secretKey === 'ops_alert_email_api_key') {
-                        state.runtimeSecrets.email_api_key = secretValue;
-                        state.secretStatus.email_api_key = {
-                            configured: true,
-                            source: 'stored',
-                            updatedAt: '2026-03-24T10:00:00.000Z'
-                        };
-                    }
                 },
                 async deleteStoredAdminSecret(_supabase, secretKey) {
                     state.deletedSecrets.push(secretKey);
@@ -251,14 +222,6 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
                     if (secretKey === 'ops_alert_feishu_webhook_url') {
                         state.runtimeSecrets.feishu_webhook_url = '';
                         state.secretStatus.feishu_webhook_url = {
-                            configured: false,
-                            source: 'missing',
-                            updatedAt: null
-                        };
-                    }
-                    if (secretKey === 'ops_alert_email_api_key') {
-                        state.runtimeSecrets.email_api_key = '';
-                        state.secretStatus.email_api_key = {
                             configured: false,
                             source: 'missing',
                             updatedAt: null
@@ -307,18 +270,6 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
                         body: JSON.stringify({ code: 0, msg: 'success' })
                     };
                 },
-                async sendEmailAlert(job, runtime) {
-                    state.emailTests.push({
-                        job: cloneValue(job),
-                        runtime: cloneValue(runtime)
-                    });
-
-                    return {
-                        ok: true,
-                        status: 200,
-                        body: JSON.stringify({ id: 'email-demo-id' })
-                    };
-                },
                 resolveEnabledChannels(runtime, severity) {
                     const channels = [];
                     const normalizedSeverity = String(severity || '').trim().toLowerCase() || 'warning';
@@ -330,10 +281,6 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
                     if (runtime?.config?.channels?.feishu?.enabled) {
                         const min = String(runtime.config.channels.feishu.minimum_severity || 'warning').trim().toLowerCase();
                         if ((rank[normalizedSeverity] || 20) >= (rank[min] || 20)) channels.push('feishu');
-                    }
-                    if (runtime?.config?.channels?.email?.enabled) {
-                        const min = String(runtime.config.channels.email.minimum_severity || 'critical').trim().toLowerCase();
-                        if ((rank[normalizedSeverity] || 20) >= (rank[min] || 30)) channels.push('email');
                     }
                     return channels;
                 }
@@ -368,13 +315,11 @@ test('ops alert settings GET returns the current config and secret status', asyn
         }),
         secretStatus: {
             telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-24T10:00:00.000Z' },
-            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null },
-            email_api_key: { configured: false, source: 'missing', updatedAt: null }
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
         },
         runtimeSecrets: {
             telegram_bot_token: 'telegram-token',
-            feishu_webhook_url: '',
-            email_api_key: ''
+            feishu_webhook_url: ''
         }
     }, async (handler) => {
         const req = { method: 'GET', body: null };
@@ -391,7 +336,6 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.telegram_bot_token.source, 'stored');
         assert.equal(payload.secrets.feishu_webhook_url.configured, false);
-        assert.equal(payload.secrets.email_api_key.configured, false);
     });
 });
 
@@ -411,20 +355,12 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         feishu: {
                             enabled: true,
                             minimum_severity: 'warning'
-                        },
-                        email: {
-                            enabled: true,
-                            minimum_severity: 'critical',
-                            recipients: ['ops@example.com', 'owner@example.com'],
-                            from_address: 'Zaoyoe Alerts <alerts@zaoyoe.com>',
-                            subject_prefix: '[Zaoyoe] '
                         }
                     }
                 },
                 secrets: {
                     telegram_bot_token: 'telegram-secret-token',
-                    feishu_webhook_url: 'https://open.feishu.cn/webhook/test',
-                    email_api_key: 'resend-secret'
+                    feishu_webhook_url: 'https://open.feishu.cn/webhook/test'
                 }
             }
         };
@@ -440,13 +376,12 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.deepEqual(payload.config.channels.telegram.chat_ids, ['123456', '789000']);
         assert.equal(state.systemConfigUpserts.length, 1);
         assert.equal(state.systemConfigUpserts[0].config_key, 'ops_alerts');
-        assert.equal(state.upsertedSecrets.length, 3);
+        assert.equal(state.upsertedSecrets.length, 2);
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.upsert');
-        assert.deepEqual(state.auditLogs[0].details.updated_secrets, ['telegram_bot_token', 'feishu_webhook_url', 'email_api_key']);
+        assert.deepEqual(state.auditLogs[0].details.updated_secrets, ['telegram_bot_token', 'feishu_webhook_url']);
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.feishu_webhook_url.configured, true);
-        assert.equal(payload.secrets.email_api_key.configured, true);
     });
 });
 
@@ -1917,63 +1852,5 @@ test('ops alert settings preview actions fan out to Feishu when the channel is e
         assert.match(payload.message, /Telegram、飞书/);
         assert.equal(state.telegramTests.length, 1);
         assert.equal(state.feishuTests.length, 1);
-    });
-});
-
-test('ops alert settings preview actions fan out to Email when the channel is enabled', async () => {
-    await withOpsAlertsSettingsHandler({
-        config: createNormalizedConfig({
-            enabled: true,
-            channels: {
-                email: {
-                    enabled: true,
-                    minimum_severity: 'critical',
-                    recipients: ['ops@example.com'],
-                    from_address: 'Zaoyoe Alerts <alerts@zaoyoe.com>',
-                    subject_prefix: '[Zaoyoe] '
-                }
-            }
-        }),
-        secretStatus: {
-            telegram_bot_token: { configured: false, source: 'missing', updatedAt: null },
-            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null },
-            email_api_key: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' }
-        },
-        runtimeSecrets: {
-            telegram_bot_token: '',
-            feishu_webhook_url: '',
-            email_api_key: 'resend-secret'
-        }
-    }, async (handler, state) => {
-        const req = {
-            method: 'POST',
-            body: {
-                action: 'send_sample_payment_config_incident',
-                config: {
-                    enabled: true,
-                    channels: {
-                        email: {
-                            enabled: true,
-                            minimum_severity: 'critical',
-                            recipients: ['ops@example.com', 'owner@example.com'],
-                            from_address: 'Zaoyoe Alerts <alerts@zaoyoe.com>',
-                            subject_prefix: '[Zaoyoe] '
-                        }
-                    }
-                },
-                secrets: {}
-            }
-        };
-        const res = createMockResponse();
-
-        await handler(req, res);
-        const payload = res.json();
-
-        assert.equal(res.statusCode, 200);
-        assert.equal(payload.success, true);
-        assert.match(payload.message, /邮件/);
-        assert.equal(state.emailTests.length, 1);
-        assert.equal(state.emailTests[0].job.alert_type, 'payment_config_incident');
-        assert.deepEqual(state.emailTests[0].runtime.config.channels.email.recipients, ['ops@example.com', 'owner@example.com']);
     });
 });

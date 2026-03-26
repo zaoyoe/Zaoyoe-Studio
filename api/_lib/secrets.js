@@ -9,8 +9,7 @@ const PAYMENT_CHANNEL_SECRET_KEYS = {
 };
 const OPS_ALERT_SECRET_KEYS = {
     telegram_bot_token: 'ops_alert_telegram_bot_token',
-    feishu_webhook_url: 'ops_alert_feishu_webhook_url',
-    email_api_key: 'ops_alert_email_api_key'
+    feishu_webhook_url: 'ops_alert_feishu_webhook_url'
 };
 
 function wrapSecretStoreError(error, fallbackMessage) {

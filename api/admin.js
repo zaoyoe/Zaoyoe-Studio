@@ -10,10 +10,8 @@ const paymentsSummaryHandler = require('../server/api-handlers/admin/payments/su
 const settingsGeminiKeyHandler = require('../server/api-handlers/admin/settings/gemini-key');
 const settingsAdminAuditMonitorHandler = require('../server/api-handlers/admin/settings/admin-audit-monitor');
 const settingsOpsAlertsHandler = require('../server/api-handlers/admin/settings/ops-alerts');
-const settingsOpsAlertHealthHandler = require('../server/api-handlers/admin/settings/ops-alert-health');
 const settingsOpsAlertMonitorHandler = require('../server/api-handlers/admin/settings/ops-alert-monitor');
 const settingsPaymentChannelsHandler = require('../server/api-handlers/admin/settings/payment-channels');
-const settingsSystemConfigHandler = require('../server/api-handlers/admin/settings/system-config');
 const settingsVerifyMonitorHandler = require('../server/api-handlers/admin/settings/verify-monitor');
 const ticketProcessHandler = require('../server/api-handlers/admin/tickets/process');
 
@@ -23,10 +21,8 @@ const ROUTE_HANDLERS = {
     'settings/admin-audit-monitor': settingsAdminAuditMonitorHandler,
     'settings/gemini-key': settingsGeminiKeyHandler,
     'settings/ops-alerts': settingsOpsAlertsHandler,
-    'settings/ops-alert-health': settingsOpsAlertHealthHandler,
     'settings/ops-alert-monitor': settingsOpsAlertMonitorHandler,
     'settings/payment-channels': settingsPaymentChannelsHandler,
-    'settings/system-config': settingsSystemConfigHandler,
     'settings/verify-monitor': settingsVerifyMonitorHandler,
     'tickets/process': ticketProcessHandler,
     'shop/mutate': shopMutateHandler,
