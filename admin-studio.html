@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=62">
+    <link rel="stylesheet" href="admin-studio.css?v=63">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -618,6 +618,9 @@
                     <button class="admin-tab" data-settings-view="security" data-admin-action="switch-settings-view">
                         🔒 安全设置
                     </button>
+                    <button class="admin-tab" data-settings-view="ops-alerts" data-admin-action="switch-settings-view">
+                        🔔 站外告警
+                    </button>
                     <button class="admin-tab" data-settings-view="notifications"
                         data-admin-action="switch-settings-view">
                         📧 系统公告
@@ -977,11 +980,69 @@
                                 </div>
                             </div>
 
-                            <div class="config-card payment-channel-config-card" data-config="ops-alerts">
+                            <!-- Unlock Pricing Card -->
+                            <div class="config-card" data-config="unlock_pricing">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-unlock-alt"></i>
+                                        <span>解锁定价</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-row">
+                                        <label>默认解锁积分</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" class="config-input" id="cfgUnlockPoints" min="1"
+                                                max="1000">
+                                            <span class="config-unit">分</span>
+                                            <span class="config-save-indicator">✓</span>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>VIP 用户折扣</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" class="config-input" id="cfgVipDiscount" min="50" max="100"
+                                                step="5">
+                                            <span class="config-unit">%</span>
+                                            <span class="config-save-indicator">✓</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Channels Card -->
+                            <div class="config-card" data-config="channels">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-store"></i>
+                                        <span>销售渠道</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="channel-tags" id="channelTags">
+                                        <!-- Dynamic tags -->
+                                    </div>
+                                    <div class="add-channel-row">
+                                        <input type="text" id="newChannelName" placeholder="新渠道名称">
+                                        <button class="btn-add-config" data-admin-action="settings-add-channel">
+                                            <i class="fas fa-plus"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- OPS ALERTS VIEW -->
+                <div id="settings-view-ops-alerts" class="view-section">
+                    <div class="module-content ops-alert-settings-layout">
+                        <div class="ops-alert-settings-column ops-alert-settings-column--main">
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-overview">
                                 <div class="config-card-header">
                                     <div class="config-card-title">
                                         <i class="fas fa-bell"></i>
-                                        <span>站外退款告警</span>
+                                        <span>站外告警概览</span>
                                     </div>
                                 </div>
                                 <div class="config-card-body">
@@ -990,230 +1051,183 @@
                                         <span>当前未启用站外退款告警。</span>
                                     </div>
 
+                                    <div class="ops-alert-overview-grid">
+                                        <article class="ops-alert-overview-card" id="opsAlertOverviewChannelsCard">
+                                            <div class="ops-alert-overview-card__eyebrow">通道状态</div>
+                                            <div class="ops-alert-overview-card__title" id="opsAlertOverviewChannelsTitle">等待配置</div>
+                                            <div class="ops-alert-overview-card__body" id="opsAlertOverviewChannels">尚未启用任何站外通道。</div>
+                                        </article>
+                                        <article class="ops-alert-overview-card" id="opsAlertOverviewTargetsCard">
+                                            <div class="ops-alert-overview-card__eyebrow">投递目标</div>
+                                            <div class="ops-alert-overview-card__title" id="opsAlertOverviewTargetsTitle">等待配置</div>
+                                            <div class="ops-alert-overview-card__body" id="opsAlertOverviewTargets">保存后会在这里显示 chat、邮箱和群机器人摘要。</div>
+                                        </article>
+                                        <article class="ops-alert-overview-card" id="opsAlertOverviewRecentCard">
+                                            <div class="ops-alert-overview-card__eyebrow">最近投递</div>
+                                            <div class="ops-alert-overview-card__title" id="opsAlertOverviewRecentTitle">等待刷新</div>
+                                            <div class="ops-alert-overview-card__body" id="opsAlertOverviewRecent">告警通道健康页加载后，会在这里显示最近投递摘要。</div>
+                                        </article>
+                                    </div>
+
                                     <div class="config-row">
                                         <div class="config-info">
-                                            <div class="config-label">启用站外退款告警</div>
-                                            <div class="config-desc">针对退款失败、扣回失败、回滚失败，异步投递到 Telegram / 飞书 / 邮件，不阻塞退款主流程。</div>
+                                            <div class="config-label">启用站外告警</div>
+                                            <div class="config-desc">针对退款失败、扣回失败、回滚失败等高危事件，异步投递到 Telegram / 飞书 / 邮件，不阻塞退款主流程。</div>
                                         </div>
                                         <div class="config-input-wrapper">
                                             <div class="status-toggle" id="opsAlertEnabledToggle" data-admin-action="settings-toggle-ops-alerts-enabled"></div>
                                         </div>
                                     </div>
 
-                                    <div class="config-row">
-                                        <div class="config-info">
-                                            <div class="config-label">Telegram 告警</div>
-                                            <div class="config-desc">建议用于秒级高危提醒。</div>
-                                        </div>
-                                        <div class="config-input-wrapper">
-                                            <div class="status-toggle" id="opsAlertTelegramEnabledToggle" data-admin-action="settings-toggle-ops-alert-channel" data-alert-channel="telegram"></div>
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <label>Telegram Chat IDs</label>
-                                        <div class="config-input-wrapper">
-                                            <textarea class="config-input" id="opsAlertTelegramChatIds" rows="3" placeholder="123456789&#10;987654321"></textarea>
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <label>Telegram 最低级别</label>
-                                        <div class="config-input-wrapper">
-                                            <select class="config-input" id="opsAlertTelegramSeverity">
-                                                <option value="warning">warning</option>
-                                                <option value="critical">critical</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <div class="config-info">
-                                            <div class="config-label">Telegram Bot Token</div>
-                                            <div class="config-desc" id="opsAlertTelegramBotTokenStatus">未配置后台安全密钥</div>
-                                        </div>
-                                        <div class="config-input-wrapper">
-                                            <input type="password" class="config-input" id="opsAlertTelegramBotToken" placeholder="留空表示保持现有密钥不变">
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <div class="config-info">
-                                            <div class="config-label">飞书告警</div>
-                                            <div class="config-desc">适合团队群提醒和处理分派。</div>
-                                        </div>
-                                        <div class="config-input-wrapper">
-                                            <div class="status-toggle" id="opsAlertFeishuEnabledToggle" data-admin-action="settings-toggle-ops-alert-channel" data-alert-channel="feishu"></div>
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <label>飞书最低级别</label>
-                                        <div class="config-input-wrapper">
-                                            <select class="config-input" id="opsAlertFeishuSeverity">
-                                                <option value="warning">warning</option>
-                                                <option value="critical">critical</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <div class="config-info">
-                                            <div class="config-label">飞书 Webhook</div>
-                                            <div class="config-desc" id="opsAlertFeishuWebhookStatus">未配置后台安全密钥</div>
-                                        </div>
-                                        <div class="config-input-wrapper">
-                                            <input type="password" class="config-input" id="opsAlertFeishuWebhookUrl" placeholder="留空表示保持现有密钥不变">
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <div class="config-info">
-                                            <div class="config-label">邮件告警</div>
-                                            <div class="config-desc">适合作为站外第三通道和留痕通知，当前通过 Resend 发送。</div>
-                                        </div>
-                                        <div class="config-input-wrapper">
-                                            <div class="status-toggle" id="opsAlertEmailEnabledToggle" data-admin-action="settings-toggle-ops-alert-channel" data-alert-channel="email"></div>
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <label>邮件最低级别</label>
-                                        <div class="config-input-wrapper">
-                                            <select class="config-input" id="opsAlertEmailSeverity">
-                                                <option value="warning">warning</option>
-                                                <option value="critical">critical</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <label>邮件收件人</label>
-                                        <div class="config-input-wrapper">
-                                            <textarea class="config-input" id="opsAlertEmailRecipients" rows="3" placeholder="ops@example.com&#10;owner@example.com"></textarea>
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <label>邮件发件地址</label>
-                                        <div class="config-input-wrapper">
-                                            <input type="text" class="config-input" id="opsAlertEmailFromAddress" placeholder="Zaoyoe Ops &lt;alerts@zaoyoe.com&gt;">
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <label>邮件回复地址</label>
-                                        <div class="config-input-wrapper">
-                                            <input type="text" class="config-input" id="opsAlertEmailReplyTo" placeholder="support@zaoyoe.com（可留空）">
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <label>邮件主题前缀</label>
-                                        <div class="config-input-wrapper">
-                                            <input type="text" class="config-input" id="opsAlertEmailSubjectPrefix" placeholder="[Zaoyoe告警]">
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row">
-                                        <div class="config-info">
-                                            <div class="config-label">Email API Key</div>
-                                            <div class="config-desc" id="opsAlertEmailApiKeyStatus">未配置后台安全密钥</div>
-                                        </div>
-                                        <div class="config-input-wrapper">
-                                            <input type="password" class="config-input" id="opsAlertEmailApiKey" placeholder="留空表示保持现有密钥不变">
-                                        </div>
-                                    </div>
-
-                                    <div class="config-inline-note ops-alert-email-help">
-                                        <i class="fas fa-envelope-open-text"></i>
-                                        <div>
-                                            <strong>邮件填写说明</strong><br>
-                                            <code>邮件收件人</code> 一行一个邮箱；<code>邮件发件地址</code> 必须使用 Resend 已验证域名，例如 <code>Zaoyoe Ops &lt;alerts@mail.zaoyoe.com&gt;</code>；<code>邮件回复地址</code> 可留空；<code>邮件主题前缀</code> 可填 <code>[Zaoyoe告警]</code>；<code>Email API Key</code> 填 Resend 后台生成的 <code>re_...</code> 密钥。保存后直接点“发送测试站外告警”，已启用的邮件 / Telegram / 飞书会一起联调。
-                                        </div>
-                                    </div>
-
-                                    <div class="config-row payment-channel-save-row ops-alert-actions-row">
-                                        <button type="button" class="btn-add-config ops-alert-actions-row__save" data-admin-action="settings-save-ops-alerts">
+                                    <div class="ops-alert-save-row">
+                                        <button type="button" class="btn-add-config" data-admin-action="settings-save-ops-alerts">
                                             <i class="fas fa-save"></i> 保存站外告警配置
                                         </button>
-                                        <div class="ops-alert-actions-grid">
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-telegram-test">
-                                                <i class="fas fa-paper-plane"></i> 发送测试站外告警
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-refund-sample">
-                                                <i class="fas fa-receipt"></i> 发送退款详情示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-gateway-sample">
-                                                <i class="fas fa-wave-square"></i> 发送支付通道异常示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-gateway-recovered-sample">
-                                                <i class="fas fa-heart-pulse"></i> 发送支付通道恢复示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-service-disabled-sample">
-                                                <i class="fas fa-power-off"></i> 发送验证服务停摆示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-queue-backlog-sample">
-                                                <i class="fas fa-list-check"></i> 发送验证任务堆积示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-failure-rate-spike-sample">
-                                                <i class="fas fa-chart-line"></i> 发送验证失败率异常示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-incident-escalated-sample">
-                                                <i class="fas fa-triangle-exclamation"></i> 发送验证综合异常示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-incident-recovered-sample">
-                                                <i class="fas fa-circle-check"></i> 发送验证恢复示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-quota-sample">
-                                                <i class="fas fa-gauge-high"></i> 发送验证额度告警示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-ticket-sla-sample">
-                                                <i class="fas fa-ticket-alt"></i> 发送工单超时示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-ticket-sla-recovered-sample">
-                                                <i class="fas fa-ticket-simple"></i> 发送工单恢复示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-inventory-sample">
-                                                <i class="fas fa-box-open"></i> 发送库存预警示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-inventory-recovered-sample">
-                                                <i class="fas fa-boxes-stacked"></i> 发送库存恢复示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-admin-login-anomaly-sample">
-                                                <i class="fas fa-user-shield"></i> 发送管理员异常登录示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-failed-sample">
-                                                <i class="fas fa-truck-ramp-box"></i> 发送履约失败示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-incident-sample">
-                                                <i class="fas fa-triangle-exclamation"></i> 发送履约异常升级示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-incident-recovered-sample">
-                                                <i class="fas fa-shield-heart"></i> 发送履约事故恢复示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-recovered-sample">
-                                                <i class="fas fa-truck-fast"></i> 发送履约恢复示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-changed-sample">
-                                                <i class="fas fa-sliders"></i> 发送支付配置变更示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-incident-sample">
-                                                <i class="fas fa-triangle-exclamation"></i> 发送支付配置异常升级示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-incident-recovered-sample">
-                                                <i class="fas fa-shield-heart"></i> 发送支付配置事故恢复示例消息
-                                            </button>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-recovered-sample">
-                                                <i class="fas fa-shield-check"></i> 发送支付配置恢复示例消息
-                                            </button>
-                                        </div>
                                     </div>
+                                </div>
+                            </div>
 
-                                    <div class="ops-alert-workspace-panel" id="opsAlertWorkspacePanel">
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-actions">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-paper-plane"></i>
+                                        <span>联调与模板</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>这里集中放置测试发送与各类示例消息，方便验收不同通道、不同告警模板，不影响真实订单与真实工单。</span>
+                                    </div>
+                                    <div class="ops-alert-action-groups">
+                                        <section class="ops-alert-action-group">
+                                            <div class="ops-alert-action-group__header">
+                                                <h4>通道联调</h4>
+                                                <p>优先确认 Telegram / 飞书 / 邮件三条通道本身可达。</p>
+                                            </div>
+                                            <div class="ops-alert-actions-grid">
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-telegram-test">
+                                                    <i class="fas fa-paper-plane"></i> 发送测试站外告警
+                                                </button>
+                                            </div>
+                                        </section>
+
+                                        <section class="ops-alert-action-group">
+                                            <div class="ops-alert-action-group__header">
+                                                <h4>支付与退款</h4>
+                                                <p>适合验收支付通道异常、退款详情、配置变更和事故恢复模板。</p>
+                                            </div>
+                                            <div class="ops-alert-actions-grid">
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-refund-sample">
+                                                    <i class="fas fa-receipt"></i> 发送退款详情示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-gateway-sample">
+                                                    <i class="fas fa-wave-square"></i> 发送支付通道异常示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-gateway-recovered-sample">
+                                                    <i class="fas fa-heart-pulse"></i> 发送支付通道恢复示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-changed-sample">
+                                                    <i class="fas fa-sliders"></i> 发送支付配置变更示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-incident-sample">
+                                                    <i class="fas fa-triangle-exclamation"></i> 发送支付配置异常升级示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-incident-recovered-sample">
+                                                    <i class="fas fa-shield-heart"></i> 发送支付配置事故恢复示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-payment-config-recovered-sample">
+                                                    <i class="fas fa-shield-check"></i> 发送支付配置恢复示例消息
+                                                </button>
+                                            </div>
+                                        </section>
+
+                                        <section class="ops-alert-action-group">
+                                            <div class="ops-alert-action-group__header">
+                                                <h4>验证服务</h4>
+                                                <p>覆盖额度不足、服务停摆、任务堆积、失败率飙升和综合异常。</p>
+                                            </div>
+                                            <div class="ops-alert-actions-grid">
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-service-disabled-sample">
+                                                    <i class="fas fa-power-off"></i> 发送验证服务停摆示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-queue-backlog-sample">
+                                                    <i class="fas fa-list-check"></i> 发送验证任务堆积示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-failure-rate-spike-sample">
+                                                    <i class="fas fa-chart-line"></i> 发送验证失败率异常示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-incident-escalated-sample">
+                                                    <i class="fas fa-triangle-exclamation"></i> 发送验证综合异常示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-incident-recovered-sample">
+                                                    <i class="fas fa-circle-check"></i> 发送验证恢复示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-verify-quota-sample">
+                                                    <i class="fas fa-gauge-high"></i> 发送验证额度告警示例消息
+                                                </button>
+                                            </div>
+                                        </section>
+
+                                        <section class="ops-alert-action-group">
+                                            <div class="ops-alert-action-group__header">
+                                                <h4>工单、库存与履约</h4>
+                                                <p>适合演练售后超时、库存波动、履约失败与履约事故闭环消息。</p>
+                                            </div>
+                                            <div class="ops-alert-actions-grid">
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-ticket-sla-sample">
+                                                    <i class="fas fa-ticket-alt"></i> 发送工单超时示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-ticket-sla-recovered-sample">
+                                                    <i class="fas fa-ticket-simple"></i> 发送工单恢复示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-inventory-sample">
+                                                    <i class="fas fa-box-open"></i> 发送库存预警示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-inventory-recovered-sample">
+                                                    <i class="fas fa-boxes-stacked"></i> 发送库存恢复示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-failed-sample">
+                                                    <i class="fas fa-truck-ramp-box"></i> 发送履约失败示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-incident-sample">
+                                                    <i class="fas fa-triangle-exclamation"></i> 发送履约异常升级示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-incident-recovered-sample">
+                                                    <i class="fas fa-shield-heart"></i> 发送履约事故恢复示例消息
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-shop-order-delivery-recovered-sample">
+                                                    <i class="fas fa-truck-fast"></i> 发送履约恢复示例消息
+                                                </button>
+                                            </div>
+                                        </section>
+
+                                        <section class="ops-alert-action-group">
+                                            <div class="ops-alert-action-group__header">
+                                                <h4>安全与审计</h4>
+                                                <p>适合演练管理员异常登录这类需要快速关注和复核的提醒。</p>
+                                            </div>
+                                            <div class="ops-alert-actions-grid">
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-ops-alert-admin-login-anomaly-sample">
+                                                    <i class="fas fa-user-shield"></i> 发送管理员异常登录示例消息
+                                                </button>
+                                            </div>
+                                        </section>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-workspace">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-compass"></i>
+                                        <span>告警处理入口</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="ops-alert-workspace-panel ops-alert-workspace-panel--embedded" id="opsAlertWorkspacePanel">
                                         <div class="ops-alert-workspace-panel__head">
                                             <div>
-                                                <h4><i class="fas fa-compass"></i> 告警处理入口</h4>
                                                 <p>一键跳到真实处理页，并自动切到对应模块、子页和常用筛选，避免只看到路径却找不到入口。</p>
                                             </div>
                                         </div>
@@ -1268,33 +1282,27 @@
                                             </article>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
 
-                                    <div class="ops-alert-health-panel" id="opsAlertHealthPanel">
-                                        <div class="ops-alert-workspace-panel__head">
-                                            <div>
-                                                <h4><i class="fas fa-heart-pulse"></i> 告警通道健康页</h4>
-                                                <p>只读汇总 Telegram、飞书、邮件三条通道的送达率、重试、死信和最近失败原因，帮助快速判断是业务异常还是通道异常。</p>
-                                            </div>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-refresh-ops-alert-health">
-                                                <i class="fas fa-rotate"></i> 刷新健康页
-                                            </button>
-                                        </div>
-                                        <div class="config-inline-note" id="opsAlertHealthMeta">
-                                            <i class="fas fa-rotate fa-spin"></i>
-                                            <span>正在加载站外告警通道健康状态...</span>
-                                        </div>
-                                        <div class="ops-alert-health-grid" id="opsAlertHealthGrid"></div>
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-monitor">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-chart-column"></i>
+                                        <span>集中告警处理面板</span>
                                     </div>
-
-                                    <div class="ops-alert-monitor-panel" id="opsAlertMonitorPanel">
-                                        <div class="ops-alert-workspace-panel__head">
-                                            <div>
-                                                <h4><i class="fas fa-chart-column"></i> 集中告警处理面板</h4>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="ops-alert-monitor-panel ops-alert-monitor-panel--embedded" id="opsAlertMonitorPanel">
+                                        <div class="ops-alert-card-toolbar">
+                                            <div class="ops-alert-card-toolbar__copy">
                                                 <p>汇总支付、工单、库存、履约四类核心告警，并支持按状态、级别、模块快速收敛到要处理的那批问题。</p>
                                             </div>
-                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-refresh-ops-alert-monitor">
-                                                <i class="fas fa-rotate"></i> 刷新面板
-                                            </button>
+                                            <div class="ops-alert-card-toolbar__actions">
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-refresh-ops-alert-monitor">
+                                                    <i class="fas fa-rotate"></i> 刷新面板
+                                                </button>
+                                            </div>
                                         </div>
                                         <div class="ops-alert-monitor-toolbar" id="opsAlertMonitorToolbar">
                                             <div class="ops-alert-monitor-filter-group" id="opsAlertMonitorScopeFilters">
@@ -1338,14 +1346,170 @@
                                         </div>
                                         <div class="ops-alert-monitor-grid" id="opsAlertMonitorGrid"></div>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
 
-                                    <div class="config-row payment-channel-save-row">
+                        <div class="ops-alert-settings-column ops-alert-settings-column--side">
+                            <div class="config-card ops-alert-config-card ops-alert-channel-card" data-config="ops-alerts-telegram">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fab fa-telegram-plane"></i>
+                                        <span>Telegram 通道</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">Telegram 告警</div>
+                                            <div class="config-desc">建议用于秒级高危提醒。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertTelegramEnabledToggle" data-admin-action="settings-toggle-ops-alert-channel" data-alert-channel="telegram"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>Telegram Chat IDs</label>
+                                        <div class="config-input-wrapper">
+                                            <textarea class="config-input" id="opsAlertTelegramChatIds" rows="3" placeholder="123456789&#10;987654321"></textarea>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>Telegram 最低级别</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertTelegramSeverity">
+                                                <option value="warning">warning</option>
+                                                <option value="critical">critical</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">Telegram Bot Token</div>
+                                            <div class="config-desc" id="opsAlertTelegramBotTokenStatus">未配置后台安全密钥</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <input type="password" class="config-input" id="opsAlertTelegramBotToken" placeholder="留空表示保持现有密钥不变">
+                                        </div>
+                                    </div>
+                                    <div class="ops-alert-card-delete-row">
                                         <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="settings-delete-ops-alert-secret" data-secret-name="telegram_bot_token">
                                             删除 Telegram 密钥
                                         </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="config-card ops-alert-config-card ops-alert-channel-card" data-config="ops-alerts-feishu">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-comments"></i>
+                                        <span>飞书通道</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">飞书告警</div>
+                                            <div class="config-desc">适合团队群提醒和处理分派。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertFeishuEnabledToggle" data-admin-action="settings-toggle-ops-alert-channel" data-alert-channel="feishu"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>飞书最低级别</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertFeishuSeverity">
+                                                <option value="warning">warning</option>
+                                                <option value="critical">critical</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">飞书 Webhook</div>
+                                            <div class="config-desc" id="opsAlertFeishuWebhookStatus">未配置后台安全密钥</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <input type="password" class="config-input" id="opsAlertFeishuWebhookUrl" placeholder="留空表示保持现有密钥不变">
+                                        </div>
+                                    </div>
+                                    <div class="ops-alert-card-delete-row">
                                         <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="settings-delete-ops-alert-secret" data-secret-name="feishu_webhook_url">
                                             删除飞书密钥
                                         </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="config-card ops-alert-config-card ops-alert-channel-card" data-config="ops-alerts-email">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-envelope-open-text"></i>
+                                        <span>邮件通道</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">邮件告警</div>
+                                            <div class="config-desc">适合作为站外第三通道和留痕通知，当前通过 Resend 发送。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertEmailEnabledToggle" data-admin-action="settings-toggle-ops-alert-channel" data-alert-channel="email"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>邮件最低级别</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertEmailSeverity">
+                                                <option value="warning">warning</option>
+                                                <option value="critical">critical</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>邮件收件人</label>
+                                        <div class="config-input-wrapper">
+                                            <textarea class="config-input" id="opsAlertEmailRecipients" rows="3" placeholder="ops@example.com&#10;owner@example.com"></textarea>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>邮件发件地址</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="text" class="config-input" id="opsAlertEmailFromAddress" placeholder="Zaoyoe Ops &lt;alerts@zaoyoe.com&gt;">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>邮件回复地址</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="text" class="config-input" id="opsAlertEmailReplyTo" placeholder="support@zaoyoe.com（可留空）">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>邮件主题前缀</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="text" class="config-input" id="opsAlertEmailSubjectPrefix" placeholder="[Zaoyoe告警]">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">Email API Key</div>
+                                            <div class="config-desc" id="opsAlertEmailApiKeyStatus">未配置后台安全密钥</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <input type="password" class="config-input" id="opsAlertEmailApiKey" placeholder="留空表示保持现有密钥不变">
+                                        </div>
+                                    </div>
+                                    <div class="config-inline-note ops-alert-email-help">
+                                        <i class="fas fa-envelope-open-text"></i>
+                                        <div>
+                                            <strong>邮件填写说明</strong><br>
+                                            <code>邮件收件人</code> 一行一个邮箱；<code>邮件发件地址</code> 必须使用 Resend 已验证域名，例如 <code>Zaoyoe Ops &lt;alerts@mail.zaoyoe.com&gt;</code>；<code>邮件回复地址</code> 可留空；<code>邮件主题前缀</code> 可填 <code>[Zaoyoe告警]</code>；<code>Email API Key</code> 填 Resend 后台生成的 <code>re_...</code> 密钥。保存后直接点“发送测试站外告警”，已启用的邮件 / Telegram / 飞书会一起联调。
+                                        </div>
+                                    </div>
+                                    <div class="ops-alert-card-delete-row">
                                         <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="settings-delete-ops-alert-secret" data-secret-name="email_api_key">
                                             删除邮件密钥
                                         </button>
@@ -1353,53 +1517,30 @@
                                 </div>
                             </div>
 
-                            <!-- Unlock Pricing Card -->
-                            <div class="config-card" data-config="unlock_pricing">
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-health">
                                 <div class="config-card-header">
                                     <div class="config-card-title">
-                                        <i class="fas fa-unlock-alt"></i>
-                                        <span>解锁定价</span>
+                                        <i class="fas fa-heart-pulse"></i>
+                                        <span>告警通道健康页</span>
                                     </div>
                                 </div>
                                 <div class="config-card-body">
-                                    <div class="config-row">
-                                        <label>默认解锁积分</label>
-                                        <div class="config-input-wrapper">
-                                            <input type="number" class="config-input" id="cfgUnlockPoints" min="1"
-                                                max="1000">
-                                            <span class="config-unit">分</span>
-                                            <span class="config-save-indicator">✓</span>
+                                    <div class="ops-alert-health-panel ops-alert-health-panel--embedded" id="opsAlertHealthPanel">
+                                        <div class="ops-alert-card-toolbar">
+                                            <div class="ops-alert-card-toolbar__copy">
+                                                <p>只读汇总 Telegram、飞书、邮件三条通道的送达率、重试、死信和最近失败原因，帮助快速判断是业务异常还是通道异常。</p>
+                                            </div>
+                                            <div class="ops-alert-card-toolbar__actions">
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-refresh-ops-alert-health">
+                                                    <i class="fas fa-rotate"></i> 刷新健康页
+                                                </button>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div class="config-row">
-                                        <label>VIP 用户折扣</label>
-                                        <div class="config-input-wrapper">
-                                            <input type="number" class="config-input" id="cfgVipDiscount" min="50" max="100"
-                                                step="5">
-                                            <span class="config-unit">%</span>
-                                            <span class="config-save-indicator">✓</span>
+                                        <div class="config-inline-note" id="opsAlertHealthMeta">
+                                            <i class="fas fa-rotate fa-spin"></i>
+                                            <span>正在加载站外告警通道健康状态...</span>
                                         </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Channels Card -->
-                            <div class="config-card" data-config="channels">
-                                <div class="config-card-header">
-                                    <div class="config-card-title">
-                                        <i class="fas fa-store"></i>
-                                        <span>销售渠道</span>
-                                    </div>
-                                </div>
-                                <div class="config-card-body">
-                                    <div class="channel-tags" id="channelTags">
-                                        <!-- Dynamic tags -->
-                                    </div>
-                                    <div class="add-channel-row">
-                                        <input type="text" id="newChannelName" placeholder="新渠道名称">
-                                        <button class="btn-add-config" data-admin-action="settings-add-channel">
-                                            <i class="fas fa-plus"></i>
-                                        </button>
+                                        <div class="ops-alert-health-grid" id="opsAlertHealthGrid"></div>
                                     </div>
                                 </div>
                             </div>
@@ -6246,7 +6387,7 @@
     <script src="admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1"></script>
     <script src="admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_2"></script>
-    <script src="admin-config.js?v=20260326_ADMIN_VERIFY_MONITOR_PROXY_20"></script>
+    <script src="admin-config.js?v=20260326_OPS_ALERT_OVERVIEW_SUMMARY_21"></script>
     <script src="admin-homepage.js?v=20260324_HOMEPAGE_RUNTIME_STYLE_2"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
