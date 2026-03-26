@@ -129,6 +129,9 @@
                     return data || [];
                 }, 10) : Promise.resolve([])
             ]);
+            const filteredShopResult = window.SiteConfig?.filterProductsForCurrentSite
+                ? window.SiteConfig.filterProductsForCurrentSite(shopResult)
+                : shopResult;
 
             // Build minimal hero data
             const heroConfig = config.hero || {};
@@ -160,7 +163,7 @@
             // Build ticker data
             const ticker = {
                 top: prompts.flatMap(p => p.ai_tags || []).slice(0, 20),
-                bottom: shopResult.map(p => p.name).slice(0, 10),
+                bottom: filteredShopResult.map(p => p.name).slice(0, 10),
                 speed: config.ticker?.scroll_speed || 30
             };
 
@@ -169,7 +172,7 @@
                 cachedData: {
                     hero,
                     prompts,
-                    shop: shopResult,
+                    shop: filteredShopResult,
                     verify,
                     guestbook: guestbookResult,
                     ticker,
