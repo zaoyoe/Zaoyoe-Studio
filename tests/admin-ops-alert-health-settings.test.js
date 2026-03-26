@@ -312,6 +312,20 @@ test('ops alert health handler summarizes recent channel delivery health', async
         assert.equal(payload.summary.recent_error_channels[0].count, 1);
         assert.equal(payload.summary.recent_error_channels[1].channel_label, '飞书');
         assert.equal(payload.summary.recent_error_channels[1].count, 1);
+        assert.equal(payload.summary.trend_bucket_hours, 6);
+        assert.equal(payload.summary.recent_trend_buckets.length, 12);
+        assert.equal(
+            payload.summary.recent_trend_buckets.reduce((sum, bucket) => sum + Number(bucket.delivered_count || 0), 0),
+            1
+        );
+        assert.equal(
+            payload.summary.recent_trend_buckets.reduce((sum, bucket) => sum + Number(bucket.failed_count || 0), 0),
+            2
+        );
+        assert.equal(
+            payload.summary.recent_trend_buckets.reduce((sum, bucket) => sum + Number(bucket.dead_letter_count || 0), 0),
+            1
+        );
 
         const telegram = payload.channels.find((channel) => channel.key === 'telegram');
         const feishu = payload.channels.find((channel) => channel.key === 'feishu');

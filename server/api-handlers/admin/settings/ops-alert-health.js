@@ -10,6 +10,7 @@ const {
 const OPS_ALERT_HEALTH_LOOKBACK_HOURS = 72;
 const OPS_ALERT_HEALTH_PAGE_SIZE = 200;
 const OPS_ALERT_HEALTH_MAX_PAGES = 5;
+const OPS_ALERT_HEALTH_TREND_BUCKET_HOURS = 6;
 const OPS_ALERT_HEALTH_CHANNELS = Object.freeze([
     { key: 'telegram', label: 'Telegram' },
     { key: 'feishu', label: '飞书' },
@@ -293,6 +294,83 @@ function buildRecentErrorChannelStats(entries = [], limit = 5) {
         .slice(0, Math.max(0, limit));
 }
 
+function createTrendBuckets(now, lookbackHours = OPS_ALERT_HEALTH_LOOKBACK_HOURS, bucketHours = OPS_ALERT_HEALTH_TREND_BUCKET_HOURS) {
+    const safeNow = now instanceof Date && Number.isFinite(now.getTime()) ? now : new Date();
+    const safeBucketHours = Math.max(1, Number(bucketHours) || OPS_ALERT_HEALTH_TREND_BUCKET_HOURS);
+    const safeLookbackHours = Math.max(safeBucketHours, Number(lookbackHours) || OPS_ALERT_HEALTH_LOOKBACK_HOURS);
+    const bucketCount = Math.max(1, Math.ceil(safeLookbackHours / safeBucketHours));
+    const bucketMs = safeBucketHours * 60 * 60 * 1000;
+    const startMs = safeNow.getTime() - bucketCount * bucketMs;
+
+    return Array.from({ length: bucketCount }, (_, index) => {
+        const bucketStartMs = startMs + index * bucketMs;
+        const bucketEndMs = bucketStartMs + bucketMs;
+        return {
+            index,
+            bucket_start_at: new Date(bucketStartMs).toISOString(),
+            bucket_end_at: new Date(bucketEndMs).toISOString(),
+            delivered_count: 0,
+            failed_count: 0,
+            dead_letter_count: 0,
+            total_count: 0
+        };
+    });
+}
+
+function bucketEventCount(buckets = [], createdAt, fieldName) {
+    const bucketList = Array.isArray(buckets) ? buckets : [];
+    const safeFieldName = normalizeText(fieldName, 80);
+    if (!bucketList.length || !safeFieldName) {
+        return;
+    }
+
+    const eventMs = Date.parse(createdAt);
+    if (!Number.isFinite(eventMs)) {
+        return;
+    }
+
+    const firstBucketMs = Date.parse(bucketList[0]?.bucket_start_at);
+    const bucketEndMs = Date.parse(bucketList[bucketList.length - 1]?.bucket_end_at);
+    if (!Number.isFinite(firstBucketMs) || !Number.isFinite(bucketEndMs) || eventMs < firstBucketMs || eventMs >= bucketEndMs) {
+        return;
+    }
+
+    const bucketMs = Date.parse(bucketList[0]?.bucket_end_at) - firstBucketMs;
+    if (!Number.isFinite(bucketMs) || bucketMs <= 0) {
+        return;
+    }
+
+    const bucketIndex = Math.min(
+        bucketList.length - 1,
+        Math.max(0, Math.floor((eventMs - firstBucketMs) / bucketMs))
+    );
+    const bucket = bucketList[bucketIndex];
+    bucket[safeFieldName] = Number(bucket[safeFieldName] || 0) + 1;
+    bucket.total_count = Number(bucket.total_count || 0) + 1;
+}
+
+function buildRecentTrendBuckets(jobs = [], attempts = [], now = new Date()) {
+    const buckets = createTrendBuckets(now);
+
+    for (const attempt of Array.isArray(attempts) ? attempts : []) {
+        const status = normalizeText(attempt.status, 80).toLowerCase();
+        bucketEventCount(
+            buckets,
+            attempt.created_at,
+            status === 'delivered' ? 'delivered_count' : 'failed_count'
+        );
+    }
+
+    for (const job of Array.isArray(jobs) ? jobs : []) {
+        if (normalizeText(job.status, 80).toLowerCase() !== 'dead_letter') {
+            continue;
+        }
+        bucketEventCount(buckets, job.created_at, 'dead_letter_count');
+    }
+
+    return buckets;
+}
+
 function buildChannelStatus(channelKey, config = {}, secretStatus = {}, jobs = [], attempts = []) {
     const enabled = config.enabled === true;
     const configured = secretStatus.configured === true;
@@ -413,8 +491,10 @@ module.exports = async (req, res) => {
 
         const recentDeliveries = buildRecentDeliveryEntries(jobs, attempts, 5);
         const recentErrors = buildRecentErrorEntries(channels, 5);
+        const recentTrendBuckets = buildRecentTrendBuckets(jobs, attempts, now);
         const summary = {
             lookback_hours: OPS_ALERT_HEALTH_LOOKBACK_HOURS,
+            trend_bucket_hours: OPS_ALERT_HEALTH_TREND_BUCKET_HOURS,
             total_job_count: jobs.length,
             total_attempt_count: attempts.length,
             delivered_count: channels.reduce((sum, channel) => sum + Number(channel.delivered_count || 0), 0),
@@ -422,6 +502,7 @@ module.exports = async (req, res) => {
             dead_letter_count: channels.reduce((sum, channel) => sum + Number(channel.dead_letter_count || 0), 0),
             enabled_channel_count: channels.filter((channel) => channel.enabled).length,
             recent_deliveries: recentDeliveries,
+            recent_trend_buckets: recentTrendBuckets,
             recent_delivery_types: buildRecentDeliveryTypeStats(recentDeliveries, 5),
             recent_errors: recentErrors,
             recent_error_channels: buildRecentErrorChannelStats(recentErrors, 5)
