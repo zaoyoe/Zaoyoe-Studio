@@ -3523,6 +3523,7 @@ Example output format:
 
             document.getElementById('prodDesc').value = '';
             document.getElementById('prodSort').value = '0';
+            document.getElementById('prodMaxPurchaseQuantity').value = '';
 
             document.getElementById('prodSort').value = '0';
 
@@ -3573,6 +3574,9 @@ Example output format:
             document.getElementById('prodIcon').value = data.icon_url;
             document.getElementById('prodDesc').value = data[fields.desc] || '';
             document.getElementById('prodSort').value = Number.isFinite(sortValue) ? sortValue : 0;
+            document.getElementById('prodMaxPurchaseQuantity').value = data.max_purchase_quantity != null
+                ? data.max_purchase_quantity
+                : '';
 
             // Populate marketing fields (Phase 2)
             let parsedRules = [];
@@ -3671,6 +3675,8 @@ Example output format:
             const sortInput = document.getElementById('prodSort').value;
             const parsedSort = Number.parseInt(sortInput, 10);
             const normalizedSort = Number.isFinite(parsedSort) ? parsedSort : 0;
+            const maxPurchaseQuantityRaw = (document.getElementById('prodMaxPurchaseQuantity').value || '').trim();
+            let normalizedMaxPurchaseQuantity = null;
             const deliveryTypeValue = document.getElementById('prodDeliveryType').value;
             const normalizedDeliveryType = deliveryTypeValue === 'API' ? 'API' : 'KEY';
             if (window.AdminRichTextEditor?.syncHiddenInput) {
@@ -3687,6 +3693,19 @@ Example output format:
 
             document.getElementById('prodSort').value = String(normalizedSort);
 
+            if (maxPurchaseQuantityRaw !== '') {
+                const parsedMaxPurchaseQuantity = Number.parseInt(maxPurchaseQuantityRaw, 10);
+                if (!Number.isFinite(parsedMaxPurchaseQuantity) || parsedMaxPurchaseQuantity < 1 || parsedMaxPurchaseQuantity > 99) {
+                    alert('单次限购必须是 1 到 99 之间的整数');
+                    return;
+                }
+                normalizedMaxPurchaseQuantity = parsedMaxPurchaseQuantity;
+            }
+
+            document.getElementById('prodMaxPurchaseQuantity').value = normalizedMaxPurchaseQuantity == null
+                ? ''
+                : String(normalizedMaxPurchaseQuantity);
+
             if (this.purchaseNotesSchemaAvailable === false && (showPurchaseNotes || normalizedPurchaseNotes)) {
                 alert('保存失败：当前 Supabase 数据库还没有“注意事项”字段。请先执行 `supabase/add_purchase_notes.sql`，再保存商品。');
                 return;
@@ -3699,6 +3718,7 @@ Example output format:
                 icon_url: document.getElementById('prodIcon').value,
                 category: document.getElementById('prodCategory').value,
                 display_order: normalizedSort,
+                max_purchase_quantity: normalizedMaxPurchaseQuantity,
                 show_usage_instructions: showUsageInstructions,
                 usage_instructions: showUsageInstructions ? (normalizedUsageInstructions || null) : null,
                 delivery_type: normalizedDeliveryType,

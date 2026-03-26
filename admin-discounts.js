@@ -29,7 +29,7 @@ const AdminDiscounts = {
         const iconNode = document.createElement('i');
         const textNode = document.createElement('span');
 
-        cell.colSpan = 5;
+        cell.colSpan = 6;
         cell.className = `empty-state admin-discount-table-state-cell admin-discount-table-state-cell--${variant}`;
 
         wrapper.className = 'admin-discount-table-state';
@@ -73,6 +73,13 @@ const AdminDiscounts = {
             return `<span class="admin-discount-type-value admin-discount-type-value--percent">${this.formatPercentDiscountValue(discount.discount_value)}</span>`;
         }
         return `<span class="admin-discount-type-value admin-discount-type-value--fixed">立减 ${discount.discount_value} 积分</span>`;
+    },
+
+    getDiscountPolicyMarkup: function (discount) {
+        if (discount.allow_zero_total) {
+            return '<span class="status-badge active"><i class="fas fa-unlock"></i> 允许全免</span>';
+        }
+        return '<span class="admin-discount-status-muted"><i class="fas fa-shield-alt"></i> 禁止全免</span>';
     },
 
     init: function () {
@@ -233,6 +240,7 @@ const AdminDiscounts = {
                         ${d.expires_at ? `<div class="admin-discount-expiry-meta">截止: ${new Date(d.expires_at).toLocaleDateString()}</div>` : '<div class="admin-discount-expiry-meta">永久有效</div>'}
                     </div>
                 </td>
+                <td>${this.getDiscountPolicyMarkup(d)}</td>
                 <td>
                     <div class="action-buttons admin-discount-action-wrap">
                         <button class="action-btn ${d.is_active ? 'warning' : 'success'}"
@@ -353,6 +361,7 @@ const AdminDiscounts = {
     openGenerateModal: function () {
         document.getElementById('discountGenerateForm').reset();
         document.getElementById('discountCodeInput').value = '';
+        document.getElementById('discountAllowZeroTotal').checked = false;
         this.selectDiscountType('percent');
         this.setGenerateModalVisible(true);
     },
@@ -440,6 +449,7 @@ const AdminDiscounts = {
         }
 
         const maxUses = parseInt(document.getElementById('discountMaxUses').value) || 0;
+        const allowZeroTotal = !!document.getElementById('discountAllowZeroTotal')?.checked;
         const expiryRaw = (document.getElementById('discountExpiryDate') || {}).value || '';
         const expiryTime = (document.getElementById('discountExpiryTime') || {}).value || '23:59';
         let expires_at = null;
@@ -453,6 +463,7 @@ const AdminDiscounts = {
             discount_value: value,
             max_uses: maxUses,
             expires_at: expires_at,
+            allow_zero_total: allowZeroTotal,
             is_active: true
         };
 
