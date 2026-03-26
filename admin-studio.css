@@ -7619,6 +7619,14 @@ input:checked+.toggle-slider:before {
     padding: 4px 0;
 }
 
+.form-hint {
+    display: block;
+    margin-top: 8px;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: rgba(148, 163, 184, 0.88);
+}
+
 /* Admin Toggle Row */
 .admin-toggle-row {
     display: flex;
@@ -7640,6 +7648,30 @@ input:checked+.toggle-slider:before {
 
 .modal-permissions-panel--flush {
     margin-top: 0;
+}
+
+.perm-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.perm-section + .perm-section {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.perm-section-title {
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.perm-help {
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: #94a3b8;
 }
 
 .perm-checkboxes {
@@ -7776,6 +7808,7 @@ input:checked+.toggle-slider:before {
 }
 
 .perm-save-btn {
+    margin-top: 20px;
     width: 100%;
     padding: 12px;
     background: linear-gradient(135deg, #6b9ece, #5a8bb8);

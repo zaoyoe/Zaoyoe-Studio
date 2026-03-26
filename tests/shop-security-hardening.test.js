@@ -167,6 +167,56 @@ test('shop policy-control migration adds per-product caps and zero-total discoun
     );
 });
 
+test('cumulative purchase-limit migration adds admin-managed bypass entitlements and rolling caps', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260326_add_shop_cumulative_purchase_limits_and_unlimited_purchase_entitlements.sql'));
+
+    assert.match(
+        migrationSql,
+        /ADD COLUMN IF NOT EXISTS purchase_limit_24h_quantity INT,/,
+        'cumulative-limit migration should add a 24-hour per-user purchase cap column'
+    );
+    assert.match(
+        migrationSql,
+        /ADD COLUMN IF NOT EXISTS purchase_limit_window_minutes INT,/,
+        'cumulative-limit migration should add a rolling window duration column'
+    );
+    assert.match(
+        migrationSql,
+        /ADD COLUMN IF NOT EXISTS purchase_limit_window_quantity INT,/,
+        'cumulative-limit migration should add a rolling window quantity cap column'
+    );
+    assert.match(
+        migrationSql,
+        /ADD COLUMN IF NOT EXISTS per_account_purchase_limit INT;/,
+        'cumulative-limit migration should add a lifetime per-account purchase cap column'
+    );
+    assert.match(
+        migrationSql,
+        /CREATE TABLE IF NOT EXISTS public\.user_purchase_entitlements/,
+        'cumulative-limit migration should introduce a dedicated user purchase entitlement table'
+    );
+    assert.match(
+        migrationSql,
+        /unlimited_shop_purchases BOOLEAN NOT NULL DEFAULT false/,
+        'purchase entitlement table should persist the unlimited-purchase bypass flag'
+    );
+    assert.match(
+        migrationSql,
+        /pg_advisory_xact_lock\(60424, hashtext\(v_purchase_limit_lock_name\)\)/,
+        'purchase RPC should serialize cumulative purchase-limit enforcement per user and product'
+    );
+    assert.match(
+        migrationSql,
+        /当前账号在24小时内最多还可购买/,
+        'cumulative-limit migration should return a clear 24-hour cap failure message'
+    );
+    assert.match(
+        migrationSql,
+        /当前账号在最近' \|\| v_product\.purchase_limit_window_minutes \|\| '分钟内最多还可购买/,
+        'cumulative-limit migration should return a clear rolling-window cap failure message'
+    );
+});
+
 test('site-aware product filtering and admin discount semantics stay aligned in the frontend', () => {
     const siteConfigSource = readRepoFile(path.join('js', 'site-config.js'));
     const indexBootstrapSource = readRepoFile(path.join('js', 'index-home-bootstrap.js'));
@@ -206,6 +256,7 @@ test('admin and storefront surfaces wire the purchase-policy controls through to
     const adminShopSource = readRepoFile(path.join('js', 'admin-shop.js'));
     const adminDiscountsSource = readRepoFile('admin-discounts.js');
     const shopClientSource = readRepoFile(path.join('js', 'shop-client.js'));
+    const adminUsersSource = readRepoFile('admin-users.js');
 
     assert.match(
         adminStudioSource,
@@ -216,6 +267,46 @@ test('admin and storefront surfaces wire the purchase-policy controls through to
         adminShopSource,
         /max_purchase_quantity: normalizedMaxPurchaseQuantity/,
         'admin product save flow should persist the per-product max purchase quantity'
+    );
+    assert.match(
+        adminStudioSource,
+        /id="prodPurchaseLimit24hQuantity"/,
+        'admin product modal should expose the 24-hour cumulative purchase cap field'
+    );
+    assert.match(
+        adminStudioSource,
+        /id="prodPurchaseLimitWindowQuantity"/,
+        'admin product modal should expose the rolling-window quantity cap field'
+    );
+    assert.match(
+        adminStudioSource,
+        /id="prodPurchaseLimitWindowMinutes"/,
+        'admin product modal should expose the rolling-window duration field'
+    );
+    assert.match(
+        adminStudioSource,
+        /id="prodPerAccountPurchaseLimit"/,
+        'admin product modal should expose the lifetime per-account cap field'
+    );
+    assert.match(
+        adminShopSource,
+        /purchase_limit_24h_quantity: normalizedPurchaseLimit24hQuantity/,
+        'admin product save flow should persist the 24-hour cumulative purchase cap'
+    );
+    assert.match(
+        adminShopSource,
+        /purchase_limit_window_quantity: normalizedPurchaseLimitWindowQuantity/,
+        'admin product save flow should persist the rolling-window quantity cap'
+    );
+    assert.match(
+        adminShopSource,
+        /purchase_limit_window_minutes: normalizedPurchaseLimitWindowMinutes/,
+        'admin product save flow should persist the rolling-window duration'
+    );
+    assert.match(
+        adminShopSource,
+        /per_account_purchase_limit: normalizedPerAccountPurchaseLimit/,
+        'admin product save flow should persist the lifetime per-account cap'
     );
     assert.match(
         adminStudioSource,
@@ -234,7 +325,27 @@ test('admin and storefront surfaces wire the purchase-policy controls through to
     );
     assert.match(
         shopClientSource,
-        /quantityInput\.max = String\(quantityCap\);/,
-        'purchase modal quantity input should clamp to the product-specific cap'
+        /\.from\('user_purchase_entitlements'\)/,
+        'shop client should read the current user purchase entitlement before clamping bulk purchase quantities'
+    );
+    assert.match(
+        shopClientSource,
+        /quantityInput\.removeAttribute\('max'\)/,
+        'unlimited-purchase users should have the purchase modal max attribute removed'
+    );
+    assert.match(
+        adminUsersSource,
+        /id="modalUnlimitedPurchasesToggle"/,
+        'user detail permissions panel should expose the unlimited-purchase override checkbox'
+    );
+    assert.match(
+        adminUsersSource,
+        /\.from\('user_purchase_entitlements'\)\s*\.upsert/s,
+        'saving user permissions should persist the unlimited-purchase entitlement'
+    );
+    assert.match(
+        adminUsersSource,
+        /\.from\('user_purchase_entitlements'\)\s*\.select\('unlimited_shop_purchases'\)/s,
+        'user detail modal should load the unlimited-purchase entitlement when opening the permissions panel'
     );
 });
