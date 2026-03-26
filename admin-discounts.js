@@ -8,6 +8,7 @@ const AdminDiscounts = {
     filteredDiscounts: [],
     currentPage: 1,
     itemsPerPage: 10,
+    controlsBound: false,
     filters: {
         status: 'all', // all, active, used (includes expired/inactive)
         search: ''
@@ -84,7 +85,84 @@ const AdminDiscounts = {
 
     init: function () {
         console.log('🎟️ Initializing Discounts Module...');
+        this.bindStaticControls();
         this.loadDiscounts();
+    },
+
+    bindStaticControls: function () {
+        if (this.controlsBound) {
+            return;
+        }
+        this.controlsBound = true;
+
+        const openBtn = document.querySelector('[data-admin-action="discounts-open-generate-modal"]');
+        if (openBtn) {
+            openBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.openGenerateModal();
+            });
+        }
+
+        const closeBtn = document.querySelector('[data-admin-action="discounts-close-generate-modal"]');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.closeGenerateModal();
+            });
+        }
+
+        const submitBtn = document.querySelector('[data-admin-action="discounts-submit-generate"]');
+        if (submitBtn) {
+            submitBtn.addEventListener('click', async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                await this.submitGenerate();
+            });
+        }
+
+        const form = document.getElementById('discountGenerateForm');
+        if (form) {
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                await this.submitGenerate();
+            });
+        }
+
+        const typeTrigger = document.getElementById('discountTypeTrigger');
+        if (typeTrigger) {
+            typeTrigger.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.toggleTypeDropdown();
+            });
+        }
+
+        document.querySelectorAll('#discountTypeDropdown [data-admin-action="discounts-select-type"]').forEach((option) => {
+            option.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.selectDiscountType(option.dataset.discountType);
+            });
+        });
+
+        const modal = document.getElementById('discountGenerateModal');
+        if (modal) {
+            modal.addEventListener('click', (event) => {
+                const target = event.target instanceof Element ? event.target : null;
+                if (!target) {
+                    return;
+                }
+
+                if (target === modal || target.closest('[data-admin-overlay-close="discount-generate-modal"]')) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.closeGenerateModal();
+                }
+            });
+        }
     },
 
     // ----------------------------------------
