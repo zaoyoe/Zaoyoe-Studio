@@ -781,7 +781,7 @@ Example output format:
             default:
                 break;
             }
-        });
+        }, true);
 
         document.addEventListener('change', (event) => {
             const target = event.target instanceof Element ? event.target : event.target?.parentElement;
@@ -2828,22 +2828,45 @@ Example output format:
                         </div>
                         
                         <div class="shop-admin-product-actions">
-                           <button class="shop-admin-product-action-btn" data-shop-action="product-edit" data-product-id="${safeProductId}" title="编辑">
+                           <button type="button" class="shop-admin-product-action-btn" data-shop-action="product-edit" data-product-id="${safeProductId}" title="编辑">
                                 <i class="fas fa-edit shop-admin-product-action-icon" aria-hidden="true"></i>
                            </button>
-                           <button class="shop-admin-product-action-btn" data-shop-action="product-toggle-status" data-product-id="${safeProductId}" data-new-status="${!p.is_active}" title="${p.is_active ? '下架' : '上架'}">
+                           <button type="button" class="shop-admin-product-action-btn" data-shop-action="product-toggle-status" data-product-id="${safeProductId}" data-new-status="${!p.is_active}" title="${p.is_active ? '下架' : '上架'}">
                                 <i class="fas fa-${p.is_active ? 'eye-slash' : 'eye'} shop-admin-product-action-icon" aria-hidden="true"></i>
                            </button>
-                           <button class="shop-admin-product-action-btn shop-admin-product-action-btn--danger" data-shop-action="product-delete" data-product-id="${safeProductId}" data-product-name="${safeProductNameAttr}" title="删除">
+                           <button type="button" class="shop-admin-product-action-btn shop-admin-product-action-btn--danger" data-shop-action="product-delete" data-product-id="${safeProductId}" data-product-name="${safeProductNameAttr}" title="删除">
                                 <i class="fas fa-trash shop-admin-product-action-icon" aria-hidden="true"></i>
                            </button>
                         </div>
                     </div>
 `;
 
-                card.querySelectorAll('.shop-admin-product-action-btn').forEach((btn) => {
-                    btn.addEventListener('click', (e) => e.stopPropagation());
-                });
+                const editBtn = card.querySelector('[data-shop-action="product-edit"]');
+                if (editBtn) {
+                    editBtn.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        await this.editProduct(safeProductId);
+                    });
+                }
+
+                const toggleBtn = card.querySelector('[data-shop-action="product-toggle-status"]');
+                if (toggleBtn) {
+                    toggleBtn.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        await this.toggleStatus(safeProductId, !p.is_active);
+                    });
+                }
+
+                const deleteBtn = card.querySelector('[data-shop-action="product-delete"]');
+                if (deleteBtn) {
+                    deleteBtn.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        await this.deleteProduct(safeProductId, p.name || '');
+                    });
+                }
 
                 const checkbox = card.querySelector('.product-select-checkbox');
                 if (checkbox) {
