@@ -573,6 +573,18 @@ function buildExternalAlertText(job = {}) {
     if (refundOpsText) {
         return refundOpsText;
     }
+    const customerChatText = buildCustomerChatMessageReceivedAlertText(job);
+    if (customerChatText) {
+        return customerChatText;
+    }
+    const shopPurchaseText = buildShopPurchaseSucceededAlertText(job);
+    if (shopPurchaseText) {
+        return shopPurchaseText;
+    }
+    const walletRechargeText = buildWalletRechargeSucceededAlertText(job);
+    if (walletRechargeText) {
+        return walletRechargeText;
+    }
     const paymentConfigIncidentRecoveredText = buildPaymentConfigIncidentRecoveredAlertText(job);
     if (paymentConfigIncidentRecoveredText) {
         return paymentConfigIncidentRecoveredText;
@@ -728,6 +740,100 @@ function formatTimestamp(value) {
     if (!normalized) return '';
     const parsed = Date.parse(normalized);
     return Number.isFinite(parsed) ? new Date(parsed).toISOString() : normalized;
+}
+
+function getChatMessageTypeLabel(value) {
+    const normalized = normalizeText(value).toLowerCase();
+    if (normalized === 'image') {
+        return '图片消息';
+    }
+    return '文本消息';
+}
+
+function buildCustomerChatMessageReceivedAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'customer_chat_message_received') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const lines = [
+        `[客服消息提醒][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '客服机器人收到新消息'}`
+    ];
+
+    if (normalizeText(payload.sender_label)) lines.push(`发送者：${normalizeText(payload.sender_label)}`);
+    if (normalizeText(payload.user_id)) lines.push(`用户ID：${normalizeText(payload.user_id)}`);
+    if (normalizeText(payload.session_id)) lines.push(`会话ID：${normalizeText(payload.session_id)}`);
+    if (normalizeText(payload.sender_email)) lines.push(`联系邮箱：${normalizeText(payload.sender_email)}`);
+    if (normalizeText(payload.message_type)) lines.push(`消息类型：${normalizeText(payload.message_type_label) || getChatMessageTypeLabel(payload.message_type)}`);
+    if (normalizeText(payload.created_at)) lines.push(`发送时间：${formatTimestamp(payload.created_at)}`);
+    if (normalizeText(payload.content_preview)) lines.push(`消息内容：${normalizeText(payload.content_preview)}`);
+    if (normalizeText(payload.message_type).toLowerCase() === 'image' && normalizeText(payload.content)) {
+        lines.push(`附件地址：${normalizeText(payload.content)}`);
+    }
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildShopPurchaseSucceededAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'shop_purchase_succeeded') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const lines = [
+        `[商城购买成功][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '商城购买成功'}`
+    ];
+
+    if (normalizeText(payload.order_id)) lines.push(`订单号：${normalizeText(payload.order_id)}`);
+    if (normalizeText(payload.buyer_label)) lines.push(`购买者：${normalizeText(payload.buyer_label)}`);
+    if (normalizeText(payload.user_id)) lines.push(`用户ID：${normalizeText(payload.user_id)}`);
+    if (normalizeText(payload.site)) lines.push(`站点：${normalizeText(payload.site).toUpperCase()}`);
+    if (normalizeText(payload.product_name)) lines.push(`商品：${normalizeText(payload.product_name)}`);
+    if (Number.isFinite(Number(payload.item_count))) lines.push(`数量：${Math.max(1, Math.round(Number(payload.item_count || 1)))} 件`);
+    if (Number.isFinite(Number(payload.total_price)) || Number.isFinite(Number(payload.price_paid))) {
+        lines.push(`订单金额：${formatCurrencyAmount(payload.total_price ?? payload.price_paid)}`);
+    }
+    if (normalizeText(payload.delivery_status)) lines.push(`履约状态：${normalizeText(payload.delivery_status_label) || getShopDeliveryStatusLabel(payload.delivery_status)}`);
+    if (normalizeText(payload.refund_status)) lines.push(`退款状态：${normalizeText(payload.refund_status_label) || getRefundStatusLabel(payload.refund_status)}`);
+    if (normalizeText(payload.created_at)) lines.push(`购买时间：${formatTimestamp(payload.created_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildWalletRechargeSucceededAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'wallet_recharge_succeeded') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const lines = [
+        `[充值成功][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '充值成功'}`
+    ];
+
+    if (normalizeText(payload.payment_order_id)) lines.push(`充值单号：${normalizeText(payload.payment_order_id)}`);
+    if (normalizeText(payload.provider_order_no)) lines.push(`支付单号：${normalizeText(payload.provider_order_no)}`);
+    if (normalizeText(payload.buyer_label)) lines.push(`付款者：${normalizeText(payload.buyer_label)}`);
+    if (normalizeText(payload.user_id)) lines.push(`用户ID：${normalizeText(payload.user_id)}`);
+    if (normalizeText(payload.site)) lines.push(`站点：${normalizeText(payload.site).toUpperCase()}`);
+    if (normalizeText(payload.provider)) lines.push(`支付通道：${getProviderLabel(payload.provider) || normalizeText(payload.provider)}`);
+    if (normalizeText(payload.package_name)) lines.push(`充值档位：${normalizeText(payload.package_name)}`);
+    if (Number.isFinite(Number(payload.expected_amount)) || Number.isFinite(Number(payload.paid_amount))) {
+        const amountLine = [formatCurrencyAmount(payload.expected_amount), formatCurrencyAmount(payload.paid_amount)].filter(Boolean);
+        if (amountLine.length === 2) {
+            lines.push(`金额：应付 ${amountLine[0]} / 实付 ${amountLine[1]}`);
+        } else if (amountLine.length === 1) {
+            lines.push(`金额：${amountLine[0]}`);
+        }
+    }
+    if (Number.isFinite(Number(payload.points_amount))) lines.push(`到账积分：${formatPointsAmount(payload.points_amount)}`);
+    if (normalizeText(payload.status)) lines.push(`订单状态：${getOrderStatusLabel(payload.status) || normalizeText(payload.status)}`);
+    if (normalizeText(payload.paid_at)) lines.push(`支付时间：${formatTimestamp(payload.paid_at)}`);
+    if (normalizeText(payload.claimed_at)) lines.push(`入账时间：${formatTimestamp(payload.claimed_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
 }
 
 function buildRefundOpsAlertText(job = {}) {

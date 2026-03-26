@@ -96,6 +96,14 @@ const {
     normalizeAdminLoginAnomalyMonitorConfig,
     runAdminLoginAnomalySweep
 } = require('../api/_lib/admin-login-anomaly-alerts');
+const {
+    normalizeChatMessageMonitorConfig,
+    runCustomerChatMessageSweep
+} = require('../api/_lib/chat-message-alerts');
+const {
+    normalizeCommerceSuccessMonitorConfig,
+    runCommerceSuccessSweep
+} = require('../api/_lib/commerce-success-alerts');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -138,6 +146,10 @@ let shopOrderDeliverySweepTimer = null;
 let shopOrderDeliverySweepRunning = false;
 let adminLoginAnomalySweepTimer = null;
 let adminLoginAnomalySweepRunning = false;
+let customerChatMessageSweepTimer = null;
+let customerChatMessageSweepRunning = false;
+let commerceSuccessSweepTimer = null;
+let commerceSuccessSweepRunning = false;
 let cachedShopDeliveryStrategy = null;
 let cachedShopDeliveryStrategyAt = 0;
 const afdianProvider = getPaymentProviderAdapter('afdian');
@@ -3452,6 +3464,104 @@ function startAdminLoginAnomalySweep() {
     });
 }
 
+async function sweepCustomerChatMessageAlerts() {
+    if (customerChatMessageSweepRunning) return;
+    customerChatMessageSweepRunning = true;
+
+    try {
+        const result = await runCustomerChatMessageSweep(supabase, {
+            env: process.env
+        });
+
+        if (Number(result?.message_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+            console.log('[CustomerChatMessageMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[CustomerChatMessageMonitor] Sweep failed:', error);
+    } finally {
+        customerChatMessageSweepRunning = false;
+    }
+}
+
+async function queueNextCustomerChatMessageSweep(delayMs = null) {
+    if (customerChatMessageSweepTimer) return;
+
+    const monitorConfig = normalizeChatMessageMonitorConfig({}, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 60 * 1000));
+
+    customerChatMessageSweepTimer = setTimeout(() => {
+        customerChatMessageSweepTimer = null;
+        sweepCustomerChatMessageAlerts()
+            .catch((error) => {
+                console.error('[CustomerChatMessageMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextCustomerChatMessageSweep().catch((error) => {
+                    console.error('[CustomerChatMessageMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startCustomerChatMessageSweep() {
+    if (customerChatMessageSweepTimer) return;
+
+    queueNextCustomerChatMessageSweep(7800).catch((error) => {
+        console.error('[CustomerChatMessageMonitor] Failed to start sweep:', error);
+    });
+}
+
+async function sweepCommerceSuccessAlerts() {
+    if (commerceSuccessSweepRunning) return;
+    commerceSuccessSweepRunning = true;
+
+    try {
+        const result = await runCommerceSuccessSweep(supabase, {
+            env: process.env
+        });
+
+        if (
+            Number(result?.purchase_count || 0) > 0
+            || Number(result?.recharge_count || 0) > 0
+            || Number(result?.queued || 0) > 0
+        ) {
+            console.log('[CommerceSuccessMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[CommerceSuccessMonitor] Sweep failed:', error);
+    } finally {
+        commerceSuccessSweepRunning = false;
+    }
+}
+
+async function queueNextCommerceSuccessSweep(delayMs = null) {
+    if (commerceSuccessSweepTimer) return;
+
+    const monitorConfig = normalizeCommerceSuccessMonitorConfig({}, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 2 * 60 * 1000));
+
+    commerceSuccessSweepTimer = setTimeout(() => {
+        commerceSuccessSweepTimer = null;
+        sweepCommerceSuccessAlerts()
+            .catch((error) => {
+                console.error('[CommerceSuccessMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextCommerceSuccessSweep().catch((error) => {
+                    console.error('[CommerceSuccessMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startCommerceSuccessSweep() {
+    if (commerceSuccessSweepTimer) return;
+
+    queueNextCommerceSuccessSweep(8300).catch((error) => {
+        console.error('[CommerceSuccessMonitor] Failed to start sweep:', error);
+    });
+}
+
 async function hasLoggedJobResult(userId, jobId, site = 'cn') {
     if (!userId || !jobId) return false;
 
@@ -4656,6 +4766,8 @@ function startServer(port = PORT) {
         startShopInventorySweep();
         startShopOrderDeliverySweep();
         startAdminLoginAnomalySweep();
+        startCustomerChatMessageSweep();
+        startCommerceSuccessSweep();
     });
 }
 
