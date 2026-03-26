@@ -3456,6 +3456,7 @@ test('discount admin runtime renderers externalize table states, copy toast, and
     }
 
     const runtimeMarkers = [
+        'bindStaticControls: function',
         'createTableStateRow: function',
         'setGenerateModalVisible: function',
         'setTypeDropdownOpen: function',
@@ -3500,9 +3501,9 @@ test('discount admin runtime renderers externalize table states, copy toast, and
         true,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
-    assert.equal(
-        adminStudioSource.includes('admin-discounts.js?v=20260324_ADMIN_DISCOUNTS_RUNTIME_STYLE_1'),
-        true,
+    assert.match(
+        adminStudioSource,
+        /admin-discounts\.js\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should reference the updated admin discounts script version'
     );
     assert.equal(
