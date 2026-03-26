@@ -2722,27 +2722,33 @@ function renderAffiliatePosterTemplates(config = normalizeAffiliatePosterConfig(
 
 async function saveConfig(key, value) {
     try {
-        let savedViaApi = false;
+        let saveMode = 'direct';
         try {
-            await saveSystemConfigViaApi(key, value);
-            savedViaApi = true;
-        } catch (apiError) {
-            console.warn('[Config] System config API save failed, falling back to RPC:', apiError.message);
-            const { error } = await withPromiseTimeout(
-                supabaseClient.rpc('update_system_config', {
-                    p_key: key,
-                    p_value: value
-                }),
-                8000,
-                '保存超时，请稍后重试'
-            );
-            if (error) throw error;
+            await saveSystemConfigViaDirectClient(key, value);
+        } catch (directError) {
+            console.warn('[Config] System config direct save failed, falling back to API:', directError.message);
+            try {
+                await saveSystemConfigViaApi(key, value);
+                saveMode = 'api';
+            } catch (apiError) {
+                console.warn('[Config] System config API save failed, falling back to RPC:', apiError.message);
+                const { error } = await withPromiseTimeout(
+                    window.supabaseClient.rpc('update_system_config', {
+                        p_key: key,
+                        p_value: value
+                    }),
+                    8000,
+                    '保存超时，请稍后重试'
+                );
+                if (error) throw error;
+                saveMode = 'rpc';
+            }
         }
 
         systemConfigCache[key] = value;
 
         // Sync packages to points_packages table
-        if (!savedViaApi && key === 'packages') {
+        if (saveMode !== 'api' && key === 'packages') {
             await syncPackagesToDatabase(value);
         }
 
@@ -2912,18 +2918,44 @@ async function loadSystemConfigEntriesViaApi() {
     return Array.isArray(payload.items) ? payload.items : [];
 }
 
+async function loadSystemConfigEntriesViaDirectClient() {
+    if (!window.supabaseClient?.from) {
+        throw new Error('Supabase client unavailable');
+    }
+
+    const { data, error } = await withPromiseTimeout(
+        window.supabaseClient
+            .from('system_config')
+            .select('config_key, config_value')
+            .order('config_key', { ascending: true }),
+        8000,
+        '加载后台配置超时，请稍后重试'
+    );
+
+    if (error) {
+        throw new Error(error.message || '加载后台配置失败');
+    }
+
+    return Array.isArray(data) ? data : [];
+}
+
 async function loadSystemConfigEntries() {
     try {
-        return await loadSystemConfigEntriesViaApi();
-    } catch (apiError) {
-        console.warn('[Config] System config API load failed, falling back to RPC:', apiError.message);
-        const { data, error } = await withPromiseTimeout(
-            window.supabaseClient.rpc('get_all_system_config'),
-            8000,
-            '加载后台配置超时，请稍后重试'
-        );
-        if (error) throw error;
-        return Array.isArray(data) ? data : [];
+        return await loadSystemConfigEntriesViaDirectClient();
+    } catch (directError) {
+        console.warn('[Config] System config direct load failed, falling back to API:', directError.message);
+        try {
+            return await loadSystemConfigEntriesViaApi();
+        } catch (apiError) {
+            console.warn('[Config] System config API load failed, falling back to RPC:', apiError.message);
+            const { data, error } = await withPromiseTimeout(
+                window.supabaseClient.rpc('get_all_system_config'),
+                8000,
+                '加载后台配置超时，请稍后重试'
+            );
+            if (error) throw error;
+            return Array.isArray(data) ? data : [];
+        }
     }
 }
 
@@ -2943,6 +2975,49 @@ async function saveSystemConfigViaApi(key, value) {
     return payload;
 }
 
+async function saveSystemConfigViaDirectClient(key, value) {
+    if (!window.supabaseClient?.from) {
+        throw new Error('Supabase client unavailable');
+    }
+
+    let updatedBy = null;
+    try {
+        const { data: { user } = {} } = await withPromiseTimeout(
+            window.supabaseClient.auth.getUser(),
+            4000,
+            '读取管理员身份超时，请稍后重试'
+        );
+        updatedBy = user?.id || null;
+    } catch (error) {
+        console.warn('[Config] Failed to resolve admin user for direct config save:', error.message);
+    }
+
+    const payload = {
+        config_key: key,
+        config_value: value,
+        updated_at: new Date().toISOString()
+    };
+    if (updatedBy) {
+        payload.updated_by = updatedBy;
+    }
+
+    const { error } = await withPromiseTimeout(
+        window.supabaseClient
+            .from('system_config')
+            .upsert(payload, {
+                onConflict: 'config_key'
+            }),
+        8000,
+        '保存超时，请稍后重试'
+    );
+
+    if (error) {
+        throw new Error(error.message || '保存后台配置失败');
+    }
+
+    return true;
+}
+
 async function loadPaymentChannelSettings(force = false) {
     if (loadPaymentChannelSettings._loadingPromise && !force) {
         return loadPaymentChannelSettings._loadingPromise;
@@ -2950,9 +3025,13 @@ async function loadPaymentChannelSettings(force = false) {
 
     loadPaymentChannelSettings._loadingPromise = (async () => {
         try {
-            const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/payment-channels', {
-                method: 'GET'
-            });
+            const { response, payload } = await withPromiseTimeout(
+                fetchAdminConfigApiJson('/api/admin/settings/payment-channels', {
+                    method: 'GET'
+                }, 10000),
+                12000,
+                '加载支付通道配置超时，请稍后重试'
+            );
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载支付通道配置失败');
             }
@@ -2989,9 +3068,13 @@ async function loadOpsAlertSettings(force = false) {
 
     loadOpsAlertSettings._loadingPromise = (async () => {
         try {
-            const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/ops-alerts', {
-                method: 'GET'
-            });
+            const { response, payload } = await withPromiseTimeout(
+                fetchAdminConfigApiJson('/api/admin/settings/ops-alerts', {
+                    method: 'GET'
+                }, 10000),
+                12000,
+                '加载站外告警配置超时，请稍后重试'
+            );
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载站外告警配置失败');
             }
@@ -3030,9 +3113,13 @@ async function loadOpsAlertHealth(force = false) {
 
     loadOpsAlertHealth._loadingPromise = (async () => {
         try {
-            const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/ops-alert-health', {
-                method: 'GET'
-            });
+            const { response, payload } = await withPromiseTimeout(
+                fetchAdminConfigApiJson('/api/admin/settings/ops-alert-health', {
+                    method: 'GET'
+                }, 10000),
+                12000,
+                '加载站外告警通道健康状态超时，请稍后重试'
+            );
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载站外告警通道健康状态失败');
             }
@@ -3080,9 +3167,13 @@ async function loadOpsAlertMonitor(force = false) {
 
     loadOpsAlertMonitor._loadingPromise = (async () => {
         try {
-            const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/ops-alert-monitor', {
-                method: 'GET'
-            });
+            const { response, payload } = await withPromiseTimeout(
+                fetchAdminConfigApiJson('/api/admin/settings/ops-alert-monitor', {
+                    method: 'GET'
+                }, 10000),
+                12000,
+                '加载集中告警处理面板超时，请稍后重试'
+            );
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载集中告警处理面板失败');
             }
@@ -6124,9 +6215,13 @@ async function loadVerifyRuntimeSnapshot(force = false) {
 
     loadVerifyRuntimeSnapshot._loadingPromise = (async () => {
         try {
-            const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/verify-monitor', {
-                method: 'GET'
-            }, 10000);
+            const { response, payload } = await withPromiseTimeout(
+                fetchAdminConfigApiJson('/api/admin/settings/verify-monitor', {
+                    method: 'GET'
+                }, 10000),
+                12000,
+                '加载验证运维数据超时，请稍后重试'
+            );
 
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载验证运维数据失败');
@@ -6246,9 +6341,13 @@ async function loadAdminAuditMonitor(force = false) {
 
     loadAdminAuditMonitor._loadingPromise = (async () => {
         try {
-            const { response, payload } = await fetchAdminConfigApiJson('/api/admin/settings/admin-audit-monitor', {
-                method: 'GET'
-            });
+            const { response, payload } = await withPromiseTimeout(
+                fetchAdminConfigApiJson('/api/admin/settings/admin-audit-monitor', {
+                    method: 'GET'
+                }, 10000),
+                12000,
+                '加载管理员访问审计超时，请稍后重试'
+            );
 
             if (!response.ok || !payload.success) {
                 throw new Error(payload.message || '加载管理员访问审计失败');

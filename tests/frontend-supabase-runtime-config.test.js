@@ -4476,7 +4476,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         'admin-studio.html should reference the updated admin stylesheet version'
     );
     assert.equal(
-        adminStudioHtml.includes('admin-config.js?v=20260326_ADMIN_CONFIG_SESSION_RETRY_20'),
+        adminStudioHtml.includes('admin-config.js?v=20260326_ADMIN_CONFIG_DIRECT_FALLBACK_21'),
         true,
         'admin-studio.html should reference the updated admin config runtime version'
     );
