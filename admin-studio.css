@@ -20726,6 +20726,16 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     margin-top: 3px;
 }
 
+.ops-alert-email-help code {
+    display: inline-block;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: rgba(107, 158, 206, 0.12);
+    border: 1px solid rgba(107, 158, 206, 0.24);
+    color: var(--text-main);
+    font-size: 0.82em;
+}
+
 @media (max-width: 1024px) {
     .payment-channel-toolbar {
         grid-template-columns: 1fr;
