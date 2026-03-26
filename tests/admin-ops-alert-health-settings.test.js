@@ -306,6 +306,9 @@ test('ops alert health handler summarizes recent channel delivery health', async
         assert.equal(email.health_label, '最近投递正常');
         assert.equal(email.delivered_count, 1);
         assert.equal(email.recipient_summary, '1 个收件人');
+        assert.equal(email.recipient_preview, 'ops@example.com');
+        assert.equal(email.from_address, 'alerts@example.com');
+        assert.equal(email.subject_prefix, '[Zaoyoe告警]');
     });
 });
 

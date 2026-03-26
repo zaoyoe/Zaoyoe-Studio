@@ -140,6 +140,18 @@ function buildChannelRecipientSummary(channelKey, config = {}) {
     return '未配置';
 }
 
+function buildEmailRecipientPreview(config = {}) {
+    const recipients = normalizeChannelList(config.recipients);
+    if (!recipients.length) {
+        return '';
+    }
+
+    const preview = recipients.slice(0, 2).join('、');
+    return recipients.length > 2
+        ? `${preview} 等 ${recipients.length} 人`
+        : preview;
+}
+
 function buildChannelStatus(channelKey, config = {}, secretStatus = {}, jobs = [], attempts = []) {
     const enabled = config.enabled === true;
     const configured = secretStatus.configured === true;
@@ -207,7 +219,11 @@ function buildChannelStatus(channelKey, config = {}, secretStatus = {}, jobs = [
         last_attempt_at: normalizeText(lastAttemptAt, 80) || null,
         last_failure_at: normalizeText(lastFailureAt, 80) || null,
         last_error: normalizeText(lastError, 500) || '',
-        recent_errors: recentErrors
+        recent_errors: recentErrors,
+        recipient_preview: channelKey === 'email' ? buildEmailRecipientPreview(config) : '',
+        from_address: channelKey === 'email' ? normalizeText(config.from_address, 200) : '',
+        reply_to: channelKey === 'email' ? normalizeText(config.reply_to, 200) : '',
+        subject_prefix: channelKey === 'email' ? normalizeText(config.subject_prefix, 120) : ''
     };
 }
 

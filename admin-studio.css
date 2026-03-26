@@ -20253,6 +20253,35 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     line-height: 1.6;
 }
 
+.ops-alert-health-card__config {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.ops-alert-health-card__config-item {
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.045);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.ops-alert-health-card__config-item span {
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+}
+
+.ops-alert-health-card__config-item strong {
+    color: var(--text-main);
+    font-size: 0.82rem;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
 .ops-alert-health-card__errors {
     display: flex;
     flex-direction: column;
@@ -20782,6 +20811,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
     .ops-alert-actions-grid .btn-add-config {
         justify-content: flex-start;
+    }
+
+    .ops-alert-health-card__config {
+        grid-template-columns: 1fr;
     }
 }
 
