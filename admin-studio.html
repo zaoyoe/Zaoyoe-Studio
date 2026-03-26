@@ -993,7 +993,7 @@
                                     <div class="config-row">
                                         <div class="config-info">
                                             <div class="config-label">启用站外退款告警</div>
-                                            <div class="config-desc">针对退款失败、扣回失败、回滚失败，异步投递到 Telegram / 飞书，不阻塞退款主流程。</div>
+                                            <div class="config-desc">针对退款失败、扣回失败、回滚失败，异步投递到 Telegram / 飞书 / 邮件，不阻塞退款主流程。</div>
                                         </div>
                                         <div class="config-input-wrapper">
                                             <div class="status-toggle" id="opsAlertEnabledToggle" data-admin-action="settings-toggle-ops-alerts-enabled"></div>
@@ -1064,6 +1064,64 @@
                                         </div>
                                         <div class="config-input-wrapper">
                                             <input type="password" class="config-input" id="opsAlertFeishuWebhookUrl" placeholder="留空表示保持现有密钥不变">
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">邮件告警</div>
+                                            <div class="config-desc">适合作为站外第三通道和留痕通知，当前通过 Resend 发送。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertEmailEnabledToggle" data-admin-action="settings-toggle-ops-alert-channel" data-alert-channel="email"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <label>邮件最低级别</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertEmailSeverity">
+                                                <option value="warning">warning</option>
+                                                <option value="critical">critical</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <label>邮件收件人</label>
+                                        <div class="config-input-wrapper">
+                                            <textarea class="config-input" id="opsAlertEmailRecipients" rows="3" placeholder="ops@example.com&#10;owner@example.com"></textarea>
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <label>邮件发件地址</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="text" class="config-input" id="opsAlertEmailFromAddress" placeholder="Zaoyoe Ops &lt;alerts@zaoyoe.com&gt;">
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <label>邮件回复地址</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="text" class="config-input" id="opsAlertEmailReplyTo" placeholder="support@zaoyoe.com（可留空）">
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <label>邮件主题前缀</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="text" class="config-input" id="opsAlertEmailSubjectPrefix" placeholder="[Zaoyoe告警]">
+                                        </div>
+                                    </div>
+
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">Email API Key</div>
+                                            <div class="config-desc" id="opsAlertEmailApiKeyStatus">未配置后台安全密钥</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <input type="password" class="config-input" id="opsAlertEmailApiKey" placeholder="留空表示保持现有密钥不变">
                                         </div>
                                     </div>
 
@@ -1279,6 +1337,9 @@
                                         </button>
                                         <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="settings-delete-ops-alert-secret" data-secret-name="feishu_webhook_url">
                                             删除飞书密钥
+                                        </button>
+                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="settings-delete-ops-alert-secret" data-secret-name="email_api_key">
+                                            删除邮件密钥
                                         </button>
                                     </div>
                                 </div>

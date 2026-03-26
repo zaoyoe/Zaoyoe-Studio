@@ -615,7 +615,76 @@ test('ops alert settings POST can send a Telegram self-check without persisting 
         assert.equal(state.feishuTests.length, 0);
         assert.deepEqual(state.telegramTests[0].runtime.config.channels.telegram.chat_ids, ['5104238366', '5104238367']);
         assert.equal(state.telegramTests[0].runtime.secrets.telegram_bot_token, 'temporary-telegram-token');
-        assert.match(state.telegramTests[0].job.title, /Telegram 自检/);
+        assert.match(state.telegramTests[0].job.title, /站外告警通道自检/);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.telegram_test');
+    });
+});
+
+test('ops alert settings POST can send a preview self-check through email when the channel is enabled', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            channels: {
+                email: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    recipients: ['ops@example.com'],
+                    from_address: 'Zaoyoe Ops <alerts@zaoyoe.com>',
+                    reply_to: 'support@zaoyoe.com',
+                    subject_prefix: '[Zaoyoe告警]'
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: false, source: 'missing', updatedAt: null },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null },
+            email_api_key: { configured: true, source: 'stored', updatedAt: '2026-03-26T09:00:00.000Z' }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: '',
+            feishu_webhook_url: '',
+            email_api_key: 'stored-email-key'
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_test_telegram',
+                config: {
+                    enabled: true,
+                    channels: {
+                        email: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            recipients: ['ops@example.com', 'owner@example.com'],
+                            from_address: 'Zaoyoe Ops <alerts@zaoyoe.com>',
+                            reply_to: 'support@zaoyoe.com',
+                            subject_prefix: '[Zaoyoe告警]'
+                        }
+                    }
+                },
+                secrets: {
+                    email_api_key: 'temporary-email-key'
+                }
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.match(payload.message, /邮件/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 0);
+        assert.equal(state.feishuTests.length, 0);
+        assert.equal(state.emailTests.length, 1);
+        assert.deepEqual(state.emailTests[0].runtime.config.channels.email.recipients, ['ops@example.com', 'owner@example.com']);
+        assert.equal(state.emailTests[0].runtime.secrets.email_api_key, 'temporary-email-key');
+        assert.match(state.emailTests[0].job.title, /站外告警通道自检/);
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.telegram_test');
     });
