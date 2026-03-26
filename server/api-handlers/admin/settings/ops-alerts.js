@@ -259,6 +259,88 @@ function buildTelegramRefundSampleJob(user) {
     };
 }
 
+function buildCustomerChatMessageSampleJob(user) {
+    const nowIso = new Date().toISOString();
+
+    return {
+        alert_type: 'customer_chat_message_received',
+        severity: 'warning',
+        title: '客服新消息（阿木）',
+        payload: {
+            target_id: 'chat-message-demo-001',
+            message_id: 'chat-message-demo-001',
+            user_id: 'user_demo_chat_001',
+            session_id: 'guest.demo@example.com',
+            sender_label: '阿木',
+            sender_email: 'guest.demo@example.com',
+            message_type: 'text',
+            message_type_label: '文本消息',
+            content: '你好，我刚刚充值成功了，想确认一下积分多久到账？',
+            content_preview: '你好，我刚刚充值成功了，想确认一下积分多久到账？',
+            created_at: nowIso,
+            entry_path: '客服消息 -> 会话详情',
+            detail: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了客服消息示例发送`
+        }
+    };
+}
+
+function buildShopPurchaseSuccessSampleJob(user) {
+    const nowIso = new Date().toISOString();
+
+    return {
+        alert_type: 'shop_purchase_succeeded',
+        severity: 'warning',
+        title: '商城购买成功（Prompt Pro 年卡）',
+        payload: {
+            target_id: 'shop-order-demo-001',
+            order_id: 'shop-order-demo-001',
+            user_id: 'user_demo_buyer_001',
+            buyer_label: '小羽',
+            site: 'cn',
+            product_name: 'Prompt Pro 年卡',
+            item_count: 1,
+            total_price: 59.8,
+            price_paid: 59.8,
+            delivery_status: 'pending',
+            delivery_status_label: '待发货',
+            refund_status: 'none',
+            refund_status_label: '正常',
+            created_at: nowIso,
+            entry_path: '商城管理 -> 订单列表',
+            detail: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了商城购买成功示例发送`
+        }
+    };
+}
+
+function buildWalletRechargeSuccessSampleJob(user) {
+    const nowIso = new Date().toISOString();
+
+    return {
+        alert_type: 'wallet_recharge_succeeded',
+        severity: 'warning',
+        title: '充值成功（50元充值）',
+        payload: {
+            target_id: 'payment-order-demo-001',
+            payment_order_id: 'payment-order-demo-001',
+            provider_order_no: 'HPJ-DEMO-20260326',
+            user_id: 'user_demo_buyer_001',
+            buyer_label: '小羽',
+            site: 'cn',
+            provider: 'hupijiao',
+            package_name: '50元充值',
+            expected_amount: 50,
+            paid_amount: 50,
+            points_amount: 500,
+            status: 'redeemed',
+            paid_at: nowIso,
+            claimed_at: nowIso,
+            created_at: nowIso,
+            entry_path: '支付对账 -> 最近订单',
+            detail: `管理员 ${sanitizeText(user?.email || user?.id) || 'unknown'} 触发了充值成功示例发送`
+        }
+    };
+}
+
 function buildGatewayDegradedSampleJob(user) {
     return {
         alert_type: 'payment_gateway_degraded',
@@ -901,6 +983,9 @@ module.exports = async (req, res) => {
             if (
                 sanitizeText(body.action) === 'send_test_telegram'
                 || sanitizeText(body.action) === 'send_sample_refund_telegram'
+                || sanitizeText(body.action) === 'send_sample_customer_chat_message'
+                || sanitizeText(body.action) === 'send_sample_shop_purchase_succeeded'
+                || sanitizeText(body.action) === 'send_sample_wallet_recharge_succeeded'
                 || sanitizeText(body.action) === 'send_sample_gateway_degraded'
                 || sanitizeText(body.action) === 'send_sample_gateway_recovered'
                 || sanitizeText(body.action) === 'send_sample_verify_service_disabled'
@@ -931,7 +1016,13 @@ module.exports = async (req, res) => {
 
                 const normalizedAction = sanitizeText(body.action);
                 const job = normalizedAction === 'send_sample_refund_telegram'
-                        ? buildTelegramRefundSampleJob(user)
+                    ? buildTelegramRefundSampleJob(user)
+                    : normalizedAction === 'send_sample_customer_chat_message'
+                        ? buildCustomerChatMessageSampleJob(user)
+                    : normalizedAction === 'send_sample_shop_purchase_succeeded'
+                        ? buildShopPurchaseSuccessSampleJob(user)
+                    : normalizedAction === 'send_sample_wallet_recharge_succeeded'
+                        ? buildWalletRechargeSuccessSampleJob(user)
                     : normalizedAction === 'send_sample_gateway_degraded'
                         ? buildGatewayDegradedSampleJob(user)
                     : normalizedAction === 'send_sample_gateway_recovered'
@@ -982,6 +1073,12 @@ module.exports = async (req, res) => {
                     adminId: user.id,
                     actionType: normalizedAction === 'send_sample_refund_telegram'
                         ? 'admin.ops_alerts.telegram_refund_sample'
+                        : normalizedAction === 'send_sample_customer_chat_message'
+                            ? 'admin.ops_alerts.customer_chat_message_sample'
+                        : normalizedAction === 'send_sample_shop_purchase_succeeded'
+                            ? 'admin.ops_alerts.shop_purchase_succeeded_sample'
+                        : normalizedAction === 'send_sample_wallet_recharge_succeeded'
+                            ? 'admin.ops_alerts.wallet_recharge_succeeded_sample'
                         : normalizedAction === 'send_sample_gateway_degraded'
                             ? 'admin.ops_alerts.gateway_degraded_sample'
                         : normalizedAction === 'send_sample_gateway_recovered'
@@ -1044,6 +1141,12 @@ module.exports = async (req, res) => {
                     success: true,
                     message: normalizedAction === 'send_sample_refund_telegram'
                         ? `退款详情示例消息已发送到 ${channelLabels || '已启用通道'}`
+                        : normalizedAction === 'send_sample_customer_chat_message'
+                            ? `客服消息示例已发送到 ${channelLabels || '已启用通道'}`
+                        : normalizedAction === 'send_sample_shop_purchase_succeeded'
+                            ? `购买成功示例消息已发送到 ${channelLabels || '已启用通道'}`
+                        : normalizedAction === 'send_sample_wallet_recharge_succeeded'
+                            ? `充值成功示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : normalizedAction === 'send_sample_gateway_degraded'
                             ? `支付通道异常示例消息已发送到 ${channelLabels || '已启用通道'}`
                         : normalizedAction === 'send_sample_gateway_recovered'

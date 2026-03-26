@@ -4050,6 +4050,36 @@ async function sendOpsAlertRefundSample() {
     }
 }
 
+async function sendOpsAlertCustomerChatMessageSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_customer_chat_message', '客服消息示例已发送');
+    } catch (error) {
+        console.error('[Config] Send customer chat message sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertShopPurchaseSucceededSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_shop_purchase_succeeded', '购买成功示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send shop purchase succeeded sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function sendOpsAlertWalletRechargeSucceededSample() {
+    try {
+        return await sendOpsAlertTelegramRequest('send_sample_wallet_recharge_succeeded', '充值成功示例消息已发送');
+    } catch (error) {
+        console.error('[Config] Send wallet recharge succeeded sample failed:', error);
+        showToast('发送失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
 async function sendOpsAlertGatewaySample() {
     try {
         return await sendOpsAlertTelegramRequest('send_sample_gateway_degraded', '支付通道异常示例消息已发送');
@@ -6755,6 +6785,9 @@ window.toggleOpsAlertChannelEnabled = toggleOpsAlertChannelEnabled;
 window.saveOpsAlertSettings = saveOpsAlertSettings;
 window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;
 window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;
+window.sendOpsAlertCustomerChatMessageSample = sendOpsAlertCustomerChatMessageSample;
+window.sendOpsAlertShopPurchaseSucceededSample = sendOpsAlertShopPurchaseSucceededSample;
+window.sendOpsAlertWalletRechargeSucceededSample = sendOpsAlertWalletRechargeSucceededSample;
 window.sendOpsAlertGatewaySample = sendOpsAlertGatewaySample;
 window.sendOpsAlertGatewayRecoveredSample = sendOpsAlertGatewayRecoveredSample;
 window.sendOpsAlertVerifyServiceDisabledSample = sendOpsAlertVerifyServiceDisabledSample;
