@@ -5841,6 +5841,7 @@
                                 <th class="admin-studio-inline-style-attr-162">类型与面额</th>
                                 <th class="admin-studio-inline-style-attr-161">使用限制</th>
                                 <th class="admin-studio-inline-style-attr-161">状态/有效期</th>
+                                <th class="admin-studio-inline-style-attr-161">策略</th>
                                 <th class="admin-studio-inline-style-attr-163">操作</th>
                             </tr>
                         </thead>
@@ -5967,6 +5968,17 @@
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+
+                            <div class="admin-studio-inline-style-attr-171">
+                                <label class="admin-studio-inline-style-attr-172" for="discountAllowZeroTotal">
+                                    风控策略
+                                </label>
+                                <label class="admin-studio-inline-style-attr-159">
+                                    <input type="checkbox" id="discountAllowZeroTotal">
+                                    <span>允许折后总价为 0 积分</span>
+                                </label>
+                                <div class="admin-studio-inline-style-attr-173">默认关闭，避免优惠码被误配成“全免单”。</div>
                             </div>
 
                             <!-- Action Buttons -->
@@ -6226,6 +6238,10 @@
                         <div class="modern-form-group">
                             <label class="modern-label">排序权重</label>
                             <input type="number" id="prodSort" class="modern-input" placeholder="0" value="0">
+                        </div>
+                        <div class="modern-form-group">
+                            <label class="modern-label">单次限购</label>
+                            <input type="number" id="prodMaxPurchaseQuantity" class="modern-input" placeholder="默认99" min="1" max="99">
                         </div>
                     </div>
 

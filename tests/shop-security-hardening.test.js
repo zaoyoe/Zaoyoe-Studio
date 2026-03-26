@@ -137,6 +137,36 @@ test('follow-up shop hardening adds a server-side quantity cap and removes direc
     );
 });
 
+test('shop policy-control migration adds per-product caps and zero-total discount guardrails', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260326_add_shop_purchase_policy_controls.sql'));
+
+    assert.match(
+        migrationSql,
+        /ADD COLUMN IF NOT EXISTS max_purchase_quantity INT;/,
+        'policy-control migration should add a per-product max_purchase_quantity column'
+    );
+    assert.match(
+        migrationSql,
+        /ADD COLUMN IF NOT EXISTS allow_zero_total BOOLEAN DEFAULT false;/,
+        'policy-control migration should add the allow_zero_total flag to discount_codes'
+    );
+    assert.match(
+        migrationSql,
+        /当前商品单次最多购买/,
+        'discount preview and purchase RPCs should reject quantities above a product-specific cap'
+    );
+    assert.match(
+        migrationSql,
+        /NOT COALESCE\(v_discount_record\.allow_zero_total, false\)/,
+        'discount preview and purchase RPCs should consult the allow_zero_total flag before approving a zero-total order'
+    );
+    assert.match(
+        migrationSql,
+        /该优惠码不允许全额抵扣/,
+        'policy-control migration should return a clear failure when a non-whitelisted discount would zero out the order'
+    );
+});
+
 test('site-aware product filtering and admin discount semantics stay aligned in the frontend', () => {
     const siteConfigSource = readRepoFile(path.join('js', 'site-config.js'));
     const indexBootstrapSource = readRepoFile(path.join('js', 'index-home-bootstrap.js'));
@@ -168,5 +198,43 @@ test('site-aware product filtering and admin discount semantics stay aligned in 
         adminDiscountsSource,
         /formatPercentDiscountValue/,
         'admin discounts UI should format percentage discounts with the same fold semantics used at checkout'
+    );
+});
+
+test('admin and storefront surfaces wire the purchase-policy controls through to the hardened backend', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminShopSource = readRepoFile(path.join('js', 'admin-shop.js'));
+    const adminDiscountsSource = readRepoFile('admin-discounts.js');
+    const shopClientSource = readRepoFile(path.join('js', 'shop-client.js'));
+
+    assert.match(
+        adminStudioSource,
+        /id="prodMaxPurchaseQuantity"/,
+        'admin product modal should expose the per-product max purchase quantity field'
+    );
+    assert.match(
+        adminShopSource,
+        /max_purchase_quantity: normalizedMaxPurchaseQuantity/,
+        'admin product save flow should persist the per-product max purchase quantity'
+    );
+    assert.match(
+        adminStudioSource,
+        /id="discountAllowZeroTotal"/,
+        'admin discount modal should expose the allow-zero-total toggle'
+    );
+    assert.match(
+        adminDiscountsSource,
+        /allow_zero_total: allowZeroTotal/,
+        'discount creation should persist the allow_zero_total flag'
+    );
+    assert.match(
+        shopClientSource,
+        /dataset\.maxPurchaseQuantity = String\(maxPurchaseQuantity\);/,
+        'shop product cards should pass the product-specific cap into the purchase modal'
+    );
+    assert.match(
+        shopClientSource,
+        /quantityInput\.max = String\(quantityCap\);/,
+        'purchase modal quantity input should clamp to the product-specific cap'
     );
 });

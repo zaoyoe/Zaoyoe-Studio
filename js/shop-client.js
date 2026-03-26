@@ -49,6 +49,18 @@ const ShopClient = {
         return `shop_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
     },
 
+    normalizePurchaseQuantityCap: function (value) {
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isFinite(parsed) || parsed < 1) {
+            return 99;
+        }
+        return Math.min(parsed, 99);
+    },
+
+    getCurrentPurchaseQuantityCap: function () {
+        return this.normalizePurchaseQuantityCap(this.currentPurchase.maxQuantity);
+    },
+
     filterProductsForCurrentSite: function (products) {
         if (window.SiteConfig?.filterProductsForCurrentSite) {
             return window.SiteConfig.filterProductsForCurrentSite(products);
@@ -334,6 +346,7 @@ const ShopClient = {
                 decodeURIComponent(target.dataset.productNameEn || ''),
                 Number(target.dataset.unitPrice || 0),
                 target.dataset.qtyRules || '',
+                target.dataset.maxPurchaseQuantity || '',
                 target.dataset.showPurchaseNotes === 'true',
                 target.dataset.purchaseNotes || ''
             );
@@ -964,6 +977,7 @@ const ShopClient = {
                     ? p.description_en
                     : (p.description || (window.i18n?.t('shop.noDescription') || '暂无描述'));
                 const qtyRulesStr = p.quantity_rules ? encodeURIComponent(JSON.stringify(p.quantity_rules)) : '';
+                const maxPurchaseQuantity = this.normalizePurchaseQuantityCap(p.max_purchase_quantity);
 
                 // Flash Sale Logic
                 const nowTime = new Date();
@@ -1028,6 +1042,7 @@ const ShopClient = {
                     buyButton.dataset.productNameEn = encodeURIComponent(p.name_en || '');
                     buyButton.dataset.unitPrice = String(currentPrice);
                     buyButton.dataset.qtyRules = qtyRulesStr;
+                    buyButton.dataset.maxPurchaseQuantity = String(maxPurchaseQuantity);
                     buyButton.dataset.showPurchaseNotes = p.show_purchase_notes ? 'true' : 'false';
                     buyButton.dataset.purchaseNotes = encodeURIComponent(p.purchase_notes || '');
                 }
@@ -1100,6 +1115,7 @@ const ShopClient = {
         discountValue: null,
         discountAmount: 0,
         purchaseNotes: '',
+        maxQuantity: 99,
         idempotencyKey: null
     },
 
@@ -1436,11 +1452,12 @@ const ShopClient = {
 
     // ---- New Purchase Flow via Modal ----
 
-    buyProduct: async function (productId, productName, productNameEn, price, rulesStr, showPurchaseNotes = false, purchaseNotesEncoded = '') {
+    buyProduct: async function (productId, productName, productNameEn, price, rulesStr, maxPurchaseQuantity = 99, showPurchaseNotes = false, purchaseNotesEncoded = '') {
         const rules = rulesStr ? JSON.parse(decodeURIComponent(rulesStr)) : [];
         const purchaseNotes = showPurchaseNotes ? decodeURIComponent(purchaseNotesEncoded || '') : '';
+        const quantityCap = this.normalizePurchaseQuantityCap(maxPurchaseQuantity);
         // 1. Open Modal immediately for instant feedback
-        this.openPurchaseModal(productId, productName, productNameEn, price, rules, purchaseNotes);
+        this.openPurchaseModal(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes);
 
         // 2. Auth Check in background
         const { data: { user } } = await supabaseClient.auth.getUser();
@@ -1455,7 +1472,8 @@ const ShopClient = {
         }
     },
 
-    openPurchaseModal: function (productId, productName, productNameEn, price, rules, purchaseNotes = '') {
+    openPurchaseModal: function (productId, productName, productNameEn, price, rules, maxPurchaseQuantity = 99, purchaseNotes = '') {
+        const quantityCap = this.normalizePurchaseQuantityCap(maxPurchaseQuantity);
         this.currentPurchase = {
             productId,
             productName,
@@ -1470,6 +1488,7 @@ const ShopClient = {
             discountValue: null,
             discountAmount: 0,
             purchaseNotes: typeof purchaseNotes === 'string' ? purchaseNotes.trim() : '',
+            maxQuantity: quantityCap,
             idempotencyKey: this.createPurchaseIdempotencyKey()
         };
         this.purchaseModalBaseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
@@ -1481,7 +1500,11 @@ const ShopClient = {
         this.renderModalProductName(displayName);
         document.getElementById('modalUnitPrice').textContent = price;
         document.getElementById('modalTotalPrice').textContent = price;
-        document.getElementById('purchaseQuantity').value = 1;
+        const quantityInput = document.getElementById('purchaseQuantity');
+        if (quantityInput) {
+            quantityInput.max = String(quantityCap);
+            quantityInput.value = 1;
+        }
 
         // Reset Discount UI
         const discountInput = document.getElementById('purchaseDiscountCode');
@@ -1608,9 +1631,10 @@ const ShopClient = {
     },
 
     adjustQuantity: function (delta) {
+        const quantityCap = this.getCurrentPurchaseQuantityCap();
         let newQty = this.currentPurchase.quantity + delta;
         if (newQty < 1) newQty = 1;
-        if (newQty > 99) newQty = 99; // Cap at 99 for safety
+        if (newQty > quantityCap) newQty = quantityCap;
 
         this.currentPurchase.quantity = newQty;
         document.getElementById('purchaseQuantity').value = newQty;
@@ -1621,11 +1645,13 @@ const ShopClient = {
 
     // Handle direct keyboard input
     onQuantityInput: function (input) {
+        const quantityCap = this.getCurrentPurchaseQuantityCap();
         let val = parseInt(input.value, 10);
         if (isNaN(val) || val < 1) val = 1;
-        if (val > 99) val = 99;
+        if (val > quantityCap) val = quantityCap;
 
         this.currentPurchase.quantity = val;
+        input.value = String(val);
         // Update Total
         this.updatePriceForQuantity(val);
     },
