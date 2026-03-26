@@ -41,6 +41,14 @@ const ShopClient = {
         return session?.access_token || '';
     },
 
+    createPurchaseIdempotencyKey: function () {
+        if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID === 'function') {
+            return globalThis.crypto.randomUUID();
+        }
+
+        return `shop_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+    },
+
     filterProductsForCurrentSite: function (products) {
         if (window.SiteConfig?.filterProductsForCurrentSite) {
             return window.SiteConfig.filterProductsForCurrentSite(products);
@@ -134,6 +142,44 @@ const ShopClient = {
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload?.success === false) {
             throw new Error(payload?.message || (window.i18n?.t('shop.verifyFailed') || '验证失败'));
+        }
+
+        return payload;
+    },
+
+    purchaseWithServer: async function () {
+        const token = await this.getAccessToken();
+        if (!token) {
+            throw new Error(window.i18n?.t('shop.loginRequired') || '请先登录');
+        }
+
+        if (!this.currentPurchase.idempotencyKey) {
+            this.currentPurchase.idempotencyKey = this.createPurchaseIdempotencyKey();
+        }
+
+        const response = await fetch('/api/shop/purchase', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+                'X-Idempotency-Key': this.currentPurchase.idempotencyKey
+            },
+            body: JSON.stringify({
+                productId: this.currentPurchase.productId,
+                quantity: this.currentPurchase.quantity,
+                discountCode: this.currentPurchase.discountCode,
+                agentId: this.currentAgentId,
+                site: window.SiteConfig?.site || 'cn',
+                idempotencyKey: this.currentPurchase.idempotencyKey
+            })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.success === false) {
+            const error = new Error(payload?.message || (window.i18n?.t('shop.redeemFailed') || '兑换失败'));
+            error.code = payload?.code || '';
+            error.retryAfterSeconds = payload?.retry_after_seconds || null;
+            throw error;
         }
 
         return payload;
@@ -1053,7 +1099,8 @@ const ShopClient = {
         discountType: null,
         discountValue: null,
         discountAmount: 0,
-        purchaseNotes: ''
+        purchaseNotes: '',
+        idempotencyKey: null
     },
 
     isPurchaseModalKeyboardDockEnabled: function () {
@@ -1422,7 +1469,8 @@ const ShopClient = {
             discountType: null,
             discountValue: null,
             discountAmount: 0,
-            purchaseNotes: typeof purchaseNotes === 'string' ? purchaseNotes.trim() : ''
+            purchaseNotes: typeof purchaseNotes === 'string' ? purchaseNotes.trim() : '',
+            idempotencyKey: this.createPurchaseIdempotencyKey()
         };
         this.purchaseModalBaseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
         this.purchaseModalOwnsFullScrollLock = false;
@@ -1583,8 +1631,6 @@ const ShopClient = {
     },
 
     confirmPurchase: async function () {
-        const { productId, productName, quantity, unitPrice } = this.currentPurchase;
-
         // Disable button
         const btn = document.getElementById('confirmPurchaseBtn');
         const originalText = btn.innerHTML;
@@ -1593,27 +1639,7 @@ const ShopClient = {
         btn.disabled = true;
 
         try {
-            const { data: { user } } = await supabaseClient.auth.getUser();
-            if (!user) throw new Error(window.i18n?.t('shop.loginRequired') || "未登录");
-
-            // DB function signature: fn_purchase_shop_item(p_product_id, p_user_id, p_site, p_quantity, p_discount_code, p_agent_id)
-            const { data, error } = await supabaseClient.rpc('fn_purchase_shop_item', {
-                p_product_id: productId,
-                p_user_id: user.id,
-                p_site: window.SiteConfig?.site || 'cn',
-                p_quantity: quantity,
-                p_discount_code: this.currentPurchase.discountCode,
-                p_agent_id: this.currentAgentId
-            });
-
-            if (error) {
-                throw error;
-            }
-
-            if (!data.success) {
-                throw new Error(data.message || (window.i18n?.t('shop.redeemFailed') || '兑换失败'));
-            }
-
+            const data = await this.purchaseWithServer();
             const purchaseData = data.data;
             let allContents = [];
             if (purchaseData.content) {
@@ -1631,6 +1657,7 @@ const ShopClient = {
 
             // Store order ID for export
             this.currentPurchase.orderId = lastOrderId;
+            this.currentPurchase.idempotencyKey = null;
 
             // Handle Results
             this.closePurchaseModal();
@@ -1647,6 +1674,7 @@ const ShopClient = {
         } catch (err) {
             console.error(err);
             const errMsg = (err.message || (window.i18n?.t('shop.unknownError') || '未知错误'));
+            const isDuplicateSubmission = err?.code === 'duplicate_submission';
 
             // If insufficient points, show toast and open wallet for recharging
             if (errMsg.includes('积分') || errMsg.includes('余额') || errMsg.includes('nsufficient') || errMsg.includes('balance')) {
@@ -1664,6 +1692,10 @@ const ShopClient = {
                 if (window.WalletModal && window.WalletModal.showToast) {
                     window.WalletModal.showToast(`❌ ${window.i18n?.t('shop.redeemFailed') || '兑换失败'}: ${errMsg}`, 'error');
                 }
+            }
+
+            if (!isDuplicateSubmission) {
+                this.currentPurchase.idempotencyKey = this.createPurchaseIdempotencyKey();
             }
 
             // Re-enable button on error
