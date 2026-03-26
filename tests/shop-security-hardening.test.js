@@ -12,6 +12,7 @@ function readRepoFile(relativePath) {
 test('shop discount validation is no longer handled by public table reads in the user client', () => {
     const shopClientSource = readRepoFile(path.join('js', 'shop-client.js'));
     const validateDiscountRouteSource = readRepoFile(path.join('api', 'shop', 'validate-discount.js'));
+    const purchaseRouteSource = readRepoFile(path.join('api', 'shop', 'purchase.js'));
 
     assert.doesNotMatch(
         shopClientSource,
@@ -22,6 +23,16 @@ test('shop discount validation is no longer handled by public table reads in the
         shopClientSource,
         /fetch\('\/api\/shop\/validate-discount'/,
         'shop-client.js should validate discounts through the hardened API route'
+    );
+    assert.doesNotMatch(
+        shopClientSource,
+        /\.rpc\('fn_purchase_shop_item'/,
+        'shop-client.js should no longer call the purchase RPC directly from the browser'
+    );
+    assert.match(
+        shopClientSource,
+        /fetch\('\/api\/shop\/purchase'/,
+        'shop-client.js should submit purchases through the hardened API route'
     );
     assert.match(
         validateDiscountRouteSource,
@@ -37,6 +48,26 @@ test('shop discount validation is no longer handled by public table reads in the
         validateDiscountRouteSource,
         /rpc\('fn_validate_discount_code'/,
         'shop discount validation route should delegate to the server-side discount RPC'
+    );
+    assert.match(
+        purchaseRouteSource,
+        /requireAuthenticatedUser/,
+        'shop purchase route should require an authenticated user'
+    );
+    assert.match(
+        purchaseRouteSource,
+        /takeRateLimitToken/,
+        'shop purchase route should apply rate limiting'
+    );
+    assert.match(
+        purchaseRouteSource,
+        /duplicate_submission/,
+        'shop purchase route should reject duplicate submissions through an idempotency guard'
+    );
+    assert.match(
+        purchaseRouteSource,
+        /rpc\('fn_purchase_shop_item'/,
+        'shop purchase route should delegate to the server-side purchase RPC'
     );
 });
 
