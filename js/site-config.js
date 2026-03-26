@@ -64,6 +64,32 @@
             return this.site === 'intl' ? 'price_points_intl' : 'price_points';
         },
 
+        /** 获取当前站点可售价格；未定价则返回 null */
+        getProductPrice: function (product) {
+            const field = this.getPriceField();
+            const rawValue = product && Object.prototype.hasOwnProperty.call(product, field)
+                ? product[field]
+                : null;
+
+            if (rawValue === null || rawValue === undefined || rawValue === '') {
+                return null;
+            }
+
+            const numericValue = Number(rawValue);
+            return Number.isFinite(numericValue) ? numericValue : null;
+        },
+
+        /** 当前商品是否在当前站点可售 */
+        isProductAvailableForCurrentSite: function (product) {
+            return this.getProductPrice(product) !== null;
+        },
+
+        /** 过滤出当前站点可售的商品 */
+        filterProductsForCurrentSite: function (products) {
+            if (!Array.isArray(products)) return [];
+            return products.filter((product) => this.isProductAvailableForCurrentSite(product));
+        },
+
         /** 获取积分显示名称 (统一为积分) */
         getPointsLabel: function () {
             return this.site === 'intl' ? 'Points' : '积分';

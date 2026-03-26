@@ -58,9 +58,19 @@ const AdminDiscounts = {
         dropdown.setAttribute('aria-hidden', open ? 'false' : 'true');
     },
 
+    formatPercentDiscountValue: function (value) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue) || numericValue <= 0) {
+            return '--折';
+        }
+
+        const folded = numericValue / 10;
+        return `${Number.isInteger(folded) ? folded : folded.toFixed(1).replace(/\.0$/, '')}折`;
+    },
+
     getDiscountTypeMarkup: function (discount) {
         if (discount.discount_type === 'percent') {
-            return `<span class="admin-discount-type-value admin-discount-type-value--percent">${100 - discount.discount_value}折</span>`;
+            return `<span class="admin-discount-type-value admin-discount-type-value--percent">${this.formatPercentDiscountValue(discount.discount_value)}</span>`;
         }
         return `<span class="admin-discount-type-value admin-discount-type-value--fixed">立减 ${discount.discount_value} 积分</span>`;
     },
@@ -420,7 +430,12 @@ const AdminDiscounts = {
         const type = document.getElementById('discountValueType').value;
         const value = parseInt(document.getElementById('discountValue').value);
         if (!value || value <= 0) {
-            alert('请输入有效的优惠卷面额');
+            alert('请输入有效的优惠券面额');
+            return;
+        }
+
+        if (type === 'percent' && value > 100) {
+            alert('折扣比例不能大于 100，例如 80 表示 8 折');
             return;
         }
 

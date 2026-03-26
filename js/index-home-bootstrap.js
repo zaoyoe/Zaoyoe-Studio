@@ -43,6 +43,7 @@
 
     async function prefetchShop() {
         try {
+            const currentSite = site();
             const [categoryResult, productResult] = await Promise.all([
                 window.supabaseClient.from('shop_categories').select('*').order('sort_order'),
                 window.supabaseClient
@@ -51,12 +52,16 @@
                     .eq('is_active', true)
                     .order('display_order', { ascending: false })
             ]);
+            const filteredProducts = window.SiteConfig?.filterProductsForCurrentSite
+                ? window.SiteConfig.filterProductsForCurrentSite(productResult.data || [])
+                : (productResult.data || []);
 
-            if (productResult.data && productResult.data.length > 0) {
+            if (filteredProducts.length > 0) {
                 sessionStorage.setItem('shop_prefetch', JSON.stringify({
                     categories: categoryResult.data || [],
-                    products: productResult.data,
-                    timestamp: Date.now()
+                    products: filteredProducts,
+                    timestamp: Date.now(),
+                    site: currentSite
                 }));
                 console.log('⚡ Shop prefetched');
             } else {

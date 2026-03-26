@@ -35,6 +35,110 @@ const ShopClient = {
     lastSkeletonCount: 6,
     staticUiBindingsBound: false,
 
+    getAccessToken: async function () {
+        const client = window.supabaseClient || supabaseClient;
+        const { data: { session } = {} } = await client.auth.getSession();
+        return session?.access_token || '';
+    },
+
+    filterProductsForCurrentSite: function (products) {
+        if (window.SiteConfig?.filterProductsForCurrentSite) {
+            return window.SiteConfig.filterProductsForCurrentSite(products);
+        }
+        return Array.isArray(products) ? products : [];
+    },
+
+    getProductPriceForCurrentSite: function (product) {
+        if (window.SiteConfig?.getProductPrice) {
+            return window.SiteConfig.getProductPrice(product);
+        }
+        const field = window.SiteConfig?.getPriceField?.() || 'price_points';
+        const rawValue = product?.[field];
+        return rawValue == null ? null : Number(rawValue);
+    },
+
+    getCurrentPurchaseSubtotal: function () {
+        return this.currentPurchase.quantity * this.currentPurchase.unitPrice;
+    },
+
+    calculateDiscountAmount: function (subtotal) {
+        const discountType = this.currentPurchase.discountType;
+        const discountValue = Number(this.currentPurchase.discountValue);
+        if (!discountType || !Number.isFinite(discountValue) || discountValue <= 0) {
+            return 0;
+        }
+
+        if (discountType === 'percent') {
+            return Math.max(0, subtotal - Math.floor(subtotal * (discountValue / 100)));
+        }
+
+        if (discountType === 'fixed') {
+            return Math.min(subtotal, discountValue);
+        }
+
+        return 0;
+    },
+
+    syncDiscountedTotal: function () {
+        const subtotal = this.getCurrentPurchaseSubtotal();
+        const discountAmount = this.calculateDiscountAmount(subtotal);
+        const finalTotal = Math.max(0, subtotal - discountAmount);
+        this.currentPurchase.discountAmount = discountAmount;
+        document.getElementById('modalTotalPrice').textContent = finalTotal;
+        return {
+            subtotal,
+            discountAmount,
+            finalTotal
+        };
+    },
+
+    setDiscountAppliedMessage: function (discountAmount) {
+        this.setDiscountMessage(
+            `<i class="fas fa-check-circle" aria-hidden="true"></i><span>${window.i18n?.t('shop.discountApplied') || '已抵扣'} ${discountAmount} ${window.i18n?.t('shop.points') || '积分'}</span>`,
+            { variant: 'success', html: true }
+        );
+    },
+
+    resetDiscountState: function ({ clearMessage = true } = {}) {
+        this.currentPurchase.discountCode = null;
+        this.currentPurchase.discountType = null;
+        this.currentPurchase.discountValue = null;
+        this.currentPurchase.discountAmount = 0;
+        document.getElementById('modalTotalPrice').textContent = this.getCurrentPurchaseSubtotal();
+        if (clearMessage) {
+            this.setDiscountMessage('');
+        }
+    },
+
+    validateDiscountWithServer: async function (discountCode) {
+        const token = await this.getAccessToken();
+        if (!token) {
+            throw new Error(window.i18n?.t('shop.loginRequired') || '请先登录');
+        }
+
+        const response = await fetch('/api/shop/validate-discount', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                productId: this.currentPurchase.productId,
+                quantity: this.currentPurchase.quantity,
+                discountCode,
+                agentId: this.currentAgentId,
+                site: window.SiteConfig?.site || 'cn'
+            })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.success === false) {
+            throw new Error(payload?.message || (window.i18n?.t('shop.verifyFailed') || '验证失败'));
+        }
+
+        return payload;
+    },
+
     init: async function () {
         console.log('🛍️ Shop Client Initialized');
         this.bindStaticUiHandlers();
@@ -98,13 +202,20 @@ const ShopClient = {
                     if (prefetchRaw) {
                         const prefetch = JSON.parse(prefetchRaw);
                         const age = Date.now() - prefetch.timestamp;
+                        const currentSite = window.SiteConfig?.site || 'cn';
                         // Only use prefetch if it actually contains products, otherwise ignore (Safari empty state bug)
-                        if (age < 300000 && prefetch.categories && prefetch.products && prefetch.products.length > 0) {
+                        if (
+                            age < 300000
+                            && prefetch.categories
+                            && prefetch.products
+                            && prefetch.products.length > 0
+                            && (!prefetch.site || prefetch.site === currentSite)
+                        ) {
                             sessionStorage.removeItem('shop_prefetch');
                             // Inject prefetched data into Cache for loadCategoryFilters / loadProducts to use
                             this._prefetchedCategories = prefetch.categories;
                             this.availableCategories = Array.isArray(prefetch.categories) ? prefetch.categories : [];
-                            this.hydrateProductCaches(prefetch.products);
+                            this.hydrateProductCaches(this.filterProductsForCurrentSite(prefetch.products));
                             usedPrefetch = true;
                             console.log(`⚡ Using prefetched shop data (${Math.round(age / 1000)}s old)`);
                         }
@@ -235,6 +346,9 @@ const ShopClient = {
         document.getElementById('purchaseDiscountCode')?.addEventListener('input', (event) => {
             if (!(event.target instanceof HTMLInputElement)) return;
             event.target.value = event.target.value.toUpperCase();
+            if (this.currentPurchase.discountCode && event.target.value.trim() !== this.currentPurchase.discountCode) {
+                this.resetDiscountState();
+            }
         });
 
         const successModal = document.getElementById('shopSuccessModal');
@@ -534,7 +648,7 @@ const ShopClient = {
 
         const result = await query;
         if (result.error) throw result.error;
-        return result.data || [];
+        return this.filterProductsForCurrentSite(result.data || []);
     },
 
     getProductsForCategory: async function (category, { forceRefresh = false } = {}) {
@@ -810,7 +924,10 @@ const ShopClient = {
                 const flashEnd = p.flash_sale_end ? new Date(p.flash_sale_end) : null;
                 let isFlashSale = flashEnd && flashEnd > nowTime && p.flash_sale_price != null;
 
-                let currentPrice = p[window.SiteConfig?.getPriceField() || 'price_points'] || p.price_points;
+                let currentPrice = this.getProductPriceForCurrentSite(p);
+                if (currentPrice == null) {
+                    return;
+                }
                 let originalPriceHtml = '';
                 let flashSaleBadge = '';
                 let flashShadowClass = '';
@@ -923,7 +1040,21 @@ const ShopClient = {
     },
 
     // State for the purchase modal
-    currentPurchase: { productId: null, productName: null, productNameEn: null, basePrice: 0, unitPrice: 0, quantity: 1, orderId: null, rules: [], discountCode: null, discountAmount: 0, purchaseNotes: '' },
+    currentPurchase: {
+        productId: null,
+        productName: null,
+        productNameEn: null,
+        basePrice: 0,
+        unitPrice: 0,
+        quantity: 1,
+        orderId: null,
+        rules: [],
+        discountCode: null,
+        discountType: null,
+        discountValue: null,
+        discountAmount: 0,
+        purchaseNotes: ''
+    },
 
     isPurchaseModalKeyboardDockEnabled: function () {
         const ua = navigator.userAgent || '';
@@ -1288,6 +1419,8 @@ const ShopClient = {
             orderId: null,
             rules: rules,
             discountCode: null,
+            discountType: null,
+            discountValue: null,
             discountAmount: 0,
             purchaseNotes: typeof purchaseNotes === 'string' ? purchaseNotes.trim() : ''
         };
@@ -1370,9 +1503,9 @@ const ShopClient = {
 
         let total = qty * unitPrice;
 
-        // Re-apply discount silently if exists
-        if (this.currentPurchase.discountCode) {
-            setTimeout(() => ShopClient.applyDiscount(true), 10);
+        if (this.currentPurchase.discountCode && this.currentPurchase.discountType) {
+            const { discountAmount } = this.syncDiscountedTotal();
+            this.setDiscountAppliedMessage(discountAmount);
         } else {
             document.getElementById('modalTotalPrice').textContent = total;
         }
@@ -1389,10 +1522,7 @@ const ShopClient = {
             if (!silent) {
                 this.setDiscountMessage(window.i18n?.t('shop.enterDiscountCode') || '请输入优惠码', { variant: 'error' });
             }
-            this.currentPurchase.discountCode = null;
-            this.currentPurchase.discountAmount = 0;
-            const subtotal = this.currentPurchase.quantity * this.currentPurchase.unitPrice;
-            document.getElementById('modalTotalPrice').textContent = subtotal;
+            this.resetDiscountState({ clearMessage: false });
             return;
         }
 
@@ -1402,41 +1532,16 @@ const ShopClient = {
         }
 
         try {
-            const { data, error } = await supabaseClient
-                .from('discount_codes')
-                .select('*')
-                .eq('code', codeInput)
-                .eq('is_active', true)
-                .single();
+            const validationPayload = await this.validateDiscountWithServer(codeInput);
+            const preview = validationPayload?.data || {};
 
-            if (error || !data) {
-                throw new Error(window.i18n?.t('shop.invalidCode') || '无效的优惠码');
-            }
+            this.currentPurchase.discountCode = String(preview.discount_code || codeInput).trim().toUpperCase();
+            this.currentPurchase.discountType = preview.discount_type || null;
+            this.currentPurchase.discountValue = preview.discount_value ?? null;
 
-            if (data.expires_at && new Date(data.expires_at) < new Date()) {
-                throw new Error(window.i18n?.t('shop.expiredCode') || '优惠码已过期');
-            }
+            const { discountAmount } = this.syncDiscountedTotal();
 
-            if (data.max_uses > 0 && data.used_count >= data.max_uses) {
-                throw new Error(window.i18n?.t('shop.codeLimitReached') || '优惠码使用次数已达上限');
-            }
-
-            this.currentPurchase.discountCode = data.code;
-            const subtotal = this.currentPurchase.quantity * this.currentPurchase.unitPrice;
-
-            if (data.discount_type === 'percent') {
-                this.currentPurchase.discountAmount = Math.floor(subtotal * (data.discount_value / 100));
-            } else {
-                this.currentPurchase.discountAmount = Math.min(subtotal, data.discount_value);
-            }
-
-            const finalTotal = Math.max(0, subtotal - this.currentPurchase.discountAmount);
-            document.getElementById('modalTotalPrice').textContent = finalTotal;
-
-            this.setDiscountMessage(
-                `<i class="fas fa-check-circle" aria-hidden="true"></i><span>${window.i18n?.t('shop.discountApplied') || '已抵扣'} ${this.currentPurchase.discountAmount} ${window.i18n?.t('shop.points') || '积分'}</span>`,
-                { variant: 'success', html: true }
-            );
+            this.setDiscountAppliedMessage(discountAmount);
 
         } catch (err) {
             if (!silent) {
@@ -1445,10 +1550,7 @@ const ShopClient = {
                     { variant: 'error', html: true }
                 );
             }
-            this.currentPurchase.discountCode = null;
-            this.currentPurchase.discountAmount = 0;
-            const subtotal = this.currentPurchase.quantity * this.currentPurchase.unitPrice;
-            document.getElementById('modalTotalPrice').textContent = subtotal;
+            this.resetDiscountState({ clearMessage: false });
         } finally {
             if (applyBtn && !silent) {
                 applyBtn.innerHTML = window.i18n?.t('shop.verify') || '验证';

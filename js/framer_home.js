@@ -622,9 +622,11 @@ const FramerHome = {
       }, 15);
 
       // Filter by category if needed
-      let filtered = allProducts;
+      let filtered = window.SiteConfig?.filterProductsForCurrentSite
+        ? window.SiteConfig.filterProductsForCurrentSite(allProducts)
+        : allProducts;
       if (config.category && config.category !== 'all') {
-        filtered = allProducts.filter(p => p.category === config.category);
+        filtered = filtered.filter(p => p.category === config.category);
       }
 
       // Randomly select 6 products
