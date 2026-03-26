@@ -14,6 +14,7 @@
 - [vercel-release-checklist.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/vercel-release-checklist.md)
 - [payment-ops-checklist.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/payment-ops-checklist.md)
 - [ops-alert-notification-matrix.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/ops-alert-notification-matrix.md)
+- [admin-studio-safe-rebuild-plan.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/admin-studio-safe-rebuild-plan.md)
 
 ## 1. 代码准备
 
