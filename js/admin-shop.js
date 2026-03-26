@@ -907,7 +907,7 @@ Example output format:
                 default:
                     break;
             }
-        });
+        }, true);
 
         document.addEventListener('submit', (event) => {
             const form = event.target instanceof HTMLFormElement ? event.target : null;
