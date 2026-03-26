@@ -250,7 +250,13 @@ test('ops alert health handler summarizes recent channel delivery health', async
                 channels: ['email'],
                 remaining_channels: [],
                 created_at: hoursAgo(4),
-                last_error: null
+                last_error: null,
+                alert_type: 'wallet_recharge_succeeded',
+                title: '充值成功',
+                payload: {
+                    buyer_label: '林白',
+                    user_id: 'user_demo_buyer_001'
+                }
             }
         ],
         attempts: [
@@ -290,6 +296,9 @@ test('ops alert health handler summarizes recent channel delivery health', async
         assert.equal(payload.summary.total_attempt_count, 3);
         assert.equal(payload.summary.delivered_count, 1);
         assert.equal(payload.summary.failed_count, 2);
+        assert.equal(payload.summary.recent_deliveries.length, 1);
+        assert.equal(payload.summary.recent_deliveries[0].alert_type, 'wallet_recharge_succeeded');
+        assert.equal(payload.summary.recent_deliveries[0].target_summary, '林白');
 
         const telegram = payload.channels.find((channel) => channel.key === 'telegram');
         const feishu = payload.channels.find((channel) => channel.key === 'feishu');
@@ -309,6 +318,8 @@ test('ops alert health handler summarizes recent channel delivery health', async
         assert.equal(email.recipient_preview, 'ops@example.com');
         assert.equal(email.from_address, 'alerts@example.com');
         assert.equal(email.subject_prefix, '[Zaoyoe告警]');
+        assert.equal(email.recent_deliveries.length, 1);
+        assert.equal(email.recent_deliveries[0].title, '充值成功');
     });
 });
 

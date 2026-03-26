@@ -74,7 +74,7 @@ async function fetchPagedRows(buildQuery, pageSize = OPS_ALERT_HEALTH_PAGE_SIZE,
 async function fetchRecentJobs(supabase, sinceIso) {
     return fetchPagedRows(() => supabase
         .from('ops_alert_jobs')
-        .select('id, status, channels, remaining_channels, created_at, last_error')
+        .select('id, status, channels, remaining_channels, created_at, last_error, alert_type, title, payload')
         .gte('created_at', sinceIso)
         .order('created_at', { ascending: false }));
 }
@@ -152,6 +152,57 @@ function buildEmailRecipientPreview(config = {}) {
         : preview;
 }
 
+function buildRecentDeliveryTarget(job = {}) {
+    const payload = job && typeof job.payload === 'object' && job.payload
+        ? job.payload
+        : {};
+    const alertType = normalizeText(job.alert_type, 80).toLowerCase();
+
+    if (alertType === 'customer_chat_message_received') {
+        return normalizeText(payload.sender_label || payload.user_id || payload.session_id, 120);
+    }
+
+    if (alertType === 'shop_purchase_succeeded') {
+        return normalizeText(payload.buyer_label || payload.user_id || payload.order_id, 120);
+    }
+
+    if (alertType === 'wallet_recharge_succeeded') {
+        return normalizeText(payload.buyer_label || payload.user_id || payload.payment_order_id, 120);
+    }
+
+    return normalizeText(
+        payload.buyer_label
+        || payload.sender_label
+        || payload.user_id
+        || payload.order_id
+        || payload.payment_order_id
+        || payload.target_id,
+        120
+    );
+}
+
+function buildRecentDeliveryEntries(jobs = [], attempts = [], limit = 5) {
+    const jobsById = new Map(
+        (Array.isArray(jobs) ? jobs : []).map((job) => [normalizeText(job.id, 120), job])
+    );
+
+    return (Array.isArray(attempts) ? attempts : [])
+        .filter((attempt) => normalizeText(attempt.status, 80).toLowerCase() === 'delivered')
+        .map((attempt) => {
+            const job = jobsById.get(normalizeText(attempt.job_id, 120)) || {};
+            return {
+                job_id: normalizeText(attempt.job_id, 120),
+                channel: normalizeText(attempt.channel, 40).toLowerCase(),
+                alert_type: normalizeText(job.alert_type, 120).toLowerCase(),
+                title: normalizeText(job.title, 160) || normalizeText(job.alert_type, 120) || '系统告警',
+                target_summary: buildRecentDeliveryTarget(job),
+                created_at: normalizeText(attempt.created_at || job.created_at, 80) || ''
+            };
+        })
+        .sort((left, right) => compareValue(right.created_at, left.created_at))
+        .slice(0, Math.max(0, limit));
+}
+
 function buildChannelStatus(channelKey, config = {}, secretStatus = {}, jobs = [], attempts = []) {
     const enabled = config.enabled === true;
     const configured = secretStatus.configured === true;
@@ -173,6 +224,7 @@ function buildChannelStatus(channelKey, config = {}, secretStatus = {}, jobs = [
     const lastAttemptAt = attempts[0]?.created_at || '';
     const lastFailureAt = attempts.find((attempt) => normalizeText(attempt.status, 80).toLowerCase() !== 'delivered')?.created_at || '';
     const recentErrors = groupRecentErrors(attempts);
+    const recentDeliveries = buildRecentDeliveryEntries(jobs, attempts, 3);
     const lastError = recentErrors[0]?.message
         || jobs.find((job) => normalizeText(job.last_error, 400))?.last_error
         || '';
@@ -220,6 +272,7 @@ function buildChannelStatus(channelKey, config = {}, secretStatus = {}, jobs = [
         last_failure_at: normalizeText(lastFailureAt, 80) || null,
         last_error: normalizeText(lastError, 500) || '',
         recent_errors: recentErrors,
+        recent_deliveries: recentDeliveries,
         recipient_preview: channelKey === 'email' ? buildEmailRecipientPreview(config) : '',
         from_address: channelKey === 'email' ? normalizeText(config.from_address, 200) : '',
         reply_to: channelKey === 'email' ? normalizeText(config.reply_to, 200) : '',
@@ -275,7 +328,8 @@ module.exports = async (req, res) => {
             delivered_count: channels.reduce((sum, channel) => sum + Number(channel.delivered_count || 0), 0),
             failed_count: channels.reduce((sum, channel) => sum + Number(channel.failed_count || 0), 0),
             dead_letter_count: channels.reduce((sum, channel) => sum + Number(channel.dead_letter_count || 0), 0),
-            enabled_channel_count: channels.filter((channel) => channel.enabled).length
+            enabled_channel_count: channels.filter((channel) => channel.enabled).length,
+            recent_deliveries: buildRecentDeliveryEntries(jobs, attempts, 5)
         };
 
         return sendJson(res, 200, {

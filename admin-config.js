@@ -2029,6 +2029,10 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
         recentBody = healthState.message || '加载站外告警通道健康状态失败。';
     } else if (healthState.status === 'ready') {
         const lookbackHours = formatVerifyMonitorInteger(summary.lookback_hours || 0);
+        const recentDeliverySummary = buildOpsAlertRecentDeliverySummary(summary.recent_deliveries, {
+            limit: 3,
+            includeChannel: true
+        });
         if (Number(summary.total_attempt_count || 0) > 0) {
             if (Number(summary.dead_letter_count || 0) > 0) {
                 recentTone = 'danger';
@@ -2038,7 +2042,7 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
                 recentTone = 'success';
             }
             recentTitle = `近 ${lookbackHours} 小时`;
-            recentBody = `送达 ${formatVerifyMonitorInteger(summary.delivered_count || 0)} 次，失败 ${formatVerifyMonitorInteger(summary.failed_count || 0)} 次，死信 ${formatVerifyMonitorInteger(summary.dead_letter_count || 0)} 项。${healthState.fetched_at ? ` 刷新于 ${formatVerifyMonitorDateTime(healthState.fetched_at)}。` : ''}`;
+            recentBody = `送达 ${formatVerifyMonitorInteger(summary.delivered_count || 0)} 次，失败 ${formatVerifyMonitorInteger(summary.failed_count || 0)} 次，死信 ${formatVerifyMonitorInteger(summary.dead_letter_count || 0)} 项。${recentDeliverySummary ? ` 最近投递：${recentDeliverySummary}。` : ''}${healthState.fetched_at ? ` 刷新于 ${formatVerifyMonitorDateTime(healthState.fetched_at)}。` : ''}`;
         } else if (Array.isArray(healthState.channels) && healthState.channels.length > 0) {
             recentTitle = `近 ${lookbackHours} 小时`;
             recentBody = '最近没有新的站外投递记录，但通道健康信息已经刷新。';
@@ -2055,6 +2059,30 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
         recentTitle,
         recentBody
     );
+}
+
+function buildOpsAlertRecentDeliverySummary(items = [], options = {}) {
+    const limit = Number.isFinite(Number(options.limit)) ? Math.max(1, Number(options.limit)) : 2;
+    const includeChannel = options.includeChannel === true;
+    const normalizedItems = Array.isArray(items) ? items : [];
+
+    return normalizedItems
+        .slice(0, limit)
+        .map((item) => {
+            const title = String(item?.title || item?.alert_type || '系统告警').trim();
+            const target = String(item?.target_summary || '').trim();
+            const channel = includeChannel ? String(item?.channel || '').trim() : '';
+            const parts = [title];
+            if (target) {
+                parts.push(`(${target})`);
+            }
+            if (channel) {
+                parts.push(`· ${channel}`);
+            }
+            return parts.join(' ');
+        })
+        .filter(Boolean)
+        .join('；');
 }
 
 function setOpsAlertHealthCardTone(card, tone = 'neutral') {
@@ -2149,17 +2177,25 @@ function getOpsAlertHealthConfigDetails(channel = {}) {
         if (channel.reply_to) {
             details.push({ label: 'Reply-To', value: channel.reply_to });
         }
+    }
 
-        if (channel.subject_prefix) {
-            details.push({ label: '主题前缀', value: channel.subject_prefix });
-        }
+    const recentDeliverySummary = buildOpsAlertRecentDeliverySummary(channel.recent_deliveries, {
+        limit: 2,
+        includeChannel: false
+    });
+    if (recentDeliverySummary) {
+        details.push({ label: '最近类型', value: recentDeliverySummary });
+    }
+
+    if (channel.subject_prefix) {
+        details.push({ label: '主题前缀', value: channel.subject_prefix });
     }
 
     if (channel.last_attempt_at) {
         details.push({ label: '最近投递', value: formatVerifyMonitorDateTime(channel.last_attempt_at) });
     }
 
-    return details.slice(0, 4);
+    return details.slice(0, 5);
 }
 
 function buildOpsAlertHealthConfigMarkup(channel = {}) {
