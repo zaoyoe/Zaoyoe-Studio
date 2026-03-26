@@ -103,6 +103,98 @@
         return document.getElementById(`module-${requestedModule}`) ? requestedModule : 'gallery';
     }
 
+    function bindAdminStudioStaticFallbackControls() {
+        if (document.documentElement.dataset.adminStudioFallbackControlsBound === '1') {
+            return;
+        }
+
+        document.documentElement.dataset.adminStudioFallbackControlsBound = '1';
+
+        const bindClick = (selector, handler) => {
+            document.querySelectorAll(selector).forEach((element) => {
+                element.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    handler(element, event);
+                });
+            });
+        };
+
+        bindClick('[data-admin-action="discounts-open-generate-modal"]', () => {
+            window.AdminDiscounts?.openGenerateModal?.();
+        });
+
+        bindClick('[data-admin-action="discounts-close-generate-modal"]', () => {
+            window.AdminDiscounts?.closeGenerateModal?.();
+        });
+
+        bindClick('[data-admin-action="discounts-submit-generate"]', async () => {
+            await window.AdminDiscounts?.submitGenerate?.();
+        });
+
+        bindClick('[data-admin-action="tickets-close-reply-modal"]', () => {
+            window.AdminTickets?.closeReplyModal?.();
+        });
+
+        bindClick('[data-admin-action="tickets-submit-reply"]', async () => {
+            await window.AdminTickets?.submitReply?.();
+        });
+
+        bindClick('[data-admin-action="analytics-open-experiment-modal"]', () => {
+            window.openExperimentModal?.();
+        });
+
+        bindClick('[data-admin-action="analytics-close-experiment-modal"]', () => {
+            window.closeExperimentModal?.();
+        });
+
+        bindClick('[data-admin-action="settings-open-ops-alert-workspace"]', (element) => {
+            window.openOpsAlertWorkspace?.(element.dataset.workspaceTarget, {
+                alertType: element.dataset.workspaceAlertType,
+                category: element.dataset.workspaceCategory,
+                referenceLabel: element.dataset.workspaceReferenceLabel,
+                referenceValue: element.dataset.workspaceReferenceValue,
+                targetId: element.dataset.workspaceTargetId
+            });
+        });
+
+        const bindSubmit = (formId, handler) => {
+            const form = document.getElementById(formId);
+            if (!form) {
+                return;
+            }
+
+            form.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                await handler(event);
+            });
+        };
+
+        bindSubmit('discountGenerateForm', async () => {
+            await window.AdminDiscounts?.submitGenerate?.();
+        });
+
+        bindSubmit('ticketReplyForm', async () => {
+            await window.AdminTickets?.submitReply?.();
+        });
+
+        bindSubmit('experimentForm', async (event) => {
+            await window.handleCreateExperiment?.(event);
+        });
+
+        const discountOverlay = document.getElementById('discountGenerateModal');
+        if (discountOverlay) {
+            discountOverlay.addEventListener('click', (event) => {
+                if (event.target === discountOverlay) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    window.AdminDiscounts?.closeGenerateModal?.();
+                }
+            });
+        }
+    }
+
     function switchModule(moduleName) {
         const switched = baseSwitchModule(moduleName);
         if (!switched) {
@@ -130,6 +222,7 @@
     window.syncAdminStudioModuleUrl = syncAdminStudioModuleUrl;
     window.restoreAdminStudioModuleFromUrl = restoreAdminStudioModuleFromUrl;
     window.switchModule = switchModule;
+    bindAdminStudioStaticFallbackControls();
 
     document.addEventListener('click', (event) => {
         const dropdown = document.getElementById('discountTypeDropdown');

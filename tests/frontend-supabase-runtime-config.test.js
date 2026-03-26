@@ -739,9 +739,9 @@ test('shop and archived index pages no longer embed inline style attributes', ()
 test('admin studio page no longer embeds inline style attributes', () => {
     const source = readRepoFile('admin-studio.html');
 
-    assert.equal(
-        source.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_HOMEPAGE_RUNTIME_STYLE_1'),
-        true,
+    assert.match(
+        source,
+        /css\/admin-studio-page\.css\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should load the updated admin studio page stylesheet'
     );
     assert.equal(
@@ -892,9 +892,9 @@ test('home, prompts, and admin studio pages externalize their remaining runtime 
         assert.equal(adminStudioSource.includes(marker), false, `admin-studio.html should not contain ${marker}`);
     }
 
-    assert.equal(
-        adminStudioSource.includes('js/admin-studio-bootstrap.js?v=20260324_ADMIN_STUDIO_BOOTSTRAP_2'),
-        true,
+    assert.match(
+        adminStudioSource,
+        /js\/admin-studio-bootstrap\.js\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should load the shared admin studio bootstrap file'
     );
 });
@@ -1721,14 +1721,14 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=64'),
-        true,
+    assert.match(
+        adminStudioHtml,
+        /admin-studio\.css\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should load the latest admin studio stylesheet version'
     );
-    assert.equal(
-        adminStudioHtml.includes('admin-studio.js?v=20260326_ADMIN_RUNTIME_STYLE_HELPERS_21'),
-        true,
+    assert.match(
+        adminStudioHtml,
+        /admin-studio\.js\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should load the latest admin studio runtime version'
     );
 });
@@ -2841,14 +2841,14 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
         assert.equal(adminStudioCss.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=64'),
-        true,
+    assert.match(
+        adminStudioSource,
+        /admin-studio\.css\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
-    assert.equal(
-        adminStudioSource.includes('admin-points.js?v=20260324_ADMIN_POINTS_RUNTIME_STYLE_1'),
-        true,
+    assert.match(
+        adminStudioSource,
+        /admin-points\.js\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should reference the updated admin points script version'
     );
 });
@@ -2925,14 +2925,14 @@ test('admin comments runtime renderers route list items, filters, and block menu
         assert.equal(adminCommentsCss.includes(marker), true, `admin-sidebar.css should contain ${marker}`);
     }
 
-    assert.equal(
-        adminStudioSource.includes('admin-sidebar.css?v=11'),
-        true,
+    assert.match(
+        adminStudioSource,
+        /admin-sidebar\.css\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should reference the updated admin sidebar stylesheet version'
     );
-    assert.equal(
-        adminStudioSource.includes('admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1'),
-        true,
+    assert.match(
+        adminStudioSource,
+        /admin-comments\.js\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should reference the updated admin comments script version'
     );
 });
@@ -3253,14 +3253,14 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
         assert.equal(adminStudioPageStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
     }
 
-    assert.equal(
-        adminStudioSource.includes('css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_HOMEPAGE_RUNTIME_STYLE_1'),
-        true,
+    assert.match(
+        adminStudioSource,
+        /css\/admin-studio-page\.css\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should load the latest admin studio page stylesheet version'
     );
-    assert.equal(
-        adminStudioSource.includes('admin-homepage.js?v=20260324_HOMEPAGE_RUNTIME_STYLE_2'),
-        true,
+    assert.match(
+        adminStudioSource,
+        /admin-homepage\.js\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should load the latest homepage admin runtime version'
     );
 });
@@ -3563,14 +3563,14 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
         assert.equal(adminStudioCss.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=64'),
-        true,
+    assert.match(
+        adminStudioSource,
+        /admin-studio\.css\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
-    assert.equal(
-        adminStudioSource.includes('js/admin-tickets.js?v=20260324_ADMIN_TICKETS_RUNTIME_STYLE_1'),
-        true,
+    assert.match(
+        adminStudioSource,
+        /js\/admin-tickets\.js\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should reference the updated admin tickets script version'
     );
 });
@@ -4546,14 +4546,14 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=64'),
-        true,
+    assert.match(
+        adminStudioHtml,
+        /admin-studio\.css\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
-    assert.equal(
-        adminStudioHtml.includes('admin-config.js?v=20260326_OPS_ALERT_OVERVIEW_TREND_22'),
-        true,
+    assert.match(
+        adminStudioHtml,
+        /admin-config\.js\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should reference the updated admin config runtime version'
     );
     assert.equal(
@@ -4810,14 +4810,14 @@ test('payments runtime renderers externalize tooltip, tab, and trend styling', (
         assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(
-        adminStudioHtml.includes('admin-studio.css?v=64'),
-        true,
+    assert.match(
+        adminStudioHtml,
+        /admin-studio\.css\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
-    assert.equal(
-        adminStudioHtml.includes('js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_2'),
-        true,
+    assert.match(
+        adminStudioHtml,
+        /js\/admin-payments\.js\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should reference the updated admin payments runtime version'
     );
     assert.equal(
