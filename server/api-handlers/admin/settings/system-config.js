@@ -82,7 +82,7 @@ module.exports = async function systemConfigHandler(req, res) {
     try {
         const method = String(req.method || 'GET').toUpperCase();
         const { user, supabase, adminSupabase } = await requireAdmin(req);
-        const db = adminSupabase || supabase;
+        const db = supabase || adminSupabase;
 
         if (method === 'GET') {
             const { data, error } = await db

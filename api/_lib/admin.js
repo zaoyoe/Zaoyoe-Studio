@@ -265,7 +265,7 @@ async function requireAdmin(req) {
         : null;
     const hasServiceRole = Boolean(getSupabaseServiceRoleKey());
     const adminSupabase = hasServiceRole ? getSupabaseAdmin() : null;
-    const supabase = adminSupabase || requestClient;
+    const supabase = requestClient || adminSupabase;
     const permissionClient = requestClient || adminSupabase;
     let activeRoles = [];
 
