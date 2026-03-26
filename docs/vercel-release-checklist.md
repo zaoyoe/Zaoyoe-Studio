@@ -8,6 +8,9 @@
 如果这次是“第一阶段正式收官”发布，先配合看：
 
 - [stage-one-launch-checklist.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/stage-one-launch-checklist.md)
+- [admin-studio-safe-rebuild-plan.md](/Volumes/chao/AI/xianyu_profit_calculator/docs/admin-studio-safe-rebuild-plan.md)
+
+如果你接下来要从稳定快照重新逐步引回后台能力，再配合看上面的 `Admin Studio` 重建顺序表。
 
 ## 1. 当前分支策略
 
