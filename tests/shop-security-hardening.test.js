@@ -75,6 +75,37 @@ test('shop migration restores site-aware pricing, balance isolation, and secure 
     );
 });
 
+test('follow-up shop hardening adds a server-side quantity cap and removes direct ledger update grants', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260326_harden_shop_quantity_cap_and_ledger_update_grants.sql'));
+    const walletModalSource = readRepoFile(path.join('js', 'components', 'WalletModal.js'));
+
+    assert.match(
+        migrationSql,
+        /v_max_quantity INT := 99;/,
+        'follow-up hardening migration should define an explicit server-side purchase quantity cap'
+    );
+    assert.match(
+        migrationSql,
+        /IF p_quantity > v_max_quantity THEN\s+RETURN jsonb_build_object\('success', false, 'message', '单次购买数量不能超过' \|\| v_max_quantity\);/s,
+        'shop purchase and discount validation RPCs should reject oversized quantities on the server'
+    );
+    assert.match(
+        walletModalSource,
+        /rpc\('fn_clear_user_history'\)/,
+        'wallet history clearing should continue to go through the controlled RPC'
+    );
+    assert.match(
+        migrationSql,
+        /CREATE OR REPLACE FUNCTION public\.fn_clear_user_history\(\)\s+RETURNS INTEGER\s+LANGUAGE plpgsql\s+SECURITY DEFINER\s+SET search_path = public, pg_temp/s,
+        'history clearing should remain behind a SECURITY DEFINER function with a fixed search_path'
+    );
+    assert.match(
+        migrationSql,
+        /REVOKE UPDATE ON public\.points_ledger FROM authenticated;/,
+        'authenticated users should no longer keep blanket UPDATE access on points_ledger'
+    );
+});
+
 test('site-aware product filtering and admin discount semantics stay aligned in the frontend', () => {
     const siteConfigSource = readRepoFile(path.join('js', 'site-config.js'));
     const indexBootstrapSource = readRepoFile(path.join('js', 'index-home-bootstrap.js'));
