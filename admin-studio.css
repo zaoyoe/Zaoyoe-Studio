@@ -2996,6 +2996,7 @@ body {
 }
 
 .admin-discount-generate-modal.is-visible {
+    display: flex;
     opacity: 1;
     visibility: visible;
     pointer-events: auto;

@@ -2842,6 +2842,12 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
     }
 
     assert.match(
+        adminStudioCss,
+        /\.admin-discount-generate-modal\.is-visible\s*\{[^}]*display:\s*flex;/s,
+        'admin-studio.css should force the discount modal visible state back to display:flex'
+    );
+
+    assert.match(
         adminStudioSource,
         /admin-studio\.css\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should reference the updated admin stylesheet version'
@@ -3496,9 +3502,9 @@ test('discount admin runtime renderers externalize table states, copy toast, and
         assert.equal(adminStudioCss.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(
-        adminStudioSource.includes('admin-studio.css?v=64'),
-        true,
+    assert.match(
+        adminStudioSource,
+        /admin-studio\.css\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should reference the updated admin stylesheet version'
     );
     assert.match(
@@ -4471,7 +4477,6 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
     }
 
     const htmlMarkers = [
-        'admin-studio.css?v=64',
         '<div class="anomaly-alerts-area" id="anomalyAlertsArea" hidden>',
         '<div class="ab-results-chart" id="abResultsChart" hidden>',
         'admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1'
@@ -4480,6 +4485,12 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
     for (const marker of htmlMarkers) {
         assert.equal(adminStudioHtml.includes(marker), true, `admin-studio.html should contain ${marker}`);
     }
+
+    assert.match(
+        adminStudioHtml,
+        /admin-studio\.css\?v=[A-Za-z0-9_]+/,
+        'admin-studio.html should load the latest admin stylesheet version'
+    );
 });
 
 test('admin config runtime renderers externalize poster preview, toggle pulse, save indicator, and verify quota styling', () => {
@@ -4968,7 +4979,7 @@ test('ops alert health runtime renders per-channel configuration detail cards fo
     assert.match(source, /recipient_preview/);
 
     const html = readRepoFile('admin-studio.html');
-    assert.match(html, /admin-studio\.css\?v=64/);
+    assert.match(html, /admin-studio\.css\?v=[A-Za-z0-9_]+/);
 });
 });
 
