@@ -3524,6 +3524,10 @@ Example output format:
             document.getElementById('prodDesc').value = '';
             document.getElementById('prodSort').value = '0';
             document.getElementById('prodMaxPurchaseQuantity').value = '';
+            document.getElementById('prodPurchaseLimit24hQuantity').value = '';
+            document.getElementById('prodPurchaseLimitWindowQuantity').value = '';
+            document.getElementById('prodPurchaseLimitWindowMinutes').value = '';
+            document.getElementById('prodPerAccountPurchaseLimit').value = '';
 
             document.getElementById('prodSort').value = '0';
 
@@ -3576,6 +3580,18 @@ Example output format:
             document.getElementById('prodSort').value = Number.isFinite(sortValue) ? sortValue : 0;
             document.getElementById('prodMaxPurchaseQuantity').value = data.max_purchase_quantity != null
                 ? data.max_purchase_quantity
+                : '';
+            document.getElementById('prodPurchaseLimit24hQuantity').value = data.purchase_limit_24h_quantity != null
+                ? data.purchase_limit_24h_quantity
+                : '';
+            document.getElementById('prodPurchaseLimitWindowQuantity').value = data.purchase_limit_window_quantity != null
+                ? data.purchase_limit_window_quantity
+                : '';
+            document.getElementById('prodPurchaseLimitWindowMinutes').value = data.purchase_limit_window_minutes != null
+                ? data.purchase_limit_window_minutes
+                : '';
+            document.getElementById('prodPerAccountPurchaseLimit').value = data.per_account_purchase_limit != null
+                ? data.per_account_purchase_limit
                 : '';
 
             // Populate marketing fields (Phase 2)
@@ -3676,7 +3692,15 @@ Example output format:
             const parsedSort = Number.parseInt(sortInput, 10);
             const normalizedSort = Number.isFinite(parsedSort) ? parsedSort : 0;
             const maxPurchaseQuantityRaw = (document.getElementById('prodMaxPurchaseQuantity').value || '').trim();
+            const purchaseLimit24hQuantityRaw = (document.getElementById('prodPurchaseLimit24hQuantity').value || '').trim();
+            const purchaseLimitWindowQuantityRaw = (document.getElementById('prodPurchaseLimitWindowQuantity').value || '').trim();
+            const purchaseLimitWindowMinutesRaw = (document.getElementById('prodPurchaseLimitWindowMinutes').value || '').trim();
+            const perAccountPurchaseLimitRaw = (document.getElementById('prodPerAccountPurchaseLimit').value || '').trim();
             let normalizedMaxPurchaseQuantity = null;
+            let normalizedPurchaseLimit24hQuantity = null;
+            let normalizedPurchaseLimitWindowQuantity = null;
+            let normalizedPurchaseLimitWindowMinutes = null;
+            let normalizedPerAccountPurchaseLimit = null;
             const deliveryTypeValue = document.getElementById('prodDeliveryType').value;
             const normalizedDeliveryType = deliveryTypeValue === 'API' ? 'API' : 'KEY';
             if (window.AdminRichTextEditor?.syncHiddenInput) {
@@ -3693,6 +3717,19 @@ Example output format:
 
             document.getElementById('prodSort').value = String(normalizedSort);
 
+            const parseOptionalPositiveInteger = (rawValue, label) => {
+                if (rawValue === '') {
+                    return null;
+                }
+
+                const parsedValue = Number.parseInt(rawValue, 10);
+                if (!Number.isFinite(parsedValue) || parsedValue < 1) {
+                    throw new Error(`${label}必须是大于 0 的整数`);
+                }
+
+                return parsedValue;
+            };
+
             if (maxPurchaseQuantityRaw !== '') {
                 const parsedMaxPurchaseQuantity = Number.parseInt(maxPurchaseQuantityRaw, 10);
                 if (!Number.isFinite(parsedMaxPurchaseQuantity) || parsedMaxPurchaseQuantity < 1 || parsedMaxPurchaseQuantity > 99) {
@@ -3702,9 +3739,36 @@ Example output format:
                 normalizedMaxPurchaseQuantity = parsedMaxPurchaseQuantity;
             }
 
+            try {
+                normalizedPurchaseLimit24hQuantity = parseOptionalPositiveInteger(purchaseLimit24hQuantityRaw, '24小时累计上限');
+                normalizedPerAccountPurchaseLimit = parseOptionalPositiveInteger(perAccountPurchaseLimitRaw, '每账号仅限购数量');
+
+                if ((purchaseLimitWindowQuantityRaw === '') !== (purchaseLimitWindowMinutesRaw === '')) {
+                    throw new Error('请同时填写 N 分钟累计上限和 N 分钟');
+                }
+
+                normalizedPurchaseLimitWindowQuantity = parseOptionalPositiveInteger(purchaseLimitWindowQuantityRaw, 'N分钟累计上限');
+                normalizedPurchaseLimitWindowMinutes = parseOptionalPositiveInteger(purchaseLimitWindowMinutesRaw, 'N分钟');
+            } catch (validationError) {
+                alert(validationError.message || '限购配置格式错误');
+                return;
+            }
+
             document.getElementById('prodMaxPurchaseQuantity').value = normalizedMaxPurchaseQuantity == null
                 ? ''
                 : String(normalizedMaxPurchaseQuantity);
+            document.getElementById('prodPurchaseLimit24hQuantity').value = normalizedPurchaseLimit24hQuantity == null
+                ? ''
+                : String(normalizedPurchaseLimit24hQuantity);
+            document.getElementById('prodPurchaseLimitWindowQuantity').value = normalizedPurchaseLimitWindowQuantity == null
+                ? ''
+                : String(normalizedPurchaseLimitWindowQuantity);
+            document.getElementById('prodPurchaseLimitWindowMinutes').value = normalizedPurchaseLimitWindowMinutes == null
+                ? ''
+                : String(normalizedPurchaseLimitWindowMinutes);
+            document.getElementById('prodPerAccountPurchaseLimit').value = normalizedPerAccountPurchaseLimit == null
+                ? ''
+                : String(normalizedPerAccountPurchaseLimit);
 
             if (this.purchaseNotesSchemaAvailable === false && (showPurchaseNotes || normalizedPurchaseNotes)) {
                 alert('保存失败：当前 Supabase 数据库还没有“注意事项”字段。请先执行 `supabase/add_purchase_notes.sql`，再保存商品。');
@@ -3719,6 +3783,10 @@ Example output format:
                 category: document.getElementById('prodCategory').value,
                 display_order: normalizedSort,
                 max_purchase_quantity: normalizedMaxPurchaseQuantity,
+                purchase_limit_24h_quantity: normalizedPurchaseLimit24hQuantity,
+                purchase_limit_window_quantity: normalizedPurchaseLimitWindowQuantity,
+                purchase_limit_window_minutes: normalizedPurchaseLimitWindowMinutes,
+                per_account_purchase_limit: normalizedPerAccountPurchaseLimit,
                 show_usage_instructions: showUsageInstructions,
                 usage_instructions: showUsageInstructions ? (normalizedUsageInstructions || null) : null,
                 delivery_type: normalizedDeliveryType,

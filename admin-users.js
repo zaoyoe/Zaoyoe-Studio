@@ -1933,6 +1933,8 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
     const fullEmail = user.email || 'Not available';
     const registrationLocation = user.registration_location || '未记录';
     const registrationLocationTitle = user.registration_location_title || '';
+    const isLockedSuperAdmin = ['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(user.email);
+    const permissionList = Array.isArray(roleInfo.permissions) ? roleInfo.permissions : [];
 
     // Format ban details for tooltip
     let banTooltip = '账号已封禁';
@@ -2038,7 +2040,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                     <div class="admin-control-icon"><i class="fas fa-user-shield"></i></div>
                     <span class="admin-control-title">权限</span>
                 </div>
-                ${['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(user.email) ?
+                ${isLockedSuperAdmin ?
                 '<div class="super-admin-badge">⭐ 超管</div>' :
                 `<label class="toggle-switch admin-switch-reset">
                         <input type="checkbox" id="modalAdminToggle" ${roleInfo.is_admin ? 'checked' : ''} 
@@ -2049,36 +2051,54 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
             }
             </div>
             
-            ${!['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(user.email) ? `
-                <div class="modal-permissions-panel modal-permissions-panel--flush" id="modalPermissionsPanel"${roleInfo.is_admin ? '' : ' hidden'}>
-                    <div class="perm-checkboxes">
+            <div class="modal-permissions-panel modal-permissions-panel--flush" id="modalPermissionsPanel">
+                ${!isLockedSuperAdmin ? `
+                    <div class="perm-section" id="modalAdminPermissionsSection"${roleInfo.is_admin ? '' : ' hidden'}>
+                        <div class="perm-section-title">后台权限</div>
+                        <div class="perm-checkboxes">
                         <label class="perm-item">
-                            <input type="checkbox" data-perm="content.moderate" ${roleInfo.permissions?.includes('content.moderate') ? 'checked' : ''}>
+                            <input type="checkbox" data-perm="content.moderate" ${permissionList.includes('content.moderate') ? 'checked' : ''}>
                             <span>📝 内容审核</span>
                         </label>
                         <label class="perm-item">
-                            <input type="checkbox" data-perm="users.manage" ${roleInfo.permissions?.includes('users.manage') ? 'checked' : ''}>
+                            <input type="checkbox" data-perm="users.manage" ${permissionList.includes('users.manage') ? 'checked' : ''}>
                             <span>👥 用户管理</span>
                         </label>
                         <label class="perm-item">
-                            <input type="checkbox" data-perm="prompts.manage" ${roleInfo.permissions?.includes('prompts.manage') ? 'checked' : ''}>
+                            <input type="checkbox" data-perm="prompts.manage" ${permissionList.includes('prompts.manage') ? 'checked' : ''}>
                             <span>🎨 Prompt 管理</span>
                         </label>
                         <label class="perm-item">
-                            <input type="checkbox" data-perm="analytics.view" ${roleInfo.permissions?.includes('analytics.view') ? 'checked' : ''}>
+                            <input type="checkbox" data-perm="analytics.view" ${permissionList.includes('analytics.view') ? 'checked' : ''}>
                             <span>📊 数据分析</span>
                         </label>
                     </div>
-                    <div class="perm-expiry">
-                        <label>到期时间</label>
-                        <input type="text" id="modalRoleExpiry" placeholder="日期和时间"
-                            data-initial-value="${roleInfo.expires_at || ''}">
+                        <div class="perm-expiry">
+                            <label>到期时间</label>
+                            <input type="text" id="modalRoleExpiry" placeholder="日期和时间"
+                                data-initial-value="${roleInfo.expires_at || ''}">
+                        </div>
                     </div>
-                    <button class="perm-save-btn" type="button" data-admin-action="users-save-modal-admin-permissions" data-user-id="${encodeURIComponent(user.id)}">
-                        <i class="fas fa-save"></i> 保存权限
-                    </button>
+                ` : `
+                    <div class="perm-section">
+                        <div class="perm-section-title">后台权限</div>
+                        <div class="perm-help">该账号为内置超管，后台角色与到期时间不在此弹窗内修改。</div>
+                    </div>
+                `}
+
+                <div class="perm-section">
+                    <div class="perm-section-title">商城购买</div>
+                    <label class="perm-item">
+                        <input type="checkbox" id="modalUnlimitedPurchasesToggle" ${roleInfo.unlimited_shop_purchases ? 'checked' : ''}>
+                        <span>🛒 无限制购买</span>
+                    </label>
+                    <div class="perm-help">勾选后，该用户可跳过商城单次限购、24 小时累计限购、N 分钟累计限购和每账号限购。</div>
                 </div>
-            ` : ''}
+
+                <button class="perm-save-btn" type="button" data-admin-action="users-save-modal-admin-permissions" data-user-id="${encodeURIComponent(user.id)}">
+                    <i class="fas fa-save"></i> 保存权限
+                </button>
+            </div>
         </div>
         ` : ''
         }
@@ -2122,9 +2142,9 @@ function toggleModalDropdown(dropdownId) {
 
 // Handle admin toggle in modal
 function handleModalAdminToggle(userId, isEnabled) {
-    const panel = document.getElementById('modalPermissionsPanel');
-    if (panel) {
-        panel.hidden = !isEnabled;
+    const adminSection = document.getElementById('modalAdminPermissionsSection');
+    if (adminSection) {
+        adminSection.hidden = !isEnabled;
     }
     toggleAdminRole(userId, isEnabled);
 }
@@ -2132,24 +2152,63 @@ function handleModalAdminToggle(userId, isEnabled) {
 // Save admin permissions from modal
 async function saveModalAdminPermissions(userId) {
     const panel = document.getElementById('modalPermissionsPanel');
+    const adminToggle = document.getElementById('modalAdminToggle');
+    const adminSection = document.getElementById('modalAdminPermissionsSection');
     const expiryInput = document.getElementById('modalRoleExpiry');
+    const unlimitedPurchasesToggle = document.getElementById('modalUnlimitedPurchasesToggle');
 
     if (!panel) return;
 
     const permissions = [];
-    panel.querySelectorAll('input[data-perm]:checked').forEach(cb => {
-        permissions.push(cb.dataset.perm);
-    });
+    if (adminToggle?.checked && adminSection) {
+        adminSection.querySelectorAll('input[data-perm]:checked').forEach(cb => {
+            permissions.push(cb.dataset.perm);
+        });
+    }
 
-    const expiresAt = expiryInput?.value ? new Date(expiryInput.value).toISOString() : null;
+    const expiresAt = adminToggle?.checked && expiryInput?.value
+        ? new Date(expiryInput.value).toISOString()
+        : null;
+    const unlimitedShopPurchases = unlimitedPurchasesToggle?.checked === true;
 
     try {
-        const { error } = await window.supabaseClient
-            .from('admin_roles')
-            .update({ permissions, expires_at: expiresAt })
-            .eq('user_id', userId);
+        const { data: currentAuth } = await window.supabaseClient.auth.getUser();
+        const currentAdminId = currentAuth?.user?.id || null;
 
-        if (error) throw error;
+        if (adminToggle?.checked) {
+            const { error } = await window.supabaseClient
+                .from('admin_roles')
+                .update({ permissions, expires_at: expiresAt })
+                .eq('user_id', userId);
+
+            if (error) throw error;
+        }
+
+        if (unlimitedShopPurchases) {
+            const { error } = await window.supabaseClient
+                .from('user_purchase_entitlements')
+                .upsert({
+                    user_id: userId,
+                    unlimited_shop_purchases: true,
+                    updated_at: new Date().toISOString(),
+                    updated_by: currentAdminId
+                }, { onConflict: 'user_id' });
+
+            if (error) throw error;
+        } else {
+            const { error } = await window.supabaseClient
+                .from('user_purchase_entitlements')
+                .delete()
+                .eq('user_id', userId);
+
+            if (error) throw error;
+        }
+
+        logAdminAction('update_user_permissions', userId, {
+            is_admin: adminToggle?.checked === true,
+            permissions,
+            unlimited_shop_purchases: unlimitedShopPurchases
+        });
         alert('✅ 权限配置已保存');
     } catch (err) {
         console.error('Failed to save permissions:', err);
@@ -5293,20 +5352,32 @@ async function checkSuperAdmin() {
 // Fetch role info for a specific user
 async function fetchUserRoleInfo(userId) {
     try {
-        const { data, error } = await window.supabaseClient
-            .from('admin_roles')
-            .select('*')
-            .eq('user_id', userId)
-            .maybeSingle();
+        const [roleResult, entitlementResult] = await Promise.all([
+            window.supabaseClient
+                .from('admin_roles')
+                .select('*')
+                .eq('user_id', userId)
+                .maybeSingle(),
+            window.supabaseClient
+                .from('user_purchase_entitlements')
+                .select('unlimited_shop_purchases')
+                .eq('user_id', userId)
+                .maybeSingle()
+        ]);
 
-        if (error) throw error;
+        if (roleResult.error) throw roleResult.error;
+        if (entitlementResult.error) throw entitlementResult.error;
+
+        const data = roleResult.data;
+        const entitlement = entitlementResult.data;
 
         return {
             is_admin: !!data,
             is_super_admin: false, // Will be determined by email check
             permissions: data?.permissions || [],
             expires_at: data?.expires_at,
-            role_name: data?.role_name || 'admin'
+            role_name: data?.role_name || 'admin',
+            unlimited_shop_purchases: entitlement?.unlimited_shop_purchases === true
         };
     } catch (err) {
         console.warn('Failed to fetch role info:', err);
@@ -5314,14 +5385,16 @@ async function fetchUserRoleInfo(userId) {
             is_admin: false,
             is_super_admin: false,
             permissions: [],
-            expires_at: null
+            expires_at: null,
+            unlimited_shop_purchases: false
         };
     }
 }
 
 // Toggle admin role on/off
 async function toggleAdminRole(userId, enabled) {
-    const permPanel = document.getElementById(`permPanel - ${userId} `);
+    const permPanel = document.getElementById(`permPanel - ${userId} `) || document.getElementById('modalAdminPermissionsSection');
+    const toggleInput = document.getElementById(`adminRoleToggle - ${userId} `) || document.getElementById('modalAdminToggle');
 
     if (enabled) {
         // Show permissions panel
@@ -5349,7 +5422,7 @@ async function toggleAdminRole(userId, enabled) {
             console.error('Failed to grant admin role:', err);
             alert('授予管理员权限失败: ' + err.message);
             // Revert toggle
-            document.getElementById(`adminRoleToggle - ${userId} `).checked = false;
+            if (toggleInput) toggleInput.checked = false;
             if (permPanel) permPanel.hidden = true;
         }
     } else {
@@ -5371,7 +5444,7 @@ async function toggleAdminRole(userId, enabled) {
             console.error('Failed to revoke admin role:', err);
             alert('撤销管理员权限失败: ' + err.message);
             // Revert toggle
-            document.getElementById(`adminRoleToggle - ${userId} `).checked = true;
+            if (toggleInput) toggleInput.checked = true;
             if (permPanel) permPanel.hidden = false;
         }
     }

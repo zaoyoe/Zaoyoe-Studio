@@ -27,6 +27,9 @@ const ShopClient = {
     allProductsPromise: null,
     agentPricesCache: null,
     agentPricesPromise: null,
+    currentUserPurchaseAccess: null,
+    currentUserPurchaseAccessPromise: null,
+    currentUserPurchaseAccessUserId: null,
     availableCategories: [],
     productsRequestToken: 0,
     productsCacheEpoch: 0,
@@ -39,6 +42,63 @@ const ShopClient = {
         const client = window.supabaseClient || supabaseClient;
         const { data: { session } = {} } = await client.auth.getSession();
         return session?.access_token || '';
+    },
+
+    loadCurrentUserPurchaseAccess: async function ({ forceRefresh = false } = {}) {
+        const client = window.supabaseClient || supabaseClient;
+        const { data: { user } = {} } = await client.auth.getUser();
+
+        if (!user) {
+            this.currentUserPurchaseAccess = null;
+            this.currentUserPurchaseAccessPromise = null;
+            this.currentUserPurchaseAccessUserId = null;
+            return { unlimitedShopPurchases: false };
+        }
+
+        if (this.currentUserPurchaseAccessUserId !== user.id) {
+            this.currentUserPurchaseAccess = null;
+            this.currentUserPurchaseAccessPromise = null;
+            this.currentUserPurchaseAccessUserId = user.id;
+        }
+
+        if (!forceRefresh && this.currentUserPurchaseAccess) {
+            return this.currentUserPurchaseAccess;
+        }
+
+        if (!forceRefresh && this.currentUserPurchaseAccessPromise) {
+            return this.currentUserPurchaseAccessPromise;
+        }
+
+        const request = client
+            .from('user_purchase_entitlements')
+            .select('unlimited_shop_purchases')
+            .eq('user_id', user.id)
+            .maybeSingle()
+            .then(({ data, error }) => {
+                if (error) {
+                    throw error;
+                }
+
+                const access = {
+                    unlimitedShopPurchases: data?.unlimited_shop_purchases === true
+                };
+                this.currentUserPurchaseAccess = access;
+                return access;
+            })
+            .catch((error) => {
+                console.warn('Failed to load current user purchase access:', error);
+                const access = { unlimitedShopPurchases: false };
+                this.currentUserPurchaseAccess = access;
+                return access;
+            })
+            .finally(() => {
+                if (this.currentUserPurchaseAccessPromise === request) {
+                    this.currentUserPurchaseAccessPromise = null;
+                }
+            });
+
+        this.currentUserPurchaseAccessPromise = request;
+        return request;
     },
 
     createPurchaseIdempotencyKey: function () {
@@ -58,7 +118,34 @@ const ShopClient = {
     },
 
     getCurrentPurchaseQuantityCap: function () {
+        if (this.currentPurchase.maxQuantity == null) {
+            return Number.MAX_SAFE_INTEGER;
+        }
         return this.normalizePurchaseQuantityCap(this.currentPurchase.maxQuantity);
+    },
+
+    setCurrentPurchaseQuantityCap: function (maxQuantity, { unlimited = false } = {}) {
+        this.currentPurchase.maxQuantity = unlimited
+            ? null
+            : this.normalizePurchaseQuantityCap(maxQuantity);
+
+        const quantityInput = document.getElementById('purchaseQuantity');
+        if (quantityInput) {
+            if (this.currentPurchase.maxQuantity == null) {
+                quantityInput.removeAttribute('max');
+            } else {
+                quantityInput.max = String(this.currentPurchase.maxQuantity);
+            }
+        }
+
+        const quantityCap = this.getCurrentPurchaseQuantityCap();
+        if (this.currentPurchase.quantity > quantityCap) {
+            this.currentPurchase.quantity = quantityCap;
+            if (quantityInput) {
+                quantityInput.value = String(quantityCap);
+            }
+            this.updatePriceForQuantity(quantityCap);
+        }
     },
 
     filterProductsForCurrentSite: function (products) {
@@ -1115,6 +1202,8 @@ const ShopClient = {
         discountValue: null,
         discountAmount: 0,
         purchaseNotes: '',
+        configuredMaxQuantity: 99,
+        unlimitedPurchases: false,
         maxQuantity: 99,
         idempotencyKey: null
     },
@@ -1470,10 +1559,19 @@ const ShopClient = {
             }
             return;
         }
+
+        const purchaseAccess = await this.loadCurrentUserPurchaseAccess();
+        if (this.currentPurchase?.productId === productId) {
+            this.currentPurchase.unlimitedPurchases = purchaseAccess.unlimitedShopPurchases === true;
+            this.setCurrentPurchaseQuantityCap(maxPurchaseQuantity, {
+                unlimited: this.currentPurchase.unlimitedPurchases
+            });
+        }
     },
 
-    openPurchaseModal: function (productId, productName, productNameEn, price, rules, maxPurchaseQuantity = 99, purchaseNotes = '') {
+    openPurchaseModal: function (productId, productName, productNameEn, price, rules, maxPurchaseQuantity = 99, purchaseNotes = '', options = {}) {
         const quantityCap = this.normalizePurchaseQuantityCap(maxPurchaseQuantity);
+        const unlimitedPurchases = options?.unlimitedPurchases === true;
         this.currentPurchase = {
             productId,
             productName,
@@ -1488,7 +1586,9 @@ const ShopClient = {
             discountValue: null,
             discountAmount: 0,
             purchaseNotes: typeof purchaseNotes === 'string' ? purchaseNotes.trim() : '',
-            maxQuantity: quantityCap,
+            configuredMaxQuantity: quantityCap,
+            unlimitedPurchases,
+            maxQuantity: unlimitedPurchases ? null : quantityCap,
             idempotencyKey: this.createPurchaseIdempotencyKey()
         };
         this.purchaseModalBaseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
@@ -1502,9 +1602,9 @@ const ShopClient = {
         document.getElementById('modalTotalPrice').textContent = price;
         const quantityInput = document.getElementById('purchaseQuantity');
         if (quantityInput) {
-            quantityInput.max = String(quantityCap);
             quantityInput.value = 1;
         }
+        this.setCurrentPurchaseQuantityCap(quantityCap, { unlimited: unlimitedPurchases });
 
         // Reset Discount UI
         const discountInput = document.getElementById('purchaseDiscountCode');

@@ -6245,6 +6245,29 @@
                         </div>
                     </div>
 
+                    <div class="input-group-row">
+                        <div class="modern-form-group">
+                            <label class="modern-label">24小时累计上限</label>
+                            <input type="number" id="prodPurchaseLimit24hQuantity" class="modern-input" placeholder="留空表示不限制" min="1">
+                        </div>
+                        <div class="modern-form-group">
+                            <label class="modern-label">N分钟累计上限</label>
+                            <input type="number" id="prodPurchaseLimitWindowQuantity" class="modern-input" placeholder="留空表示不限制" min="1">
+                        </div>
+                        <div class="modern-form-group">
+                            <label class="modern-label">N分钟</label>
+                            <input type="number" id="prodPurchaseLimitWindowMinutes" class="modern-input" placeholder="例如 10" min="1">
+                        </div>
+                    </div>
+
+                    <div class="input-group-row">
+                        <div class="modern-form-group">
+                            <label class="modern-label">每账号仅限购数量</label>
+                            <input type="number" id="prodPerAccountPurchaseLimit" class="modern-input" placeholder="留空表示不限制" min="1">
+                            <small class="form-hint">留空表示不限制；填写 N 分钟累计上限时，必须同时填写 N 分钟。</small>
+                        </div>
+                    </div>
+
                     <div class="modern-form-group">
                         <label class="modern-label">商品图标</label>
                         <div class="upload-box" data-shop-action="product-upload-icon">
