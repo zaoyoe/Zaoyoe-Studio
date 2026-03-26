@@ -1942,6 +1942,62 @@ function buildOpsAlertHealthRecentErrorMarkup(channel = {}) {
     `;
 }
 
+function getOpsAlertHealthConfigDetails(channel = {}) {
+    const details = [];
+
+    if (channel.key === 'telegram' && channel.recipient_summary) {
+        details.push({ label: '投递目标', value: channel.recipient_summary });
+    }
+
+    if (channel.key === 'feishu') {
+        details.push({ label: '投递方式', value: channel.recipient_summary || 'Webhook 通道' });
+    }
+
+    if (channel.key === 'email') {
+        if (channel.recipient_preview) {
+            details.push({ label: '收件人', value: channel.recipient_preview });
+        } else if (channel.recipient_summary) {
+            details.push({ label: '收件人', value: channel.recipient_summary });
+        }
+
+        if (channel.from_address) {
+            details.push({ label: '发件地址', value: channel.from_address });
+        }
+
+        if (channel.reply_to) {
+            details.push({ label: 'Reply-To', value: channel.reply_to });
+        }
+
+        if (channel.subject_prefix) {
+            details.push({ label: '主题前缀', value: channel.subject_prefix });
+        }
+    }
+
+    if (channel.last_attempt_at) {
+        details.push({ label: '最近投递', value: formatVerifyMonitorDateTime(channel.last_attempt_at) });
+    }
+
+    return details.slice(0, 4);
+}
+
+function buildOpsAlertHealthConfigMarkup(channel = {}) {
+    const details = getOpsAlertHealthConfigDetails(channel);
+    if (!details.length) {
+        return '';
+    }
+
+    return `
+        <div class="ops-alert-health-card__config">
+            ${details.map((item) => `
+                <div class="ops-alert-health-card__config-item">
+                    <span>${escapeConfigHtml(item.label || '')}</span>
+                    <strong>${escapeConfigHtml(item.value || '—')}</strong>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
 function buildOpsAlertHealthCardMarkup(channel = {}) {
     const tone = String(channel.tone || 'neutral').trim().toLowerCase() || 'neutral';
     const deliveryRate = Number(channel.delivery_rate);
@@ -1965,6 +2021,7 @@ function buildOpsAlertHealthCardMarkup(channel = {}) {
                 <div><strong>${escapeConfigHtml(formatVerifyMonitorInteger(channel.dead_letter_count || 0))}</strong><span>死信</span></div>
                 <div><strong>${escapeConfigHtml(formatVerifyMonitorInteger(channel.retry_count || 0))}</strong><span>重试</span></div>
             </div>
+            ${buildOpsAlertHealthConfigMarkup(channel)}
             <div class="ops-alert-health-card__summary">${escapeConfigHtml(getOpsAlertHealthLastErrorLine(channel))}</div>
             ${buildOpsAlertHealthRecentErrorMarkup(channel)}
         </article>
