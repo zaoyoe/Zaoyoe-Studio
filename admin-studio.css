@@ -18798,7 +18798,21 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 20px;
 }
 
+#settings-view-ops-alerts .module-content.ops-alert-settings-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+    align-items: start;
+    gap: 20px;
+}
+
 #settings-view-pricing .pricing-settings-column {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+}
+
+#settings-view-ops-alerts .ops-alert-settings-column {
     display: flex;
     flex-direction: column;
     gap: 20px;
@@ -18809,12 +18823,20 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     width: 100%;
 }
 
+#settings-view-ops-alerts .ops-alert-settings-column .config-card {
+    width: 100%;
+}
+
 @media (max-width: 1024px) {
     #module-settings .module-content {
         grid-template-columns: repeat(2, 1fr);
     }
 
     #settings-view-pricing .module-content.pricing-settings-layout {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #settings-view-ops-alerts .module-content.ops-alert-settings-layout {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
@@ -18848,7 +18870,17 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         gap: 16px;
     }
 
+    #settings-view-ops-alerts .module-content.ops-alert-settings-layout {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
     #settings-view-pricing .pricing-settings-column {
+        gap: 16px;
+    }
+
+    #settings-view-ops-alerts .ops-alert-settings-column {
         gap: 16px;
     }
 }
@@ -19338,12 +19370,18 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 #settings-view-pricing .config-card[data-config="payment-channels"]:not(.collapsed) .config-card-body,
-#settings-view-pricing .config-card[data-config="ops-alerts"]:not(.collapsed) .config-card-body {
+#settings-view-ops-alerts .config-card:not(.collapsed) .config-card-body {
     max-height: none;
     overflow: visible;
 }
 
 .payment-channel-config-card .config-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.ops-alert-config-card .config-card-body {
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -19555,6 +19593,43 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     margin-left: 0;
 }
 
+.ops-alert-save-row,
+.ops-alert-card-delete-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.ops-alert-card-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.ops-alert-card-toolbar__copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ops-alert-card-toolbar__copy p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    line-height: 1.6;
+}
+
+.ops-alert-card-toolbar__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
 .ops-alert-actions-row__save {
     align-self: flex-start;
 }
@@ -19579,6 +19654,57 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .ops-alert-actions-grid .btn-add-config i {
     flex: 0 0 auto;
     margin-top: 1px;
+}
+
+#settings-view-ops-alerts .config-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+    align-items: start;
+    gap: 18px;
+}
+
+#settings-view-ops-alerts .config-row > label {
+    color: var(--text-main);
+    font-size: 0.94rem;
+    font-weight: 500;
+    padding-top: 10px;
+}
+
+#settings-view-ops-alerts .config-info,
+#settings-view-ops-alerts .config-input-wrapper {
+    min-width: 0;
+}
+
+#settings-view-ops-alerts .config-desc {
+    max-width: none;
+}
+
+#settings-view-ops-alerts .config-input-wrapper {
+    width: 100%;
+    justify-content: flex-end;
+    margin-top: 0;
+}
+
+#settings-view-ops-alerts .config-input[type="text"],
+#settings-view-ops-alerts .config-input[type="url"],
+#settings-view-ops-alerts .config-input[type="password"],
+#settings-view-ops-alerts .config-input[type="number"],
+#settings-view-ops-alerts .config-input[type="email"],
+#settings-view-ops-alerts .config-input[type="search"],
+#settings-view-ops-alerts select.config-input,
+#settings-view-ops-alerts textarea.config-input {
+    width: min(100%, 320px);
+    min-width: 220px;
+    text-align: left;
+}
+
+#settings-view-ops-alerts textarea.config-input {
+    min-height: 96px;
+    resize: vertical;
+}
+
+#settings-view-ops-alerts .status-toggle {
+    margin-left: auto;
 }
 
 /* Config Row */
@@ -20084,6 +20210,16 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: flex;
     flex-direction: column;
     gap: 16px;
+}
+
+.ops-alert-workspace-panel--embedded,
+.ops-alert-health-panel--embedded,
+.ops-alert-monitor-panel--embedded {
+    margin-top: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    border-radius: 0;
 }
 
 .ops-alert-workspace-panel__head {
@@ -20820,6 +20956,43 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     }
 
     .ops-alert-actions-grid .btn-add-config {
+        justify-content: flex-start;
+    }
+
+    #settings-view-ops-alerts .config-row {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    #settings-view-ops-alerts .config-row > label {
+        padding-top: 0;
+    }
+
+    #settings-view-ops-alerts .config-input-wrapper {
+        justify-content: flex-start;
+    }
+
+    #settings-view-ops-alerts .config-input[type="text"],
+    #settings-view-ops-alerts .config-input[type="url"],
+    #settings-view-ops-alerts .config-input[type="password"],
+    #settings-view-ops-alerts .config-input[type="number"],
+    #settings-view-ops-alerts .config-input[type="email"],
+    #settings-view-ops-alerts .config-input[type="search"],
+    #settings-view-ops-alerts select.config-input,
+    #settings-view-ops-alerts textarea.config-input {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .ops-alert-card-toolbar,
+    .ops-alert-save-row,
+    .ops-alert-card-delete-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .ops-alert-card-toolbar__actions {
+        width: 100%;
         justify-content: flex-start;
     }
 

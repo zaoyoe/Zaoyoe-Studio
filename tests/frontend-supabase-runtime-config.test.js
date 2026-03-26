@@ -2051,6 +2051,16 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     }
 
     const delegatedHtmlMarkers = [
+        'data-settings-view="ops-alerts"',
+        'id="settings-view-ops-alerts"',
+        'data-config="ops-alerts-overview"',
+        'data-config="ops-alerts-actions"',
+        'data-config="ops-alerts-workspace"',
+        'data-config="ops-alerts-monitor"',
+        'data-config="ops-alerts-telegram"',
+        'data-config="ops-alerts-feishu"',
+        'data-config="ops-alerts-email"',
+        'data-config="ops-alerts-health"',
         'id="opsAlertSummary"',
         'id="opsAlertEnabledToggle"',
         'id="opsAlertWorkspacePanel"',
@@ -2230,9 +2240,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     }
 
     assert.equal(
-        adminStudioCss.includes('#settings-view-pricing .config-card[data-config="ops-alerts"]:not(.collapsed) .config-card-body'),
+        adminStudioCss.includes('#settings-view-ops-alerts .config-card:not(.collapsed) .config-card-body'),
         true,
-        'admin-studio.css should allow the ops alert settings card to grow beyond the shared 500px config body cap'
+        'admin-studio.css should allow the dedicated ops alert cards to grow beyond the shared 500px config body cap'
     );
 
     const workspaceCssMarkers = [
