@@ -18,6 +18,16 @@ const SUPPORTED_ROUTING_KEYS = Object.freeze([
     'wallet_recharge_success',
     'shop_inventory'
 ]);
+const SUPPORTED_MUTE_RULE_MODULE_KEYS = Object.freeze([
+    'customer_engagement',
+    'commerce',
+    'inventory',
+    'payments',
+    'verify',
+    'tickets',
+    'fulfillment',
+    'security'
+]);
 const ALERT_TYPE_ROUTING_MAP = Object.freeze({
     customer_chat_message_received: 'customer_chat_message',
     shop_purchase_succeeded: 'shop_purchase_success',
@@ -25,6 +35,35 @@ const ALERT_TYPE_ROUTING_MAP = Object.freeze({
     shop_inventory_low: 'shop_inventory',
     shop_inventory_empty: 'shop_inventory',
     shop_inventory_recovered: 'shop_inventory'
+});
+const ALERT_TYPE_MODULE_MAP = Object.freeze({
+    customer_chat_message_received: 'customer_engagement',
+    shop_purchase_succeeded: 'commerce',
+    wallet_recharge_succeeded: 'commerce',
+    shop_inventory_low: 'inventory',
+    shop_inventory_empty: 'inventory',
+    shop_inventory_recovered: 'inventory',
+    payment_gateway_degraded: 'payments',
+    payment_gateway_recovered: 'payments',
+    payment_refund_ops: 'payments',
+    payment_refund_alert: 'payments',
+    payment_config_changed: 'payments',
+    payment_config_recovered: 'payments',
+    payment_config_incident: 'payments',
+    payment_config_incident_recovered: 'payments',
+    verify_quota_low: 'verify',
+    verify_service_disabled: 'verify',
+    verify_failure_rate_spike: 'verify',
+    verify_queue_backlog: 'verify',
+    verify_incident_escalated: 'verify',
+    verify_incident_recovered: 'verify',
+    ticket_sla_overdue: 'tickets',
+    ticket_sla_recovered: 'tickets',
+    shop_order_delivery_failed: 'fulfillment',
+    shop_order_delivery_recovered: 'fulfillment',
+    shop_order_delivery_incident: 'fulfillment',
+    shop_order_delivery_incident_recovered: 'fulfillment',
+    security_admin_login_anomaly: 'security'
 });
 const SEVERITY_RANK = Object.freeze({
     info: 10,
@@ -50,6 +89,60 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         end_hour: 8,
         timezone: DEFAULT_QUIET_HOURS_TIMEZONE,
         allow_critical: true
+    }),
+    mute_rules: Object.freeze({
+        types: Object.freeze({
+            customer_chat_message: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            shop_purchase_success: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            wallet_recharge_success: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            shop_inventory: Object.freeze({
+                until: '',
+                allow_critical: true
+            })
+        }),
+        modules: Object.freeze({
+            customer_engagement: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            commerce: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            inventory: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            payments: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            verify: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            tickets: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            fulfillment: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            security: Object.freeze({
+                until: '',
+                allow_critical: true
+            })
+        })
     }),
     channels: Object.freeze({
         telegram: Object.freeze({
@@ -232,6 +325,60 @@ function cloneDefaultConfig() {
             timezone: DEFAULT_OPS_ALERTS_CONFIG.quiet_hours.timezone,
             allow_critical: DEFAULT_OPS_ALERTS_CONFIG.quiet_hours.allow_critical
         },
+        mute_rules: {
+            types: {
+                customer_chat_message: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.customer_chat_message.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.customer_chat_message.allow_critical
+                },
+                shop_purchase_success: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.shop_purchase_success.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.shop_purchase_success.allow_critical
+                },
+                wallet_recharge_success: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.wallet_recharge_success.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.wallet_recharge_success.allow_critical
+                },
+                shop_inventory: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.shop_inventory.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.shop_inventory.allow_critical
+                }
+            },
+            modules: {
+                customer_engagement: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.customer_engagement.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.customer_engagement.allow_critical
+                },
+                commerce: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.commerce.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.commerce.allow_critical
+                },
+                inventory: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.inventory.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.inventory.allow_critical
+                },
+                payments: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.payments.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.payments.allow_critical
+                },
+                verify: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.verify.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.verify.allow_critical
+                },
+                tickets: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.tickets.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.tickets.allow_critical
+                },
+                fulfillment: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.fulfillment.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.fulfillment.allow_critical
+                },
+                security: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.security.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.security.allow_critical
+                }
+            }
+        },
         channels: {
             telegram: {
                 enabled: DEFAULT_OPS_ALERTS_CONFIG.channels.telegram.enabled,
@@ -331,6 +478,15 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
     const quietHoursConfig = source.quiet_hours && typeof source.quiet_hours === 'object'
         ? source.quiet_hours
         : {};
+    const muteRulesConfig = source.mute_rules && typeof source.mute_rules === 'object'
+        ? source.mute_rules
+        : {};
+    const typeMuteRulesConfig = muteRulesConfig.types && typeof muteRulesConfig.types === 'object'
+        ? muteRulesConfig.types
+        : {};
+    const moduleMuteRulesConfig = muteRulesConfig.modules && typeof muteRulesConfig.modules === 'object'
+        ? muteRulesConfig.modules
+        : {};
     const routingConfig = source.routing && typeof source.routing === 'object'
         ? source.routing
         : {};
@@ -413,6 +569,26 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         quietHoursConfig.allow_critical,
         config.quiet_hours.allow_critical
     );
+    for (const routingKey of SUPPORTED_ROUTING_KEYS) {
+        const muteRuleSource = typeMuteRulesConfig[routingKey] && typeof typeMuteRulesConfig[routingKey] === 'object'
+            ? typeMuteRulesConfig[routingKey]
+            : {};
+        config.mute_rules.types[routingKey].until = normalizeText(muteRuleSource.until);
+        config.mute_rules.types[routingKey].allow_critical = normalizeBoolean(
+            muteRuleSource.allow_critical,
+            config.mute_rules.types[routingKey].allow_critical
+        );
+    }
+    for (const moduleKey of SUPPORTED_MUTE_RULE_MODULE_KEYS) {
+        const muteRuleSource = moduleMuteRulesConfig[moduleKey] && typeof moduleMuteRulesConfig[moduleKey] === 'object'
+            ? moduleMuteRulesConfig[moduleKey]
+            : {};
+        config.mute_rules.modules[moduleKey].until = normalizeText(muteRuleSource.until);
+        config.mute_rules.modules[moduleKey].allow_critical = normalizeBoolean(
+            muteRuleSource.allow_critical,
+            config.mute_rules.modules[moduleKey].allow_critical
+        );
+    }
 
     config.channels.telegram.enabled = normalizeBoolean(
         telegramConfig.enabled,
@@ -765,6 +941,10 @@ function mapAlertTypeToRoutingKey(alertType = '') {
     return ALERT_TYPE_ROUTING_MAP[normalizeText(alertType).toLowerCase()] || '';
 }
 
+function mapAlertTypeToModuleKey(alertType = '') {
+    return ALERT_TYPE_MODULE_MAP[normalizeText(alertType).toLowerCase()] || '';
+}
+
 function isHourWithinQuietWindow(hour, startHour, endHour) {
     if (!Number.isInteger(hour) || !Number.isInteger(startHour) || !Number.isInteger(endHour)) {
         return false;
@@ -839,6 +1019,43 @@ function isAlertSuppressedByTemporaryMute(config = {}, alertSeverity = 'warning'
     return parsedUntil > now.getTime();
 }
 
+function isAlertSuppressedByMuteRule(rule = {}, alertSeverity = 'warning', options = {}) {
+    const until = normalizeText(rule.until);
+    if (!until) {
+        return false;
+    }
+
+    if (rule.allow_critical && normalizeSeverity(alertSeverity, 'warning') === 'critical') {
+        return false;
+    }
+
+    const parsedUntil = Date.parse(until);
+    if (!Number.isFinite(parsedUntil)) {
+        return false;
+    }
+
+    const now = options.now instanceof Date
+        ? options.now
+        : new Date(options.now || Date.now());
+    return parsedUntil > now.getTime();
+}
+
+function isAlertSuppressedByScopedMute(config = {}, alertSeverity = 'warning', alertType = '', options = {}) {
+    const normalizedOptions = normalizeJsonObject(options);
+    const routingKey = normalizeText(normalizedOptions.routingKey) || mapAlertTypeToRoutingKey(alertType);
+    const moduleKey = normalizeText(normalizedOptions.moduleKey) || mapAlertTypeToModuleKey(alertType);
+
+    if (routingKey && isAlertSuppressedByMuteRule(config.mute_rules?.types?.[routingKey], alertSeverity, normalizedOptions)) {
+        return true;
+    }
+
+    if (moduleKey && isAlertSuppressedByMuteRule(config.mute_rules?.modules?.[moduleKey], alertSeverity, normalizedOptions)) {
+        return true;
+    }
+
+    return false;
+}
+
 function resolveEnabledChannels(runtime = {}, alertSeverity = 'warning', alertTypeOrOptions = '', maybeOptions = {}) {
     const config = runtime.config || cloneDefaultConfig();
     const secrets = runtime.secrets || {};
@@ -859,6 +1076,10 @@ function resolveEnabledChannels(runtime = {}, alertSeverity = 'warning', alertTy
     }
 
     if (isAlertSuppressedByQuietHours(config, alertSeverity, options)) {
+        return channels;
+    }
+
+    if (isAlertSuppressedByScopedMute(config, alertSeverity, alertType, options)) {
         return channels;
     }
 

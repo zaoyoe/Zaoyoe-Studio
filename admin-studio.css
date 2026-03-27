@@ -20158,6 +20158,40 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     accent-color: var(--accent-starry);
 }
 
+.ops-alert-scoped-mute-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.ops-alert-scoped-mute-row {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px 20px;
+    border: 1px solid rgba(107, 158, 206, 0.14);
+    border-radius: 18px;
+    background: rgba(10, 19, 36, 0.3);
+}
+
+.ops-alert-scoped-mute-row__head {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ops-alert-scoped-mute-row__head strong {
+    color: var(--text-main);
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+
+.ops-alert-scoped-mute-row__head span {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    line-height: 1.55;
+}
+
 .ops-alert-actions-grid {
     width: 100%;
     display: grid;
@@ -21838,6 +21872,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     }
 
     .ops-alert-routing-row {
+        padding: 16px;
+    }
+
+    .ops-alert-scoped-mute-row {
         padding: 16px;
     }
 

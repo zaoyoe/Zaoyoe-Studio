@@ -51,6 +51,24 @@ function createDefaultState() {
                 timezone: 'Asia/Shanghai',
                 allow_critical: true
             },
+            mute_rules: {
+                types: {
+                    customer_chat_message: { until: '', allow_critical: true },
+                    shop_purchase_success: { until: '', allow_critical: true },
+                    wallet_recharge_success: { until: '', allow_critical: true },
+                    shop_inventory: { until: '', allow_critical: true }
+                },
+                modules: {
+                    customer_engagement: { until: '', allow_critical: true },
+                    commerce: { until: '', allow_critical: true },
+                    inventory: { until: '', allow_critical: true },
+                    payments: { until: '', allow_critical: true },
+                    verify: { until: '', allow_critical: true },
+                    tickets: { until: '', allow_critical: true },
+                    fulfillment: { until: '', allow_critical: true },
+                    security: { until: '', allow_critical: true }
+                }
+            },
             channels: {
                 telegram: {
                     enabled: false,
@@ -184,6 +202,9 @@ function createNormalizedConfig(raw) {
     const email = channels.email && typeof channels.email === 'object' ? channels.email : {};
     const temporaryMute = source.temporary_mute && typeof source.temporary_mute === 'object' ? source.temporary_mute : {};
     const quietHours = source.quiet_hours && typeof source.quiet_hours === 'object' ? source.quiet_hours : {};
+    const muteRules = source.mute_rules && typeof source.mute_rules === 'object' ? source.mute_rules : {};
+    const typeMuteRules = muteRules.types && typeof muteRules.types === 'object' ? muteRules.types : {};
+    const moduleMuteRules = muteRules.modules && typeof muteRules.modules === 'object' ? muteRules.modules : {};
     const shopOrderRisk = source.shop_order_risk && typeof source.shop_order_risk === 'object' ? source.shop_order_risk : {};
     const shopInventory = source.shop_inventory && typeof source.shop_inventory === 'object' ? source.shop_inventory : {};
     const customerChatMessage = source.customer_chat_message && typeof source.customer_chat_message === 'object' ? source.customer_chat_message : {};
@@ -207,6 +228,60 @@ function createNormalizedConfig(raw) {
             end_hour: Math.min(23, Math.max(0, Number(quietHours.end_hour || 8) || 8)),
             timezone: String(quietHours.timezone || 'Asia/Shanghai').trim() || 'Asia/Shanghai',
             allow_critical: normalizeBoolean(quietHours.allow_critical, true)
+        },
+        mute_rules: {
+            types: {
+                customer_chat_message: {
+                    until: typeof typeMuteRules.customer_chat_message?.until === 'string' ? typeMuteRules.customer_chat_message.until.trim() : '',
+                    allow_critical: normalizeBoolean(typeMuteRules.customer_chat_message?.allow_critical, true)
+                },
+                shop_purchase_success: {
+                    until: typeof typeMuteRules.shop_purchase_success?.until === 'string' ? typeMuteRules.shop_purchase_success.until.trim() : '',
+                    allow_critical: normalizeBoolean(typeMuteRules.shop_purchase_success?.allow_critical, true)
+                },
+                wallet_recharge_success: {
+                    until: typeof typeMuteRules.wallet_recharge_success?.until === 'string' ? typeMuteRules.wallet_recharge_success.until.trim() : '',
+                    allow_critical: normalizeBoolean(typeMuteRules.wallet_recharge_success?.allow_critical, true)
+                },
+                shop_inventory: {
+                    until: typeof typeMuteRules.shop_inventory?.until === 'string' ? typeMuteRules.shop_inventory.until.trim() : '',
+                    allow_critical: normalizeBoolean(typeMuteRules.shop_inventory?.allow_critical, true)
+                }
+            },
+            modules: {
+                customer_engagement: {
+                    until: typeof moduleMuteRules.customer_engagement?.until === 'string' ? moduleMuteRules.customer_engagement.until.trim() : '',
+                    allow_critical: normalizeBoolean(moduleMuteRules.customer_engagement?.allow_critical, true)
+                },
+                commerce: {
+                    until: typeof moduleMuteRules.commerce?.until === 'string' ? moduleMuteRules.commerce.until.trim() : '',
+                    allow_critical: normalizeBoolean(moduleMuteRules.commerce?.allow_critical, true)
+                },
+                inventory: {
+                    until: typeof moduleMuteRules.inventory?.until === 'string' ? moduleMuteRules.inventory.until.trim() : '',
+                    allow_critical: normalizeBoolean(moduleMuteRules.inventory?.allow_critical, true)
+                },
+                payments: {
+                    until: typeof moduleMuteRules.payments?.until === 'string' ? moduleMuteRules.payments.until.trim() : '',
+                    allow_critical: normalizeBoolean(moduleMuteRules.payments?.allow_critical, true)
+                },
+                verify: {
+                    until: typeof moduleMuteRules.verify?.until === 'string' ? moduleMuteRules.verify.until.trim() : '',
+                    allow_critical: normalizeBoolean(moduleMuteRules.verify?.allow_critical, true)
+                },
+                tickets: {
+                    until: typeof moduleMuteRules.tickets?.until === 'string' ? moduleMuteRules.tickets.until.trim() : '',
+                    allow_critical: normalizeBoolean(moduleMuteRules.tickets?.allow_critical, true)
+                },
+                fulfillment: {
+                    until: typeof moduleMuteRules.fulfillment?.until === 'string' ? moduleMuteRules.fulfillment.until.trim() : '',
+                    allow_critical: normalizeBoolean(moduleMuteRules.fulfillment?.allow_critical, true)
+                },
+                security: {
+                    until: typeof moduleMuteRules.security?.until === 'string' ? moduleMuteRules.security.until.trim() : '',
+                    allow_critical: normalizeBoolean(moduleMuteRules.security?.allow_critical, true)
+                }
+            }
         },
         channels: {
             telegram: {
@@ -598,6 +673,28 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         timezone: 'Asia/Shanghai',
                         allow_critical: false
                     },
+                    mute_rules: {
+                        types: {
+                            customer_chat_message: {
+                                until: '2026-03-27T18:00:00.000Z',
+                                allow_critical: false
+                            },
+                            shop_inventory: {
+                                until: '2026-03-28T09:30:00.000Z',
+                                allow_critical: true
+                            }
+                        },
+                        modules: {
+                            commerce: {
+                                until: '2026-03-27T20:00:00.000Z',
+                                allow_critical: false
+                            },
+                            payments: {
+                                until: '2026-03-28T08:00:00.000Z',
+                                allow_critical: true
+                            }
+                        }
+                    },
                     channels: {
                         telegram: {
                             enabled: true,
@@ -686,6 +783,13 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.quiet_hours.end_hour, 7);
         assert.equal(payload.config.quiet_hours.timezone, 'Asia/Shanghai');
         assert.equal(payload.config.quiet_hours.allow_critical, false);
+        assert.equal(payload.config.mute_rules.types.customer_chat_message.until, '2026-03-27T18:00:00.000Z');
+        assert.equal(payload.config.mute_rules.types.customer_chat_message.allow_critical, false);
+        assert.equal(payload.config.mute_rules.types.shop_inventory.until, '2026-03-28T09:30:00.000Z');
+        assert.equal(payload.config.mute_rules.modules.commerce.until, '2026-03-27T20:00:00.000Z');
+        assert.equal(payload.config.mute_rules.modules.commerce.allow_critical, false);
+        assert.equal(payload.config.mute_rules.modules.payments.until, '2026-03-28T08:00:00.000Z');
+        assert.equal(payload.config.mute_rules.modules.payments.allow_critical, true);
         assert.equal(payload.config.channels.telegram.enabled, true);
         assert.deepEqual(payload.config.channels.telegram.chat_ids, ['123456', '789000']);
         assert.deepEqual(payload.config.routing.customer_chat_message, {
@@ -743,6 +847,28 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.quiet_hours_end_hour, 7);
         assert.equal(state.auditLogs[0].details.quiet_hours_timezone, 'Asia/Shanghai');
         assert.equal(state.auditLogs[0].details.quiet_hours_allow_critical, false);
+        assert.deepEqual(state.auditLogs[0].details.mute_type_keys_active, ['customer_chat_message', 'shop_inventory']);
+        assert.deepEqual(state.auditLogs[0].details.mute_module_keys_active, ['commerce', 'payments']);
+        assert.deepEqual(state.auditLogs[0].details.mute_type_rules, {
+            customer_chat_message: {
+                until: '2026-03-27T18:00:00.000Z',
+                allow_critical: false
+            },
+            shop_inventory: {
+                until: '2026-03-28T09:30:00.000Z',
+                allow_critical: true
+            }
+        });
+        assert.deepEqual(state.auditLogs[0].details.mute_module_rules, {
+            commerce: {
+                until: '2026-03-27T20:00:00.000Z',
+                allow_critical: false
+            },
+            payments: {
+                until: '2026-03-28T08:00:00.000Z',
+                allow_critical: true
+            }
+        });
         assert.deepEqual(state.auditLogs[0].details.routing_customer_chat_message_channels, ['feishu', 'email']);
         assert.deepEqual(state.auditLogs[0].details.routing_shop_purchase_success_channels, ['telegram', 'email']);
         assert.deepEqual(state.auditLogs[0].details.routing_wallet_recharge_success_channels, ['telegram', 'feishu']);

@@ -1625,6 +1625,115 @@ test('resolveEnabledChannels filters channels by alert-type routing', () => {
     );
 });
 
+test('resolveEnabledChannels suppresses alerts by type-scoped mute rules', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['123456']
+                },
+                feishu: {
+                    enabled: true,
+                    minimum_severity: 'warning'
+                }
+            },
+            mute_rules: {
+                types: {
+                    customer_chat_message: {
+                        until: '2026-03-27T12:00:00.000Z',
+                        allow_critical: false
+                    }
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: 'telegram-key',
+            feishu_webhook_url: 'https://open.feishu.cn/webhook/test'
+        }
+    });
+
+    assert.deepEqual(
+        __testUtils.resolveEnabledChannels(runtime, 'warning', 'customer_chat_message_received', {
+            now: new Date('2026-03-27T10:00:00.000Z')
+        }),
+        []
+    );
+});
+
+test('resolveEnabledChannels suppresses alerts by module-scoped mute rules', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['123456']
+                },
+                feishu: {
+                    enabled: true,
+                    minimum_severity: 'warning'
+                }
+            },
+            mute_rules: {
+                modules: {
+                    commerce: {
+                        until: '2026-03-27T12:00:00.000Z',
+                        allow_critical: false
+                    }
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: 'telegram-key',
+            feishu_webhook_url: 'https://open.feishu.cn/webhook/test'
+        }
+    });
+
+    assert.deepEqual(
+        __testUtils.resolveEnabledChannels(runtime, 'warning', 'shop_purchase_succeeded', {
+            now: new Date('2026-03-27T10:00:00.000Z')
+        }),
+        []
+    );
+});
+
+test('resolveEnabledChannels lets critical alerts bypass scoped mute rules when allowed', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['123456']
+                }
+            },
+            mute_rules: {
+                modules: {
+                    inventory: {
+                        until: '2026-03-27T12:00:00.000Z',
+                        allow_critical: true
+                    }
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: 'telegram-key'
+        }
+    });
+
+    assert.deepEqual(
+        __testUtils.resolveEnabledChannels(runtime, 'critical', 'shop_inventory_empty', {
+            now: new Date('2026-03-27T10:00:00.000Z')
+        }),
+        ['telegram']
+    );
+});
+
 test('sendEmailAlert uses Resend with recipients, sender, and severity subject', async () => {
     let request = null;
     const result = await __testUtils.sendEmailAlert({
