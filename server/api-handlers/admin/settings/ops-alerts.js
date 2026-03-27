@@ -1226,6 +1226,32 @@ module.exports = async (req, res) => {
                 updatedSecrets.push(secretName);
             }
 
+            const muteTypeRules = Object.fromEntries(
+                Object.entries(nextConfig.mute_rules?.types || {})
+                    .map(([key, rule]) => {
+                        const until = sanitizeText(rule?.until, 120);
+                        if (!until) return null;
+                        return [key, {
+                            until,
+                            allow_critical: rule?.allow_critical !== false
+                        }];
+                    })
+                    .filter(Boolean)
+            );
+
+            const muteModuleRules = Object.fromEntries(
+                Object.entries(nextConfig.mute_rules?.modules || {})
+                    .map(([key, rule]) => {
+                        const until = sanitizeText(rule?.until, 120);
+                        if (!until) return null;
+                        return [key, {
+                            until,
+                            allow_critical: rule?.allow_critical !== false
+                        }];
+                    })
+                    .filter(Boolean)
+            );
+
             await writeAdminAuditLog({
                 supabase,
                 adminId: user.id,
@@ -1239,6 +1265,10 @@ module.exports = async (req, res) => {
                     quiet_hours_end_hour: Number(nextConfig.quiet_hours?.end_hour),
                     quiet_hours_timezone: sanitizeText(nextConfig.quiet_hours?.timezone, 120) || null,
                     quiet_hours_allow_critical: nextConfig.quiet_hours?.allow_critical !== false,
+                    mute_type_keys_active: Object.keys(muteTypeRules),
+                    mute_module_keys_active: Object.keys(muteModuleRules),
+                    mute_type_rules: muteTypeRules,
+                    mute_module_rules: muteModuleRules,
                     telegram_enabled: nextConfig.channels?.telegram?.enabled === true,
                     feishu_enabled: nextConfig.channels?.feishu?.enabled === true,
                     email_enabled: nextConfig.channels?.email?.enabled === true,

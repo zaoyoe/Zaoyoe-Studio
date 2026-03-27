@@ -1228,6 +1228,338 @@
                                                 </div>
                                             </div>
                                         </section>
+
+                                        <section class="ops-alert-strategy-card ops-alert-strategy-card--wide">
+                                            <div class="ops-alert-strategy-card__head">
+                                                <div>
+                                                    <h4>按单类静默</h4>
+                                                    <p>针对单一业务通知单独静默到某个时间，不影响其它告警继续外发。</p>
+                                                </div>
+                                            </div>
+                                            <div class="ops-alert-scoped-mute-list">
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>客服消息</strong>
+                                                        <span>只静默“用户给客服机器人发新消息”的外发通知。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertTypeMuteCustomerChatMessageStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertTypeMuteCustomerChatMessageUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">即使设置了单类静默，高危异常仍可继续外发。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertTypeMuteCustomerChatMessageAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="types" data-rule-key="customer_chat_message"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="customer_chat_message">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>购买成功</strong>
+                                                        <span>只静默商城订单支付完成并创建成功后的成功通知。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertTypeMuteShopPurchaseSuccessStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertTypeMuteShopPurchaseSuccessUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">高危异常仍可继续外发，避免误伤真正的重要告警。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertTypeMuteShopPurchaseSuccessAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="types" data-rule-key="shop_purchase_success"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="shop_purchase_success">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>充值成功</strong>
+                                                        <span>只静默钱包充值成功这类成功通知。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertTypeMuteWalletRechargeSuccessStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertTypeMuteWalletRechargeSuccessUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">仅暂停成功通知，不拦截真正的高危异常。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertTypeMuteWalletRechargeSuccessAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="types" data-rule-key="wallet_recharge_success"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="wallet_recharge_success">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>库存与补货</strong>
+                                                        <span>单独静默低库存、售罄和库存恢复，不影响支付、验证等其它告警。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertTypeMuteShopInventoryStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertTypeMuteShopInventoryUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">如果库存异常被标成 critical，仍可以继续走站外通知。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertTypeMuteShopInventoryAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="types" data-rule-key="shop_inventory"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="shop_inventory">清除此静默</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </section>
+
+                                        <section class="ops-alert-strategy-card ops-alert-strategy-card--wide">
+                                            <div class="ops-alert-strategy-card__head">
+                                                <div>
+                                                    <h4>按模块静默</h4>
+                                                    <p>按业务模块统一静默整批相关通知，适合维护窗口、集中排障或阶段性降噪。</p>
+                                                </div>
+                                            </div>
+                                            <div class="ops-alert-scoped-mute-list">
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>客服互动</strong>
+                                                        <span>统一静默客服消息等用户互动类通知。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertModuleMuteCustomerEngagementStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertModuleMuteCustomerEngagementUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">高危异常仍继续外发，普通互动通知暂停。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertModuleMuteCustomerEngagementAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="modules" data-rule-key="customer_engagement"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="modules" data-rule-key="customer_engagement">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>交易成功</strong>
+                                                        <span>统一静默购买成功、充值成功等交易完成类通知。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertModuleMuteCommerceStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertModuleMuteCommerceUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">仅暂停成功提醒，不影响严重交易异常继续推送。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertModuleMuteCommerceAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="modules" data-rule-key="commerce"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="modules" data-rule-key="commerce">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>库存与补货</strong>
+                                                        <span>统一静默库存预警、售罄和库存恢复。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertModuleMuteInventoryStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertModuleMuteInventoryUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">库存模块里的高危异常仍可继续外发。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertModuleMuteInventoryAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="modules" data-rule-key="inventory"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="modules" data-rule-key="inventory">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>支付与退款</strong>
+                                                        <span>统一静默支付通道、退款、支付配置相关告警。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertModuleMutePaymentsStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertModuleMutePaymentsUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">保留最重要的资金与回滚异常继续外发。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertModuleMutePaymentsAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="modules" data-rule-key="payments"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="modules" data-rule-key="payments">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>验证服务</strong>
+                                                        <span>统一静默验证额度、停摆、堆积、失败率和综合事故相关告警。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertModuleMuteVerifyStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertModuleMuteVerifyUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">允许高危验证事故继续通知，避免维护期误伤核心异常。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertModuleMuteVerifyAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="modules" data-rule-key="verify"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="modules" data-rule-key="verify">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>工单与售后</strong>
+                                                        <span>统一静默工单超时及恢复类通知。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertModuleMuteTicketsStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertModuleMuteTicketsUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">严重售后异常仍可继续发出提醒。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertModuleMuteTicketsAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="modules" data-rule-key="tickets"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="modules" data-rule-key="tickets">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>履约与死信</strong>
+                                                        <span>统一静默履约失败、集中事故和恢复通知。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertModuleMuteFulfillmentStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertModuleMuteFulfillmentUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">履约集中事故仍可继续外发，避免值班遗漏。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertModuleMuteFulfillmentAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="modules" data-rule-key="fulfillment"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="modules" data-rule-key="fulfillment">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>安全与审计</strong>
+                                                        <span>统一静默管理员异常登录等安全审计类通知。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertModuleMuteSecurityStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertModuleMuteSecurityUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">高危安全异常默认仍可继续外发。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertModuleMuteSecurityAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="modules" data-rule-key="security"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="modules" data-rule-key="security">清除此静默</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </section>
                                     </div>
                                 </div>
                             </div>

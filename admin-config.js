@@ -921,6 +921,60 @@ function getDefaultOpsAlertConfig() {
             timezone: 'Asia/Shanghai',
             allow_critical: true
         },
+        mute_rules: {
+            types: {
+                customer_chat_message: {
+                    until: '',
+                    allow_critical: true
+                },
+                shop_purchase_success: {
+                    until: '',
+                    allow_critical: true
+                },
+                wallet_recharge_success: {
+                    until: '',
+                    allow_critical: true
+                },
+                shop_inventory: {
+                    until: '',
+                    allow_critical: true
+                }
+            },
+            modules: {
+                customer_engagement: {
+                    until: '',
+                    allow_critical: true
+                },
+                commerce: {
+                    until: '',
+                    allow_critical: true
+                },
+                inventory: {
+                    until: '',
+                    allow_critical: true
+                },
+                payments: {
+                    until: '',
+                    allow_critical: true
+                },
+                verify: {
+                    until: '',
+                    allow_critical: true
+                },
+                tickets: {
+                    until: '',
+                    allow_critical: true
+                },
+                fulfillment: {
+                    until: '',
+                    allow_critical: true
+                },
+                security: {
+                    until: '',
+                    allow_critical: true
+                }
+            }
+        },
         channels: {
             telegram: {
                 enabled: false,
@@ -1348,6 +1402,15 @@ function normalizeOpsAlertConfig(raw) {
     const quietHoursSource = source.quiet_hours && typeof source.quiet_hours === 'object' && !Array.isArray(source.quiet_hours)
         ? source.quiet_hours
         : {};
+    const muteRulesSource = source.mute_rules && typeof source.mute_rules === 'object' && !Array.isArray(source.mute_rules)
+        ? source.mute_rules
+        : {};
+    const typeMuteRulesSource = muteRulesSource.types && typeof muteRulesSource.types === 'object' && !Array.isArray(muteRulesSource.types)
+        ? muteRulesSource.types
+        : {};
+    const moduleMuteRulesSource = muteRulesSource.modules && typeof muteRulesSource.modules === 'object' && !Array.isArray(muteRulesSource.modules)
+        ? muteRulesSource.modules
+        : {};
     const sourceChannels = source.channels && typeof source.channels === 'object' && !Array.isArray(source.channels)
         ? source.channels
         : {};
@@ -1414,6 +1477,60 @@ function normalizeOpsAlertConfig(raw) {
             end_hour: clamp(toWholeNumber(quietHoursSource.end_hour, defaults.quiet_hours.end_hour), 0, 23),
             timezone: String(quietHoursSource.timezone || defaults.quiet_hours.timezone).trim() || defaults.quiet_hours.timezone,
             allow_critical: normalizeConfigBoolean(quietHoursSource.allow_critical, defaults.quiet_hours.allow_critical)
+        },
+        mute_rules: {
+            types: {
+                customer_chat_message: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.customer_chat_message?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.customer_chat_message?.allow_critical, defaults.mute_rules.types.customer_chat_message.allow_critical)
+                },
+                shop_purchase_success: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.shop_purchase_success?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.shop_purchase_success?.allow_critical, defaults.mute_rules.types.shop_purchase_success.allow_critical)
+                },
+                wallet_recharge_success: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.wallet_recharge_success?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.wallet_recharge_success?.allow_critical, defaults.mute_rules.types.wallet_recharge_success.allow_critical)
+                },
+                shop_inventory: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.shop_inventory?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.shop_inventory?.allow_critical, defaults.mute_rules.types.shop_inventory.allow_critical)
+                }
+            },
+            modules: {
+                customer_engagement: {
+                    until: normalizeDateTimeLocalInputValue(moduleMuteRulesSource.customer_engagement?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(moduleMuteRulesSource.customer_engagement?.allow_critical, defaults.mute_rules.modules.customer_engagement.allow_critical)
+                },
+                commerce: {
+                    until: normalizeDateTimeLocalInputValue(moduleMuteRulesSource.commerce?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(moduleMuteRulesSource.commerce?.allow_critical, defaults.mute_rules.modules.commerce.allow_critical)
+                },
+                inventory: {
+                    until: normalizeDateTimeLocalInputValue(moduleMuteRulesSource.inventory?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(moduleMuteRulesSource.inventory?.allow_critical, defaults.mute_rules.modules.inventory.allow_critical)
+                },
+                payments: {
+                    until: normalizeDateTimeLocalInputValue(moduleMuteRulesSource.payments?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(moduleMuteRulesSource.payments?.allow_critical, defaults.mute_rules.modules.payments.allow_critical)
+                },
+                verify: {
+                    until: normalizeDateTimeLocalInputValue(moduleMuteRulesSource.verify?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(moduleMuteRulesSource.verify?.allow_critical, defaults.mute_rules.modules.verify.allow_critical)
+                },
+                tickets: {
+                    until: normalizeDateTimeLocalInputValue(moduleMuteRulesSource.tickets?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(moduleMuteRulesSource.tickets?.allow_critical, defaults.mute_rules.modules.tickets.allow_critical)
+                },
+                fulfillment: {
+                    until: normalizeDateTimeLocalInputValue(moduleMuteRulesSource.fulfillment?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(moduleMuteRulesSource.fulfillment?.allow_critical, defaults.mute_rules.modules.fulfillment.allow_critical)
+                },
+                security: {
+                    until: normalizeDateTimeLocalInputValue(moduleMuteRulesSource.security?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(moduleMuteRulesSource.security?.allow_critical, defaults.mute_rules.modules.security.allow_critical)
+                }
+            }
         },
         channels: {
             telegram: {
@@ -2097,6 +2214,114 @@ function getOpsAlertRoutingCheckboxId(routingKey, channelKey) {
     return `opsAlertRouting${routingIdMap[routingKey] || ''}${channelIdMap[channelKey] || ''}`;
 }
 
+const OPS_ALERT_MUTE_RULE_TYPE_DEFINITIONS = Object.freeze([
+    {
+        key: 'customer_chat_message',
+        id: 'CustomerChatMessage',
+        label: '客服消息',
+        description: '仅静默用户给客服机器人发新消息这类通知。'
+    },
+    {
+        key: 'shop_purchase_success',
+        id: 'ShopPurchaseSuccess',
+        label: '购买成功',
+        description: '仅静默商城订单支付成功并创建成功后的通知。'
+    },
+    {
+        key: 'wallet_recharge_success',
+        id: 'WalletRechargeSuccess',
+        label: '充值成功',
+        description: '仅静默钱包充值入账成功后的通知。'
+    },
+    {
+        key: 'shop_inventory',
+        id: 'ShopInventory',
+        label: '库存与补货',
+        description: '静默低库存、售罄和库存恢复相关通知。'
+    }
+]);
+
+const OPS_ALERT_MUTE_RULE_MODULE_DEFINITIONS = Object.freeze([
+    {
+        key: 'customer_engagement',
+        id: 'CustomerEngagement',
+        label: '客服互动',
+        description: '统一静默客服消息等用户互动类通知。'
+    },
+    {
+        key: 'commerce',
+        id: 'Commerce',
+        label: '交易成功',
+        description: '统一静默购买成功、充值成功等交易完成通知。'
+    },
+    {
+        key: 'inventory',
+        id: 'Inventory',
+        label: '库存与补货',
+        description: '统一静默库存预警、售罄与库存恢复。'
+    },
+    {
+        key: 'payments',
+        id: 'Payments',
+        label: '支付与退款',
+        description: '统一静默支付通道、退款、支付配置相关告警。'
+    },
+    {
+        key: 'verify',
+        id: 'Verify',
+        label: '验证服务',
+        description: '统一静默验证额度、停摆、堆积、失败率与综合事故。'
+    },
+    {
+        key: 'tickets',
+        id: 'Tickets',
+        label: '工单与售后',
+        description: '统一静默工单超时与恢复通知。'
+    },
+    {
+        key: 'fulfillment',
+        id: 'Fulfillment',
+        label: '履约与死信',
+        description: '统一静默履约失败、集中事故和恢复通知。'
+    },
+    {
+        key: 'security',
+        id: 'Security',
+        label: '安全与审计',
+        description: '统一静默管理员异常登录等安全审计通知。'
+    }
+]);
+
+function getOpsAlertMuteRuleDefinitions(scope) {
+    return scope === 'modules'
+        ? OPS_ALERT_MUTE_RULE_MODULE_DEFINITIONS
+        : OPS_ALERT_MUTE_RULE_TYPE_DEFINITIONS;
+}
+
+function getOpsAlertMuteRuleElementId(scope, key, suffix) {
+    const definition = getOpsAlertMuteRuleDefinitions(scope).find((item) => item.key === key);
+    const scopeId = scope === 'modules' ? 'Module' : 'Type';
+    return `opsAlert${scopeId}Mute${definition?.id || ''}${suffix}`;
+}
+
+function getOpsAlertMuteRuleState(rule = {}, options = {}) {
+    const normalizedUntil = String(rule?.until || '').trim();
+    const parsedUntil = normalizedUntil ? Date.parse(normalizedUntil) : Number.NaN;
+    const referenceDate = options.now instanceof Date
+        ? options.now
+        : new Date(options.now || Date.now());
+    const isValid = Number.isFinite(parsedUntil);
+    const isActive = isValid && parsedUntil > referenceDate.getTime();
+
+    return {
+        active: isActive,
+        expired: isValid && !isActive,
+        until: isValid ? new Date(parsedUntil).toISOString() : '',
+        untilLabel: isValid ? formatVerifyMonitorDateTime(parsedUntil) : '—',
+        allowCritical: rule?.allow_critical !== false
+    };
+}
+
 function getOpsAlertTemporaryMuteState(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']), options = {}) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const temporaryMute = normalizedConfig.temporary_mute || getDefaultOpsAlertConfig().temporary_mute;
@@ -2161,6 +2386,34 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
     ].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.disabled = !quietHours.enabled;
+    });
+
+    ['types', 'modules'].forEach((scope) => {
+        const scopeConfig = normalizedConfig.mute_rules?.[scope] || {};
+        getOpsAlertMuteRuleDefinitions(scope).forEach((definition) => {
+            const rule = scopeConfig[definition.key] || {};
+            const state = getOpsAlertMuteRuleState(rule);
+            const input = document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'Until'));
+            if (input) {
+                input.value = formatDateTimeLocalInputValue(rule.until || '');
+            }
+
+            const allowCriticalToggle = document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'AllowCriticalToggle'));
+            if (allowCriticalToggle) {
+                allowCriticalToggle.classList.toggle('active', rule.allow_critical !== false);
+            }
+
+            const statusEl = document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'Status'));
+            if (statusEl) {
+                if (state.active) {
+                    statusEl.textContent = `当前已静默至 ${state.untilLabel}，${state.allowCritical ? 'critical 仍继续通知。' : '所有级别暂停外发。'}`;
+                } else if (state.expired) {
+                    statusEl.textContent = `上次静默已于 ${state.untilLabel} 到期。可清除旧时间后重新保存。`;
+                } else {
+                    statusEl.textContent = '当前未设置单独静默。设置到期时间后，保存站外告警配置即可生效。';
+                }
+            }
+        });
     });
 
     const routingKeys = ['customer_chat_message', 'shop_purchase_success', 'wallet_recharge_success', 'shop_inventory'];
@@ -5198,6 +5451,14 @@ function collectOpsAlertConfigFromForm() {
         quiet_hours: {
             ...currentConfig.quiet_hours
         },
+        mute_rules: {
+            types: {
+                ...currentConfig.mute_rules.types
+            },
+            modules: {
+                ...currentConfig.mute_rules.modules
+            }
+        },
         channels: {
             telegram: {
                 ...currentConfig.channels.telegram
@@ -5269,6 +5530,22 @@ function collectOpsAlertConfigFromForm() {
     ).trim() || currentConfig.quiet_hours.timezone;
     nextConfig.quiet_hours.allow_critical = document.getElementById('opsAlertQuietHoursAllowCriticalToggle')?.classList.contains('active')
         ?? currentConfig.quiet_hours.allow_critical;
+    ['types', 'modules'].forEach((scope) => {
+        getOpsAlertMuteRuleDefinitions(scope).forEach((definition) => {
+            const currentRule = currentConfig.mute_rules?.[scope]?.[definition.key] || {
+                until: '',
+                allow_critical: true
+            };
+            nextConfig.mute_rules[scope][definition.key] = {
+                ...currentRule,
+                until: normalizeDateTimeLocalInputValue(
+                    document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'Until'))?.value ?? currentRule.until
+                ),
+                allow_critical: document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'AllowCriticalToggle'))?.classList.contains('active')
+                    ?? currentRule.allow_critical
+            };
+        });
+    });
     nextConfig.channels.telegram.enabled = document.getElementById('opsAlertTelegramEnabledToggle')?.classList.contains('active')
         ?? currentConfig.channels.telegram.enabled;
     nextConfig.channels.telegram.chat_ids = normalizeConfigStringArray(
@@ -6489,6 +6766,24 @@ function clearOpsAlertTemporaryMute() {
     input.value = '';
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
     showToast('已清除临时静默时间，保存站外告警配置后生效。', 'info');
+}
+
+function toggleOpsAlertMuteRuleAllowCritical(scope, key) {
+    const toggleEl = document.getElementById(getOpsAlertMuteRuleElementId(scope, key, 'AllowCriticalToggle'));
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function clearOpsAlertMuteRule(scope, key) {
+    const input = document.getElementById(getOpsAlertMuteRuleElementId(scope, key, 'Until'));
+    if (!input) return;
+
+    input.value = '';
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    showToast('已清除该条静默时间，保存站外告警配置后生效。', 'info');
 }
 
 function toggleOpsAlertShopRiskAutoResponseEnabled() {
@@ -8768,6 +9063,8 @@ window.toggleOpsAlertChannelEnabled = toggleOpsAlertChannelEnabled;
 window.toggleOpsAlertTemporaryMuteAllowCritical = toggleOpsAlertTemporaryMuteAllowCritical;
 window.setOpsAlertTemporaryMutePreset = setOpsAlertTemporaryMutePreset;
 window.clearOpsAlertTemporaryMute = clearOpsAlertTemporaryMute;
+window.toggleOpsAlertMuteRuleAllowCritical = toggleOpsAlertMuteRuleAllowCritical;
+window.clearOpsAlertMuteRule = clearOpsAlertMuteRule;
 window.toggleOpsAlertQuietHoursEnabled = toggleOpsAlertQuietHoursEnabled;
 window.toggleOpsAlertQuietHoursAllowCritical = toggleOpsAlertQuietHoursAllowCritical;
 window.toggleOpsAlertShopRiskAutoResponseEnabled = toggleOpsAlertShopRiskAutoResponseEnabled;
