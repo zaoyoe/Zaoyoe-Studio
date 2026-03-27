@@ -2077,9 +2077,9 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
             }
             </div>
             
-            <div class="modal-permissions-panel modal-permissions-panel--flush" id="modalPermissionsPanel">
+            <div class="modal-permissions-panel modal-permissions-panel--flush${roleInfo.is_admin ? '' : ' modal-permissions-panel--admin-collapsed'}" id="modalPermissionsPanel">
                 ${!isLockedSuperAdmin ? `
-                    <div class="perm-section" id="modalAdminPermissionsSection"${roleInfo.is_admin ? '' : ' hidden'}>
+                    <div class="perm-section perm-section--collapsible${roleInfo.is_admin ? '' : ' perm-section--collapsed'}" id="modalAdminPermissionsSection"${roleInfo.is_admin ? '' : ' hidden aria-hidden="true"'}>
                         <div class="perm-section-title">后台权限</div>
                         <div class="perm-checkboxes">
                         <label class="perm-item">
@@ -2130,6 +2130,8 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
         }
         `;
 
+    setModalAdminPermissionsSectionVisible(roleInfo.is_admin, { immediate: true });
+
     // Initialize Flatpickr for expiry date after DOM is updated
     setTimeout(() => {
         const expiryInput = document.getElementById('modalRoleExpiry');
@@ -2166,12 +2168,52 @@ function toggleModalDropdown(dropdownId) {
     setTimeout(() => document.addEventListener('click', closeHandler), 0);
 }
 
+function setModalAdminPermissionsSectionVisible(visible, { immediate = false } = {}) {
+    const adminSection = document.getElementById('modalAdminPermissionsSection');
+    const panel = document.getElementById('modalPermissionsPanel');
+    if (!adminSection) return;
+
+    if (adminSection._collapseHideTimer) {
+        window.clearTimeout(adminSection._collapseHideTimer);
+        adminSection._collapseHideTimer = null;
+    }
+
+    if (visible) {
+        panel?.classList.remove('modal-permissions-panel--admin-collapsed');
+        adminSection.hidden = false;
+        adminSection.setAttribute('aria-hidden', 'false');
+
+        if (immediate) {
+            adminSection.classList.remove('perm-section--collapsed');
+            return;
+        }
+
+        requestAnimationFrame(() => {
+            adminSection.classList.remove('perm-section--collapsed');
+        });
+        return;
+    }
+
+    panel?.classList.add('modal-permissions-panel--admin-collapsed');
+    adminSection.setAttribute('aria-hidden', 'true');
+    adminSection.classList.add('perm-section--collapsed');
+
+    if (immediate) {
+        adminSection.hidden = true;
+        return;
+    }
+
+    adminSection._collapseHideTimer = window.setTimeout(() => {
+        if (adminSection.classList.contains('perm-section--collapsed')) {
+            adminSection.hidden = true;
+        }
+        adminSection._collapseHideTimer = null;
+    }, 280);
+}
+
 // Handle admin toggle in modal
 function handleModalAdminToggle(userId, isEnabled) {
-    const adminSection = document.getElementById('modalAdminPermissionsSection');
-    if (adminSection) {
-        adminSection.hidden = !isEnabled;
-    }
+    setModalAdminPermissionsSectionVisible(isEnabled);
     toggleAdminRole(userId, isEnabled);
 }
 
@@ -5427,9 +5469,6 @@ async function toggleAdminRole(userId, enabled) {
     const toggleInput = document.getElementById(`adminRoleToggle - ${userId} `) || document.getElementById('modalAdminToggle');
 
     if (enabled) {
-        // Show permissions panel
-        if (permPanel) permPanel.hidden = false;
-
         // Insert role with default permissions
         try {
             const { data: currentUser } = await window.supabaseClient.auth.getUser();
@@ -5453,12 +5492,10 @@ async function toggleAdminRole(userId, enabled) {
             alert('授予管理员权限失败: ' + err.message);
             // Revert toggle
             if (toggleInput) toggleInput.checked = false;
-            if (permPanel) permPanel.hidden = true;
+            setModalAdminPermissionsSectionVisible(false);
+            if (permPanel && permPanel !== document.getElementById('modalAdminPermissionsSection')) permPanel.hidden = true;
         }
     } else {
-        // Hide permissions panel
-        if (permPanel) permPanel.hidden = true;
-
         // Remove role
         try {
             const { error } = await window.supabaseClient
@@ -5475,7 +5512,8 @@ async function toggleAdminRole(userId, enabled) {
             alert('撤销管理员权限失败: ' + err.message);
             // Revert toggle
             if (toggleInput) toggleInput.checked = true;
-            if (permPanel) permPanel.hidden = false;
+            setModalAdminPermissionsSectionVisible(true);
+            if (permPanel && permPanel !== document.getElementById('modalAdminPermissionsSection')) permPanel.hidden = false;
         }
     }
 }
