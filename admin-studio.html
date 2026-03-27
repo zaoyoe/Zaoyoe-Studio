@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260327_OPS_ALERT_ROUTING_WIDE_1">
+    <link rel="stylesheet" href="admin-studio.css?v=20260327_OPS_ALERT_ROUTING_LONGCARD_1">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -1182,47 +1182,49 @@
                                                 </div>
                                             </div>
                                             <div class="ops-alert-routing-grid">
-                                                <div class="ops-alert-routing-row ops-alert-routing-row--head">
-                                                    <div class="ops-alert-routing-head">告警类型</div>
-                                                    <div class="ops-alert-routing-check">Telegram</div>
-                                                    <div class="ops-alert-routing-check">飞书</div>
-                                                    <div class="ops-alert-routing-check">邮件</div>
-                                                </div>
                                                 <div class="ops-alert-routing-row">
                                                     <div class="ops-alert-routing-head">
                                                         <strong>客服消息</strong>
                                                         <span>用户给客服机器人发新消息时触发。</span>
                                                     </div>
-                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingCustomerChatMessageTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
-                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingCustomerChatMessageFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
-                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingCustomerChatMessageEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    <div class="ops-alert-routing-options">
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingCustomerChatMessageTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingCustomerChatMessageFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingCustomerChatMessageEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    </div>
                                                 </div>
                                                 <div class="ops-alert-routing-row">
                                                     <div class="ops-alert-routing-head">
                                                         <strong>购买成功</strong>
                                                         <span>商城订单支付完成并创建成功后触发。</span>
                                                     </div>
-                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopPurchaseSuccessTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
-                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopPurchaseSuccessFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
-                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopPurchaseSuccessEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    <div class="ops-alert-routing-options">
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopPurchaseSuccessTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopPurchaseSuccessFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopPurchaseSuccessEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    </div>
                                                 </div>
                                                 <div class="ops-alert-routing-row">
                                                     <div class="ops-alert-routing-head">
                                                         <strong>充值成功</strong>
                                                         <span>钱包充值入账成功后触发。</span>
                                                     </div>
-                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingWalletRechargeSuccessTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
-                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingWalletRechargeSuccessFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
-                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingWalletRechargeSuccessEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    <div class="ops-alert-routing-options">
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingWalletRechargeSuccessTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingWalletRechargeSuccessFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingWalletRechargeSuccessEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    </div>
                                                 </div>
                                                 <div class="ops-alert-routing-row">
                                                     <div class="ops-alert-routing-head">
                                                         <strong>库存与补货</strong>
                                                         <span>低库存、售罄和库存恢复都使用同一组路由。</span>
                                                     </div>
-                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopInventoryTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
-                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopInventoryFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
-                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopInventoryEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    <div class="ops-alert-routing-options">
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopInventoryTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopInventoryFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopInventoryEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </section>
