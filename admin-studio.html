@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260327_ADMIN_SCROLLBAR_AUTO_HIDE_1">
+    <link rel="stylesheet" href="admin-studio.css?v=20260327_OPS_ALERT_SHOP_RISK_WORKSPACE_1">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -1252,6 +1252,22 @@
                                             </div>
                                         </div>
                                         <div class="ops-alert-workspace-grid" id="opsAlertWorkspaceGrid">
+                                            <article class="ops-alert-workspace-card ops-alert-workspace-card--featured">
+                                                <div class="ops-alert-workspace-card__eyebrow">商城风控优先处理</div>
+                                                <div class="ops-alert-workspace-card__title">风险订单 / 优惠券码 / 用户详情</div>
+                                                <p class="ops-alert-workspace-card__desc">优惠码滥用、0 价订单和短时扫货都从这里直接接手，优先落到最常用的处理页。</p>
+                                                <div class="ops-alert-workspace-card__actions">
+                                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="shop-risk-orders">
+                                                        <i class="fas fa-bag-shopping"></i> 风险订单
+                                                    </button>
+                                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="shop-risk-discounts">
+                                                        <i class="fas fa-ticket"></i> 优惠券码
+                                                    </button>
+                                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="shop-risk-users">
+                                                        <i class="fas fa-user-shield"></i> 用户详情
+                                                    </button>
+                                                </div>
+                                            </article>
                                             <article class="ops-alert-workspace-card">
                                                 <div class="ops-alert-workspace-card__title">支付与退款</div>
                                                 <p class="ops-alert-workspace-card__desc">支付通道异常、退款售后和站外告警队列都从这里进入。</p>
@@ -1316,11 +1332,32 @@
                                     <div class="ops-alert-monitor-panel ops-alert-monitor-panel--embedded" id="opsAlertMonitorPanel">
                                         <div class="ops-alert-card-toolbar">
                                             <div class="ops-alert-card-toolbar__copy">
-                                                <p>汇总支付、工单、库存、履约四类核心告警，并支持按状态、级别、模块快速收敛到要处理的那批问题。</p>
+                                                <p>汇总支付、工单、库存、履约与商城风控五类核心告警，并支持按状态、级别、模块快速收敛到要处理的那批问题。</p>
                                             </div>
                                             <div class="ops-alert-card-toolbar__actions">
                                                 <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-refresh-ops-alert-monitor">
                                                     <i class="fas fa-rotate"></i> 刷新面板
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="ops-alert-risk-spotlight" id="opsAlertRiskSpotlight">
+                                            <div class="ops-alert-risk-spotlight__copy">
+                                                <div class="ops-alert-risk-spotlight__eyebrow">商城风控优先处理</div>
+                                                <div class="ops-alert-risk-spotlight__title">正在汇总优惠码滥用、0 价订单和短时扫货信号...</div>
+                                                <div class="ops-alert-risk-spotlight__summary">处理入口会直达订单列表、优惠券码和用户详情，避免只看到告警却还要手动找页签。</div>
+                                            </div>
+                                            <div class="ops-alert-risk-spotlight__stats">
+                                                <span class="ops-alert-monitor-badge ops-alert-monitor-badge--neutral">等待加载</span>
+                                            </div>
+                                            <div class="ops-alert-risk-spotlight__actions">
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="shop-risk-orders">
+                                                    <i class="fas fa-bag-shopping"></i> 风险订单
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="shop-risk-discounts">
+                                                    <i class="fas fa-ticket"></i> 优惠券码
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="shop-risk-users">
+                                                    <i class="fas fa-user-shield"></i> 用户详情
                                                 </button>
                                             </div>
                                         </div>
@@ -1349,6 +1386,7 @@
                                                     <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="category" data-ops-alert-monitor-filter-value="tickets" aria-pressed="false">工单与售后</button>
                                                     <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="category" data-ops-alert-monitor-filter-value="inventory" aria-pressed="false">库存与补货</button>
                                                     <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="category" data-ops-alert-monitor-filter-value="fulfillment" aria-pressed="false">履约与死信</button>
+                                                    <button type="button" class="ops-alert-monitor-filter-btn" data-admin-action="settings-filter-ops-alert-monitor" data-ops-alert-monitor-filter-kind="category" data-ops-alert-monitor-filter-value="shop_risk" aria-pressed="false">商城风控</button>
                                                 </div>
                                             </div>
                                         </div>
@@ -6490,7 +6528,7 @@
     <script src="admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1"></script>
     <script src="admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_2"></script>
-    <script src="admin-config.js?v=20260326_OPS_ALERT_OVERVIEW_TREND_22"></script>
+    <script src="admin-config.js?v=20260327_OPS_ALERT_SHOP_RISK_WORKSPACE_1"></script>
     <script src="admin-homepage.js?v=20260324_HOMEPAGE_RUNTIME_STYLE_2"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>

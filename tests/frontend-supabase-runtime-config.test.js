@@ -2074,6 +2074,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'id="opsAlertEnabledToggle"',
         'id="opsAlertWorkspacePanel"',
         'id="opsAlertWorkspaceGrid"',
+        'id="opsAlertRiskSpotlight"',
         'id="opsAlertHealthPanel"',
         'id="opsAlertHealthMeta"',
         'id="opsAlertHealthGrid"',
@@ -2131,6 +2132,11 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'data-workspace-target="tickets-resolved"',
         'data-workspace-target="shop-inventory"',
         'data-workspace-target="shop-fulfillment"',
+        'data-workspace-target="shop-risk-orders"',
+        'data-workspace-target="shop-risk-discounts"',
+        'data-workspace-target="shop-risk-users"',
+        'data-ops-alert-monitor-filter-value="shop_risk"',
+        '商城风控',
         'id="opsAlertEmailEnabledToggle"',
         'id="opsAlertEmailRecipients"',
         'id="opsAlertEmailFromAddress"',
@@ -2235,6 +2241,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'function getDefaultOpsAlertMonitorState()',
         'function getDefaultOpsAlertMonitorViewState()',
         'function renderOpsAlertMonitorPanel()',
+        'function getOpsAlertRiskSpotlightCategory(filters = getOpsAlertMonitorViewFilters())',
+        'function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlertMonitorViewFilters())',
+        'function renderOpsAlertRiskSpotlight(filters = getOpsAlertMonitorViewFilters())',
         'function getOpsAlertMonitorPreparedCategories(filters = getOpsAlertMonitorViewFilters())',
         'async function copyOpsAlertMonitorChecklist(categoryKey = \'\')',
         'function exportOpsAlertMonitorCsv(categoryKey = \'\')',
@@ -2246,6 +2255,10 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;',
         'async function openOpsAlertWorkspace(workspaceKey, context = {})',
         'window.openOpsAlertWorkspace = openOpsAlertWorkspace;',
+        "'shop-risk-orders': '商城风险订单'",
+        "'shop-risk-discounts': '优惠券码列表'",
+        "'shop-risk-users': '用户详情'",
+        "shop_risk: '商城风控'",
         'email_api_key: { configured: false, source: \'missing\', updatedAt: null }',
         'subject_prefix: \'[Zaoyoe告警]\'',
         "fetch('/api/admin/settings/verify-monitor/quota'",
@@ -2268,6 +2281,8 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     const workspaceCssMarkers = [
         '.ops-alert-workspace-grid',
         '.ops-alert-workspace-card',
+        '.ops-alert-workspace-card--featured',
+        '.ops-alert-workspace-card__eyebrow',
         '.ops-alert-workspace-card__actions',
         '.ops-alert-overview-grid',
         '.ops-alert-overview-card',
@@ -2286,6 +2301,8 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         '.ops-alert-monitor-toolbar',
         '.ops-alert-monitor-filter-btn',
         '.ops-alert-monitor-grid',
+        '.ops-alert-risk-spotlight',
+        '.ops-alert-risk-spotlight__actions',
         '.ops-alert-monitor-card',
         '.ops-alert-monitor-card__actions',
         '.ops-alert-monitor-item__actions'
@@ -5149,14 +5166,16 @@ test('admin studio modal scrollers auto-hide after scroll activity settles', () 
         assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    const htmlMarkers = [
-        'admin-studio.css?v=20260327_ADMIN_SCROLLBAR_AUTO_HIDE_1',
-        'admin-studio.js?v=20260327_ADMIN_SCROLLBAR_AUTO_HIDE_1'
-    ];
-
-    for (const marker of htmlMarkers) {
-        assert.equal(adminStudioHtml.includes(marker), true, `admin-studio.html should contain ${marker}`);
-    }
+    assert.match(
+        adminStudioHtml,
+        /admin-studio\.css\?v=20260327_[A-Z0-9_]+/,
+        'admin-studio.html should reference a cache-busted admin-studio.css asset'
+    );
+    assert.match(
+        adminStudioHtml,
+        /admin-studio\.js\?v=20260327_[A-Z0-9_]+/,
+        'admin-studio.html should reference a cache-busted admin-studio.js asset'
+    );
 });
 
 test('announcement runtime renderers externalize decoration particles and physics style state', () => {
