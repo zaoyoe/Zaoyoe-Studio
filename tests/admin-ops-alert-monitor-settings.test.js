@@ -271,7 +271,11 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillme
                 payload: {
                     target_id: 'shop_order_risk:coupon:FLASH0',
                     signal_type: 'discount_code_spike',
-                    discount_code: 'FLASH0'
+                    discount_code: 'FLASH0',
+                    risk_level: 'critical',
+                    risk_score: 94,
+                    primary_action: 'disable-coupon',
+                    response_summary: '建议立即停用优惠码 FLASH0，并复核最近命中订单。'
                 },
                 created_at: hoursAgo(1.5)
             })
@@ -314,6 +318,9 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillme
         assert.equal(shopRisk.critical_count, 1);
         assert.equal(shopRisk.items[0].reference_label, '优惠码');
         assert.equal(shopRisk.items[0].reference_value, 'FLASH0');
+        assert.equal(shopRisk.items[0].risk_level, 'critical');
+        assert.equal(shopRisk.items[0].risk_score, 94);
+        assert.equal(shopRisk.items[0].primary_action, 'disable-coupon');
     });
 });
 
@@ -407,7 +414,11 @@ test('ops alert monitor handler exposes shared login ip shop risk context', asyn
                     signal_type: 'shared_login_ip_cluster',
                     client_ip: '203.0.113.88',
                     user_id: 'buyer-anchor-1',
-                    buyer_label: 'Alpha'
+                    buyer_label: 'Alpha',
+                    risk_level: 'critical',
+                    risk_score: 91,
+                    primary_action: 'open-user-ban',
+                    response_summary: '建议先查看关联账号，再对风险锚点账号发起封禁处理。'
                 },
                 created_at: hoursAgo(1)
             })
@@ -428,6 +439,8 @@ test('ops alert monitor handler exposes shared login ip shop risk context', asyn
         assert.equal(shopRisk.items[0].reference_value, '203.0.113.88');
         assert.equal(shopRisk.items[0].signal_type, 'shared_login_ip_cluster');
         assert.equal(shopRisk.items[0].user_id, 'buyer-anchor-1');
+        assert.equal(shopRisk.items[0].risk_score, 91);
+        assert.equal(shopRisk.items[0].primary_action, 'open-user-ban');
     });
 });
 
@@ -446,7 +459,11 @@ test('ops alert monitor handler exposes shared login signature shop risk context
                     user_agent_summary: 'Mozilla/5.0 Chrome/124',
                     login_signature_label: '203.0.113.88 · Mozilla/5.0 Chrome/124',
                     user_id: 'buyer-anchor-2',
-                    buyer_label: 'Beta'
+                    buyer_label: 'Beta',
+                    risk_level: 'critical',
+                    risk_score: 95,
+                    primary_action: 'open-user-ban',
+                    response_summary: '建议优先核查关联账号与共用设备，再对风险锚点账号发起封禁处理。'
                 },
                 created_at: hoursAgo(1)
             })
@@ -468,5 +485,7 @@ test('ops alert monitor handler exposes shared login signature shop risk context
         assert.equal(shopRisk.items[0].signal_type, 'shared_login_signature_cluster');
         assert.equal(shopRisk.items[0].user_id, 'buyer-anchor-2');
         assert.equal(shopRisk.items[0].login_signature_label, '203.0.113.88 · Mozilla/5.0 Chrome/124');
+        assert.equal(shopRisk.items[0].risk_level, 'critical');
+        assert.equal(shopRisk.items[0].primary_action, 'open-user-ban');
     });
 });

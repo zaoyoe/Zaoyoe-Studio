@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const { normalizeOpsAlertsConfig } = require('../api/_lib/ops-alerts');
 const {
+    buildShopOrderRiskAnomalyAlerts,
     normalizeShopOrderRiskMonitorConfig,
     runShopOrderRiskSweep,
     __testUtils
@@ -536,6 +537,142 @@ test('buildSharedLoginSignatureAlerts flags clustered orders from the same ip an
     assert.match(alerts[0].content, /共享登录签名/);
 });
 
+test('buildShopOrderRiskAnomalyAlerts enriches risk score and recommended actions', () => {
+    const alerts = buildShopOrderRiskAnomalyAlerts([
+        {
+            id: 'coupon-1',
+            user_id: 'buyer-1',
+            site: 'cn',
+            snapshot_product_name: 'Prompt Pro 年卡',
+            price_paid: 0,
+            total_price: 19.9,
+            item_count: 2,
+            discount_code: 'FLASH0',
+            created_at: '2026-03-27T10:00:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'coupon-2',
+            user_id: 'buyer-2',
+            site: 'cn',
+            snapshot_product_name: 'Prompt Pro 年卡',
+            price_paid: 0,
+            total_price: 19.9,
+            item_count: 2,
+            discount_code: 'FLASH0',
+            created_at: '2026-03-27T10:01:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'coupon-3',
+            user_id: 'buyer-3',
+            site: 'intl',
+            snapshot_product_name: '卡密周卡',
+            price_paid: 0,
+            total_price: 9.9,
+            item_count: 2,
+            discount_code: 'FLASH0',
+            created_at: '2026-03-27T10:02:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'coupon-4',
+            user_id: 'buyer-1',
+            site: 'cn',
+            snapshot_product_name: '卡密周卡',
+            price_paid: 0,
+            total_price: 9.9,
+            item_count: 2,
+            discount_code: 'FLASH0',
+            created_at: '2026-03-27T10:03:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'bulk-1',
+            user_id: 'buyer-bulk',
+            site: 'cn',
+            snapshot_product_name: 'Apple 资格号',
+            price_paid: 30,
+            total_price: 30,
+            item_count: 2,
+            discount_code: '',
+            created_at: '2026-03-27T10:04:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'bulk-2',
+            user_id: 'buyer-bulk',
+            site: 'cn',
+            snapshot_product_name: 'Apple 资格号',
+            price_paid: 30,
+            total_price: 30,
+            item_count: 2,
+            discount_code: '',
+            created_at: '2026-03-27T10:05:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'bulk-3',
+            user_id: 'buyer-bulk',
+            site: 'cn',
+            snapshot_product_name: 'Apple 资格号',
+            price_paid: 30,
+            total_price: 30,
+            item_count: 2,
+            discount_code: '',
+            created_at: '2026-03-27T10:06:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'bulk-4',
+            user_id: 'buyer-bulk',
+            site: 'cn',
+            snapshot_product_name: 'Apple 资格号',
+            price_paid: 30,
+            total_price: 30,
+            item_count: 2,
+            discount_code: '',
+            created_at: '2026-03-27T10:07:00.000Z',
+            refund_status: 'none'
+        }
+    ], {
+        profilesContext: {
+            byId: new Map([
+                ['buyer-1', { id: 'buyer-1', display_name: 'Alpha', last_login_ip: '203.0.113.88' }],
+                ['buyer-2', { id: 'buyer-2', display_name: 'Beta', last_login_ip: '203.0.113.88' }],
+                ['buyer-3', { id: 'buyer-3', display_name: 'Gamma', last_login_ip: '203.0.113.88' }],
+                ['buyer-bulk', { id: 'buyer-bulk', display_name: 'BulkBuyer', last_login_ip: '198.51.100.30' }]
+            ])
+        },
+        entitlementContext: {
+            unlimitedUserIds: new Set()
+        },
+        loginHistoryContext: {
+            latestByUser: new Map([
+                ['buyer-1', { user_id: 'buyer-1', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:01:00.000Z' }],
+                ['buyer-2', { user_id: 'buyer-2', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:02:00.000Z' }],
+                ['buyer-3', { user_id: 'buyer-3', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:03:00.000Z' }]
+            ])
+        }
+    }, normalizeShopOrderRiskMonitorConfig(), {
+        now: '2026-03-27T10:10:00.000Z'
+    });
+
+    const couponAlert = alerts.find((alert) => alert.payload.signal_type === 'discount_code_spike');
+    const velocityAlert = alerts.find((alert) => alert.payload.signal_type === 'user_velocity');
+    const topAlert = alerts[0];
+
+    assert.ok(couponAlert);
+    assert.ok(velocityAlert);
+    assert.equal(typeof topAlert.payload.risk_score, 'number');
+    assert.ok(topAlert.payload.risk_score >= 85);
+    assert.equal(couponAlert.payload.primary_action, 'disable-coupon');
+    assert.equal(couponAlert.payload.discount_code, 'FLASH0');
+    assert.match(couponAlert.payload.response_summary, /停用优惠码 FLASH0/);
+    assert.equal(velocityAlert.payload.primary_action, 'open-user-ban');
+    assert.match(velocityAlert.payload.response_summary, /封禁/);
+});
+
 test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async () => {
     const state = {
         jobs: [],
@@ -677,6 +814,8 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
     assert.equal(first.deduped, 0);
     assert.equal(state.jobs.length, 5);
     assert.equal(state.jobs.every((job) => job.alert_type === 'shop_order_risk_anomaly'), true);
+    assert.equal(state.jobs.every((job) => typeof job.payload?.risk_score === 'number'), true);
+    assert.equal(state.jobs.every((job) => typeof job.payload?.response_summary === 'string' && job.payload.response_summary.length > 0), true);
 
     const second = await runShopOrderRiskSweep(supabase, {
         runtime,
@@ -702,6 +841,10 @@ test('runShopOrderRiskSweep enqueues recovery notices and writes admin notificat
                     target_id: 'shop_order_risk:coupon:FLASH0',
                     signal_type: 'discount_code_spike',
                     discount_code: 'FLASH0',
+                    risk_score: 94,
+                    risk_level: 'critical',
+                    primary_action: 'disable-coupon',
+                    response_summary: '建议立即停用优惠码 FLASH0，并复核最近命中订单。',
                     order_count: 4,
                     distinct_user_count: 3,
                     zero_total_count: 4,
@@ -734,6 +877,8 @@ test('runShopOrderRiskSweep enqueues recovery notices and writes admin notificat
     assert.equal(state.jobs.length, 2);
     assert.equal(state.jobs[1].alert_type, 'shop_order_risk_recovered');
     assert.deepEqual(state.jobs[1].channels, ['feishu']);
+    assert.equal(state.jobs[1].payload.previous_risk_level, 'critical');
+    assert.equal(state.jobs[1].payload.previous_primary_action, 'disable-coupon');
     assert.equal(state.systemNotifications.length, 2);
     assert.match(state.systemNotifications[0].title, /风险已恢复/);
 

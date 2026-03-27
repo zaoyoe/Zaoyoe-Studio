@@ -486,6 +486,161 @@ function getLoginSignatureKey(row = {}) {
     return `${ip}|${userAgent}`;
 }
 
+function getPrimaryDiscountCode(values = []) {
+    const codes = countLabels((values || [])
+        .map((value) => normalizeText(value).toUpperCase())
+        .filter((value) => value && value !== '无优惠码'));
+    return normalizeText(codes[0]?.[0]).toUpperCase();
+}
+
+function resolveShopOrderRiskLevel(score) {
+    const numericScore = Number(score);
+    if (!Number.isFinite(numericScore)) {
+        return 'medium';
+    }
+    if (numericScore >= 85) {
+        return 'critical';
+    }
+    if (numericScore >= 65) {
+        return 'high';
+    }
+    return 'medium';
+}
+
+function getShopOrderRiskLevelLabel(level) {
+    const normalizedLevel = normalizeText(level).toLowerCase();
+    if (normalizedLevel === 'critical') return '紧急';
+    if (normalizedLevel === 'high') return '高';
+    return '中';
+}
+
+function calculateShopOrderRiskScore(signalType, payload = {}, severity = 'warning') {
+    const normalizedSignalType = normalizeText(signalType).toLowerCase();
+    const normalizedSeverity = normalizeText(severity).toLowerCase();
+    const orderCount = Math.max(0, Math.round(Number(payload.order_count || 0)));
+    const distinctUserCount = Math.max(0, Math.round(Number(payload.distinct_user_count || 0)));
+    const totalQuantity = Math.max(0, Math.round(Number(payload.total_quantity || 0)));
+    const zeroTotalCount = Math.max(0, Math.round(Number(payload.zero_total_count || 0)));
+    const distinctProductCount = Math.max(0, Math.round(Number(payload.distinct_product_count || 0)));
+    const totalOrderValue = Number(payload.total_order_value || 0);
+    const siteCount = Array.isArray(payload.site_labels) ? payload.site_labels.filter(Boolean).length : 0;
+    const baseScores = {
+        discount_code_spike: 44,
+        zero_total_cluster: 66,
+        user_velocity: 42,
+        shared_login_ip_cluster: 56,
+        shared_login_signature_cluster: 64
+    };
+
+    let score = baseScores[normalizedSignalType] || 40;
+    score += Math.min(18, Math.max(0, orderCount - 1) * 4);
+    score += Math.min(16, Math.max(0, distinctUserCount - 1) * 5);
+    score += Math.min(16, totalQuantity * 2);
+    score += Math.min(18, zeroTotalCount * 6);
+    score += Math.min(10, Math.max(0, distinctProductCount - 1) * 3);
+    if (siteCount >= 2) {
+        score += 5;
+    }
+    if (Number.isFinite(totalOrderValue) && totalOrderValue > 0) {
+        if (totalOrderValue >= 300) {
+            score += 10;
+        } else if (totalOrderValue >= 100) {
+            score += 6;
+        } else if (totalOrderValue >= 30) {
+            score += 3;
+        }
+    }
+
+    if (normalizedSeverity === 'critical') {
+        score = Math.max(score, 86);
+    } else if (normalizedSeverity === 'warning') {
+        score = Math.max(score, 58);
+    }
+
+    return Math.min(99, Math.max(40, Math.round(score)));
+}
+
+function getShopOrderRiskResponsePlan(signalType, payload = {}, severity = 'warning') {
+    const normalizedSignalType = normalizeText(signalType).toLowerCase();
+    const score = calculateShopOrderRiskScore(normalizedSignalType, payload, severity);
+    const riskLevel = resolveShopOrderRiskLevel(score);
+    const primaryDiscountCode = normalizeText(payload.discount_code).toUpperCase()
+        || getPrimaryDiscountCode(payload.hot_discount_codes);
+
+    if (normalizedSignalType === 'discount_code_spike') {
+        return {
+            risk_score: score,
+            risk_level: riskLevel,
+            primary_action: primaryDiscountCode ? 'disable-coupon' : 'review-orders',
+            response_summary: primaryDiscountCode
+                ? `建议立即停用优惠码 ${primaryDiscountCode}，并复核最近命中订单。`
+                : '建议立即复核最近命中订单，并检查优惠码是否已经外泄。'
+        };
+    }
+
+    if (normalizedSignalType === 'zero_total_cluster') {
+        return {
+            risk_score: score,
+            risk_level: riskLevel,
+            primary_action: primaryDiscountCode ? 'disable-coupon' : 'review-orders',
+            response_summary: primaryDiscountCode
+                ? `建议先停用优惠码 ${primaryDiscountCode}，再核查最近 0 价订单与商品定价规则。`
+                : '建议立即核查最近 0 价订单，并排查优惠码、活动和商品定价是否被误配。'
+        };
+    }
+
+    if (normalizedSignalType === 'user_velocity') {
+        return {
+            risk_score: score,
+            risk_level: riskLevel,
+            primary_action: 'open-user-ban',
+            response_summary: riskLevel === 'critical'
+                ? '建议立即发起封禁处理，并复核该账号最近订单与库存消耗。'
+                : '建议先查看用户详情与最近订单，必要时立刻发起封禁处理。'
+        };
+    }
+
+    if (normalizedSignalType === 'shared_login_ip_cluster') {
+        return {
+            risk_score: score,
+            risk_level: riskLevel,
+            primary_action: 'open-user-ban',
+            response_summary: '建议先查看关联账号，再对风险锚点账号发起封禁处理。'
+        };
+    }
+
+    if (normalizedSignalType === 'shared_login_signature_cluster') {
+        return {
+            risk_score: score,
+            risk_level: riskLevel,
+            primary_action: 'open-user-ban',
+            response_summary: '建议优先核查关联账号与共用设备，再对风险锚点账号发起封禁处理。'
+        };
+    }
+
+    return {
+        risk_score: score,
+        risk_level: riskLevel,
+        primary_action: 'review-orders',
+        response_summary: '建议先复核风险订单，再决定是否需要处置账号或优惠码。'
+    };
+}
+
+function enrichShopOrderRiskPayload(payload = {}, severity = 'warning') {
+    const normalizedPayload = payload && typeof payload === 'object' ? payload : {};
+    const plan = getShopOrderRiskResponsePlan(normalizedPayload.signal_type, normalizedPayload, severity);
+    const primaryDiscountCode = normalizeText(normalizedPayload.discount_code).toUpperCase()
+        || getPrimaryDiscountCode(normalizedPayload.hot_discount_codes);
+    return {
+        ...normalizedPayload,
+        discount_code: primaryDiscountCode || null,
+        risk_score: plan.risk_score,
+        risk_level: plan.risk_level,
+        primary_action: plan.primary_action,
+        response_summary: plan.response_summary
+    };
+}
+
 function buildDiscountCodeSpikeAlerts(orders = [], profilesContext = {}, config = {}, options = {}) {
     const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
     const filteredOrders = (orders || [])
@@ -1011,9 +1166,17 @@ function buildShopOrderRiskAnomalyAlerts(orders = [], contexts = {}, rawConfig =
         ...buildUserVelocityAlerts(orders, profilesContext, entitlementContext, config, { now: nowDate }),
         ...buildSharedLoginIpAlerts(orders, profilesContext, config, { now: nowDate }),
         ...buildSharedLoginSignatureAlerts(orders, profilesContext, loginHistoryContext, config, { now: nowDate })
-    ];
+    ].map((alert) => ({
+        ...alert,
+        payload: enrichShopOrderRiskPayload(alert.payload, alert.severity)
+    }));
 
     return alerts.sort((left, right) => {
+        const leftRiskScore = Number(left?.payload?.risk_score || 0);
+        const rightRiskScore = Number(right?.payload?.risk_score || 0);
+        if (rightRiskScore !== leftRiskScore) {
+            return rightRiskScore - leftRiskScore;
+        }
         const leftSeverity = normalizeText(left?.severity).toLowerCase() === 'critical' ? 1 : 0;
         const rightSeverity = normalizeText(right?.severity).toLowerCase() === 'critical' ? 1 : 0;
         if (rightSeverity !== leftSeverity) {
@@ -1118,6 +1281,10 @@ function buildShopOrderRiskRecoveredAlerts(activeAlerts = [], stateJobs = [], ra
         } else if (normalizeText(payload.user_id)) {
             lines.push(`用户ID：${normalizeText(payload.user_id)}`);
         }
+        if (normalizeText(payload.risk_level)) {
+            const riskScore = Number(payload.risk_score);
+            lines.push(`上次风险等级：${getShopOrderRiskLevelLabel(payload.risk_level)}${Number.isFinite(riskScore) ? ` (${Math.round(riskScore)} 分)` : ''}`);
+        }
         if (Number.isFinite(Number(payload.order_count))) {
             lines.push(`上次命中订单：${Math.max(0, Math.round(Number(payload.order_count || 0)))} 笔`);
         }
@@ -1168,6 +1335,10 @@ function buildShopOrderRiskRecoveredAlerts(activeAlerts = [], stateJobs = [], ra
                 previous_distinct_user_count: Number.isFinite(Number(payload.distinct_user_count)) ? Math.max(0, Math.round(Number(payload.distinct_user_count || 0))) : null,
                 previous_total_quantity: Number.isFinite(Number(payload.total_quantity)) ? Math.max(0, Math.round(Number(payload.total_quantity || 0))) : null,
                 previous_zero_total_count: Number.isFinite(Number(payload.zero_total_count)) ? Math.max(0, Math.round(Number(payload.zero_total_count || 0))) : null,
+                previous_risk_score: Number.isFinite(Number(payload.risk_score)) ? Math.max(0, Math.round(Number(payload.risk_score || 0))) : null,
+                previous_risk_level: normalizeText(payload.risk_level) || null,
+                previous_primary_action: normalizeText(payload.primary_action) || null,
+                previous_response_summary: normalizeText(payload.response_summary) || null,
                 previous_hot_discount_codes: Array.isArray(payload.hot_discount_codes) ? payload.hot_discount_codes : [],
                 previous_sample_products: Array.isArray(payload.sample_products) ? payload.sample_products : [],
                 entry_path: normalizeText(payload.entry_path) || '商城管理 -> 订单列表'

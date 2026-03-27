@@ -542,7 +542,8 @@ function bindAdminStudioDelegatedControls() {
                     referenceValue: actionEl.dataset.workspaceReferenceValue,
                     targetId: actionEl.dataset.workspaceTargetId,
                     userId: actionEl.dataset.workspaceUserId,
-                    clientIp: actionEl.dataset.workspaceClientIp
+                    clientIp: actionEl.dataset.workspaceClientIp,
+                    discountCode: actionEl.dataset.workspaceDiscountCode
                 });
                 break;
             case 'settings-handle-shop-risk-action':
@@ -553,7 +554,8 @@ function bindAdminStudioDelegatedControls() {
                     referenceValue: actionEl.dataset.workspaceReferenceValue,
                     targetId: actionEl.dataset.workspaceTargetId,
                     userId: actionEl.dataset.workspaceUserId,
-                    clientIp: actionEl.dataset.workspaceClientIp
+                    clientIp: actionEl.dataset.workspaceClientIp,
+                    discountCode: actionEl.dataset.workspaceDiscountCode
                 });
                 break;
             case 'settings-refresh-ops-alert-monitor':

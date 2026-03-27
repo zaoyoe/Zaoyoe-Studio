@@ -2606,6 +2606,24 @@ function getOpsAlertMonitorSeverityTone(severity) {
     return normalizedSeverity === 'critical' ? 'danger' : (normalizedSeverity === 'warning' ? 'warning' : 'neutral');
 }
 
+function getOpsAlertMonitorRiskTone(riskLevel) {
+    const normalizedRiskLevel = String(riskLevel || '').trim().toLowerCase();
+    if (normalizedRiskLevel === 'critical') return 'danger';
+    if (normalizedRiskLevel === 'high') return 'warning';
+    if (normalizedRiskLevel === 'medium') return 'neutral';
+    return 'neutral';
+}
+
+function getOpsAlertMonitorRiskLevelLabel(riskLevel) {
+    const normalizedRiskLevel = String(riskLevel || '').trim().toLowerCase();
+    const labelMap = {
+        medium: '中',
+        high: '高',
+        critical: '紧急'
+    };
+    return labelMap[normalizedRiskLevel] || normalizedRiskLevel || '中';
+}
+
 function getOpsAlertMonitorItemAction(category = {}, item = {}) {
     const alertType = String(item.alert_type || '').trim().toLowerCase();
     const categoryKey = String(category.key || '').trim().toLowerCase();
@@ -2649,16 +2667,29 @@ function getOpsAlertMonitorItemAction(category = {}, item = {}) {
 function getOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
     const alertType = String(item.alert_type || '').trim().toLowerCase();
     const targetId = String(item.target_id || '').trim().toLowerCase();
+    const primaryAction = String(item.primary_action || '').trim().toLowerCase();
 
     if (String(category.key || '').trim().toLowerCase() !== 'shop_risk') {
         return null;
     }
 
-    if (alertType === 'shop_order_risk_anomaly' && targetId.startsWith('shop_order_risk:coupon:')) {
+    if (alertType !== 'shop_order_risk_anomaly') {
+        return null;
+    }
+
+    if (primaryAction === 'disable-coupon' && item.discount_code) {
         return {
             action: 'disable-coupon',
             label: '一键停用优惠码',
             icon: 'fas fa-ban'
+        };
+    }
+
+    if (primaryAction === 'open-user-ban' && item.user_id) {
+        return {
+            action: 'open-user-ban',
+            label: '发起封禁处理',
+            icon: 'fas fa-user-lock'
         };
     }
 
@@ -2673,7 +2704,8 @@ function buildOpsAlertMonitorContextAttrs(category = {}, item = {}) {
         'data-workspace-reference-value': item.reference_value || '',
         'data-workspace-target-id': item.target_id || '',
         'data-workspace-user-id': item.user_id || '',
-        'data-workspace-client-ip': item.client_ip || ''
+        'data-workspace-client-ip': item.client_ip || '',
+        'data-workspace-discount-code': item.discount_code || ''
     };
 }
 
@@ -2706,6 +2738,8 @@ function buildOpsAlertMonitorQuickActionAttrs(action = {}, category = {}, item =
 function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
     const severity = String(item.severity || 'warning').trim().toLowerCase();
     const severityTone = getOpsAlertMonitorSeverityTone(severity);
+    const riskLevel = String(item.risk_level || '').trim().toLowerCase();
+    const riskTone = getOpsAlertMonitorRiskTone(riskLevel);
     const itemAction = getOpsAlertMonitorItemAction(category, item);
     const quickAction = getOpsAlertMonitorItemQuickAction(category, item);
     const metaParts = [
@@ -2719,9 +2753,11 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
         <article class="ops-alert-monitor-item">
             <div class="ops-alert-monitor-item__top">
                 ${buildOpsAlertMonitorBadge(severity === 'critical' ? 'critical' : 'warning', severityTone)}
+                ${riskLevel ? buildOpsAlertMonitorBadge(`风险 ${getOpsAlertMonitorRiskLevelLabel(riskLevel)}${Number.isFinite(Number(item.risk_score)) ? ` · ${formatVerifyMonitorInteger(item.risk_score)}` : ''}`, riskTone) : ''}
                 <strong class="ops-alert-monitor-item__title">${escapeConfigHtml(item.title || '系统告警')}</strong>
             </div>
             ${item.message ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(item.message)}</div>` : ''}
+            ${item.response_summary ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(item.response_summary)}</div>` : ''}
             <div class="ops-alert-monitor-item__meta">${metaParts.length ? metaParts.join(' · ') : '等待更多上下文'}</div>
             ${(itemAction || quickAction) ? `
                 <div class="ops-alert-monitor-item__actions">
@@ -2995,7 +3031,8 @@ function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlert
         : '当前没有可展示的商城风控快照';
     const summary = spotlightCategory
         ? (
-            latestItem?.message
+            latestItem?.response_summary
+            || latestItem?.message
             || spotlightCategory.filtered_note
             || spotlightCategory.latest_message
             || '处理入口会直达订单列表、优惠券码和用户详情，避免只看到告警却还要手动找页签。'
@@ -4817,7 +4854,8 @@ function normalizeOpsAlertWorkspaceContext(context = {}) {
         referenceValue: String(context.referenceValue || context.reference_value || '').trim(),
         targetId: String(context.targetId || context.target_id || '').trim(),
         userId: String(context.userId || context.user_id || context.workspaceUserId || '').trim(),
-        clientIp: String(context.clientIp || context.client_ip || context.workspaceClientIp || '').trim()
+        clientIp: String(context.clientIp || context.client_ip || context.workspaceClientIp || '').trim(),
+        discountCode: String(context.discountCode || context.discount_code || context.workspaceDiscountCode || '').trim()
     };
 }
 
@@ -4831,6 +4869,9 @@ function getOpsAlertWorkspaceTargetIdParts(context = {}) {
 
 function getOpsAlertWorkspaceDiscountCode(context = {}) {
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    if (normalizedContext.discountCode) {
+        return normalizedContext.discountCode;
+    }
     if (normalizedContext.referenceLabel === '优惠码' && normalizedContext.referenceValue) {
         return normalizedContext.referenceValue;
     }
@@ -5106,6 +5147,28 @@ async function handleShopRiskAction(action, context = {}) {
                 refreshOpsAlertMonitorPanel?.(),
                 window.AdminDiscounts?.loadDiscounts?.()
             ]);
+            return true;
+        }
+
+        if (normalizedAction === 'open-user-ban') {
+            const userId = getOpsAlertWorkspaceRiskUserId(normalizedContext);
+            if (!userId) {
+                showToast('缺少可处理的用户', 'warning');
+                return false;
+            }
+
+            await openOpsAlertWorkspace('shop-risk-users', {
+                ...normalizedContext,
+                userId
+            });
+            await settleOpsAlertWorkspace();
+
+            if (typeof window.toggleUserBlock !== 'function') {
+                throw new Error('用户封禁入口尚未就绪');
+            }
+
+            await window.toggleUserBlock(userId, false);
+            showToast('已打开封禁处理弹窗', 'success');
             return true;
         }
 

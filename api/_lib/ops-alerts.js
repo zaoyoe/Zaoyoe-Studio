@@ -1699,6 +1699,26 @@ function getShopOrderRiskSignalLabel(value) {
     return labelMap[normalized] || normalized;
 }
 
+function getShopOrderRiskLevelLabel(value) {
+    const normalized = normalizeText(value).toLowerCase();
+    const labelMap = {
+        medium: '中',
+        high: '高',
+        critical: '紧急'
+    };
+    return labelMap[normalized] || normalized || '中';
+}
+
+function getShopOrderRiskActionLabel(value) {
+    const normalized = normalizeText(value).toLowerCase();
+    const labelMap = {
+        'disable-coupon': '停用优惠码',
+        'open-user-ban': '发起封禁处理',
+        'review-orders': '复核风险订单'
+    };
+    return labelMap[normalized] || normalized;
+}
+
 function buildShopOrderRiskAlertText(job = {}) {
     if (normalizeText(job.alert_type).toLowerCase() !== 'shop_order_risk_anomaly') {
         return '';
@@ -1715,6 +1735,10 @@ function buildShopOrderRiskAlertText(job = {}) {
     ];
 
     if (normalizeText(payload.signal_type)) lines.push(`风险类型：${getShopOrderRiskSignalLabel(payload.signal_type)}`);
+    if (normalizeText(payload.risk_level)) {
+        const riskScore = Number(payload.risk_score);
+        lines.push(`风险等级：${getShopOrderRiskLevelLabel(payload.risk_level)}${Number.isFinite(riskScore) ? ` (${Math.round(riskScore)} 分)` : ''}`);
+    }
     if (normalizeText(payload.discount_code)) lines.push(`优惠码：${normalizeText(payload.discount_code)}`);
     if (normalizeText(payload.buyer_label)) {
         lines.push(`账号：${normalizeText(payload.buyer_label)}`);
@@ -1750,6 +1774,8 @@ function buildShopOrderRiskAlertText(job = {}) {
     if (Number.isFinite(Number(payload.window_minutes))) {
         lines.push(`统计窗口：${Math.max(1, Math.round(Number(payload.window_minutes || 0)))} 分钟`);
     }
+    if (normalizeText(payload.response_summary)) lines.push(`建议动作：${normalizeText(payload.response_summary)}`);
+    if (normalizeText(payload.primary_action)) lines.push(`首选处置：${getShopOrderRiskActionLabel(payload.primary_action)}`);
     if (siteLabels.length) lines.push(`涉及站点：${siteLabels.join('、')}`);
     if (hotDiscountCodes.length) lines.push(`热点优惠码：${hotDiscountCodes.join('、')}`);
     if (sampleProducts.length) lines.push(`热点商品：${sampleProducts.join('、')}`);
@@ -1781,6 +1807,10 @@ function buildShopOrderRiskRecoveredAlertText(job = {}) {
     } else if (normalizeText(payload.user_id)) {
         lines.push(`用户ID：${normalizeText(payload.user_id)}`);
     }
+    if (normalizeText(payload.previous_risk_level)) {
+        const previousRiskScore = Number(payload.previous_risk_score);
+        lines.push(`上次风险等级：${getShopOrderRiskLevelLabel(payload.previous_risk_level)}${Number.isFinite(previousRiskScore) ? ` (${Math.round(previousRiskScore)} 分)` : ''}`);
+    }
     if (normalizeText(payload.client_ip)) {
         lines.push(`共享登录 IP：${normalizeText(payload.client_ip)}`);
     }
@@ -1803,6 +1833,8 @@ function buildShopOrderRiskRecoveredAlertText(job = {}) {
     }
     if (hotDiscountCodes.length) lines.push(`上次热点优惠码：${hotDiscountCodes.join('、')}`);
     if (sampleProducts.length) lines.push(`上次热点商品：${sampleProducts.join('、')}`);
+    if (normalizeText(payload.previous_response_summary)) lines.push(`上次建议动作：${normalizeText(payload.previous_response_summary)}`);
+    if (normalizeText(payload.previous_primary_action)) lines.push(`上次首选处置：${getShopOrderRiskActionLabel(payload.previous_primary_action)}`);
     if (normalizeText(payload.incident_started_at)) lines.push(`上次异常：${formatTimestamp(payload.incident_started_at)}`);
     if (normalizeText(payload.incident_recovered_at)) lines.push(`恢复时间：${formatTimestamp(payload.incident_recovered_at)}`);
     if (Number.isFinite(Number(payload.incident_duration_minutes))) {

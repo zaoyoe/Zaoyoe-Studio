@@ -1143,6 +1143,10 @@ test('buildExternalAlertText renders shop order risk anomaly details', () => {
         title: '优惠码高频使用异常（FLASH0）',
         payload: {
             signal_type: 'discount_code_spike',
+            risk_score: 94,
+            risk_level: 'critical',
+            primary_action: 'disable-coupon',
+            response_summary: '建议立即停用优惠码 FLASH0，并复核最近命中订单。',
             discount_code: 'FLASH0',
             order_count: 4,
             distinct_user_count: 3,
@@ -1159,11 +1163,14 @@ test('buildExternalAlertText renders shop order risk anomaly details', () => {
 
     assert.match(text, /商城风控告警/);
     assert.match(text, /风险类型：优惠码高频使用/);
+    assert.match(text, /风险等级：紧急 \(94 分\)/);
     assert.match(text, /优惠码：FLASH0/);
     assert.match(text, /命中订单：4 笔/);
     assert.match(text, /涉及账号：3 个/);
     assert.match(text, /0 价订单：4 笔/);
     assert.match(text, /统计窗口：30 分钟/);
+    assert.match(text, /建议动作：建议立即停用优惠码 FLASH0，并复核最近命中订单。/);
+    assert.match(text, /首选处置：停用优惠码/);
     assert.match(text, /热点商品：Prompt Pro 年卡 × 2、卡密周卡 × 2/);
     assert.match(text, /处理入口：商城管理 -> 订单列表 \/ 优惠券码/);
 });
@@ -1177,6 +1184,10 @@ test('buildExternalAlertText renders shop order risk recovery details', () => {
             signal_type: 'discount_code_spike',
             recovery_summary: '优惠码 FLASH0 在风险窗口内已回落到阈值以下',
             discount_code: 'FLASH0',
+            previous_risk_score: 94,
+            previous_risk_level: 'critical',
+            previous_primary_action: 'disable-coupon',
+            previous_response_summary: '建议立即停用优惠码 FLASH0，并复核最近命中订单。',
             previous_order_count: 4,
             previous_distinct_user_count: 3,
             previous_zero_total_count: 4,
@@ -1192,10 +1203,13 @@ test('buildExternalAlertText renders shop order risk recovery details', () => {
     assert.match(text, /商城风控恢复/);
     assert.match(text, /风险类型：优惠码高频使用/);
     assert.match(text, /恢复结论：优惠码 FLASH0 在风险窗口内已回落到阈值以下/);
+    assert.match(text, /上次风险等级：紧急 \(94 分\)/);
     assert.match(text, /优惠码：FLASH0/);
     assert.match(text, /上次命中订单：4 笔/);
     assert.match(text, /上次涉及账号：3 个/);
     assert.match(text, /上次 0 价订单：4 笔/);
+    assert.match(text, /上次建议动作：建议立即停用优惠码 FLASH0，并复核最近命中订单。/);
+    assert.match(text, /上次首选处置：停用优惠码/);
     assert.match(text, /持续时长：30 分钟/);
     assert.match(text, /处理入口：商城管理 -> 订单列表 \/ 优惠券码/);
 });
