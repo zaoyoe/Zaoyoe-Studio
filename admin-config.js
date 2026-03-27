@@ -2625,6 +2625,9 @@ function getOpsAlertMonitorItemAction(category = {}, item = {}) {
         if (targetId.startsWith('shop_order_risk:coupon:')) {
             return { target: 'shop-risk-discounts', label: '查看优惠券码', icon: 'fas fa-ticket' };
         }
+        if (targetId.startsWith('shop_order_risk:login_signature:')) {
+            return { target: 'shop-risk-users', label: '查看关联账号', icon: 'fas fa-user-shield' };
+        }
         if (targetId.startsWith('shop_order_risk:shared_ip:')) {
             return { target: 'shop-risk-users', label: '查看关联账号', icon: 'fas fa-user-shield' };
         }

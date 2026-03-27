@@ -1693,7 +1693,8 @@ function getShopOrderRiskSignalLabel(value) {
         discount_code_spike: '优惠码高频使用',
         zero_total_cluster: '0 价订单聚集',
         user_velocity: '账号短时扫货',
-        shared_login_ip_cluster: '共享登录 IP 多账号下单'
+        shared_login_ip_cluster: '共享登录 IP 多账号下单',
+        shared_login_signature_cluster: '共享登录签名多账号下单'
     };
     return labelMap[normalized] || normalized;
 }
@@ -1722,6 +1723,11 @@ function buildShopOrderRiskAlertText(job = {}) {
     }
     if (normalizeText(payload.client_ip)) {
         lines.push(`共享登录 IP：${normalizeText(payload.client_ip)}`);
+    }
+    if (normalizeText(payload.login_signature_label)) {
+        lines.push(`共享登录签名：${normalizeText(payload.login_signature_label)}`);
+    } else if (normalizeText(payload.user_agent_summary)) {
+        lines.push(`设备摘要：${normalizeText(payload.user_agent_summary)}`);
     }
     if (Number.isFinite(Number(payload.order_count))) {
         lines.push(`命中订单：${Math.max(0, Math.round(Number(payload.order_count || 0)))} 笔`);
@@ -1777,6 +1783,11 @@ function buildShopOrderRiskRecoveredAlertText(job = {}) {
     }
     if (normalizeText(payload.client_ip)) {
         lines.push(`共享登录 IP：${normalizeText(payload.client_ip)}`);
+    }
+    if (normalizeText(payload.login_signature_label)) {
+        lines.push(`共享登录签名：${normalizeText(payload.login_signature_label)}`);
+    } else if (normalizeText(payload.user_agent_summary)) {
+        lines.push(`设备摘要：${normalizeText(payload.user_agent_summary)}`);
     }
     if (Number.isFinite(Number(payload.previous_order_count))) {
         lines.push(`上次命中订单：${Math.max(0, Math.round(Number(payload.previous_order_count || 0)))} 笔`);

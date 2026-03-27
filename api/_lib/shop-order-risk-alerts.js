@@ -26,6 +26,10 @@ const DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG = Object.freeze({
     shared_login_ip_min_order_count: 4,
     shared_login_ip_min_distinct_users: 3,
     shared_login_ip_min_total_quantity: 6,
+    login_signature_window_minutes: 30,
+    login_signature_min_order_count: 4,
+    login_signature_min_distinct_users: 3,
+    login_signature_min_total_quantity: 6,
     page_size: 500,
     max_pages: 10
 });
@@ -167,6 +171,30 @@ function normalizeShopOrderRiskMonitorConfig(rawConfig = {}, env = process.env) 
             2,
             10000
         ),
+        login_signature_window_minutes: normalizeNumber(
+            source.login_signature_window_minutes,
+            normalizeNumber(env?.SHOP_ORDER_RISK_LOGIN_SIGNATURE_WINDOW_MINUTES, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.login_signature_window_minutes, 5, 24 * 60),
+            5,
+            24 * 60
+        ),
+        login_signature_min_order_count: normalizeNumber(
+            source.login_signature_min_order_count,
+            normalizeNumber(env?.SHOP_ORDER_RISK_LOGIN_SIGNATURE_MIN_ORDER_COUNT, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.login_signature_min_order_count, 2, 100),
+            2,
+            100
+        ),
+        login_signature_min_distinct_users: normalizeNumber(
+            source.login_signature_min_distinct_users,
+            normalizeNumber(env?.SHOP_ORDER_RISK_LOGIN_SIGNATURE_MIN_DISTINCT_USERS, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.login_signature_min_distinct_users, 2, 100),
+            2,
+            100
+        ),
+        login_signature_min_total_quantity: normalizeNumber(
+            source.login_signature_min_total_quantity,
+            normalizeNumber(env?.SHOP_ORDER_RISK_LOGIN_SIGNATURE_MIN_TOTAL_QUANTITY, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.login_signature_min_total_quantity, 2, 10000),
+            2,
+            10000
+        ),
         page_size: normalizeNumber(
             source.page_size,
             normalizeNumber(env?.SHOP_ORDER_RISK_MONITOR_PAGE_SIZE, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.page_size, 50, 5000),
@@ -274,6 +302,34 @@ async function fetchPurchaseEntitlementsByUserIds(client, userIds = [], config =
     return rows;
 }
 
+async function fetchRecentLoginHistoryByUserIds(client, userIds = [], sinceIso, config = {}) {
+    const normalizedUserIds = Array.from(new Set((userIds || []).map((userId) => normalizeText(userId)).filter(Boolean)));
+    if (!normalizedUserIds.length) {
+        return [];
+    }
+
+    const rows = [];
+    const chunkSize = Math.max(1, Math.min(Number(config.page_size || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.page_size), 200));
+
+    for (let index = 0; index < normalizedUserIds.length; index += chunkSize) {
+        const batch = normalizedUserIds.slice(index, index + chunkSize);
+        const { data, error } = await client
+            .from('user_login_history')
+            .select('user_id, ip_address, user_agent, created_at, site')
+            .in('user_id', batch)
+            .gte('created_at', sinceIso)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            throw error;
+        }
+
+        rows.push(...(Array.isArray(data) ? data : []));
+    }
+
+    return rows;
+}
+
 function buildProfilesContext(profiles = []) {
     const byId = new Map();
     for (const profile of profiles || []) {
@@ -295,6 +351,27 @@ function buildPurchaseEntitlementContext(rows = []) {
         }
     }
     return { unlimitedUserIds };
+}
+
+function summarizeUserAgent(value) {
+    const normalized = normalizeText(value);
+    if (!normalized) return '';
+    return normalized.length > 88 ? `${normalized.slice(0, 85)}...` : normalized;
+}
+
+function buildLoginHistoryContext(rows = []) {
+    const latestByUser = new Map();
+
+    for (const row of (rows || []).slice().sort(compareCreatedAtDescending)) {
+        const userId = normalizeText(row?.user_id);
+        if (!userId || latestByUser.has(userId)) {
+            continue;
+        }
+
+        latestByUser.set(userId, row);
+    }
+
+    return { latestByUser };
 }
 
 function resolveUserLabel(profile, userId = '') {
@@ -398,6 +475,15 @@ function getSiteLabel(value) {
 
 function getProfileLastLoginIp(profile = {}) {
     return normalizeText(profile?.last_login_ip);
+}
+
+function getLoginSignatureKey(row = {}) {
+    const ip = normalizeText(row?.ip_address);
+    const userAgent = normalizeText(row?.user_agent);
+    if (!ip || !userAgent) {
+        return '';
+    }
+    return `${ip}|${userAgent}`;
 }
 
 function buildDiscountCodeSpikeAlerts(orders = [], profilesContext = {}, config = {}, options = {}) {
@@ -776,17 +862,155 @@ function buildSharedLoginIpAlerts(orders = [], profilesContext = {}, config = {}
     }).filter(Boolean);
 }
 
+function buildSharedLoginSignatureAlerts(orders = [], profilesContext = {}, loginHistoryContext = {}, config = {}, options = {}) {
+    const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
+    const filteredOrders = (orders || [])
+        .filter((order) => !shouldSkipRefundedOrder(order))
+        .filter((order) => isWithinWindow(order.created_at, config.login_signature_window_minutes, nowDate))
+        .filter((order) => normalizeText(order.user_id));
+    const groups = new Map();
+
+    for (const order of filteredOrders) {
+        const userId = normalizeText(order.user_id);
+        const loginRow = loginHistoryContext.latestByUser instanceof Map
+            ? loginHistoryContext.latestByUser.get(userId)
+            : null;
+        if (!loginRow || !isWithinWindow(loginRow.created_at, config.login_signature_window_minutes, nowDate)) {
+            continue;
+        }
+
+        const signatureKey = getLoginSignatureKey(loginRow);
+        if (!signatureKey) {
+            continue;
+        }
+
+        if (!groups.has(signatureKey)) {
+            groups.set(signatureKey, {
+                loginRow,
+                orders: []
+            });
+        }
+        groups.get(signatureKey).orders.push(order);
+    }
+
+    return Array.from(groups.entries()).map(([signatureKey, group]) => {
+        const groupOrders = Array.isArray(group?.orders) ? group.orders : [];
+        const loginRow = group?.loginRow || {};
+        const distinctUserIds = Array.from(new Set(groupOrders.map((order) => normalizeText(order.user_id)).filter(Boolean)));
+        const totalQuantity = groupOrders.reduce((sum, order) => sum + Math.max(1, Math.round(Number(order.item_count || 1))), 0);
+        if (
+            groupOrders.length < Number(config.login_signature_min_order_count || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.login_signature_min_order_count)
+            || distinctUserIds.length < Number(config.login_signature_min_distinct_users || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.login_signature_min_distinct_users)
+            || totalQuantity < Number(config.login_signature_min_total_quantity || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.login_signature_min_total_quantity)
+        ) {
+            return null;
+        }
+
+        const clientIp = normalizeText(loginRow.ip_address);
+        const userAgentSummary = summarizeUserAgent(loginRow.user_agent);
+        const loginSignatureHash = crypto.createHash('sha256').update(signatureKey).digest('hex').slice(0, 24);
+        const loginSignatureLabel = [clientIp, userAgentSummary].filter(Boolean).join(' · ');
+        const sampleUsers = distinctUserIds.slice(0, 6).map((userId) => {
+            const profile = profilesContext.byId instanceof Map ? profilesContext.byId.get(userId) : null;
+            return resolveUserLabel(profile, userId);
+        }).filter(Boolean);
+        const sampleProducts = formatTopLabels(groupOrders.map((order) => order.snapshot_product_name), 3);
+        const siteLabels = formatTopLabels(groupOrders.map((order) => getSiteLabel(order.site)), 3);
+        const orderRefs = groupOrders
+            .map((order) => normalizeText(order.id))
+            .filter(Boolean)
+            .slice(0, 6);
+        const latestOrderAt = getLatestCreatedAt(groupOrders);
+        const zeroTotalCount = getZeroTotalOrderCount(groupOrders);
+        const distinctProductCount = Array.from(new Set(groupOrders.map((order) => normalizeText(order.snapshot_product_name)).filter(Boolean))).length;
+        const totalOrderValue = groupOrders.reduce((sum, order) => {
+            const numericValue = Number(order.total_price);
+            return sum + (Number.isFinite(numericValue) ? numericValue : 0);
+        }, 0);
+        const anchorUserId = distinctUserIds[0] || null;
+        const anchorProfile = anchorUserId && profilesContext.byId instanceof Map
+            ? profilesContext.byId.get(anchorUserId)
+            : null;
+        const anchorUserLabel = resolveUserLabel(anchorProfile, anchorUserId || '');
+        const lines = [
+            `最近 ${Math.max(1, Math.round(Number(config.login_signature_window_minutes || 0)))} 分钟内，多个账号使用同一登录 IP 与设备指纹组合后连续下单，建议重点排查批量养号或代下。`,
+            `共享登录签名：${loginSignatureLabel || loginSignatureHash}`,
+            `命中订单：${groupOrders.length} 笔`,
+            `涉及账号：${distinctUserIds.length} 个`,
+            `累计数量：${totalQuantity} 件`
+        ];
+
+        if (distinctProductCount > 0) lines.push(`涉及商品：${distinctProductCount} 个`);
+        if (zeroTotalCount > 0) lines.push(`0 价订单：${zeroTotalCount} 笔`);
+        if (siteLabels.length) lines.push(`涉及站点：${siteLabels.join('、')}`);
+        if (sampleProducts.length) lines.push(`热点商品：${sampleProducts.join('、')}`);
+        if (sampleUsers.length) lines.push(`关联账号：${sampleUsers.join('、')}`);
+        if (orderRefs.length) lines.push(`示例订单：${orderRefs.join('、')}`);
+        if (Number.isFinite(totalOrderValue) && totalOrderValue > 0) lines.push(`窗口原价合计：${totalOrderValue.toFixed(2)} 元`);
+        if (latestOrderAt) lines.push(`最近下单时间：${latestOrderAt}`);
+        lines.push('处理入口：商城管理 -> 用户详情(关联账号) / 订单列表');
+
+        const fingerprint = groupOrders
+            .map((order) => normalizeText(order.id))
+            .filter(Boolean)
+            .sort()
+            .join('|');
+
+        return {
+            alertType: 'shop_order_risk_anomaly',
+            severity: zeroTotalCount > 0
+                || distinctUserIds.length >= Math.max(4, Number(config.login_signature_min_distinct_users || 0) + 1)
+                || totalQuantity >= Math.max(10, Number(config.login_signature_min_total_quantity || 0) * 2)
+                ? 'critical'
+                : 'warning',
+            title: `共享登录签名异常（${userAgentSummary || clientIp || loginSignatureHash}）`,
+            content: lines.join('\n'),
+            payload: {
+                target_id: `shop_order_risk:login_signature:${loginSignatureHash}`,
+                signal_type: 'shared_login_signature_cluster',
+                client_ip: clientIp,
+                user_agent_summary: userAgentSummary,
+                login_signature_hash: loginSignatureHash,
+                login_signature_label: loginSignatureLabel || loginSignatureHash,
+                user_id: anchorUserId,
+                buyer_label: anchorUserLabel,
+                related_user_ids: distinctUserIds.slice(0, 12),
+                order_count: groupOrders.length,
+                distinct_user_count: distinctUserIds.length,
+                total_quantity: totalQuantity,
+                distinct_product_count: distinctProductCount,
+                zero_total_count: zeroTotalCount,
+                site_labels: siteLabels,
+                sample_products: sampleProducts,
+                sample_users: sampleUsers,
+                order_refs: orderRefs,
+                total_order_value: Number.isFinite(totalOrderValue) ? Number(totalOrderValue.toFixed(2)) : null,
+                latest_order_at: latestOrderAt || null,
+                window_minutes: Math.max(1, Math.round(Number(config.login_signature_window_minutes || 0))),
+                entry_path: '商城管理 -> 用户详情(关联账号) / 订单列表'
+            },
+            dedupeKey: crypto
+                .createHash('sha256')
+                .update(`shop_order_risk:shared_login_signature_cluster:${loginSignatureHash}:${fingerprint || 'empty'}`)
+                .digest('hex'),
+            dedupeWindowMinutes: Number(config.dedupe_window_minutes || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.dedupe_window_minutes)
+        };
+    }).filter(Boolean);
+}
+
 function buildShopOrderRiskAnomalyAlerts(orders = [], contexts = {}, rawConfig = {}, options = {}) {
     const config = normalizeShopOrderRiskMonitorConfig(rawConfig);
     const profilesContext = contexts.profilesContext || { byId: new Map() };
     const entitlementContext = contexts.entitlementContext || { unlimitedUserIds: new Set() };
+    const loginHistoryContext = contexts.loginHistoryContext || { latestByUser: new Map() };
     const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
 
     const alerts = [
         ...buildDiscountCodeSpikeAlerts(orders, profilesContext, config, { now: nowDate }),
         ...buildZeroTotalClusterAlerts(orders, profilesContext, config, { now: nowDate }),
         ...buildUserVelocityAlerts(orders, profilesContext, entitlementContext, config, { now: nowDate }),
-        ...buildSharedLoginIpAlerts(orders, profilesContext, config, { now: nowDate })
+        ...buildSharedLoginIpAlerts(orders, profilesContext, config, { now: nowDate }),
+        ...buildSharedLoginSignatureAlerts(orders, profilesContext, loginHistoryContext, config, { now: nowDate })
     ];
 
     return alerts.sort((left, right) => {
@@ -816,6 +1040,9 @@ function buildRecoverySummary(payload = {}) {
     if (signalType === 'shared_login_ip_cluster') {
         return `共享登录 IP ${normalizeText(payload.client_ip) || 'unknown'} 的多账号下单信号已回落到阈值以下`;
     }
+    if (signalType === 'shared_login_signature_cluster') {
+        return `共享登录签名 ${normalizeText(payload.login_signature_label) || normalizeText(payload.client_ip) || 'unknown'} 的多账号下单信号已回落到阈值以下`;
+    }
     return '商城风险信号已回落到阈值以下';
 }
 
@@ -833,6 +1060,9 @@ function buildRecoveryTitle(payload = {}) {
     }
     if (signalType === 'shared_login_ip_cluster') {
         return `共享登录 IP 风险已恢复（${normalizeText(payload.client_ip) || 'unknown'}）`;
+    }
+    if (signalType === 'shared_login_signature_cluster') {
+        return `共享登录签名风险已恢复（${normalizeText(payload.login_signature_label) || normalizeText(payload.client_ip) || 'unknown'}）`;
     }
     return '商城风险告警已恢复';
 }
@@ -926,6 +1156,9 @@ function buildShopOrderRiskRecoveredAlerts(activeAlerts = [], stateJobs = [], ra
                 discount_code: normalizeText(payload.discount_code) || null,
                 user_id: normalizeText(payload.user_id) || null,
                 buyer_label: normalizeText(payload.buyer_label) || null,
+                client_ip: normalizeText(payload.client_ip) || null,
+                user_agent_summary: normalizeText(payload.user_agent_summary) || null,
+                login_signature_label: normalizeText(payload.login_signature_label) || null,
                 incident_alert_job_id: normalizeText(latestAnomaly.id) || null,
                 incident_started_at: normalizeText(latestAnomaly.created_at) || null,
                 incident_recovered_at: incidentRecoveredAt,
@@ -982,7 +1215,9 @@ async function runShopOrderRiskSweep(supabase, options = {}) {
         Number(config.lookback_minutes || 0),
         Number(config.discount_code_window_minutes || 0),
         Number(config.zero_total_window_minutes || 0),
-        Number(config.user_velocity_window_minutes || 0)
+        Number(config.user_velocity_window_minutes || 0),
+        Number(config.shared_login_ip_window_minutes || 0),
+        Number(config.login_signature_window_minutes || 0)
     );
     const sinceIso = new Date(nowDate.getTime() - maxWindowMinutes * 60 * 1000).toISOString();
     const stateSinceIso = new Date(nowDate.getTime() - Number(config.state_lookback_minutes || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.state_lookback_minutes) * 60 * 1000).toISOString();
@@ -992,13 +1227,15 @@ async function runShopOrderRiskSweep(supabase, options = {}) {
         fetchRecentShopOrderRiskStateJobs(supabase, stateSinceIso, config)
     ]);
     const userIds = Array.from(new Set((orders || []).map((order) => normalizeText(order.user_id)).filter(Boolean)));
-    const [profiles, entitlements] = await Promise.all([
+    const [profiles, entitlements, loginHistory] = await Promise.all([
         fetchProfilesByIds(supabase, userIds, config),
-        fetchPurchaseEntitlementsByUserIds(supabase, userIds, config)
+        fetchPurchaseEntitlementsByUserIds(supabase, userIds, config),
+        fetchRecentLoginHistoryByUserIds(supabase, userIds, sinceIso, config)
     ]);
     const contexts = {
         profilesContext: buildProfilesContext(profiles),
-        entitlementContext: buildPurchaseEntitlementContext(entitlements)
+        entitlementContext: buildPurchaseEntitlementContext(entitlements),
+        loginHistoryContext: buildLoginHistoryContext(loginHistory)
     };
     const alerts = buildShopOrderRiskAnomalyAlerts(orders, contexts, config, { now: nowDate });
     const recoveryAlerts = buildShopOrderRiskRecoveredAlerts(alerts, stateJobs, config, { now: nowDate });
@@ -1088,6 +1325,7 @@ async function runShopOrderRiskSweep(supabase, options = {}) {
         zero_total_cluster_count: alerts.filter((alert) => normalizeText(alert.payload?.signal_type).toLowerCase() === 'zero_total_cluster').length,
         user_velocity_count: alerts.filter((alert) => normalizeText(alert.payload?.signal_type).toLowerCase() === 'user_velocity').length,
         shared_login_ip_cluster_count: alerts.filter((alert) => normalizeText(alert.payload?.signal_type).toLowerCase() === 'shared_login_ip_cluster').length,
+        shared_login_signature_cluster_count: alerts.filter((alert) => normalizeText(alert.payload?.signal_type).toLowerCase() === 'shared_login_signature_cluster').length,
         queued,
         deduped,
         recovered_queued: recoveredQueued,
@@ -1113,10 +1351,12 @@ module.exports = {
         buildZeroTotalClusterAlerts,
         buildUserVelocityAlerts,
         buildSharedLoginIpAlerts,
+        buildSharedLoginSignatureAlerts,
         compareCreatedAtDescending,
         getAlertTargetId,
         getLatestShopOrderRiskStateJob,
         shouldSkipRefundedOrder,
-        resolveUserLabel
+        resolveUserLabel,
+        summarizeUserAgent
     }
 };

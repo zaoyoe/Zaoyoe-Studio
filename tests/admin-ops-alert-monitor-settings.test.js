@@ -430,3 +430,43 @@ test('ops alert monitor handler exposes shared login ip shop risk context', asyn
         assert.equal(shopRisk.items[0].user_id, 'buyer-anchor-1');
     });
 });
+
+test('ops alert monitor handler exposes shared login signature shop risk context', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('shop_order_risk_anomaly', {
+                id: 'shop-risk-signature-1',
+                severity: 'critical',
+                title: '共享登录签名异常（Chrome/124）',
+                content: '商城风控告警\n共享登录签名：203.0.113.88 · Mozilla/5.0 Chrome/124',
+                payload: {
+                    target_id: 'shop_order_risk:login_signature:abc123',
+                    signal_type: 'shared_login_signature_cluster',
+                    client_ip: '203.0.113.88',
+                    user_agent_summary: 'Mozilla/5.0 Chrome/124',
+                    login_signature_label: '203.0.113.88 · Mozilla/5.0 Chrome/124',
+                    user_id: 'buyer-anchor-2',
+                    buyer_label: 'Beta'
+                },
+                created_at: hoursAgo(1)
+            })
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+
+        const shopRisk = payload.categories.find((item) => item.key === 'shop_risk');
+        assert.equal(shopRisk.active_count, 1);
+        assert.equal(shopRisk.items[0].reference_label, '共享登录签名');
+        assert.equal(shopRisk.items[0].reference_value, '203.0.113.88 · Mozilla/5.0 Chrome/124');
+        assert.equal(shopRisk.items[0].signal_type, 'shared_login_signature_cluster');
+        assert.equal(shopRisk.items[0].user_id, 'buyer-anchor-2');
+        assert.equal(shopRisk.items[0].login_signature_label, '203.0.113.88 · Mozilla/5.0 Chrome/124');
+    });
+});

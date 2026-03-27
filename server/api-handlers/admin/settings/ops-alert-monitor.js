@@ -139,13 +139,15 @@ function getShopOrderRiskSignalLabel(value) {
         discount_code_spike: '优惠码高频使用',
         zero_total_cluster: '0 价订单聚集',
         user_velocity: '账号短时扫货',
-        shared_login_ip_cluster: '共享登录 IP 多账号下单'
+        shared_login_ip_cluster: '共享登录 IP 多账号下单',
+        shared_login_signature_cluster: '共享登录签名多账号下单'
     };
     return labelMap[normalized] || normalized;
 }
 
 function getAlertReference(job = {}) {
     const payload = normalizePayload(job.payload);
+    const signalType = normalizeText(payload.signal_type, 120).toLowerCase();
 
     if (normalizeText(payload.provider_order_no, 160)) {
         return {
@@ -171,10 +173,22 @@ function getAlertReference(job = {}) {
             value: normalizeText(payload.discount_code, 160)
         };
     }
+    if (signalType === 'shared_login_signature_cluster' && normalizeText(payload.login_signature_label, 160)) {
+        return {
+            label: '共享登录签名',
+            value: normalizeText(payload.login_signature_label, 160)
+        };
+    }
     if (normalizeText(payload.client_ip, 160)) {
         return {
             label: '共享登录 IP',
             value: normalizeText(payload.client_ip, 160)
+        };
+    }
+    if (normalizeText(payload.login_signature_label, 160)) {
+        return {
+            label: '共享登录签名',
+            value: normalizeText(payload.login_signature_label, 160)
         };
     }
     if (normalizeText(payload.buyer_label, 160)) {
@@ -225,7 +239,9 @@ function buildAlertItem(job = {}) {
         discount_code: normalizeText(payload.discount_code, 160) || null,
         buyer_label: normalizeText(payload.buyer_label, 160) || null,
         user_id: normalizeText(payload.user_id, 160) || null,
-        client_ip: normalizeText(payload.client_ip, 160) || null
+        client_ip: normalizeText(payload.client_ip, 160) || null,
+        login_signature_label: normalizeText(payload.login_signature_label, 160) || null,
+        user_agent_summary: normalizeText(payload.user_agent_summary, 160) || null
     };
 }
 

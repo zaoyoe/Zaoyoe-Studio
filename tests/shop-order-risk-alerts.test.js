@@ -110,6 +110,7 @@ function createSupabaseStub(state = {}) {
     const orders = state.orders || [];
     const profiles = state.profiles || [];
     const entitlements = state.entitlements || [];
+    const loginHistory = state.loginHistory || [];
     const adminRoles = state.adminRoles || [];
     const systemNotifications = state.systemNotifications || [];
 
@@ -158,6 +159,13 @@ function createSupabaseStub(state = {}) {
                 if (table === 'user_purchase_entitlements' && query.mode === 'select') {
                     return {
                         data: applyRange(sortRows(applyFilters(entitlements, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'user_login_history' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(loginHistory, query.filters), query.order), query.range),
                         error: null
                     };
                 }
@@ -460,6 +468,74 @@ test('buildSharedLoginIpAlerts flags clustered orders from the same login ip', (
     assert.match(alerts[0].content, /共享登录 IP/);
 });
 
+test('buildSharedLoginSignatureAlerts flags clustered orders from the same ip and device signature', () => {
+    const alerts = __testUtils.buildSharedLoginSignatureAlerts([
+        {
+            id: 'sig-1',
+            user_id: 'buyer-1',
+            site: 'cn',
+            snapshot_product_name: 'Prompt Pro 年卡',
+            item_count: 2,
+            total_price: 19.9,
+            created_at: '2026-03-27T10:00:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'sig-2',
+            user_id: 'buyer-2',
+            site: 'cn',
+            snapshot_product_name: 'Apple 资格号',
+            item_count: 2,
+            total_price: 30,
+            created_at: '2026-03-27T10:04:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'sig-3',
+            user_id: 'buyer-3',
+            site: 'intl',
+            snapshot_product_name: '卡密周卡',
+            item_count: 2,
+            total_price: 9.9,
+            created_at: '2026-03-27T10:06:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'sig-4',
+            user_id: 'buyer-1',
+            site: 'cn',
+            snapshot_product_name: 'Prompt Pro 年卡',
+            item_count: 2,
+            total_price: 19.9,
+            created_at: '2026-03-27T10:08:00.000Z',
+            refund_status: 'none'
+        }
+    ], {
+        byId: new Map([
+            ['buyer-1', { id: 'buyer-1', display_name: 'Alpha' }],
+            ['buyer-2', { id: 'buyer-2', display_name: 'Beta' }],
+            ['buyer-3', { id: 'buyer-3', display_name: 'Gamma' }]
+        ])
+    }, {
+        latestByUser: new Map([
+            ['buyer-1', { user_id: 'buyer-1', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:01:00.000Z' }],
+            ['buyer-2', { user_id: 'buyer-2', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:02:00.000Z' }],
+            ['buyer-3', { user_id: 'buyer-3', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:03:00.000Z' }]
+        ])
+    }, normalizeShopOrderRiskMonitorConfig(), {
+        now: '2026-03-27T10:10:00.000Z'
+    });
+
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].payload.signal_type, 'shared_login_signature_cluster');
+    assert.equal(alerts[0].payload.client_ip, '203.0.113.88');
+    assert.match(alerts[0].payload.login_signature_label, /203\.0\.113\.88/);
+    assert.equal(alerts[0].payload.order_count, 4);
+    assert.equal(alerts[0].payload.distinct_user_count, 3);
+    assert.equal(alerts[0].payload.total_quantity, 8);
+    assert.match(alerts[0].content, /共享登录签名/);
+});
+
 test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async () => {
     const state = {
         jobs: [],
@@ -575,6 +651,12 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
             { id: 'buyer-3', display_name: 'Gamma', last_login_ip: '203.0.113.88' },
             { id: 'buyer-bulk', display_name: 'BulkBuyer', last_login_ip: '198.51.100.30' }
         ],
+        loginHistory: [
+            { user_id: 'buyer-1', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:01:00.000Z', site: 'cn' },
+            { user_id: 'buyer-2', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:02:00.000Z', site: 'cn' },
+            { user_id: 'buyer-3', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:03:00.000Z', site: 'intl' },
+            { user_id: 'buyer-bulk', ip_address: '198.51.100.30', user_agent: 'Mozilla/5.0 Safari/17', created_at: '2026-03-27T10:04:00.000Z', site: 'cn' }
+        ],
         entitlements: []
     };
     const supabase = createSupabaseStub(state);
@@ -585,14 +667,15 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
         now: '2026-03-27T10:10:00.000Z'
     });
 
-    assert.equal(first.anomaly_count, 4);
+    assert.equal(first.anomaly_count, 5);
     assert.equal(first.discount_code_spike_count, 1);
     assert.equal(first.zero_total_cluster_count, 1);
     assert.equal(first.user_velocity_count, 1);
     assert.equal(first.shared_login_ip_cluster_count, 1);
-    assert.equal(first.queued, 4);
+    assert.equal(first.shared_login_signature_cluster_count, 1);
+    assert.equal(first.queued, 5);
     assert.equal(first.deduped, 0);
-    assert.equal(state.jobs.length, 4);
+    assert.equal(state.jobs.length, 5);
     assert.equal(state.jobs.every((job) => job.alert_type === 'shop_order_risk_anomaly'), true);
 
     const second = await runShopOrderRiskSweep(supabase, {
@@ -600,10 +683,10 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
         now: '2026-03-27T10:12:00.000Z'
     });
 
-    assert.equal(second.anomaly_count, 4);
+    assert.equal(second.anomaly_count, 5);
     assert.equal(second.queued, 0);
-    assert.equal(second.deduped, 4);
-    assert.equal(state.jobs.length, 4);
+    assert.equal(second.deduped, 5);
+    assert.equal(state.jobs.length, 5);
 });
 
 test('runShopOrderRiskSweep enqueues recovery notices and writes admin notifications once', async () => {
