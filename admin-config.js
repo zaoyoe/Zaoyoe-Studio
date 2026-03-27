@@ -912,6 +912,14 @@ function getDefaultOpsAlertConfig() {
             auto_ban_user_min_risk_score: 96,
             auto_ban_user_duration_days: 7,
             auto_suspend_product_min_risk_score: 97
+        },
+        shop_inventory: {
+            enabled: true,
+            low_stock_threshold: 5,
+            sweep_interval_ms: 15 * 60 * 1000,
+            sales_window_days: 7,
+            dedupe_window_minutes: 6 * 60,
+            recovery_notification_enabled: true
         }
     };
 }
@@ -1275,6 +1283,9 @@ function normalizeOpsAlertConfig(raw) {
     const shopRiskSource = source.shop_order_risk && typeof source.shop_order_risk === 'object' && !Array.isArray(source.shop_order_risk)
         ? source.shop_order_risk
         : {};
+    const shopInventorySource = source.shop_inventory && typeof source.shop_inventory === 'object' && !Array.isArray(source.shop_inventory)
+        ? source.shop_inventory
+        : {};
 
     return {
         enabled: normalizeConfigBoolean(source.enabled, defaults.enabled),
@@ -1329,6 +1340,33 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(shopRiskSource.auto_suspend_product_min_risk_score, defaults.shop_order_risk.auto_suspend_product_min_risk_score),
                 85,
                 99
+            )
+        },
+        shop_inventory: {
+            enabled: normalizeConfigBoolean(shopInventorySource.enabled, defaults.shop_inventory.enabled),
+            low_stock_threshold: clamp(
+                toWholeNumber(shopInventorySource.low_stock_threshold, defaults.shop_inventory.low_stock_threshold),
+                0,
+                10000
+            ),
+            sweep_interval_ms: clamp(
+                toWholeNumber(shopInventorySource.sweep_interval_ms, defaults.shop_inventory.sweep_interval_ms),
+                10000,
+                60 * 60 * 1000
+            ),
+            sales_window_days: clamp(
+                toWholeNumber(shopInventorySource.sales_window_days, defaults.shop_inventory.sales_window_days),
+                1,
+                30
+            ),
+            dedupe_window_minutes: clamp(
+                toWholeNumber(shopInventorySource.dedupe_window_minutes, defaults.shop_inventory.dedupe_window_minutes),
+                1,
+                24 * 60
+            ),
+            recovery_notification_enabled: normalizeConfigBoolean(
+                shopInventorySource.recovery_notification_enabled,
+                defaults.shop_inventory.recovery_notification_enabled
             )
         }
     };
@@ -1844,6 +1882,7 @@ function applyOpsAlertOverview(config) {
     setOpsAlertDeleteButtonState('feishu_webhook_url', feishuSecret);
     setOpsAlertDeleteButtonState('email_api_key', emailSecret);
     applyOpsAlertShopRiskControls(normalizedConfig);
+    applyOpsAlertShopInventoryControls(normalizedConfig);
     renderOpsAlertOverviewCards(normalizedConfig);
 }
 
@@ -1863,6 +1902,31 @@ function applyOpsAlertShopRiskControls(config = normalizeOpsAlertConfig(systemCo
     ].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.disabled = !shopRiskConfig.auto_response_enabled;
+    });
+}
+
+function applyOpsAlertShopInventoryControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const inventoryConfig = normalizedConfig.shop_inventory || getDefaultOpsAlertConfig().shop_inventory;
+    const toggleEl = document.getElementById('opsAlertShopInventoryEnabledToggle');
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', inventoryConfig.enabled);
+    }
+
+    const recoveryToggleEl = document.getElementById('opsAlertShopInventoryRecoveryNotificationEnabledToggle');
+    if (recoveryToggleEl) {
+        recoveryToggleEl.classList.toggle('active', inventoryConfig.recovery_notification_enabled);
+        recoveryToggleEl.classList.toggle('disabled', !inventoryConfig.enabled);
+    }
+
+    [
+        'opsAlertShopInventoryLowStockThreshold',
+        'opsAlertShopInventorySweepIntervalMinutes',
+        'opsAlertShopInventorySalesWindowDays',
+        'opsAlertShopInventoryDedupeWindowMinutes'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !inventoryConfig.enabled;
     });
 }
 
@@ -1927,6 +1991,26 @@ function renderOpsAlertSettings() {
     const autoSuspendProductMinRiskScore = document.getElementById('opsAlertShopRiskAutoSuspendProductMinRiskScore');
     if (autoSuspendProductMinRiskScore) {
         autoSuspendProductMinRiskScore.value = String(config.shop_order_risk.auto_suspend_product_min_risk_score);
+    }
+
+    const inventoryLowStockThreshold = document.getElementById('opsAlertShopInventoryLowStockThreshold');
+    if (inventoryLowStockThreshold) {
+        inventoryLowStockThreshold.value = String(config.shop_inventory.low_stock_threshold);
+    }
+
+    const inventorySweepIntervalMinutes = document.getElementById('opsAlertShopInventorySweepIntervalMinutes');
+    if (inventorySweepIntervalMinutes) {
+        inventorySweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.shop_inventory.sweep_interval_ms || 0) / 60000)));
+    }
+
+    const inventorySalesWindowDays = document.getElementById('opsAlertShopInventorySalesWindowDays');
+    if (inventorySalesWindowDays) {
+        inventorySalesWindowDays.value = String(config.shop_inventory.sales_window_days);
+    }
+
+    const inventoryDedupeWindowMinutes = document.getElementById('opsAlertShopInventoryDedupeWindowMinutes');
+    if (inventoryDedupeWindowMinutes) {
+        inventoryDedupeWindowMinutes.value = String(config.shop_inventory.dedupe_window_minutes);
     }
 
     applyOpsAlertOverview(config);
@@ -4714,6 +4798,9 @@ function collectOpsAlertConfigFromForm() {
         },
         shop_order_risk: {
             ...currentConfig.shop_order_risk
+        },
+        shop_inventory: {
+            ...currentConfig.shop_inventory
         }
     };
 
@@ -4769,6 +4856,29 @@ function collectOpsAlertConfigFromForm() {
         document.getElementById('opsAlertShopRiskAutoSuspendProductMinRiskScore')?.value,
         currentConfig.shop_order_risk.auto_suspend_product_min_risk_score
     );
+    nextConfig.shop_inventory.enabled = document.getElementById('opsAlertShopInventoryEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.shop_inventory.enabled;
+    nextConfig.shop_inventory.low_stock_threshold = toWholeNumber(
+        document.getElementById('opsAlertShopInventoryLowStockThreshold')?.value,
+        currentConfig.shop_inventory.low_stock_threshold
+    );
+    nextConfig.shop_inventory.sweep_interval_ms = Math.max(
+        10000,
+        toWholeNumber(
+            document.getElementById('opsAlertShopInventorySweepIntervalMinutes')?.value,
+            Math.max(1, Math.round(Number(currentConfig.shop_inventory.sweep_interval_ms || 0) / 60000))
+        ) * 60 * 1000
+    );
+    nextConfig.shop_inventory.sales_window_days = toWholeNumber(
+        document.getElementById('opsAlertShopInventorySalesWindowDays')?.value,
+        currentConfig.shop_inventory.sales_window_days
+    );
+    nextConfig.shop_inventory.dedupe_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertShopInventoryDedupeWindowMinutes')?.value,
+        currentConfig.shop_inventory.dedupe_window_minutes
+    );
+    nextConfig.shop_inventory.recovery_notification_enabled = document.getElementById('opsAlertShopInventoryRecoveryNotificationEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.shop_inventory.recovery_notification_enabled;
 
     return normalizeOpsAlertConfig(nextConfig);
 }
@@ -5809,6 +5919,25 @@ function toggleOpsAlertChannelEnabled(channelKey) {
 function toggleOpsAlertShopRiskAutoResponseEnabled() {
     const toggleEl = document.getElementById('opsAlertShopRiskAutoResponseEnabledToggle');
     if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertShopInventoryEnabled() {
+    const toggleEl = document.getElementById('opsAlertShopInventoryEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertShopInventoryRecoveryNotificationEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertShopInventoryEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertShopInventoryRecoveryNotificationEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
@@ -8035,6 +8164,8 @@ window.loadOpsAlertMonitor = loadOpsAlertMonitor;
 window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;
 window.toggleOpsAlertChannelEnabled = toggleOpsAlertChannelEnabled;
 window.toggleOpsAlertShopRiskAutoResponseEnabled = toggleOpsAlertShopRiskAutoResponseEnabled;
+window.toggleOpsAlertShopInventoryEnabled = toggleOpsAlertShopInventoryEnabled;
+window.toggleOpsAlertShopInventoryRecoveryNotificationEnabled = toggleOpsAlertShopInventoryRecoveryNotificationEnabled;
 window.saveOpsAlertSettings = saveOpsAlertSettings;
 window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;
 window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;

@@ -448,6 +448,12 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-shop-risk-auto-response':
                 window.toggleOpsAlertShopRiskAutoResponseEnabled?.();
                 break;
+            case 'settings-toggle-ops-alert-shop-inventory-enabled':
+                window.toggleOpsAlertShopInventoryEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-shop-inventory-recovery-enabled':
+                window.toggleOpsAlertShopInventoryRecoveryNotificationEnabled?.();
+                break;
             case 'settings-save-ops-alerts':
                 window.saveOpsAlertSettings?.();
                 break;

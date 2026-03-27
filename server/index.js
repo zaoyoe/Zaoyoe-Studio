@@ -3320,7 +3320,10 @@ async function sweepShopInventoryHealth() {
     shopInventorySweepRunning = true;
 
     try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
         const result = await runShopInventoryLowSweep(supabase, {
+            runtime,
+            config: runtime?.config?.shop_inventory,
             env: process.env
         });
 
@@ -3344,7 +3347,13 @@ async function sweepShopInventoryHealth() {
 async function queueNextShopInventorySweep(delayMs = null) {
     if (shopInventorySweepTimer) return;
 
-    const monitorConfig = normalizeShopInventoryMonitorConfig({}, process.env);
+    let monitorConfig = normalizeShopInventoryMonitorConfig({}, process.env);
+    try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        monitorConfig = normalizeShopInventoryMonitorConfig(runtime?.config?.shop_inventory || {}, process.env);
+    } catch (error) {
+        console.warn('[ShopInventoryMonitor] Failed to load runtime config for next sweep delay:', error.message || error);
+    }
     const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 15 * 60 * 1000));
 
     shopInventorySweepTimer = setTimeout(() => {
