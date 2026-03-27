@@ -1457,6 +1457,32 @@
 
                                                 <div class="ops-alert-scoped-mute-row">
                                                     <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>商城风控</strong>
+                                                        <span>统一静默优惠码异常、短时扫货、共享登录等商城风控告警。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertModuleMuteShopRiskStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertModuleMuteShopRiskUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">保留极高风险的商城风控信号继续通知，避免完全失去值班感知。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertModuleMuteShopRiskAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="modules" data-rule-key="shop_risk"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="modules" data-rule-key="shop_risk">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
                                                         <strong>验证服务</strong>
                                                         <span>统一静默验证额度、停摆、堆积、失败率和综合事故相关告警。</span>
                                                     </div>
@@ -1874,6 +1900,9 @@
                                             </button>
                                             <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-batch-resolve-ops-alert-monitor">
                                                 <i class="fas fa-circle-check"></i> 当前筛选批量关闭
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-batch-mute-ops-alert-monitor">
+                                                <i class="fas fa-bell-slash"></i> 当前筛选静默到
                                             </button>
                                             <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-copy-ops-alert-monitor-checklist">
                                                 <i class="fas fa-clipboard-check"></i> 复制当前筛选清单
@@ -2417,6 +2446,45 @@
                                 <button type="submit" class="btn-add-config btn-add-config--compact btn-add-config--primary" id="shopRiskCaseComposerSubmit" data-admin-action="settings-submit-shop-risk-case-modal">
                                     保存备注
                                 </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div id="opsAlertBatchMuteModal" class="modal-overlay admin-shop-risk-case-modal" data-admin-overlay-close="ops-alert-batch-mute-modal" aria-hidden="true">
+                    <div class="admin-shop-risk-case-modal__dialog">
+                        <div class="admin-shop-risk-case-modal__header">
+                            <div class="admin-shop-risk-case-modal__icon">
+                                <i class="fas fa-bell-slash"></i>
+                            </div>
+                            <div class="admin-shop-risk-case-modal__copy">
+                                <h2>按当前筛选静默到某时间</h2>
+                                <p id="opsAlertBatchMuteSummary">集中告警模块静默</p>
+                            </div>
+                            <button type="button" class="modal-close-btn" data-admin-action="settings-close-ops-alert-batch-mute-modal" aria-label="关闭">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <form id="opsAlertBatchMuteForm" class="admin-shop-risk-case-modal__form">
+                            <div class="admin-shop-risk-case-modal__note" id="opsAlertBatchMuteDescription">
+                                当前筛选命中的模块会统一写入静默截止时间。
+                            </div>
+                            <div class="admin-shop-risk-case-modal__field">
+                                <label for="opsAlertBatchMuteUntil">静默截止时间</label>
+                                <input id="opsAlertBatchMuteUntil" type="datetime-local" class="config-input" />
+                            </div>
+                            <div class="admin-shop-risk-case-modal__actions" style="justify-content: space-between;">
+                                <button type="button" class="btn-add-config btn-add-config--compact" id="opsAlertBatchMuteAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-batch-mute-allow-critical">
+                                    <i class="fas fa-bolt"></i> critical 继续通知
+                                </button>
+                                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-close-ops-alert-batch-mute-modal">
+                                        <i class="fas fa-xmark"></i> 取消
+                                    </button>
+                                    <button type="submit" class="btn-add-config btn-add-config--compact btn-add-config--primary" id="opsAlertBatchMuteSubmit" data-admin-action="settings-submit-ops-alert-batch-mute-modal">
+                                        保存静默
+                                    </button>
+                                </div>
                             </div>
                         </form>
                     </div>

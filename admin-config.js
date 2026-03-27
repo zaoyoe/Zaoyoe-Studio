@@ -12,6 +12,7 @@ let opsAlertHealthState = getDefaultOpsAlertHealthState();
 let opsAlertMonitorState = getDefaultOpsAlertMonitorState();
 let opsAlertMonitorViewState = getDefaultOpsAlertMonitorViewState();
 let shopRiskCaseComposerState = getDefaultShopRiskCaseComposerState();
+let opsAlertBatchMuteState = getDefaultOpsAlertBatchMuteState();
 let verifyMonitorState = getDefaultVerifyMonitorState();
 let adminAuditMonitorState = getDefaultAdminAuditMonitorState();
 let paymentChannelAccordionState = {
@@ -843,6 +844,18 @@ function getDefaultShopRiskCaseComposerState() {
     };
 }
 
+function getDefaultOpsAlertBatchMuteState() {
+    return {
+        open: false,
+        items: [],
+        moduleKeys: [],
+        categoryKey: '',
+        filters: getDefaultOpsAlertMonitorViewState(),
+        allowCritical: true,
+        submitting: false
+    };
+}
+
 function getDefaultVerifyMonitorState() {
     return {
         quota: {
@@ -956,6 +969,10 @@ function getDefaultOpsAlertConfig() {
                     allow_critical: true
                 },
                 payments: {
+                    until: '',
+                    allow_critical: true
+                },
+                shop_risk: {
                     until: '',
                     allow_critical: true
                 },
@@ -1524,6 +1541,10 @@ function normalizeOpsAlertConfig(raw) {
                 payments: {
                     until: normalizeDateTimeLocalInputValue(moduleMuteRulesSource.payments?.until || '') || '',
                     allow_critical: normalizeConfigBoolean(moduleMuteRulesSource.payments?.allow_critical, defaults.mute_rules.modules.payments.allow_critical)
+                },
+                shop_risk: {
+                    until: normalizeDateTimeLocalInputValue(moduleMuteRulesSource.shop_risk?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(moduleMuteRulesSource.shop_risk?.allow_critical, defaults.mute_rules.modules.shop_risk.allow_critical)
                 },
                 verify: {
                     until: normalizeDateTimeLocalInputValue(moduleMuteRulesSource.verify?.until || '') || '',
@@ -2309,6 +2330,12 @@ const OPS_ALERT_MUTE_RULE_MODULE_DEFINITIONS = Object.freeze([
         id: 'Payments',
         label: '支付与退款',
         description: '统一静默支付通道、退款、支付配置相关告警。'
+    },
+    {
+        key: 'shop_risk',
+        id: 'ShopRisk',
+        label: '商城风控',
+        description: '统一静默优惠码异常、短时扫货、共享登录等商城风控告警。'
     },
     {
         key: 'verify',
@@ -4426,6 +4453,35 @@ function buildOpsAlertCaseMutationItems(items = [], categoryKey = '') {
         .filter((item) => item.category_key && item.target_id);
 }
 
+function getOpsAlertMonitorBatchMuteModuleKeys(filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
+    const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
+    const categoryToModuleKey = {
+        payments: 'payments',
+        tickets: 'tickets',
+        inventory: 'inventory',
+        fulfillment: 'fulfillment',
+        shop_risk: 'shop_risk'
+    };
+
+    return Array.from(new Set(
+        getOpsAlertMonitorPreparedCategories(filters)
+            .filter((category) => {
+                const currentCategoryKey = String(category.key || '').trim().toLowerCase();
+                if (normalizedCategoryKey && currentCategoryKey !== normalizedCategoryKey) {
+                    return false;
+                }
+                return Array.isArray(category.visible_items) && category.visible_items.length > 0;
+            })
+            .map((category) => categoryToModuleKey[String(category.key || '').trim().toLowerCase()])
+            .filter(Boolean)
+    ));
+}
+
+function getOpsAlertMuteModuleLabel(moduleKey = '') {
+    const definition = OPS_ALERT_MUTE_RULE_MODULE_DEFINITIONS.find((item) => item.key === String(moduleKey || '').trim().toLowerCase());
+    return definition?.label || String(moduleKey || '').trim() || '模块';
+}
+
 function getOpsAlertMonitorBatchItems(filters = getOpsAlertMonitorViewFilters(), action = '', categoryKey = '') {
     const normalizedAction = String(action || '').trim().toLowerCase();
     const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
@@ -4483,6 +4539,12 @@ function renderOpsAlertMonitorBatchActions(filters = getOpsAlertMonitorViewFilte
         getOpsAlertMonitorBatchItems(filters, 'resolve').length,
         '当前筛选条件下没有可关闭的告警',
         '当前筛选将关闭 {count} 条告警'
+    );
+    setButtonState(
+        'settings-batch-mute-ops-alert-monitor',
+        getOpsAlertMonitorBatchMuteModuleKeys(filters).length,
+        '当前筛选条件下没有可静默的告警模块',
+        '当前筛选将静默 {count} 个告警模块'
     );
 }
 
@@ -5921,18 +5983,21 @@ function clearOpsAlertSecretInputs() {
     });
 }
 
-async function saveOpsAlertSettings() {
+function buildOpsAlertSettingsRequestBody(config) {
+    return {
+        config,
+        secrets: {
+            telegram_bot_token: document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '',
+            feishu_webhook_url: document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || '',
+            email_api_key: document.getElementById('opsAlertEmailApiKey')?.value?.trim() || ''
+        }
+    };
+}
+
+async function saveOpsAlertConfigOverride(config, options = {}) {
     try {
-        const config = collectOpsAlertConfigFromForm();
         const headers = await getAdminConfigApiHeaders();
-        const body = {
-            config,
-            secrets: {
-                telegram_bot_token: document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '',
-                feishu_webhook_url: document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || '',
-                email_api_key: document.getElementById('opsAlertEmailApiKey')?.value?.trim() || ''
-            }
-        };
+        const body = buildOpsAlertSettingsRequestBody(normalizeOpsAlertConfig(config));
 
         const response = await fetch('/api/admin/settings/ops-alerts', {
             method: 'POST',
@@ -5949,7 +6014,11 @@ async function saveOpsAlertSettings() {
         opsAlertSecretStatus = payload.secrets || getDefaultOpsAlertSecretStatus();
         renderOpsAlertSettings();
         clearOpsAlertSecretInputs();
-        showConfigSavedToast(payload.message || '站外退款告警配置已保存');
+        if (options.successMessage) {
+            showConfigSavedToast(options.successMessage);
+        } else {
+            showConfigSavedToast(payload.message || '站外退款告警配置已保存');
+        }
         return true;
     } catch (error) {
         console.error('[Config] Save ops alert settings failed:', error);
@@ -5957,6 +6026,10 @@ async function saveOpsAlertSettings() {
         renderOpsAlertSettings();
         return false;
     }
+}
+
+async function saveOpsAlertSettings() {
+    return saveOpsAlertConfigOverride(collectOpsAlertConfigFromForm());
 }
 
 async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
@@ -6841,6 +6914,165 @@ async function handleOpsAlertMonitorBatchCaseAction(action, categoryKey = '') {
     } catch (error) {
         console.error('[Config] Handle ops alert batch action failed:', error);
         showToast('处理失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+function setOpsAlertBatchMuteModalVisible(visible) {
+    const modal = document.getElementById('opsAlertBatchMuteModal');
+    if (!modal) return;
+    modal.classList.toggle('is-visible', visible);
+    modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function getDefaultOpsAlertBatchMuteUntilInputValue() {
+    return formatDateTimeLocalInputValue(new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString());
+}
+
+function renderOpsAlertBatchMuteModal() {
+    const modal = document.getElementById('opsAlertBatchMuteModal');
+    const summaryEl = document.getElementById('opsAlertBatchMuteSummary');
+    const noteEl = document.getElementById('opsAlertBatchMuteDescription');
+    const untilInput = document.getElementById('opsAlertBatchMuteUntil');
+    const allowCriticalToggle = document.getElementById('opsAlertBatchMuteAllowCriticalToggle');
+    const submitBtn = document.getElementById('opsAlertBatchMuteSubmit');
+
+    if (!modal || !summaryEl || !noteEl || !untilInput || !allowCriticalToggle || !submitBtn) {
+        return;
+    }
+
+    const state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState();
+    const moduleLabels = state.moduleKeys.map((key) => getOpsAlertMuteModuleLabel(key));
+    const severityScopedNote = String(state.filters?.severity || 'all') !== 'all'
+        ? '当前筛选里的级别条件只用于确定命中模块；本次静默会作用到对应模块的全部告警。'
+        : '本次静默会直接写入模块级策略，命中的同类告警都会一起暂停外发。';
+
+    summaryEl.textContent = state.open
+        ? `当前筛选：${getOpsAlertMonitorFilterSummaryLabel(state.filters)} · 命中 ${formatVerifyMonitorInteger(state.moduleKeys.length)} 个模块（${moduleLabels.join('、') || '无'}）`
+        : '集中告警模块静默';
+    noteEl.textContent = severityScopedNote;
+    if (!untilInput.value) {
+        untilInput.value = getDefaultOpsAlertBatchMuteUntilInputValue();
+    }
+    allowCriticalToggle.classList.toggle('active', state.allowCritical !== false);
+    submitBtn.disabled = state.submitting;
+    submitBtn.textContent = state.submitting ? '静默中...' : '保存静默';
+
+    setOpsAlertBatchMuteModalVisible(Boolean(state.open));
+    if (state.open && !state.submitting) {
+        window.setTimeout(() => untilInput.focus(), 40);
+    }
+}
+
+function closeOpsAlertBatchMuteModal() {
+    opsAlertBatchMuteState = getDefaultOpsAlertBatchMuteState();
+    const untilInput = document.getElementById('opsAlertBatchMuteUntil');
+    if (untilInput) {
+        untilInput.value = '';
+    }
+    renderOpsAlertBatchMuteModal();
+}
+
+function toggleOpsAlertBatchMuteAllowCritical() {
+    const toggle = document.getElementById('opsAlertBatchMuteAllowCriticalToggle');
+    if (!toggle) return false;
+    const nextActive = !toggle.classList.contains('active');
+    toggle.classList.toggle('active', nextActive);
+    opsAlertBatchMuteState = {
+        ...(opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState()),
+        allowCritical: nextActive
+    };
+    return true;
+}
+
+function openOpsAlertBatchMuteModal(categoryKey = '') {
+    const filters = getOpsAlertMonitorViewFilters();
+    const moduleKeys = getOpsAlertMonitorBatchMuteModuleKeys(filters, categoryKey);
+    const items = getOpsAlertMonitorBatchItems(filters, 'add_note', categoryKey);
+
+    if (!moduleKeys.length || !items.length) {
+        showToast('当前筛选条件下没有可静默的告警模块', 'info');
+        return false;
+    }
+
+    opsAlertBatchMuteState = {
+        open: true,
+        items,
+        moduleKeys,
+        categoryKey: String(categoryKey || '').trim().toLowerCase(),
+        filters,
+        allowCritical: true,
+        submitting: false
+    };
+    renderOpsAlertBatchMuteModal();
+    return true;
+}
+
+async function submitOpsAlertBatchMuteModal() {
+    const state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState();
+    const untilInput = document.getElementById('opsAlertBatchMuteUntil');
+    const allowCriticalToggle = document.getElementById('opsAlertBatchMuteAllowCriticalToggle');
+    const untilValue = String(untilInput?.value || '').trim();
+    const normalizedUntil = normalizeDateTimeLocalInputValue(untilValue);
+    const moduleLabels = state.moduleKeys.map((key) => getOpsAlertMuteModuleLabel(key));
+
+    if (!state.open || !state.moduleKeys.length) {
+        return false;
+    }
+
+    if (!normalizedUntil) {
+        showToast('请先选择静默截止时间', 'warning');
+        untilInput?.focus?.();
+        return false;
+    }
+
+    try {
+        opsAlertBatchMuteState = {
+            ...state,
+            allowCritical: allowCriticalToggle?.classList.contains('active') !== false,
+            submitting: true
+        };
+        renderOpsAlertBatchMuteModal();
+
+        const nextConfig = collectOpsAlertConfigFromForm();
+        const allowCritical = allowCriticalToggle?.classList.contains('active') !== false;
+        state.moduleKeys.forEach((moduleKey) => {
+            const currentRule = nextConfig.mute_rules?.modules?.[moduleKey] || {
+                until: '',
+                allow_critical: true
+            };
+            nextConfig.mute_rules.modules[moduleKey] = {
+                ...currentRule,
+                until: normalizedUntil,
+                allow_critical: allowCritical
+            };
+        });
+
+        const success = await saveOpsAlertConfigOverride(nextConfig, {
+            successMessage: `已将 ${moduleLabels.join('、')} 静默至 ${formatVerifyMonitorDateTime(normalizedUntil)}`
+        });
+        if (!success) {
+            opsAlertBatchMuteState = {
+                ...state,
+                allowCritical,
+                submitting: false
+            };
+            renderOpsAlertBatchMuteModal();
+            return false;
+        }
+
+        closeOpsAlertBatchMuteModal();
+        renderOpsAlertMonitorPanel();
+        return true;
+    } catch (error) {
+        console.error('[Config] Submit ops alert batch mute failed:', error);
+        opsAlertBatchMuteState = {
+            ...state,
+            allowCritical: allowCriticalToggle?.classList.contains('active') !== false,
+            submitting: false
+        };
+        renderOpsAlertBatchMuteModal();
+        showToast('静默失败: ' + (error.message || '未知错误'), 'error');
         return false;
     }
 }
@@ -9492,6 +9724,10 @@ window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;
 window.openOpsAlertWorkspace = openOpsAlertWorkspace;
 window.handleOpsAlertCaseAction = handleOpsAlertCaseAction;
 window.handleOpsAlertMonitorBatchCaseAction = handleOpsAlertMonitorBatchCaseAction;
+window.openOpsAlertBatchMuteModal = openOpsAlertBatchMuteModal;
+window.toggleOpsAlertBatchMuteAllowCritical = toggleOpsAlertBatchMuteAllowCritical;
+window.closeOpsAlertBatchMuteModal = closeOpsAlertBatchMuteModal;
+window.submitOpsAlertBatchMuteModal = submitOpsAlertBatchMuteModal;
 window.closeOpsAlertCaseComposer = closeOpsAlertCaseComposer;
 window.submitOpsAlertCaseComposer = submitOpsAlertCaseComposer;
 window.handleShopRiskAction = handleShopRiskAction;

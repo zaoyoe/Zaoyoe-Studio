@@ -187,6 +187,10 @@
             await window.submitOpsAlertCaseComposer?.();
         });
 
+        bindSubmit('opsAlertBatchMuteForm', async () => {
+            await window.submitOpsAlertBatchMuteModal?.();
+        });
+
         const discountOverlay = document.getElementById('discountGenerateModal');
         if (discountOverlay) {
             discountOverlay.addEventListener('click', (event) => {

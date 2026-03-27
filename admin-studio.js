@@ -645,6 +645,18 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-batch-resolve-ops-alert-monitor':
                 window.handleOpsAlertMonitorBatchCaseAction?.('resolve');
                 break;
+            case 'settings-batch-mute-ops-alert-monitor':
+                window.openOpsAlertBatchMuteModal?.();
+                break;
+            case 'settings-toggle-ops-alert-batch-mute-allow-critical':
+                window.toggleOpsAlertBatchMuteAllowCritical?.();
+                break;
+            case 'settings-close-ops-alert-batch-mute-modal':
+                window.closeOpsAlertBatchMuteModal?.();
+                break;
+            case 'settings-submit-ops-alert-batch-mute-modal':
+                window.submitOpsAlertBatchMuteModal?.();
+                break;
             case 'settings-copy-ops-alert-monitor-checklist':
                 window.copyOpsAlertMonitorChecklist?.();
                 break;
@@ -1485,6 +1497,12 @@ function bindAdminStudioDelegatedControls() {
         if (form.id === 'shopRiskCaseComposerForm') {
             event.preventDefault();
             window.submitShopRiskCaseComposer?.();
+            return;
+        }
+
+        if (form.id === 'opsAlertBatchMuteForm') {
+            event.preventDefault();
+            window.submitOpsAlertBatchMuteModal?.();
         }
     });
 
@@ -1503,6 +1521,9 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'shop-risk-case-modal':
                 window.closeShopRiskCaseComposer?.();
+                break;
+            case 'ops-alert-batch-mute-modal':
+                window.closeOpsAlertBatchMuteModal?.();
                 break;
             default:
                 break;
