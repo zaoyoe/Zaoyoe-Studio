@@ -3454,6 +3454,7 @@ test('discount admin runtime renderers externalize table states, copy toast, and
         "modal.style.display = 'none'",
         "dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block'",
         "dropdown.style.display = 'none'",
+        "target.closest('[data-admin-overlay-close=\"discount-generate-modal\"]')",
         '<span style="font-size:1rem">💰</span> 固定金额立减',
         '<span style="font-size:1rem">📊</span> 按比例打折'
     ];
@@ -3477,6 +3478,7 @@ test('discount admin runtime renderers externalize table states, copy toast, and
         'admin-discount-pagination-shell',
         'admin-discount-copy-toast',
         "modal.classList.toggle('is-visible', visible)",
+        'if (target === modal)',
         "dropdown.classList.toggle('is-open', open)",
         'admin-discount-type-label-icon'
     ];
