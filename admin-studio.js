@@ -478,11 +478,20 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-customer-chat-message-enabled':
                 window.toggleOpsAlertCustomerChatMessageEnabled?.();
                 break;
+            case 'settings-toggle-ops-alert-customer-chat-message-summary-enabled':
+                window.toggleOpsAlertCustomerChatMessageSummaryEnabled?.();
+                break;
             case 'settings-toggle-ops-alert-shop-purchase-success-enabled':
                 window.toggleOpsAlertShopPurchaseSuccessEnabled?.();
                 break;
+            case 'settings-toggle-ops-alert-shop-purchase-success-summary-enabled':
+                window.toggleOpsAlertShopPurchaseSuccessSummaryEnabled?.();
+                break;
             case 'settings-toggle-ops-alert-wallet-recharge-success-enabled':
                 window.toggleOpsAlertWalletRechargeSuccessEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-wallet-recharge-success-summary-enabled':
+                window.toggleOpsAlertWalletRechargeSuccessSummaryEnabled?.();
                 break;
             case 'settings-save-ops-alerts':
                 window.saveOpsAlertSettings?.();

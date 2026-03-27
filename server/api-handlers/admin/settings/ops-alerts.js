@@ -1287,6 +1287,15 @@ module.exports = async (req, res) => {
                         nextConfig.routing?.wallet_recharge_success?.feishu !== false ? 'feishu' : null,
                         nextConfig.routing?.wallet_recharge_success?.email !== false ? 'email' : null
                     ].filter(Boolean),
+                    customer_chat_message_summary_enabled: nextConfig.customer_chat_message?.summary_enabled === true,
+                    customer_chat_message_summary_window_minutes: Number(nextConfig.customer_chat_message?.summary_window_minutes || 0),
+                    customer_chat_message_summary_max_items: Number(nextConfig.customer_chat_message?.summary_max_items || 0),
+                    shop_purchase_success_summary_enabled: nextConfig.shop_purchase_success?.summary_enabled === true,
+                    shop_purchase_success_summary_window_minutes: Number(nextConfig.shop_purchase_success?.summary_window_minutes || 0),
+                    shop_purchase_success_summary_max_items: Number(nextConfig.shop_purchase_success?.summary_max_items || 0),
+                    wallet_recharge_success_summary_enabled: nextConfig.wallet_recharge_success?.summary_enabled === true,
+                    wallet_recharge_success_summary_window_minutes: Number(nextConfig.wallet_recharge_success?.summary_window_minutes || 0),
+                    wallet_recharge_success_summary_max_items: Number(nextConfig.wallet_recharge_success?.summary_max_items || 0),
                     routing_shop_inventory_channels: [
                         nextConfig.routing?.shop_inventory?.telegram !== false ? 'telegram' : null,
                         nextConfig.routing?.shop_inventory?.feishu !== false ? 'feishu' : null,
