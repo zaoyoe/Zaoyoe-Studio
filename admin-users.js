@@ -1219,10 +1219,29 @@ async function batchAddTags() {
 }
 
 // Show batch tag selection modal
+function animateUsersOverlayIn(overlay, visibleClass = 'active') {
+    if (!overlay) return;
+    requestAnimationFrame(() => {
+        overlay.classList.add(visibleClass);
+    });
+}
+
+function animateUsersOverlayOut(overlay, onComplete, visibleClass = 'active') {
+    if (!overlay) {
+        if (typeof onComplete === 'function') onComplete();
+        return;
+    }
+
+    overlay.classList.remove(visibleClass);
+    window.setTimeout(() => {
+        onComplete?.();
+    }, 300);
+}
+
 function showBatchTagModal(count) {
     return new Promise((resolve) => {
         const modal = document.createElement('div');
-        modal.className = 'modal-overlay active';
+        modal.className = 'modal-overlay';
 
         const tagButtons = Object.entries(TAG_CONFIG)
             .map(([key, config]) => `<button class="tag-option ${config.class}" type="button" data-batch-tag-value="${escapeHtml(key)}">${config.label}</button>`)
@@ -1247,22 +1266,27 @@ function showBatchTagModal(count) {
             </div>
         `;
         document.body.appendChild(modal);
+        animateUsersOverlayIn(modal);
 
         const resolveBatchTag = (tag) => {
             if (!tag || !tag.trim()) {
                 showToast('请选择或输入标签', 'error');
                 return;
             }
-            modal.remove();
-            resolve(tag.trim());
+            animateUsersOverlayOut(modal, () => {
+                modal.remove();
+                resolve(tag.trim());
+            });
         };
 
         modal.addEventListener('click', (e) => {
             const actionEl = e.target instanceof Element ? e.target.closest('[data-batch-tag-value],[data-batch-tag-close],[data-batch-tag-submit]') : null;
             if (actionEl) {
                 if (actionEl.hasAttribute('data-batch-tag-close')) {
-                    modal.remove();
-                    resolve(null);
+                    animateUsersOverlayOut(modal, () => {
+                        modal.remove();
+                        resolve(null);
+                    });
                     return;
                 }
 
@@ -1278,8 +1302,10 @@ function showBatchTagModal(count) {
             }
 
             if (e.target === modal) {
-                modal.remove();
-                resolve(null);
+                animateUsersOverlayOut(modal, () => {
+                    modal.remove();
+                    resolve(null);
+                });
             }
         });
     });
@@ -3154,7 +3180,7 @@ async function openAdminLedgerDetail(ledgerId) {
     const record = (currentModalData.pointsLedger || []).find(item => String(item.id) === String(ledgerId));
     if (!record) return;
 
-    closeAdminLedgerDetailModal();
+    document.getElementById('adminLedgerDetailOverlay')?.remove();
 
     const overlay = document.createElement('div');
     overlay.id = 'adminLedgerDetailOverlay';
@@ -3171,6 +3197,7 @@ async function openAdminLedgerDetail(ledgerId) {
         </div>
     `;
     document.body.appendChild(overlay);
+    animateUsersOverlayIn(overlay);
 
     if (!currentModalData.ledgerDetails) {
         currentModalData.ledgerDetails = {};
@@ -3189,7 +3216,10 @@ async function openAdminLedgerDetail(ledgerId) {
 }
 
 function closeAdminLedgerDetailModal() {
-    document.getElementById('adminLedgerDetailOverlay')?.remove();
+    const overlay = document.getElementById('adminLedgerDetailOverlay');
+    animateUsersOverlayOut(overlay, () => {
+        overlay?.remove();
+    });
 }
 
 window.openAdminLedgerDetail = openAdminLedgerDetail;

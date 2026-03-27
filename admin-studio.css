@@ -2391,6 +2391,16 @@ body {
     align-items: center;
     justify-content: center;
     z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.28s ease, visibility 0.28s ease;
+}
+
+.batch-modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
 }
 
 .batch-modal {
@@ -2402,6 +2412,14 @@ body {
     width: 90%;
     max-width: 420px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    transform: translateY(22px) scale(0.97);
+    transition: opacity 0.28s ease, transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.batch-modal-overlay.active .batch-modal {
+    opacity: 1;
+    transform: translateY(0) scale(1);
 }
 
 .batch-modal-title {
@@ -2516,6 +2534,16 @@ body {
     align-items: center;
     justify-content: center;
     z-index: 2000;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.28s ease, visibility 0.28s ease;
+}
+
+.lightbox-overlay.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
 }
 
 .lightbox-image {
@@ -2523,6 +2551,14 @@ body {
     max-height: 90vh;
     object-fit: contain;
     border-radius: 8px;
+    opacity: 0;
+    transform: scale(0.97);
+    transition: opacity 0.28s ease, transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lightbox-overlay.active .lightbox-image {
+    opacity: 1;
+    transform: scale(1);
 }
 
 .lightbox-close {
@@ -6046,6 +6082,16 @@ input:checked+.toggle-slider:before {
     padding: 24px;
     background: rgba(2, 6, 23, 0.66);
     backdrop-filter: blur(14px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.28s ease, visibility 0.28s ease;
+}
+
+.admin-ledger-modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
 }
 
 .admin-ledger-modal {
@@ -6058,6 +6104,14 @@ input:checked+.toggle-slider:before {
         radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 32%),
         rgba(15, 23, 42, 0.94);
     box-shadow: 0 32px 80px rgba(2, 6, 23, 0.45);
+    opacity: 0;
+    transform: translateY(24px) scale(0.97);
+    transition: opacity 0.28s ease, transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.admin-ledger-modal-overlay.active .admin-ledger-modal {
+    opacity: 1;
+    transform: translateY(0) scale(1);
 }
 
 .admin-ledger-modal-loading {
@@ -12391,7 +12445,16 @@ input:checked+.toggle-slider:before {
     align-items: center;
     justify-content: center;
     z-index: 10000;
-    animation: fadeIn 0.2s ease;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.24s ease, visibility 0.24s ease;
+}
+
+.codes-modal-overlay.is-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
 }
 
 .codes-modal {
@@ -12403,7 +12466,14 @@ input:checked+.toggle-slider:before {
     display: flex;
     flex-direction: column;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    animation: slideUp 0.3s ease;
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+    transition: opacity 0.24s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.codes-modal-overlay.is-visible .codes-modal {
+    opacity: 1;
+    transform: translateY(0) scale(1);
 }
 
 @keyframes slideUp {
@@ -12476,7 +12546,16 @@ input:checked+.toggle-slider:before {
     align-items: center;
     justify-content: center;
     z-index: 10000;
-    animation: fadeIn 0.2s ease;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.24s ease, visibility 0.24s ease;
+}
+
+.edit-modal-overlay.is-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
 }
 
 .edit-modal {
@@ -12485,7 +12564,14 @@ input:checked+.toggle-slider:before {
     width: 90%;
     max-width: 400px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    animation: slideUp 0.3s ease;
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+    transition: opacity 0.24s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.edit-modal-overlay.is-visible .edit-modal {
+    opacity: 1;
+    transform: translateY(0) scale(1);
 }
 
 .edit-modal-header {
@@ -17406,7 +17492,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 /* ---- A/B Experiment Modal ---- */
 #experimentModal {
-    display: none;
+    display: flex;
     position: fixed;
     top: 0;
     left: 0;
@@ -17417,10 +17503,16 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     z-index: 9999;
     justify-content: center;
     align-items: center;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.24s ease, visibility 0.24s ease;
 }
 
 #experimentModal.active {
-    display: flex;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
 }
 
 #experimentModal .modal-content {
@@ -17432,6 +17524,14 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     max-height: 80vh;
     overflow-y: auto;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+    transition: opacity 0.24s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#experimentModal.active .modal-content {
+    opacity: 1;
+    transform: translateY(0) scale(1);
 }
 
 #experimentModal .modal-header {

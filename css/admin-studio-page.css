@@ -815,6 +815,17 @@ body.admin-access-pending,
                             backdrop-filter: blur(8px);
                             -webkit-backdrop-filter: blur(8px);
                             z-index: 9999;
+                            opacity: 0;
+                            visibility: hidden;
+                            pointer-events: none;
+                            transition: opacity 0.24s ease, visibility 0.24s ease;
+                        }
+
+                        .shop-inventory-fault-overlay.is-visible,
+                        .shop-inventory-detail-overlay.is-visible {
+                            opacity: 1;
+                            visibility: visible;
+                            pointer-events: auto;
                         }
 
                         .shop-inventory-fault-modal,
@@ -824,6 +835,15 @@ body.admin-access-pending,
                             border-radius: 16px;
                             padding: 25px;
                             box-sizing: border-box;
+                            opacity: 0;
+                            transform: translateY(20px) scale(0.98);
+                            transition: opacity 0.24s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+                        }
+
+                        .shop-inventory-fault-overlay.is-visible .shop-inventory-fault-modal,
+                        .shop-inventory-detail-overlay.is-visible .shop-inventory-detail-modal {
+                            opacity: 1;
+                            transform: translateY(0) scale(1);
                         }
 
                         .shop-inventory-fault-modal {
@@ -1171,11 +1191,22 @@ body.admin-access-pending,
                             backdrop-filter: blur(12px);
                             -webkit-backdrop-filter: blur(12px);
                             z-index: 9999;
+                            opacity: 0;
+                            visibility: hidden;
+                            pointer-events: none;
+                            transition: opacity 0.24s ease, visibility 0.24s ease;
                         }
 
                         .shop-order-content-overlay {
                             background: rgba(0, 0, 0, 0.5);
                             z-index: 1000;
+                        }
+
+                        .shop-order-content-overlay.is-visible,
+                        .shop-refund-modal-overlay.is-visible {
+                            opacity: 1;
+                            visibility: visible;
+                            pointer-events: auto;
                         }
 
                         .shop-order-content-modal {
@@ -1188,7 +1219,14 @@ body.admin-access-pending,
                             width: min(500px, 100%);
                             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
                             overflow: hidden;
-                            animation: shop-modal-fade-in 0.3s ease-out;
+                            opacity: 0;
+                            transform: translateY(20px) scale(0.98);
+                            transition: opacity 0.24s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+                        }
+
+                        .shop-order-content-overlay.is-visible .shop-order-content-modal {
+                            opacity: 1;
+                            transform: translateY(0) scale(1);
                         }
 
                         .shop-order-content-header {
@@ -1289,7 +1327,14 @@ body.admin-access-pending,
                             border-radius: 20px;
                             padding: 30px;
                             width: min(480px, 100%);
-                            animation: shop-modal-fade-in 0.3s ease-out;
+                            opacity: 0;
+                            transform: translateY(20px) scale(0.98);
+                            transition: opacity 0.24s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+                        }
+
+                        .shop-refund-modal-overlay.is-visible .shop-refund-modal {
+                            opacity: 1;
+                            transform: translateY(0) scale(1);
                         }
 
                         .shop-refund-modal-title {
