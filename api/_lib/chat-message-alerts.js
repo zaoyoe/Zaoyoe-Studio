@@ -323,7 +323,14 @@ function buildCustomerChatMessageAlerts(messages = [], profilesContext = {}, raw
 
 async function runCustomerChatMessageSweep(supabase, options = {}) {
     const env = options.env || process.env;
-    const config = normalizeChatMessageMonitorConfig(options.config, env);
+    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
+    const runtimeConfig = runtime?.config?.customer_chat_message && typeof runtime.config.customer_chat_message === 'object'
+        ? runtime.config.customer_chat_message
+        : {};
+    const config = normalizeChatMessageMonitorConfig({
+        ...runtimeConfig,
+        ...(options.config && typeof options.config === 'object' ? options.config : {})
+    }, env);
 
     if (!config.enabled) {
         return {
@@ -334,7 +341,6 @@ async function runCustomerChatMessageSweep(supabase, options = {}) {
         };
     }
 
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
     if (!runtime?.config?.enabled) {
         return {
             skipped: 'ops_alerts_disabled',

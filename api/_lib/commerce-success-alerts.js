@@ -373,9 +373,23 @@ function buildWalletRechargeSucceededAlerts(paymentOrders = [], profilesContext 
 
 async function runCommerceSuccessSweep(supabase, options = {}) {
     const env = options.env || process.env;
-    const config = normalizeCommerceSuccessMonitorConfig(options.config, env);
+    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
+    const runtimePurchaseConfig = runtime?.config?.shop_purchase_success && typeof runtime.config.shop_purchase_success === 'object'
+        ? runtime.config.shop_purchase_success
+        : {};
+    const runtimeRechargeConfig = runtime?.config?.wallet_recharge_success && typeof runtime.config.wallet_recharge_success === 'object'
+        ? runtime.config.wallet_recharge_success
+        : {};
+    const purchaseConfig = normalizeCommerceSuccessMonitorConfig({
+        ...runtimePurchaseConfig,
+        ...(options.purchaseConfig && typeof options.purchaseConfig === 'object' ? options.purchaseConfig : {})
+    }, env);
+    const rechargeConfig = normalizeCommerceSuccessMonitorConfig({
+        ...runtimeRechargeConfig,
+        ...(options.rechargeConfig && typeof options.rechargeConfig === 'object' ? options.rechargeConfig : {})
+    }, env);
 
-    if (!config.enabled) {
+    if (!purchaseConfig.enabled && !rechargeConfig.enabled) {
         return {
             skipped: 'monitor_disabled',
             purchase_count: 0,
@@ -385,7 +399,6 @@ async function runCommerceSuccessSweep(supabase, options = {}) {
         };
     }
 
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
     if (!runtime?.config?.enabled) {
         return {
             skipped: 'ops_alerts_disabled',
@@ -397,22 +410,47 @@ async function runCommerceSuccessSweep(supabase, options = {}) {
     }
 
     const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
-    const sinceIso = new Date(nowDate.getTime() - Number(config.lookback_minutes || DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG.lookback_minutes) * 60 * 1000).toISOString();
-    const stateSinceIso = new Date(nowDate.getTime() - Number(config.state_lookback_minutes || DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG.state_lookback_minutes) * 60 * 1000).toISOString();
+    const activeConfigs = [purchaseConfig, rechargeConfig].filter((config) => config.enabled);
+    const maxStateLookbackMinutes = activeConfigs.length
+        ? Math.max(...activeConfigs.map((config) => Number(config.state_lookback_minutes || DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG.state_lookback_minutes)))
+        : DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG.state_lookback_minutes;
+    const stateQueryConfig = activeConfigs.reduce((accumulator, config) => ({
+        page_size: Math.max(accumulator.page_size, Number(config.page_size || DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG.page_size)),
+        max_pages: Math.max(accumulator.max_pages, Number(config.max_pages || DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG.max_pages))
+    }), {
+        page_size: DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG.page_size,
+        max_pages: DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG.max_pages
+    });
+    const purchaseSinceIso = new Date(
+        nowDate.getTime() - Number(purchaseConfig.lookback_minutes || DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG.lookback_minutes) * 60 * 1000
+    ).toISOString();
+    const rechargeSinceIso = new Date(
+        nowDate.getTime() - Number(rechargeConfig.lookback_minutes || DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG.lookback_minutes) * 60 * 1000
+    ).toISOString();
+    const stateSinceIso = new Date(nowDate.getTime() - maxStateLookbackMinutes * 60 * 1000).toISOString();
 
     const [shopOrders, paymentOrders, stateJobs] = await Promise.all([
-        fetchRecentShopOrders(supabase, sinceIso, config),
-        fetchRecentSuccessfulRechargeOrders(supabase, sinceIso, config),
-        fetchRecentCommerceSuccessStateJobs(supabase, stateSinceIso, config)
+        purchaseConfig.enabled ? fetchRecentShopOrders(supabase, purchaseSinceIso, purchaseConfig) : Promise.resolve([]),
+        rechargeConfig.enabled ? fetchRecentSuccessfulRechargeOrders(supabase, rechargeSinceIso, rechargeConfig) : Promise.resolve([]),
+        fetchRecentCommerceSuccessStateJobs(supabase, stateSinceIso, stateQueryConfig)
     ]);
 
     const userIds = Array.from(new Set([
         ...(shopOrders || []).map((order) => normalizeText(order.user_id)),
         ...(paymentOrders || []).map((order) => normalizeText(order.user_id))
     ].filter(Boolean)));
-    const profilesContext = buildProfilesContext(await fetchProfilesByIds(supabase, userIds, config));
-    const purchaseAlerts = buildShopPurchaseSucceededAlerts(shopOrders, profilesContext, config, { now: nowDate });
-    const rechargeAlerts = buildWalletRechargeSucceededAlerts(paymentOrders, profilesContext, config, { now: nowDate });
+    const profilesConfig = activeConfigs.reduce((accumulator, config) => ({
+        page_size: Math.max(accumulator.page_size, Number(config.page_size || DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG.page_size))
+    }), {
+        page_size: DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG.page_size
+    });
+    const profilesContext = buildProfilesContext(await fetchProfilesByIds(supabase, userIds, profilesConfig));
+    const purchaseAlerts = purchaseConfig.enabled
+        ? buildShopPurchaseSucceededAlerts(shopOrders, profilesContext, purchaseConfig, { now: nowDate })
+        : [];
+    const rechargeAlerts = rechargeConfig.enabled
+        ? buildWalletRechargeSucceededAlerts(paymentOrders, profilesContext, rechargeConfig, { now: nowDate })
+        : [];
     const alerts = [...purchaseAlerts, ...rechargeAlerts];
 
     let queued = 0;

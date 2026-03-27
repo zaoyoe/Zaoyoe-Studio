@@ -241,3 +241,40 @@ test('runCustomerChatMessageSweep queues outbound alerts for fresh user messages
     assert.equal(state.jobs[0].payload.sender_label, 'guest100');
     assert.match(state.jobs[0].content, /客服在吗？我刚刚付款了/);
 });
+
+test('runCustomerChatMessageSweep respects runtime customer chat monitor config', async () => {
+    const state = {
+        messages: [
+            {
+                id: 'chat-message-200',
+                session_id: 'guest@example.com',
+                user_id: 'user-200',
+                content: '有人吗？',
+                message_type: 'text',
+                created_at: '2026-03-26T02:10:00.000Z',
+                is_admin: false
+            }
+        ],
+        profiles: [
+            {
+                id: 'user-200',
+                email: 'guest@example.com',
+                username: 'guest200'
+            }
+        ],
+        jobs: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime();
+    runtime.config.customer_chat_message.enabled = false;
+
+    const result = await runCustomerChatMessageSweep(supabase, {
+        now: new Date('2026-03-26T02:12:00.000Z'),
+        runtime
+    });
+
+    assert.equal(result.message_count, 0);
+    assert.equal(result.queued, 0);
+    assert.equal(result.skipped, 'monitor_disabled');
+    assert.equal(state.jobs.length, 0);
+});

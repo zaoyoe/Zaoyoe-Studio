@@ -284,3 +284,61 @@ test('runCommerceSuccessSweep queues purchase and recharge success alerts', asyn
     assert.equal(state.jobs.some((job) => job.alert_type === 'shop_purchase_succeeded'), true);
     assert.equal(state.jobs.some((job) => job.alert_type === 'wallet_recharge_succeeded'), true);
 });
+
+test('runCommerceSuccessSweep supports independent purchase and recharge monitor config', async () => {
+    const state = {
+        shopOrders: [
+            {
+                id: 'shop-order-200',
+                user_id: 'user-200',
+                site: 'cn',
+                snapshot_product_name: '旗舰套餐',
+                total_price: 88,
+                price_paid: 88,
+                item_count: 1,
+                delivery_status: 'pending',
+                refund_status: 'none',
+                created_at: '2026-03-26T05:00:00.000Z'
+            }
+        ],
+        paymentOrders: [
+            {
+                id: 'payment-order-200',
+                user_id: 'user-200',
+                provider: 'hupijiao',
+                provider_order_no: 'HP200',
+                site: 'cn',
+                package_name: '100元充值',
+                expected_amount: 100,
+                paid_amount: 100,
+                points_amount: 1000,
+                status: 'redeemed',
+                paid_at: '2026-03-26T05:01:00.000Z',
+                claimed_at: '2026-03-26T05:02:00.000Z',
+                created_at: '2026-03-26T04:59:00.000Z'
+            }
+        ],
+        profiles: [
+            {
+                id: 'user-200',
+                username: 'buyer200'
+            }
+        ],
+        jobs: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime();
+    runtime.config.shop_purchase_success.enabled = false;
+    runtime.config.wallet_recharge_success.enabled = true;
+
+    const result = await runCommerceSuccessSweep(supabase, {
+        now: new Date('2026-03-26T05:05:00.000Z'),
+        runtime
+    });
+
+    assert.equal(result.purchase_count, 0);
+    assert.equal(result.recharge_count, 1);
+    assert.equal(result.queued, 1);
+    assert.equal(state.jobs.some((job) => job.alert_type === 'shop_purchase_succeeded'), false);
+    assert.equal(state.jobs.some((job) => job.alert_type === 'wallet_recharge_succeeded'), true);
+});

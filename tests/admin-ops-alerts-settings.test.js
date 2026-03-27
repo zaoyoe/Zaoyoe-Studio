@@ -73,6 +73,24 @@ function createDefaultState() {
                 sales_window_days: 7,
                 dedupe_window_minutes: 6 * 60,
                 recovery_notification_enabled: true
+            },
+            customer_chat_message: {
+                enabled: true,
+                sweep_interval_ms: 60 * 1000,
+                lookback_minutes: 15,
+                dedupe_window_minutes: 12 * 60
+            },
+            shop_purchase_success: {
+                enabled: true,
+                sweep_interval_ms: 2 * 60 * 1000,
+                lookback_minutes: 30,
+                dedupe_window_minutes: 24 * 60
+            },
+            wallet_recharge_success: {
+                enabled: true,
+                sweep_interval_ms: 2 * 60 * 1000,
+                lookback_minutes: 30,
+                dedupe_window_minutes: 24 * 60
             }
         },
         secretStatus: {
@@ -133,6 +151,9 @@ function createNormalizedConfig(raw) {
     const email = channels.email && typeof channels.email === 'object' ? channels.email : {};
     const shopOrderRisk = source.shop_order_risk && typeof source.shop_order_risk === 'object' ? source.shop_order_risk : {};
     const shopInventory = source.shop_inventory && typeof source.shop_inventory === 'object' ? source.shop_inventory : {};
+    const customerChatMessage = source.customer_chat_message && typeof source.customer_chat_message === 'object' ? source.customer_chat_message : {};
+    const shopPurchaseSuccess = source.shop_purchase_success && typeof source.shop_purchase_success === 'object' ? source.shop_purchase_success : {};
+    const walletRechargeSuccess = source.wallet_recharge_success && typeof source.wallet_recharge_success === 'object' ? source.wallet_recharge_success : {};
 
     return {
         enabled: normalizeBoolean(source.enabled, false),
@@ -175,6 +196,24 @@ function createNormalizedConfig(raw) {
             sales_window_days: Math.min(30, Math.max(1, Number(shopInventory.sales_window_days || 7) || 7)),
             dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(shopInventory.dedupe_window_minutes || 6 * 60) || (6 * 60))),
             recovery_notification_enabled: normalizeBoolean(shopInventory.recovery_notification_enabled, true)
+        },
+        customer_chat_message: {
+            enabled: normalizeBoolean(customerChatMessage.enabled, true),
+            sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(customerChatMessage.sweep_interval_ms || 60 * 1000) || (60 * 1000))),
+            lookback_minutes: Math.min(24 * 60, Math.max(1, Number(customerChatMessage.lookback_minutes || 15) || 15)),
+            dedupe_window_minutes: Math.min(7 * 24 * 60, Math.max(1, Number(customerChatMessage.dedupe_window_minutes || 12 * 60) || (12 * 60)))
+        },
+        shop_purchase_success: {
+            enabled: normalizeBoolean(shopPurchaseSuccess.enabled, true),
+            sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(shopPurchaseSuccess.sweep_interval_ms || 2 * 60 * 1000) || (2 * 60 * 1000))),
+            lookback_minutes: Math.min(24 * 60, Math.max(1, Number(shopPurchaseSuccess.lookback_minutes || 30) || 30)),
+            dedupe_window_minutes: Math.min(30 * 24 * 60, Math.max(1, Number(shopPurchaseSuccess.dedupe_window_minutes || 24 * 60) || (24 * 60)))
+        },
+        wallet_recharge_success: {
+            enabled: normalizeBoolean(walletRechargeSuccess.enabled, true),
+            sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(walletRechargeSuccess.sweep_interval_ms || 2 * 60 * 1000) || (2 * 60 * 1000))),
+            lookback_minutes: Math.min(24 * 60, Math.max(1, Number(walletRechargeSuccess.lookback_minutes || 30) || 30)),
+            dedupe_window_minutes: Math.min(30 * 24 * 60, Math.max(1, Number(walletRechargeSuccess.dedupe_window_minutes || 24 * 60) || (24 * 60)))
         }
     };
 }
@@ -436,6 +475,18 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.shop_inventory.sales_window_days, 7);
         assert.equal(payload.config.shop_inventory.dedupe_window_minutes, 6 * 60);
         assert.equal(payload.config.shop_inventory.recovery_notification_enabled, true);
+        assert.equal(payload.config.customer_chat_message.enabled, true);
+        assert.equal(payload.config.customer_chat_message.sweep_interval_ms, 60 * 1000);
+        assert.equal(payload.config.customer_chat_message.lookback_minutes, 15);
+        assert.equal(payload.config.customer_chat_message.dedupe_window_minutes, 12 * 60);
+        assert.equal(payload.config.shop_purchase_success.enabled, true);
+        assert.equal(payload.config.shop_purchase_success.sweep_interval_ms, 2 * 60 * 1000);
+        assert.equal(payload.config.shop_purchase_success.lookback_minutes, 30);
+        assert.equal(payload.config.shop_purchase_success.dedupe_window_minutes, 24 * 60);
+        assert.equal(payload.config.wallet_recharge_success.enabled, true);
+        assert.equal(payload.config.wallet_recharge_success.sweep_interval_ms, 2 * 60 * 1000);
+        assert.equal(payload.config.wallet_recharge_success.lookback_minutes, 30);
+        assert.equal(payload.config.wallet_recharge_success.dedupe_window_minutes, 24 * 60);
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.telegram_bot_token.source, 'stored');
         assert.equal(payload.secrets.feishu_webhook_url.configured, false);
@@ -475,6 +526,24 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         sales_window_days: 5,
                         dedupe_window_minutes: 180,
                         recovery_notification_enabled: false
+                    },
+                    customer_chat_message: {
+                        enabled: true,
+                        sweep_interval_ms: 3 * 60 * 1000,
+                        lookback_minutes: 20,
+                        dedupe_window_minutes: 240
+                    },
+                    shop_purchase_success: {
+                        enabled: false,
+                        sweep_interval_ms: 4 * 60 * 1000,
+                        lookback_minutes: 45,
+                        dedupe_window_minutes: 360
+                    },
+                    wallet_recharge_success: {
+                        enabled: true,
+                        sweep_interval_ms: 5 * 60 * 1000,
+                        lookback_minutes: 60,
+                        dedupe_window_minutes: 480
                     }
                 },
                 secrets: {
@@ -504,6 +573,18 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.shop_inventory.sales_window_days, 5);
         assert.equal(payload.config.shop_inventory.dedupe_window_minutes, 180);
         assert.equal(payload.config.shop_inventory.recovery_notification_enabled, false);
+        assert.equal(payload.config.customer_chat_message.enabled, true);
+        assert.equal(payload.config.customer_chat_message.sweep_interval_ms, 3 * 60 * 1000);
+        assert.equal(payload.config.customer_chat_message.lookback_minutes, 20);
+        assert.equal(payload.config.customer_chat_message.dedupe_window_minutes, 240);
+        assert.equal(payload.config.shop_purchase_success.enabled, false);
+        assert.equal(payload.config.shop_purchase_success.sweep_interval_ms, 4 * 60 * 1000);
+        assert.equal(payload.config.shop_purchase_success.lookback_minutes, 45);
+        assert.equal(payload.config.shop_purchase_success.dedupe_window_minutes, 360);
+        assert.equal(payload.config.wallet_recharge_success.enabled, true);
+        assert.equal(payload.config.wallet_recharge_success.sweep_interval_ms, 5 * 60 * 1000);
+        assert.equal(payload.config.wallet_recharge_success.lookback_minutes, 60);
+        assert.equal(payload.config.wallet_recharge_success.dedupe_window_minutes, 480);
         assert.equal(state.systemConfigUpserts.length, 1);
         assert.equal(state.systemConfigUpserts[0].config_key, 'ops_alerts');
         assert.equal(state.upsertedSecrets.length, 2);
@@ -520,6 +601,18 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.shop_inventory_sales_window_days, 5);
         assert.equal(state.auditLogs[0].details.shop_inventory_dedupe_window_minutes, 180);
         assert.equal(state.auditLogs[0].details.shop_inventory_recovery_notification_enabled, false);
+        assert.equal(state.auditLogs[0].details.customer_chat_message_enabled, true);
+        assert.equal(state.auditLogs[0].details.customer_chat_message_sweep_interval_ms, 3 * 60 * 1000);
+        assert.equal(state.auditLogs[0].details.customer_chat_message_lookback_minutes, 20);
+        assert.equal(state.auditLogs[0].details.customer_chat_message_dedupe_window_minutes, 240);
+        assert.equal(state.auditLogs[0].details.shop_purchase_success_enabled, false);
+        assert.equal(state.auditLogs[0].details.shop_purchase_success_sweep_interval_ms, 4 * 60 * 1000);
+        assert.equal(state.auditLogs[0].details.shop_purchase_success_lookback_minutes, 45);
+        assert.equal(state.auditLogs[0].details.shop_purchase_success_dedupe_window_minutes, 360);
+        assert.equal(state.auditLogs[0].details.wallet_recharge_success_enabled, true);
+        assert.equal(state.auditLogs[0].details.wallet_recharge_success_sweep_interval_ms, 5 * 60 * 1000);
+        assert.equal(state.auditLogs[0].details.wallet_recharge_success_lookback_minutes, 60);
+        assert.equal(state.auditLogs[0].details.wallet_recharge_success_dedupe_window_minutes, 480);
         assert.deepEqual(state.auditLogs[0].details.updated_secrets, ['telegram_bot_token', 'feishu_webhook_url']);
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.feishu_webhook_url.configured, true);

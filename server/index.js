@@ -154,8 +154,10 @@ let adminLoginAnomalySweepTimer = null;
 let adminLoginAnomalySweepRunning = false;
 let customerChatMessageSweepTimer = null;
 let customerChatMessageSweepRunning = false;
-let commerceSuccessSweepTimer = null;
-let commerceSuccessSweepRunning = false;
+let shopPurchaseSuccessSweepTimer = null;
+let shopPurchaseSuccessSweepRunning = false;
+let walletRechargeSuccessSweepTimer = null;
+let walletRechargeSuccessSweepRunning = false;
 let cachedShopDeliveryStrategy = null;
 let cachedShopDeliveryStrategyAt = 0;
 const afdianProvider = getPaymentProviderAdapter('afdian');
@@ -3546,7 +3548,10 @@ async function sweepCustomerChatMessageAlerts() {
     customerChatMessageSweepRunning = true;
 
     try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
         const result = await runCustomerChatMessageSweep(supabase, {
+            runtime,
+            config: runtime?.config?.customer_chat_message || {},
             env: process.env
         });
 
@@ -3563,7 +3568,13 @@ async function sweepCustomerChatMessageAlerts() {
 async function queueNextCustomerChatMessageSweep(delayMs = null) {
     if (customerChatMessageSweepTimer) return;
 
-    const monitorConfig = normalizeChatMessageMonitorConfig({}, process.env);
+    let monitorConfig = normalizeChatMessageMonitorConfig({}, process.env);
+    try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        monitorConfig = normalizeChatMessageMonitorConfig(runtime?.config?.customer_chat_message || {}, process.env);
+    } catch (error) {
+        console.warn('[CustomerChatMessageMonitor] Failed to load runtime config for next sweep delay:', error.message || error);
+    }
     const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 60 * 1000));
 
     customerChatMessageSweepTimer = setTimeout(() => {
@@ -3588,54 +3599,117 @@ function startCustomerChatMessageSweep() {
     });
 }
 
-async function sweepCommerceSuccessAlerts() {
-    if (commerceSuccessSweepRunning) return;
-    commerceSuccessSweepRunning = true;
+async function sweepShopPurchaseSuccessAlerts() {
+    if (shopPurchaseSuccessSweepRunning) return;
+    shopPurchaseSuccessSweepRunning = true;
 
     try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
         const result = await runCommerceSuccessSweep(supabase, {
+            runtime,
+            purchaseConfig: runtime?.config?.shop_purchase_success || {},
+            rechargeConfig: { enabled: false },
             env: process.env
         });
 
-        if (
-            Number(result?.purchase_count || 0) > 0
-            || Number(result?.recharge_count || 0) > 0
-            || Number(result?.queued || 0) > 0
-        ) {
-            console.log('[CommerceSuccessMonitor] Sweep complete:', JSON.stringify(result));
+        if (Number(result?.purchase_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+            console.log('[ShopPurchaseSuccessMonitor] Sweep complete:', JSON.stringify(result));
         }
     } catch (error) {
-        console.error('[CommerceSuccessMonitor] Sweep failed:', error);
+        console.error('[ShopPurchaseSuccessMonitor] Sweep failed:', error);
     } finally {
-        commerceSuccessSweepRunning = false;
+        shopPurchaseSuccessSweepRunning = false;
     }
 }
 
-async function queueNextCommerceSuccessSweep(delayMs = null) {
-    if (commerceSuccessSweepTimer) return;
+async function queueNextShopPurchaseSuccessSweep(delayMs = null) {
+    if (shopPurchaseSuccessSweepTimer) return;
 
-    const monitorConfig = normalizeCommerceSuccessMonitorConfig({}, process.env);
+    let monitorConfig = normalizeCommerceSuccessMonitorConfig({}, process.env);
+    try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        monitorConfig = normalizeCommerceSuccessMonitorConfig(runtime?.config?.shop_purchase_success || {}, process.env);
+    } catch (error) {
+        console.warn('[ShopPurchaseSuccessMonitor] Failed to load runtime config for next sweep delay:', error.message || error);
+    }
     const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 2 * 60 * 1000));
 
-    commerceSuccessSweepTimer = setTimeout(() => {
-        commerceSuccessSweepTimer = null;
-        sweepCommerceSuccessAlerts()
+    shopPurchaseSuccessSweepTimer = setTimeout(() => {
+        shopPurchaseSuccessSweepTimer = null;
+        sweepShopPurchaseSuccessAlerts()
             .catch((error) => {
-                console.error('[CommerceSuccessMonitor] Sweep tick failed:', error);
+                console.error('[ShopPurchaseSuccessMonitor] Sweep tick failed:', error);
             })
             .finally(() => {
-                queueNextCommerceSuccessSweep().catch((error) => {
-                    console.error('[CommerceSuccessMonitor] Failed to schedule next sweep:', error);
+                queueNextShopPurchaseSuccessSweep().catch((error) => {
+                    console.error('[ShopPurchaseSuccessMonitor] Failed to schedule next sweep:', error);
                 });
             });
     }, nextDelay);
 }
 
-function startCommerceSuccessSweep() {
-    if (commerceSuccessSweepTimer) return;
+function startShopPurchaseSuccessSweep() {
+    if (shopPurchaseSuccessSweepTimer) return;
 
-    queueNextCommerceSuccessSweep(8300).catch((error) => {
-        console.error('[CommerceSuccessMonitor] Failed to start sweep:', error);
+    queueNextShopPurchaseSuccessSweep(8300).catch((error) => {
+        console.error('[ShopPurchaseSuccessMonitor] Failed to start sweep:', error);
+    });
+}
+
+async function sweepWalletRechargeSuccessAlerts() {
+    if (walletRechargeSuccessSweepRunning) return;
+    walletRechargeSuccessSweepRunning = true;
+
+    try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        const result = await runCommerceSuccessSweep(supabase, {
+            runtime,
+            purchaseConfig: { enabled: false },
+            rechargeConfig: runtime?.config?.wallet_recharge_success || {},
+            env: process.env
+        });
+
+        if (Number(result?.recharge_count || 0) > 0 || Number(result?.queued || 0) > 0) {
+            console.log('[WalletRechargeSuccessMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[WalletRechargeSuccessMonitor] Sweep failed:', error);
+    } finally {
+        walletRechargeSuccessSweepRunning = false;
+    }
+}
+
+async function queueNextWalletRechargeSuccessSweep(delayMs = null) {
+    if (walletRechargeSuccessSweepTimer) return;
+
+    let monitorConfig = normalizeCommerceSuccessMonitorConfig({}, process.env);
+    try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        monitorConfig = normalizeCommerceSuccessMonitorConfig(runtime?.config?.wallet_recharge_success || {}, process.env);
+    } catch (error) {
+        console.warn('[WalletRechargeSuccessMonitor] Failed to load runtime config for next sweep delay:', error.message || error);
+    }
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 2 * 60 * 1000));
+
+    walletRechargeSuccessSweepTimer = setTimeout(() => {
+        walletRechargeSuccessSweepTimer = null;
+        sweepWalletRechargeSuccessAlerts()
+            .catch((error) => {
+                console.error('[WalletRechargeSuccessMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextWalletRechargeSuccessSweep().catch((error) => {
+                    console.error('[WalletRechargeSuccessMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startWalletRechargeSuccessSweep() {
+    if (walletRechargeSuccessSweepTimer) return;
+
+    queueNextWalletRechargeSuccessSweep(8800).catch((error) => {
+        console.error('[WalletRechargeSuccessMonitor] Failed to start sweep:', error);
     });
 }
 
@@ -4845,7 +4919,8 @@ function startServer(port = PORT) {
         startShopOrderRiskSweep();
         startAdminLoginAnomalySweep();
         startCustomerChatMessageSweep();
-        startCommerceSuccessSweep();
+        startShopPurchaseSuccessSweep();
+        startWalletRechargeSuccessSweep();
     });
 }
 

@@ -1575,6 +1575,132 @@
                                 </div>
                             </div>
 
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-customer-chat-message">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-headset"></i>
+                                        <span>客服消息告警</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用客服消息监控</div>
+                                            <div class="config-desc">用户给客服机器人发送新消息时，自动推送站外告警，并带上发送者、消息内容和时间。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertCustomerChatMessageEnabledToggle" data-admin-action="settings-toggle-ops-alert-customer-chat-message-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>巡检频率（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="60" step="1" class="config-input" id="opsAlertCustomerChatMessageSweepIntervalMinutes" placeholder="1">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>消息回看窗口（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="1440" step="1" class="config-input" id="opsAlertCustomerChatMessageLookbackMinutes" placeholder="15">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>去重冷却时间（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="10080" step="1" class="config-input" id="opsAlertCustomerChatMessageDedupeWindowMinutes" placeholder="720">
+                                        </div>
+                                    </div>
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>适合控制客服提醒的节奏。回看窗口决定每次扫描会补看多久内的新消息，去重冷却时间决定同一条消息在多长时间内不会重复外发。</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-shop-purchase-success">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-bag-shopping"></i>
+                                        <span>购买成功告警</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用购买成功监控</div>
+                                            <div class="config-desc">用户商城下单成功后，自动向 Telegram、飞书、邮件发送购买成功通知。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertShopPurchaseSuccessEnabledToggle" data-admin-action="settings-toggle-ops-alert-shop-purchase-success-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>巡检频率（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="60" step="1" class="config-input" id="opsAlertShopPurchaseSuccessSweepIntervalMinutes" placeholder="2">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>订单回看窗口（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="1440" step="1" class="config-input" id="opsAlertShopPurchaseSuccessLookbackMinutes" placeholder="30">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>去重冷却时间（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="43200" step="1" class="config-input" id="opsAlertShopPurchaseSuccessDedupeWindowMinutes" placeholder="1440">
+                                        </div>
+                                    </div>
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>适合控制购买成功通知的外发节奏。冷却时间越长，同一笔订单重复扫描时越不容易再次触发外部提醒。</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-wallet-recharge-success">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-wallet"></i>
+                                        <span>充值成功告警</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用充值成功监控</div>
+                                            <div class="config-desc">用户充值成功并入账后，自动向 Telegram、飞书、邮件发送充值成功通知。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertWalletRechargeSuccessEnabledToggle" data-admin-action="settings-toggle-ops-alert-wallet-recharge-success-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>巡检频率（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="60" step="1" class="config-input" id="opsAlertWalletRechargeSuccessSweepIntervalMinutes" placeholder="2">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>充值回看窗口（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="1440" step="1" class="config-input" id="opsAlertWalletRechargeSuccessLookbackMinutes" placeholder="30">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>去重冷却时间（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="43200" step="1" class="config-input" id="opsAlertWalletRechargeSuccessDedupeWindowMinutes" placeholder="1440">
+                                        </div>
+                                    </div>
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>适合控制充值提醒频率。回看窗口越大，越能覆盖短时抖动；冷却时间越长，同一笔充值被重复补扫时越不会反复通知。</span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="config-card ops-alert-config-card" data-config="ops-alerts-shop-inventory">
                                 <div class="config-card-header">
                                     <div class="config-card-title">
