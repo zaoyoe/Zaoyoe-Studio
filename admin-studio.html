@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260327_OPS_ALERT_SHOP_RISK_WORKSPACE_1">
+    <link rel="stylesheet" href="admin-studio.css?v=20260327_SHOP_RISK_CASE_WORKFLOW_1">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -1655,6 +1655,40 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <div id="shopRiskCaseComposerModal" class="modal-overlay admin-shop-risk-case-modal" data-admin-overlay-close="shop-risk-case-modal" aria-hidden="true">
+                    <div class="admin-shop-risk-case-modal__dialog">
+                        <div class="admin-shop-risk-case-modal__header">
+                            <div class="admin-shop-risk-case-modal__icon">
+                                <i class="fas fa-shield-halved"></i>
+                            </div>
+                            <div class="admin-shop-risk-case-modal__copy">
+                                <h2 id="shopRiskCaseComposerTitle">记录商城风控备注</h2>
+                                <p id="shopRiskCaseComposerSummary">商城风控案例</p>
+                            </div>
+                            <button type="button" class="modal-close-btn" data-admin-action="settings-close-shop-risk-case-modal" aria-label="关闭">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <form id="shopRiskCaseComposerForm" class="admin-shop-risk-case-modal__form">
+                            <div class="admin-shop-risk-case-modal__note" id="shopRiskCaseComposerDescription">
+                                记录调查进展、交接说明或关闭结论。
+                            </div>
+                            <div class="admin-shop-risk-case-modal__field">
+                                <label for="shopRiskCaseComposerTextarea" id="shopRiskCaseComposerLabel">备注内容</label>
+                                <textarea id="shopRiskCaseComposerTextarea" rows="6" class="config-input" placeholder="请输入内容"></textarea>
+                            </div>
+                            <div class="admin-shop-risk-case-modal__actions">
+                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-close-shop-risk-case-modal">
+                                    <i class="fas fa-xmark"></i> 取消
+                                </button>
+                                <button type="submit" class="btn-add-config btn-add-config--compact btn-add-config--primary" id="shopRiskCaseComposerSubmit" data-admin-action="settings-submit-shop-risk-case-modal">
+                                    保存备注
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
 
@@ -6580,13 +6614,13 @@
     <script src="admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1"></script>
     <script src="admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_2"></script>
-    <script src="admin-config.js?v=20260327_OPS_ALERT_SHOP_RISK_WORKSPACE_1"></script>
+    <script src="admin-config.js?v=20260327_SHOP_RISK_CASE_WORKFLOW_1"></script>
     <script src="admin-homepage.js?v=20260324_HOMEPAGE_RUNTIME_STYLE_2"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
     <script src="js/admin-tickets.js?v=20260324_ADMIN_TICKETS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-access.js"></script>
-    <script src="admin-studio.js?v=20260327_ADMIN_SCROLLBAR_AUTO_HIDE_1"></script>
+    <script src="admin-studio.js?v=20260327_SHOP_RISK_CASE_WORKFLOW_1"></script>
     <script src="js/admin-shop.js?v=20260327_SHOP_MODAL_MOTION_1"></script>
 </body>
 

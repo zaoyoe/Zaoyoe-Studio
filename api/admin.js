@@ -12,6 +12,7 @@ const settingsAdminAuditMonitorHandler = require('../server/api-handlers/admin/s
 const settingsOpsAlertHealthHandler = require('../server/api-handlers/admin/settings/ops-alert-health');
 const settingsOpsAlertsHandler = require('../server/api-handlers/admin/settings/ops-alerts');
 const settingsOpsAlertMonitorHandler = require('../server/api-handlers/admin/settings/ops-alert-monitor');
+const settingsOpsAlertMonitorCasesHandler = require('../server/api-handlers/admin/settings/ops-alert-monitor-cases');
 const settingsPaymentChannelsHandler = require('../server/api-handlers/admin/settings/payment-channels');
 const settingsVerifyMonitorHandler = require('../server/api-handlers/admin/settings/verify-monitor');
 const settingsVerifyMonitorQuotaHandler = require('../server/api-handlers/admin/settings/verify-monitor-quota');
@@ -26,6 +27,7 @@ const ROUTE_HANDLERS = {
     'settings/ops-alert-health': settingsOpsAlertHealthHandler,
     'settings/ops-alerts': settingsOpsAlertsHandler,
     'settings/ops-alert-monitor': settingsOpsAlertMonitorHandler,
+    'settings/ops-alert-monitor-cases': settingsOpsAlertMonitorCasesHandler,
     'settings/payment-channels': settingsPaymentChannelsHandler,
     'settings/verify-monitor': settingsVerifyMonitorHandler,
     'settings/verify-monitor/quota': settingsVerifyMonitorQuotaHandler,

@@ -21220,6 +21220,144 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     line-height: 1.55;
 }
 
+.admin-shop-risk-case-modal {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(5, 10, 24, 0.72);
+    backdrop-filter: blur(16px);
+    z-index: 1400;
+}
+
+.admin-shop-risk-case-modal.is-visible {
+    display: flex;
+    animation: adminShopRiskCaseFadeIn 0.18s ease-out;
+}
+
+.admin-shop-risk-case-modal__dialog {
+    width: min(560px, calc(100vw - 32px));
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(24, 31, 50, 0.98), rgba(17, 24, 39, 0.98));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 26px 72px rgba(2, 8, 23, 0.45);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    transform: translateY(8px) scale(0.985);
+    animation: adminShopRiskCaseSlideIn 0.22s ease-out forwards;
+}
+
+.admin-shop-risk-case-modal__header {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+}
+
+.admin-shop-risk-case-modal__icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(63, 155, 243, 0.9), rgba(86, 214, 178, 0.75));
+    color: #fff;
+    font-size: 1.3rem;
+    flex-shrink: 0;
+}
+
+.admin-shop-risk-case-modal__copy {
+    flex: 1;
+    min-width: 0;
+}
+
+.admin-shop-risk-case-modal__copy h2 {
+    margin: 0;
+    color: var(--text-main);
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+.admin-shop-risk-case-modal__copy p {
+    margin: 6px 0 0;
+    color: var(--text-secondary);
+    line-height: 1.55;
+}
+
+.admin-shop-risk-case-modal__form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.admin-shop-risk-case-modal__note {
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+    line-height: 1.6;
+}
+
+.admin-shop-risk-case-modal__field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.admin-shop-risk-case-modal__field label {
+    color: var(--text-main);
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.admin-shop-risk-case-modal__field textarea {
+    min-height: 148px;
+    resize: vertical;
+}
+
+.admin-shop-risk-case-modal__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.admin-shop-risk-case-modal__actions .btn-add-config--primary {
+    background: linear-gradient(135deg, rgba(107, 158, 206, 0.26), rgba(107, 158, 206, 0.18));
+    border-style: solid;
+    color: #e8f3ff;
+}
+
+.admin-shop-risk-case-modal__actions .btn-add-config--primary:hover {
+    background: linear-gradient(135deg, rgba(107, 158, 206, 0.34), rgba(107, 158, 206, 0.22));
+}
+
+@keyframes adminShopRiskCaseFadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes adminShopRiskCaseSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(14px) scale(0.975);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
 .ops-alert-monitor-badge {
     display: inline-flex;
     align-items: center;

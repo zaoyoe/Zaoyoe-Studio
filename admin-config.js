@@ -11,6 +11,7 @@ let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
 let opsAlertHealthState = getDefaultOpsAlertHealthState();
 let opsAlertMonitorState = getDefaultOpsAlertMonitorState();
 let opsAlertMonitorViewState = getDefaultOpsAlertMonitorViewState();
+let shopRiskCaseComposerState = getDefaultShopRiskCaseComposerState();
 let verifyMonitorState = getDefaultVerifyMonitorState();
 let adminAuditMonitorState = getDefaultAdminAuditMonitorState();
 let paymentChannelAccordionState = {
@@ -805,6 +806,15 @@ function getDefaultOpsAlertMonitorViewState() {
         scope: 'all',
         severity: 'all',
         category: 'all'
+    };
+}
+
+function getDefaultShopRiskCaseComposerState() {
+    return {
+        open: false,
+        action: '',
+        context: {},
+        submitting: false
     };
 }
 
@@ -2697,6 +2707,49 @@ function getOpsAlertMonitorRiskLevelLabel(riskLevel) {
     return labelMap[normalizedRiskLevel] || normalizedRiskLevel || '中';
 }
 
+function getShopRiskCaseStatusTone(status) {
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    if (normalizedStatus === 'resolved') return 'success';
+    if (normalizedStatus === 'claimed') return 'neutral';
+    return 'warning';
+}
+
+function getShopRiskCaseStatusLabel(status) {
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    const labelMap = {
+        open: '待认领',
+        claimed: '处理中',
+        resolved: '已关闭'
+    };
+    return labelMap[normalizedStatus] || '待认领';
+}
+
+function getShopRiskCaseSummaryText(item = {}) {
+    const status = String(item.case_status || '').trim().toLowerCase() || 'open';
+    const statusLabel = getShopRiskCaseStatusLabel(status);
+    const ownerLabel = String(item.case_owner_label || '').trim();
+    const resolution = String(item.case_resolution || '').trim();
+    const note = String(item.case_note || '').trim();
+    const lastActionAt = String(item.case_last_action_at || '').trim();
+    const summaryParts = [statusLabel];
+
+    if (ownerLabel) {
+        summaryParts.push(`负责人 ${ownerLabel}`);
+    }
+
+    if (status === 'resolved' && resolution) {
+        summaryParts.push(`关闭：${resolution}`);
+    } else if (note) {
+        summaryParts.push(`备注：${note}`);
+    }
+
+    if (lastActionAt) {
+        summaryParts.push(formatVerifyMonitorDateTime(lastActionAt));
+    }
+
+    return summaryParts.join(' · ');
+}
+
 function getOpsAlertMonitorItemAction(category = {}, item = {}) {
     const alertType = String(item.alert_type || '').trim().toLowerCase();
     const categoryKey = String(category.key || '').trim().toLowerCase();
@@ -2780,8 +2833,57 @@ function getOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
     return null;
 }
 
+function getOpsAlertMonitorItemCaseActions(category = {}, item = {}) {
+    if (String(category.key || '').trim().toLowerCase() !== 'shop_risk') {
+        return [];
+    }
+
+    const alertType = String(item.alert_type || '').trim().toLowerCase();
+    if (alertType !== 'shop_order_risk_anomaly' && alertType !== 'shop_order_risk_recovered') {
+        return [];
+    }
+
+    const status = String(item.case_status || '').trim().toLowerCase() || 'open';
+    const actions = [];
+
+    if (status !== 'resolved') {
+        if (status !== 'claimed') {
+            actions.push({
+                action: 'claim',
+                label: '认领',
+                icon: 'fas fa-hand'
+            });
+        }
+
+        actions.push({
+            action: 'add_note',
+            label: '备注',
+            icon: 'fas fa-note-sticky'
+        });
+        actions.push({
+            action: 'resolve',
+            label: '关闭',
+            icon: 'fas fa-circle-check'
+        });
+    } else {
+        actions.push({
+            action: 'reopen',
+            label: '重新打开',
+            icon: 'fas fa-arrow-rotate-left'
+        });
+        actions.push({
+            action: 'add_note',
+            label: '补充备注',
+            icon: 'fas fa-note-sticky'
+        });
+    }
+
+    return actions;
+}
+
 function buildOpsAlertMonitorContextAttrs(category = {}, item = {}) {
     return {
+        'data-workspace-title': item.title || '',
         'data-workspace-alert-type': item.alert_type || '',
         'data-workspace-category': category.key || '',
         'data-workspace-reference-label': item.reference_label || '',
@@ -2789,7 +2891,10 @@ function buildOpsAlertMonitorContextAttrs(category = {}, item = {}) {
         'data-workspace-target-id': item.target_id || '',
         'data-workspace-user-id': item.user_id || '',
         'data-workspace-client-ip': item.client_ip || '',
-        'data-workspace-discount-code': item.discount_code || ''
+        'data-workspace-discount-code': item.discount_code || '',
+        'data-workspace-signal-type': item.signal_type || '',
+        'data-workspace-case-status': item.case_status || '',
+        'data-workspace-case-owner-label': item.case_owner_label || ''
     };
 }
 
@@ -2819,6 +2924,19 @@ function buildOpsAlertMonitorQuickActionAttrs(action = {}, category = {}, item =
         .join(' ');
 }
 
+function buildOpsAlertMonitorCaseActionAttrs(action = {}, category = {}, item = {}) {
+    const attrs = {
+        'data-admin-action': 'settings-handle-shop-risk-case',
+        'data-shop-risk-case-action': action.action || '',
+        ...buildOpsAlertMonitorContextAttrs(category, item)
+    };
+
+    return Object.entries(attrs)
+        .filter(([, value]) => String(value || '').length > 0)
+        .map(([name, value]) => `${name}="${escapeConfigHtml(value)}"`)
+        .join(' ');
+}
+
 function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
     const severity = String(item.severity || 'warning').trim().toLowerCase();
     const severityTone = getOpsAlertMonitorSeverityTone(severity);
@@ -2826,6 +2944,9 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
     const riskTone = getOpsAlertMonitorRiskTone(riskLevel);
     const itemAction = getOpsAlertMonitorItemAction(category, item);
     const quickAction = getOpsAlertMonitorItemQuickAction(category, item);
+    const caseActions = getOpsAlertMonitorItemCaseActions(category, item);
+    const caseStatus = String(item.case_status || '').trim().toLowerCase() || 'open';
+    const caseTone = getShopRiskCaseStatusTone(caseStatus);
     const metaParts = [
         item.reference_label && item.reference_value
             ? `${escapeConfigHtml(item.reference_label)}：${escapeConfigHtml(item.reference_value)}`
@@ -2838,14 +2959,25 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
             <div class="ops-alert-monitor-item__top">
                 ${buildOpsAlertMonitorBadge(severity === 'critical' ? 'critical' : 'warning', severityTone)}
                 ${riskLevel ? buildOpsAlertMonitorBadge(`风险 ${getOpsAlertMonitorRiskLevelLabel(riskLevel)}${Number.isFinite(Number(item.risk_score)) ? ` · ${formatVerifyMonitorInteger(item.risk_score)}` : ''}`, riskTone) : ''}
+                ${String(category.key || '').trim().toLowerCase() === 'shop_risk' ? buildOpsAlertMonitorBadge(`值班 ${getShopRiskCaseStatusLabel(caseStatus)}`, caseTone) : ''}
                 <strong class="ops-alert-monitor-item__title">${escapeConfigHtml(item.title || '系统告警')}</strong>
             </div>
             ${item.message ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(item.message)}</div>` : ''}
+            ${String(category.key || '').trim().toLowerCase() === 'shop_risk' ? `<div class="ops-alert-monitor-item__summary"><strong>值班处理：</strong> ${escapeConfigHtml(getShopRiskCaseSummaryText(item))}</div>` : ''}
             ${item.auto_response_summary ? `<div class="ops-alert-monitor-item__summary"><strong>自动处置：</strong> ${escapeConfigHtml(item.auto_response_summary)}</div>` : ''}
             ${item.response_summary ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(item.response_summary)}</div>` : ''}
             <div class="ops-alert-monitor-item__meta">${metaParts.length ? metaParts.join(' · ') : '等待更多上下文'}</div>
-            ${(itemAction || quickAction) ? `
+            ${(itemAction || quickAction || caseActions.length) ? `
                 <div class="ops-alert-monitor-item__actions">
+                    ${caseActions.map((action) => `
+                        <button
+                            type="button"
+                            class="btn-add-config btn-add-config--compact"
+                            ${buildOpsAlertMonitorCaseActionAttrs(action, category, item)}
+                        >
+                            <i class="${escapeConfigHtml(action.icon)}"></i> ${escapeConfigHtml(action.label)}
+                        </button>
+                    `).join('')}
                     ${quickAction ? `
                         <button
                             type="button"
@@ -3185,6 +3317,9 @@ function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlert
     const latestQuickAction = latestItem ? getOpsAlertMonitorItemQuickAction(spotlightCategory || {}, latestItem) : null;
     const activeCount = spotlightCategory ? getOpsAlertMonitorDisplayActiveCount(spotlightCategory) : 0;
     const criticalCount = spotlightCategory ? getOpsAlertMonitorDisplayCriticalCount(spotlightCategory) : 0;
+    const caseSummary = spotlightCategory && typeof spotlightCategory.case_summary === 'object'
+        ? spotlightCategory.case_summary
+        : { open: 0, claimed: 0, resolved: 0 };
     const title = spotlightCategory
         ? (
             activeCount > 0
@@ -3212,6 +3347,11 @@ function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlert
     const stats = [
         buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(activeCount)} 待关注`, activeCount > 0 ? 'warning' : 'neutral')
     ];
+
+    if (spotlightCategory) {
+        stats.push(buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(caseSummary.open || 0)} 待认领`, 'warning'));
+        stats.push(buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(caseSummary.claimed || 0)} 处理中`, 'neutral'));
+    }
 
     if (criticalCount > 0) {
         stats.push(buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(criticalCount)} critical`, 'danger'));
@@ -5058,6 +5198,7 @@ function scrollToOpsAlertWorkspaceTarget(targetId) {
 
 function normalizeOpsAlertWorkspaceContext(context = {}) {
     return {
+        title: String(context.title || context.workspaceTitle || '').trim(),
         alertType: String(context.alertType || context.alert_type || '').trim().toLowerCase(),
         category: String(context.category || context.workspaceCategory || '').trim().toLowerCase(),
         referenceLabel: String(context.referenceLabel || context.reference_label || '').trim(),
@@ -5065,7 +5206,10 @@ function normalizeOpsAlertWorkspaceContext(context = {}) {
         targetId: String(context.targetId || context.target_id || '').trim(),
         userId: String(context.userId || context.user_id || context.workspaceUserId || '').trim(),
         clientIp: String(context.clientIp || context.client_ip || context.workspaceClientIp || '').trim(),
-        discountCode: String(context.discountCode || context.discount_code || context.workspaceDiscountCode || '').trim()
+        discountCode: String(context.discountCode || context.discount_code || context.workspaceDiscountCode || '').trim(),
+        signalType: String(context.signalType || context.signal_type || context.workspaceSignalType || '').trim().toLowerCase(),
+        caseStatus: String(context.caseStatus || context.case_status || context.workspaceCaseStatus || '').trim().toLowerCase(),
+        caseOwnerLabel: String(context.caseOwnerLabel || context.case_owner_label || context.workspaceCaseOwnerLabel || '').trim()
     };
 }
 
@@ -5323,6 +5467,206 @@ async function openOpsAlertWorkspace(workspaceKey, context = {}) {
     } catch (error) {
         console.error('[Config] Open ops alert workspace failed:', error);
         showToast('打开失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+function getShopRiskCaseComposerTargetLabel(context = {}) {
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    if (normalizedContext.referenceLabel && normalizedContext.referenceValue) {
+        return `${normalizedContext.referenceLabel}：${normalizedContext.referenceValue}`;
+    }
+    return normalizedContext.title || normalizedContext.targetId || '商城风控案例';
+}
+
+function getShopRiskCaseComposerMeta(action, context = {}) {
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const targetLabel = getShopRiskCaseComposerTargetLabel(normalizedContext);
+    const ownerLabel = normalizedContext.caseOwnerLabel || '';
+
+    if (normalizedAction === 'resolve') {
+        return {
+            title: '关闭商城风控案例',
+            summary: `${targetLabel}${ownerLabel ? ` · 当前负责人 ${ownerLabel}` : ''}`,
+            description: '填写本次处置结论，关闭后仍可重新打开继续跟进。',
+            fieldLabel: '关闭结论',
+            placeholder: '例如：已停用优惠码并核查关联订单，无进一步扩散迹象。',
+            submitLabel: '关闭案例'
+        };
+    }
+
+    return {
+        title: '记录商城风控备注',
+        summary: `${targetLabel}${ownerLabel ? ` · 当前负责人 ${ownerLabel}` : ''}`,
+        description: '适合记录调查进展、证据链接、交接说明或下一步动作。',
+        fieldLabel: '备注内容',
+        placeholder: '例如：已初步排查共享 IP 情况，待继续核对关联账号和订单。',
+        submitLabel: '保存备注'
+    };
+}
+
+function setShopRiskCaseComposerVisible(visible) {
+    const modal = document.getElementById('shopRiskCaseComposerModal');
+    if (!modal) return;
+    modal.classList.toggle('is-visible', visible);
+    modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function renderShopRiskCaseComposer() {
+    const modal = document.getElementById('shopRiskCaseComposerModal');
+    const titleEl = document.getElementById('shopRiskCaseComposerTitle');
+    const summaryEl = document.getElementById('shopRiskCaseComposerSummary');
+    const descEl = document.getElementById('shopRiskCaseComposerDescription');
+    const labelEl = document.getElementById('shopRiskCaseComposerLabel');
+    const textareaEl = document.getElementById('shopRiskCaseComposerTextarea');
+    const submitBtn = document.getElementById('shopRiskCaseComposerSubmit');
+
+    if (!modal || !titleEl || !summaryEl || !descEl || !labelEl || !textareaEl || !submitBtn) {
+        return;
+    }
+
+    const state = shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState();
+    const meta = getShopRiskCaseComposerMeta(state.action, state.context);
+
+    titleEl.textContent = meta.title;
+    summaryEl.textContent = meta.summary;
+    descEl.textContent = meta.description;
+    labelEl.textContent = meta.fieldLabel;
+    textareaEl.placeholder = meta.placeholder;
+    submitBtn.textContent = state.submitting ? '提交中...' : meta.submitLabel;
+    submitBtn.disabled = state.submitting;
+
+    setShopRiskCaseComposerVisible(Boolean(state.open));
+    if (state.open && !state.submitting) {
+        window.setTimeout(() => textareaEl.focus(), 40);
+    }
+}
+
+function closeShopRiskCaseComposer() {
+    shopRiskCaseComposerState = getDefaultShopRiskCaseComposerState();
+    const textareaEl = document.getElementById('shopRiskCaseComposerTextarea');
+    if (textareaEl) {
+        textareaEl.value = '';
+    }
+    renderShopRiskCaseComposer();
+}
+
+function openShopRiskCaseComposer(action, context = {}) {
+    shopRiskCaseComposerState = {
+        open: true,
+        action: String(action || '').trim().toLowerCase(),
+        context: normalizeOpsAlertWorkspaceContext(context),
+        submitting: false
+    };
+
+    const textareaEl = document.getElementById('shopRiskCaseComposerTextarea');
+    if (textareaEl) {
+        textareaEl.value = '';
+    }
+
+    renderShopRiskCaseComposer();
+}
+
+async function submitShopRiskCaseMutation(action, context = {}, options = {}) {
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const headers = await getAdminConfigApiHeaders();
+    const response = await fetch('/api/admin/settings/ops-alert-monitor-cases', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+            action: normalizedAction,
+            target_id: normalizedContext.targetId,
+            note: String(options.note || '').trim(),
+            resolution: String(options.resolution || '').trim(),
+            metadata: {
+                alert_type: normalizedContext.alertType || '',
+                category: normalizedContext.category || '',
+                reference_label: normalizedContext.referenceLabel || '',
+                reference_value: normalizedContext.referenceValue || '',
+                signal_type: normalizedContext.signalType || ''
+            }
+        })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.success) {
+        throw new Error(payload.message || '商城风控案例处理失败');
+    }
+
+    return payload;
+}
+
+async function handleShopRiskCaseAction(action, context = {}) {
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+
+    if (!normalizedContext.targetId) {
+        showToast('缺少商城风控案例标识', 'warning');
+        return false;
+    }
+
+    try {
+        if (normalizedAction === 'claim' || normalizedAction === 'reopen') {
+            const payload = await submitShopRiskCaseMutation(normalizedAction, normalizedContext);
+            await refreshOpsAlertMonitorPanel?.();
+            showToast(payload.message || '商城风控案例已更新', 'success');
+            return true;
+        }
+
+        if (normalizedAction === 'add_note' || normalizedAction === 'resolve') {
+            openShopRiskCaseComposer(normalizedAction, normalizedContext);
+            return true;
+        }
+
+        throw new Error('未识别的商城风控案例动作');
+    } catch (error) {
+        console.error('[Config] Handle shop risk case action failed:', error);
+        showToast('处理失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function submitShopRiskCaseComposer() {
+    const state = shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState();
+    const textareaEl = document.getElementById('shopRiskCaseComposerTextarea');
+    const textValue = String(textareaEl?.value || '').trim();
+
+    if (!state.open || !state.action) {
+        return false;
+    }
+
+    if (!textValue) {
+        showToast(state.action === 'resolve' ? '请先填写关闭结论' : '请先填写备注内容', 'warning');
+        textareaEl?.focus?.();
+        return false;
+    }
+
+    try {
+        shopRiskCaseComposerState = {
+            ...state,
+            submitting: true
+        };
+        renderShopRiskCaseComposer();
+
+        const payload = await submitShopRiskCaseMutation(state.action, state.context, {
+            note: textValue,
+            resolution: state.action === 'resolve' ? textValue : ''
+        });
+
+        closeShopRiskCaseComposer();
+        await refreshOpsAlertMonitorPanel?.();
+        showToast(payload.message || '商城风控案例已更新', 'success');
+        return true;
+    } catch (error) {
+        console.error('[Config] Submit shop risk case composer failed:', error);
+        shopRiskCaseComposerState = {
+            ...state,
+            submitting: false
+        };
+        renderShopRiskCaseComposer();
+        showToast('处理失败: ' + (error.message || '未知错误'), 'error');
         return false;
     }
 }
@@ -7725,6 +8069,9 @@ window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;
 window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;
 window.openOpsAlertWorkspace = openOpsAlertWorkspace;
 window.handleShopRiskAction = handleShopRiskAction;
+window.handleShopRiskCaseAction = handleShopRiskCaseAction;
+window.closeShopRiskCaseComposer = closeShopRiskCaseComposer;
+window.submitShopRiskCaseComposer = submitShopRiskCaseComposer;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.loadVerifyMonitor = loadVerifyMonitor;
 window.refreshVerifyMonitor = refreshVerifyMonitor;

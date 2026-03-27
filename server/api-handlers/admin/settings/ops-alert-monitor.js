@@ -105,6 +105,44 @@ async function fetchRecentOpsAlertJobs(supabase, sinceIso) {
         .order('created_at', { ascending: false }));
 }
 
+async function fetchShopRiskCasesByTargetIds(supabase, targetIds = []) {
+    const normalizedTargetIds = Array.from(new Set(
+        (Array.isArray(targetIds) ? targetIds : [])
+            .map((value) => normalizeText(value, 200))
+            .filter(Boolean)
+    ));
+
+    if (!normalizedTargetIds.length) {
+        return new Map();
+    }
+
+    const { data, error } = await supabase
+        .from('shop_risk_cases')
+        .select('target_id, status, owner_admin_id, owner_label, note, resolution, last_action, last_action_at, updated_at')
+        .in('target_id', normalizedTargetIds);
+
+    if (error) {
+        throw error;
+    }
+
+    return new Map(
+        (Array.isArray(data) ? data : []).map((row) => [
+            normalizeText(row.target_id, 200),
+            {
+                target_id: normalizeText(row.target_id, 200),
+                status: normalizeText(row.status, 40).toLowerCase() || 'open',
+                owner_admin_id: normalizeText(row.owner_admin_id, 160) || null,
+                owner_label: normalizeText(row.owner_label, 255) || null,
+                note: normalizeText(row.note, 2000) || null,
+                resolution: normalizeText(row.resolution, 2000) || null,
+                last_action: normalizeText(row.last_action, 80).toLowerCase() || 'opened',
+                last_action_at: normalizeText(row.last_action_at, 80) || null,
+                updated_at: normalizeText(row.updated_at, 80) || null
+            }
+        ])
+    );
+}
+
 function getCreatedAtTime(row = {}) {
     const timestamp = Date.parse(normalizeText(row.created_at, 80));
     return Number.isFinite(timestamp) ? timestamp : 0;
@@ -250,9 +288,11 @@ function getAlertReference(job = {}) {
     };
 }
 
-function buildAlertItem(job = {}) {
+function buildAlertItem(job = {}, shopRiskCasesByTargetId = new Map()) {
     const payload = normalizePayload(job.payload);
     const reference = getAlertReference(job);
+    const targetId = getAlertTargetId(job);
+    const caseRecord = shopRiskCasesByTargetId.get(targetId) || null;
     return {
         id: normalizeText(job.id, 160),
         alert_type: normalizeText(job.alert_type, 120).toLowerCase(),
@@ -260,7 +300,7 @@ function buildAlertItem(job = {}) {
         title: normalizeText(job.title, 240) || '系统告警',
         message: getAlertExcerpt(job),
         created_at: normalizeText(job.created_at, 80) || null,
-        target_id: getAlertTargetId(job),
+        target_id: targetId,
         reference_label: reference.label,
         reference_value: reference.value,
         signal_type: normalizeText(payload.signal_type, 120) || null,
@@ -279,7 +319,15 @@ function buildAlertItem(job = {}) {
         auto_response_target: normalizeText(payload.auto_response_target, 160) || null,
         auto_response_target_type: normalizeText(payload.auto_response_target_type, 80) || null,
         login_signature_label: normalizeText(payload.login_signature_label, 160) || null,
-        user_agent_summary: normalizeText(payload.user_agent_summary, 160) || null
+        user_agent_summary: normalizeText(payload.user_agent_summary, 160) || null,
+        case_status: normalizeText(caseRecord?.status, 40).toLowerCase() || 'open',
+        case_owner_admin_id: normalizeText(caseRecord?.owner_admin_id, 160) || null,
+        case_owner_label: normalizeText(caseRecord?.owner_label, 255) || null,
+        case_note: normalizeText(caseRecord?.note, 2000) || null,
+        case_resolution: normalizeText(caseRecord?.resolution, 2000) || null,
+        case_last_action: normalizeText(caseRecord?.last_action, 80).toLowerCase() || null,
+        case_last_action_at: normalizeText(caseRecord?.last_action_at, 80) || null,
+        case_updated_at: normalizeText(caseRecord?.updated_at, 80) || null
     };
 }
 
@@ -302,7 +350,7 @@ function buildShopRiskThresholdConfig(config = {}) {
     };
 }
 
-function buildShopRiskThresholdHitEntries(jobs = [], config = {}) {
+function buildShopRiskThresholdHitEntries(jobs = [], config = {}, shopRiskCasesByTargetId = new Map()) {
     const thresholdConfig = buildShopRiskThresholdConfig(config);
     const entries = [];
 
@@ -322,6 +370,7 @@ function buildShopRiskThresholdHitEntries(jobs = [], config = {}) {
         const autoResponseStatus = normalizeText(payload.auto_response_status, 80).toLowerCase()
             || (thresholdConfig.auto_response_enabled ? 'pending_review' : 'auto_response_disabled');
         const reference = getAlertReference(job);
+        const caseRecord = shopRiskCasesByTargetId.get(getAlertTargetId(job)) || null;
 
         if (
             primaryAction === 'disable-coupon'
@@ -342,7 +391,9 @@ function buildShopRiskThresholdHitEntries(jobs = [], config = {}) {
                 status_label: getShopOrderRiskAutoStatusLabel(autoResponseStatus, thresholdConfig.auto_response_enabled),
                 summary: normalizeText(payload.auto_response_summary, 240)
                     || normalizeText(payload.response_summary, 240)
-                    || '已命中停用优惠码阈值。'
+                    || '已命中停用优惠码阈值。',
+                case_status: normalizeText(caseRecord?.status, 40).toLowerCase() || 'open',
+                case_owner_label: normalizeText(caseRecord?.owner_label, 255) || null
             });
         }
 
@@ -366,7 +417,9 @@ function buildShopRiskThresholdHitEntries(jobs = [], config = {}) {
                 status_label: getShopOrderRiskAutoStatusLabel(autoResponseStatus, thresholdConfig.auto_response_enabled),
                 summary: normalizeText(payload.auto_response_summary, 240)
                     || normalizeText(payload.response_summary, 240)
-                    || '已命中自动封禁账号阈值。'
+                    || '已命中自动封禁账号阈值。',
+                case_status: normalizeText(caseRecord?.status, 40).toLowerCase() || 'open',
+                case_owner_label: normalizeText(caseRecord?.owner_label, 255) || null
             });
         }
 
@@ -390,7 +443,9 @@ function buildShopRiskThresholdHitEntries(jobs = [], config = {}) {
                 status: autoResponseStatus,
                 status_label: getShopOrderRiskAutoStatusLabel(autoResponseStatus, thresholdConfig.auto_response_enabled),
                 summary: normalizeText(payload.auto_response_summary, 240)
-                    || '已命中自动下架商品阈值。'
+                    || '已命中自动下架商品阈值。',
+                case_status: normalizeText(caseRecord?.status, 40).toLowerCase() || 'open',
+                case_owner_label: normalizeText(caseRecord?.owner_label, 255) || null
             });
         }
     }
@@ -398,7 +453,7 @@ function buildShopRiskThresholdHitEntries(jobs = [], config = {}) {
     return entries.slice(0, 5);
 }
 
-function buildShopRiskAutoResponseHistoryEntries(jobs = [], config = {}) {
+function buildShopRiskAutoResponseHistoryEntries(jobs = [], config = {}, shopRiskCasesByTargetId = new Map()) {
     const thresholdConfig = buildShopRiskThresholdConfig(config);
 
     return sortByCreatedAtDesc(jobs)
@@ -414,6 +469,7 @@ function buildShopRiskAutoResponseHistoryEntries(jobs = [], config = {}) {
             const reference = getAlertReference(job);
             const status = normalizeText(payload.auto_response_status, 80).toLowerCase()
                 || (thresholdConfig.auto_response_enabled ? 'pending_review' : 'auto_response_disabled');
+            const caseRecord = shopRiskCasesByTargetId.get(getAlertTargetId(job)) || null;
 
             return {
                 id: normalizeText(job.id, 160) || normalizeText(payload.target_id, 160),
@@ -427,15 +483,38 @@ function buildShopRiskAutoResponseHistoryEntries(jobs = [], config = {}) {
                 summary: summary || normalizeText(payload.response_summary, 240) || '已写入自动处置记录。',
                 reference_label: reference.label,
                 reference_value: reference.value,
-                title: normalizeText(job.title, 240) || '商城风控自动处置'
+                title: normalizeText(job.title, 240) || '商城风控自动处置',
+                case_status: normalizeText(caseRecord?.status, 40).toLowerCase() || 'open',
+                case_owner_label: normalizeText(caseRecord?.owner_label, 255) || null
             };
         })
         .filter(Boolean)
         .slice(0, 5);
 }
 
+function buildShopRiskCaseSummary(items = []) {
+    return (Array.isArray(items) ? items : []).reduce((summary, item) => {
+        const status = normalizeText(item?.case_status, 40).toLowerCase() || 'open';
+        if (status === 'claimed') {
+            summary.claimed += 1;
+        } else if (status === 'resolved') {
+            summary.resolved += 1;
+        } else {
+            summary.open += 1;
+        }
+        return summary;
+    }, {
+        open: 0,
+        claimed: 0,
+        resolved: 0
+    });
+}
+
 function buildCategorySnapshot(category, jobs = [], options = {}) {
     const shopRiskThresholdConfig = buildShopRiskThresholdConfig(options.shopRiskConfig);
+    const shopRiskCasesByTargetId = options.shopRiskCasesByTargetId instanceof Map
+        ? options.shopRiskCasesByTargetId
+        : new Map();
     const filteredJobs = sortByCreatedAtDesc(
         jobs.filter((job) => {
             const alertType = normalizeText(job.alert_type, 120).toLowerCase();
@@ -459,6 +538,7 @@ function buildCategorySnapshot(category, jobs = [], options = {}) {
     const latestState = latestJob
         ? (category.problem_types.includes(normalizeText(latestJob.alert_type, 120).toLowerCase()) ? 'problem' : 'recovered')
         : 'idle';
+    const builtItems = activeJobs.map((job) => buildAlertItem(job, shopRiskCasesByTargetId));
 
     return {
         key: category.key,
@@ -471,11 +551,12 @@ function buildCategorySnapshot(category, jobs = [], options = {}) {
         latest_at: normalizeText(latestJob?.created_at, 80) || null,
         latest_title: normalizeText(latestJob?.title, 240) || null,
         latest_message: latestJob ? getAlertExcerpt(latestJob) : '',
-        items: activeJobs.slice(0, 3).map(buildAlertItem),
+        items: builtItems.slice(0, 3),
         ...(String(category.key || '').trim().toLowerCase() === 'shop_risk' ? {
             thresholds: shopRiskThresholdConfig,
-            recent_threshold_hits: buildShopRiskThresholdHitEntries(filteredJobs, shopRiskThresholdConfig),
-            recent_auto_responses: buildShopRiskAutoResponseHistoryEntries(filteredJobs, shopRiskThresholdConfig)
+            case_summary: buildShopRiskCaseSummary(builtItems),
+            recent_threshold_hits: buildShopRiskThresholdHitEntries(filteredJobs, shopRiskThresholdConfig, shopRiskCasesByTargetId),
+            recent_auto_responses: buildShopRiskAutoResponseHistoryEntries(filteredJobs, shopRiskThresholdConfig, shopRiskCasesByTargetId)
         } : {})
     };
 }
@@ -496,8 +577,18 @@ module.exports = async (req, res) => {
         const sinceIso = new Date(now.getTime() - OPS_ALERT_MONITOR_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
         const runtime = await loadOpsAlertsRuntimeConfig(supabase);
         const jobs = await fetchRecentOpsAlertJobs(supabase, sinceIso);
+        const shopRiskCasesByTargetId = await fetchShopRiskCasesByTargetIds(
+            supabase,
+            jobs
+                .filter((job) => {
+                    const alertType = normalizeText(job.alert_type, 120).toLowerCase();
+                    return alertType === 'shop_order_risk_anomaly' || alertType === 'shop_order_risk_recovered';
+                })
+                .map((job) => getAlertTargetId(job))
+        );
         const categories = ALERT_MONITOR_CATEGORIES.map((category) => buildCategorySnapshot(category, jobs, {
-            shopRiskConfig: runtime?.config?.shop_order_risk || {}
+            shopRiskConfig: runtime?.config?.shop_order_risk || {},
+            shopRiskCasesByTargetId
         }));
         const totalActiveCount = categories.reduce((sum, category) => sum + Number(category.active_count || 0), 0);
         const totalCriticalCount = categories.reduce((sum, category) => sum + Number(category.critical_count || 0), 0);

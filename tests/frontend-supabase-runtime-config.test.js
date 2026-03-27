@@ -2125,6 +2125,8 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'data-admin-action="settings-filter-ops-alert-monitor"',
         'data-admin-action="settings-copy-ops-alert-monitor-checklist"',
         'data-admin-action="settings-export-ops-alert-monitor-csv"',
+        'data-admin-action="settings-close-shop-risk-case-modal"',
+        'data-admin-action="settings-submit-shop-risk-case-modal"',
         'data-workspace-target="payments-overview"',
         'data-workspace-target="payments-ops"',
         'data-workspace-target="verify-monitor"',
@@ -2137,6 +2139,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'data-workspace-target="shop-risk-discounts"',
         'data-workspace-target="shop-risk-users"',
         'data-ops-alert-monitor-filter-value="shop_risk"',
+        'id="shopRiskCaseComposerModal"',
+        'id="shopRiskCaseComposerForm"',
+        'id="shopRiskCaseComposerTextarea"',
         '商城风控',
         'id="opsAlertEmailEnabledToggle"',
         'id="opsAlertEmailRecipients"',
@@ -2202,6 +2207,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         "case 'settings-open-ops-alert-workspace':",
         "case 'settings-toggle-ops-alert-shop-risk-auto-response':",
         "case 'settings-handle-shop-risk-action':",
+        "case 'settings-handle-shop-risk-case':",
+        "case 'settings-close-shop-risk-case-modal':",
+        "case 'settings-submit-shop-risk-case-modal':",
         "case 'settings-delete-ops-alert-secret':"
     ];
 
@@ -2268,9 +2276,23 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;',
         'window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;',
         'async function openOpsAlertWorkspace(workspaceKey, context = {})',
+        'function getDefaultShopRiskCaseComposerState()',
+        'function getShopRiskCaseStatusTone(status)',
+        'function getShopRiskCaseStatusLabel(status)',
+        'function getOpsAlertMonitorItemCaseActions(category = {}, item = {})',
+        'function buildOpsAlertMonitorCaseActionAttrs(action = {}, category = {}, item = {})',
+        'function getShopRiskCaseComposerMeta(action, context = {})',
+        'function renderShopRiskCaseComposer()',
+        'async function submitShopRiskCaseMutation(action, context = {}, options = {})',
+        'async function handleShopRiskCaseAction(action, context = {})',
+        'async function submitShopRiskCaseComposer()',
+        "fetch('/api/admin/settings/ops-alert-monitor-cases'",
         'async function handleShopRiskAction(action, context = {})',
         'window.openOpsAlertWorkspace = openOpsAlertWorkspace;',
         'window.handleShopRiskAction = handleShopRiskAction;',
+        'window.handleShopRiskCaseAction = handleShopRiskCaseAction;',
+        'window.closeShopRiskCaseComposer = closeShopRiskCaseComposer;',
+        'window.submitShopRiskCaseComposer = submitShopRiskCaseComposer;',
         "'shop-risk-orders': '商城风险订单'",
         "'shop-risk-discounts': '优惠券码列表'",
         "'shop-risk-users': '用户详情'",
@@ -2339,7 +2361,10 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         '.ops-alert-risk-spotlight__entry-meta',
         '.ops-alert-monitor-card',
         '.ops-alert-monitor-card__actions',
-        '.ops-alert-monitor-item__actions'
+        '.ops-alert-monitor-item__actions',
+        '.admin-shop-risk-case-modal',
+        '.admin-shop-risk-case-modal__dialog',
+        '.admin-shop-risk-case-modal__actions'
     ];
 
     for (const marker of workspaceCssMarkers) {

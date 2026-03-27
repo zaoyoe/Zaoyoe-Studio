@@ -38,7 +38,8 @@ const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [
     '.shop-order-content-box',
     '.custom-scrollbar',
     '#discountGenerateModal > div',
-    '#ticketReplyModal > div'
+    '#ticketReplyModal > div',
+    '#shopRiskCaseComposerModal > div'
 ].join(', ');
 
 function markAdminScrollbarActive(target) {
@@ -551,6 +552,7 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'settings-handle-shop-risk-action':
                 window.handleShopRiskAction?.(actionEl.dataset.shopRiskAction, {
+                    title: actionEl.dataset.workspaceTitle,
                     alertType: actionEl.dataset.workspaceAlertType,
                     category: actionEl.dataset.workspaceCategory,
                     referenceLabel: actionEl.dataset.workspaceReferenceLabel,
@@ -558,8 +560,33 @@ function bindAdminStudioDelegatedControls() {
                     targetId: actionEl.dataset.workspaceTargetId,
                     userId: actionEl.dataset.workspaceUserId,
                     clientIp: actionEl.dataset.workspaceClientIp,
-                    discountCode: actionEl.dataset.workspaceDiscountCode
+                    discountCode: actionEl.dataset.workspaceDiscountCode,
+                    signalType: actionEl.dataset.workspaceSignalType,
+                    caseStatus: actionEl.dataset.workspaceCaseStatus,
+                    caseOwnerLabel: actionEl.dataset.workspaceCaseOwnerLabel
                 });
+                break;
+            case 'settings-handle-shop-risk-case':
+                window.handleShopRiskCaseAction?.(actionEl.dataset.shopRiskCaseAction, {
+                    title: actionEl.dataset.workspaceTitle,
+                    alertType: actionEl.dataset.workspaceAlertType,
+                    category: actionEl.dataset.workspaceCategory,
+                    referenceLabel: actionEl.dataset.workspaceReferenceLabel,
+                    referenceValue: actionEl.dataset.workspaceReferenceValue,
+                    targetId: actionEl.dataset.workspaceTargetId,
+                    userId: actionEl.dataset.workspaceUserId,
+                    clientIp: actionEl.dataset.workspaceClientIp,
+                    discountCode: actionEl.dataset.workspaceDiscountCode,
+                    signalType: actionEl.dataset.workspaceSignalType,
+                    caseStatus: actionEl.dataset.workspaceCaseStatus,
+                    caseOwnerLabel: actionEl.dataset.workspaceCaseOwnerLabel
+                });
+                break;
+            case 'settings-close-shop-risk-case-modal':
+                window.closeShopRiskCaseComposer?.();
+                break;
+            case 'settings-submit-shop-risk-case-modal':
+                window.submitShopRiskCaseComposer?.();
                 break;
             case 'settings-refresh-ops-alert-monitor':
                 window.refreshOpsAlertMonitorPanel?.();
@@ -1398,6 +1425,12 @@ function bindAdminStudioDelegatedControls() {
         if (form.id === 'experimentForm') {
             event.preventDefault();
             window.handleCreateExperiment?.(event);
+            return;
+        }
+
+        if (form.id === 'shopRiskCaseComposerForm') {
+            event.preventDefault();
+            window.submitShopRiskCaseComposer?.();
         }
     });
 
@@ -1413,6 +1446,9 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'ticket-reply-modal':
                 window.AdminTickets?.closeReplyModal?.();
+                break;
+            case 'shop-risk-case-modal':
+                window.closeShopRiskCaseComposer?.();
                 break;
             default:
                 break;
