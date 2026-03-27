@@ -21541,6 +21541,17 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     flex-wrap: wrap;
 }
 
+.admin-shop-risk-case-modal__actions--split {
+    justify-content: space-between;
+    align-items: center;
+}
+
+.admin-shop-risk-case-modal__action-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .admin-shop-risk-case-modal__actions .btn-add-config--primary {
     background: linear-gradient(135deg, rgba(107, 158, 206, 0.26), rgba(107, 158, 206, 0.18));
     border-style: solid;
@@ -21549,6 +21560,17 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .admin-shop-risk-case-modal__actions .btn-add-config--primary:hover {
     background: linear-gradient(135deg, rgba(107, 158, 206, 0.34), rgba(107, 158, 206, 0.22));
+}
+
+@media (max-width: 640px) {
+    .admin-shop-risk-case-modal__actions--split {
+        align-items: stretch;
+    }
+
+    .admin-shop-risk-case-modal__action-group {
+        width: 100%;
+        justify-content: flex-end;
+    }
 }
 
 @keyframes adminShopRiskCaseFadeIn {
