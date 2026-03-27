@@ -20082,31 +20082,28 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .ops-alert-routing-grid {
     display: flex;
     flex-direction: column;
-    gap: 0;
+    gap: 12px;
     width: 100%;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    border: 1px solid rgba(107, 158, 206, 0.14);
-    border-radius: 18px;
-    background: rgba(10, 19, 36, 0.24);
-}
-
-.ops-alert-routing-row {
-    display: grid;
-    grid-template-columns: minmax(280px, 2fr) repeat(3, minmax(132px, 1fr));
-    gap: 0;
-    align-items: stretch;
-    min-width: 760px;
-    border-bottom: 1px solid rgba(107, 158, 206, 0.14);
+    overflow: visible;
+    padding-bottom: 0;
+    border: none;
+    border-radius: 0;
     background: transparent;
 }
 
-.ops-alert-routing-row--head {
-    background: rgba(107, 158, 206, 0.08);
+.ops-alert-routing-row {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+    padding: 18px 20px;
+    border: 1px solid rgba(107, 158, 206, 0.14);
+    border-radius: 18px;
+    background: rgba(10, 19, 36, 0.3);
 }
 
-.ops-alert-routing-row:last-child {
-    border-bottom: none;
+.ops-alert-routing-row--head {
+    display: none;
 }
 
 .ops-alert-routing-head {
@@ -20130,28 +20127,29 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     line-height: 1.55;
 }
 
+.ops-alert-routing-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+}
+
 .ops-alert-routing-check {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
+    justify-content: flex-start;
+    gap: 10px;
     min-width: 0;
-    padding: 18px 16px;
-    border-left: 1px solid rgba(107, 158, 206, 0.14);
+    padding: 14px 16px;
+    border: 1px solid rgba(107, 158, 206, 0.14);
+    border-radius: 14px;
+    background: rgba(107, 158, 206, 0.06);
     color: var(--text-main);
     font-size: 0.84rem;
     white-space: nowrap;
 }
 
 .ops-alert-routing-check__label {
-    display: none;
-}
-
-.ops-alert-routing-row--head .ops-alert-routing-check {
-    color: var(--text-secondary);
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    display: inline;
 }
 
 .ops-alert-routing-check input[type="checkbox"] {
@@ -21840,37 +21838,15 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     }
 
     .ops-alert-routing-row {
+        padding: 16px;
+    }
+
+    .ops-alert-routing-options {
         grid-template-columns: 1fr;
-        gap: 10px;
-        min-width: 0;
-        padding: 14px 16px;
-        border-bottom: none;
-        border: 1px solid rgba(107, 158, 206, 0.14);
-        border-radius: 16px;
-        background: rgba(10, 19, 36, 0.3);
-    }
-
-    .ops-alert-routing-row--head {
-        display: none;
-    }
-
-    .ops-alert-routing-grid {
-        gap: 10px;
-        border: none;
-        border-radius: 0;
-        background: transparent;
-        overflow: visible;
-        padding-bottom: 0;
     }
 
     .ops-alert-routing-check {
-        justify-content: flex-start;
-        padding: 0;
-        border-left: none;
-    }
-
-    .ops-alert-routing-check__label {
-        display: inline;
+        white-space: normal;
     }
 
     #settings-view-ops-alerts .config-row {
