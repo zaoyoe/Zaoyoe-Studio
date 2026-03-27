@@ -5970,6 +5970,50 @@
                                 </div>
                             </div>
 
+                            <div class="admin-studio-inline-style-attr-191">
+                                <div>
+                                    <label class="admin-studio-inline-style-attr-177">适用站点</label>
+                                    <select id="discountApplicableSite" class="admin-studio-inline-style-attr-192">
+                                        <option value="">全部站点</option>
+                                        <option value="cn">仅 CN</option>
+                                        <option value="intl">仅 INTL</option>
+                                    </select>
+                                    <div class="admin-studio-inline-style-attr-173">留空表示国内站和国际站都可以使用。</div>
+                                </div>
+                                <div>
+                                    <label class="admin-studio-inline-style-attr-177">每用户最多使用次数</label>
+                                    <input type="number" id="discountMaxUsesPerUser" placeholder="0 = 不限制" value="0" min="0"
+                                        class="admin-studio-inline-style-attr-192">
+                                </div>
+                            </div>
+
+                            <div class="admin-studio-inline-style-attr-191">
+                                <div>
+                                    <label class="admin-studio-inline-style-attr-177">适用范围</label>
+                                    <select id="discountScopeType" class="admin-studio-inline-style-attr-192">
+                                        <option value="all">全部商品</option>
+                                        <option value="category">指定分类</option>
+                                        <option value="product">指定商品</option>
+                                    </select>
+                                </div>
+                                <div id="discountScopeCategoryWrapper" hidden>
+                                    <label class="admin-studio-inline-style-attr-177">指定分类</label>
+                                    <select id="discountScopeCategory" class="admin-studio-inline-style-attr-192">
+                                        <option value="">请选择分类</option>
+                                    </select>
+                                </div>
+                                <div id="discountScopeProductWrapper" hidden>
+                                    <label class="admin-studio-inline-style-attr-177">指定商品</label>
+                                    <select id="discountScopeProduct" class="admin-studio-inline-style-attr-192">
+                                        <option value="">请选择商品</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="admin-studio-inline-style-attr-173">
+                                可将优惠券限制为单个站点、单个分类或单个商品使用；“每用户最多使用次数”用于限制同一账号可重复使用的次数。
+                            </div>
+
                             <div class="admin-studio-inline-style-attr-171">
                                 <label class="admin-studio-inline-style-attr-172" for="discountAllowZeroTotal">
                                     风控策略
@@ -6437,7 +6481,7 @@
     <script src="js/admin-studio-bootstrap.js?v=20260326_ADMIN_STUDIO_FALLBACK_BINDINGS_1"></script>
     <script src="admin-users.js?v=20260327_ADMIN_USERS_MODAL_MOTION_1"></script>
     <script src="admin-points.js?v=20260327_ADMIN_POINTS_MODAL_MOTION_1"></script>
-    <script src="admin-discounts.js?v=20260327_ADMIN_DISCOUNT_OVERLAY_CLOSE_FIX_1"></script>
+    <script src="admin-discounts.js?v=20260327_ADMIN_DISCOUNT_SCOPE_RULES_1"></script>
     <script src="starry-sky.js"></script>
     <!-- Flatpickr JS -->
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
