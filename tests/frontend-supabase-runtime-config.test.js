@@ -5119,6 +5119,46 @@ test('final frontend runtime remnants route through delegated or bound listeners
     }
 });
 
+test('admin studio modal scrollers auto-hide after scroll activity settles', () => {
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+
+    const scriptMarkers = [
+        'const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [',
+        'function markAdminScrollbarActive(target) {',
+        'target.classList.add(ADMIN_SCROLLBAR_AUTO_HIDE_CLASS);',
+        "target.addEventListener('scroll', () => markAdminScrollbarActive(target), { passive: true });",
+        'function observeAdminScrollbarAutoHide() {',
+        '#discountGenerateModal > div',
+        '#ticketReplyModal > div'
+    ];
+
+    for (const marker of scriptMarkers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    const styleMarkers = [
+        '.admin-scrollbar-auto-hide {',
+        'scrollbar-color: transparent transparent !important;',
+        '.admin-scrollbar-auto-hide.admin-scrollbar-auto-hide--visible::-webkit-scrollbar-thumb',
+        '.admin-scrollbar-auto-hide:hover::-webkit-scrollbar-thumb:hover'
+    ];
+
+    for (const marker of styleMarkers) {
+        assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
+    }
+
+    const htmlMarkers = [
+        'admin-studio.css?v=20260327_ADMIN_SCROLLBAR_AUTO_HIDE_1',
+        'admin-studio.js?v=20260327_ADMIN_SCROLLBAR_AUTO_HIDE_1'
+    ];
+
+    for (const marker of htmlMarkers) {
+        assert.equal(adminStudioHtml.includes(marker), true, `admin-studio.html should contain ${marker}`);
+    }
+});
+
 test('announcement runtime renderers externalize decoration particles and physics style state', () => {
     const announcementSource = readRepoFile('announcement-loader.js');
     const verifySource = readRepoFile('verify.html');

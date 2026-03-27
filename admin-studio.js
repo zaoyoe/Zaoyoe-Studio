@@ -16,6 +16,100 @@ window.isSuperAdmin = false;
 window.isAdmin = false;
 window.adminStudioAccessGranted = false;
 const ADMIN_STUDIO_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';
+const ADMIN_SCROLLBAR_AUTO_HIDE_CLASS = 'admin-scrollbar-auto-hide';
+const ADMIN_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS = 'admin-scrollbar-auto-hide--visible';
+const ADMIN_SCROLLBAR_AUTO_HIDE_BOUND_ATTR = 'data-admin-scrollbar-auto-hide-bound';
+const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [
+    '.modal-content',
+    '.user-modal-left',
+    '.user-tab-content',
+    '.users-notes-list',
+    '.users-audit-list',
+    '.codes-modal-body',
+    '.edit-modal-form',
+    '.admin-ledger-modal-body',
+    '.ban-user-modal .modal-body',
+    '.locked-accounts-list',
+    '.premium-modal-layout',
+    '.product-list-container',
+    '.inventory-textarea',
+    '.shop-inventory-detail-modal',
+    '.shop-inventory-detail-entry-list',
+    '.shop-order-content-box',
+    '.custom-scrollbar',
+    '#discountGenerateModal > div',
+    '#ticketReplyModal > div'
+].join(', ');
+
+function markAdminScrollbarActive(target) {
+    if (!(target instanceof HTMLElement)) return;
+
+    target.classList.add(ADMIN_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS);
+
+    if (target.__adminScrollbarHideTimer) {
+        window.clearTimeout(target.__adminScrollbarHideTimer);
+    }
+
+    target.__adminScrollbarHideTimer = window.setTimeout(() => {
+        target.classList.remove(ADMIN_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS);
+        target.__adminScrollbarHideTimer = null;
+    }, 720);
+}
+
+function bindAdminScrollbarAutoHide(target) {
+    if (!(target instanceof HTMLElement)) return;
+    if (target.getAttribute(ADMIN_SCROLLBAR_AUTO_HIDE_BOUND_ATTR) === '1') return;
+
+    target.setAttribute(ADMIN_SCROLLBAR_AUTO_HIDE_BOUND_ATTR, '1');
+    target.classList.add(ADMIN_SCROLLBAR_AUTO_HIDE_CLASS);
+    target.addEventListener('scroll', () => markAdminScrollbarActive(target), { passive: true });
+}
+
+function collectAdminScrollbarTargets(root) {
+    const targets = [];
+
+    if (root instanceof Element && root.matches(ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR)) {
+        targets.push(root);
+    }
+
+    if (root instanceof Element || root instanceof DocumentFragment || root === document) {
+        targets.push(...root.querySelectorAll(ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR));
+    }
+
+    return targets;
+}
+
+function initAdminScrollbarAutoHide(root = document) {
+    const targets = collectAdminScrollbarTargets(root);
+    for (const target of targets) {
+        bindAdminScrollbarAutoHide(target);
+    }
+}
+
+function observeAdminScrollbarAutoHide() {
+    if (document.documentElement.dataset.adminScrollbarAutoHideObserver === '1') {
+        return;
+    }
+
+    document.documentElement.dataset.adminScrollbarAutoHideObserver = '1';
+    initAdminScrollbarAutoHide(document);
+
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+                if (!(node instanceof Element)) continue;
+                initAdminScrollbarAutoHide(node);
+            }
+        }
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+    window.__adminScrollbarAutoHideObserver = observer;
+}
 
 function setAdminStudioVisibility(target, visible, visibleClass = '') {
     if (!target) return;
@@ -233,6 +327,7 @@ async function requireAdminStudioAccess() {
 
 function initializeAdminStudioShell() {
     bindAdminStudioDelegatedControls();
+    observeAdminScrollbarAutoHide();
     initUploadZone();
     initForm();
     initCustomDropdown();
