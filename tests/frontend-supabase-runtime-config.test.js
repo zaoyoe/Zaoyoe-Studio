@@ -632,7 +632,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
         ['shop.html', 'css/shop-page.css?v=20260324_SHOP_RUNTIME_STYLE_1'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260324_ADMIN_STUDIO_HOMEPAGE_RUNTIME_STYLE_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260327_ADMIN_DISCOUNT_MODAL_MOTION_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -3428,6 +3428,7 @@ test('discount and ticket admin renderers no longer emit inline row or paginatio
 test('discount admin runtime renderers externalize table states, copy toast, and modal visibility styling', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioCss = readRepoFile('admin-studio.css');
+    const adminStudioPageCss = readRepoFile('css/admin-studio-page.css');
     const discountsSource = readRepoFile('admin-discounts.js');
 
     const removedRuntimeMarkers = [
@@ -3522,6 +3523,16 @@ test('discount admin runtime renderers externalize table states, copy toast, and
         true,
         'admin-studio.html should expose the discount type dropdown runtime class'
     );
+
+    const pageCssMarkers = [
+        '[data-admin-action="discounts-open-generate-modal"].admin-studio-inline-style-attr-160:hover',
+        '.admin-studio-inline-style-attr-164.is-visible',
+        '.admin-studio-inline-style-attr-164.is-visible .admin-studio-inline-style-attr-165'
+    ];
+
+    for (const marker of pageCssMarkers) {
+        assert.equal(adminStudioPageCss.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
+    }
 });
 
 test('ticket admin runtime renderers externalize row states, modal visibility, and copy toast styling', () => {
