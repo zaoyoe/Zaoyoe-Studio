@@ -9,6 +9,8 @@ const {
 
 const DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG = Object.freeze({
     enabled: true,
+    auto_response_enabled: true,
+    auto_disable_coupon_min_risk_score: 90,
     sweep_interval_ms: 5 * 60 * 1000,
     lookback_minutes: 180,
     state_lookback_minutes: 24 * 60,
@@ -68,6 +70,16 @@ function normalizeShopOrderRiskMonitorConfig(rawConfig = {}, env = process.env) 
         enabled: normalizeBoolean(
             source.enabled,
             normalizeBoolean(env?.SHOP_ORDER_RISK_MONITOR_ENABLED, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.enabled)
+        ),
+        auto_response_enabled: normalizeBoolean(
+            source.auto_response_enabled,
+            normalizeBoolean(env?.SHOP_ORDER_RISK_AUTO_RESPONSE_ENABLED, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.auto_response_enabled)
+        ),
+        auto_disable_coupon_min_risk_score: normalizeNumber(
+            source.auto_disable_coupon_min_risk_score,
+            normalizeNumber(env?.SHOP_ORDER_RISK_AUTO_DISABLE_COUPON_MIN_RISK_SCORE, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.auto_disable_coupon_min_risk_score, 65, 99),
+            65,
+            99
         ),
         sweep_interval_ms: normalizeNumber(
             source.sweep_interval_ms,
@@ -330,6 +342,32 @@ async function fetchRecentLoginHistoryByUserIds(client, userIds = [], sinceIso, 
     return rows;
 }
 
+async function fetchDiscountCodesByCodes(client, codes = [], config = {}) {
+    const normalizedCodes = Array.from(new Set((codes || []).map((code) => normalizeText(code).toUpperCase()).filter(Boolean)));
+    if (!normalizedCodes.length) {
+        return [];
+    }
+
+    const rows = [];
+    const chunkSize = Math.max(1, Math.min(Number(config.page_size || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.page_size), 200));
+
+    for (let index = 0; index < normalizedCodes.length; index += chunkSize) {
+        const batch = normalizedCodes.slice(index, index + chunkSize);
+        const { data, error } = await client
+            .from('discount_codes')
+            .select('code, is_active')
+            .in('code', batch);
+
+        if (error) {
+            throw error;
+        }
+
+        rows.push(...(Array.isArray(data) ? data : []));
+    }
+
+    return rows;
+}
+
 function buildProfilesContext(profiles = []) {
     const byId = new Map();
     for (const profile of profiles || []) {
@@ -372,6 +410,18 @@ function buildLoginHistoryContext(rows = []) {
     }
 
     return { latestByUser };
+}
+
+function buildDiscountCodeContext(rows = []) {
+    const byCode = new Map();
+
+    for (const row of rows || []) {
+        const code = normalizeText(row?.code).toUpperCase();
+        if (!code) continue;
+        byCode.set(code, row);
+    }
+
+    return { byCode };
 }
 
 function resolveUserLabel(profile, userId = '') {
@@ -488,7 +538,7 @@ function getLoginSignatureKey(row = {}) {
 
 function getPrimaryDiscountCode(values = []) {
     const codes = countLabels((values || [])
-        .map((value) => normalizeText(value).toUpperCase())
+        .map((value) => normalizeText(value).replace(/\s+[×x]\s+\d+$/i, '').toUpperCase())
         .filter((value) => value && value !== '无优惠码'));
     return normalizeText(codes[0]?.[0]).toUpperCase();
 }
@@ -638,6 +688,179 @@ function enrichShopOrderRiskPayload(payload = {}, severity = 'warning') {
         risk_level: plan.risk_level,
         primary_action: plan.primary_action,
         response_summary: plan.response_summary
+    };
+}
+
+function appendAlertContentLine(content = '', line = '') {
+    const normalizedLine = normalizeText(line);
+    if (!normalizedLine) {
+        return normalizeText(content);
+    }
+
+    const normalizedContent = normalizeText(content);
+    if (!normalizedContent) {
+        return normalizedLine;
+    }
+    if (normalizedContent.includes(normalizedLine)) {
+        return normalizedContent;
+    }
+    return `${normalizedContent}\n${normalizedLine}`;
+}
+
+function shouldAutoDisableCoupon(alert = {}, config = {}) {
+    const payload = alert?.payload && typeof alert.payload === 'object' ? alert.payload : {};
+    const score = Number(payload.risk_score || 0);
+    return normalizeText(payload.primary_action).toLowerCase() === 'disable-coupon'
+        && normalizeText(payload.discount_code)
+        && Number.isFinite(score)
+        && score >= Number(config.auto_disable_coupon_min_risk_score || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.auto_disable_coupon_min_risk_score);
+}
+
+function buildCouponAutoResponseOutcome(discountCode, status, appliedAt = null, errorMessage = '') {
+    const normalizedCode = normalizeText(discountCode).toUpperCase() || 'UNKNOWN';
+    const normalizedStatus = normalizeText(status).toLowerCase();
+    const normalizedAppliedAt = normalizeText(appliedAt) || null;
+    const normalizedError = normalizeText(errorMessage) || null;
+
+    if (normalizedStatus === 'applied') {
+        return {
+            status: 'applied',
+            applied: true,
+            summary: `系统已自动停用优惠码 ${normalizedCode}，请继续复核最近命中订单与关联账号。`,
+            applied_at: normalizedAppliedAt,
+            error_message: null
+        };
+    }
+
+    if (normalizedStatus === 'already_inactive') {
+        return {
+            status: 'already_inactive',
+            applied: false,
+            summary: `系统检测到优惠码 ${normalizedCode} 已停用，本轮未重复处置。`,
+            applied_at: null,
+            error_message: null
+        };
+    }
+
+    if (normalizedStatus === 'not_found') {
+        return {
+            status: 'not_found',
+            applied: false,
+            summary: `系统尝试自动停用优惠码 ${normalizedCode}，但未找到可更新的优惠码记录。`,
+            applied_at: null,
+            error_message: null
+        };
+    }
+
+    return {
+        status: 'failed',
+        applied: false,
+        summary: normalizedError
+            ? `系统尝试自动停用优惠码 ${normalizedCode} 失败：${normalizedError}`
+            : `系统尝试自动停用优惠码 ${normalizedCode} 失败，请尽快手动处置。`,
+        applied_at: null,
+        error_message: normalizedError
+    };
+}
+
+async function applyCouponAutoResponses(supabase, alerts = [], discountCodeContext = {}, rawConfig = {}, options = {}) {
+    const config = normalizeShopOrderRiskMonitorConfig(rawConfig);
+    if (!config.auto_response_enabled) {
+        return {
+            alerts,
+            applied: 0,
+            already_inactive: 0,
+            not_found: 0,
+            failed: 0,
+            attempted: 0
+        };
+    }
+
+    const alertsByCode = new Map();
+    for (const alert of alerts || []) {
+        const payload = alert?.payload && typeof alert.payload === 'object' ? alert.payload : {};
+        const discountCode = normalizeText(payload.discount_code).toUpperCase();
+        if (!discountCode || normalizeText(payload.primary_action).toLowerCase() !== 'disable-coupon') {
+            continue;
+        }
+        if (!alertsByCode.has(discountCode)) {
+            alertsByCode.set(discountCode, []);
+        }
+        alertsByCode.get(discountCode).push(alert);
+    }
+
+    const candidateCodes = Array.from(alertsByCode.entries())
+        .filter(([, relatedAlerts]) => relatedAlerts.some((alert) => shouldAutoDisableCoupon(alert, config)))
+        .map(([discountCode]) => discountCode);
+
+    if (!candidateCodes.length) {
+        return {
+            alerts,
+            applied: 0,
+            already_inactive: 0,
+            not_found: 0,
+            failed: 0,
+            attempted: 0
+        };
+    }
+
+    const byCode = discountCodeContext.byCode instanceof Map ? discountCodeContext.byCode : new Map();
+    const nowIso = options.now instanceof Date ? options.now.toISOString() : new Date(options.now || Date.now()).toISOString();
+    let applied = 0;
+    let alreadyInactive = 0;
+    let notFound = 0;
+    let failed = 0;
+
+    for (const discountCode of candidateCodes) {
+        const existingRow = byCode.get(discountCode);
+        let outcome;
+
+        if (!existingRow) {
+            outcome = buildCouponAutoResponseOutcome(discountCode, 'not_found');
+            notFound += 1;
+        } else if (existingRow.is_active === false) {
+            outcome = buildCouponAutoResponseOutcome(discountCode, 'already_inactive');
+            alreadyInactive += 1;
+        } else {
+            const { error } = await supabase
+                .from('discount_codes')
+                .update({ is_active: false })
+                .eq('code', discountCode);
+
+            if (error) {
+                outcome = buildCouponAutoResponseOutcome(discountCode, 'failed', null, error.message || 'unknown_error');
+                failed += 1;
+            } else {
+                existingRow.is_active = false;
+                outcome = buildCouponAutoResponseOutcome(discountCode, 'applied', nowIso);
+                applied += 1;
+            }
+        }
+
+        for (const alert of alertsByCode.get(discountCode) || []) {
+            const payload = alert?.payload && typeof alert.payload === 'object' ? alert.payload : {};
+            alert.payload = {
+                ...payload,
+                auto_response_action: 'disable-coupon',
+                auto_response_target_type: 'discount_code',
+                auto_response_target: discountCode,
+                auto_response_status: outcome.status,
+                auto_response_applied: outcome.applied,
+                auto_response_applied_at: outcome.applied_at,
+                auto_response_summary: outcome.summary,
+                auto_response_error: outcome.error_message
+            };
+            alert.content = appendAlertContentLine(alert.content, `自动处置：${outcome.summary}`);
+        }
+    }
+
+    return {
+        alerts,
+        applied,
+        already_inactive: alreadyInactive,
+        not_found: notFound,
+        failed,
+        attempted: candidateCodes.length
     };
 }
 
@@ -1285,6 +1508,9 @@ function buildShopOrderRiskRecoveredAlerts(activeAlerts = [], stateJobs = [], ra
             const riskScore = Number(payload.risk_score);
             lines.push(`上次风险等级：${getShopOrderRiskLevelLabel(payload.risk_level)}${Number.isFinite(riskScore) ? ` (${Math.round(riskScore)} 分)` : ''}`);
         }
+        if (normalizeText(payload.auto_response_summary)) {
+            lines.push(`上次自动处置：${normalizeText(payload.auto_response_summary)}`);
+        }
         if (Number.isFinite(Number(payload.order_count))) {
             lines.push(`上次命中订单：${Math.max(0, Math.round(Number(payload.order_count || 0)))} 笔`);
         }
@@ -1339,6 +1565,9 @@ function buildShopOrderRiskRecoveredAlerts(activeAlerts = [], stateJobs = [], ra
                 previous_risk_level: normalizeText(payload.risk_level) || null,
                 previous_primary_action: normalizeText(payload.primary_action) || null,
                 previous_response_summary: normalizeText(payload.response_summary) || null,
+                previous_auto_response_action: normalizeText(payload.auto_response_action) || null,
+                previous_auto_response_status: normalizeText(payload.auto_response_status) || null,
+                previous_auto_response_summary: normalizeText(payload.auto_response_summary) || null,
                 previous_hot_discount_codes: Array.isArray(payload.hot_discount_codes) ? payload.hot_discount_codes : [],
                 previous_sample_products: Array.isArray(payload.sample_products) ? payload.sample_products : [],
                 entry_path: normalizeText(payload.entry_path) || '商城管理 -> 订单列表'
@@ -1409,6 +1638,17 @@ async function runShopOrderRiskSweep(supabase, options = {}) {
         loginHistoryContext: buildLoginHistoryContext(loginHistory)
     };
     const alerts = buildShopOrderRiskAnomalyAlerts(orders, contexts, config, { now: nowDate });
+    const autoResponseDiscountCodes = Array.from(new Set(
+        alerts
+            .filter((alert) => shouldAutoDisableCoupon(alert, config))
+            .map((alert) => normalizeText(alert?.payload?.discount_code).toUpperCase())
+            .filter(Boolean)
+    ));
+    const discountCodes = autoResponseDiscountCodes.length
+        ? await fetchDiscountCodesByCodes(supabase, autoResponseDiscountCodes, config)
+        : [];
+    const discountCodeContext = buildDiscountCodeContext(discountCodes);
+    const autoResponseResult = await applyCouponAutoResponses(supabase, alerts, discountCodeContext, config, { now: nowDate });
     const recoveryAlerts = buildShopOrderRiskRecoveredAlerts(alerts, stateJobs, config, { now: nowDate });
 
     let queued = 0;
@@ -1505,6 +1745,11 @@ async function runShopOrderRiskSweep(supabase, options = {}) {
         recovered_skipped_no_channels: recoveredSkippedNoChannels,
         admin_notifications_created: adminNotificationsCreated,
         admin_notifications_skipped: adminNotificationsSkipped,
+        auto_response_attempted: autoResponseResult.attempted,
+        auto_response_applied: autoResponseResult.applied,
+        auto_response_already_inactive: autoResponseResult.already_inactive,
+        auto_response_not_found: autoResponseResult.not_found,
+        auto_response_failed: autoResponseResult.failed,
         state_job_count: stateJobs.length,
         results
     };
@@ -1526,6 +1771,7 @@ module.exports = {
         compareCreatedAtDescending,
         getAlertTargetId,
         getLatestShopOrderRiskStateJob,
+        buildCouponAutoResponseOutcome,
         shouldSkipRefundedOrder,
         resolveUserLabel,
         summarizeUserAgent

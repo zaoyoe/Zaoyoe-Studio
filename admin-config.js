@@ -2668,6 +2668,7 @@ function getOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
     const alertType = String(item.alert_type || '').trim().toLowerCase();
     const targetId = String(item.target_id || '').trim().toLowerCase();
     const primaryAction = String(item.primary_action || '').trim().toLowerCase();
+    const autoResponseStatus = String(item.auto_response_status || '').trim().toLowerCase();
 
     if (String(category.key || '').trim().toLowerCase() !== 'shop_risk') {
         return null;
@@ -2677,7 +2678,12 @@ function getOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
         return null;
     }
 
-    if (primaryAction === 'disable-coupon' && item.discount_code) {
+    if (
+        primaryAction === 'disable-coupon'
+        && item.discount_code
+        && autoResponseStatus !== 'applied'
+        && autoResponseStatus !== 'already_inactive'
+    ) {
         return {
             action: 'disable-coupon',
             label: '一键停用优惠码',
@@ -2757,6 +2763,7 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
                 <strong class="ops-alert-monitor-item__title">${escapeConfigHtml(item.title || '系统告警')}</strong>
             </div>
             ${item.message ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(item.message)}</div>` : ''}
+            ${item.auto_response_summary ? `<div class="ops-alert-monitor-item__summary"><strong>自动处置：</strong> ${escapeConfigHtml(item.auto_response_summary)}</div>` : ''}
             ${item.response_summary ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(item.response_summary)}</div>` : ''}
             <div class="ops-alert-monitor-item__meta">${metaParts.length ? metaParts.join(' · ') : '等待更多上下文'}</div>
             ${(itemAction || quickAction) ? `

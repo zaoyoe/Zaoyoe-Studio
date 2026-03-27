@@ -55,6 +55,11 @@ function createQueryBuilder(executor) {
             state.payload = payload;
             return builder;
         },
+        update(payload) {
+            state.mode = 'update';
+            state.payload = payload;
+            return builder;
+        },
         single() {
             state.single = true;
             return builder;
@@ -114,6 +119,7 @@ function createSupabaseStub(state = {}) {
     const loginHistory = state.loginHistory || [];
     const adminRoles = state.adminRoles || [];
     const systemNotifications = state.systemNotifications || [];
+    const discountCodes = state.discountCodes || [];
 
     return {
         from(table) {
@@ -199,6 +205,25 @@ function createSupabaseStub(state = {}) {
 
                     return {
                         data: query.single ? inserted[0] : inserted,
+                        error: null
+                    };
+                }
+
+                if (table === 'discount_codes' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(discountCodes, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'discount_codes' && query.mode === 'update') {
+                    const rows = applyFilters(discountCodes, query.filters);
+                    rows.forEach((row) => {
+                        Object.assign(row, query.payload || {});
+                    });
+
+                    return {
+                        data: query.single ? rows[0] || null : rows,
                         error: null
                     };
                 }
@@ -794,7 +819,10 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
             { user_id: 'buyer-3', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:03:00.000Z', site: 'intl' },
             { user_id: 'buyer-bulk', ip_address: '198.51.100.30', user_agent: 'Mozilla/5.0 Safari/17', created_at: '2026-03-27T10:04:00.000Z', site: 'cn' }
         ],
-        entitlements: []
+        entitlements: [],
+        discountCodes: [
+            { code: 'FLASH0', is_active: true }
+        ]
     };
     const supabase = createSupabaseStub(state);
     const runtime = createOpsRuntime();
@@ -812,10 +840,18 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
     assert.equal(first.shared_login_signature_cluster_count, 1);
     assert.equal(first.queued, 5);
     assert.equal(first.deduped, 0);
+    assert.equal(first.auto_response_attempted, 1);
+    assert.equal(first.auto_response_applied, 1);
+    assert.equal(first.auto_response_failed, 0);
+    assert.equal(state.discountCodes[0].is_active, false);
     assert.equal(state.jobs.length, 5);
     assert.equal(state.jobs.every((job) => job.alert_type === 'shop_order_risk_anomaly'), true);
     assert.equal(state.jobs.every((job) => typeof job.payload?.risk_score === 'number'), true);
     assert.equal(state.jobs.every((job) => typeof job.payload?.response_summary === 'string' && job.payload.response_summary.length > 0), true);
+    const couponRiskJobs = state.jobs.filter((job) => String(job.payload?.discount_code || '').toUpperCase() === 'FLASH0');
+    assert.equal(couponRiskJobs.length >= 1, true);
+    assert.equal(couponRiskJobs.every((job) => typeof job.payload?.auto_response_summary === 'string' && job.payload.auto_response_summary.includes('FLASH0')), true);
+    assert.equal(couponRiskJobs.every((job) => job.payload?.auto_response_action === 'disable-coupon'), true);
 
     const second = await runShopOrderRiskSweep(supabase, {
         runtime,
@@ -825,6 +861,9 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
     assert.equal(second.anomaly_count, 5);
     assert.equal(second.queued, 0);
     assert.equal(second.deduped, 5);
+    assert.equal(second.auto_response_attempted, 1);
+    assert.equal(second.auto_response_applied, 0);
+    assert.equal(second.auto_response_already_inactive, 1);
     assert.equal(state.jobs.length, 5);
 });
 
@@ -844,6 +883,9 @@ test('runShopOrderRiskSweep enqueues recovery notices and writes admin notificat
                     risk_score: 94,
                     risk_level: 'critical',
                     primary_action: 'disable-coupon',
+                    auto_response_action: 'disable-coupon',
+                    auto_response_status: 'applied',
+                    auto_response_summary: '系统已自动停用优惠码 FLASH0，请继续复核最近命中订单与关联账号。',
                     response_summary: '建议立即停用优惠码 FLASH0，并复核最近命中订单。',
                     order_count: 4,
                     distinct_user_count: 3,
@@ -879,6 +921,8 @@ test('runShopOrderRiskSweep enqueues recovery notices and writes admin notificat
     assert.deepEqual(state.jobs[1].channels, ['feishu']);
     assert.equal(state.jobs[1].payload.previous_risk_level, 'critical');
     assert.equal(state.jobs[1].payload.previous_primary_action, 'disable-coupon');
+    assert.equal(state.jobs[1].payload.previous_auto_response_status, 'applied');
+    assert.match(state.jobs[1].payload.previous_auto_response_summary, /FLASH0/);
     assert.equal(state.systemNotifications.length, 2);
     assert.match(state.systemNotifications[0].title, /风险已恢复/);
 

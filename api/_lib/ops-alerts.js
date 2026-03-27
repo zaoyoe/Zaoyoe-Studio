@@ -1774,6 +1774,7 @@ function buildShopOrderRiskAlertText(job = {}) {
     if (Number.isFinite(Number(payload.window_minutes))) {
         lines.push(`统计窗口：${Math.max(1, Math.round(Number(payload.window_minutes || 0)))} 分钟`);
     }
+    if (normalizeText(payload.auto_response_summary)) lines.push(`自动处置：${normalizeText(payload.auto_response_summary)}`);
     if (normalizeText(payload.response_summary)) lines.push(`建议动作：${normalizeText(payload.response_summary)}`);
     if (normalizeText(payload.primary_action)) lines.push(`首选处置：${getShopOrderRiskActionLabel(payload.primary_action)}`);
     if (siteLabels.length) lines.push(`涉及站点：${siteLabels.join('、')}`);
@@ -1833,6 +1834,7 @@ function buildShopOrderRiskRecoveredAlertText(job = {}) {
     }
     if (hotDiscountCodes.length) lines.push(`上次热点优惠码：${hotDiscountCodes.join('、')}`);
     if (sampleProducts.length) lines.push(`上次热点商品：${sampleProducts.join('、')}`);
+    if (normalizeText(payload.previous_auto_response_summary)) lines.push(`上次自动处置：${normalizeText(payload.previous_auto_response_summary)}`);
     if (normalizeText(payload.previous_response_summary)) lines.push(`上次建议动作：${normalizeText(payload.previous_response_summary)}`);
     if (normalizeText(payload.previous_primary_action)) lines.push(`上次首选处置：${getShopOrderRiskActionLabel(payload.previous_primary_action)}`);
     if (normalizeText(payload.incident_started_at)) lines.push(`上次异常：${formatTimestamp(payload.incident_started_at)}`);

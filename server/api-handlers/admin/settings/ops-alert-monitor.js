@@ -244,6 +244,9 @@ function buildAlertItem(job = {}) {
         risk_score: Number.isFinite(Number(payload.risk_score)) ? Math.max(0, Math.round(Number(payload.risk_score || 0))) : null,
         primary_action: normalizeText(payload.primary_action, 80) || null,
         response_summary: normalizeText(payload.response_summary, 240) || null,
+        auto_response_action: normalizeText(payload.auto_response_action, 80) || null,
+        auto_response_status: normalizeText(payload.auto_response_status, 80) || null,
+        auto_response_summary: normalizeText(payload.auto_response_summary, 240) || null,
         login_signature_label: normalizeText(payload.login_signature_label, 160) || null,
         user_agent_summary: normalizeText(payload.user_agent_summary, 160) || null
     };
