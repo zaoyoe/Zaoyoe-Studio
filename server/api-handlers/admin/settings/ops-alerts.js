@@ -1235,6 +1235,11 @@ module.exports = async (req, res) => {
                     telegram_enabled: nextConfig.channels?.telegram?.enabled === true,
                     feishu_enabled: nextConfig.channels?.feishu?.enabled === true,
                     email_enabled: nextConfig.channels?.email?.enabled === true,
+                    shop_risk_auto_response_enabled: nextConfig.shop_order_risk?.auto_response_enabled === true,
+                    shop_risk_auto_disable_coupon_min_risk_score: Number(nextConfig.shop_order_risk?.auto_disable_coupon_min_risk_score || 0) || null,
+                    shop_risk_auto_ban_user_min_risk_score: Number(nextConfig.shop_order_risk?.auto_ban_user_min_risk_score || 0) || null,
+                    shop_risk_auto_ban_user_duration_days: Number(nextConfig.shop_order_risk?.auto_ban_user_duration_days || 0) || null,
+                    shop_risk_auto_suspend_product_min_risk_score: Number(nextConfig.shop_order_risk?.auto_suspend_product_min_risk_score || 0) || null,
                     updated_secrets: updatedSecrets
                 }
             });

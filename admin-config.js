@@ -895,6 +895,13 @@ function getDefaultOpsAlertConfig() {
                 reply_to: '',
                 subject_prefix: '[Zaoyoe告警]'
             }
+        },
+        shop_order_risk: {
+            auto_response_enabled: true,
+            auto_disable_coupon_min_risk_score: 90,
+            auto_ban_user_min_risk_score: 96,
+            auto_ban_user_duration_days: 7,
+            auto_suspend_product_min_risk_score: 97
         }
     };
 }
@@ -1255,6 +1262,9 @@ function normalizeOpsAlertConfig(raw) {
     const emailSource = sourceChannels.email && typeof sourceChannels.email === 'object' && !Array.isArray(sourceChannels.email)
         ? sourceChannels.email
         : {};
+    const shopRiskSource = source.shop_order_risk && typeof source.shop_order_risk === 'object' && !Array.isArray(source.shop_order_risk)
+        ? source.shop_order_risk
+        : {};
 
     return {
         enabled: normalizeConfigBoolean(source.enabled, defaults.enabled),
@@ -1287,6 +1297,29 @@ function normalizeOpsAlertConfig(raw) {
                 reply_to: String(emailSource.reply_to || defaults.channels.email.reply_to).trim(),
                 subject_prefix: String(emailSource.subject_prefix || defaults.channels.email.subject_prefix).trim() || defaults.channels.email.subject_prefix
             }
+        },
+        shop_order_risk: {
+            auto_response_enabled: normalizeConfigBoolean(shopRiskSource.auto_response_enabled, defaults.shop_order_risk.auto_response_enabled),
+            auto_disable_coupon_min_risk_score: clamp(
+                toWholeNumber(shopRiskSource.auto_disable_coupon_min_risk_score, defaults.shop_order_risk.auto_disable_coupon_min_risk_score),
+                65,
+                99
+            ),
+            auto_ban_user_min_risk_score: clamp(
+                toWholeNumber(shopRiskSource.auto_ban_user_min_risk_score, defaults.shop_order_risk.auto_ban_user_min_risk_score),
+                80,
+                99
+            ),
+            auto_ban_user_duration_days: clamp(
+                toWholeNumber(shopRiskSource.auto_ban_user_duration_days, defaults.shop_order_risk.auto_ban_user_duration_days),
+                1,
+                30
+            ),
+            auto_suspend_product_min_risk_score: clamp(
+                toWholeNumber(shopRiskSource.auto_suspend_product_min_risk_score, defaults.shop_order_risk.auto_suspend_product_min_risk_score),
+                85,
+                99
+            )
         }
     };
 }
@@ -1800,7 +1833,27 @@ function applyOpsAlertOverview(config) {
     setOpsAlertDeleteButtonState('telegram_bot_token', telegramSecret);
     setOpsAlertDeleteButtonState('feishu_webhook_url', feishuSecret);
     setOpsAlertDeleteButtonState('email_api_key', emailSecret);
+    applyOpsAlertShopRiskControls(normalizedConfig);
     renderOpsAlertOverviewCards(normalizedConfig);
+}
+
+function applyOpsAlertShopRiskControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const shopRiskConfig = normalizedConfig.shop_order_risk || getDefaultOpsAlertConfig().shop_order_risk;
+    const toggleEl = document.getElementById('opsAlertShopRiskAutoResponseEnabledToggle');
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', shopRiskConfig.auto_response_enabled);
+    }
+
+    [
+        'opsAlertShopRiskAutoDisableCouponMinRiskScore',
+        'opsAlertShopRiskAutoBanUserMinRiskScore',
+        'opsAlertShopRiskAutoBanUserDurationDays',
+        'opsAlertShopRiskAutoSuspendProductMinRiskScore'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !shopRiskConfig.auto_response_enabled;
+    });
 }
 
 function renderOpsAlertSettings() {
@@ -1844,6 +1897,26 @@ function renderOpsAlertSettings() {
     const emailSubjectPrefix = document.getElementById('opsAlertEmailSubjectPrefix');
     if (emailSubjectPrefix) {
         emailSubjectPrefix.value = config.channels.email.subject_prefix;
+    }
+
+    const autoDisableCouponMinRiskScore = document.getElementById('opsAlertShopRiskAutoDisableCouponMinRiskScore');
+    if (autoDisableCouponMinRiskScore) {
+        autoDisableCouponMinRiskScore.value = String(config.shop_order_risk.auto_disable_coupon_min_risk_score);
+    }
+
+    const autoBanUserMinRiskScore = document.getElementById('opsAlertShopRiskAutoBanUserMinRiskScore');
+    if (autoBanUserMinRiskScore) {
+        autoBanUserMinRiskScore.value = String(config.shop_order_risk.auto_ban_user_min_risk_score);
+    }
+
+    const autoBanUserDurationDays = document.getElementById('opsAlertShopRiskAutoBanUserDurationDays');
+    if (autoBanUserDurationDays) {
+        autoBanUserDurationDays.value = String(config.shop_order_risk.auto_ban_user_duration_days);
+    }
+
+    const autoSuspendProductMinRiskScore = document.getElementById('opsAlertShopRiskAutoSuspendProductMinRiskScore');
+    if (autoSuspendProductMinRiskScore) {
+        autoSuspendProductMinRiskScore.value = String(config.shop_order_risk.auto_suspend_product_min_risk_score);
     }
 
     applyOpsAlertOverview(config);
@@ -2691,7 +2764,12 @@ function getOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
         };
     }
 
-    if (primaryAction === 'open-user-ban' && item.user_id) {
+    if (
+        primaryAction === 'open-user-ban'
+        && item.user_id
+        && autoResponseStatus !== 'applied'
+        && autoResponseStatus !== 'already_blocked'
+    ) {
         return {
             action: 'open-user-ban',
             label: '发起封禁处理',
@@ -4389,6 +4467,9 @@ function collectOpsAlertConfigFromForm() {
             email: {
                 ...currentConfig.channels.email
             }
+        },
+        shop_order_risk: {
+            ...currentConfig.shop_order_risk
         }
     };
 
@@ -4426,6 +4507,24 @@ function collectOpsAlertConfigFromForm() {
     nextConfig.channels.email.subject_prefix = String(
         document.getElementById('opsAlertEmailSubjectPrefix')?.value ?? currentConfig.channels.email.subject_prefix
     ).trim() || currentConfig.channels.email.subject_prefix;
+    nextConfig.shop_order_risk.auto_response_enabled = document.getElementById('opsAlertShopRiskAutoResponseEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.shop_order_risk.auto_response_enabled;
+    nextConfig.shop_order_risk.auto_disable_coupon_min_risk_score = toWholeNumber(
+        document.getElementById('opsAlertShopRiskAutoDisableCouponMinRiskScore')?.value,
+        currentConfig.shop_order_risk.auto_disable_coupon_min_risk_score
+    );
+    nextConfig.shop_order_risk.auto_ban_user_min_risk_score = toWholeNumber(
+        document.getElementById('opsAlertShopRiskAutoBanUserMinRiskScore')?.value,
+        currentConfig.shop_order_risk.auto_ban_user_min_risk_score
+    );
+    nextConfig.shop_order_risk.auto_ban_user_duration_days = toWholeNumber(
+        document.getElementById('opsAlertShopRiskAutoBanUserDurationDays')?.value,
+        currentConfig.shop_order_risk.auto_ban_user_duration_days
+    );
+    nextConfig.shop_order_risk.auto_suspend_product_min_risk_score = toWholeNumber(
+        document.getElementById('opsAlertShopRiskAutoSuspendProductMinRiskScore')?.value,
+        currentConfig.shop_order_risk.auto_suspend_product_min_risk_score
+    );
 
     return normalizeOpsAlertConfig(nextConfig);
 }
@@ -5252,6 +5351,15 @@ function toggleOpsAlertChannelEnabled(channelKey) {
         email: 'opsAlertEmailEnabledToggle'
     };
     const toggleEl = document.getElementById(toggleMap[channelKey]);
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertShopRiskAutoResponseEnabled() {
+    const toggleEl = document.getElementById('opsAlertShopRiskAutoResponseEnabledToggle');
     if (!toggleEl) return;
 
     toggleEl.classList.toggle('active');
@@ -7478,6 +7586,7 @@ window.loadOpsAlertHealth = loadOpsAlertHealth;
 window.loadOpsAlertMonitor = loadOpsAlertMonitor;
 window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;
 window.toggleOpsAlertChannelEnabled = toggleOpsAlertChannelEnabled;
+window.toggleOpsAlertShopRiskAutoResponseEnabled = toggleOpsAlertShopRiskAutoResponseEnabled;
 window.saveOpsAlertSettings = saveOpsAlertSettings;
 window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;
 window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;

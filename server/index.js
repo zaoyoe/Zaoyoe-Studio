@@ -3428,7 +3428,10 @@ async function sweepShopOrderRiskHealth() {
     shopOrderRiskSweepRunning = true;
 
     try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
         const result = await runShopOrderRiskSweep(supabase, {
+            runtime,
+            config: runtime?.config?.shop_order_risk || {},
             env: process.env
         });
 
@@ -3451,7 +3454,13 @@ async function sweepShopOrderRiskHealth() {
 async function queueNextShopOrderRiskSweep(delayMs = null) {
     if (shopOrderRiskSweepTimer) return;
 
-    const monitorConfig = normalizeShopOrderRiskMonitorConfig({}, process.env);
+    let monitorConfig = normalizeShopOrderRiskMonitorConfig({}, process.env);
+    try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        monitorConfig = normalizeShopOrderRiskMonitorConfig(runtime?.config?.shop_order_risk || {}, process.env);
+    } catch (error) {
+        console.warn('[ShopOrderRiskMonitor] Failed to load stored runtime config, falling back to env defaults:', error?.message || error);
+    }
     const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 5 * 60 * 1000));
 
     shopOrderRiskSweepTimer = setTimeout(() => {

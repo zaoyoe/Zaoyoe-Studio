@@ -11,6 +11,9 @@ const DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG = Object.freeze({
     enabled: true,
     auto_response_enabled: true,
     auto_disable_coupon_min_risk_score: 90,
+    auto_ban_user_min_risk_score: 96,
+    auto_ban_user_duration_days: 7,
+    auto_suspend_product_min_risk_score: 97,
     sweep_interval_ms: 5 * 60 * 1000,
     lookback_minutes: 180,
     state_lookback_minutes: 24 * 60,
@@ -64,7 +67,10 @@ function normalizeNumber(value, fallback = 0, min = null, max = null) {
 }
 
 function normalizeShopOrderRiskMonitorConfig(rawConfig = {}, env = process.env) {
-    const source = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
+    const rootSource = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
+    const source = rootSource.shop_order_risk && typeof rootSource.shop_order_risk === 'object'
+        ? rootSource.shop_order_risk
+        : rootSource;
 
     return {
         enabled: normalizeBoolean(
@@ -79,6 +85,24 @@ function normalizeShopOrderRiskMonitorConfig(rawConfig = {}, env = process.env) 
             source.auto_disable_coupon_min_risk_score,
             normalizeNumber(env?.SHOP_ORDER_RISK_AUTO_DISABLE_COUPON_MIN_RISK_SCORE, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.auto_disable_coupon_min_risk_score, 65, 99),
             65,
+            99
+        ),
+        auto_ban_user_min_risk_score: normalizeNumber(
+            source.auto_ban_user_min_risk_score,
+            normalizeNumber(env?.SHOP_ORDER_RISK_AUTO_BAN_USER_MIN_RISK_SCORE, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.auto_ban_user_min_risk_score, 80, 99),
+            80,
+            99
+        ),
+        auto_ban_user_duration_days: normalizeNumber(
+            source.auto_ban_user_duration_days,
+            normalizeNumber(env?.SHOP_ORDER_RISK_AUTO_BAN_USER_DURATION_DAYS, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.auto_ban_user_duration_days, 1, 30),
+            1,
+            30
+        ),
+        auto_suspend_product_min_risk_score: normalizeNumber(
+            source.auto_suspend_product_min_risk_score,
+            normalizeNumber(env?.SHOP_ORDER_RISK_AUTO_SUSPEND_PRODUCT_MIN_RISK_SCORE, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.auto_suspend_product_min_risk_score, 85, 99),
+            85,
             99
         ),
         sweep_interval_ms: normalizeNumber(
@@ -248,7 +272,7 @@ async function fetchPagedRows(buildQuery, pageSize = 500, maxPages = 10) {
 async function fetchRecentShopOrders(client, sinceIso, config) {
     return fetchPagedRows(() => client
         .from('shop_orders')
-        .select('id, user_id, site, snapshot_product_name, price_paid, total_price, item_count, discount_code, discount_amount, created_at, refund_status')
+        .select('id, user_id, product_id, site, snapshot_product_name, price_paid, total_price, item_count, discount_code, discount_amount, created_at, refund_status')
         .gte('created_at', sinceIso)
         .order('created_at', { ascending: false }), config.page_size, config.max_pages);
 }
@@ -368,6 +392,58 @@ async function fetchDiscountCodesByCodes(client, codes = [], config = {}) {
     return rows;
 }
 
+async function fetchBlockedUsersByUserIds(client, userIds = [], config = {}) {
+    const normalizedUserIds = Array.from(new Set((userIds || []).map((userId) => normalizeText(userId)).filter(Boolean)));
+    if (!normalizedUserIds.length) {
+        return [];
+    }
+
+    const rows = [];
+    const chunkSize = Math.max(1, Math.min(Number(config.page_size || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.page_size), 200));
+
+    for (let index = 0; index < normalizedUserIds.length; index += chunkSize) {
+        const batch = normalizedUserIds.slice(index, index + chunkSize);
+        const { data, error } = await client
+            .from('blocked_users')
+            .select('user_id, scope, reason, expires_at')
+            .in('user_id', batch);
+
+        if (error) {
+            throw error;
+        }
+
+        rows.push(...(Array.isArray(data) ? data : []));
+    }
+
+    return rows;
+}
+
+async function fetchProductsByIds(client, productIds = [], config = {}) {
+    const normalizedProductIds = Array.from(new Set((productIds || []).map((productId) => normalizeText(productId)).filter(Boolean)));
+    if (!normalizedProductIds.length) {
+        return [];
+    }
+
+    const rows = [];
+    const chunkSize = Math.max(1, Math.min(Number(config.page_size || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.page_size), 200));
+
+    for (let index = 0; index < normalizedProductIds.length; index += chunkSize) {
+        const batch = normalizedProductIds.slice(index, index + chunkSize);
+        const { data, error } = await client
+            .from('shop_products')
+            .select('id, name, is_active')
+            .in('id', batch);
+
+        if (error) {
+            throw error;
+        }
+
+        rows.push(...(Array.isArray(data) ? data : []));
+    }
+
+    return rows;
+}
+
 function buildProfilesContext(profiles = []) {
     const byId = new Map();
     for (const profile of profiles || []) {
@@ -422,6 +498,55 @@ function buildDiscountCodeContext(rows = []) {
     }
 
     return { byCode };
+}
+
+function isBlockRecordActive(row = {}, nowDate = new Date()) {
+    if (!row || typeof row !== 'object') {
+        return false;
+    }
+
+    const expiresAt = normalizeText(row.expires_at);
+    if (!expiresAt) {
+        return true;
+    }
+
+    const expiresAtMs = Date.parse(expiresAt);
+    if (!Number.isFinite(expiresAtMs)) {
+        return true;
+    }
+
+    return expiresAtMs > nowDate.getTime();
+}
+
+function buildBlockedUserContext(rows = [], options = {}) {
+    const byUserId = new Map();
+    const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
+
+    for (const row of rows || []) {
+        const userId = normalizeText(row?.user_id);
+        const scope = normalizeText(row?.scope).toLowerCase();
+        if (!userId || scope !== 'all' || !isBlockRecordActive(row, nowDate)) {
+            continue;
+        }
+
+        if (!byUserId.has(userId)) {
+            byUserId.set(userId, row);
+        }
+    }
+
+    return { byUserId };
+}
+
+function buildProductContext(rows = []) {
+    const byId = new Map();
+
+    for (const row of rows || []) {
+        const productId = normalizeText(row?.id);
+        if (!productId) continue;
+        byId.set(productId, row);
+    }
+
+    return { byId };
 }
 
 function resolveUserLabel(profile, userId = '') {
@@ -492,6 +617,26 @@ function countLabels(values = []) {
             if (right[1] !== left[1]) return right[1] - left[1];
             return left[0].localeCompare(right[0]);
         });
+}
+
+function getDominantValueStats(values = []) {
+    const normalizedValues = (values || []).map((value) => normalizeText(value)).filter(Boolean);
+    if (!normalizedValues.length) {
+        return null;
+    }
+
+    const [value, count] = countLabels(normalizedValues)[0] || [];
+    if (!normalizeText(value) || !Number.isFinite(Number(count))) {
+        return null;
+    }
+
+    const total = normalizedValues.length;
+    return {
+        value: normalizeText(value),
+        count: Math.max(0, Math.round(Number(count || 0))),
+        total,
+        share: total > 0 ? Number((Number(count || 0) / total).toFixed(4)) : 0
+    };
 }
 
 function formatTopLabels(values = [], maxItems = 3) {
@@ -716,6 +861,72 @@ function shouldAutoDisableCoupon(alert = {}, config = {}) {
         && score >= Number(config.auto_disable_coupon_min_risk_score || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.auto_disable_coupon_min_risk_score);
 }
 
+function shouldAutoBanUser(alert = {}, config = {}) {
+    const payload = alert?.payload && typeof alert.payload === 'object' ? alert.payload : {};
+    const score = Number(payload.risk_score || 0);
+    return normalizeText(payload.primary_action).toLowerCase() === 'open-user-ban'
+        && normalizeText(payload.signal_type).toLowerCase() === 'user_velocity'
+        && normalizeText(payload.user_id)
+        && Number.isFinite(score)
+        && score >= Number(config.auto_ban_user_min_risk_score || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.auto_ban_user_min_risk_score);
+}
+
+function shouldAutoSuspendProduct(alert = {}, config = {}) {
+    const payload = alert?.payload && typeof alert.payload === 'object' ? alert.payload : {};
+    const score = Number(payload.risk_score || 0);
+    const orderShare = Number(payload.primary_product_order_share || 0);
+    const orderCount = Number(payload.primary_product_order_count || 0);
+    return normalizeText(payload.signal_type).toLowerCase() === 'zero_total_cluster'
+        && normalizeText(payload.primary_product_id)
+        && Number.isFinite(score)
+        && score >= Number(config.auto_suspend_product_min_risk_score || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.auto_suspend_product_min_risk_score)
+        && Number.isFinite(orderShare)
+        && orderShare >= 0.6
+        && Number.isFinite(orderCount)
+        && orderCount >= 3;
+}
+
+function getAutoResponseActionPriority(action = '') {
+    const normalizedAction = normalizeText(action).toLowerCase();
+    if (normalizedAction === 'disable-coupon') return 3;
+    if (normalizedAction === 'ban-user') return 2;
+    if (normalizedAction === 'suspend-product') return 1;
+    return 0;
+}
+
+function attachAutoResponseToAlert(alert = {}, outcome = {}) {
+    const summary = normalizeText(outcome.summary);
+    if (!summary) {
+        return;
+    }
+
+    const payload = alert?.payload && typeof alert.payload === 'object' ? alert.payload : {};
+    const existingAction = normalizeText(payload.auto_response_action).toLowerCase();
+    const nextAction = normalizeText(outcome.action).toLowerCase();
+    const shouldOverwriteAction = !existingAction
+        || getAutoResponseActionPriority(nextAction) >= getAutoResponseActionPriority(existingAction);
+    const existingSummary = normalizeText(payload.auto_response_summary);
+    const mergedSummary = [existingSummary, summary]
+        .filter(Boolean)
+        .filter((value, index, values) => values.indexOf(value) === index)
+        .join('；');
+
+    alert.payload = {
+        ...payload,
+        auto_response_summary: mergedSummary,
+        ...(shouldOverwriteAction ? {
+            auto_response_action: outcome.action || null,
+            auto_response_target_type: outcome.target_type || null,
+            auto_response_target: outcome.target || null,
+            auto_response_status: outcome.status || null,
+            auto_response_applied: outcome.applied === true,
+            auto_response_applied_at: outcome.applied_at || null,
+            auto_response_error: outcome.error_message || null
+        } : {})
+    };
+    alert.content = appendAlertContentLine(alert.content, `自动处置：${summary}`);
+}
+
 function buildCouponAutoResponseOutcome(discountCode, status, appliedAt = null, errorMessage = '') {
     const normalizedCode = normalizeText(discountCode).toUpperCase() || 'UNKNOWN';
     const normalizedStatus = normalizeText(status).toLowerCase();
@@ -864,6 +1075,313 @@ async function applyCouponAutoResponses(supabase, alerts = [], discountCodeConte
     };
 }
 
+function buildUserBanAutoResponseOutcome(userLabel, status, durationDays, appliedAt = null, errorMessage = '') {
+    const normalizedUserLabel = normalizeText(userLabel) || '未知账号';
+    const normalizedStatus = normalizeText(status).toLowerCase();
+    const normalizedAppliedAt = normalizeText(appliedAt) || null;
+    const normalizedError = normalizeText(errorMessage) || null;
+    const durationLabel = `${Math.max(1, Math.round(Number(durationDays || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.auto_ban_user_duration_days)))} 天`;
+
+    if (normalizedStatus === 'applied') {
+        return {
+            action: 'ban-user',
+            target_type: 'user',
+            status: 'applied',
+            applied: true,
+            summary: `系统已自动封禁账号 ${normalizedUserLabel}（${durationLabel}），请尽快复核最近订单与关联账号。`,
+            applied_at: normalizedAppliedAt,
+            error_message: null
+        };
+    }
+
+    if (normalizedStatus === 'already_blocked') {
+        return {
+            action: 'ban-user',
+            target_type: 'user',
+            status: 'already_blocked',
+            applied: false,
+            summary: `系统检测到账号 ${normalizedUserLabel} 已处于封禁状态，本轮未重复处置。`,
+            applied_at: null,
+            error_message: null
+        };
+    }
+
+    return {
+        action: 'ban-user',
+        target_type: 'user',
+        status: 'failed',
+        applied: false,
+        summary: normalizedError
+            ? `系统尝试自动封禁账号 ${normalizedUserLabel} 失败：${normalizedError}`
+            : `系统尝试自动封禁账号 ${normalizedUserLabel} 失败，请尽快手动处置。`,
+        applied_at: null,
+        error_message: normalizedError
+    };
+}
+
+function buildProductSuspendAutoResponseOutcome(productLabel, productId, status, appliedAt = null, errorMessage = '') {
+    const normalizedProductLabel = normalizeText(productLabel) || normalizeText(productId) || '未知商品';
+    const normalizedStatus = normalizeText(status).toLowerCase();
+    const normalizedAppliedAt = normalizeText(appliedAt) || null;
+    const normalizedError = normalizeText(errorMessage) || null;
+
+    if (normalizedStatus === 'applied') {
+        return {
+            action: 'suspend-product',
+            target_type: 'product',
+            status: 'applied',
+            applied: true,
+            summary: `系统已自动下架商品 ${normalizedProductLabel}，待人工复核后再恢复上架。`,
+            applied_at: normalizedAppliedAt,
+            error_message: null
+        };
+    }
+
+    if (normalizedStatus === 'already_inactive') {
+        return {
+            action: 'suspend-product',
+            target_type: 'product',
+            status: 'already_inactive',
+            applied: false,
+            summary: `系统检测到商品 ${normalizedProductLabel} 已下架，本轮未重复处置。`,
+            applied_at: null,
+            error_message: null
+        };
+    }
+
+    if (normalizedStatus === 'not_found') {
+        return {
+            action: 'suspend-product',
+            target_type: 'product',
+            status: 'not_found',
+            applied: false,
+            summary: `系统尝试自动下架商品 ${normalizedProductLabel}，但未找到可更新的商品记录。`,
+            applied_at: null,
+            error_message: null
+        };
+    }
+
+    return {
+        action: 'suspend-product',
+        target_type: 'product',
+        status: 'failed',
+        applied: false,
+        summary: normalizedError
+            ? `系统尝试自动下架商品 ${normalizedProductLabel} 失败：${normalizedError}`
+            : `系统尝试自动下架商品 ${normalizedProductLabel} 失败，请尽快手动处置。`,
+        applied_at: null,
+        error_message: normalizedError
+    };
+}
+
+async function applyUserBanAutoResponses(supabase, alerts = [], blockedUserContext = {}, rawConfig = {}, options = {}) {
+    const config = normalizeShopOrderRiskMonitorConfig(rawConfig);
+    if (!config.auto_response_enabled) {
+        return {
+            applied: 0,
+            already_blocked: 0,
+            failed: 0,
+            attempted: 0
+        };
+    }
+
+    const alertsByUserId = new Map();
+    for (const alert of alerts || []) {
+        const payload = alert?.payload && typeof alert.payload === 'object' ? alert.payload : {};
+        const userId = normalizeText(payload.user_id);
+        if (!userId) continue;
+        if (!alertsByUserId.has(userId)) {
+            alertsByUserId.set(userId, []);
+        }
+        alertsByUserId.get(userId).push(alert);
+    }
+
+    const candidateUserIds = Array.from(alertsByUserId.entries())
+        .filter(([, relatedAlerts]) => relatedAlerts.some((alert) => shouldAutoBanUser(alert, config)))
+        .map(([userId]) => userId);
+
+    if (!candidateUserIds.length) {
+        return {
+            applied: 0,
+            already_blocked: 0,
+            failed: 0,
+            attempted: 0
+        };
+    }
+
+    const byUserId = blockedUserContext.byUserId instanceof Map ? blockedUserContext.byUserId : new Map();
+    const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
+    const nowIso = nowDate.toISOString();
+    const durationDays = Math.max(1, Math.round(Number(config.auto_ban_user_duration_days || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.auto_ban_user_duration_days)));
+    const expiresAt = new Date(nowDate.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+    let applied = 0;
+    let alreadyBlocked = 0;
+    let failed = 0;
+
+    for (const userId of candidateUserIds) {
+        const relatedAlerts = alertsByUserId.get(userId) || [];
+        const representativeAlert = relatedAlerts[0] || {};
+        const payload = representativeAlert?.payload && typeof representativeAlert.payload === 'object'
+            ? representativeAlert.payload
+            : {};
+        const buyerLabel = normalizeText(payload.buyer_label) || `用户 ${userId.slice(0, 8)}`;
+        const signalTypeLabel = normalizeText(payload.signal_type) || 'shop_order_risk';
+        const score = Math.max(0, Math.round(Number(payload.risk_score || 0)));
+        const blockReason = `商城风控自动封禁: ${signalTypeLabel} (${score} 分)`;
+        let outcome;
+
+        if (byUserId.has(userId)) {
+            outcome = buildUserBanAutoResponseOutcome(buyerLabel, 'already_blocked', durationDays);
+            alreadyBlocked += 1;
+        } else {
+            const upsertResult = await supabase
+                .from('blocked_users')
+                .upsert({
+                    user_id: userId,
+                    scope: 'all',
+                    reason: blockReason,
+                    admin_id: null,
+                    expires_at: expiresAt
+                }, { onConflict: 'user_id, scope' });
+
+            if (upsertResult?.error) {
+                outcome = buildUserBanAutoResponseOutcome(buyerLabel, 'failed', durationDays, null, upsertResult.error.message || 'blocked_users_upsert_failed');
+                failed += 1;
+            } else {
+                const blockHistoryResult = await supabase
+                    .from('block_history')
+                    .insert({
+                        user_id: userId,
+                        action: 'block',
+                        scope: 'all',
+                        reason: blockReason,
+                        admin_id: null
+                    });
+
+                if (blockHistoryResult?.error) {
+                    outcome = buildUserBanAutoResponseOutcome(buyerLabel, 'failed', durationDays, null, blockHistoryResult.error.message || 'block_history_insert_failed');
+                    failed += 1;
+                } else {
+                    byUserId.set(userId, {
+                        user_id: userId,
+                        scope: 'all',
+                        reason: blockReason,
+                        expires_at: expiresAt
+                    });
+                    outcome = buildUserBanAutoResponseOutcome(buyerLabel, 'applied', durationDays, nowIso);
+                    applied += 1;
+                }
+            }
+        }
+
+        for (const alert of relatedAlerts) {
+            attachAutoResponseToAlert(alert, {
+                ...outcome,
+                target: userId
+            });
+        }
+    }
+
+    return {
+        applied,
+        already_blocked: alreadyBlocked,
+        failed,
+        attempted: candidateUserIds.length
+    };
+}
+
+async function applyProductSuspendAutoResponses(supabase, alerts = [], productContext = {}, rawConfig = {}, options = {}) {
+    const config = normalizeShopOrderRiskMonitorConfig(rawConfig);
+    if (!config.auto_response_enabled) {
+        return {
+            applied: 0,
+            already_inactive: 0,
+            not_found: 0,
+            failed: 0,
+            attempted: 0
+        };
+    }
+
+    const alertsByProductId = new Map();
+    for (const alert of alerts || []) {
+        const payload = alert?.payload && typeof alert.payload === 'object' ? alert.payload : {};
+        const productId = normalizeText(payload.primary_product_id);
+        if (!productId) continue;
+        if (!alertsByProductId.has(productId)) {
+            alertsByProductId.set(productId, []);
+        }
+        alertsByProductId.get(productId).push(alert);
+    }
+
+    const candidateProductIds = Array.from(alertsByProductId.entries())
+        .filter(([, relatedAlerts]) => relatedAlerts.some((alert) => shouldAutoSuspendProduct(alert, config)))
+        .map(([productId]) => productId);
+
+    if (!candidateProductIds.length) {
+        return {
+            applied: 0,
+            already_inactive: 0,
+            not_found: 0,
+            failed: 0,
+            attempted: 0
+        };
+    }
+
+    const byId = productContext.byId instanceof Map ? productContext.byId : new Map();
+    const nowIso = options.now instanceof Date ? options.now.toISOString() : new Date(options.now || Date.now()).toISOString();
+    let applied = 0;
+    let alreadyInactive = 0;
+    let notFound = 0;
+    let failed = 0;
+
+    for (const productId of candidateProductIds) {
+        const relatedAlerts = alertsByProductId.get(productId) || [];
+        const representativePayload = relatedAlerts[0]?.payload && typeof relatedAlerts[0].payload === 'object'
+            ? relatedAlerts[0].payload
+            : {};
+        const existingRow = byId.get(productId);
+        const productLabel = normalizeText(existingRow?.name) || normalizeText(representativePayload.primary_product_name) || productId;
+        let outcome;
+
+        if (!existingRow) {
+            outcome = buildProductSuspendAutoResponseOutcome(productLabel, productId, 'not_found');
+            notFound += 1;
+        } else if (existingRow.is_active === false) {
+            outcome = buildProductSuspendAutoResponseOutcome(productLabel, productId, 'already_inactive');
+            alreadyInactive += 1;
+        } else {
+            const { error } = await supabase
+                .from('shop_products')
+                .update({ is_active: false })
+                .eq('id', productId);
+
+            if (error) {
+                outcome = buildProductSuspendAutoResponseOutcome(productLabel, productId, 'failed', null, error.message || 'shop_products_update_failed');
+                failed += 1;
+            } else {
+                existingRow.is_active = false;
+                outcome = buildProductSuspendAutoResponseOutcome(productLabel, productId, 'applied', nowIso);
+                applied += 1;
+            }
+        }
+
+        for (const alert of relatedAlerts) {
+            attachAutoResponseToAlert(alert, {
+                ...outcome,
+                target: productId
+            });
+        }
+    }
+
+    return {
+        applied,
+        already_inactive: alreadyInactive,
+        not_found: notFound,
+        failed,
+        attempted: candidateProductIds.length
+    };
+}
+
 function buildDiscountCodeSpikeAlerts(orders = [], profilesContext = {}, config = {}, options = {}) {
     const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
     const filteredOrders = (orders || [])
@@ -978,6 +1496,18 @@ function buildZeroTotalClusterAlerts(orders = [], profilesContext = {}, config =
     const sampleProducts = formatTopLabels(filteredOrders.map((order) => order.snapshot_product_name), 3);
     const siteLabels = formatTopLabels(filteredOrders.map((order) => getSiteLabel(order.site)), 3);
     const discountCodeLabels = formatTopLabels(filteredOrders.map((order) => normalizeText(order.discount_code) || '无优惠码'), 3);
+    const dominantProduct = getDominantValueStats(filteredOrders.map((order) => order.product_id));
+    const primaryProductId = dominantProduct && dominantProduct.share >= 0.6
+        ? normalizeText(dominantProduct.value)
+        : '';
+    const primaryProductName = primaryProductId
+        ? normalizeText(filteredOrders.find((order) => normalizeText(order.product_id) === primaryProductId)?.snapshot_product_name)
+        : '';
+    const distinctProductCount = Array.from(new Set(filteredOrders.map((order) => normalizeText(order.snapshot_product_name)).filter(Boolean))).length;
+    const totalOrderValue = filteredOrders.reduce((sum, order) => {
+        const numericValue = Number(order.total_price);
+        return sum + (Number.isFinite(numericValue) ? numericValue : 0);
+    }, 0);
     const orderRefs = filteredOrders
         .map((order) => normalizeText(order.id))
         .filter(Boolean)
@@ -1013,8 +1543,15 @@ function buildZeroTotalClusterAlerts(orders = [], profilesContext = {}, config =
             signal_type: 'zero_total_cluster',
             order_count: filteredOrders.length,
             distinct_user_count: distinctUserIds.length,
+            zero_total_count: filteredOrders.length,
+            distinct_product_count: distinctProductCount,
+            total_order_value: Number.isFinite(totalOrderValue) ? Number(totalOrderValue.toFixed(2)) : null,
             site_labels: siteLabels,
             hot_discount_codes: discountCodeLabels,
+            primary_product_id: primaryProductId || null,
+            primary_product_name: primaryProductName || null,
+            primary_product_order_count: dominantProduct?.count || null,
+            primary_product_order_share: Number.isFinite(Number(dominantProduct?.share)) ? Number(dominantProduct.share) : null,
             sample_products: sampleProducts,
             sample_users: sampleUsers,
             order_refs: orderRefs,
@@ -1644,11 +2181,35 @@ async function runShopOrderRiskSweep(supabase, options = {}) {
             .map((alert) => normalizeText(alert?.payload?.discount_code).toUpperCase())
             .filter(Boolean)
     ));
-    const discountCodes = autoResponseDiscountCodes.length
-        ? await fetchDiscountCodesByCodes(supabase, autoResponseDiscountCodes, config)
-        : [];
+    const autoResponseUserIds = Array.from(new Set(
+        alerts
+            .filter((alert) => shouldAutoBanUser(alert, config))
+            .map((alert) => normalizeText(alert?.payload?.user_id))
+            .filter(Boolean)
+    ));
+    const autoResponseProductIds = Array.from(new Set(
+        alerts
+            .filter((alert) => shouldAutoSuspendProduct(alert, config))
+            .map((alert) => normalizeText(alert?.payload?.primary_product_id))
+            .filter(Boolean)
+    ));
+    const [discountCodes, blockedUsers, products] = await Promise.all([
+        autoResponseDiscountCodes.length
+            ? fetchDiscountCodesByCodes(supabase, autoResponseDiscountCodes, config)
+            : [],
+        autoResponseUserIds.length
+            ? fetchBlockedUsersByUserIds(supabase, autoResponseUserIds, config)
+            : [],
+        autoResponseProductIds.length
+            ? fetchProductsByIds(supabase, autoResponseProductIds, config)
+            : []
+    ]);
     const discountCodeContext = buildDiscountCodeContext(discountCodes);
-    const autoResponseResult = await applyCouponAutoResponses(supabase, alerts, discountCodeContext, config, { now: nowDate });
+    const blockedUserContext = buildBlockedUserContext(blockedUsers, { now: nowDate });
+    const productContext = buildProductContext(products);
+    const couponAutoResponseResult = await applyCouponAutoResponses(supabase, alerts, discountCodeContext, config, { now: nowDate });
+    const userBanAutoResponseResult = await applyUserBanAutoResponses(supabase, alerts, blockedUserContext, config, { now: nowDate });
+    const productSuspendAutoResponseResult = await applyProductSuspendAutoResponses(supabase, alerts, productContext, config, { now: nowDate });
     const recoveryAlerts = buildShopOrderRiskRecoveredAlerts(alerts, stateJobs, config, { now: nowDate });
 
     let queued = 0;
@@ -1745,11 +2306,15 @@ async function runShopOrderRiskSweep(supabase, options = {}) {
         recovered_skipped_no_channels: recoveredSkippedNoChannels,
         admin_notifications_created: adminNotificationsCreated,
         admin_notifications_skipped: adminNotificationsSkipped,
-        auto_response_attempted: autoResponseResult.attempted,
-        auto_response_applied: autoResponseResult.applied,
-        auto_response_already_inactive: autoResponseResult.already_inactive,
-        auto_response_not_found: autoResponseResult.not_found,
-        auto_response_failed: autoResponseResult.failed,
+        auto_response_attempted: couponAutoResponseResult.attempted + userBanAutoResponseResult.attempted + productSuspendAutoResponseResult.attempted,
+        auto_response_applied: couponAutoResponseResult.applied + userBanAutoResponseResult.applied + productSuspendAutoResponseResult.applied,
+        auto_response_already_inactive: couponAutoResponseResult.already_inactive + productSuspendAutoResponseResult.already_inactive,
+        auto_response_already_blocked: userBanAutoResponseResult.already_blocked,
+        auto_response_not_found: couponAutoResponseResult.not_found + productSuspendAutoResponseResult.not_found,
+        auto_response_failed: couponAutoResponseResult.failed + userBanAutoResponseResult.failed + productSuspendAutoResponseResult.failed,
+        auto_response_coupon_applied: couponAutoResponseResult.applied,
+        auto_response_user_ban_applied: userBanAutoResponseResult.applied,
+        auto_response_product_suspend_applied: productSuspendAutoResponseResult.applied,
         state_job_count: stateJobs.length,
         results
     };
