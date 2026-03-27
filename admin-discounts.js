@@ -156,7 +156,7 @@ const AdminDiscounts = {
                     return;
                 }
 
-                if (target === modal || target.closest('[data-admin-overlay-close="discount-generate-modal"]')) {
+                if (target === modal) {
                     event.preventDefault();
                     event.stopPropagation();
                     this.closeGenerateModal();
