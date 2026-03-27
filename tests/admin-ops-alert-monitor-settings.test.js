@@ -36,6 +36,7 @@ function createState(overrides = {}) {
     return {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
         jobs: [],
+        cases: [],
         runtimeConfig: {
             shop_order_risk: {
                 auto_response_enabled: true,
@@ -90,15 +91,28 @@ function applyRange(rows, range) {
 function createSupabaseStub(state) {
     return {
         from(table) {
-            if (table !== 'ops_alert_jobs') {
+            if (table !== 'ops_alert_jobs' && table !== 'shop_risk_cases') {
                 throw new Error(`Unexpected table access: ${table}`);
             }
 
             const queryState = {
                 filters: [],
                 order: null,
-                range: null
+                range: null,
+                maybeSingle: false
             };
+
+            function execute(rangeOverride = queryState.range) {
+                const sourceRows = table === 'ops_alert_jobs' ? (state.jobs || []) : (state.cases || []);
+                let rows = sortRows(applyFilters(sourceRows, queryState.filters), queryState.order);
+                if (rangeOverride) {
+                    rows = applyRange(rows, rangeOverride);
+                }
+                return {
+                    data: queryState.maybeSingle ? (rows[0] || null) : rows,
+                    error: null
+                };
+            }
 
             const query = {
                 select() {
@@ -119,11 +133,18 @@ function createSupabaseStub(state) {
                     };
                     return query;
                 },
+                maybeSingle() {
+                    queryState.maybeSingle = true;
+                    return query;
+                },
                 async range(from, to) {
-                    return {
-                        data: applyRange(sortRows(applyFilters(state.jobs || [], queryState.filters), queryState.order), { from, to }),
-                        error: null
-                    };
+                    return execute({ from, to });
+                },
+                then(resolve, reject) {
+                    return Promise.resolve(execute()).then(resolve, reject);
+                },
+                catch(reject) {
+                    return query.then(undefined, reject);
                 }
             };
 
@@ -367,6 +388,61 @@ test('ops alert monitor handler rejects non-GET methods', async () => {
         assert.equal(res.statusCode, 405);
         assert.equal(payload.success, false);
         assert.equal(payload.message, 'Method not allowed');
+    });
+});
+
+test('ops alert monitor handler merges shop risk case ownership and case summary into shop risk items', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('shop_order_risk_anomaly', {
+                id: 'shop-risk-case-1',
+                severity: 'critical',
+                title: '优惠码高频使用（FLASH0）',
+                content: '商城风控告警\n优惠码：FLASH0',
+                payload: {
+                    target_id: 'shop_order_risk:coupon:FLASH0',
+                    signal_type: 'discount_code_spike',
+                    discount_code: 'FLASH0',
+                    risk_level: 'critical',
+                    risk_score: 93,
+                    primary_action: 'disable-coupon',
+                    response_summary: '建议先停用优惠码并复核关联订单。'
+                },
+                created_at: hoursAgo(1)
+            })
+        ],
+        cases: [
+            {
+                target_id: 'shop_order_risk:coupon:FLASH0',
+                status: 'claimed',
+                owner_admin_id: 'admin-user-2',
+                owner_label: 'ops@example.com',
+                note: '已认领，正在核对近 24 小时关联订单。',
+                resolution: null,
+                last_action: 'claimed',
+                last_action_at: hoursAgo(0.6),
+                updated_at: hoursAgo(0.6)
+            }
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+
+        const shopRisk = payload.categories.find((item) => item.key === 'shop_risk');
+        assert.equal(shopRisk.items[0].case_status, 'claimed');
+        assert.equal(shopRisk.items[0].case_owner_label, 'ops@example.com');
+        assert.equal(shopRisk.items[0].case_note, '已认领，正在核对近 24 小时关联订单。');
+        assert.equal(shopRisk.case_summary.open, 0);
+        assert.equal(shopRisk.case_summary.claimed, 1);
+        assert.equal(shopRisk.case_summary.resolved, 0);
+        assert.equal(shopRisk.recent_threshold_hits[0].case_status, 'claimed');
+        assert.equal(shopRisk.recent_auto_responses.length, 0);
     });
 });
 
