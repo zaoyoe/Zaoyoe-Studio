@@ -271,7 +271,11 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillme
                 payload: {
                     target_id: 'shop_order_risk:coupon:FLASH0',
                     signal_type: 'discount_code_spike',
-                    discount_code: 'FLASH0'
+                    discount_code: 'FLASH0',
+                    risk_level: 'critical',
+                    risk_score: 94,
+                    primary_action: 'disable-coupon',
+                    response_summary: '建议立即停用优惠码 FLASH0，并复核最近命中订单。'
                 },
                 created_at: hoursAgo(1.5)
             })
@@ -314,6 +318,9 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillme
         assert.equal(shopRisk.critical_count, 1);
         assert.equal(shopRisk.items[0].reference_label, '优惠码');
         assert.equal(shopRisk.items[0].reference_value, 'FLASH0');
+        assert.equal(shopRisk.items[0].risk_level, 'critical');
+        assert.equal(shopRisk.items[0].risk_score, 94);
+        assert.equal(shopRisk.items[0].primary_action, 'disable-coupon');
     });
 });
 
@@ -391,5 +398,94 @@ test('ops alert monitor handler treats payment config incident recovery as a pay
         assert.equal(payments.active_count, 0);
         assert.equal(payments.latest_state, 'recovered');
         assert.equal(payments.latest_title, '支付配置事故已恢复');
+    });
+});
+
+test('ops alert monitor handler exposes shared login ip shop risk context', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('shop_order_risk_anomaly', {
+                id: 'shop-risk-shared-ip-1',
+                severity: 'critical',
+                title: '共享登录 IP 异常（203.0.113.88）',
+                content: '商城风控告警\n共享登录 IP：203.0.113.88',
+                payload: {
+                    target_id: 'shop_order_risk:shared_ip:203.0.113.88',
+                    signal_type: 'shared_login_ip_cluster',
+                    client_ip: '203.0.113.88',
+                    user_id: 'buyer-anchor-1',
+                    buyer_label: 'Alpha',
+                    risk_level: 'critical',
+                    risk_score: 91,
+                    primary_action: 'open-user-ban',
+                    response_summary: '建议先查看关联账号，再对风险锚点账号发起封禁处理。'
+                },
+                created_at: hoursAgo(1)
+            })
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+
+        const shopRisk = payload.categories.find((item) => item.key === 'shop_risk');
+        assert.equal(shopRisk.active_count, 1);
+        assert.equal(shopRisk.items[0].reference_label, '共享登录 IP');
+        assert.equal(shopRisk.items[0].reference_value, '203.0.113.88');
+        assert.equal(shopRisk.items[0].signal_type, 'shared_login_ip_cluster');
+        assert.equal(shopRisk.items[0].user_id, 'buyer-anchor-1');
+        assert.equal(shopRisk.items[0].risk_score, 91);
+        assert.equal(shopRisk.items[0].primary_action, 'open-user-ban');
+    });
+});
+
+test('ops alert monitor handler exposes shared login signature shop risk context', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('shop_order_risk_anomaly', {
+                id: 'shop-risk-signature-1',
+                severity: 'critical',
+                title: '共享登录签名异常（Chrome/124）',
+                content: '商城风控告警\n共享登录签名：203.0.113.88 · Mozilla/5.0 Chrome/124',
+                payload: {
+                    target_id: 'shop_order_risk:login_signature:abc123',
+                    signal_type: 'shared_login_signature_cluster',
+                    client_ip: '203.0.113.88',
+                    user_agent_summary: 'Mozilla/5.0 Chrome/124',
+                    login_signature_label: '203.0.113.88 · Mozilla/5.0 Chrome/124',
+                    user_id: 'buyer-anchor-2',
+                    buyer_label: 'Beta',
+                    risk_level: 'critical',
+                    risk_score: 95,
+                    primary_action: 'open-user-ban',
+                    response_summary: '建议优先核查关联账号与共用设备，再对风险锚点账号发起封禁处理。'
+                },
+                created_at: hoursAgo(1)
+            })
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+
+        const shopRisk = payload.categories.find((item) => item.key === 'shop_risk');
+        assert.equal(shopRisk.active_count, 1);
+        assert.equal(shopRisk.items[0].reference_label, '共享登录签名');
+        assert.equal(shopRisk.items[0].reference_value, '203.0.113.88 · Mozilla/5.0 Chrome/124');
+        assert.equal(shopRisk.items[0].signal_type, 'shared_login_signature_cluster');
+        assert.equal(shopRisk.items[0].user_id, 'buyer-anchor-2');
+        assert.equal(shopRisk.items[0].login_signature_label, '203.0.113.88 · Mozilla/5.0 Chrome/124');
+        assert.equal(shopRisk.items[0].risk_level, 'critical');
+        assert.equal(shopRisk.items[0].primary_action, 'open-user-ban');
     });
 });

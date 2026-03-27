@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const { normalizeOpsAlertsConfig } = require('../api/_lib/ops-alerts');
 const {
+    buildShopOrderRiskAnomalyAlerts,
     normalizeShopOrderRiskMonitorConfig,
     runShopOrderRiskSweep,
     __testUtils
@@ -51,6 +52,11 @@ function createQueryBuilder(executor) {
         },
         insert(payload) {
             state.mode = 'insert';
+            state.payload = payload;
+            return builder;
+        },
+        update(payload) {
+            state.mode = 'update';
             state.payload = payload;
             return builder;
         },
@@ -110,8 +116,10 @@ function createSupabaseStub(state = {}) {
     const orders = state.orders || [];
     const profiles = state.profiles || [];
     const entitlements = state.entitlements || [];
+    const loginHistory = state.loginHistory || [];
     const adminRoles = state.adminRoles || [];
     const systemNotifications = state.systemNotifications || [];
+    const discountCodes = state.discountCodes || [];
 
     return {
         from(table) {
@@ -162,6 +170,13 @@ function createSupabaseStub(state = {}) {
                     };
                 }
 
+                if (table === 'user_login_history' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(loginHistory, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
                 if (table === 'admin_roles' && query.mode === 'select') {
                     return {
                         data: applyRange(sortRows(applyFilters(adminRoles, query.filters), query.order), query.range),
@@ -190,6 +205,25 @@ function createSupabaseStub(state = {}) {
 
                     return {
                         data: query.single ? inserted[0] : inserted,
+                        error: null
+                    };
+                }
+
+                if (table === 'discount_codes' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(discountCodes, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'discount_codes' && query.mode === 'update') {
+                    const rows = applyFilters(discountCodes, query.filters);
+                    rows.forEach((row) => {
+                        Object.assign(row, query.payload || {});
+                    });
+
+                    return {
+                        data: query.single ? rows[0] || null : rows,
                         error: null
                     };
                 }
@@ -399,6 +433,271 @@ test('buildUserVelocityAlerts skips unlimited purchasers', () => {
     assert.equal(alerts.length, 0);
 });
 
+test('buildSharedLoginIpAlerts flags clustered orders from the same login ip', () => {
+    const alerts = __testUtils.buildSharedLoginIpAlerts([
+        {
+            id: 'ip-1',
+            user_id: 'buyer-1',
+            site: 'cn',
+            snapshot_product_name: 'Prompt Pro 年卡',
+            item_count: 2,
+            total_price: 19.9,
+            created_at: '2026-03-27T10:00:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'ip-2',
+            user_id: 'buyer-2',
+            site: 'cn',
+            snapshot_product_name: 'Apple 资格号',
+            item_count: 2,
+            total_price: 30,
+            created_at: '2026-03-27T10:04:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'ip-3',
+            user_id: 'buyer-3',
+            site: 'intl',
+            snapshot_product_name: '卡密周卡',
+            item_count: 2,
+            total_price: 9.9,
+            created_at: '2026-03-27T10:06:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'ip-4',
+            user_id: 'buyer-1',
+            site: 'cn',
+            snapshot_product_name: 'Prompt Pro 年卡',
+            item_count: 2,
+            total_price: 19.9,
+            created_at: '2026-03-27T10:08:00.000Z',
+            refund_status: 'none'
+        }
+    ], {
+        byId: new Map([
+            ['buyer-1', { id: 'buyer-1', display_name: 'Alpha', last_login_ip: '203.0.113.88' }],
+            ['buyer-2', { id: 'buyer-2', display_name: 'Beta', last_login_ip: '203.0.113.88' }],
+            ['buyer-3', { id: 'buyer-3', display_name: 'Gamma', last_login_ip: '203.0.113.88' }]
+        ])
+    }, normalizeShopOrderRiskMonitorConfig(), {
+        now: '2026-03-27T10:10:00.000Z'
+    });
+
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].payload.signal_type, 'shared_login_ip_cluster');
+    assert.equal(alerts[0].payload.client_ip, '203.0.113.88');
+    assert.equal(alerts[0].payload.order_count, 4);
+    assert.equal(alerts[0].payload.distinct_user_count, 3);
+    assert.equal(alerts[0].payload.total_quantity, 8);
+    assert.match(alerts[0].content, /共享登录 IP/);
+});
+
+test('buildSharedLoginSignatureAlerts flags clustered orders from the same ip and device signature', () => {
+    const alerts = __testUtils.buildSharedLoginSignatureAlerts([
+        {
+            id: 'sig-1',
+            user_id: 'buyer-1',
+            site: 'cn',
+            snapshot_product_name: 'Prompt Pro 年卡',
+            item_count: 2,
+            total_price: 19.9,
+            created_at: '2026-03-27T10:00:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'sig-2',
+            user_id: 'buyer-2',
+            site: 'cn',
+            snapshot_product_name: 'Apple 资格号',
+            item_count: 2,
+            total_price: 30,
+            created_at: '2026-03-27T10:04:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'sig-3',
+            user_id: 'buyer-3',
+            site: 'intl',
+            snapshot_product_name: '卡密周卡',
+            item_count: 2,
+            total_price: 9.9,
+            created_at: '2026-03-27T10:06:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'sig-4',
+            user_id: 'buyer-1',
+            site: 'cn',
+            snapshot_product_name: 'Prompt Pro 年卡',
+            item_count: 2,
+            total_price: 19.9,
+            created_at: '2026-03-27T10:08:00.000Z',
+            refund_status: 'none'
+        }
+    ], {
+        byId: new Map([
+            ['buyer-1', { id: 'buyer-1', display_name: 'Alpha' }],
+            ['buyer-2', { id: 'buyer-2', display_name: 'Beta' }],
+            ['buyer-3', { id: 'buyer-3', display_name: 'Gamma' }]
+        ])
+    }, {
+        latestByUser: new Map([
+            ['buyer-1', { user_id: 'buyer-1', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:01:00.000Z' }],
+            ['buyer-2', { user_id: 'buyer-2', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:02:00.000Z' }],
+            ['buyer-3', { user_id: 'buyer-3', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:03:00.000Z' }]
+        ])
+    }, normalizeShopOrderRiskMonitorConfig(), {
+        now: '2026-03-27T10:10:00.000Z'
+    });
+
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].payload.signal_type, 'shared_login_signature_cluster');
+    assert.equal(alerts[0].payload.client_ip, '203.0.113.88');
+    assert.match(alerts[0].payload.login_signature_label, /203\.0\.113\.88/);
+    assert.equal(alerts[0].payload.order_count, 4);
+    assert.equal(alerts[0].payload.distinct_user_count, 3);
+    assert.equal(alerts[0].payload.total_quantity, 8);
+    assert.match(alerts[0].content, /共享登录签名/);
+});
+
+test('buildShopOrderRiskAnomalyAlerts enriches risk score and recommended actions', () => {
+    const alerts = buildShopOrderRiskAnomalyAlerts([
+        {
+            id: 'coupon-1',
+            user_id: 'buyer-1',
+            site: 'cn',
+            snapshot_product_name: 'Prompt Pro 年卡',
+            price_paid: 0,
+            total_price: 19.9,
+            item_count: 2,
+            discount_code: 'FLASH0',
+            created_at: '2026-03-27T10:00:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'coupon-2',
+            user_id: 'buyer-2',
+            site: 'cn',
+            snapshot_product_name: 'Prompt Pro 年卡',
+            price_paid: 0,
+            total_price: 19.9,
+            item_count: 2,
+            discount_code: 'FLASH0',
+            created_at: '2026-03-27T10:01:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'coupon-3',
+            user_id: 'buyer-3',
+            site: 'intl',
+            snapshot_product_name: '卡密周卡',
+            price_paid: 0,
+            total_price: 9.9,
+            item_count: 2,
+            discount_code: 'FLASH0',
+            created_at: '2026-03-27T10:02:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'coupon-4',
+            user_id: 'buyer-1',
+            site: 'cn',
+            snapshot_product_name: '卡密周卡',
+            price_paid: 0,
+            total_price: 9.9,
+            item_count: 2,
+            discount_code: 'FLASH0',
+            created_at: '2026-03-27T10:03:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'bulk-1',
+            user_id: 'buyer-bulk',
+            site: 'cn',
+            snapshot_product_name: 'Apple 资格号',
+            price_paid: 30,
+            total_price: 30,
+            item_count: 2,
+            discount_code: '',
+            created_at: '2026-03-27T10:04:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'bulk-2',
+            user_id: 'buyer-bulk',
+            site: 'cn',
+            snapshot_product_name: 'Apple 资格号',
+            price_paid: 30,
+            total_price: 30,
+            item_count: 2,
+            discount_code: '',
+            created_at: '2026-03-27T10:05:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'bulk-3',
+            user_id: 'buyer-bulk',
+            site: 'cn',
+            snapshot_product_name: 'Apple 资格号',
+            price_paid: 30,
+            total_price: 30,
+            item_count: 2,
+            discount_code: '',
+            created_at: '2026-03-27T10:06:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'bulk-4',
+            user_id: 'buyer-bulk',
+            site: 'cn',
+            snapshot_product_name: 'Apple 资格号',
+            price_paid: 30,
+            total_price: 30,
+            item_count: 2,
+            discount_code: '',
+            created_at: '2026-03-27T10:07:00.000Z',
+            refund_status: 'none'
+        }
+    ], {
+        profilesContext: {
+            byId: new Map([
+                ['buyer-1', { id: 'buyer-1', display_name: 'Alpha', last_login_ip: '203.0.113.88' }],
+                ['buyer-2', { id: 'buyer-2', display_name: 'Beta', last_login_ip: '203.0.113.88' }],
+                ['buyer-3', { id: 'buyer-3', display_name: 'Gamma', last_login_ip: '203.0.113.88' }],
+                ['buyer-bulk', { id: 'buyer-bulk', display_name: 'BulkBuyer', last_login_ip: '198.51.100.30' }]
+            ])
+        },
+        entitlementContext: {
+            unlimitedUserIds: new Set()
+        },
+        loginHistoryContext: {
+            latestByUser: new Map([
+                ['buyer-1', { user_id: 'buyer-1', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:01:00.000Z' }],
+                ['buyer-2', { user_id: 'buyer-2', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:02:00.000Z' }],
+                ['buyer-3', { user_id: 'buyer-3', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:03:00.000Z' }]
+            ])
+        }
+    }, normalizeShopOrderRiskMonitorConfig(), {
+        now: '2026-03-27T10:10:00.000Z'
+    });
+
+    const couponAlert = alerts.find((alert) => alert.payload.signal_type === 'discount_code_spike');
+    const velocityAlert = alerts.find((alert) => alert.payload.signal_type === 'user_velocity');
+    const topAlert = alerts[0];
+
+    assert.ok(couponAlert);
+    assert.ok(velocityAlert);
+    assert.equal(typeof topAlert.payload.risk_score, 'number');
+    assert.ok(topAlert.payload.risk_score >= 85);
+    assert.equal(couponAlert.payload.primary_action, 'disable-coupon');
+    assert.equal(couponAlert.payload.discount_code, 'FLASH0');
+    assert.match(couponAlert.payload.response_summary, /停用优惠码 FLASH0/);
+    assert.equal(velocityAlert.payload.primary_action, 'open-user-ban');
+    assert.match(velocityAlert.payload.response_summary, /封禁/);
+});
+
 test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async () => {
     const state = {
         jobs: [],
@@ -410,7 +709,7 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
                 snapshot_product_name: 'Prompt Pro 年卡',
                 price_paid: 0,
                 total_price: 19.9,
-                item_count: 1,
+                item_count: 2,
                 discount_code: 'FLASH0',
                 discount_amount: 19.9,
                 created_at: '2026-03-27T10:00:00.000Z',
@@ -423,7 +722,7 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
                 snapshot_product_name: 'Prompt Pro 年卡',
                 price_paid: 0,
                 total_price: 19.9,
-                item_count: 1,
+                item_count: 2,
                 discount_code: 'FLASH0',
                 discount_amount: 19.9,
                 created_at: '2026-03-27T10:01:00.000Z',
@@ -436,7 +735,7 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
                 snapshot_product_name: '卡密周卡',
                 price_paid: 0,
                 total_price: 9.9,
-                item_count: 1,
+                item_count: 2,
                 discount_code: 'FLASH0',
                 discount_amount: 9.9,
                 created_at: '2026-03-27T10:02:00.000Z',
@@ -449,7 +748,7 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
                 snapshot_product_name: '卡密周卡',
                 price_paid: 0,
                 total_price: 9.9,
-                item_count: 1,
+                item_count: 2,
                 discount_code: 'FLASH0',
                 discount_amount: 9.9,
                 created_at: '2026-03-27T10:03:00.000Z',
@@ -509,12 +808,21 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
             }
         ],
         profiles: [
-            { id: 'buyer-1', display_name: 'Alpha' },
-            { id: 'buyer-2', display_name: 'Beta' },
-            { id: 'buyer-3', display_name: 'Gamma' },
-            { id: 'buyer-bulk', display_name: 'BulkBuyer' }
+            { id: 'buyer-1', display_name: 'Alpha', last_login_ip: '203.0.113.88' },
+            { id: 'buyer-2', display_name: 'Beta', last_login_ip: '203.0.113.88' },
+            { id: 'buyer-3', display_name: 'Gamma', last_login_ip: '203.0.113.88' },
+            { id: 'buyer-bulk', display_name: 'BulkBuyer', last_login_ip: '198.51.100.30' }
         ],
-        entitlements: []
+        loginHistory: [
+            { user_id: 'buyer-1', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:01:00.000Z', site: 'cn' },
+            { user_id: 'buyer-2', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:02:00.000Z', site: 'cn' },
+            { user_id: 'buyer-3', ip_address: '203.0.113.88', user_agent: 'Mozilla/5.0 Chrome/124', created_at: '2026-03-27T10:03:00.000Z', site: 'intl' },
+            { user_id: 'buyer-bulk', ip_address: '198.51.100.30', user_agent: 'Mozilla/5.0 Safari/17', created_at: '2026-03-27T10:04:00.000Z', site: 'cn' }
+        ],
+        entitlements: [],
+        discountCodes: [
+            { code: 'FLASH0', is_active: true }
+        ]
     };
     const supabase = createSupabaseStub(state);
     const runtime = createOpsRuntime();
@@ -524,24 +832,39 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
         now: '2026-03-27T10:10:00.000Z'
     });
 
-    assert.equal(first.anomaly_count, 3);
+    assert.equal(first.anomaly_count, 5);
     assert.equal(first.discount_code_spike_count, 1);
     assert.equal(first.zero_total_cluster_count, 1);
     assert.equal(first.user_velocity_count, 1);
-    assert.equal(first.queued, 3);
+    assert.equal(first.shared_login_ip_cluster_count, 1);
+    assert.equal(first.shared_login_signature_cluster_count, 1);
+    assert.equal(first.queued, 5);
     assert.equal(first.deduped, 0);
-    assert.equal(state.jobs.length, 3);
+    assert.equal(first.auto_response_attempted, 1);
+    assert.equal(first.auto_response_applied, 1);
+    assert.equal(first.auto_response_failed, 0);
+    assert.equal(state.discountCodes[0].is_active, false);
+    assert.equal(state.jobs.length, 5);
     assert.equal(state.jobs.every((job) => job.alert_type === 'shop_order_risk_anomaly'), true);
+    assert.equal(state.jobs.every((job) => typeof job.payload?.risk_score === 'number'), true);
+    assert.equal(state.jobs.every((job) => typeof job.payload?.response_summary === 'string' && job.payload.response_summary.length > 0), true);
+    const couponRiskJobs = state.jobs.filter((job) => String(job.payload?.discount_code || '').toUpperCase() === 'FLASH0');
+    assert.equal(couponRiskJobs.length >= 1, true);
+    assert.equal(couponRiskJobs.every((job) => typeof job.payload?.auto_response_summary === 'string' && job.payload.auto_response_summary.includes('FLASH0')), true);
+    assert.equal(couponRiskJobs.every((job) => job.payload?.auto_response_action === 'disable-coupon'), true);
 
     const second = await runShopOrderRiskSweep(supabase, {
         runtime,
         now: '2026-03-27T10:12:00.000Z'
     });
 
-    assert.equal(second.anomaly_count, 3);
+    assert.equal(second.anomaly_count, 5);
     assert.equal(second.queued, 0);
-    assert.equal(second.deduped, 3);
-    assert.equal(state.jobs.length, 3);
+    assert.equal(second.deduped, 5);
+    assert.equal(second.auto_response_attempted, 1);
+    assert.equal(second.auto_response_applied, 0);
+    assert.equal(second.auto_response_already_inactive, 1);
+    assert.equal(state.jobs.length, 5);
 });
 
 test('runShopOrderRiskSweep enqueues recovery notices and writes admin notifications once', async () => {
@@ -557,6 +880,13 @@ test('runShopOrderRiskSweep enqueues recovery notices and writes admin notificat
                     target_id: 'shop_order_risk:coupon:FLASH0',
                     signal_type: 'discount_code_spike',
                     discount_code: 'FLASH0',
+                    risk_score: 94,
+                    risk_level: 'critical',
+                    primary_action: 'disable-coupon',
+                    auto_response_action: 'disable-coupon',
+                    auto_response_status: 'applied',
+                    auto_response_summary: '系统已自动停用优惠码 FLASH0，请继续复核最近命中订单与关联账号。',
+                    response_summary: '建议立即停用优惠码 FLASH0，并复核最近命中订单。',
                     order_count: 4,
                     distinct_user_count: 3,
                     zero_total_count: 4,
@@ -589,6 +919,10 @@ test('runShopOrderRiskSweep enqueues recovery notices and writes admin notificat
     assert.equal(state.jobs.length, 2);
     assert.equal(state.jobs[1].alert_type, 'shop_order_risk_recovered');
     assert.deepEqual(state.jobs[1].channels, ['feishu']);
+    assert.equal(state.jobs[1].payload.previous_risk_level, 'critical');
+    assert.equal(state.jobs[1].payload.previous_primary_action, 'disable-coupon');
+    assert.equal(state.jobs[1].payload.previous_auto_response_status, 'applied');
+    assert.match(state.jobs[1].payload.previous_auto_response_summary, /FLASH0/);
     assert.equal(state.systemNotifications.length, 2);
     assert.match(state.systemNotifications[0].title, /风险已恢复/);
 

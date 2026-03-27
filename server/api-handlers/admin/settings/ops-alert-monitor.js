@@ -138,13 +138,16 @@ function getShopOrderRiskSignalLabel(value) {
     const labelMap = {
         discount_code_spike: '优惠码高频使用',
         zero_total_cluster: '0 价订单聚集',
-        user_velocity: '账号短时扫货'
+        user_velocity: '账号短时扫货',
+        shared_login_ip_cluster: '共享登录 IP 多账号下单',
+        shared_login_signature_cluster: '共享登录签名多账号下单'
     };
     return labelMap[normalized] || normalized;
 }
 
 function getAlertReference(job = {}) {
     const payload = normalizePayload(job.payload);
+    const signalType = normalizeText(payload.signal_type, 120).toLowerCase();
 
     if (normalizeText(payload.provider_order_no, 160)) {
         return {
@@ -168,6 +171,24 @@ function getAlertReference(job = {}) {
         return {
             label: '优惠码',
             value: normalizeText(payload.discount_code, 160)
+        };
+    }
+    if (signalType === 'shared_login_signature_cluster' && normalizeText(payload.login_signature_label, 160)) {
+        return {
+            label: '共享登录签名',
+            value: normalizeText(payload.login_signature_label, 160)
+        };
+    }
+    if (normalizeText(payload.client_ip, 160)) {
+        return {
+            label: '共享登录 IP',
+            value: normalizeText(payload.client_ip, 160)
+        };
+    }
+    if (normalizeText(payload.login_signature_label, 160)) {
+        return {
+            label: '共享登录签名',
+            value: normalizeText(payload.login_signature_label, 160)
         };
     }
     if (normalizeText(payload.buyer_label, 160)) {
@@ -202,6 +223,7 @@ function getAlertReference(job = {}) {
 }
 
 function buildAlertItem(job = {}) {
+    const payload = normalizePayload(job.payload);
     const reference = getAlertReference(job);
     return {
         id: normalizeText(job.id, 160),
@@ -212,7 +234,21 @@ function buildAlertItem(job = {}) {
         created_at: normalizeText(job.created_at, 80) || null,
         target_id: getAlertTargetId(job),
         reference_label: reference.label,
-        reference_value: reference.value
+        reference_value: reference.value,
+        signal_type: normalizeText(payload.signal_type, 120) || null,
+        discount_code: normalizeText(payload.discount_code, 160) || null,
+        buyer_label: normalizeText(payload.buyer_label, 160) || null,
+        user_id: normalizeText(payload.user_id, 160) || null,
+        client_ip: normalizeText(payload.client_ip, 160) || null,
+        risk_level: normalizeText(payload.risk_level, 40) || null,
+        risk_score: Number.isFinite(Number(payload.risk_score)) ? Math.max(0, Math.round(Number(payload.risk_score || 0))) : null,
+        primary_action: normalizeText(payload.primary_action, 80) || null,
+        response_summary: normalizeText(payload.response_summary, 240) || null,
+        auto_response_action: normalizeText(payload.auto_response_action, 80) || null,
+        auto_response_status: normalizeText(payload.auto_response_status, 80) || null,
+        auto_response_summary: normalizeText(payload.auto_response_summary, 240) || null,
+        login_signature_label: normalizeText(payload.login_signature_label, 160) || null,
+        user_agent_summary: normalizeText(payload.user_agent_summary, 160) || null
     };
 }
 
