@@ -636,6 +636,15 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-refresh-ops-alert-monitor':
                 window.refreshOpsAlertMonitorPanel?.();
                 break;
+            case 'settings-batch-claim-ops-alert-monitor':
+                window.handleOpsAlertMonitorBatchCaseAction?.('claim');
+                break;
+            case 'settings-batch-note-ops-alert-monitor':
+                window.handleOpsAlertMonitorBatchCaseAction?.('add_note');
+                break;
+            case 'settings-batch-resolve-ops-alert-monitor':
+                window.handleOpsAlertMonitorBatchCaseAction?.('resolve');
+                break;
             case 'settings-copy-ops-alert-monitor-checklist':
                 window.copyOpsAlertMonitorChecklist?.();
                 break;

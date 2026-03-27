@@ -1866,6 +1866,15 @@
                                             </div>
                                         </div>
                                         <div class="ops-alert-monitor-batch-actions" id="opsAlertMonitorBatchActions">
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-batch-claim-ops-alert-monitor">
+                                                <i class="fas fa-user-check"></i> 当前筛选指派给我
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-batch-note-ops-alert-monitor">
+                                                <i class="fas fa-note-sticky"></i> 当前筛选批量备注
+                                            </button>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-batch-resolve-ops-alert-monitor">
+                                                <i class="fas fa-circle-check"></i> 当前筛选批量关闭
+                                            </button>
                                             <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-copy-ops-alert-monitor-checklist">
                                                 <i class="fas fa-clipboard-check"></i> 复制当前筛选清单
                                             </button>
@@ -2386,8 +2395,8 @@
                                 <i class="fas fa-shield-halved"></i>
                             </div>
                             <div class="admin-shop-risk-case-modal__copy">
-                                <h2 id="shopRiskCaseComposerTitle">记录商城风控备注</h2>
-                                <p id="shopRiskCaseComposerSummary">商城风控案例</p>
+                                <h2 id="shopRiskCaseComposerTitle">处理集中告警</h2>
+                                <p id="shopRiskCaseComposerSummary">集中告警记录</p>
                             </div>
                             <button type="button" class="modal-close-btn" data-admin-action="settings-close-shop-risk-case-modal" aria-label="关闭">
                                 <i class="fas fa-times"></i>
@@ -2395,7 +2404,7 @@
                         </div>
                         <form id="shopRiskCaseComposerForm" class="admin-shop-risk-case-modal__form">
                             <div class="admin-shop-risk-case-modal__note" id="shopRiskCaseComposerDescription">
-                                记录调查进展、交接说明或关闭结论。
+                                记录处理备注、交接说明或关闭结论。
                             </div>
                             <div class="admin-shop-risk-case-modal__field">
                                 <label for="shopRiskCaseComposerTextarea" id="shopRiskCaseComposerLabel">备注内容</label>

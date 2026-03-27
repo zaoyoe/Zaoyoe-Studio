@@ -183,6 +183,10 @@
             await window.handleCreateExperiment?.(event);
         });
 
+        bindSubmit('shopRiskCaseComposerForm', async () => {
+            await window.submitOpsAlertCaseComposer?.();
+        });
+
         const discountOverlay = document.getElementById('discountGenerateModal');
         if (discountOverlay) {
             discountOverlay.addEventListener('click', (event) => {
