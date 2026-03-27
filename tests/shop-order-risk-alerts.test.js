@@ -60,6 +60,11 @@ function createQueryBuilder(executor) {
             state.payload = payload;
             return builder;
         },
+        upsert(payload) {
+            state.mode = 'upsert';
+            state.payload = payload;
+            return builder;
+        },
         single() {
             state.single = true;
             return builder;
@@ -120,6 +125,9 @@ function createSupabaseStub(state = {}) {
     const adminRoles = state.adminRoles || [];
     const systemNotifications = state.systemNotifications || [];
     const discountCodes = state.discountCodes || [];
+    const blockedUsers = state.blockedUsers || [];
+    const blockHistory = state.blockHistory || [];
+    const shopProducts = state.shopProducts || [];
 
     return {
         from(table) {
@@ -218,6 +226,69 @@ function createSupabaseStub(state = {}) {
 
                 if (table === 'discount_codes' && query.mode === 'update') {
                     const rows = applyFilters(discountCodes, query.filters);
+                    rows.forEach((row) => {
+                        Object.assign(row, query.payload || {});
+                    });
+
+                    return {
+                        data: query.single ? rows[0] || null : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'blocked_users' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(blockedUsers, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'blocked_users' && query.mode === 'upsert') {
+                    const payload = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    const upserted = payload.map((row) => {
+                        const existingRow = blockedUsers.find((item) => item.user_id === row.user_id && item.scope === row.scope);
+                        if (existingRow) {
+                            Object.assign(existingRow, row);
+                            return { ...existingRow };
+                        }
+                        const insertedRow = { ...row };
+                        blockedUsers.push(insertedRow);
+                        return insertedRow;
+                    });
+
+                    return {
+                        data: query.single ? upserted[0] : upserted,
+                        error: null
+                    };
+                }
+
+                if (table === 'block_history' && query.mode === 'insert') {
+                    const payload = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    const inserted = payload.map((row, index) => ({
+                        id: row.id || `block-history-${blockHistory.length + index + 1}`,
+                        created_at: row.created_at || new Date().toISOString(),
+                        ...row
+                    }));
+
+                    inserted.forEach((row) => {
+                        blockHistory.push({ ...row });
+                    });
+
+                    return {
+                        data: query.single ? inserted[0] : inserted,
+                        error: null
+                    };
+                }
+
+                if (table === 'shop_products' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(shopProducts, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'shop_products' && query.mode === 'update') {
+                    const rows = applyFilters(shopProducts, query.filters);
                     rows.forEach((row) => {
                         Object.assign(row, query.payload || {});
                     });
@@ -865,6 +936,221 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
     assert.equal(second.auto_response_applied, 0);
     assert.equal(second.auto_response_already_inactive, 1);
     assert.equal(state.jobs.length, 5);
+});
+
+test('runShopOrderRiskSweep auto-bans extreme user velocity anomalies', async () => {
+    const state = {
+        jobs: [],
+        orders: [
+            {
+                id: 'velocity-1',
+                user_id: 'buyer-bulk-risk',
+                site: 'cn',
+                snapshot_product_name: 'Apple 资格号',
+                price_paid: 60,
+                total_price: 60,
+                item_count: 2,
+                discount_code: '',
+                discount_amount: 0,
+                created_at: '2026-03-27T10:00:00.000Z',
+                refund_status: 'none'
+            },
+            {
+                id: 'velocity-2',
+                user_id: 'buyer-bulk-risk',
+                site: 'cn',
+                snapshot_product_name: 'Facebook 资格号',
+                price_paid: 60,
+                total_price: 60,
+                item_count: 2,
+                discount_code: '',
+                discount_amount: 0,
+                created_at: '2026-03-27T10:01:00.000Z',
+                refund_status: 'none'
+            },
+            {
+                id: 'velocity-3',
+                user_id: 'buyer-bulk-risk',
+                site: 'intl',
+                snapshot_product_name: 'Apple 资格号',
+                price_paid: 60,
+                total_price: 60,
+                item_count: 2,
+                discount_code: '',
+                discount_amount: 0,
+                created_at: '2026-03-27T10:02:00.000Z',
+                refund_status: 'none'
+            },
+            {
+                id: 'velocity-4',
+                user_id: 'buyer-bulk-risk',
+                site: 'intl',
+                snapshot_product_name: 'Facebook 资格号',
+                price_paid: 60,
+                total_price: 60,
+                item_count: 2,
+                discount_code: '',
+                discount_amount: 0,
+                created_at: '2026-03-27T10:03:00.000Z',
+                refund_status: 'none'
+            },
+            {
+                id: 'velocity-5',
+                user_id: 'buyer-bulk-risk',
+                site: 'cn',
+                snapshot_product_name: 'Google 资格号',
+                price_paid: 60,
+                total_price: 60,
+                item_count: 2,
+                discount_code: '',
+                discount_amount: 0,
+                created_at: '2026-03-27T10:04:00.000Z',
+                refund_status: 'none'
+            },
+            {
+                id: 'velocity-6',
+                user_id: 'buyer-bulk-risk',
+                site: 'intl',
+                snapshot_product_name: 'Google 资格号',
+                price_paid: 60,
+                total_price: 60,
+                item_count: 2,
+                discount_code: '',
+                discount_amount: 0,
+                created_at: '2026-03-27T10:05:00.000Z',
+                refund_status: 'none'
+            }
+        ],
+        profiles: [
+            { id: 'buyer-bulk-risk', display_name: 'RiskBuyer', last_login_ip: '198.51.100.30' }
+        ],
+        entitlements: [],
+        blockedUsers: [],
+        blockHistory: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime();
+
+    const result = await runShopOrderRiskSweep(supabase, {
+        runtime,
+        now: '2026-03-27T10:10:00.000Z'
+    });
+
+    assert.equal(result.anomaly_count, 1);
+    assert.equal(result.user_velocity_count, 1);
+    assert.equal(result.auto_response_attempted, 1);
+    assert.equal(result.auto_response_applied, 1);
+    assert.equal(result.auto_response_user_ban_applied, 1);
+    assert.equal(result.auto_response_failed, 0);
+    assert.equal(state.blockedUsers.length, 1);
+    assert.equal(state.blockedUsers[0].user_id, 'buyer-bulk-risk');
+    assert.equal(state.blockedUsers[0].scope, 'all');
+    assert.match(state.blockedUsers[0].reason, /商城风控自动封禁/);
+    assert.ok(Date.parse(state.blockedUsers[0].expires_at) > Date.parse('2026-03-27T10:10:00.000Z'));
+    assert.equal(state.blockHistory.length, 1);
+    assert.equal(state.blockHistory[0].user_id, 'buyer-bulk-risk');
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].payload.signal_type, 'user_velocity');
+    assert.equal(state.jobs[0].payload.auto_response_action, 'ban-user');
+    assert.equal(state.jobs[0].payload.auto_response_status, 'applied');
+    assert.equal(state.jobs[0].payload.auto_response_target, 'buyer-bulk-risk');
+    assert.match(state.jobs[0].payload.auto_response_summary, /自动封禁账号 RiskBuyer/);
+});
+
+test('runShopOrderRiskSweep auto-suspends dominant zero-total products', async () => {
+    const state = {
+        jobs: [],
+        orders: [
+            {
+                id: 'zero-1',
+                user_id: 'buyer-1',
+                product_id: 'product-risk',
+                site: 'cn',
+                snapshot_product_name: '高风险资格号',
+                price_paid: 0,
+                total_price: 80,
+                item_count: 1,
+                discount_code: '',
+                discount_amount: 80,
+                created_at: '2026-03-27T10:00:00.000Z',
+                refund_status: 'none'
+            },
+            {
+                id: 'zero-2',
+                user_id: 'buyer-2',
+                product_id: 'product-risk',
+                site: 'cn',
+                snapshot_product_name: '高风险资格号',
+                price_paid: 0,
+                total_price: 80,
+                item_count: 1,
+                discount_code: '',
+                discount_amount: 80,
+                created_at: '2026-03-27T10:01:00.000Z',
+                refund_status: 'none'
+            },
+            {
+                id: 'zero-3',
+                user_id: 'buyer-3',
+                product_id: 'product-risk',
+                site: 'intl',
+                snapshot_product_name: '高风险资格号',
+                price_paid: 0,
+                total_price: 80,
+                item_count: 1,
+                discount_code: '',
+                discount_amount: 80,
+                created_at: '2026-03-27T10:02:00.000Z',
+                refund_status: 'none'
+            },
+            {
+                id: 'zero-4',
+                user_id: 'buyer-4',
+                product_id: 'product-risk',
+                site: 'intl',
+                snapshot_product_name: '高风险资格号',
+                price_paid: 0,
+                total_price: 80,
+                item_count: 1,
+                discount_code: '',
+                discount_amount: 80,
+                created_at: '2026-03-27T10:03:00.000Z',
+                refund_status: 'none'
+            }
+        ],
+        profiles: [
+            { id: 'buyer-1', display_name: 'Alpha', last_login_ip: '203.0.113.11' },
+            { id: 'buyer-2', display_name: 'Beta', last_login_ip: '203.0.113.12' },
+            { id: 'buyer-3', display_name: 'Gamma', last_login_ip: '203.0.113.13' },
+            { id: 'buyer-4', display_name: 'Delta', last_login_ip: '203.0.113.14' }
+        ],
+        entitlements: [],
+        shopProducts: [
+            { id: 'product-risk', name: '高风险资格号', is_active: true }
+        ]
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime();
+
+    const result = await runShopOrderRiskSweep(supabase, {
+        runtime,
+        now: '2026-03-27T10:10:00.000Z'
+    });
+
+    assert.equal(result.anomaly_count, 1);
+    assert.equal(result.zero_total_cluster_count, 1);
+    assert.equal(result.auto_response_attempted, 1);
+    assert.equal(result.auto_response_applied, 1);
+    assert.equal(result.auto_response_product_suspend_applied, 1);
+    assert.equal(result.auto_response_failed, 0);
+    assert.equal(state.shopProducts[0].is_active, false);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].payload.signal_type, 'zero_total_cluster');
+    assert.equal(state.jobs[0].payload.primary_product_id, 'product-risk');
+    assert.equal(state.jobs[0].payload.auto_response_action, 'suspend-product');
+    assert.equal(state.jobs[0].payload.auto_response_status, 'applied');
+    assert.equal(state.jobs[0].payload.auto_response_target, 'product-risk');
+    assert.match(state.jobs[0].payload.auto_response_summary, /自动下架商品 高风险资格号/);
 });
 
 test('runShopOrderRiskSweep enqueues recovery notices and writes admin notifications once', async () => {

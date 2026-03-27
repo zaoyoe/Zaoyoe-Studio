@@ -2691,7 +2691,12 @@ function getOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
         };
     }
 
-    if (primaryAction === 'open-user-ban' && item.user_id) {
+    if (
+        primaryAction === 'open-user-ban'
+        && item.user_id
+        && autoResponseStatus !== 'applied'
+        && autoResponseStatus !== 'already_blocked'
+    ) {
         return {
             action: 'open-user-ban',
             label: '发起封禁处理',
