@@ -51,6 +51,24 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         auto_ban_user_duration_days: 7,
         auto_suspend_product_min_risk_score: 97
     }),
+    customer_chat_message: Object.freeze({
+        enabled: true,
+        sweep_interval_ms: 60 * 1000,
+        lookback_minutes: 15,
+        dedupe_window_minutes: 12 * 60
+    }),
+    shop_purchase_success: Object.freeze({
+        enabled: true,
+        sweep_interval_ms: 2 * 60 * 1000,
+        lookback_minutes: 30,
+        dedupe_window_minutes: 24 * 60
+    }),
+    wallet_recharge_success: Object.freeze({
+        enabled: true,
+        sweep_interval_ms: 2 * 60 * 1000,
+        lookback_minutes: 30,
+        dedupe_window_minutes: 24 * 60
+    }),
     shop_inventory: Object.freeze({
         enabled: true,
         low_stock_threshold: 5,
@@ -164,6 +182,24 @@ function cloneDefaultConfig() {
             auto_ban_user_duration_days: DEFAULT_OPS_ALERTS_CONFIG.shop_order_risk.auto_ban_user_duration_days,
             auto_suspend_product_min_risk_score: DEFAULT_OPS_ALERTS_CONFIG.shop_order_risk.auto_suspend_product_min_risk_score
         },
+        customer_chat_message: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.enabled,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.sweep_interval_ms,
+            lookback_minutes: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.lookback_minutes,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.dedupe_window_minutes
+        },
+        shop_purchase_success: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.enabled,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.sweep_interval_ms,
+            lookback_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.lookback_minutes,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.dedupe_window_minutes
+        },
+        wallet_recharge_success: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.enabled,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.sweep_interval_ms,
+            lookback_minutes: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.lookback_minutes,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.dedupe_window_minutes
+        },
         shop_inventory: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.enabled,
             low_stock_threshold: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.low_stock_threshold,
@@ -190,6 +226,15 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         : {};
     const shopOrderRiskConfig = source.shop_order_risk && typeof source.shop_order_risk === 'object'
         ? source.shop_order_risk
+        : {};
+    const customerChatMessageConfig = source.customer_chat_message && typeof source.customer_chat_message === 'object'
+        ? source.customer_chat_message
+        : {};
+    const shopPurchaseSuccessConfig = source.shop_purchase_success && typeof source.shop_purchase_success === 'object'
+        ? source.shop_purchase_success
+        : {};
+    const walletRechargeSuccessConfig = source.wallet_recharge_success && typeof source.wallet_recharge_success === 'object'
+        ? source.wallet_recharge_success
         : {};
     const shopInventoryConfig = source.shop_inventory && typeof source.shop_inventory === 'object'
         ? source.shop_inventory
@@ -332,6 +377,75 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         ),
         85,
         99
+    );
+
+    config.customer_chat_message.enabled = normalizeBoolean(
+        customerChatMessageConfig.enabled,
+        normalizeBoolean(env?.CHAT_MESSAGE_MONITOR_ENABLED, config.customer_chat_message.enabled)
+    );
+    config.customer_chat_message.sweep_interval_ms = normalizeNumber(
+        customerChatMessageConfig.sweep_interval_ms,
+        normalizeNumber(env?.CHAT_MESSAGE_MONITOR_SWEEP_INTERVAL_MS, config.customer_chat_message.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.customer_chat_message.lookback_minutes = normalizeNumber(
+        customerChatMessageConfig.lookback_minutes,
+        normalizeNumber(env?.CHAT_MESSAGE_MONITOR_LOOKBACK_MINUTES, config.customer_chat_message.lookback_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.customer_chat_message.dedupe_window_minutes = normalizeNumber(
+        customerChatMessageConfig.dedupe_window_minutes,
+        normalizeNumber(env?.CHAT_MESSAGE_MONITOR_DEDUPE_WINDOW_MINUTES, config.customer_chat_message.dedupe_window_minutes, 1, 7 * 24 * 60),
+        1,
+        7 * 24 * 60
+    );
+
+    config.shop_purchase_success.enabled = normalizeBoolean(
+        shopPurchaseSuccessConfig.enabled,
+        normalizeBoolean(env?.COMMERCE_SUCCESS_MONITOR_ENABLED, config.shop_purchase_success.enabled)
+    );
+    config.shop_purchase_success.sweep_interval_ms = normalizeNumber(
+        shopPurchaseSuccessConfig.sweep_interval_ms,
+        normalizeNumber(env?.COMMERCE_SUCCESS_MONITOR_SWEEP_INTERVAL_MS, config.shop_purchase_success.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.shop_purchase_success.lookback_minutes = normalizeNumber(
+        shopPurchaseSuccessConfig.lookback_minutes,
+        normalizeNumber(env?.COMMERCE_SUCCESS_MONITOR_LOOKBACK_MINUTES, config.shop_purchase_success.lookback_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.shop_purchase_success.dedupe_window_minutes = normalizeNumber(
+        shopPurchaseSuccessConfig.dedupe_window_minutes,
+        normalizeNumber(env?.COMMERCE_SUCCESS_MONITOR_DEDUPE_WINDOW_MINUTES, config.shop_purchase_success.dedupe_window_minutes, 1, 30 * 24 * 60),
+        1,
+        30 * 24 * 60
+    );
+
+    config.wallet_recharge_success.enabled = normalizeBoolean(
+        walletRechargeSuccessConfig.enabled,
+        normalizeBoolean(env?.COMMERCE_SUCCESS_MONITOR_ENABLED, config.wallet_recharge_success.enabled)
+    );
+    config.wallet_recharge_success.sweep_interval_ms = normalizeNumber(
+        walletRechargeSuccessConfig.sweep_interval_ms,
+        normalizeNumber(env?.COMMERCE_SUCCESS_MONITOR_SWEEP_INTERVAL_MS, config.wallet_recharge_success.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.wallet_recharge_success.lookback_minutes = normalizeNumber(
+        walletRechargeSuccessConfig.lookback_minutes,
+        normalizeNumber(env?.COMMERCE_SUCCESS_MONITOR_LOOKBACK_MINUTES, config.wallet_recharge_success.lookback_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.wallet_recharge_success.dedupe_window_minutes = normalizeNumber(
+        walletRechargeSuccessConfig.dedupe_window_minutes,
+        normalizeNumber(env?.COMMERCE_SUCCESS_MONITOR_DEDUPE_WINDOW_MINUTES, config.wallet_recharge_success.dedupe_window_minutes, 1, 30 * 24 * 60),
+        1,
+        30 * 24 * 60
     );
 
     config.shop_inventory.enabled = normalizeBoolean(

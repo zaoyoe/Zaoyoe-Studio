@@ -1246,6 +1246,18 @@ module.exports = async (req, res) => {
                     shop_inventory_sales_window_days: Number(nextConfig.shop_inventory?.sales_window_days || 0) || null,
                     shop_inventory_dedupe_window_minutes: Number(nextConfig.shop_inventory?.dedupe_window_minutes || 0) || null,
                     shop_inventory_recovery_notification_enabled: nextConfig.shop_inventory?.recovery_notification_enabled !== false,
+                    customer_chat_message_enabled: nextConfig.customer_chat_message?.enabled !== false,
+                    customer_chat_message_sweep_interval_ms: Number(nextConfig.customer_chat_message?.sweep_interval_ms || 0) || null,
+                    customer_chat_message_lookback_minutes: Number(nextConfig.customer_chat_message?.lookback_minutes || 0) || null,
+                    customer_chat_message_dedupe_window_minutes: Number(nextConfig.customer_chat_message?.dedupe_window_minutes || 0) || null,
+                    shop_purchase_success_enabled: nextConfig.shop_purchase_success?.enabled !== false,
+                    shop_purchase_success_sweep_interval_ms: Number(nextConfig.shop_purchase_success?.sweep_interval_ms || 0) || null,
+                    shop_purchase_success_lookback_minutes: Number(nextConfig.shop_purchase_success?.lookback_minutes || 0) || null,
+                    shop_purchase_success_dedupe_window_minutes: Number(nextConfig.shop_purchase_success?.dedupe_window_minutes || 0) || null,
+                    wallet_recharge_success_enabled: nextConfig.wallet_recharge_success?.enabled !== false,
+                    wallet_recharge_success_sweep_interval_ms: Number(nextConfig.wallet_recharge_success?.sweep_interval_ms || 0) || null,
+                    wallet_recharge_success_lookback_minutes: Number(nextConfig.wallet_recharge_success?.lookback_minutes || 0) || null,
+                    wallet_recharge_success_dedupe_window_minutes: Number(nextConfig.wallet_recharge_success?.dedupe_window_minutes || 0) || null,
                     updated_secrets: updatedSecrets
                 }
             });
