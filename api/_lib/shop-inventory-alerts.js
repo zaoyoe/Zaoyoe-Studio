@@ -14,6 +14,7 @@ const DEFAULT_SHOP_INVENTORY_MONITOR_CONFIG = Object.freeze({
     sales_window_days: 7,
     state_lookback_minutes: 24 * 60,
     dedupe_window_minutes: 6 * 60,
+    recovery_notification_enabled: true,
     page_size: 500,
     max_pages: 10
 });
@@ -82,6 +83,13 @@ function normalizeShopInventoryMonitorConfig(rawConfig = {}, env = process.env) 
             normalizeNumber(env?.SHOP_INVENTORY_MONITOR_DEDUPE_WINDOW_MINUTES, DEFAULT_SHOP_INVENTORY_MONITOR_CONFIG.dedupe_window_minutes, 1, 24 * 60),
             1,
             24 * 60
+        ),
+        recovery_notification_enabled: normalizeBoolean(
+            source.recovery_notification_enabled,
+            normalizeBoolean(
+                env?.SHOP_INVENTORY_MONITOR_RECOVERY_NOTIFICATION_ENABLED,
+                DEFAULT_SHOP_INVENTORY_MONITOR_CONFIG.recovery_notification_enabled
+            )
         ),
         page_size: normalizeNumber(
             source.page_size,
@@ -305,6 +313,10 @@ function buildShopInventoryLowAlerts(products = [], recentOrders = [], rawConfig
 
 function buildShopInventoryRecoveredAlerts(products = [], recentOrders = [], stateJobs = [], rawConfig = {}, options = {}) {
     const config = normalizeShopInventoryMonitorConfig(rawConfig);
+    if (!config.recovery_notification_enabled) {
+        return [];
+    }
+
     const activeAlerts = buildShopInventoryLowAlerts(products, recentOrders, config, options);
     const activeTargetIds = new Set(activeAlerts.map((alert) => getInventoryTargetId(alert.payload)));
     const stateTargetIds = Array.from(new Set(
@@ -424,26 +436,38 @@ function buildShopInventoryRecoveredAlerts(products = [], recentOrders = [], sta
 
 async function runShopInventoryLowSweep(supabase, options = {}) {
     const env = options.env || process.env;
-    const config = normalizeShopInventoryMonitorConfig(options.config, env);
+    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
+    const runtimeConfig = runtime?.config?.shop_inventory && typeof runtime.config.shop_inventory === 'object'
+        ? runtime.config.shop_inventory
+        : {};
+    const config = normalizeShopInventoryMonitorConfig({
+        ...runtimeConfig,
+        ...(options.config && typeof options.config === 'object' ? options.config : {})
+    }, env);
 
     if (!config.enabled) {
         return {
             skipped: 'monitor_disabled',
             low_stock_count: 0,
             empty_stock_count: 0,
+            recovered_count: 0,
             queued: 0,
-            deduped: 0
+            deduped: 0,
+            recovered_queued: 0,
+            recovered_deduped: 0
         };
     }
 
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
     if (!runtime?.config?.enabled) {
         return {
             skipped: 'ops_alerts_disabled',
             low_stock_count: 0,
             empty_stock_count: 0,
+            recovered_count: 0,
             queued: 0,
-            deduped: 0
+            deduped: 0,
+            recovered_queued: 0,
+            recovered_deduped: 0
         };
     }
 

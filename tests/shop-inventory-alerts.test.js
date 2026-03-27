@@ -207,6 +207,14 @@ function createOpsRuntime() {
                     enabled: true,
                     minimum_severity: 'warning'
                 }
+            },
+            shop_inventory: {
+                enabled: true,
+                low_stock_threshold: 5,
+                sweep_interval_ms: 15 * 60 * 1000,
+                sales_window_days: 7,
+                dedupe_window_minutes: 6 * 60,
+                recovery_notification_enabled: true
             }
         }),
         secrets: {
@@ -381,6 +389,41 @@ test('buildShopInventoryRecoveredAlerts emits a recovery notice after a product 
     assert.equal(alerts[0].payload.incident_duration_minutes, 54);
 });
 
+test('buildShopInventoryRecoveredAlerts respects recovery notification switch', () => {
+    const alerts = buildShopInventoryRecoveredAlerts([
+        {
+            id: 'product-low',
+            name: 'Prompt Pro 月卡',
+            category: '提示词',
+            stock_count: 18,
+            is_active: true,
+            delivery_type: 'KEY',
+            updated_at: '2026-03-25T10:54:00.000Z'
+        }
+    ], [], [
+        {
+            id: 'inventory-low-1',
+            alert_type: 'shop_inventory_low',
+            severity: 'warning',
+            title: 'Prompt Pro 月卡 库存不足',
+            created_at: '2026-03-25T10:00:00.000Z',
+            payload: {
+                target_id: 'product-low',
+                product_id: 'product-low',
+                product_name: 'Prompt Pro 月卡',
+                stock_count: 3,
+                low_stock_threshold: 5
+            }
+        }
+    ], {
+        recovery_notification_enabled: false
+    }, {
+        now: '2026-03-25T10:54:00.000Z'
+    });
+
+    assert.equal(alerts.length, 0);
+});
+
 test('runShopInventoryLowSweep enqueues recovery notices and writes admin notifications once', async () => {
     const state = {
         jobs: [
@@ -454,4 +497,78 @@ test('runShopInventoryLowSweep enqueues recovery notices and writes admin notifi
     assert.equal(second.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 2);
     assert.equal(state.systemNotifications.length, 2);
+});
+
+test('runShopInventoryLowSweep prefers runtime inventory config and can disable recovery notifications', async () => {
+    const state = {
+        jobs: [
+            {
+                id: 'inventory-low-1',
+                alert_type: 'shop_inventory_low',
+                severity: 'warning',
+                title: 'Prompt Pro 月卡 库存不足',
+                created_at: '2026-03-25T10:00:00.000Z',
+                payload: {
+                    target_id: 'product-low',
+                    product_id: 'product-low',
+                    product_name: 'Prompt Pro 月卡',
+                    stock_count: 4,
+                    low_stock_threshold: 8
+                }
+            }
+        ],
+        products: [
+            {
+                id: 'product-low',
+                name: 'Prompt Pro 月卡',
+                category: '提示词',
+                stock_count: 12,
+                is_active: true,
+                delivery_type: 'KEY',
+                updated_at: '2026-03-25T10:54:00.000Z'
+            }
+        ],
+        orders: [],
+        adminRoles: [
+            { user_id: 'admin-1', role_name: 'admin', expires_at: null }
+        ],
+        systemNotifications: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = {
+        ...createOpsRuntime(),
+        config: normalizeOpsAlertsConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['10001']
+                },
+                feishu: {
+                    enabled: true,
+                    minimum_severity: 'warning'
+                }
+            },
+            shop_inventory: {
+                enabled: true,
+                low_stock_threshold: 8,
+                sweep_interval_ms: 20 * 60 * 1000,
+                sales_window_days: 5,
+                dedupe_window_minutes: 180,
+                recovery_notification_enabled: false
+            }
+        })
+    };
+
+    const result = await runShopInventoryLowSweep(supabase, {
+        runtime,
+        now: '2026-03-25T10:54:00.000Z'
+    });
+
+    assert.equal(result.recovered_count, 0);
+    assert.equal(result.recovered_queued, 0);
+    assert.equal(result.admin_notifications_created, 0);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.systemNotifications.length, 0);
 });

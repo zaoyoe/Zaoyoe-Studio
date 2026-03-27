@@ -1575,6 +1575,63 @@
                                 </div>
                             </div>
 
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-shop-inventory">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-box-open"></i>
+                                        <span>库存与补货告警</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用库存监控</div>
+                                            <div class="config-desc">只监控启用中的 KEY 型商品，库存不足或售罄时自动推送站外告警。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertShopInventoryEnabledToggle" data-admin-action="settings-toggle-ops-alert-shop-inventory-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>低库存阈值</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="10000" step="1" class="config-input" id="opsAlertShopInventoryLowStockThreshold" placeholder="5">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>巡检频率（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="60" step="1" class="config-input" id="opsAlertShopInventorySweepIntervalMinutes" placeholder="15">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>销量观察天数</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="30" step="1" class="config-input" id="opsAlertShopInventorySalesWindowDays" placeholder="7">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>去重冷却时间（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="1440" step="1" class="config-input" id="opsAlertShopInventoryDedupeWindowMinutes" placeholder="360">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">恢复通知</div>
+                                            <div class="config-desc">商品库存恢复到阈值以上时，发送恢复类告警并同步站内通知。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertShopInventoryRecoveryNotificationEnabledToggle" data-admin-action="settings-toggle-ops-alert-shop-inventory-recovery-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>当前这组配置会优先覆盖环境变量，适合在值班阶段快速调整库存告警节奏；更深的静默时段、定时汇总和按商品差异化策略已纳入后续计划。</span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="config-card ops-alert-config-card" data-config="ops-alerts-shop-risk">
                                 <div class="config-card-header">
                                     <div class="config-card-title">
@@ -6614,7 +6671,7 @@
     <script src="admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1"></script>
     <script src="admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_2"></script>
-    <script src="admin-config.js?v=20260327_SHOP_RISK_CASE_WORKFLOW_1"></script>
+    <script src="admin-config.js?v=20260327_SHOP_INVENTORY_CONFIG_1"></script>
     <script src="admin-homepage.js?v=20260324_HOMEPAGE_RUNTIME_STYLE_2"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>

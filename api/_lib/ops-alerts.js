@@ -50,6 +50,14 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         auto_ban_user_min_risk_score: 96,
         auto_ban_user_duration_days: 7,
         auto_suspend_product_min_risk_score: 97
+    }),
+    shop_inventory: Object.freeze({
+        enabled: true,
+        low_stock_threshold: 5,
+        sweep_interval_ms: 15 * 60 * 1000,
+        sales_window_days: 7,
+        dedupe_window_minutes: 6 * 60,
+        recovery_notification_enabled: true
     })
 });
 
@@ -155,6 +163,14 @@ function cloneDefaultConfig() {
             auto_ban_user_min_risk_score: DEFAULT_OPS_ALERTS_CONFIG.shop_order_risk.auto_ban_user_min_risk_score,
             auto_ban_user_duration_days: DEFAULT_OPS_ALERTS_CONFIG.shop_order_risk.auto_ban_user_duration_days,
             auto_suspend_product_min_risk_score: DEFAULT_OPS_ALERTS_CONFIG.shop_order_risk.auto_suspend_product_min_risk_score
+        },
+        shop_inventory: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.enabled,
+            low_stock_threshold: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.low_stock_threshold,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.sweep_interval_ms,
+            sales_window_days: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.sales_window_days,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.dedupe_window_minutes,
+            recovery_notification_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.recovery_notification_enabled
         }
     };
 }
@@ -174,6 +190,9 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         : {};
     const shopOrderRiskConfig = source.shop_order_risk && typeof source.shop_order_risk === 'object'
         ? source.shop_order_risk
+        : {};
+    const shopInventoryConfig = source.shop_inventory && typeof source.shop_inventory === 'object'
+        ? source.shop_inventory
         : {};
 
     config.enabled = normalizeBoolean(source.enabled, normalizeBoolean(env?.OPS_ALERTS_ENABLED, config.enabled));
@@ -313,6 +332,62 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         ),
         85,
         99
+    );
+
+    config.shop_inventory.enabled = normalizeBoolean(
+        shopInventoryConfig.enabled,
+        normalizeBoolean(env?.SHOP_INVENTORY_MONITOR_ENABLED, config.shop_inventory.enabled)
+    );
+    config.shop_inventory.low_stock_threshold = normalizeNumber(
+        shopInventoryConfig.low_stock_threshold,
+        normalizeNumber(
+            env?.SHOP_INVENTORY_MONITOR_LOW_STOCK_THRESHOLD,
+            config.shop_inventory.low_stock_threshold,
+            0,
+            10000
+        ),
+        0,
+        10000
+    );
+    config.shop_inventory.sweep_interval_ms = normalizeNumber(
+        shopInventoryConfig.sweep_interval_ms,
+        normalizeNumber(
+            env?.SHOP_INVENTORY_MONITOR_SWEEP_INTERVAL_MS,
+            config.shop_inventory.sweep_interval_ms,
+            10000,
+            60 * 60 * 1000
+        ),
+        10000,
+        60 * 60 * 1000
+    );
+    config.shop_inventory.sales_window_days = normalizeNumber(
+        shopInventoryConfig.sales_window_days,
+        normalizeNumber(
+            env?.SHOP_INVENTORY_MONITOR_SALES_WINDOW_DAYS,
+            config.shop_inventory.sales_window_days,
+            1,
+            30
+        ),
+        1,
+        30
+    );
+    config.shop_inventory.dedupe_window_minutes = normalizeNumber(
+        shopInventoryConfig.dedupe_window_minutes,
+        normalizeNumber(
+            env?.SHOP_INVENTORY_MONITOR_DEDUPE_WINDOW_MINUTES,
+            config.shop_inventory.dedupe_window_minutes,
+            1,
+            24 * 60
+        ),
+        1,
+        24 * 60
+    );
+    config.shop_inventory.recovery_notification_enabled = normalizeBoolean(
+        shopInventoryConfig.recovery_notification_enabled,
+        normalizeBoolean(
+            env?.SHOP_INVENTORY_MONITOR_RECOVERY_NOTIFICATION_ENABLED,
+            config.shop_inventory.recovery_notification_enabled
+        )
     );
 
     return config;

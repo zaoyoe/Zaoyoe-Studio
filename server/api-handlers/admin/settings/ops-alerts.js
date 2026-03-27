@@ -1240,6 +1240,12 @@ module.exports = async (req, res) => {
                     shop_risk_auto_ban_user_min_risk_score: Number(nextConfig.shop_order_risk?.auto_ban_user_min_risk_score || 0) || null,
                     shop_risk_auto_ban_user_duration_days: Number(nextConfig.shop_order_risk?.auto_ban_user_duration_days || 0) || null,
                     shop_risk_auto_suspend_product_min_risk_score: Number(nextConfig.shop_order_risk?.auto_suspend_product_min_risk_score || 0) || null,
+                    shop_inventory_enabled: nextConfig.shop_inventory?.enabled !== false,
+                    shop_inventory_low_stock_threshold: Number(nextConfig.shop_inventory?.low_stock_threshold || 0) || 0,
+                    shop_inventory_sweep_interval_ms: Number(nextConfig.shop_inventory?.sweep_interval_ms || 0) || null,
+                    shop_inventory_sales_window_days: Number(nextConfig.shop_inventory?.sales_window_days || 0) || null,
+                    shop_inventory_dedupe_window_minutes: Number(nextConfig.shop_inventory?.dedupe_window_minutes || 0) || null,
+                    shop_inventory_recovery_notification_enabled: nextConfig.shop_inventory?.recovery_notification_enabled !== false,
                     updated_secrets: updatedSecrets
                 }
             });

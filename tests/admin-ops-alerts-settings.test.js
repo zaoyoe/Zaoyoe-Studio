@@ -65,6 +65,14 @@ function createDefaultState() {
                 auto_ban_user_min_risk_score: 96,
                 auto_ban_user_duration_days: 7,
                 auto_suspend_product_min_risk_score: 97
+            },
+            shop_inventory: {
+                enabled: true,
+                low_stock_threshold: 5,
+                sweep_interval_ms: 15 * 60 * 1000,
+                sales_window_days: 7,
+                dedupe_window_minutes: 6 * 60,
+                recovery_notification_enabled: true
             }
         },
         secretStatus: {
@@ -124,6 +132,7 @@ function createNormalizedConfig(raw) {
     const feishu = channels.feishu && typeof channels.feishu === 'object' ? channels.feishu : {};
     const email = channels.email && typeof channels.email === 'object' ? channels.email : {};
     const shopOrderRisk = source.shop_order_risk && typeof source.shop_order_risk === 'object' ? source.shop_order_risk : {};
+    const shopInventory = source.shop_inventory && typeof source.shop_inventory === 'object' ? source.shop_inventory : {};
 
     return {
         enabled: normalizeBoolean(source.enabled, false),
@@ -158,6 +167,14 @@ function createNormalizedConfig(raw) {
             auto_ban_user_min_risk_score: Math.min(99, Math.max(80, Number(shopOrderRisk.auto_ban_user_min_risk_score || 96) || 96)),
             auto_ban_user_duration_days: Math.min(30, Math.max(1, Number(shopOrderRisk.auto_ban_user_duration_days || 7) || 7)),
             auto_suspend_product_min_risk_score: Math.min(99, Math.max(85, Number(shopOrderRisk.auto_suspend_product_min_risk_score || 97) || 97))
+        },
+        shop_inventory: {
+            enabled: normalizeBoolean(shopInventory.enabled, true),
+            low_stock_threshold: Math.min(10000, Math.max(0, Number(shopInventory.low_stock_threshold || 5) || 5)),
+            sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(shopInventory.sweep_interval_ms || 15 * 60 * 1000) || (15 * 60 * 1000))),
+            sales_window_days: Math.min(30, Math.max(1, Number(shopInventory.sales_window_days || 7) || 7)),
+            dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(shopInventory.dedupe_window_minutes || 6 * 60) || (6 * 60))),
+            recovery_notification_enabled: normalizeBoolean(shopInventory.recovery_notification_enabled, true)
         }
     };
 }
@@ -413,6 +430,12 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.shop_order_risk.auto_ban_user_min_risk_score, 96);
         assert.equal(payload.config.shop_order_risk.auto_ban_user_duration_days, 7);
         assert.equal(payload.config.shop_order_risk.auto_suspend_product_min_risk_score, 97);
+        assert.equal(payload.config.shop_inventory.enabled, true);
+        assert.equal(payload.config.shop_inventory.low_stock_threshold, 5);
+        assert.equal(payload.config.shop_inventory.sweep_interval_ms, 15 * 60 * 1000);
+        assert.equal(payload.config.shop_inventory.sales_window_days, 7);
+        assert.equal(payload.config.shop_inventory.dedupe_window_minutes, 6 * 60);
+        assert.equal(payload.config.shop_inventory.recovery_notification_enabled, true);
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.telegram_bot_token.source, 'stored');
         assert.equal(payload.secrets.feishu_webhook_url.configured, false);
@@ -444,6 +467,14 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         auto_ban_user_min_risk_score: 95,
                         auto_ban_user_duration_days: 14,
                         auto_suspend_product_min_risk_score: 98
+                    },
+                    shop_inventory: {
+                        enabled: true,
+                        low_stock_threshold: 9,
+                        sweep_interval_ms: 20 * 60 * 1000,
+                        sales_window_days: 5,
+                        dedupe_window_minutes: 180,
+                        recovery_notification_enabled: false
                     }
                 },
                 secrets: {
@@ -467,6 +498,12 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.shop_order_risk.auto_ban_user_min_risk_score, 95);
         assert.equal(payload.config.shop_order_risk.auto_ban_user_duration_days, 14);
         assert.equal(payload.config.shop_order_risk.auto_suspend_product_min_risk_score, 98);
+        assert.equal(payload.config.shop_inventory.enabled, true);
+        assert.equal(payload.config.shop_inventory.low_stock_threshold, 9);
+        assert.equal(payload.config.shop_inventory.sweep_interval_ms, 20 * 60 * 1000);
+        assert.equal(payload.config.shop_inventory.sales_window_days, 5);
+        assert.equal(payload.config.shop_inventory.dedupe_window_minutes, 180);
+        assert.equal(payload.config.shop_inventory.recovery_notification_enabled, false);
         assert.equal(state.systemConfigUpserts.length, 1);
         assert.equal(state.systemConfigUpserts[0].config_key, 'ops_alerts');
         assert.equal(state.upsertedSecrets.length, 2);
@@ -477,6 +514,12 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.shop_risk_auto_ban_user_min_risk_score, 95);
         assert.equal(state.auditLogs[0].details.shop_risk_auto_ban_user_duration_days, 14);
         assert.equal(state.auditLogs[0].details.shop_risk_auto_suspend_product_min_risk_score, 98);
+        assert.equal(state.auditLogs[0].details.shop_inventory_enabled, true);
+        assert.equal(state.auditLogs[0].details.shop_inventory_low_stock_threshold, 9);
+        assert.equal(state.auditLogs[0].details.shop_inventory_sweep_interval_ms, 20 * 60 * 1000);
+        assert.equal(state.auditLogs[0].details.shop_inventory_sales_window_days, 5);
+        assert.equal(state.auditLogs[0].details.shop_inventory_dedupe_window_minutes, 180);
+        assert.equal(state.auditLogs[0].details.shop_inventory_recovery_notification_enabled, false);
         assert.deepEqual(state.auditLogs[0].details.updated_secrets, ['telegram_bot_token', 'feishu_webhook_url']);
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.feishu_webhook_url.configured, true);
