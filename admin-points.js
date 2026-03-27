@@ -1264,11 +1264,22 @@ function showDeleteOptionsModal(batchIds, usedCount, totalCount) {
     `;
 
     document.body.insertAdjacentHTML('beforeend', modalHtml);
+    const overlay = document.querySelector('.delete-options-modal-overlay');
+    if (overlay) {
+        requestAnimationFrame(() => {
+            overlay.classList.add('is-visible');
+        });
+    }
 }
 
 function closeDeleteOptionsModal(event) {
     if (!event || event.target.classList.contains('delete-options-modal-overlay')) {
-        document.querySelector('.delete-options-modal-overlay')?.remove();
+        const overlay = document.querySelector('.delete-options-modal-overlay');
+        if (!overlay) return;
+        overlay.classList.remove('is-visible');
+        window.setTimeout(() => {
+            overlay.remove();
+        }, 260);
     }
 }
 
@@ -1439,6 +1450,12 @@ async function viewBatchCodes(batchId) {
         </div>
     `;
     document.body.insertAdjacentHTML('beforeend', loadingHtml);
+    const overlay = document.querySelector('.codes-modal-overlay');
+    if (overlay) {
+        requestAnimationFrame(() => {
+            overlay.classList.add('is-visible');
+        });
+    }
     window.currentViewBatchId = batchId;
 
     try {
@@ -1586,7 +1603,12 @@ async function viewBatchCodes(batchId) {
 // Close codes modal
 function closeCodesModal(event) {
     if (!event || event.target.classList.contains('codes-modal-overlay')) {
-        document.querySelector('.codes-modal-overlay')?.remove();
+        const overlay = document.querySelector('.codes-modal-overlay');
+        if (!overlay) return;
+        overlay.classList.remove('is-visible');
+        window.setTimeout(() => {
+            overlay.remove();
+        }, 260);
         window.currentViewBatchId = null;
     }
 }
@@ -1937,6 +1959,12 @@ function openBatchEditModal(batchId) {
         </div>
     `;
     document.body.insertAdjacentHTML('beforeend', modalHtml);
+    const overlay = document.querySelector('.edit-modal-overlay');
+    if (overlay) {
+        requestAnimationFrame(() => {
+            overlay.classList.add('is-visible');
+        });
+    }
 
     // Initialize flatpickr for expires input
     if (typeof flatpickr !== 'undefined') {
@@ -1953,7 +1981,12 @@ function openBatchEditModal(batchId) {
 
 function closeBatchEditModal(event) {
     if (!event || event.target.classList.contains('edit-modal-overlay')) {
-        document.querySelector('.edit-modal-overlay')?.remove();
+        const overlay = document.querySelector('.edit-modal-overlay');
+        if (!overlay) return;
+        overlay.classList.remove('is-visible');
+        window.setTimeout(() => {
+            overlay.remove();
+        }, 260);
     }
 }
 

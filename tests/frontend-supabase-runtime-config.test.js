@@ -632,7 +632,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
         ['shop.html', 'css/shop-page.css?v=20260324_SHOP_RUNTIME_STYLE_1'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260327_ADMIN_DISCOUNT_MODAL_MOTION_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260327_ADMIN_MODAL_MOTION_SWEEP_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -2641,7 +2641,9 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         "target.matches('[data-users-tag-input=\"1\"]')",
         'function bindBanUserModalInteractions(overlay)',
         'function bindPointsModalInteractions(overlay)',
-        'function bindClearContentModalInteractions(overlay)'
+        'function bindClearContentModalInteractions(overlay)',
+        'function animateUsersOverlayIn(',
+        'function animateUsersOverlayOut('
     ];
 
     for (const marker of delegatedMarkers) {
@@ -2694,6 +2696,8 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         '.users-table-empty-state',
         '.modal-permissions-panel--flush',
         '.admin-ledger-item--emerald',
+        '.admin-ledger-modal-overlay.active',
+        '.admin-ledger-modal-overlay.active .admin-ledger-modal',
         '.users-affiliate-error-state',
         '.users-ledger-reason-row',
         '.users-ban-confirm-btn--ban',
@@ -2746,7 +2750,9 @@ test('admin points runtime renderers route batch tables and modals through deleg
         "document.documentElement.dataset.adminPointsRuntimeDelegatesBound === '1'",
         "case 'execute-delete-option':",
         "case 'navigate-user':",
-        "case 'save-batch-edit':"
+        "case 'save-batch-edit':",
+        "overlay.classList.add('is-visible')",
+        "overlay.classList.remove('is-visible')"
     ];
 
     for (const marker of delegatedMarkers) {
@@ -2834,7 +2840,9 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
         '.admin-points-lookup-value-danger',
         '.points-delete-options-modal',
         '.points-delete-options-modal-body',
-        '.points-codes-error'
+        '.points-codes-error',
+        '.codes-modal-overlay.is-visible',
+        '.edit-modal-overlay.is-visible'
     ];
 
     for (const marker of expectedCssMarkers) {
@@ -3881,8 +3889,10 @@ test('shop admin order workflows externalize runtime table-row and modal styling
     const styleMarkers = [
         '.shop-order-row',
         '.shop-order-content-overlay',
+        '.shop-order-content-overlay.is-visible',
         '.shop-order-content-box',
         '.shop-refund-modal-overlay',
+        '.shop-refund-modal-overlay.is-visible',
         '.shop-refund-status-grid',
         '.shop-refund-modal-textarea',
         '.shop-order-action-btn--refund'
@@ -3933,7 +3943,9 @@ test('shop admin inventory workflows externalize runtime table and modal styling
         '.shop-inventory-content-chip',
         '.shop-inventory-status-badge',
         '.shop-inventory-fault-overlay',
+        '.shop-inventory-fault-overlay.is-visible',
         '.shop-inventory-detail-overlay',
+        '.shop-inventory-detail-overlay.is-visible',
         '.shop-inventory-detail-inline-btn',
         '.shop-inventory-detail-entry',
         '.shop-inventory-copy-feedback',

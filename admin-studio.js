@@ -26,6 +26,32 @@ function setAdminStudioVisibility(target, visible, visibleClass = '') {
     }
 }
 
+function showAdminStudioOverlay(target, visibleClass = 'active') {
+    if (!target) return;
+    if (target.__adminStudioHideTimer) {
+        window.clearTimeout(target.__adminStudioHideTimer);
+        target.__adminStudioHideTimer = null;
+    }
+    target.classList.remove(ADMIN_STUDIO_HIDDEN_CLASS);
+    target.removeAttribute('hidden');
+    requestAnimationFrame(() => {
+        target.classList.add(visibleClass);
+    });
+}
+
+function hideAdminStudioOverlay(target, visibleClass = 'active', duration = 300) {
+    if (!target) return;
+    target.classList.remove(visibleClass);
+    if (target.__adminStudioHideTimer) {
+        window.clearTimeout(target.__adminStudioHideTimer);
+    }
+    target.__adminStudioHideTimer = window.setTimeout(() => {
+        target.classList.add(ADMIN_STUDIO_HIDDEN_CLASS);
+        target.setAttribute('hidden', '');
+        target.__adminStudioHideTimer = null;
+    }, duration);
+}
+
 function createAdminStudioEmptyElement(text, className = 'admin-empty-message', tagName = 'p') {
     const element = document.createElement(tagName);
     element.className = className;
@@ -3609,11 +3635,11 @@ function showDeleteConfirmation() {
 
     document.getElementById('deleteConfirmText').textContent =
         `确定要删除选中的 ${count} 个提示词吗？`;
-    setAdminStudioVisibility(document.getElementById('deleteConfirmOverlay'), true);
+    showAdminStudioOverlay(document.getElementById('deleteConfirmOverlay'));
 }
 
 function hideDeleteConfirmation() {
-    setAdminStudioVisibility(document.getElementById('deleteConfirmOverlay'), false);
+    hideAdminStudioOverlay(document.getElementById('deleteConfirmOverlay'));
 }
 
 async function executeBatchDelete() {
@@ -3647,12 +3673,12 @@ async function executeBatchDelete() {
 // ========================================
 function showBatchProgressModal(title, total) {
     document.getElementById('batchModalTitle').textContent = title;
-    setAdminStudioVisibility(document.getElementById('batchProgressOverlay'), true);
+    showAdminStudioOverlay(document.getElementById('batchProgressOverlay'));
     updateBatchProgress(0, total, '准备中...');
 }
 
 function hideBatchProgressModal() {
-    setAdminStudioVisibility(document.getElementById('batchProgressOverlay'), false);
+    hideAdminStudioOverlay(document.getElementById('batchProgressOverlay'));
 }
 
 function updateBatchProgress(current, total, currentItem) {
@@ -3728,11 +3754,11 @@ document.addEventListener('mouseout', (e) => {
 function openLightbox(src) {
     if (!src) return;
     document.getElementById('lightboxImage').src = src;
-    setAdminStudioVisibility(document.getElementById('lightboxOverlay'), true);
+    showAdminStudioOverlay(document.getElementById('lightboxOverlay'));
 }
 
 function closeLightbox() {
-    setAdminStudioVisibility(document.getElementById('lightboxOverlay'), false);
+    hideAdminStudioOverlay(document.getElementById('lightboxOverlay'));
 }
 
 // ========================================
@@ -3748,7 +3774,7 @@ function openCropModal(index) {
 
     const cropImage = document.getElementById('cropImage');
     cropImage.src = file.dataUrl;
-    setAdminStudioVisibility(document.getElementById('cropModalOverlay'), true);
+    showAdminStudioOverlay(document.getElementById('cropModalOverlay'));
 
     // Wait for image to load before initializing Cropper
     cropImage.onload = function () {
@@ -3785,7 +3811,7 @@ function openCropModal(index) {
 }
 
 function closeCropModal() {
-    setAdminStudioVisibility(document.getElementById('cropModalOverlay'), false);
+    hideAdminStudioOverlay(document.getElementById('cropModalOverlay'));
     cropImageIndex = null;
 
     // Destroy Cropper instance

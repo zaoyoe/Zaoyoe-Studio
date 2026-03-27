@@ -374,7 +374,13 @@ Example output format:
     },
 
     closeDynamicModal: function (modalId) {
-        document.getElementById(modalId)?.remove();
+        const modal = document.getElementById(modalId);
+        if (!modal) return;
+
+        modal.classList.remove('is-visible');
+        window.setTimeout(() => {
+            modal.remove();
+        }, 280);
     },
 
     updateLegacyImportLineCount: function () {
@@ -7467,6 +7473,9 @@ Example output format:
         });
 
         document.body.appendChild(overlay);
+        requestAnimationFrame(() => {
+            overlay.classList.add('is-visible');
+        });
     },
 
     // Open Enhanced Refund Modal
@@ -7517,6 +7526,9 @@ Example output format:
             </div>
         `;
         document.body.insertAdjacentHTML('beforeend', modalHtml);
+        requestAnimationFrame(() => {
+            document.getElementById('refundModal')?.classList.add('is-visible');
+        });
     },
 
     submitRefund: async function (orderId, submitButton = null) {
@@ -7543,7 +7555,7 @@ Example output format:
 
             if (data.success) {
                 alert(data.message);
-                document.getElementById('refundModal').remove();
+                this.closeDynamicModal('refundModal');
                 this.searchOrders(); // Refresh Order List
                 // Also try refresh inventory list if possible, or user will switch tab
                 if (this.currentTab === 'inventory') this.loadInventoryList();
@@ -8190,6 +8202,9 @@ Example output format:
             </div>
         `;
         document.body.insertAdjacentHTML('beforeend', modalHtml);
+        requestAnimationFrame(() => {
+            document.getElementById('markFaultModal')?.classList.add('is-visible');
+        });
         setTimeout(() => document.getElementById('faultRemarkInput').focus(), 100);
     },
 
@@ -8208,7 +8223,7 @@ Example output format:
                 remark
             });
 
-            document.getElementById('markFaultModal').remove();
+            this.closeDynamicModal('markFaultModal');
 
             // Reload list
             this.loadInventoryList(this.inventoryPage);
@@ -8236,6 +8251,9 @@ Example output format:
             </div>
         `;
         document.body.insertAdjacentHTML('beforeend', modalHtml);
+        requestAnimationFrame(() => {
+            document.getElementById('inventoryDetailModal')?.classList.add('is-visible');
+        });
 
         try {
             // Fetch detailed info - only join shop_products (profiles doesn't have FK from inventory)
