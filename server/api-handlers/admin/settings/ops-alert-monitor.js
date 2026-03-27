@@ -2,6 +2,9 @@ const {
     requireAdmin,
     sendJson
 } = require('../../../../api/_lib/admin');
+const {
+    loadOpsAlertsRuntimeConfig
+} = require('../../../../api/_lib/ops-alerts');
 
 const OPS_ALERT_MONITOR_LOOKBACK_HOURS = 7 * 24;
 const OPS_ALERT_MONITOR_PAGE_SIZE = 200;
@@ -145,6 +148,31 @@ function getShopOrderRiskSignalLabel(value) {
     return labelMap[normalized] || normalized;
 }
 
+function getShopOrderRiskActionLabel(value) {
+    const normalized = normalizeText(value, 80).toLowerCase();
+    const labelMap = {
+        'disable-coupon': '自动停用优惠码',
+        'open-user-ban': '封禁高风险账号',
+        'suspend-product': '自动下架商品',
+        'review-orders': '复核风险订单'
+    };
+    return labelMap[normalized] || normalized || '人工复核';
+}
+
+function getShopOrderRiskAutoStatusLabel(value, autoResponseEnabled = true) {
+    const normalized = normalizeText(value, 80).toLowerCase();
+    const labelMap = {
+        applied: '已自动处置',
+        already_inactive: '目标已停用',
+        already_blocked: '账号已封禁',
+        not_found: '目标不存在',
+        failed: '自动处置失败',
+        pending_review: autoResponseEnabled ? '待人工确认' : '自动处置关闭',
+        auto_response_disabled: '自动处置关闭'
+    };
+    return labelMap[normalized] || (autoResponseEnabled ? '待人工确认' : '自动处置关闭');
+}
+
 function getAlertReference(job = {}) {
     const payload = normalizePayload(job.payload);
     const signalType = normalizeText(payload.signal_type, 120).toLowerCase();
@@ -247,12 +275,167 @@ function buildAlertItem(job = {}) {
         auto_response_action: normalizeText(payload.auto_response_action, 80) || null,
         auto_response_status: normalizeText(payload.auto_response_status, 80) || null,
         auto_response_summary: normalizeText(payload.auto_response_summary, 240) || null,
+        auto_response_applied_at: normalizeText(payload.auto_response_applied_at, 80) || null,
+        auto_response_target: normalizeText(payload.auto_response_target, 160) || null,
+        auto_response_target_type: normalizeText(payload.auto_response_target_type, 80) || null,
         login_signature_label: normalizeText(payload.login_signature_label, 160) || null,
         user_agent_summary: normalizeText(payload.user_agent_summary, 160) || null
     };
 }
 
-function buildCategorySnapshot(category, jobs = []) {
+function buildShopRiskThresholdConfig(config = {}) {
+    const source = config && typeof config === 'object' ? config : {};
+    return {
+        auto_response_enabled: source.auto_response_enabled !== false,
+        auto_disable_coupon_min_risk_score: Number.isFinite(Number(source.auto_disable_coupon_min_risk_score))
+            ? Math.max(65, Math.min(99, Math.round(Number(source.auto_disable_coupon_min_risk_score))))
+            : 90,
+        auto_ban_user_min_risk_score: Number.isFinite(Number(source.auto_ban_user_min_risk_score))
+            ? Math.max(80, Math.min(99, Math.round(Number(source.auto_ban_user_min_risk_score))))
+            : 96,
+        auto_ban_user_duration_days: Number.isFinite(Number(source.auto_ban_user_duration_days))
+            ? Math.max(1, Math.min(30, Math.round(Number(source.auto_ban_user_duration_days))))
+            : 7,
+        auto_suspend_product_min_risk_score: Number.isFinite(Number(source.auto_suspend_product_min_risk_score))
+            ? Math.max(85, Math.min(99, Math.round(Number(source.auto_suspend_product_min_risk_score))))
+            : 97
+    };
+}
+
+function buildShopRiskThresholdHitEntries(jobs = [], config = {}) {
+    const thresholdConfig = buildShopRiskThresholdConfig(config);
+    const entries = [];
+
+    for (const job of sortByCreatedAtDesc(jobs)) {
+        if (normalizeText(job.alert_type, 120).toLowerCase() !== 'shop_order_risk_anomaly') {
+            continue;
+        }
+
+        const payload = normalizePayload(job.payload);
+        const score = Number(payload.risk_score || 0);
+        if (!Number.isFinite(score)) {
+            continue;
+        }
+
+        const primaryAction = normalizeText(payload.primary_action, 80).toLowerCase();
+        const signalType = normalizeText(payload.signal_type, 120).toLowerCase();
+        const autoResponseStatus = normalizeText(payload.auto_response_status, 80).toLowerCase()
+            || (thresholdConfig.auto_response_enabled ? 'pending_review' : 'auto_response_disabled');
+        const reference = getAlertReference(job);
+
+        if (
+            primaryAction === 'disable-coupon'
+            && normalizeText(payload.discount_code, 160)
+            && score >= thresholdConfig.auto_disable_coupon_min_risk_score
+        ) {
+            entries.push({
+                id: `${normalizeText(job.id, 160) || normalizeText(payload.target_id, 160)}:disable-coupon`,
+                created_at: normalizeText(job.created_at, 80) || null,
+                action: 'disable-coupon',
+                action_label: getShopOrderRiskActionLabel('disable-coupon'),
+                threshold: thresholdConfig.auto_disable_coupon_min_risk_score,
+                risk_score: Math.max(0, Math.round(score)),
+                reference_label: '优惠码',
+                reference_value: normalizeText(payload.discount_code, 160).toUpperCase(),
+                title: normalizeText(job.title, 240) || '优惠码风险命中',
+                status: autoResponseStatus,
+                status_label: getShopOrderRiskAutoStatusLabel(autoResponseStatus, thresholdConfig.auto_response_enabled),
+                summary: normalizeText(payload.auto_response_summary, 240)
+                    || normalizeText(payload.response_summary, 240)
+                    || '已命中停用优惠码阈值。'
+            });
+        }
+
+        if (
+            primaryAction === 'open-user-ban'
+            && signalType === 'user_velocity'
+            && normalizeText(payload.user_id, 160)
+            && score >= thresholdConfig.auto_ban_user_min_risk_score
+        ) {
+            entries.push({
+                id: `${normalizeText(job.id, 160) || normalizeText(payload.target_id, 160)}:ban-user`,
+                created_at: normalizeText(job.created_at, 80) || null,
+                action: 'ban-user',
+                action_label: getShopOrderRiskActionLabel('open-user-ban'),
+                threshold: thresholdConfig.auto_ban_user_min_risk_score,
+                risk_score: Math.max(0, Math.round(score)),
+                reference_label: reference.label || '账号',
+                reference_value: normalizeText(payload.buyer_label, 160) || normalizeText(reference.value, 160) || normalizeText(payload.user_id, 160),
+                title: normalizeText(job.title, 240) || '账号风控阈值命中',
+                status: autoResponseStatus,
+                status_label: getShopOrderRiskAutoStatusLabel(autoResponseStatus, thresholdConfig.auto_response_enabled),
+                summary: normalizeText(payload.auto_response_summary, 240)
+                    || normalizeText(payload.response_summary, 240)
+                    || '已命中自动封禁账号阈值。'
+            });
+        }
+
+        if (
+            signalType === 'zero_total_cluster'
+            && normalizeText(payload.primary_product_id, 160)
+            && Number(payload.primary_product_order_share || 0) >= 0.6
+            && Number(payload.primary_product_order_count || 0) >= 3
+            && score >= thresholdConfig.auto_suspend_product_min_risk_score
+        ) {
+            entries.push({
+                id: `${normalizeText(job.id, 160) || normalizeText(payload.target_id, 160)}:suspend-product`,
+                created_at: normalizeText(job.created_at, 80) || null,
+                action: 'suspend-product',
+                action_label: getShopOrderRiskActionLabel('suspend-product'),
+                threshold: thresholdConfig.auto_suspend_product_min_risk_score,
+                risk_score: Math.max(0, Math.round(score)),
+                reference_label: '商品',
+                reference_value: normalizeText(payload.primary_product_name, 160) || normalizeText(payload.primary_product_id, 160),
+                title: normalizeText(job.title, 240) || '商品风控阈值命中',
+                status: autoResponseStatus,
+                status_label: getShopOrderRiskAutoStatusLabel(autoResponseStatus, thresholdConfig.auto_response_enabled),
+                summary: normalizeText(payload.auto_response_summary, 240)
+                    || '已命中自动下架商品阈值。'
+            });
+        }
+    }
+
+    return entries.slice(0, 5);
+}
+
+function buildShopRiskAutoResponseHistoryEntries(jobs = [], config = {}) {
+    const thresholdConfig = buildShopRiskThresholdConfig(config);
+
+    return sortByCreatedAtDesc(jobs)
+        .filter((job) => normalizeText(job.alert_type, 120).toLowerCase() === 'shop_order_risk_anomaly')
+        .map((job) => {
+            const payload = normalizePayload(job.payload);
+            const action = normalizeText(payload.auto_response_action, 80).toLowerCase();
+            const summary = normalizeText(payload.auto_response_summary, 240);
+            if (!action && !summary) {
+                return null;
+            }
+
+            const reference = getAlertReference(job);
+            const status = normalizeText(payload.auto_response_status, 80).toLowerCase()
+                || (thresholdConfig.auto_response_enabled ? 'pending_review' : 'auto_response_disabled');
+
+            return {
+                id: normalizeText(job.id, 160) || normalizeText(payload.target_id, 160),
+                created_at: normalizeText(payload.auto_response_applied_at, 80) || normalizeText(job.created_at, 80) || null,
+                action,
+                action_label: getShopOrderRiskActionLabel(action),
+                target: normalizeText(payload.auto_response_target, 160) || normalizeText(reference.value, 160) || null,
+                target_type: normalizeText(payload.auto_response_target_type, 80) || null,
+                status,
+                status_label: getShopOrderRiskAutoStatusLabel(status, thresholdConfig.auto_response_enabled),
+                summary: summary || normalizeText(payload.response_summary, 240) || '已写入自动处置记录。',
+                reference_label: reference.label,
+                reference_value: reference.value,
+                title: normalizeText(job.title, 240) || '商城风控自动处置'
+            };
+        })
+        .filter(Boolean)
+        .slice(0, 5);
+}
+
+function buildCategorySnapshot(category, jobs = [], options = {}) {
+    const shopRiskThresholdConfig = buildShopRiskThresholdConfig(options.shopRiskConfig);
     const filteredJobs = sortByCreatedAtDesc(
         jobs.filter((job) => {
             const alertType = normalizeText(job.alert_type, 120).toLowerCase();
@@ -288,7 +471,12 @@ function buildCategorySnapshot(category, jobs = []) {
         latest_at: normalizeText(latestJob?.created_at, 80) || null,
         latest_title: normalizeText(latestJob?.title, 240) || null,
         latest_message: latestJob ? getAlertExcerpt(latestJob) : '',
-        items: activeJobs.slice(0, 3).map(buildAlertItem)
+        items: activeJobs.slice(0, 3).map(buildAlertItem),
+        ...(String(category.key || '').trim().toLowerCase() === 'shop_risk' ? {
+            thresholds: shopRiskThresholdConfig,
+            recent_threshold_hits: buildShopRiskThresholdHitEntries(filteredJobs, shopRiskThresholdConfig),
+            recent_auto_responses: buildShopRiskAutoResponseHistoryEntries(filteredJobs, shopRiskThresholdConfig)
+        } : {})
     };
 }
 
@@ -306,8 +494,11 @@ module.exports = async (req, res) => {
 
         const now = new Date();
         const sinceIso = new Date(now.getTime() - OPS_ALERT_MONITOR_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase);
         const jobs = await fetchRecentOpsAlertJobs(supabase, sinceIso);
-        const categories = ALERT_MONITOR_CATEGORIES.map((category) => buildCategorySnapshot(category, jobs));
+        const categories = ALERT_MONITOR_CATEGORIES.map((category) => buildCategorySnapshot(category, jobs, {
+            shopRiskConfig: runtime?.config?.shop_order_risk || {}
+        }));
         const totalActiveCount = categories.reduce((sum, category) => sum + Number(category.active_count || 0), 0);
         const totalCriticalCount = categories.reduce((sum, category) => sum + Number(category.critical_count || 0), 0);
         const activeCategoryCount = categories.filter((category) => Number(category.active_count || 0) > 0).length;
