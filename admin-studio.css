@@ -19983,7 +19983,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .ops-alert-strategy-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
 }
 
@@ -19996,6 +19996,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: flex;
     flex-direction: column;
     gap: 16px;
+}
+
+.ops-alert-strategy-card--wide {
+    grid-column: 1 / -1;
 }
 
 .ops-alert-strategy-card__head {
@@ -20040,6 +20044,41 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 10px;
 }
 
+.ops-alert-strategy-card .config-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+}
+
+.ops-alert-strategy-card .config-row > label {
+    padding-top: 0;
+}
+
+.ops-alert-strategy-card .config-input-wrapper {
+    justify-content: flex-start;
+}
+
+.ops-alert-strategy-card .config-input[type="text"],
+.ops-alert-strategy-card .config-input[type="url"],
+.ops-alert-strategy-card .config-input[type="password"],
+.ops-alert-strategy-card .config-input[type="number"],
+.ops-alert-strategy-card .config-input[type="email"],
+.ops-alert-strategy-card .config-input[type="search"],
+.ops-alert-strategy-card .config-input[type="datetime-local"],
+.ops-alert-strategy-card select.config-input,
+.ops-alert-strategy-card textarea.config-input {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+}
+
+.ops-alert-strategy-card .config-desc {
+    max-width: none;
+}
+
+.ops-alert-strategy-card .status-toggle {
+    margin-left: 0;
+}
+
 .ops-alert-routing-grid {
     display: flex;
     flex-direction: column;
@@ -20048,7 +20087,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .ops-alert-routing-row {
     display: grid;
-    grid-template-columns: minmax(0, 1.45fr) repeat(3, minmax(88px, 1fr));
+    grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(120px, 1fr));
     gap: 12px;
     align-items: center;
     padding: 14px 16px;
@@ -20090,6 +20129,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 8px;
     color: var(--text-main);
     font-size: 0.84rem;
+    white-space: nowrap;
 }
 
 .ops-alert-routing-row--head .ops-alert-routing-check {
