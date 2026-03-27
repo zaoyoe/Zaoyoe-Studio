@@ -3093,6 +3093,88 @@ function getOpsAlertRiskSpotlightCategory(filters = getOpsAlertMonitorViewFilter
     });
 }
 
+function getOpsAlertMonitorAutoResponseTone(status) {
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    if (['applied', 'already_inactive', 'already_blocked'].includes(normalizedStatus)) return 'success';
+    if (['failed', 'not_found'].includes(normalizedStatus)) return 'danger';
+    if (normalizedStatus === 'auto_response_disabled') return 'neutral';
+    return 'warning';
+}
+
+function buildOpsAlertRiskThresholdBadges(category = {}) {
+    const thresholds = category?.thresholds && typeof category.thresholds === 'object'
+        ? category.thresholds
+        : null;
+    if (!thresholds) {
+        return '';
+    }
+
+    const badges = [
+        buildOpsAlertMonitorBadge(
+            thresholds.auto_response_enabled ? '自动处置开启' : '自动处置关闭',
+            thresholds.auto_response_enabled ? 'warning' : 'neutral'
+        ),
+        buildOpsAlertMonitorBadge(`停券 ≥ ${formatVerifyMonitorInteger(thresholds.auto_disable_coupon_min_risk_score || 0)}`, 'neutral'),
+        buildOpsAlertMonitorBadge(`封禁 ≥ ${formatVerifyMonitorInteger(thresholds.auto_ban_user_min_risk_score || 0)}`, 'neutral'),
+        buildOpsAlertMonitorBadge(`封禁 ${formatVerifyMonitorInteger(thresholds.auto_ban_user_duration_days || 0)} 天`, 'neutral'),
+        buildOpsAlertMonitorBadge(`下架 ≥ ${formatVerifyMonitorInteger(thresholds.auto_suspend_product_min_risk_score || 0)}`, 'neutral')
+    ];
+
+    return `
+        <div class="ops-alert-risk-spotlight__thresholds">
+            ${badges.join('')}
+        </div>
+    `;
+}
+
+function buildOpsAlertRiskSpotlightActivityItem(item = {}, kind = 'threshold') {
+    const normalizedKind = String(kind || 'threshold').trim().toLowerCase();
+    const statusLabel = item.status_label || '待人工确认';
+    const statusTone = getOpsAlertMonitorAutoResponseTone(item.status);
+    const title = normalizedKind === 'auto'
+        ? `${item.action_label || '自动处置'} · ${item.target || item.reference_value || item.title || '未知目标'}`
+        : `${item.action_label || '阈值命中'} · ${item.reference_value || item.title || '未知目标'}`;
+    const referenceValue = String(item.reference_value || '').trim();
+    const metaParts = [];
+
+    if (normalizedKind === 'threshold' && Number.isFinite(Number(item.risk_score)) && Number.isFinite(Number(item.threshold))) {
+        metaParts.push(`分数 ${formatVerifyMonitorInteger(item.risk_score)} / 阈值 ${formatVerifyMonitorInteger(item.threshold)}`);
+    }
+
+    if (item.reference_label && referenceValue && !title.includes(referenceValue)) {
+        metaParts.push(`${item.reference_label}：${referenceValue}`);
+    }
+
+    if (item.created_at) {
+        metaParts.push(formatVerifyMonitorDateTime(item.created_at));
+    }
+
+    return `
+        <div class="ops-alert-risk-spotlight__entry">
+            <div class="ops-alert-risk-spotlight__entry-top">
+                <strong class="ops-alert-risk-spotlight__entry-title">${escapeConfigHtml(title)}</strong>
+                ${buildOpsAlertMonitorBadge(statusLabel, statusTone)}
+            </div>
+            <div class="ops-alert-risk-spotlight__entry-summary">${escapeConfigHtml(item.summary || item.title || '等待更多上下文')}</div>
+            <div class="ops-alert-risk-spotlight__entry-meta">${escapeConfigHtml(metaParts.join(' · ') || '等待更多上下文')}</div>
+        </div>
+    `;
+}
+
+function buildOpsAlertRiskSpotlightActivitySection(title, items = [], emptyMessage = '', kind = 'threshold') {
+    const normalizedItems = Array.isArray(items) ? items : [];
+    return `
+        <section class="ops-alert-risk-spotlight__panel">
+            <div class="ops-alert-risk-spotlight__panel-title">${escapeConfigHtml(title)}</div>
+            <div class="ops-alert-risk-spotlight__panel-list">
+                ${normalizedItems.length
+        ? normalizedItems.map((item) => buildOpsAlertRiskSpotlightActivityItem(item, kind)).join('')
+        : `<div class="ops-alert-risk-spotlight__panel-empty">${escapeConfigHtml(emptyMessage || '暂无记录')}</div>`}
+            </div>
+        </section>
+    `;
+}
+
 function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlertMonitorViewFilters()) {
     const actions = getOpsAlertMonitorCategoryActions('shop_risk');
     const spotlightCategory = category && typeof category === 'object' ? category : null;
@@ -3141,6 +3223,13 @@ function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlert
         stats.push(buildOpsAlertMonitorBadge('等待更多上下文', 'neutral'));
     }
 
+    const thresholdHits = Array.isArray(spotlightCategory?.recent_threshold_hits)
+        ? spotlightCategory.recent_threshold_hits.slice(0, 4)
+        : [];
+    const autoResponses = Array.isArray(spotlightCategory?.recent_auto_responses)
+        ? spotlightCategory.recent_auto_responses.slice(0, 4)
+        : [];
+
     return `
         <div class="ops-alert-risk-spotlight ops-alert-risk-spotlight--${escapeConfigHtml(tone)}">
             <div class="ops-alert-risk-spotlight__copy">
@@ -3150,6 +3239,21 @@ function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlert
             </div>
             <div class="ops-alert-risk-spotlight__stats">
                 ${stats.join('')}
+            </div>
+            ${spotlightCategory ? buildOpsAlertRiskThresholdBadges(spotlightCategory) : ''}
+            <div class="ops-alert-risk-spotlight__panels">
+                ${buildOpsAlertRiskSpotlightActivitySection(
+        '最近阈值命中',
+        thresholdHits,
+        '最近没有新的风控阈值命中记录。',
+        'threshold'
+    )}
+                ${buildOpsAlertRiskSpotlightActivitySection(
+        '最近自动处置',
+        autoResponses,
+        '最近没有新的自动停券、封禁或下架记录。',
+        'auto'
+    )}
             </div>
             <div class="ops-alert-risk-spotlight__actions">
                 <button

@@ -36,6 +36,15 @@ function createState(overrides = {}) {
     return {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
         jobs: [],
+        runtimeConfig: {
+            shop_order_risk: {
+                auto_response_enabled: true,
+                auto_disable_coupon_min_risk_score: 90,
+                auto_ban_user_min_risk_score: 96,
+                auto_ban_user_duration_days: 7,
+                auto_suspend_product_min_risk_score: 97
+            }
+        },
         ...overrides
     };
 }
@@ -138,6 +147,17 @@ function createAdminModule(state) {
     };
 }
 
+function createOpsAlertsModule(state) {
+    return {
+        async loadOpsAlertsRuntimeConfig() {
+            return {
+                config: state.runtimeConfig || createState().runtimeConfig,
+                secrets: {}
+            };
+        }
+    };
+}
+
 async function withHandler(stateOverrides, callback) {
     const handlerPath = path.resolve(__dirname, '../server/api-handlers/admin/settings/ops-alert-monitor.js');
     const originalLoad = Module._load;
@@ -147,6 +167,9 @@ async function withHandler(stateOverrides, callback) {
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../../../../api/_lib/admin') {
             return createAdminModule(state);
+        }
+        if (request === '../../../../api/_lib/ops-alerts') {
+            return createOpsAlertsModule(state);
         }
         return originalLoad(request, parent, isMain);
     };
@@ -275,7 +298,11 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillme
                     risk_level: 'critical',
                     risk_score: 94,
                     primary_action: 'disable-coupon',
-                    response_summary: '建议立即停用优惠码 FLASH0，并复核最近命中订单。'
+                    response_summary: '建议立即停用优惠码 FLASH0，并复核最近命中订单。',
+                    auto_response_action: 'disable-coupon',
+                    auto_response_status: 'applied',
+                    auto_response_summary: '系统已自动停用优惠码 FLASH0，请继续复核最近命中订单与关联账号。',
+                    auto_response_applied_at: hoursAgo(1.4)
                 },
                 created_at: hoursAgo(1.5)
             })
@@ -321,6 +348,11 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillme
         assert.equal(shopRisk.items[0].risk_level, 'critical');
         assert.equal(shopRisk.items[0].risk_score, 94);
         assert.equal(shopRisk.items[0].primary_action, 'disable-coupon');
+        assert.equal(shopRisk.thresholds.auto_disable_coupon_min_risk_score, 90);
+        assert.equal(shopRisk.recent_threshold_hits[0].action, 'disable-coupon');
+        assert.equal(shopRisk.recent_threshold_hits[0].status, 'applied');
+        assert.equal(shopRisk.recent_auto_responses[0].action, 'disable-coupon');
+        assert.equal(shopRisk.recent_auto_responses[0].status, 'applied');
     });
 });
 
@@ -487,5 +519,81 @@ test('ops alert monitor handler exposes shared login signature shop risk context
         assert.equal(shopRisk.items[0].login_signature_label, '203.0.113.88 · Mozilla/5.0 Chrome/124');
         assert.equal(shopRisk.items[0].risk_level, 'critical');
         assert.equal(shopRisk.items[0].primary_action, 'open-user-ban');
+    });
+});
+
+test('ops alert monitor handler includes recent shop risk threshold hits and auto-response history', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('shop_order_risk_anomaly', {
+                id: 'shop-risk-zero-total-1',
+                severity: 'critical',
+                title: '0 价订单聚集（商品 A）',
+                content: '商城风控告警\n商品：商品 A',
+                payload: {
+                    target_id: 'shop_order_risk:zero_total:global',
+                    signal_type: 'zero_total_cluster',
+                    primary_product_id: 'product-a',
+                    primary_product_name: '商品 A',
+                    primary_product_order_count: 4,
+                    primary_product_order_share: 0.75,
+                    risk_level: 'critical',
+                    risk_score: 98,
+                    primary_action: 'review-orders',
+                    response_summary: '建议先复核风险订单，再决定是否需要处置账号或优惠码。',
+                    auto_response_action: 'suspend-product',
+                    auto_response_status: 'applied',
+                    auto_response_summary: '系统已自动下架商品 商品 A，请尽快复核最近 0 价订单与商品配置。',
+                    auto_response_target: '商品 A',
+                    auto_response_target_type: 'product',
+                    auto_response_applied_at: hoursAgo(0.8)
+                },
+                created_at: hoursAgo(1)
+            }),
+            buildJob('shop_order_risk_anomaly', {
+                id: 'shop-risk-velocity-1',
+                severity: 'critical',
+                title: '账号短时扫货（Gamma）',
+                content: '商城风控告警\n账号：Gamma',
+                payload: {
+                    target_id: 'shop_order_risk:user_velocity:user-gamma',
+                    signal_type: 'user_velocity',
+                    user_id: 'user-gamma',
+                    buyer_label: 'Gamma',
+                    risk_level: 'critical',
+                    risk_score: 97,
+                    primary_action: 'open-user-ban',
+                    response_summary: '建议立即发起封禁处理，并复核该账号最近订单与库存消耗。',
+                    auto_response_action: 'ban-user',
+                    auto_response_status: 'applied',
+                    auto_response_summary: '系统已自动封禁账号 Gamma 7 天，请继续复核其近期订单与库存消耗。',
+                    auto_response_target: 'Gamma',
+                    auto_response_target_type: 'user',
+                    auto_response_applied_at: hoursAgo(0.6)
+                },
+                created_at: hoursAgo(0.7)
+            })
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+
+        const shopRisk = payload.categories.find((item) => item.key === 'shop_risk');
+        assert.equal(shopRisk.recent_threshold_hits.length, 2);
+        assert.equal(shopRisk.recent_threshold_hits[0].action, 'ban-user');
+        assert.equal(shopRisk.recent_threshold_hits[0].status, 'applied');
+        assert.equal(shopRisk.recent_threshold_hits[1].action, 'suspend-product');
+        assert.equal(shopRisk.recent_threshold_hits[1].reference_value, '商品 A');
+        assert.equal(shopRisk.recent_auto_responses.length, 2);
+        assert.equal(shopRisk.recent_auto_responses[0].action, 'ban-user');
+        assert.equal(shopRisk.recent_auto_responses[0].target, 'Gamma');
+        assert.equal(shopRisk.recent_auto_responses[1].action, 'suspend-product');
+        assert.equal(shopRisk.recent_auto_responses[1].target, '商品 A');
     });
 });

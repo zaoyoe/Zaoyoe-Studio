@@ -20944,6 +20944,78 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 10px;
 }
 
+.ops-alert-risk-spotlight__thresholds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.ops-alert-risk-spotlight__panels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+}
+
+.ops-alert-risk-spotlight__panel {
+    border-radius: 14px;
+    padding: 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ops-alert-risk-spotlight__panel-title {
+    color: var(--text-main);
+    font-size: 0.86rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.ops-alert-risk-spotlight__panel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+
+.ops-alert-risk-spotlight__panel-empty {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    line-height: 1.55;
+}
+
+.ops-alert-risk-spotlight__entry {
+    border-radius: 12px;
+    padding: 11px 12px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ops-alert-risk-spotlight__entry-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.ops-alert-risk-spotlight__entry-title {
+    color: var(--text-main);
+    font-size: 0.83rem;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.ops-alert-risk-spotlight__entry-summary,
+.ops-alert-risk-spotlight__entry-meta {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    line-height: 1.55;
+}
+
 .ops-alert-monitor-toolbar {
     display: flex;
     flex-direction: column;
