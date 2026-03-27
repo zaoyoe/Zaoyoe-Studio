@@ -35,6 +35,13 @@ const ALERT_MONITOR_CATEGORIES = Object.freeze([
         description: '聚合单笔履约失败、履约事故升级及恢复告警。',
         problem_types: ['shop_order_delivery_failed', 'shop_order_delivery_incident'],
         recovery_types: ['shop_order_delivery_recovered', 'shop_order_delivery_incident_recovered']
+    },
+    {
+        key: 'shop_risk',
+        label: '商城风控',
+        description: '聚合优惠码滥用、0 价订单和短时扫货风险告警。',
+        problem_types: ['shop_order_risk_anomaly'],
+        recovery_types: ['shop_order_risk_recovered']
     }
 ]);
 
@@ -126,6 +133,16 @@ function getAlertExcerpt(job = {}) {
     return lines[0] || '';
 }
 
+function getShopOrderRiskSignalLabel(value) {
+    const normalized = normalizeText(value, 80).toLowerCase();
+    const labelMap = {
+        discount_code_spike: '优惠码高频使用',
+        zero_total_cluster: '0 价订单聚集',
+        user_velocity: '账号短时扫货'
+    };
+    return labelMap[normalized] || normalized;
+}
+
 function getAlertReference(job = {}) {
     const payload = normalizePayload(job.payload);
 
@@ -145,6 +162,24 @@ function getAlertReference(job = {}) {
         return {
             label: '商品',
             value: normalizeText(payload.product_name, 160)
+        };
+    }
+    if (normalizeText(payload.discount_code, 160)) {
+        return {
+            label: '优惠码',
+            value: normalizeText(payload.discount_code, 160)
+        };
+    }
+    if (normalizeText(payload.buyer_label, 160)) {
+        return {
+            label: '账号',
+            value: normalizeText(payload.buyer_label, 160)
+        };
+    }
+    if (normalizeText(payload.signal_type, 160)) {
+        return {
+            label: '风控信号',
+            value: getShopOrderRiskSignalLabel(payload.signal_type)
         };
     }
     if (normalizeText(payload.order_id, 160)) {

@@ -177,7 +177,7 @@ function buildJob(alertType, overrides = {}) {
     };
 }
 
-test('ops alert monitor handler summarizes payment, ticket, inventory, and fulfillment categories', async () => {
+test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillment, and shop risk categories', async () => {
     await withHandler({
         jobs: [
             buildJob('payment_refund_ops', {
@@ -262,6 +262,18 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, and fulfi
                     target_id: 'shop_order_delivery_incident:global'
                 },
                 created_at: hoursAgo(1)
+            }),
+            buildJob('shop_order_risk_anomaly', {
+                id: 'shop-risk-1',
+                severity: 'critical',
+                title: '优惠码高频使用异常（FLASH0）',
+                content: '商城风控告警\n优惠码：FLASH0',
+                payload: {
+                    target_id: 'shop_order_risk:coupon:FLASH0',
+                    signal_type: 'discount_code_spike',
+                    discount_code: 'FLASH0'
+                },
+                created_at: hoursAgo(1.5)
             })
         ]
     }, async (handler) => {
@@ -273,11 +285,11 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, and fulfi
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
-        assert.equal(payload.summary.total_active_count, 4);
-        assert.equal(payload.summary.total_critical_count, 3);
-        assert.equal(payload.summary.active_category_count, 3);
+        assert.equal(payload.summary.total_active_count, 5);
+        assert.equal(payload.summary.total_critical_count, 4);
+        assert.equal(payload.summary.active_category_count, 4);
         assert.equal(Array.isArray(payload.categories), true);
-        assert.equal(payload.categories.length, 4);
+        assert.equal(payload.categories.length, 5);
 
         const payments = payload.categories.find((item) => item.key === 'payments');
         assert.equal(payments.active_count, 1);
@@ -296,6 +308,12 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, and fulfi
         const fulfillment = payload.categories.find((item) => item.key === 'fulfillment');
         assert.equal(fulfillment.active_count, 2);
         assert.equal(fulfillment.critical_count, 2);
+
+        const shopRisk = payload.categories.find((item) => item.key === 'shop_risk');
+        assert.equal(shopRisk.active_count, 1);
+        assert.equal(shopRisk.critical_count, 1);
+        assert.equal(shopRisk.items[0].reference_label, '优惠码');
+        assert.equal(shopRisk.items[0].reference_value, 'FLASH0');
     });
 });
 

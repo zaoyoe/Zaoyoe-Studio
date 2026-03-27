@@ -93,6 +93,10 @@ const {
     runShopOrderDeliveryFailedSweep
 } = require('../api/_lib/shop-order-delivery-alerts');
 const {
+    normalizeShopOrderRiskMonitorConfig,
+    runShopOrderRiskSweep
+} = require('../api/_lib/shop-order-risk-alerts');
+const {
     normalizeAdminLoginAnomalyMonitorConfig,
     runAdminLoginAnomalySweep
 } = require('../api/_lib/admin-login-anomaly-alerts');
@@ -144,6 +148,8 @@ let shopInventorySweepTimer = null;
 let shopInventorySweepRunning = false;
 let shopOrderDeliverySweepTimer = null;
 let shopOrderDeliverySweepRunning = false;
+let shopOrderRiskSweepTimer = null;
+let shopOrderRiskSweepRunning = false;
 let adminLoginAnomalySweepTimer = null;
 let adminLoginAnomalySweepRunning = false;
 let customerChatMessageSweepTimer = null;
@@ -3417,6 +3423,59 @@ function startShopOrderDeliverySweep() {
     });
 }
 
+async function sweepShopOrderRiskHealth() {
+    if (shopOrderRiskSweepRunning) return;
+    shopOrderRiskSweepRunning = true;
+
+    try {
+        const result = await runShopOrderRiskSweep(supabase, {
+            env: process.env
+        });
+
+        if (
+            Number(result?.anomaly_count || 0) > 0
+            || Number(result?.queued || 0) > 0
+            || Number(result?.recovered_count || 0) > 0
+            || Number(result?.recovered_queued || 0) > 0
+            || Number(result?.admin_notifications_created || 0) > 0
+        ) {
+            console.log('[ShopOrderRiskMonitor] Sweep complete:', JSON.stringify(result));
+        }
+    } catch (error) {
+        console.error('[ShopOrderRiskMonitor] Sweep failed:', error);
+    } finally {
+        shopOrderRiskSweepRunning = false;
+    }
+}
+
+async function queueNextShopOrderRiskSweep(delayMs = null) {
+    if (shopOrderRiskSweepTimer) return;
+
+    const monitorConfig = normalizeShopOrderRiskMonitorConfig({}, process.env);
+    const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 5 * 60 * 1000));
+
+    shopOrderRiskSweepTimer = setTimeout(() => {
+        shopOrderRiskSweepTimer = null;
+        sweepShopOrderRiskHealth()
+            .catch((error) => {
+                console.error('[ShopOrderRiskMonitor] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextShopOrderRiskSweep().catch((error) => {
+                    console.error('[ShopOrderRiskMonitor] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
+function startShopOrderRiskSweep() {
+    if (shopOrderRiskSweepTimer) return;
+
+    queueNextShopOrderRiskSweep(6950).catch((error) => {
+        console.error('[ShopOrderRiskMonitor] Failed to start sweep:', error);
+    });
+}
+
 async function sweepAdminLoginAnomalyHealth() {
     if (adminLoginAnomalySweepRunning) return;
     adminLoginAnomalySweepRunning = true;
@@ -4765,6 +4824,7 @@ function startServer(port = PORT) {
         startTicketSlaSweep();
         startShopInventorySweep();
         startShopOrderDeliverySweep();
+        startShopOrderRiskSweep();
         startAdminLoginAnomalySweep();
         startCustomerChatMessageSweep();
         startCommerceSuccessSweep();
