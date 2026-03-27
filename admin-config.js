@@ -2522,6 +2522,11 @@ function getOpsAlertMonitorCategoryActions(categoryKey) {
         ],
         fulfillment: [
             { target: 'shop-fulfillment', label: '履约死信', icon: 'fas fa-truck-ramp-box' }
+        ],
+        shop_risk: [
+            { target: 'shop-risk-orders', label: '风险订单', icon: 'fas fa-bag-shopping' },
+            { target: 'shop-risk-discounts', label: '优惠券码', icon: 'fas fa-ticket' },
+            { target: 'shop-risk-users', label: '用户详情', icon: 'fas fa-user-shield' }
         ]
     };
     return actionMap[normalizedKey] || [];
@@ -2538,7 +2543,7 @@ function normalizeOpsAlertMonitorFilterValue(kind, value) {
         return ['all', 'critical', 'warning'].includes(normalizedValue) ? normalizedValue : 'all';
     }
     if (normalizedKind === 'category') {
-        return ['all', 'payments', 'tickets', 'inventory', 'fulfillment'].includes(normalizedValue)
+        return ['all', 'payments', 'tickets', 'inventory', 'fulfillment', 'shop_risk'].includes(normalizedValue)
             ? normalizedValue
             : 'all';
     }
@@ -2604,6 +2609,7 @@ function getOpsAlertMonitorSeverityTone(severity) {
 function getOpsAlertMonitorItemAction(category = {}, item = {}) {
     const alertType = String(item.alert_type || '').trim().toLowerCase();
     const categoryKey = String(category.key || '').trim().toLowerCase();
+    const targetId = String(item.target_id || '').trim().toLowerCase();
     const perType = {
         payment_refund_ops: { target: 'payments-ops', label: '处理退款', icon: 'fas fa-arrow-rotate-left' },
         payment_gateway_degraded: { target: 'payments-overview', label: '查看通道', icon: 'fas fa-credit-card' },
@@ -2615,11 +2621,21 @@ function getOpsAlertMonitorItemAction(category = {}, item = {}) {
         shop_order_delivery_failed: { target: 'shop-fulfillment', label: '处理履约', icon: 'fas fa-truck-ramp-box' },
         shop_order_delivery_incident: { target: 'shop-fulfillment', label: '处理事故', icon: 'fas fa-triangle-exclamation' }
     };
+    if (alertType === 'shop_order_risk_anomaly' || alertType === 'shop_order_risk_recovered') {
+        if (targetId.startsWith('shop_order_risk:coupon:')) {
+            return { target: 'shop-risk-discounts', label: '查看优惠券码', icon: 'fas fa-ticket' };
+        }
+        if (targetId.startsWith('shop_order_risk:user_velocity:')) {
+            return { target: 'shop-risk-users', label: '查看用户详情', icon: 'fas fa-user-shield' };
+        }
+        return { target: 'shop-risk-orders', label: '查看风险订单', icon: 'fas fa-bag-shopping' };
+    }
     const fallbackByCategory = {
         payments: { target: 'payments-ops', label: '进入处理页', icon: 'fas fa-shield-heart' },
         tickets: { target: 'tickets-pending', label: '进入处理页', icon: 'fas fa-ticket-alt' },
         inventory: { target: 'shop-inventory', label: '进入处理页', icon: 'fas fa-box-open' },
-        fulfillment: { target: 'shop-fulfillment', label: '进入处理页', icon: 'fas fa-truck-ramp-box' }
+        fulfillment: { target: 'shop-fulfillment', label: '进入处理页', icon: 'fas fa-truck-ramp-box' },
+        shop_risk: { target: 'shop-risk-orders', label: '进入处理页', icon: 'fas fa-bag-shopping' }
     };
     return perType[alertType] || fallbackByCategory[categoryKey] || null;
 }
@@ -2744,7 +2760,8 @@ function getOpsAlertMonitorFilterSummaryLabel(filters = getOpsAlertMonitorViewFi
         payments: '支付与退款',
         tickets: '工单与售后',
         inventory: '库存与补货',
-        fulfillment: '履约与死信'
+        fulfillment: '履约与死信',
+        shop_risk: '商城风控'
     };
 
     return [scopeLabels[filters.scope], severityLabels[filters.severity], categoryLabels[filters.category]]
@@ -2848,7 +2865,8 @@ function buildOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonit
         payments: '支付与退款',
         tickets: '工单与售后',
         inventory: '库存与补货',
-        fulfillment: '履约与死信'
+        fulfillment: '履约与死信',
+        shop_risk: '商城风控'
     };
     const lines = [
         '第一阶段集中告警处理清单',
@@ -2881,6 +2899,136 @@ function buildOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonit
     });
 
     return lines.join('\n').trim();
+}
+
+function getOpsAlertRiskSpotlightCategory(filters = getOpsAlertMonitorViewFilters()) {
+    const rawCategory = (Array.isArray(opsAlertMonitorState?.categories) ? opsAlertMonitorState.categories : [])
+        .find((category) => String(category?.key || '').trim().toLowerCase() === 'shop_risk');
+    if (!rawCategory) {
+        return null;
+    }
+
+    return buildOpsAlertMonitorCategoryView(rawCategory, {
+        ...filters,
+        category: 'all'
+    });
+}
+
+function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlertMonitorViewFilters()) {
+    const actions = getOpsAlertMonitorCategoryActions('shop_risk');
+    const spotlightCategory = category && typeof category === 'object' ? category : null;
+    const tone = spotlightCategory ? getOpsAlertMonitorCardTone(spotlightCategory) : 'neutral';
+    const latestItem = Array.isArray(spotlightCategory?.visible_items) && spotlightCategory.visible_items.length
+        ? spotlightCategory.visible_items[0]
+        : (Array.isArray(spotlightCategory?.items) && spotlightCategory.items.length ? spotlightCategory.items[0] : null);
+    const activeCount = spotlightCategory ? getOpsAlertMonitorDisplayActiveCount(spotlightCategory) : 0;
+    const criticalCount = spotlightCategory ? getOpsAlertMonitorDisplayCriticalCount(spotlightCategory) : 0;
+    const title = spotlightCategory
+        ? (
+            activeCount > 0
+                ? `当前有 ${formatVerifyMonitorInteger(activeCount)} 项商城风控信号待接手`
+                : (
+                    String(spotlightCategory.latest_state || '').toLowerCase() === 'recovered'
+                        ? '最近一轮商城风控信号已恢复'
+                        : '当前没有持续中的商城风控信号'
+                )
+        )
+        : '当前没有可展示的商城风控快照';
+    const summary = spotlightCategory
+        ? (
+            latestItem?.message
+            || spotlightCategory.filtered_note
+            || spotlightCategory.latest_message
+            || '处理入口会直达订单列表、优惠券码和用户详情，避免只看到告警却还要手动找页签。'
+        )
+        : (
+            filters.severity !== 'all' || filters.scope !== 'all'
+                ? '当前筛选条件下没有命中的商城风控信号，可以切回“全部状态 / 全部级别”查看全量快照。'
+                : '最近没有持续中的商城风控告警，下面保留订单、优惠券码和用户处理入口。'
+        );
+    const stats = [
+        buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(activeCount)} 待关注`, activeCount > 0 ? 'warning' : 'neutral')
+    ];
+
+    if (criticalCount > 0) {
+        stats.push(buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(criticalCount)} critical`, 'danger'));
+    }
+    if (spotlightCategory && String(spotlightCategory.latest_state || '').toLowerCase() === 'recovered' && activeCount <= 0) {
+        stats.push(buildOpsAlertMonitorBadge('已恢复', 'success'));
+    }
+    if (!spotlightCategory) {
+        stats.push(buildOpsAlertMonitorBadge('等待更多上下文', 'neutral'));
+    }
+
+    return `
+        <div class="ops-alert-risk-spotlight ops-alert-risk-spotlight--${escapeConfigHtml(tone)}">
+            <div class="ops-alert-risk-spotlight__copy">
+                <div class="ops-alert-risk-spotlight__eyebrow">商城风控优先处理</div>
+                <div class="ops-alert-risk-spotlight__title">${escapeConfigHtml(title)}</div>
+                <div class="ops-alert-risk-spotlight__summary">${escapeConfigHtml(summary)}</div>
+            </div>
+            <div class="ops-alert-risk-spotlight__stats">
+                ${stats.join('')}
+            </div>
+            <div class="ops-alert-risk-spotlight__actions">
+                <button
+                    type="button"
+                    class="btn-add-config btn-add-config--compact"
+                    data-admin-action="settings-copy-ops-alert-monitor-category"
+                    data-ops-alert-monitor-category-key="shop_risk"
+                >
+                    <i class="fas fa-list-check"></i> 复制商城风控清单
+                </button>
+                ${actions.map((action) => `
+                    <button
+                        type="button"
+                        class="btn-add-config btn-add-config--compact"
+                        data-admin-action="settings-open-ops-alert-workspace"
+                        data-workspace-target="${escapeConfigHtml(action.target)}"
+                    >
+                        <i class="${escapeConfigHtml(action.icon)}"></i> ${escapeConfigHtml(action.label)}
+                    </button>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function renderOpsAlertRiskSpotlight(filters = getOpsAlertMonitorViewFilters()) {
+    const target = document.getElementById('opsAlertRiskSpotlight');
+    if (!target) return;
+
+    const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
+    if (state.status === 'loading') {
+        target.innerHTML = buildOpsAlertRiskSpotlightMarkup(null, filters);
+        return;
+    }
+
+    if (state.status === 'error') {
+        target.innerHTML = `
+            <div class="ops-alert-risk-spotlight ops-alert-risk-spotlight--danger">
+                <div class="ops-alert-risk-spotlight__copy">
+                    <div class="ops-alert-risk-spotlight__eyebrow">商城风控优先处理</div>
+                    <div class="ops-alert-risk-spotlight__title">商城风控快照加载失败</div>
+                    <div class="ops-alert-risk-spotlight__summary">${escapeConfigHtml(state.message || '请刷新面板后重试。')}</div>
+                </div>
+                <div class="ops-alert-risk-spotlight__stats">
+                    ${buildOpsAlertMonitorBadge('加载失败', 'danger')}
+                </div>
+                <div class="ops-alert-risk-spotlight__actions">
+                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-refresh-ops-alert-monitor">
+                        <i class="fas fa-rotate"></i> 刷新面板
+                    </button>
+                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="shop-risk-orders">
+                        <i class="fas fa-bag-shopping"></i> 风险订单
+                    </button>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    target.innerHTML = buildOpsAlertRiskSpotlightMarkup(getOpsAlertRiskSpotlightCategory(filters), filters);
 }
 
 function buildOpsAlertMonitorCategoryMarkup(category = {}, filters = getOpsAlertMonitorViewFilters()) {
@@ -2980,9 +3128,10 @@ function renderOpsAlertMonitorPanel() {
 
     panel.hidden = false;
     syncOpsAlertMonitorFilterToolbar(filters);
+    renderOpsAlertRiskSpotlight(filters);
 
     if (state.status === 'loading') {
-        meta.innerHTML = '<i class="fas fa-rotate fa-spin"></i><span>正在汇总支付、工单、库存、履约四类告警...</span>';
+        meta.innerHTML = '<i class="fas fa-rotate fa-spin"></i><span>正在汇总支付、工单、库存、履约与商城风控五类告警...</span>';
         renderOpsAlertMonitorEmptyState(grid, '正在加载集中告警处理面板...');
         return;
     }
@@ -4602,6 +4751,55 @@ function normalizeOpsAlertWorkspaceContext(context = {}) {
     };
 }
 
+function getOpsAlertWorkspaceTargetIdParts(context = {}) {
+    return normalizeOpsAlertWorkspaceContext(context)
+        .targetId
+        .split(':')
+        .map((part) => String(part || '').trim())
+        .filter(Boolean);
+}
+
+function getOpsAlertWorkspaceDiscountCode(context = {}) {
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    if (normalizedContext.referenceLabel === '优惠码' && normalizedContext.referenceValue) {
+        return normalizedContext.referenceValue;
+    }
+
+    const parts = getOpsAlertWorkspaceTargetIdParts(normalizedContext);
+    if (parts[0] === 'shop_order_risk' && parts[1] === 'coupon' && parts[2]) {
+        return parts.slice(2).join(':');
+    }
+
+    return '';
+}
+
+function getOpsAlertWorkspaceRiskUserId(context = {}) {
+    const parts = getOpsAlertWorkspaceTargetIdParts(context);
+    if (parts[0] === 'shop_order_risk' && parts[1] === 'user_velocity' && parts[2]) {
+        return parts.slice(2).join(':');
+    }
+    return '';
+}
+
+async function tryOpenOpsAlertWorkspaceUserModal(userId, attemptCount = 6, delayMs = 140) {
+    const normalizedUserId = String(userId || '').trim();
+    if (!normalizedUserId) {
+        return false;
+    }
+
+    const encodedUserId = encodeURIComponent(normalizedUserId);
+    for (let attempt = 0; attempt < attemptCount; attempt += 1) {
+        const row = document.querySelector(`[data-admin-action="users-open-drawer"][data-user-id="${encodedUserId}"]`);
+        if (row instanceof HTMLElement) {
+            row.click();
+            return true;
+        }
+        await settleOpsAlertWorkspace(delayMs);
+    }
+
+    return false;
+}
+
 function getOpsAlertWorkspaceSearchValue(context = {}) {
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
     const normalizedLabel = String(normalizedContext.referenceLabel || '').trim().toLowerCase();
@@ -4642,7 +4840,10 @@ function getOpsAlertWorkspaceSuccessLabel(workspaceKey) {
         'tickets-pending': '待处理工单',
         'tickets-resolved': '已处理工单',
         'shop-inventory': '库存 / 补货',
-        'shop-fulfillment': '履约异常订单'
+        'shop-fulfillment': '履约异常订单',
+        'shop-risk-orders': '商城风险订单',
+        'shop-risk-discounts': '优惠券码列表',
+        'shop-risk-users': '用户详情'
     };
     return labels[normalizedKey] || '告警处理入口';
 }
@@ -4736,6 +4937,57 @@ async function openOpsAlertWorkspace(workspaceKey, context = {}) {
                 await window.ShopAdmin.loadDeliveryTasks?.(1);
             }
             scrollToOpsAlertWorkspaceTarget('deliveryDeadLetterSummary');
+        } else if (normalizedKey === 'shop-risk-orders') {
+            const orderSearchValue = ['订单号', '订单'].includes(normalizedContext.referenceLabel)
+                ? workspaceSearchValue
+                : '';
+            window.switchModule?.('shop');
+            await settleOpsAlertWorkspace();
+            await window.ShopAdmin?.init?.();
+            window.ShopAdmin?.switchTab?.('orders');
+            await settleOpsAlertWorkspace();
+            const orderSearchInput = document.getElementById('orderSearchInput');
+            if (orderSearchInput) {
+                orderSearchInput.value = orderSearchValue || '';
+            }
+            await window.ShopAdmin?.searchOrders?.(1);
+            scrollToOpsAlertWorkspaceTarget('shop-view-orders');
+        } else if (normalizedKey === 'shop-risk-discounts') {
+            const discountSearchValue = getOpsAlertWorkspaceDiscountCode(normalizedContext) || workspaceSearchValue || '';
+            window.switchModule?.('discounts');
+            await settleOpsAlertWorkspace();
+            if (window.AdminDiscounts) {
+                window.AdminDiscounts.filters = {
+                    ...(window.AdminDiscounts.filters || {}),
+                    search: String(discountSearchValue || '').trim().toLowerCase()
+                };
+                window.AdminDiscounts.currentPage = 1;
+            }
+            const discountSearchInput = document.getElementById('discountSearchInput');
+            if (discountSearchInput) {
+                discountSearchInput.value = discountSearchValue || '';
+            }
+            await window.AdminDiscounts?.loadDiscounts?.();
+            if (discountSearchValue) {
+                window.AdminDiscounts?.search?.();
+            }
+            scrollToOpsAlertWorkspaceTarget('module-discounts');
+        } else if (normalizedKey === 'shop-risk-users') {
+            const riskUserId = getOpsAlertWorkspaceRiskUserId(normalizedContext);
+            const userSearchValue = riskUserId || workspaceSearchValue || '';
+            window.switchModule?.('users');
+            await settleOpsAlertWorkspace();
+            const userSearchInput = document.getElementById('userSearchInput');
+            if (userSearchInput) {
+                userSearchInput.value = userSearchValue;
+                userSearchInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            await settleOpsAlertWorkspace();
+            if (riskUserId) {
+                await tryOpenOpsAlertWorkspaceUserModal(riskUserId);
+            } else {
+                scrollToOpsAlertWorkspaceTarget('module-users');
+            }
         } else {
             throw new Error('未识别的告警处理入口');
         }
