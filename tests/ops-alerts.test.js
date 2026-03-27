@@ -1460,6 +1460,113 @@ test('resolveEnabledChannels includes email only when the backend email channel 
     assert.deepEqual(__testUtils.resolveEnabledChannels(runtime, 'critical'), ['email']);
 });
 
+test('resolveEnabledChannels suppresses non-critical alerts during configured quiet hours', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            enabled: true,
+            quiet_hours: {
+                enabled: true,
+                start_hour: 23,
+                end_hour: 8,
+                timezone: 'Asia/Shanghai',
+                allow_critical: true
+            },
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['123456']
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: 'telegram-key'
+        }
+    });
+
+    assert.deepEqual(
+        __testUtils.resolveEnabledChannels(runtime, 'warning', 'shop_inventory_low', {
+            now: new Date('2026-03-27T16:00:00.000Z')
+        }),
+        []
+    );
+});
+
+test('resolveEnabledChannels still allows critical alerts during quiet hours when configured', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            enabled: true,
+            quiet_hours: {
+                enabled: true,
+                start_hour: 23,
+                end_hour: 8,
+                timezone: 'Asia/Shanghai',
+                allow_critical: true
+            },
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['123456']
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: 'telegram-key'
+        }
+    });
+
+    assert.deepEqual(
+        __testUtils.resolveEnabledChannels(runtime, 'critical', 'shop_inventory_empty', {
+            now: new Date('2026-03-27T16:00:00.000Z')
+        }),
+        ['telegram']
+    );
+});
+
+test('resolveEnabledChannels filters channels by alert-type routing', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['123456']
+                },
+                feishu: {
+                    enabled: true,
+                    minimum_severity: 'warning'
+                },
+                email: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    recipients: ['ops@example.com'],
+                    from_address: 'Zaoyoe Ops <alerts@zaoyoe.com>',
+                    subject_prefix: '[Zaoyoe告警]'
+                }
+            },
+            routing: {
+                shop_inventory: {
+                    telegram: false,
+                    feishu: true,
+                    email: false
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: 'telegram-key',
+            feishu_webhook_url: 'https://open.feishu.cn/webhook/test',
+            email_api_key: 're_email_key'
+        }
+    });
+
+    assert.deepEqual(
+        __testUtils.resolveEnabledChannels(runtime, 'warning', 'shop_inventory_low'),
+        ['feishu']
+    );
+});
+
 test('sendEmailAlert uses Resend with recipients, sender, and severity subject', async () => {
     let request = null;
     const result = await __testUtils.sendEmailAlert({

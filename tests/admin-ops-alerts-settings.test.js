@@ -40,6 +40,13 @@ function createDefaultState() {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
         config: {
             enabled: false,
+            quiet_hours: {
+                enabled: false,
+                start_hour: 23,
+                end_hour: 8,
+                timezone: 'Asia/Shanghai',
+                allow_critical: true
+            },
             channels: {
                 telegram: {
                     enabled: false,
@@ -57,6 +64,28 @@ function createDefaultState() {
                     from_address: '',
                     reply_to: '',
                     subject_prefix: '[Zaoyoe告警]'
+                }
+            },
+            routing: {
+                customer_chat_message: {
+                    telegram: true,
+                    feishu: true,
+                    email: true
+                },
+                shop_purchase_success: {
+                    telegram: true,
+                    feishu: true,
+                    email: true
+                },
+                wallet_recharge_success: {
+                    telegram: true,
+                    feishu: true,
+                    email: true
+                },
+                shop_inventory: {
+                    telegram: true,
+                    feishu: true,
+                    email: true
                 }
             },
             shop_order_risk: {
@@ -149,14 +178,27 @@ function createNormalizedConfig(raw) {
     const telegram = channels.telegram && typeof channels.telegram === 'object' ? channels.telegram : {};
     const feishu = channels.feishu && typeof channels.feishu === 'object' ? channels.feishu : {};
     const email = channels.email && typeof channels.email === 'object' ? channels.email : {};
+    const quietHours = source.quiet_hours && typeof source.quiet_hours === 'object' ? source.quiet_hours : {};
     const shopOrderRisk = source.shop_order_risk && typeof source.shop_order_risk === 'object' ? source.shop_order_risk : {};
     const shopInventory = source.shop_inventory && typeof source.shop_inventory === 'object' ? source.shop_inventory : {};
     const customerChatMessage = source.customer_chat_message && typeof source.customer_chat_message === 'object' ? source.customer_chat_message : {};
     const shopPurchaseSuccess = source.shop_purchase_success && typeof source.shop_purchase_success === 'object' ? source.shop_purchase_success : {};
     const walletRechargeSuccess = source.wallet_recharge_success && typeof source.wallet_recharge_success === 'object' ? source.wallet_recharge_success : {};
+    const routing = source.routing && typeof source.routing === 'object' ? source.routing : {};
+    const routingCustomerChatMessage = routing.customer_chat_message && typeof routing.customer_chat_message === 'object' ? routing.customer_chat_message : {};
+    const routingShopPurchaseSuccess = routing.shop_purchase_success && typeof routing.shop_purchase_success === 'object' ? routing.shop_purchase_success : {};
+    const routingWalletRechargeSuccess = routing.wallet_recharge_success && typeof routing.wallet_recharge_success === 'object' ? routing.wallet_recharge_success : {};
+    const routingShopInventory = routing.shop_inventory && typeof routing.shop_inventory === 'object' ? routing.shop_inventory : {};
 
     return {
         enabled: normalizeBoolean(source.enabled, false),
+        quiet_hours: {
+            enabled: normalizeBoolean(quietHours.enabled, false),
+            start_hour: Math.min(23, Math.max(0, Number(quietHours.start_hour || 23) || 23)),
+            end_hour: Math.min(23, Math.max(0, Number(quietHours.end_hour || 8) || 8)),
+            timezone: String(quietHours.timezone || 'Asia/Shanghai').trim() || 'Asia/Shanghai',
+            allow_critical: normalizeBoolean(quietHours.allow_critical, true)
+        },
         channels: {
             telegram: {
                 enabled: normalizeBoolean(telegram.enabled, false),
@@ -180,6 +222,28 @@ function createNormalizedConfig(raw) {
                 from_address: String(email.from_address || '').trim(),
                 reply_to: String(email.reply_to || '').trim(),
                 subject_prefix: String(email.subject_prefix || '').trim() || '[Zaoyoe告警]'
+            }
+        },
+        routing: {
+            customer_chat_message: {
+                telegram: normalizeBoolean(routingCustomerChatMessage.telegram, true),
+                feishu: normalizeBoolean(routingCustomerChatMessage.feishu, true),
+                email: normalizeBoolean(routingCustomerChatMessage.email, true)
+            },
+            shop_purchase_success: {
+                telegram: normalizeBoolean(routingShopPurchaseSuccess.telegram, true),
+                feishu: normalizeBoolean(routingShopPurchaseSuccess.feishu, true),
+                email: normalizeBoolean(routingShopPurchaseSuccess.email, true)
+            },
+            wallet_recharge_success: {
+                telegram: normalizeBoolean(routingWalletRechargeSuccess.telegram, true),
+                feishu: normalizeBoolean(routingWalletRechargeSuccess.feishu, true),
+                email: normalizeBoolean(routingWalletRechargeSuccess.email, true)
+            },
+            shop_inventory: {
+                telegram: normalizeBoolean(routingShopInventory.telegram, true),
+                feishu: normalizeBoolean(routingShopInventory.feishu, true),
+                email: normalizeBoolean(routingShopInventory.email, true)
             }
         },
         shop_order_risk: {
@@ -462,8 +526,19 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
         assert.equal(payload.config.enabled, true);
+        assert.equal(payload.config.quiet_hours.enabled, false);
+        assert.equal(payload.config.quiet_hours.start_hour, 23);
+        assert.equal(payload.config.quiet_hours.end_hour, 8);
+        assert.equal(payload.config.quiet_hours.timezone, 'Asia/Shanghai');
+        assert.equal(payload.config.quiet_hours.allow_critical, true);
         assert.equal(payload.config.channels.telegram.minimum_severity, 'critical');
         assert.deepEqual(payload.config.channels.telegram.chat_ids, ['123456']);
+        assert.equal(payload.config.routing.customer_chat_message.telegram, true);
+        assert.equal(payload.config.routing.customer_chat_message.feishu, true);
+        assert.equal(payload.config.routing.customer_chat_message.email, true);
+        assert.equal(payload.config.routing.shop_inventory.telegram, true);
+        assert.equal(payload.config.routing.shop_inventory.feishu, true);
+        assert.equal(payload.config.routing.shop_inventory.email, true);
         assert.equal(payload.config.shop_order_risk.auto_response_enabled, true);
         assert.equal(payload.config.shop_order_risk.auto_disable_coupon_min_risk_score, 90);
         assert.equal(payload.config.shop_order_risk.auto_ban_user_min_risk_score, 96);
@@ -501,6 +576,13 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
             body: {
                 config: {
                     enabled: true,
+                    quiet_hours: {
+                        enabled: true,
+                        start_hour: 22,
+                        end_hour: 7,
+                        timezone: 'Asia/Shanghai',
+                        allow_critical: false
+                    },
                     channels: {
                         telegram: {
                             enabled: true,
@@ -510,6 +592,28 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         feishu: {
                             enabled: true,
                             minimum_severity: 'warning'
+                        }
+                    },
+                    routing: {
+                        customer_chat_message: {
+                            telegram: false,
+                            feishu: true,
+                            email: true
+                        },
+                        shop_purchase_success: {
+                            telegram: true,
+                            feishu: false,
+                            email: true
+                        },
+                        wallet_recharge_success: {
+                            telegram: true,
+                            feishu: true,
+                            email: false
+                        },
+                        shop_inventory: {
+                            telegram: false,
+                            feishu: true,
+                            email: false
                         }
                     },
                     shop_order_risk: {
@@ -560,8 +664,33 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
         assert.equal(payload.config.enabled, true);
+        assert.equal(payload.config.quiet_hours.enabled, true);
+        assert.equal(payload.config.quiet_hours.start_hour, 22);
+        assert.equal(payload.config.quiet_hours.end_hour, 7);
+        assert.equal(payload.config.quiet_hours.timezone, 'Asia/Shanghai');
+        assert.equal(payload.config.quiet_hours.allow_critical, false);
         assert.equal(payload.config.channels.telegram.enabled, true);
         assert.deepEqual(payload.config.channels.telegram.chat_ids, ['123456', '789000']);
+        assert.deepEqual(payload.config.routing.customer_chat_message, {
+            telegram: false,
+            feishu: true,
+            email: true
+        });
+        assert.deepEqual(payload.config.routing.shop_purchase_success, {
+            telegram: true,
+            feishu: false,
+            email: true
+        });
+        assert.deepEqual(payload.config.routing.wallet_recharge_success, {
+            telegram: true,
+            feishu: true,
+            email: false
+        });
+        assert.deepEqual(payload.config.routing.shop_inventory, {
+            telegram: false,
+            feishu: true,
+            email: false
+        });
         assert.equal(payload.config.shop_order_risk.auto_response_enabled, true);
         assert.equal(payload.config.shop_order_risk.auto_disable_coupon_min_risk_score, 88);
         assert.equal(payload.config.shop_order_risk.auto_ban_user_min_risk_score, 95);
@@ -590,6 +719,15 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.upsertedSecrets.length, 2);
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.upsert');
+        assert.equal(state.auditLogs[0].details.quiet_hours_enabled, true);
+        assert.equal(state.auditLogs[0].details.quiet_hours_start_hour, 22);
+        assert.equal(state.auditLogs[0].details.quiet_hours_end_hour, 7);
+        assert.equal(state.auditLogs[0].details.quiet_hours_timezone, 'Asia/Shanghai');
+        assert.equal(state.auditLogs[0].details.quiet_hours_allow_critical, false);
+        assert.deepEqual(state.auditLogs[0].details.routing_customer_chat_message_channels, ['feishu', 'email']);
+        assert.deepEqual(state.auditLogs[0].details.routing_shop_purchase_success_channels, ['telegram', 'email']);
+        assert.deepEqual(state.auditLogs[0].details.routing_wallet_recharge_success_channels, ['telegram', 'feishu']);
+        assert.deepEqual(state.auditLogs[0].details.routing_shop_inventory_channels, ['feishu']);
         assert.equal(state.auditLogs[0].details.shop_risk_auto_response_enabled, true);
         assert.equal(state.auditLogs[0].details.shop_risk_auto_disable_coupon_min_risk_score, 88);
         assert.equal(state.auditLogs[0].details.shop_risk_auto_ban_user_min_risk_score, 95);

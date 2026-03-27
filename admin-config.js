@@ -887,6 +887,13 @@ function getDefaultOpsAlertConfig() {
         retry_base_delay_ms: 60000,
         retry_max_delay_ms: 1800000,
         timeout_ms: 5000,
+        quiet_hours: {
+            enabled: false,
+            start_hour: 23,
+            end_hour: 8,
+            timezone: 'Asia/Shanghai',
+            allow_critical: true
+        },
         channels: {
             telegram: {
                 enabled: false,
@@ -904,6 +911,28 @@ function getDefaultOpsAlertConfig() {
                 from_address: '',
                 reply_to: '',
                 subject_prefix: '[Zaoyoe告警]'
+            }
+        },
+        routing: {
+            customer_chat_message: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            shop_purchase_success: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            wallet_recharge_success: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            shop_inventory: {
+                telegram: true,
+                feishu: true,
+                email: true
             }
         },
         shop_order_risk: {
@@ -1286,6 +1315,9 @@ function normalizePaymentChannelsConfig(raw) {
 function normalizeOpsAlertConfig(raw) {
     const defaults = getDefaultOpsAlertConfig();
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const quietHoursSource = source.quiet_hours && typeof source.quiet_hours === 'object' && !Array.isArray(source.quiet_hours)
+        ? source.quiet_hours
+        : {};
     const sourceChannels = source.channels && typeof source.channels === 'object' && !Array.isArray(source.channels)
         ? source.channels
         : {};
@@ -1313,6 +1345,21 @@ function normalizeOpsAlertConfig(raw) {
     const walletRechargeSuccessSource = source.wallet_recharge_success && typeof source.wallet_recharge_success === 'object' && !Array.isArray(source.wallet_recharge_success)
         ? source.wallet_recharge_success
         : {};
+    const routingSource = source.routing && typeof source.routing === 'object' && !Array.isArray(source.routing)
+        ? source.routing
+        : {};
+    const routingCustomerChatSource = routingSource.customer_chat_message && typeof routingSource.customer_chat_message === 'object' && !Array.isArray(routingSource.customer_chat_message)
+        ? routingSource.customer_chat_message
+        : {};
+    const routingShopPurchaseSource = routingSource.shop_purchase_success && typeof routingSource.shop_purchase_success === 'object' && !Array.isArray(routingSource.shop_purchase_success)
+        ? routingSource.shop_purchase_success
+        : {};
+    const routingWalletRechargeSource = routingSource.wallet_recharge_success && typeof routingSource.wallet_recharge_success === 'object' && !Array.isArray(routingSource.wallet_recharge_success)
+        ? routingSource.wallet_recharge_success
+        : {};
+    const routingShopInventorySource = routingSource.shop_inventory && typeof routingSource.shop_inventory === 'object' && !Array.isArray(routingSource.shop_inventory)
+        ? routingSource.shop_inventory
+        : {};
 
     return {
         enabled: normalizeConfigBoolean(source.enabled, defaults.enabled),
@@ -1327,6 +1374,13 @@ function normalizeOpsAlertConfig(raw) {
             24 * 60 * 60 * 1000
         ),
         timeout_ms: clamp(toWholeNumber(source.timeout_ms, defaults.timeout_ms), 1000, 30000),
+        quiet_hours: {
+            enabled: normalizeConfigBoolean(quietHoursSource.enabled, defaults.quiet_hours.enabled),
+            start_hour: clamp(toWholeNumber(quietHoursSource.start_hour, defaults.quiet_hours.start_hour), 0, 23),
+            end_hour: clamp(toWholeNumber(quietHoursSource.end_hour, defaults.quiet_hours.end_hour), 0, 23),
+            timezone: String(quietHoursSource.timezone || defaults.quiet_hours.timezone).trim() || defaults.quiet_hours.timezone,
+            allow_critical: normalizeConfigBoolean(quietHoursSource.allow_critical, defaults.quiet_hours.allow_critical)
+        },
         channels: {
             telegram: {
                 enabled: normalizeConfigBoolean(telegramSource.enabled, defaults.channels.telegram.enabled),
@@ -1344,6 +1398,28 @@ function normalizeOpsAlertConfig(raw) {
                 from_address: String(emailSource.from_address || defaults.channels.email.from_address).trim(),
                 reply_to: String(emailSource.reply_to || defaults.channels.email.reply_to).trim(),
                 subject_prefix: String(emailSource.subject_prefix || defaults.channels.email.subject_prefix).trim() || defaults.channels.email.subject_prefix
+            }
+        },
+        routing: {
+            customer_chat_message: {
+                telegram: normalizeConfigBoolean(routingCustomerChatSource.telegram, defaults.routing.customer_chat_message.telegram),
+                feishu: normalizeConfigBoolean(routingCustomerChatSource.feishu, defaults.routing.customer_chat_message.feishu),
+                email: normalizeConfigBoolean(routingCustomerChatSource.email, defaults.routing.customer_chat_message.email)
+            },
+            shop_purchase_success: {
+                telegram: normalizeConfigBoolean(routingShopPurchaseSource.telegram, defaults.routing.shop_purchase_success.telegram),
+                feishu: normalizeConfigBoolean(routingShopPurchaseSource.feishu, defaults.routing.shop_purchase_success.feishu),
+                email: normalizeConfigBoolean(routingShopPurchaseSource.email, defaults.routing.shop_purchase_success.email)
+            },
+            wallet_recharge_success: {
+                telegram: normalizeConfigBoolean(routingWalletRechargeSource.telegram, defaults.routing.wallet_recharge_success.telegram),
+                feishu: normalizeConfigBoolean(routingWalletRechargeSource.feishu, defaults.routing.wallet_recharge_success.feishu),
+                email: normalizeConfigBoolean(routingWalletRechargeSource.email, defaults.routing.wallet_recharge_success.email)
+            },
+            shop_inventory: {
+                telegram: normalizeConfigBoolean(routingShopInventorySource.telegram, defaults.routing.shop_inventory.telegram),
+                feishu: normalizeConfigBoolean(routingShopInventorySource.feishu, defaults.routing.shop_inventory.feishu),
+                email: normalizeConfigBoolean(routingShopInventorySource.email, defaults.routing.shop_inventory.email)
             }
         },
         shop_order_risk: {
@@ -1962,12 +2038,63 @@ function applyOpsAlertOverview(config) {
     setOpsAlertDeleteButtonState('telegram_bot_token', telegramSecret);
     setOpsAlertDeleteButtonState('feishu_webhook_url', feishuSecret);
     setOpsAlertDeleteButtonState('email_api_key', emailSecret);
+    applyOpsAlertStrategyControls(normalizedConfig);
     applyOpsAlertShopRiskControls(normalizedConfig);
     applyOpsAlertShopInventoryControls(normalizedConfig);
     applyOpsAlertCustomerChatControls(normalizedConfig);
     applyOpsAlertShopPurchaseSuccessControls(normalizedConfig);
     applyOpsAlertWalletRechargeSuccessControls(normalizedConfig);
     renderOpsAlertOverviewCards(normalizedConfig);
+}
+
+function getOpsAlertRoutingCheckboxId(routingKey, channelKey) {
+    const routingIdMap = {
+        customer_chat_message: 'CustomerChatMessage',
+        shop_purchase_success: 'ShopPurchaseSuccess',
+        wallet_recharge_success: 'WalletRechargeSuccess',
+        shop_inventory: 'ShopInventory'
+    };
+    const channelIdMap = {
+        telegram: 'Telegram',
+        feishu: 'Feishu',
+        email: 'Email'
+    };
+
+    return `opsAlertRouting${routingIdMap[routingKey] || ''}${channelIdMap[channelKey] || ''}`;
+}
+
+function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const quietHours = normalizedConfig.quiet_hours || getDefaultOpsAlertConfig().quiet_hours;
+    const quietHoursEnabledToggle = document.getElementById('opsAlertQuietHoursEnabledToggle');
+    if (quietHoursEnabledToggle) {
+        quietHoursEnabledToggle.classList.toggle('active', quietHours.enabled);
+    }
+
+    const allowCriticalToggle = document.getElementById('opsAlertQuietHoursAllowCriticalToggle');
+    if (allowCriticalToggle) {
+        allowCriticalToggle.classList.toggle('active', quietHours.allow_critical);
+        allowCriticalToggle.classList.toggle('disabled', !quietHours.enabled);
+    }
+
+    [
+        'opsAlertQuietHoursStartHour',
+        'opsAlertQuietHoursEndHour',
+        'opsAlertQuietHoursTimezone'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !quietHours.enabled;
+    });
+
+    const routingKeys = ['customer_chat_message', 'shop_purchase_success', 'wallet_recharge_success', 'shop_inventory'];
+    const channelKeys = ['telegram', 'feishu', 'email'];
+    routingKeys.forEach((routingKey) => {
+        channelKeys.forEach((channelKey) => {
+            const checkbox = document.getElementById(getOpsAlertRoutingCheckboxId(routingKey, channelKey));
+            if (!checkbox) return;
+            checkbox.checked = normalizedConfig.routing?.[routingKey]?.[channelKey] !== false;
+        });
+    });
 }
 
 function applyOpsAlertShopRiskControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
@@ -2070,6 +2197,21 @@ function applyOpsAlertWalletRechargeSuccessControls(config = normalizeOpsAlertCo
 
 function renderOpsAlertSettings() {
     const config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
+
+    const quietHoursStartHour = document.getElementById('opsAlertQuietHoursStartHour');
+    if (quietHoursStartHour) {
+        quietHoursStartHour.value = String(config.quiet_hours.start_hour);
+    }
+
+    const quietHoursEndHour = document.getElementById('opsAlertQuietHoursEndHour');
+    if (quietHoursEndHour) {
+        quietHoursEndHour.value = String(config.quiet_hours.end_hour);
+    }
+
+    const quietHoursTimezone = document.getElementById('opsAlertQuietHoursTimezone');
+    if (quietHoursTimezone) {
+        quietHoursTimezone.value = config.quiet_hours.timezone;
+    }
 
     const telegramChatIds = document.getElementById('opsAlertTelegramChatIds');
     if (telegramChatIds) {
@@ -4968,6 +5110,9 @@ function collectOpsAlertConfigFromForm() {
     const currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
     const nextConfig = {
         ...currentConfig,
+        quiet_hours: {
+            ...currentConfig.quiet_hours
+        },
         channels: {
             telegram: {
                 ...currentConfig.channels.telegram
@@ -4977,6 +5122,20 @@ function collectOpsAlertConfigFromForm() {
             },
             email: {
                 ...currentConfig.channels.email
+            }
+        },
+        routing: {
+            customer_chat_message: {
+                ...currentConfig.routing.customer_chat_message
+            },
+            shop_purchase_success: {
+                ...currentConfig.routing.shop_purchase_success
+            },
+            wallet_recharge_success: {
+                ...currentConfig.routing.wallet_recharge_success
+            },
+            shop_inventory: {
+                ...currentConfig.routing.shop_inventory
             }
         },
         shop_order_risk: {
@@ -4997,6 +5156,29 @@ function collectOpsAlertConfigFromForm() {
     };
 
     nextConfig.enabled = document.getElementById('opsAlertEnabledToggle')?.classList.contains('active') ?? currentConfig.enabled;
+    nextConfig.quiet_hours.enabled = document.getElementById('opsAlertQuietHoursEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.quiet_hours.enabled;
+    nextConfig.quiet_hours.start_hour = clamp(
+        toWholeNumber(
+            document.getElementById('opsAlertQuietHoursStartHour')?.value,
+            currentConfig.quiet_hours.start_hour
+        ),
+        0,
+        23
+    );
+    nextConfig.quiet_hours.end_hour = clamp(
+        toWholeNumber(
+            document.getElementById('opsAlertQuietHoursEndHour')?.value,
+            currentConfig.quiet_hours.end_hour
+        ),
+        0,
+        23
+    );
+    nextConfig.quiet_hours.timezone = String(
+        document.getElementById('opsAlertQuietHoursTimezone')?.value ?? currentConfig.quiet_hours.timezone
+    ).trim() || currentConfig.quiet_hours.timezone;
+    nextConfig.quiet_hours.allow_critical = document.getElementById('opsAlertQuietHoursAllowCriticalToggle')?.classList.contains('active')
+        ?? currentConfig.quiet_hours.allow_critical;
     nextConfig.channels.telegram.enabled = document.getElementById('opsAlertTelegramEnabledToggle')?.classList.contains('active')
         ?? currentConfig.channels.telegram.enabled;
     nextConfig.channels.telegram.chat_ids = normalizeConfigStringArray(
@@ -5030,6 +5212,18 @@ function collectOpsAlertConfigFromForm() {
     nextConfig.channels.email.subject_prefix = String(
         document.getElementById('opsAlertEmailSubjectPrefix')?.value ?? currentConfig.channels.email.subject_prefix
     ).trim() || currentConfig.channels.email.subject_prefix;
+    [
+        'customer_chat_message',
+        'shop_purchase_success',
+        'wallet_recharge_success',
+        'shop_inventory'
+    ].forEach((routingKey) => {
+        ['telegram', 'feishu', 'email'].forEach((channelKey) => {
+            const checkbox = document.getElementById(getOpsAlertRoutingCheckboxId(routingKey, channelKey));
+            if (!checkbox) return;
+            nextConfig.routing[routingKey][channelKey] = checkbox.checked;
+        });
+    });
     nextConfig.shop_order_risk.auto_response_enabled = document.getElementById('opsAlertShopRiskAutoResponseEnabledToggle')?.classList.contains('active')
         ?? currentConfig.shop_order_risk.auto_response_enabled;
     nextConfig.shop_order_risk.auto_disable_coupon_min_risk_score = toWholeNumber(
@@ -6153,6 +6347,25 @@ function toggleOpsAlertChannelEnabled(channelKey) {
     };
     const toggleEl = document.getElementById(toggleMap[channelKey]);
     if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertQuietHoursEnabled() {
+    const toggleEl = document.getElementById('opsAlertQuietHoursEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertQuietHoursAllowCritical() {
+    const quietHoursToggleEl = document.getElementById('opsAlertQuietHoursEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertQuietHoursAllowCriticalToggle');
+    if (!toggleEl || !quietHoursToggleEl?.classList.contains('active')) return;
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
@@ -8433,6 +8646,8 @@ window.loadOpsAlertHealth = loadOpsAlertHealth;
 window.loadOpsAlertMonitor = loadOpsAlertMonitor;
 window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;
 window.toggleOpsAlertChannelEnabled = toggleOpsAlertChannelEnabled;
+window.toggleOpsAlertQuietHoursEnabled = toggleOpsAlertQuietHoursEnabled;
+window.toggleOpsAlertQuietHoursAllowCritical = toggleOpsAlertQuietHoursAllowCritical;
 window.toggleOpsAlertShopRiskAutoResponseEnabled = toggleOpsAlertShopRiskAutoResponseEnabled;
 window.toggleOpsAlertShopInventoryEnabled = toggleOpsAlertShopInventoryEnabled;
 window.toggleOpsAlertShopInventoryRecoveryNotificationEnabled = toggleOpsAlertShopInventoryRecoveryNotificationEnabled;
