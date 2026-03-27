@@ -2625,6 +2625,9 @@ function getOpsAlertMonitorItemAction(category = {}, item = {}) {
         if (targetId.startsWith('shop_order_risk:coupon:')) {
             return { target: 'shop-risk-discounts', label: '查看优惠券码', icon: 'fas fa-ticket' };
         }
+        if (targetId.startsWith('shop_order_risk:shared_ip:')) {
+            return { target: 'shop-risk-users', label: '查看关联账号', icon: 'fas fa-user-shield' };
+        }
         if (targetId.startsWith('shop_order_risk:user_velocity:')) {
             return { target: 'shop-risk-users', label: '查看用户详情', icon: 'fas fa-user-shield' };
         }
@@ -2640,15 +2643,55 @@ function getOpsAlertMonitorItemAction(category = {}, item = {}) {
     return perType[alertType] || fallbackByCategory[categoryKey] || null;
 }
 
-function buildOpsAlertMonitorWorkspaceAttrs(action = {}, category = {}, item = {}) {
-    const attrs = {
-        'data-admin-action': 'settings-open-ops-alert-workspace',
-        'data-workspace-target': action.target || '',
+function getOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
+    const alertType = String(item.alert_type || '').trim().toLowerCase();
+    const targetId = String(item.target_id || '').trim().toLowerCase();
+
+    if (String(category.key || '').trim().toLowerCase() !== 'shop_risk') {
+        return null;
+    }
+
+    if (alertType === 'shop_order_risk_anomaly' && targetId.startsWith('shop_order_risk:coupon:')) {
+        return {
+            action: 'disable-coupon',
+            label: '一键停用优惠码',
+            icon: 'fas fa-ban'
+        };
+    }
+
+    return null;
+}
+
+function buildOpsAlertMonitorContextAttrs(category = {}, item = {}) {
+    return {
         'data-workspace-alert-type': item.alert_type || '',
         'data-workspace-category': category.key || '',
         'data-workspace-reference-label': item.reference_label || '',
         'data-workspace-reference-value': item.reference_value || '',
-        'data-workspace-target-id': item.target_id || ''
+        'data-workspace-target-id': item.target_id || '',
+        'data-workspace-user-id': item.user_id || '',
+        'data-workspace-client-ip': item.client_ip || ''
+    };
+}
+
+function buildOpsAlertMonitorWorkspaceAttrs(action = {}, category = {}, item = {}) {
+    const attrs = {
+        'data-admin-action': 'settings-open-ops-alert-workspace',
+        'data-workspace-target': action.target || '',
+        ...buildOpsAlertMonitorContextAttrs(category, item)
+    };
+
+    return Object.entries(attrs)
+        .filter(([, value]) => String(value || '').length > 0)
+        .map(([name, value]) => `${name}="${escapeConfigHtml(value)}"`)
+        .join(' ');
+}
+
+function buildOpsAlertMonitorQuickActionAttrs(action = {}, category = {}, item = {}) {
+    const attrs = {
+        'data-admin-action': 'settings-handle-shop-risk-action',
+        'data-shop-risk-action': action.action || '',
+        ...buildOpsAlertMonitorContextAttrs(category, item)
     };
 
     return Object.entries(attrs)
@@ -2661,6 +2704,7 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
     const severity = String(item.severity || 'warning').trim().toLowerCase();
     const severityTone = getOpsAlertMonitorSeverityTone(severity);
     const itemAction = getOpsAlertMonitorItemAction(category, item);
+    const quickAction = getOpsAlertMonitorItemQuickAction(category, item);
     const metaParts = [
         item.reference_label && item.reference_value
             ? `${escapeConfigHtml(item.reference_label)}：${escapeConfigHtml(item.reference_value)}`
@@ -2676,15 +2720,26 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
             </div>
             ${item.message ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(item.message)}</div>` : ''}
             <div class="ops-alert-monitor-item__meta">${metaParts.length ? metaParts.join(' · ') : '等待更多上下文'}</div>
-            ${itemAction ? `
+            ${(itemAction || quickAction) ? `
                 <div class="ops-alert-monitor-item__actions">
-                    <button
-                        type="button"
-                        class="btn-add-config btn-add-config--compact"
-                        ${buildOpsAlertMonitorWorkspaceAttrs(itemAction, category, item)}
-                    >
-                        <i class="${escapeConfigHtml(itemAction.icon)}"></i> ${escapeConfigHtml(itemAction.label)}
-                    </button>
+                    ${quickAction ? `
+                        <button
+                            type="button"
+                            class="btn-add-config btn-add-config--compact"
+                            ${buildOpsAlertMonitorQuickActionAttrs(quickAction, category, item)}
+                        >
+                            <i class="${escapeConfigHtml(quickAction.icon)}"></i> ${escapeConfigHtml(quickAction.label)}
+                        </button>
+                    ` : ''}
+                    ${itemAction ? `
+                        <button
+                            type="button"
+                            class="btn-add-config btn-add-config--compact"
+                            ${buildOpsAlertMonitorWorkspaceAttrs(itemAction, category, item)}
+                        >
+                            <i class="${escapeConfigHtml(itemAction.icon)}"></i> ${escapeConfigHtml(itemAction.label)}
+                        </button>
+                    ` : ''}
                 </div>
             ` : ''}
         </article>
@@ -2921,6 +2976,7 @@ function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlert
     const latestItem = Array.isArray(spotlightCategory?.visible_items) && spotlightCategory.visible_items.length
         ? spotlightCategory.visible_items[0]
         : (Array.isArray(spotlightCategory?.items) && spotlightCategory.items.length ? spotlightCategory.items[0] : null);
+    const latestQuickAction = latestItem ? getOpsAlertMonitorItemQuickAction(spotlightCategory || {}, latestItem) : null;
     const activeCount = spotlightCategory ? getOpsAlertMonitorDisplayActiveCount(spotlightCategory) : 0;
     const criticalCount = spotlightCategory ? getOpsAlertMonitorDisplayCriticalCount(spotlightCategory) : 0;
     const title = spotlightCategory
@@ -2979,6 +3035,15 @@ function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlert
                 >
                     <i class="fas fa-list-check"></i> 复制商城风控清单
                 </button>
+                ${latestQuickAction && latestItem ? `
+                    <button
+                        type="button"
+                        class="btn-add-config btn-add-config--compact"
+                        ${buildOpsAlertMonitorQuickActionAttrs(latestQuickAction, spotlightCategory || {}, latestItem)}
+                    >
+                        <i class="${escapeConfigHtml(latestQuickAction.icon)}"></i> ${escapeConfigHtml(latestQuickAction.label)}
+                    </button>
+                ` : ''}
                 ${actions.map((action) => `
                     <button
                         type="button"
@@ -4747,7 +4812,9 @@ function normalizeOpsAlertWorkspaceContext(context = {}) {
         category: String(context.category || context.workspaceCategory || '').trim().toLowerCase(),
         referenceLabel: String(context.referenceLabel || context.reference_label || '').trim(),
         referenceValue: String(context.referenceValue || context.reference_value || '').trim(),
-        targetId: String(context.targetId || context.target_id || '').trim()
+        targetId: String(context.targetId || context.target_id || '').trim(),
+        userId: String(context.userId || context.user_id || context.workspaceUserId || '').trim(),
+        clientIp: String(context.clientIp || context.client_ip || context.workspaceClientIp || '').trim()
     };
 }
 
@@ -4774,7 +4841,12 @@ function getOpsAlertWorkspaceDiscountCode(context = {}) {
 }
 
 function getOpsAlertWorkspaceRiskUserId(context = {}) {
-    const parts = getOpsAlertWorkspaceTargetIdParts(context);
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    if (normalizedContext.userId) {
+        return normalizedContext.userId;
+    }
+
+    const parts = getOpsAlertWorkspaceTargetIdParts(normalizedContext);
     if (parts[0] === 'shop_order_risk' && parts[1] === 'user_velocity' && parts[2]) {
         return parts.slice(2).join(':');
     }
@@ -4997,6 +5069,47 @@ async function openOpsAlertWorkspace(workspaceKey, context = {}) {
     } catch (error) {
         console.error('[Config] Open ops alert workspace failed:', error);
         showToast('打开失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function handleShopRiskAction(action, context = {}) {
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+
+    try {
+        if (normalizedAction === 'disable-coupon') {
+            const discountCode = getOpsAlertWorkspaceDiscountCode(normalizedContext);
+            if (!discountCode) {
+                showToast('缺少可处理的优惠码', 'warning');
+                return false;
+            }
+
+            if (!window.confirm(`确定要立即停用优惠码 ${discountCode} 吗？`)) {
+                return false;
+            }
+
+            const { error } = await supabaseClient
+                .from('discount_codes')
+                .update({ is_active: false })
+                .eq('code', discountCode);
+
+            if (error) {
+                throw error;
+            }
+
+            showToast(`已停用优惠码 ${discountCode}`, 'success');
+            await Promise.allSettled([
+                refreshOpsAlertMonitorPanel?.(),
+                window.AdminDiscounts?.loadDiscounts?.()
+            ]);
+            return true;
+        }
+
+        throw new Error('未识别的商城风控处理动作');
+    } catch (error) {
+        console.error('[Config] Handle shop risk action failed:', error);
+        showToast('处理失败: ' + (error.message || '未知错误'), 'error');
         return false;
     }
 }
@@ -7325,6 +7438,7 @@ window.setOpsAlertMonitorFilter = setOpsAlertMonitorFilter;
 window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;
 window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;
 window.openOpsAlertWorkspace = openOpsAlertWorkspace;
+window.handleShopRiskAction = handleShopRiskAction;
 window.deleteOpsAlertSecret = deleteOpsAlertSecret;
 window.loadVerifyMonitor = loadVerifyMonitor;
 window.refreshVerifyMonitor = refreshVerifyMonitor;

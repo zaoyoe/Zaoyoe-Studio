@@ -399,6 +399,67 @@ test('buildUserVelocityAlerts skips unlimited purchasers', () => {
     assert.equal(alerts.length, 0);
 });
 
+test('buildSharedLoginIpAlerts flags clustered orders from the same login ip', () => {
+    const alerts = __testUtils.buildSharedLoginIpAlerts([
+        {
+            id: 'ip-1',
+            user_id: 'buyer-1',
+            site: 'cn',
+            snapshot_product_name: 'Prompt Pro 年卡',
+            item_count: 2,
+            total_price: 19.9,
+            created_at: '2026-03-27T10:00:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'ip-2',
+            user_id: 'buyer-2',
+            site: 'cn',
+            snapshot_product_name: 'Apple 资格号',
+            item_count: 2,
+            total_price: 30,
+            created_at: '2026-03-27T10:04:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'ip-3',
+            user_id: 'buyer-3',
+            site: 'intl',
+            snapshot_product_name: '卡密周卡',
+            item_count: 2,
+            total_price: 9.9,
+            created_at: '2026-03-27T10:06:00.000Z',
+            refund_status: 'none'
+        },
+        {
+            id: 'ip-4',
+            user_id: 'buyer-1',
+            site: 'cn',
+            snapshot_product_name: 'Prompt Pro 年卡',
+            item_count: 2,
+            total_price: 19.9,
+            created_at: '2026-03-27T10:08:00.000Z',
+            refund_status: 'none'
+        }
+    ], {
+        byId: new Map([
+            ['buyer-1', { id: 'buyer-1', display_name: 'Alpha', last_login_ip: '203.0.113.88' }],
+            ['buyer-2', { id: 'buyer-2', display_name: 'Beta', last_login_ip: '203.0.113.88' }],
+            ['buyer-3', { id: 'buyer-3', display_name: 'Gamma', last_login_ip: '203.0.113.88' }]
+        ])
+    }, normalizeShopOrderRiskMonitorConfig(), {
+        now: '2026-03-27T10:10:00.000Z'
+    });
+
+    assert.equal(alerts.length, 1);
+    assert.equal(alerts[0].payload.signal_type, 'shared_login_ip_cluster');
+    assert.equal(alerts[0].payload.client_ip, '203.0.113.88');
+    assert.equal(alerts[0].payload.order_count, 4);
+    assert.equal(alerts[0].payload.distinct_user_count, 3);
+    assert.equal(alerts[0].payload.total_quantity, 8);
+    assert.match(alerts[0].content, /共享登录 IP/);
+});
+
 test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async () => {
     const state = {
         jobs: [],
@@ -410,7 +471,7 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
                 snapshot_product_name: 'Prompt Pro 年卡',
                 price_paid: 0,
                 total_price: 19.9,
-                item_count: 1,
+                item_count: 2,
                 discount_code: 'FLASH0',
                 discount_amount: 19.9,
                 created_at: '2026-03-27T10:00:00.000Z',
@@ -423,7 +484,7 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
                 snapshot_product_name: 'Prompt Pro 年卡',
                 price_paid: 0,
                 total_price: 19.9,
-                item_count: 1,
+                item_count: 2,
                 discount_code: 'FLASH0',
                 discount_amount: 19.9,
                 created_at: '2026-03-27T10:01:00.000Z',
@@ -436,7 +497,7 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
                 snapshot_product_name: '卡密周卡',
                 price_paid: 0,
                 total_price: 9.9,
-                item_count: 1,
+                item_count: 2,
                 discount_code: 'FLASH0',
                 discount_amount: 9.9,
                 created_at: '2026-03-27T10:02:00.000Z',
@@ -449,7 +510,7 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
                 snapshot_product_name: '卡密周卡',
                 price_paid: 0,
                 total_price: 9.9,
-                item_count: 1,
+                item_count: 2,
                 discount_code: 'FLASH0',
                 discount_amount: 9.9,
                 created_at: '2026-03-27T10:03:00.000Z',
@@ -509,10 +570,10 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
             }
         ],
         profiles: [
-            { id: 'buyer-1', display_name: 'Alpha' },
-            { id: 'buyer-2', display_name: 'Beta' },
-            { id: 'buyer-3', display_name: 'Gamma' },
-            { id: 'buyer-bulk', display_name: 'BulkBuyer' }
+            { id: 'buyer-1', display_name: 'Alpha', last_login_ip: '203.0.113.88' },
+            { id: 'buyer-2', display_name: 'Beta', last_login_ip: '203.0.113.88' },
+            { id: 'buyer-3', display_name: 'Gamma', last_login_ip: '203.0.113.88' },
+            { id: 'buyer-bulk', display_name: 'BulkBuyer', last_login_ip: '198.51.100.30' }
         ],
         entitlements: []
     };
@@ -524,13 +585,14 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
         now: '2026-03-27T10:10:00.000Z'
     });
 
-    assert.equal(first.anomaly_count, 3);
+    assert.equal(first.anomaly_count, 4);
     assert.equal(first.discount_code_spike_count, 1);
     assert.equal(first.zero_total_cluster_count, 1);
     assert.equal(first.user_velocity_count, 1);
-    assert.equal(first.queued, 3);
+    assert.equal(first.shared_login_ip_cluster_count, 1);
+    assert.equal(first.queued, 4);
     assert.equal(first.deduped, 0);
-    assert.equal(state.jobs.length, 3);
+    assert.equal(state.jobs.length, 4);
     assert.equal(state.jobs.every((job) => job.alert_type === 'shop_order_risk_anomaly'), true);
 
     const second = await runShopOrderRiskSweep(supabase, {
@@ -538,10 +600,10 @@ test('runShopOrderRiskSweep enqueues anomaly alerts with stable dedupe', async (
         now: '2026-03-27T10:12:00.000Z'
     });
 
-    assert.equal(second.anomaly_count, 3);
+    assert.equal(second.anomaly_count, 4);
     assert.equal(second.queued, 0);
-    assert.equal(second.deduped, 3);
-    assert.equal(state.jobs.length, 3);
+    assert.equal(second.deduped, 4);
+    assert.equal(state.jobs.length, 4);
 });
 
 test('runShopOrderRiskSweep enqueues recovery notices and writes admin notifications once', async () => {

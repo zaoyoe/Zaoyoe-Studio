@@ -22,6 +22,10 @@ const DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG = Object.freeze({
     user_velocity_window_minutes: 10,
     user_velocity_min_order_count: 4,
     user_velocity_min_total_quantity: 6,
+    shared_login_ip_window_minutes: 30,
+    shared_login_ip_min_order_count: 4,
+    shared_login_ip_min_distinct_users: 3,
+    shared_login_ip_min_total_quantity: 6,
     page_size: 500,
     max_pages: 10
 });
@@ -139,6 +143,30 @@ function normalizeShopOrderRiskMonitorConfig(rawConfig = {}, env = process.env) 
             2,
             10000
         ),
+        shared_login_ip_window_minutes: normalizeNumber(
+            source.shared_login_ip_window_minutes,
+            normalizeNumber(env?.SHOP_ORDER_RISK_SHARED_LOGIN_IP_WINDOW_MINUTES, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.shared_login_ip_window_minutes, 5, 24 * 60),
+            5,
+            24 * 60
+        ),
+        shared_login_ip_min_order_count: normalizeNumber(
+            source.shared_login_ip_min_order_count,
+            normalizeNumber(env?.SHOP_ORDER_RISK_SHARED_LOGIN_IP_MIN_ORDER_COUNT, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.shared_login_ip_min_order_count, 2, 100),
+            2,
+            100
+        ),
+        shared_login_ip_min_distinct_users: normalizeNumber(
+            source.shared_login_ip_min_distinct_users,
+            normalizeNumber(env?.SHOP_ORDER_RISK_SHARED_LOGIN_IP_MIN_DISTINCT_USERS, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.shared_login_ip_min_distinct_users, 2, 100),
+            2,
+            100
+        ),
+        shared_login_ip_min_total_quantity: normalizeNumber(
+            source.shared_login_ip_min_total_quantity,
+            normalizeNumber(env?.SHOP_ORDER_RISK_SHARED_LOGIN_IP_MIN_TOTAL_QUANTITY, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.shared_login_ip_min_total_quantity, 2, 10000),
+            2,
+            10000
+        ),
         page_size: normalizeNumber(
             source.page_size,
             normalizeNumber(env?.SHOP_ORDER_RISK_MONITOR_PAGE_SIZE, DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.page_size, 50, 5000),
@@ -207,7 +235,7 @@ async function fetchProfilesByIds(client, userIds = [], config = {}) {
         const batch = normalizedUserIds.slice(index, index + chunkSize);
         const { data, error } = await client
             .from('profiles')
-            .select('id, email, display_name, username')
+            .select('id, email, display_name, username, last_login_ip')
             .in('id', batch);
 
         if (error) {
@@ -366,6 +394,10 @@ function getSiteLabel(value) {
     const normalized = normalizeText(value).toLowerCase();
     if (!normalized) return 'UNKNOWN';
     return normalized.toUpperCase();
+}
+
+function getProfileLastLoginIp(profile = {}) {
+    return normalizeText(profile?.last_login_ip);
 }
 
 function buildDiscountCodeSpikeAlerts(orders = [], profilesContext = {}, config = {}, options = {}) {
@@ -629,6 +661,121 @@ function buildUserVelocityAlerts(orders = [], profilesContext = {}, entitlementC
     }).filter(Boolean);
 }
 
+function buildSharedLoginIpAlerts(orders = [], profilesContext = {}, config = {}, options = {}) {
+    const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
+    const filteredOrders = (orders || [])
+        .filter((order) => !shouldSkipRefundedOrder(order))
+        .filter((order) => isWithinWindow(order.created_at, config.shared_login_ip_window_minutes, nowDate))
+        .filter((order) => normalizeText(order.user_id));
+    const groups = new Map();
+
+    for (const order of filteredOrders) {
+        const userId = normalizeText(order.user_id);
+        const profile = profilesContext.byId instanceof Map ? profilesContext.byId.get(userId) : null;
+        const lastLoginIp = getProfileLastLoginIp(profile);
+        if (!lastLoginIp) continue;
+        if (!groups.has(lastLoginIp)) {
+            groups.set(lastLoginIp, []);
+        }
+        groups.get(lastLoginIp).push(order);
+    }
+
+    return Array.from(groups.entries()).map(([lastLoginIp, groupOrders]) => {
+        const distinctUserIds = Array.from(new Set(groupOrders.map((order) => normalizeText(order.user_id)).filter(Boolean)));
+        const totalQuantity = groupOrders.reduce((sum, order) => sum + Math.max(1, Math.round(Number(order.item_count || 1))), 0);
+        if (
+            groupOrders.length < Number(config.shared_login_ip_min_order_count || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.shared_login_ip_min_order_count)
+            || distinctUserIds.length < Number(config.shared_login_ip_min_distinct_users || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.shared_login_ip_min_distinct_users)
+            || totalQuantity < Number(config.shared_login_ip_min_total_quantity || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.shared_login_ip_min_total_quantity)
+        ) {
+            return null;
+        }
+
+        const sampleUsers = distinctUserIds.slice(0, 6).map((userId) => {
+            const profile = profilesContext.byId instanceof Map ? profilesContext.byId.get(userId) : null;
+            return resolveUserLabel(profile, userId);
+        }).filter(Boolean);
+        const sampleProducts = formatTopLabels(groupOrders.map((order) => order.snapshot_product_name), 3);
+        const siteLabels = formatTopLabels(groupOrders.map((order) => getSiteLabel(order.site)), 3);
+        const orderRefs = groupOrders
+            .map((order) => normalizeText(order.id))
+            .filter(Boolean)
+            .slice(0, 6);
+        const latestOrderAt = getLatestCreatedAt(groupOrders);
+        const zeroTotalCount = getZeroTotalOrderCount(groupOrders);
+        const distinctProductCount = Array.from(new Set(groupOrders.map((order) => normalizeText(order.snapshot_product_name)).filter(Boolean))).length;
+        const totalOrderValue = groupOrders.reduce((sum, order) => {
+            const numericValue = Number(order.total_price);
+            return sum + (Number.isFinite(numericValue) ? numericValue : 0);
+        }, 0);
+        const anchorUserId = distinctUserIds[0] || null;
+        const anchorProfile = anchorUserId && profilesContext.byId instanceof Map
+            ? profilesContext.byId.get(anchorUserId)
+            : null;
+        const anchorUserLabel = resolveUserLabel(anchorProfile, anchorUserId || '');
+        const lines = [
+            `最近 ${Math.max(1, Math.round(Number(config.shared_login_ip_window_minutes || 0)))} 分钟内，多个账号共享同一登录 IP 后连续下单，建议核查是否存在养号、代下或团伙扫货。`,
+            `共享登录 IP：${lastLoginIp}`,
+            `命中订单：${groupOrders.length} 笔`,
+            `涉及账号：${distinctUserIds.length} 个`,
+            `累计数量：${totalQuantity} 件`
+        ];
+
+        if (distinctProductCount > 0) lines.push(`涉及商品：${distinctProductCount} 个`);
+        if (zeroTotalCount > 0) lines.push(`0 价订单：${zeroTotalCount} 笔`);
+        if (siteLabels.length) lines.push(`涉及站点：${siteLabels.join('、')}`);
+        if (sampleProducts.length) lines.push(`热点商品：${sampleProducts.join('、')}`);
+        if (sampleUsers.length) lines.push(`关联账号：${sampleUsers.join('、')}`);
+        if (orderRefs.length) lines.push(`示例订单：${orderRefs.join('、')}`);
+        if (Number.isFinite(totalOrderValue) && totalOrderValue > 0) lines.push(`窗口原价合计：${totalOrderValue.toFixed(2)} 元`);
+        if (latestOrderAt) lines.push(`最近下单时间：${latestOrderAt}`);
+        lines.push('处理入口：商城管理 -> 用户详情(关联账号) / 订单列表');
+
+        const fingerprint = groupOrders
+            .map((order) => normalizeText(order.id))
+            .filter(Boolean)
+            .sort()
+            .join('|');
+
+        return {
+            alertType: 'shop_order_risk_anomaly',
+            severity: zeroTotalCount > 0
+                || distinctUserIds.length >= Math.max(4, Number(config.shared_login_ip_min_distinct_users || 0) + 1)
+                || totalQuantity >= Math.max(10, Number(config.shared_login_ip_min_total_quantity || 0) * 2)
+                ? 'critical'
+                : 'warning',
+            title: `共享登录 IP 异常（${lastLoginIp}）`,
+            content: lines.join('\n'),
+            payload: {
+                target_id: `shop_order_risk:shared_ip:${lastLoginIp}`,
+                signal_type: 'shared_login_ip_cluster',
+                client_ip: lastLoginIp,
+                user_id: anchorUserId,
+                buyer_label: anchorUserLabel,
+                related_user_ids: distinctUserIds.slice(0, 12),
+                order_count: groupOrders.length,
+                distinct_user_count: distinctUserIds.length,
+                total_quantity: totalQuantity,
+                distinct_product_count: distinctProductCount,
+                zero_total_count: zeroTotalCount,
+                site_labels: siteLabels,
+                sample_products: sampleProducts,
+                sample_users: sampleUsers,
+                order_refs: orderRefs,
+                total_order_value: Number.isFinite(totalOrderValue) ? Number(totalOrderValue.toFixed(2)) : null,
+                latest_order_at: latestOrderAt || null,
+                window_minutes: Math.max(1, Math.round(Number(config.shared_login_ip_window_minutes || 0))),
+                entry_path: '商城管理 -> 用户详情(关联账号) / 订单列表'
+            },
+            dedupeKey: crypto
+                .createHash('sha256')
+                .update(`shop_order_risk:shared_login_ip_cluster:${lastLoginIp}:${fingerprint || 'empty'}`)
+                .digest('hex'),
+            dedupeWindowMinutes: Number(config.dedupe_window_minutes || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.dedupe_window_minutes)
+        };
+    }).filter(Boolean);
+}
+
 function buildShopOrderRiskAnomalyAlerts(orders = [], contexts = {}, rawConfig = {}, options = {}) {
     const config = normalizeShopOrderRiskMonitorConfig(rawConfig);
     const profilesContext = contexts.profilesContext || { byId: new Map() };
@@ -638,7 +785,8 @@ function buildShopOrderRiskAnomalyAlerts(orders = [], contexts = {}, rawConfig =
     const alerts = [
         ...buildDiscountCodeSpikeAlerts(orders, profilesContext, config, { now: nowDate }),
         ...buildZeroTotalClusterAlerts(orders, profilesContext, config, { now: nowDate }),
-        ...buildUserVelocityAlerts(orders, profilesContext, entitlementContext, config, { now: nowDate })
+        ...buildUserVelocityAlerts(orders, profilesContext, entitlementContext, config, { now: nowDate }),
+        ...buildSharedLoginIpAlerts(orders, profilesContext, config, { now: nowDate })
     ];
 
     return alerts.sort((left, right) => {
@@ -665,6 +813,9 @@ function buildRecoverySummary(payload = {}) {
     if (signalType === 'user_velocity') {
         return `账号 ${normalizeText(payload.buyer_label) || normalizeText(payload.user_id).slice(0, 8) || 'unknown'} 的短时下单频率已回落到阈值以下`;
     }
+    if (signalType === 'shared_login_ip_cluster') {
+        return `共享登录 IP ${normalizeText(payload.client_ip) || 'unknown'} 的多账号下单信号已回落到阈值以下`;
+    }
     return '商城风险信号已回落到阈值以下';
 }
 
@@ -679,6 +830,9 @@ function buildRecoveryTitle(payload = {}) {
     }
     if (signalType === 'user_velocity') {
         return `账号扫货风险已恢复（${normalizeText(payload.buyer_label) || normalizeText(payload.user_id).slice(0, 8) || 'unknown'}）`;
+    }
+    if (signalType === 'shared_login_ip_cluster') {
+        return `共享登录 IP 风险已恢复（${normalizeText(payload.client_ip) || 'unknown'}）`;
     }
     return '商城风险告警已恢复';
 }
@@ -933,6 +1087,7 @@ async function runShopOrderRiskSweep(supabase, options = {}) {
         discount_code_spike_count: alerts.filter((alert) => normalizeText(alert.payload?.signal_type).toLowerCase() === 'discount_code_spike').length,
         zero_total_cluster_count: alerts.filter((alert) => normalizeText(alert.payload?.signal_type).toLowerCase() === 'zero_total_cluster').length,
         user_velocity_count: alerts.filter((alert) => normalizeText(alert.payload?.signal_type).toLowerCase() === 'user_velocity').length,
+        shared_login_ip_cluster_count: alerts.filter((alert) => normalizeText(alert.payload?.signal_type).toLowerCase() === 'shared_login_ip_cluster').length,
         queued,
         deduped,
         recovered_queued: recoveredQueued,
@@ -957,6 +1112,7 @@ module.exports = {
         buildDiscountCodeSpikeAlerts,
         buildZeroTotalClusterAlerts,
         buildUserVelocityAlerts,
+        buildSharedLoginIpAlerts,
         compareCreatedAtDescending,
         getAlertTargetId,
         getLatestShopOrderRiskStateJob,

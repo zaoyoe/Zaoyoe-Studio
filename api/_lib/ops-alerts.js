@@ -1692,7 +1692,8 @@ function getShopOrderRiskSignalLabel(value) {
     const labelMap = {
         discount_code_spike: '优惠码高频使用',
         zero_total_cluster: '0 价订单聚集',
-        user_velocity: '账号短时扫货'
+        user_velocity: '账号短时扫货',
+        shared_login_ip_cluster: '共享登录 IP 多账号下单'
     };
     return labelMap[normalized] || normalized;
 }
@@ -1718,6 +1719,9 @@ function buildShopOrderRiskAlertText(job = {}) {
         lines.push(`账号：${normalizeText(payload.buyer_label)}`);
     } else if (normalizeText(payload.user_id)) {
         lines.push(`用户ID：${normalizeText(payload.user_id)}`);
+    }
+    if (normalizeText(payload.client_ip)) {
+        lines.push(`共享登录 IP：${normalizeText(payload.client_ip)}`);
     }
     if (Number.isFinite(Number(payload.order_count))) {
         lines.push(`命中订单：${Math.max(0, Math.round(Number(payload.order_count || 0)))} 笔`);
@@ -1770,6 +1774,9 @@ function buildShopOrderRiskRecoveredAlertText(job = {}) {
         lines.push(`账号：${normalizeText(payload.buyer_label)}`);
     } else if (normalizeText(payload.user_id)) {
         lines.push(`用户ID：${normalizeText(payload.user_id)}`);
+    }
+    if (normalizeText(payload.client_ip)) {
+        lines.push(`共享登录 IP：${normalizeText(payload.client_ip)}`);
     }
     if (Number.isFinite(Number(payload.previous_order_count))) {
         lines.push(`上次命中订单：${Math.max(0, Math.round(Number(payload.previous_order_count || 0)))} 笔`);

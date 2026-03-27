@@ -138,7 +138,8 @@ function getShopOrderRiskSignalLabel(value) {
     const labelMap = {
         discount_code_spike: '优惠码高频使用',
         zero_total_cluster: '0 价订单聚集',
-        user_velocity: '账号短时扫货'
+        user_velocity: '账号短时扫货',
+        shared_login_ip_cluster: '共享登录 IP 多账号下单'
     };
     return labelMap[normalized] || normalized;
 }
@@ -168,6 +169,12 @@ function getAlertReference(job = {}) {
         return {
             label: '优惠码',
             value: normalizeText(payload.discount_code, 160)
+        };
+    }
+    if (normalizeText(payload.client_ip, 160)) {
+        return {
+            label: '共享登录 IP',
+            value: normalizeText(payload.client_ip, 160)
         };
     }
     if (normalizeText(payload.buyer_label, 160)) {
@@ -202,6 +209,7 @@ function getAlertReference(job = {}) {
 }
 
 function buildAlertItem(job = {}) {
+    const payload = normalizePayload(job.payload);
     const reference = getAlertReference(job);
     return {
         id: normalizeText(job.id, 160),
@@ -212,7 +220,12 @@ function buildAlertItem(job = {}) {
         created_at: normalizeText(job.created_at, 80) || null,
         target_id: getAlertTargetId(job),
         reference_label: reference.label,
-        reference_value: reference.value
+        reference_value: reference.value,
+        signal_type: normalizeText(payload.signal_type, 120) || null,
+        discount_code: normalizeText(payload.discount_code, 160) || null,
+        buyer_label: normalizeText(payload.buyer_label, 160) || null,
+        user_id: normalizeText(payload.user_id, 160) || null,
+        client_ip: normalizeText(payload.client_ip, 160) || null
     };
 }
 

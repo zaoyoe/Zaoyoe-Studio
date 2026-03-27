@@ -540,7 +540,20 @@ function bindAdminStudioDelegatedControls() {
                     category: actionEl.dataset.workspaceCategory,
                     referenceLabel: actionEl.dataset.workspaceReferenceLabel,
                     referenceValue: actionEl.dataset.workspaceReferenceValue,
-                    targetId: actionEl.dataset.workspaceTargetId
+                    targetId: actionEl.dataset.workspaceTargetId,
+                    userId: actionEl.dataset.workspaceUserId,
+                    clientIp: actionEl.dataset.workspaceClientIp
+                });
+                break;
+            case 'settings-handle-shop-risk-action':
+                window.handleShopRiskAction?.(actionEl.dataset.shopRiskAction, {
+                    alertType: actionEl.dataset.workspaceAlertType,
+                    category: actionEl.dataset.workspaceCategory,
+                    referenceLabel: actionEl.dataset.workspaceReferenceLabel,
+                    referenceValue: actionEl.dataset.workspaceReferenceValue,
+                    targetId: actionEl.dataset.workspaceTargetId,
+                    userId: actionEl.dataset.workspaceUserId,
+                    clientIp: actionEl.dataset.workspaceClientIp
                 });
                 break;
             case 'settings-refresh-ops-alert-monitor':

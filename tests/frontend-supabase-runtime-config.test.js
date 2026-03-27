@@ -2193,6 +2193,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         "case 'settings-export-ops-alert-monitor-csv':",
         "case 'settings-copy-ops-alert-monitor-category':",
         "case 'settings-open-ops-alert-workspace':",
+        "case 'settings-handle-shop-risk-action':",
         "case 'settings-delete-ops-alert-secret':"
     ];
 
@@ -2254,7 +2255,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;',
         'window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;',
         'async function openOpsAlertWorkspace(workspaceKey, context = {})',
+        'async function handleShopRiskAction(action, context = {})',
         'window.openOpsAlertWorkspace = openOpsAlertWorkspace;',
+        'window.handleShopRiskAction = handleShopRiskAction;',
         "'shop-risk-orders': '商城风险订单'",
         "'shop-risk-discounts': '优惠券码列表'",
         "'shop-risk-users': '用户详情'",

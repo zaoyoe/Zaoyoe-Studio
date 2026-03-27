@@ -393,3 +393,40 @@ test('ops alert monitor handler treats payment config incident recovery as a pay
         assert.equal(payments.latest_title, '支付配置事故已恢复');
     });
 });
+
+test('ops alert monitor handler exposes shared login ip shop risk context', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('shop_order_risk_anomaly', {
+                id: 'shop-risk-shared-ip-1',
+                severity: 'critical',
+                title: '共享登录 IP 异常（203.0.113.88）',
+                content: '商城风控告警\n共享登录 IP：203.0.113.88',
+                payload: {
+                    target_id: 'shop_order_risk:shared_ip:203.0.113.88',
+                    signal_type: 'shared_login_ip_cluster',
+                    client_ip: '203.0.113.88',
+                    user_id: 'buyer-anchor-1',
+                    buyer_label: 'Alpha'
+                },
+                created_at: hoursAgo(1)
+            })
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+
+        const shopRisk = payload.categories.find((item) => item.key === 'shop_risk');
+        assert.equal(shopRisk.active_count, 1);
+        assert.equal(shopRisk.items[0].reference_label, '共享登录 IP');
+        assert.equal(shopRisk.items[0].reference_value, '203.0.113.88');
+        assert.equal(shopRisk.items[0].signal_type, 'shared_login_ip_cluster');
+        assert.equal(shopRisk.items[0].user_id, 'buyer-anchor-1');
+    });
+});
