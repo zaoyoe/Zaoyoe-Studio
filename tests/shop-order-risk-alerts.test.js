@@ -328,6 +328,24 @@ function createOpsRuntime() {
     };
 }
 
+test('normalizeShopOrderRiskMonitorConfig accepts nested ops alert shop risk config', () => {
+    const config = normalizeShopOrderRiskMonitorConfig({
+        shop_order_risk: {
+            auto_response_enabled: false,
+            auto_disable_coupon_min_risk_score: 88,
+            auto_ban_user_min_risk_score: 95,
+            auto_ban_user_duration_days: 12,
+            auto_suspend_product_min_risk_score: 98
+        }
+    });
+
+    assert.equal(config.auto_response_enabled, false);
+    assert.equal(config.auto_disable_coupon_min_risk_score, 88);
+    assert.equal(config.auto_ban_user_min_risk_score, 95);
+    assert.equal(config.auto_ban_user_duration_days, 12);
+    assert.equal(config.auto_suspend_product_min_risk_score, 98);
+});
+
 test('buildDiscountCodeSpikeAlerts flags coupon abuse across multiple users', () => {
     const alerts = __testUtils.buildDiscountCodeSpikeAlerts([
         {

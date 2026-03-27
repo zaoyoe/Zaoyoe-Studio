@@ -444,6 +444,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-channel':
                 window.toggleOpsAlertChannelEnabled?.(actionEl.dataset.alertChannel);
                 break;
+            case 'settings-toggle-ops-alert-shop-risk-auto-response':
+                window.toggleOpsAlertShopRiskAutoResponseEnabled?.();
+                break;
             case 'settings-save-ops-alerts':
                 window.saveOpsAlertSettings?.();
                 break;

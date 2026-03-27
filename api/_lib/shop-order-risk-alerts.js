@@ -67,7 +67,10 @@ function normalizeNumber(value, fallback = 0, min = null, max = null) {
 }
 
 function normalizeShopOrderRiskMonitorConfig(rawConfig = {}, env = process.env) {
-    const source = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
+    const rootSource = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
+    const source = rootSource.shop_order_risk && typeof rootSource.shop_order_risk === 'object'
+        ? rootSource.shop_order_risk
+        : rootSource;
 
     return {
         enabled: normalizeBoolean(

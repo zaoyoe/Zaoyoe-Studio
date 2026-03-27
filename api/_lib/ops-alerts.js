@@ -43,6 +43,13 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
             reply_to: '',
             subject_prefix: '[Zaoyoe告警]'
         })
+    }),
+    shop_order_risk: Object.freeze({
+        auto_response_enabled: true,
+        auto_disable_coupon_min_risk_score: 90,
+        auto_ban_user_min_risk_score: 96,
+        auto_ban_user_duration_days: 7,
+        auto_suspend_product_min_risk_score: 97
     })
 });
 
@@ -141,6 +148,13 @@ function cloneDefaultConfig() {
                 reply_to: DEFAULT_OPS_ALERTS_CONFIG.channels.email.reply_to,
                 subject_prefix: DEFAULT_OPS_ALERTS_CONFIG.channels.email.subject_prefix
             }
+        },
+        shop_order_risk: {
+            auto_response_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_order_risk.auto_response_enabled,
+            auto_disable_coupon_min_risk_score: DEFAULT_OPS_ALERTS_CONFIG.shop_order_risk.auto_disable_coupon_min_risk_score,
+            auto_ban_user_min_risk_score: DEFAULT_OPS_ALERTS_CONFIG.shop_order_risk.auto_ban_user_min_risk_score,
+            auto_ban_user_duration_days: DEFAULT_OPS_ALERTS_CONFIG.shop_order_risk.auto_ban_user_duration_days,
+            auto_suspend_product_min_risk_score: DEFAULT_OPS_ALERTS_CONFIG.shop_order_risk.auto_suspend_product_min_risk_score
         }
     };
 }
@@ -157,6 +171,9 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         : {};
     const emailConfig = channelConfig.email && typeof channelConfig.email === 'object'
         ? channelConfig.email
+        : {};
+    const shopOrderRiskConfig = source.shop_order_risk && typeof source.shop_order_risk === 'object'
+        ? source.shop_order_risk
         : {};
 
     config.enabled = normalizeBoolean(source.enabled, normalizeBoolean(env?.OPS_ALERTS_ENABLED, config.enabled));
@@ -248,6 +265,55 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
     config.channels.email.subject_prefix = normalizeText(
         emailConfig.subject_prefix || env?.OPS_ALERTS_EMAIL_SUBJECT_PREFIX || config.channels.email.subject_prefix
     ) || DEFAULT_OPS_ALERTS_CONFIG.channels.email.subject_prefix;
+
+    config.shop_order_risk.auto_response_enabled = normalizeBoolean(
+        shopOrderRiskConfig.auto_response_enabled,
+        normalizeBoolean(env?.SHOP_ORDER_RISK_AUTO_RESPONSE_ENABLED, config.shop_order_risk.auto_response_enabled)
+    );
+    config.shop_order_risk.auto_disable_coupon_min_risk_score = normalizeNumber(
+        shopOrderRiskConfig.auto_disable_coupon_min_risk_score,
+        normalizeNumber(
+            env?.SHOP_ORDER_RISK_AUTO_DISABLE_COUPON_MIN_RISK_SCORE,
+            config.shop_order_risk.auto_disable_coupon_min_risk_score,
+            65,
+            99
+        ),
+        65,
+        99
+    );
+    config.shop_order_risk.auto_ban_user_min_risk_score = normalizeNumber(
+        shopOrderRiskConfig.auto_ban_user_min_risk_score,
+        normalizeNumber(
+            env?.SHOP_ORDER_RISK_AUTO_BAN_USER_MIN_RISK_SCORE,
+            config.shop_order_risk.auto_ban_user_min_risk_score,
+            80,
+            99
+        ),
+        80,
+        99
+    );
+    config.shop_order_risk.auto_ban_user_duration_days = normalizeNumber(
+        shopOrderRiskConfig.auto_ban_user_duration_days,
+        normalizeNumber(
+            env?.SHOP_ORDER_RISK_AUTO_BAN_USER_DURATION_DAYS,
+            config.shop_order_risk.auto_ban_user_duration_days,
+            1,
+            30
+        ),
+        1,
+        30
+    );
+    config.shop_order_risk.auto_suspend_product_min_risk_score = normalizeNumber(
+        shopOrderRiskConfig.auto_suspend_product_min_risk_score,
+        normalizeNumber(
+            env?.SHOP_ORDER_RISK_AUTO_SUSPEND_PRODUCT_MIN_RISK_SCORE,
+            config.shop_order_risk.auto_suspend_product_min_risk_score,
+            85,
+            99
+        ),
+        85,
+        99
+    );
 
     return config;
 }

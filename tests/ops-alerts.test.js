@@ -229,6 +229,25 @@ function createRuntimeConfig(overrides = {}) {
     };
 }
 
+test('normalizeOpsAlertsConfig preserves admin-managed shop risk auto-response thresholds', () => {
+    const config = normalizeOpsAlertsConfig({
+        enabled: true,
+        shop_order_risk: {
+            auto_response_enabled: false,
+            auto_disable_coupon_min_risk_score: 87,
+            auto_ban_user_min_risk_score: 94,
+            auto_ban_user_duration_days: 15,
+            auto_suspend_product_min_risk_score: 98
+        }
+    });
+
+    assert.equal(config.shop_order_risk.auto_response_enabled, false);
+    assert.equal(config.shop_order_risk.auto_disable_coupon_min_risk_score, 87);
+    assert.equal(config.shop_order_risk.auto_ban_user_min_risk_score, 94);
+    assert.equal(config.shop_order_risk.auto_ban_user_duration_days, 15);
+    assert.equal(config.shop_order_risk.auto_suspend_product_min_risk_score, 98);
+});
+
 async function withOpsAlertsModuleWithoutSecretKeyMap(callback) {
     const modulePath = path.resolve(__dirname, '../api/_lib/ops-alerts.js');
     const originalLoad = Module._load;

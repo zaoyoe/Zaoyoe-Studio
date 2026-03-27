@@ -1575,6 +1575,58 @@
                                 </div>
                             </div>
 
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-shop-risk">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-user-shield"></i>
+                                        <span>商城风控自动处置</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用自动处置</div>
+                                            <div class="config-desc">命中高风险阈值后，可自动停用优惠码、自动封禁高风险账号、自动下架高风险商品。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertShopRiskAutoResponseEnabledToggle" data-admin-action="settings-toggle-ops-alert-shop-risk-auto-response"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-triangle-exclamation"></i>
+                                        <span>风险分采用 0-99 分。建议保持“优惠码停用阈值”低于“自动封禁”和“自动下架”，避免处置顺序倒挂。</span>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>自动停用优惠码阈值</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="65" max="99" step="1" class="config-input" id="opsAlertShopRiskAutoDisableCouponMinRiskScore" placeholder="90">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>自动封禁账号阈值</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="80" max="99" step="1" class="config-input" id="opsAlertShopRiskAutoBanUserMinRiskScore" placeholder="96">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>自动封禁天数</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="30" step="1" class="config-input" id="opsAlertShopRiskAutoBanUserDurationDays" placeholder="7">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>自动下架商品阈值</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="85" max="99" step="1" class="config-input" id="opsAlertShopRiskAutoSuspendProductMinRiskScore" placeholder="97">
+                                        </div>
+                                    </div>
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>当前自动封禁仅对“账号短时扫货”生效；当前自动下架仅对“0 价订单聚集且明显集中到单一商品”生效。</span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="config-card ops-alert-config-card" data-config="ops-alerts-health">
                                 <div class="config-card-header">
                                     <div class="config-card-title">
