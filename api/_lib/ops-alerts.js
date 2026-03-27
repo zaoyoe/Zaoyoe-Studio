@@ -11,6 +11,21 @@ const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
     email_api_key: 'ops_alert_email_api_key'
 });
 const SUPPORTED_CHANNELS = Object.freeze(['telegram', 'feishu', 'email']);
+const DEFAULT_QUIET_HOURS_TIMEZONE = 'Asia/Shanghai';
+const SUPPORTED_ROUTING_KEYS = Object.freeze([
+    'customer_chat_message',
+    'shop_purchase_success',
+    'wallet_recharge_success',
+    'shop_inventory'
+]);
+const ALERT_TYPE_ROUTING_MAP = Object.freeze({
+    customer_chat_message_received: 'customer_chat_message',
+    shop_purchase_succeeded: 'shop_purchase_success',
+    wallet_recharge_succeeded: 'wallet_recharge_success',
+    shop_inventory_low: 'shop_inventory',
+    shop_inventory_empty: 'shop_inventory',
+    shop_inventory_recovered: 'shop_inventory'
+});
 const SEVERITY_RANK = Object.freeze({
     info: 10,
     warning: 20,
@@ -25,6 +40,17 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
     retry_base_delay_ms: 60000,
     retry_max_delay_ms: 1800000,
     timeout_ms: 5000,
+    temporary_mute: Object.freeze({
+        until: '',
+        allow_critical: true
+    }),
+    quiet_hours: Object.freeze({
+        enabled: false,
+        start_hour: 23,
+        end_hour: 8,
+        timezone: DEFAULT_QUIET_HOURS_TIMEZONE,
+        allow_critical: true
+    }),
     channels: Object.freeze({
         telegram: Object.freeze({
             enabled: false,
@@ -50,6 +76,28 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         auto_ban_user_min_risk_score: 96,
         auto_ban_user_duration_days: 7,
         auto_suspend_product_min_risk_score: 97
+    }),
+    routing: Object.freeze({
+        customer_chat_message: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        }),
+        shop_purchase_success: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        }),
+        wallet_recharge_success: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        }),
+        shop_inventory: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        })
     }),
     customer_chat_message: Object.freeze({
         enabled: true,
@@ -146,6 +194,23 @@ function normalizeStringArray(value) {
     return [];
 }
 
+function normalizeTimeZone(value, fallback = DEFAULT_QUIET_HOURS_TIMEZONE) {
+    const normalized = normalizeText(value);
+    if (!normalized) {
+        return fallback;
+    }
+
+    try {
+        Intl.DateTimeFormat('en-US', {
+            timeZone: normalized,
+            hour: '2-digit'
+        }).format(new Date());
+        return normalized;
+    } catch (_error) {
+        return fallback;
+    }
+}
+
 function cloneDefaultConfig() {
     return {
         enabled: DEFAULT_OPS_ALERTS_CONFIG.enabled,
@@ -156,6 +221,17 @@ function cloneDefaultConfig() {
         retry_base_delay_ms: DEFAULT_OPS_ALERTS_CONFIG.retry_base_delay_ms,
         retry_max_delay_ms: DEFAULT_OPS_ALERTS_CONFIG.retry_max_delay_ms,
         timeout_ms: DEFAULT_OPS_ALERTS_CONFIG.timeout_ms,
+        temporary_mute: {
+            until: DEFAULT_OPS_ALERTS_CONFIG.temporary_mute.until,
+            allow_critical: DEFAULT_OPS_ALERTS_CONFIG.temporary_mute.allow_critical
+        },
+        quiet_hours: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.quiet_hours.enabled,
+            start_hour: DEFAULT_OPS_ALERTS_CONFIG.quiet_hours.start_hour,
+            end_hour: DEFAULT_OPS_ALERTS_CONFIG.quiet_hours.end_hour,
+            timezone: DEFAULT_OPS_ALERTS_CONFIG.quiet_hours.timezone,
+            allow_critical: DEFAULT_OPS_ALERTS_CONFIG.quiet_hours.allow_critical
+        },
         channels: {
             telegram: {
                 enabled: DEFAULT_OPS_ALERTS_CONFIG.channels.telegram.enabled,
@@ -181,6 +257,28 @@ function cloneDefaultConfig() {
             auto_ban_user_min_risk_score: DEFAULT_OPS_ALERTS_CONFIG.shop_order_risk.auto_ban_user_min_risk_score,
             auto_ban_user_duration_days: DEFAULT_OPS_ALERTS_CONFIG.shop_order_risk.auto_ban_user_duration_days,
             auto_suspend_product_min_risk_score: DEFAULT_OPS_ALERTS_CONFIG.shop_order_risk.auto_suspend_product_min_risk_score
+        },
+        routing: {
+            customer_chat_message: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.customer_chat_message.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.customer_chat_message.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.customer_chat_message.email
+            },
+            shop_purchase_success: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_purchase_success.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_purchase_success.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_purchase_success.email
+            },
+            wallet_recharge_success: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.wallet_recharge_success.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.wallet_recharge_success.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.wallet_recharge_success.email
+            },
+            shop_inventory: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_inventory.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_inventory.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_inventory.email
+            }
         },
         customer_chat_message: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.enabled,
@@ -226,6 +324,15 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         : {};
     const shopOrderRiskConfig = source.shop_order_risk && typeof source.shop_order_risk === 'object'
         ? source.shop_order_risk
+        : {};
+    const temporaryMuteConfig = source.temporary_mute && typeof source.temporary_mute === 'object'
+        ? source.temporary_mute
+        : {};
+    const quietHoursConfig = source.quiet_hours && typeof source.quiet_hours === 'object'
+        ? source.quiet_hours
+        : {};
+    const routingConfig = source.routing && typeof source.routing === 'object'
+        ? source.routing
         : {};
     const customerChatMessageConfig = source.customer_chat_message && typeof source.customer_chat_message === 'object'
         ? source.customer_chat_message
@@ -282,6 +389,29 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         normalizeNumber(env?.OPS_ALERTS_TIMEOUT_MS, config.timeout_ms, 1000, 30000),
         1000,
         30000
+    );
+    config.temporary_mute.until = normalizeText(temporaryMuteConfig.until);
+    config.temporary_mute.allow_critical = normalizeBoolean(
+        temporaryMuteConfig.allow_critical,
+        config.temporary_mute.allow_critical
+    );
+    config.quiet_hours.enabled = normalizeBoolean(quietHoursConfig.enabled, config.quiet_hours.enabled);
+    config.quiet_hours.start_hour = normalizeNumber(
+        quietHoursConfig.start_hour,
+        config.quiet_hours.start_hour,
+        0,
+        23
+    );
+    config.quiet_hours.end_hour = normalizeNumber(
+        quietHoursConfig.end_hour,
+        config.quiet_hours.end_hour,
+        0,
+        23
+    );
+    config.quiet_hours.timezone = normalizeTimeZone(quietHoursConfig.timezone, config.quiet_hours.timezone);
+    config.quiet_hours.allow_critical = normalizeBoolean(
+        quietHoursConfig.allow_critical,
+        config.quiet_hours.allow_critical
     );
 
     config.channels.telegram.enabled = normalizeBoolean(
@@ -378,6 +508,19 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         85,
         99
     );
+    for (const routingKey of SUPPORTED_ROUTING_KEYS) {
+        const routingSource = routingConfig[routingKey] && typeof routingConfig[routingKey] === 'object'
+            ? routingConfig[routingKey]
+            : {};
+        const channels = normalizeStringArray(routingSource.channels)
+            .map((item) => normalizeChannelName(item))
+            .filter(Boolean);
+        for (const channel of SUPPORTED_CHANNELS) {
+            config.routing[routingKey][channel] = channels.length
+                ? channels.includes(channel)
+                : normalizeBoolean(routingSource[channel], DEFAULT_OPS_ALERTS_CONFIG.routing[routingKey][channel]);
+        }
+    }
 
     config.customer_chat_message.enabled = normalizeBoolean(
         customerChatMessageConfig.enabled,
@@ -618,20 +761,119 @@ function isSeverityAllowed(minimumSeverity, alertSeverity) {
         >= (SEVERITY_RANK[normalizeSeverity(minimumSeverity, 'warning')] || 0);
 }
 
-function resolveEnabledChannels(runtime = {}, alertSeverity = 'warning') {
+function mapAlertTypeToRoutingKey(alertType = '') {
+    return ALERT_TYPE_ROUTING_MAP[normalizeText(alertType).toLowerCase()] || '';
+}
+
+function isHourWithinQuietWindow(hour, startHour, endHour) {
+    if (!Number.isInteger(hour) || !Number.isInteger(startHour) || !Number.isInteger(endHour)) {
+        return false;
+    }
+
+    if (startHour === endHour) {
+        return false;
+    }
+
+    if (startHour < endHour) {
+        return hour >= startHour && hour < endHour;
+    }
+
+    return hour >= startHour || hour < endHour;
+}
+
+function getHourInTimeZone(now, timeZone) {
+    const referenceDate = now instanceof Date
+        ? now
+        : new Date(now || Date.now());
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: normalizeTimeZone(timeZone),
+        hour: '2-digit',
+        hour12: false
+    });
+    const hourPart = formatter.formatToParts(referenceDate).find((part) => part.type === 'hour');
+    const hour = Number.parseInt(hourPart?.value || '', 10);
+    return Number.isInteger(hour) ? hour : null;
+}
+
+function isAlertSuppressedByQuietHours(config = {}, alertSeverity = 'warning', options = {}) {
+    const quietHours = normalizeJsonObject(config.quiet_hours);
+    if (!quietHours.enabled) {
+        return false;
+    }
+
+    if (quietHours.allow_critical && normalizeSeverity(alertSeverity, 'warning') === 'critical') {
+        return false;
+    }
+
+    const hour = getHourInTimeZone(options.now, quietHours.timezone || DEFAULT_QUIET_HOURS_TIMEZONE);
+    if (!Number.isInteger(hour)) {
+        return false;
+    }
+
+    return isHourWithinQuietWindow(
+        hour,
+        normalizeNumber(quietHours.start_hour, DEFAULT_OPS_ALERTS_CONFIG.quiet_hours.start_hour, 0, 23),
+        normalizeNumber(quietHours.end_hour, DEFAULT_OPS_ALERTS_CONFIG.quiet_hours.end_hour, 0, 23)
+    );
+}
+
+function isAlertSuppressedByTemporaryMute(config = {}, alertSeverity = 'warning', options = {}) {
+    const temporaryMute = normalizeJsonObject(config.temporary_mute);
+    const until = normalizeText(temporaryMute.until);
+    if (!until) {
+        return false;
+    }
+
+    if (temporaryMute.allow_critical && normalizeSeverity(alertSeverity, 'warning') === 'critical') {
+        return false;
+    }
+
+    const parsedUntil = Date.parse(until);
+    if (!Number.isFinite(parsedUntil)) {
+        return false;
+    }
+
+    const now = options.now instanceof Date
+        ? options.now
+        : new Date(options.now || Date.now());
+    return parsedUntil > now.getTime();
+}
+
+function resolveEnabledChannels(runtime = {}, alertSeverity = 'warning', alertTypeOrOptions = '', maybeOptions = {}) {
     const config = runtime.config || cloneDefaultConfig();
     const secrets = runtime.secrets || {};
+    const alertType = alertTypeOrOptions && typeof alertTypeOrOptions === 'object' && !Array.isArray(alertTypeOrOptions)
+        ? ''
+        : normalizeText(alertTypeOrOptions);
+    const options = alertTypeOrOptions && typeof alertTypeOrOptions === 'object' && !Array.isArray(alertTypeOrOptions)
+        ? alertTypeOrOptions
+        : normalizeJsonObject(maybeOptions);
     const channels = [];
 
     if (!config.enabled) {
         return channels;
     }
 
+    if (isAlertSuppressedByTemporaryMute(config, alertSeverity, options)) {
+        return channels;
+    }
+
+    if (isAlertSuppressedByQuietHours(config, alertSeverity, options)) {
+        return channels;
+    }
+
+    const routingKey = mapAlertTypeToRoutingKey(alertType);
+    const allowedChannels = routingKey
+        ? SUPPORTED_CHANNELS.filter((channel) => normalizeBoolean(config.routing?.[routingKey]?.[channel], true))
+        : [];
+    const isChannelAllowed = (channel) => !routingKey || allowedChannels.includes(channel);
+
     if (
         config.channels.telegram.enabled
         && normalizeText(secrets.telegram_bot_token)
         && normalizeStringArray(config.channels.telegram.chat_ids).length
         && isSeverityAllowed(config.channels.telegram.minimum_severity, alertSeverity)
+        && isChannelAllowed('telegram')
     ) {
         channels.push('telegram');
     }
@@ -640,6 +882,7 @@ function resolveEnabledChannels(runtime = {}, alertSeverity = 'warning') {
         config.channels.feishu.enabled
         && normalizeText(secrets.feishu_webhook_url)
         && isSeverityAllowed(config.channels.feishu.minimum_severity, alertSeverity)
+        && isChannelAllowed('feishu')
     ) {
         channels.push('feishu');
     }
@@ -650,6 +893,7 @@ function resolveEnabledChannels(runtime = {}, alertSeverity = 'warning') {
         && normalizeStringArray(config.channels.email.recipients).length
         && normalizeText(config.channels.email.from_address)
         && isSeverityAllowed(config.channels.email.minimum_severity, alertSeverity)
+        && isChannelAllowed('email')
     ) {
         channels.push('email');
     }
@@ -720,16 +964,16 @@ async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
         return { queued: false, reason: 'missing_fields' };
     }
 
-    const channels = resolveEnabledChannels(runtime, severity)
+    const explicitCreatedAt = normalizeText(input.createdAt || input.created_at);
+    const dedupeReferenceDate = options.now instanceof Date
+        ? options.now
+        : new Date(options.now || explicitCreatedAt || Date.now());
+    const channels = resolveEnabledChannels(runtime, severity, alertType, { now: dedupeReferenceDate })
         .filter((channel) => !requestedChannels.length || requestedChannels.includes(channel));
     if (!channels.length) {
         return { queued: false, reason: 'no_active_channels' };
     }
 
-    const explicitCreatedAt = normalizeText(input.createdAt || input.created_at);
-    const dedupeReferenceDate = options.now instanceof Date
-        ? options.now
-        : new Date(options.now || explicitCreatedAt || Date.now());
     const dedupeWindowMinutes = normalizeNumber(
         input.dedupeWindowMinutes,
         runtime.config?.dedupe_window_minutes || DEFAULT_OPS_ALERTS_CONFIG.dedupe_window_minutes,

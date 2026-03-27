@@ -1089,6 +1089,147 @@
                                 </div>
                             </div>
 
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-strategy">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-sliders"></i>
+                                        <span>告警策略</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="ops-alert-strategy-grid">
+                                        <section class="ops-alert-strategy-card">
+                                            <div class="ops-alert-strategy-card__head">
+                                                <div>
+                                                    <h4>临时静默</h4>
+                                                    <p>适合临时维护或短时降噪。设置静默到期时间后，保存配置即可暂停外发。</p>
+                                                </div>
+                                            </div>
+                                            <div class="ops-alert-mute-status" id="opsAlertTemporaryMuteStatus">当前未设置临时静默。</div>
+                                            <div class="ops-alert-quiet-hours-grid">
+                                                <div class="config-row">
+                                                    <label>静默至</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="datetime-local" class="config-input" id="opsAlertTemporaryMuteUntil">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <div class="config-info">
+                                                        <div class="config-label">critical 继续通知</div>
+                                                        <div class="config-desc">高危异常仍继续外发，避免维护期间错过真正重要的问题。</div>
+                                                    </div>
+                                                    <div class="config-input-wrapper">
+                                                        <div class="status-toggle" id="opsAlertTemporaryMuteAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-temporary-mute-allow-critical"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="ops-alert-mute-actions">
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-set-ops-alert-temporary-mute" data-mute-hours="1">静默 1 小时</button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-set-ops-alert-temporary-mute" data-mute-hours="6">静默 6 小时</button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-set-ops-alert-temporary-mute" data-mute-hours="24">静默 24 小时</button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-temporary-mute">清除静默</button>
+                                            </div>
+                                            <div class="config-inline-note">
+                                                <i class="fas fa-circle-info"></i>
+                                                <span>预设按钮会直接填入时间；点击顶部“保存站外告警配置”后才会真正生效。</span>
+                                            </div>
+                                        </section>
+
+                                        <section class="ops-alert-strategy-card">
+                                            <div class="ops-alert-strategy-card__head">
+                                                <div>
+                                                    <h4>静默时段</h4>
+                                                    <p>适合夜间降噪。开启后，非 critical 告警会在指定时段内暂停外发。</p>
+                                                </div>
+                                                <div class="status-toggle" id="opsAlertQuietHoursEnabledToggle" data-admin-action="settings-toggle-ops-alert-quiet-hours-enabled"></div>
+                                            </div>
+                                            <div class="ops-alert-quiet-hours-grid">
+                                                <div class="config-row">
+                                                    <label>开始小时</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertQuietHoursStartHour" placeholder="23">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>结束小时</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertQuietHoursEndHour" placeholder="8">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>时区</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="text" class="config-input" id="opsAlertQuietHoursTimezone" placeholder="Asia/Shanghai">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <div class="config-info">
+                                                        <div class="config-label">critical 继续通知</div>
+                                                        <div class="config-desc">高危异常仍继续外发，避免静默时段错过真正重要的问题。</div>
+                                                    </div>
+                                                    <div class="config-input-wrapper">
+                                                        <div class="status-toggle" id="opsAlertQuietHoursAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-quiet-hours-allow-critical"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </section>
+
+                                        <section class="ops-alert-strategy-card">
+                                            <div class="ops-alert-strategy-card__head">
+                                                <div>
+                                                    <h4>分类型通道路由</h4>
+                                                    <p>为高频业务通知单独指定外发通道，避免所有消息都打到同一端。</p>
+                                                </div>
+                                            </div>
+                                            <div class="ops-alert-routing-grid">
+                                                <div class="ops-alert-routing-row ops-alert-routing-row--head">
+                                                    <div class="ops-alert-routing-head">告警类型</div>
+                                                    <div class="ops-alert-routing-check">Telegram</div>
+                                                    <div class="ops-alert-routing-check">飞书</div>
+                                                    <div class="ops-alert-routing-check">邮件</div>
+                                                </div>
+                                                <div class="ops-alert-routing-row">
+                                                    <div class="ops-alert-routing-head">
+                                                        <strong>客服消息</strong>
+                                                        <span>用户给客服机器人发新消息时触发。</span>
+                                                    </div>
+                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingCustomerChatMessageTelegram"> Telegram</label>
+                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingCustomerChatMessageFeishu"> 飞书</label>
+                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingCustomerChatMessageEmail"> 邮件</label>
+                                                </div>
+                                                <div class="ops-alert-routing-row">
+                                                    <div class="ops-alert-routing-head">
+                                                        <strong>购买成功</strong>
+                                                        <span>商城订单支付完成并创建成功后触发。</span>
+                                                    </div>
+                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopPurchaseSuccessTelegram"> Telegram</label>
+                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopPurchaseSuccessFeishu"> 飞书</label>
+                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopPurchaseSuccessEmail"> 邮件</label>
+                                                </div>
+                                                <div class="ops-alert-routing-row">
+                                                    <div class="ops-alert-routing-head">
+                                                        <strong>充值成功</strong>
+                                                        <span>钱包充值入账成功后触发。</span>
+                                                    </div>
+                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingWalletRechargeSuccessTelegram"> Telegram</label>
+                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingWalletRechargeSuccessFeishu"> 飞书</label>
+                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingWalletRechargeSuccessEmail"> 邮件</label>
+                                                </div>
+                                                <div class="ops-alert-routing-row">
+                                                    <div class="ops-alert-routing-head">
+                                                        <strong>库存与补货</strong>
+                                                        <span>低库存、售罄和库存恢复都使用同一组路由。</span>
+                                                    </div>
+                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopInventoryTelegram"> Telegram</label>
+                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopInventoryFeishu"> 飞书</label>
+                                                    <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopInventoryEmail"> 邮件</label>
+                                                </div>
+                                            </div>
+                                        </section>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="config-card ops-alert-config-card" data-config="ops-alerts-actions">
                                 <div class="config-card-header">
                                     <div class="config-card-title">

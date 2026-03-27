@@ -160,6 +160,29 @@ function formatVerifyMonitorDateTime(value) {
     });
 }
 
+function formatDateTimeLocalInputValue(value) {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const parts = [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0')
+    ];
+    const timeParts = [
+        String(date.getHours()).padStart(2, '0'),
+        String(date.getMinutes()).padStart(2, '0')
+    ];
+    return `${parts.join('-')}T${timeParts.join(':')}`;
+}
+
+function normalizeDateTimeLocalInputValue(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    const parsed = Date.parse(normalized);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : '';
+}
+
 function formatVerifyMonitorMinutes(value) {
     const num = Number(value);
     if (!Number.isFinite(num) || num < 0) return '—';
@@ -887,6 +910,17 @@ function getDefaultOpsAlertConfig() {
         retry_base_delay_ms: 60000,
         retry_max_delay_ms: 1800000,
         timeout_ms: 5000,
+        temporary_mute: {
+            until: '',
+            allow_critical: true
+        },
+        quiet_hours: {
+            enabled: false,
+            start_hour: 23,
+            end_hour: 8,
+            timezone: 'Asia/Shanghai',
+            allow_critical: true
+        },
         channels: {
             telegram: {
                 enabled: false,
@@ -904,6 +938,28 @@ function getDefaultOpsAlertConfig() {
                 from_address: '',
                 reply_to: '',
                 subject_prefix: '[Zaoyoe告警]'
+            }
+        },
+        routing: {
+            customer_chat_message: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            shop_purchase_success: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            wallet_recharge_success: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            shop_inventory: {
+                telegram: true,
+                feishu: true,
+                email: true
             }
         },
         shop_order_risk: {
@@ -1286,6 +1342,12 @@ function normalizePaymentChannelsConfig(raw) {
 function normalizeOpsAlertConfig(raw) {
     const defaults = getDefaultOpsAlertConfig();
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const temporaryMuteSource = source.temporary_mute && typeof source.temporary_mute === 'object' && !Array.isArray(source.temporary_mute)
+        ? source.temporary_mute
+        : {};
+    const quietHoursSource = source.quiet_hours && typeof source.quiet_hours === 'object' && !Array.isArray(source.quiet_hours)
+        ? source.quiet_hours
+        : {};
     const sourceChannels = source.channels && typeof source.channels === 'object' && !Array.isArray(source.channels)
         ? source.channels
         : {};
@@ -1313,6 +1375,21 @@ function normalizeOpsAlertConfig(raw) {
     const walletRechargeSuccessSource = source.wallet_recharge_success && typeof source.wallet_recharge_success === 'object' && !Array.isArray(source.wallet_recharge_success)
         ? source.wallet_recharge_success
         : {};
+    const routingSource = source.routing && typeof source.routing === 'object' && !Array.isArray(source.routing)
+        ? source.routing
+        : {};
+    const routingCustomerChatSource = routingSource.customer_chat_message && typeof routingSource.customer_chat_message === 'object' && !Array.isArray(routingSource.customer_chat_message)
+        ? routingSource.customer_chat_message
+        : {};
+    const routingShopPurchaseSource = routingSource.shop_purchase_success && typeof routingSource.shop_purchase_success === 'object' && !Array.isArray(routingSource.shop_purchase_success)
+        ? routingSource.shop_purchase_success
+        : {};
+    const routingWalletRechargeSource = routingSource.wallet_recharge_success && typeof routingSource.wallet_recharge_success === 'object' && !Array.isArray(routingSource.wallet_recharge_success)
+        ? routingSource.wallet_recharge_success
+        : {};
+    const routingShopInventorySource = routingSource.shop_inventory && typeof routingSource.shop_inventory === 'object' && !Array.isArray(routingSource.shop_inventory)
+        ? routingSource.shop_inventory
+        : {};
 
     return {
         enabled: normalizeConfigBoolean(source.enabled, defaults.enabled),
@@ -1327,6 +1404,17 @@ function normalizeOpsAlertConfig(raw) {
             24 * 60 * 60 * 1000
         ),
         timeout_ms: clamp(toWholeNumber(source.timeout_ms, defaults.timeout_ms), 1000, 30000),
+        temporary_mute: {
+            until: normalizeDateTimeLocalInputValue(temporaryMuteSource.until || '') || '',
+            allow_critical: normalizeConfigBoolean(temporaryMuteSource.allow_critical, defaults.temporary_mute.allow_critical)
+        },
+        quiet_hours: {
+            enabled: normalizeConfigBoolean(quietHoursSource.enabled, defaults.quiet_hours.enabled),
+            start_hour: clamp(toWholeNumber(quietHoursSource.start_hour, defaults.quiet_hours.start_hour), 0, 23),
+            end_hour: clamp(toWholeNumber(quietHoursSource.end_hour, defaults.quiet_hours.end_hour), 0, 23),
+            timezone: String(quietHoursSource.timezone || defaults.quiet_hours.timezone).trim() || defaults.quiet_hours.timezone,
+            allow_critical: normalizeConfigBoolean(quietHoursSource.allow_critical, defaults.quiet_hours.allow_critical)
+        },
         channels: {
             telegram: {
                 enabled: normalizeConfigBoolean(telegramSource.enabled, defaults.channels.telegram.enabled),
@@ -1344,6 +1432,28 @@ function normalizeOpsAlertConfig(raw) {
                 from_address: String(emailSource.from_address || defaults.channels.email.from_address).trim(),
                 reply_to: String(emailSource.reply_to || defaults.channels.email.reply_to).trim(),
                 subject_prefix: String(emailSource.subject_prefix || defaults.channels.email.subject_prefix).trim() || defaults.channels.email.subject_prefix
+            }
+        },
+        routing: {
+            customer_chat_message: {
+                telegram: normalizeConfigBoolean(routingCustomerChatSource.telegram, defaults.routing.customer_chat_message.telegram),
+                feishu: normalizeConfigBoolean(routingCustomerChatSource.feishu, defaults.routing.customer_chat_message.feishu),
+                email: normalizeConfigBoolean(routingCustomerChatSource.email, defaults.routing.customer_chat_message.email)
+            },
+            shop_purchase_success: {
+                telegram: normalizeConfigBoolean(routingShopPurchaseSource.telegram, defaults.routing.shop_purchase_success.telegram),
+                feishu: normalizeConfigBoolean(routingShopPurchaseSource.feishu, defaults.routing.shop_purchase_success.feishu),
+                email: normalizeConfigBoolean(routingShopPurchaseSource.email, defaults.routing.shop_purchase_success.email)
+            },
+            wallet_recharge_success: {
+                telegram: normalizeConfigBoolean(routingWalletRechargeSource.telegram, defaults.routing.wallet_recharge_success.telegram),
+                feishu: normalizeConfigBoolean(routingWalletRechargeSource.feishu, defaults.routing.wallet_recharge_success.feishu),
+                email: normalizeConfigBoolean(routingWalletRechargeSource.email, defaults.routing.wallet_recharge_success.email)
+            },
+            shop_inventory: {
+                telegram: normalizeConfigBoolean(routingShopInventorySource.telegram, defaults.routing.shop_inventory.telegram),
+                feishu: normalizeConfigBoolean(routingShopInventorySource.feishu, defaults.routing.shop_inventory.feishu),
+                email: normalizeConfigBoolean(routingShopInventorySource.email, defaults.routing.shop_inventory.email)
             }
         },
         shop_order_risk: {
@@ -1962,12 +2072,106 @@ function applyOpsAlertOverview(config) {
     setOpsAlertDeleteButtonState('telegram_bot_token', telegramSecret);
     setOpsAlertDeleteButtonState('feishu_webhook_url', feishuSecret);
     setOpsAlertDeleteButtonState('email_api_key', emailSecret);
+    applyOpsAlertStrategyControls(normalizedConfig);
     applyOpsAlertShopRiskControls(normalizedConfig);
     applyOpsAlertShopInventoryControls(normalizedConfig);
     applyOpsAlertCustomerChatControls(normalizedConfig);
     applyOpsAlertShopPurchaseSuccessControls(normalizedConfig);
     applyOpsAlertWalletRechargeSuccessControls(normalizedConfig);
     renderOpsAlertOverviewCards(normalizedConfig);
+}
+
+function getOpsAlertRoutingCheckboxId(routingKey, channelKey) {
+    const routingIdMap = {
+        customer_chat_message: 'CustomerChatMessage',
+        shop_purchase_success: 'ShopPurchaseSuccess',
+        wallet_recharge_success: 'WalletRechargeSuccess',
+        shop_inventory: 'ShopInventory'
+    };
+    const channelIdMap = {
+        telegram: 'Telegram',
+        feishu: 'Feishu',
+        email: 'Email'
+    };
+
+    return `opsAlertRouting${routingIdMap[routingKey] || ''}${channelIdMap[channelKey] || ''}`;
+}
+
+function getOpsAlertTemporaryMuteState(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']), options = {}) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const temporaryMute = normalizedConfig.temporary_mute || getDefaultOpsAlertConfig().temporary_mute;
+    const normalizedUntil = String(temporaryMute.until || '').trim();
+    const parsedUntil = normalizedUntil ? Date.parse(normalizedUntil) : Number.NaN;
+    const referenceDate = options.now instanceof Date
+        ? options.now
+        : new Date(options.now || Date.now());
+    const isValid = Number.isFinite(parsedUntil);
+    const isActive = isValid && parsedUntil > referenceDate.getTime();
+
+    return {
+        active: isActive,
+        expired: isValid && !isActive,
+        until: isValid ? new Date(parsedUntil).toISOString() : '',
+        untilLabel: isValid ? formatVerifyMonitorDateTime(parsedUntil) : '—',
+        allowCritical: temporaryMute.allow_critical !== false
+    };
+}
+
+function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const temporaryMute = normalizedConfig.temporary_mute || getDefaultOpsAlertConfig().temporary_mute;
+    const temporaryMuteState = getOpsAlertTemporaryMuteState(normalizedConfig);
+    const temporaryMuteUntilInput = document.getElementById('opsAlertTemporaryMuteUntil');
+    if (temporaryMuteUntilInput) {
+        temporaryMuteUntilInput.value = formatDateTimeLocalInputValue(temporaryMute.until || '');
+    }
+
+    const temporaryMuteAllowCriticalToggle = document.getElementById('opsAlertTemporaryMuteAllowCriticalToggle');
+    if (temporaryMuteAllowCriticalToggle) {
+        temporaryMuteAllowCriticalToggle.classList.toggle('active', temporaryMute.allow_critical !== false);
+    }
+
+    const temporaryMuteStatus = document.getElementById('opsAlertTemporaryMuteStatus');
+    if (temporaryMuteStatus) {
+        if (temporaryMuteState.active) {
+            temporaryMuteStatus.textContent = `当前已静默至 ${temporaryMuteState.untilLabel}，${temporaryMuteState.allowCritical ? 'critical 仍继续通知。' : '所有级别暂停外发。'}`;
+        } else if (temporaryMuteState.expired) {
+            temporaryMuteStatus.textContent = `上次静默已于 ${temporaryMuteState.untilLabel} 到期。点击“清除静默”可清掉旧时间。`;
+        } else {
+            temporaryMuteStatus.textContent = '当前未设置临时静默。点击预设按钮后，保存站外告警配置即可生效。';
+        }
+    }
+
+    const quietHours = normalizedConfig.quiet_hours || getDefaultOpsAlertConfig().quiet_hours;
+    const quietHoursEnabledToggle = document.getElementById('opsAlertQuietHoursEnabledToggle');
+    if (quietHoursEnabledToggle) {
+        quietHoursEnabledToggle.classList.toggle('active', quietHours.enabled);
+    }
+
+    const allowCriticalToggle = document.getElementById('opsAlertQuietHoursAllowCriticalToggle');
+    if (allowCriticalToggle) {
+        allowCriticalToggle.classList.toggle('active', quietHours.allow_critical);
+        allowCriticalToggle.classList.toggle('disabled', !quietHours.enabled);
+    }
+
+    [
+        'opsAlertQuietHoursStartHour',
+        'opsAlertQuietHoursEndHour',
+        'opsAlertQuietHoursTimezone'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !quietHours.enabled;
+    });
+
+    const routingKeys = ['customer_chat_message', 'shop_purchase_success', 'wallet_recharge_success', 'shop_inventory'];
+    const channelKeys = ['telegram', 'feishu', 'email'];
+    routingKeys.forEach((routingKey) => {
+        channelKeys.forEach((channelKey) => {
+            const checkbox = document.getElementById(getOpsAlertRoutingCheckboxId(routingKey, channelKey));
+            if (!checkbox) return;
+            checkbox.checked = normalizedConfig.routing?.[routingKey]?.[channelKey] !== false;
+        });
+    });
 }
 
 function applyOpsAlertShopRiskControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
@@ -2070,6 +2274,21 @@ function applyOpsAlertWalletRechargeSuccessControls(config = normalizeOpsAlertCo
 
 function renderOpsAlertSettings() {
     const config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
+
+    const quietHoursStartHour = document.getElementById('opsAlertQuietHoursStartHour');
+    if (quietHoursStartHour) {
+        quietHoursStartHour.value = String(config.quiet_hours.start_hour);
+    }
+
+    const quietHoursEndHour = document.getElementById('opsAlertQuietHoursEndHour');
+    if (quietHoursEndHour) {
+        quietHoursEndHour.value = String(config.quiet_hours.end_hour);
+    }
+
+    const quietHoursTimezone = document.getElementById('opsAlertQuietHoursTimezone');
+    if (quietHoursTimezone) {
+        quietHoursTimezone.value = config.quiet_hours.timezone;
+    }
 
     const telegramChatIds = document.getElementById('opsAlertTelegramChatIds');
     if (telegramChatIds) {
@@ -2468,6 +2687,7 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
     let channelsTitle = '未启用';
     let channelsBody = '当前未启用站外告警，退款和异常消息仍会保留在站内后台。';
     const enabledSeveritySummary = buildOpsAlertEnabledSeveritySummary(normalizedConfig);
+    const temporaryMuteState = getOpsAlertTemporaryMuteState(normalizedConfig);
 
     if (normalizedConfig.enabled && enabledChannelCount === 0) {
         channelsTone = 'warning';
@@ -2487,6 +2707,10 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
     }
     if (enabledSeveritySummary) {
         channelsBody += `${channelsBody.endsWith('。') ? '' : '。'} 当前级别：${enabledSeveritySummary}。`;
+    }
+    if (temporaryMuteState.active) {
+        channelsTone = channelsTone === 'danger' ? 'danger' : 'warning';
+        channelsBody += `${channelsBody.endsWith('。') ? '' : '。'} 当前临时静默至 ${temporaryMuteState.untilLabel}，${temporaryMuteState.allowCritical ? 'critical 仍继续通知。' : '所有级别暂停外发。'}`;
     }
     updateOpsAlertOverviewCard(
         'opsAlertOverviewChannelsCard',
@@ -4968,6 +5192,12 @@ function collectOpsAlertConfigFromForm() {
     const currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
     const nextConfig = {
         ...currentConfig,
+        temporary_mute: {
+            ...currentConfig.temporary_mute
+        },
+        quiet_hours: {
+            ...currentConfig.quiet_hours
+        },
         channels: {
             telegram: {
                 ...currentConfig.channels.telegram
@@ -4977,6 +5207,20 @@ function collectOpsAlertConfigFromForm() {
             },
             email: {
                 ...currentConfig.channels.email
+            }
+        },
+        routing: {
+            customer_chat_message: {
+                ...currentConfig.routing.customer_chat_message
+            },
+            shop_purchase_success: {
+                ...currentConfig.routing.shop_purchase_success
+            },
+            wallet_recharge_success: {
+                ...currentConfig.routing.wallet_recharge_success
+            },
+            shop_inventory: {
+                ...currentConfig.routing.shop_inventory
             }
         },
         shop_order_risk: {
@@ -4997,6 +5241,34 @@ function collectOpsAlertConfigFromForm() {
     };
 
     nextConfig.enabled = document.getElementById('opsAlertEnabledToggle')?.classList.contains('active') ?? currentConfig.enabled;
+    nextConfig.temporary_mute.until = normalizeDateTimeLocalInputValue(
+        document.getElementById('opsAlertTemporaryMuteUntil')?.value ?? currentConfig.temporary_mute.until
+    );
+    nextConfig.temporary_mute.allow_critical = document.getElementById('opsAlertTemporaryMuteAllowCriticalToggle')?.classList.contains('active')
+        ?? currentConfig.temporary_mute.allow_critical;
+    nextConfig.quiet_hours.enabled = document.getElementById('opsAlertQuietHoursEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.quiet_hours.enabled;
+    nextConfig.quiet_hours.start_hour = clamp(
+        toWholeNumber(
+            document.getElementById('opsAlertQuietHoursStartHour')?.value,
+            currentConfig.quiet_hours.start_hour
+        ),
+        0,
+        23
+    );
+    nextConfig.quiet_hours.end_hour = clamp(
+        toWholeNumber(
+            document.getElementById('opsAlertQuietHoursEndHour')?.value,
+            currentConfig.quiet_hours.end_hour
+        ),
+        0,
+        23
+    );
+    nextConfig.quiet_hours.timezone = String(
+        document.getElementById('opsAlertQuietHoursTimezone')?.value ?? currentConfig.quiet_hours.timezone
+    ).trim() || currentConfig.quiet_hours.timezone;
+    nextConfig.quiet_hours.allow_critical = document.getElementById('opsAlertQuietHoursAllowCriticalToggle')?.classList.contains('active')
+        ?? currentConfig.quiet_hours.allow_critical;
     nextConfig.channels.telegram.enabled = document.getElementById('opsAlertTelegramEnabledToggle')?.classList.contains('active')
         ?? currentConfig.channels.telegram.enabled;
     nextConfig.channels.telegram.chat_ids = normalizeConfigStringArray(
@@ -5030,6 +5302,18 @@ function collectOpsAlertConfigFromForm() {
     nextConfig.channels.email.subject_prefix = String(
         document.getElementById('opsAlertEmailSubjectPrefix')?.value ?? currentConfig.channels.email.subject_prefix
     ).trim() || currentConfig.channels.email.subject_prefix;
+    [
+        'customer_chat_message',
+        'shop_purchase_success',
+        'wallet_recharge_success',
+        'shop_inventory'
+    ].forEach((routingKey) => {
+        ['telegram', 'feishu', 'email'].forEach((channelKey) => {
+            const checkbox = document.getElementById(getOpsAlertRoutingCheckboxId(routingKey, channelKey));
+            if (!checkbox) return;
+            nextConfig.routing[routingKey][channelKey] = checkbox.checked;
+        });
+    });
     nextConfig.shop_order_risk.auto_response_enabled = document.getElementById('opsAlertShopRiskAutoResponseEnabledToggle')?.classList.contains('active')
         ?? currentConfig.shop_order_risk.auto_response_enabled;
     nextConfig.shop_order_risk.auto_disable_coupon_min_risk_score = toWholeNumber(
@@ -6157,6 +6441,54 @@ function toggleOpsAlertChannelEnabled(channelKey) {
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertQuietHoursEnabled() {
+    const toggleEl = document.getElementById('opsAlertQuietHoursEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertQuietHoursAllowCritical() {
+    const quietHoursToggleEl = document.getElementById('opsAlertQuietHoursEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertQuietHoursAllowCriticalToggle');
+    if (!toggleEl || !quietHoursToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertTemporaryMuteAllowCritical() {
+    const toggleEl = document.getElementById('opsAlertTemporaryMuteAllowCriticalToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function setOpsAlertTemporaryMutePreset(hours) {
+    const numericHours = Math.max(1, Number(hours) || 0);
+    const input = document.getElementById('opsAlertTemporaryMuteUntil');
+    if (!input) return;
+
+    const target = new Date(Date.now() + numericHours * 60 * 60 * 1000);
+    input.value = formatDateTimeLocalInputValue(target);
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    showToast(`已设置临时静默 ${numericHours} 小时，保存站外告警配置后生效。`, 'info');
+}
+
+function clearOpsAlertTemporaryMute() {
+    const input = document.getElementById('opsAlertTemporaryMuteUntil');
+    if (!input) return;
+
+    input.value = '';
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    showToast('已清除临时静默时间，保存站外告警配置后生效。', 'info');
 }
 
 function toggleOpsAlertShopRiskAutoResponseEnabled() {
@@ -8433,6 +8765,11 @@ window.loadOpsAlertHealth = loadOpsAlertHealth;
 window.loadOpsAlertMonitor = loadOpsAlertMonitor;
 window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;
 window.toggleOpsAlertChannelEnabled = toggleOpsAlertChannelEnabled;
+window.toggleOpsAlertTemporaryMuteAllowCritical = toggleOpsAlertTemporaryMuteAllowCritical;
+window.setOpsAlertTemporaryMutePreset = setOpsAlertTemporaryMutePreset;
+window.clearOpsAlertTemporaryMute = clearOpsAlertTemporaryMute;
+window.toggleOpsAlertQuietHoursEnabled = toggleOpsAlertQuietHoursEnabled;
+window.toggleOpsAlertQuietHoursAllowCritical = toggleOpsAlertQuietHoursAllowCritical;
 window.toggleOpsAlertShopRiskAutoResponseEnabled = toggleOpsAlertShopRiskAutoResponseEnabled;
 window.toggleOpsAlertShopInventoryEnabled = toggleOpsAlertShopInventoryEnabled;
 window.toggleOpsAlertShopInventoryRecoveryNotificationEnabled = toggleOpsAlertShopInventoryRecoveryNotificationEnabled;

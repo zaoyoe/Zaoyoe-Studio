@@ -1232,9 +1232,36 @@ module.exports = async (req, res) => {
                 actionType: 'admin.ops_alerts.upsert',
                 details: {
                     enabled: nextConfig.enabled,
+                    temporary_mute_until: sanitizeText(nextConfig.temporary_mute?.until, 120) || null,
+                    temporary_mute_allow_critical: nextConfig.temporary_mute?.allow_critical !== false,
+                    quiet_hours_enabled: nextConfig.quiet_hours?.enabled === true,
+                    quiet_hours_start_hour: Number(nextConfig.quiet_hours?.start_hour),
+                    quiet_hours_end_hour: Number(nextConfig.quiet_hours?.end_hour),
+                    quiet_hours_timezone: sanitizeText(nextConfig.quiet_hours?.timezone, 120) || null,
+                    quiet_hours_allow_critical: nextConfig.quiet_hours?.allow_critical !== false,
                     telegram_enabled: nextConfig.channels?.telegram?.enabled === true,
                     feishu_enabled: nextConfig.channels?.feishu?.enabled === true,
                     email_enabled: nextConfig.channels?.email?.enabled === true,
+                    routing_customer_chat_message_channels: [
+                        nextConfig.routing?.customer_chat_message?.telegram !== false ? 'telegram' : null,
+                        nextConfig.routing?.customer_chat_message?.feishu !== false ? 'feishu' : null,
+                        nextConfig.routing?.customer_chat_message?.email !== false ? 'email' : null
+                    ].filter(Boolean),
+                    routing_shop_purchase_success_channels: [
+                        nextConfig.routing?.shop_purchase_success?.telegram !== false ? 'telegram' : null,
+                        nextConfig.routing?.shop_purchase_success?.feishu !== false ? 'feishu' : null,
+                        nextConfig.routing?.shop_purchase_success?.email !== false ? 'email' : null
+                    ].filter(Boolean),
+                    routing_wallet_recharge_success_channels: [
+                        nextConfig.routing?.wallet_recharge_success?.telegram !== false ? 'telegram' : null,
+                        nextConfig.routing?.wallet_recharge_success?.feishu !== false ? 'feishu' : null,
+                        nextConfig.routing?.wallet_recharge_success?.email !== false ? 'email' : null
+                    ].filter(Boolean),
+                    routing_shop_inventory_channels: [
+                        nextConfig.routing?.shop_inventory?.telegram !== false ? 'telegram' : null,
+                        nextConfig.routing?.shop_inventory?.feishu !== false ? 'feishu' : null,
+                        nextConfig.routing?.shop_inventory?.email !== false ? 'email' : null
+                    ].filter(Boolean),
                     shop_risk_auto_response_enabled: nextConfig.shop_order_risk?.auto_response_enabled === true,
                     shop_risk_auto_disable_coupon_min_risk_score: Number(nextConfig.shop_order_risk?.auto_disable_coupon_min_risk_score || 0) || null,
                     shop_risk_auto_ban_user_min_risk_score: Number(nextConfig.shop_order_risk?.auto_ban_user_min_risk_score || 0) || null,
