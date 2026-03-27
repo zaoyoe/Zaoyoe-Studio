@@ -217,6 +217,66 @@ test('cumulative purchase-limit migration adds admin-managed bypass entitlements
     );
 });
 
+test('discount scope-control migration adds site, scope, and per-user coupon guardrails', () => {
+    const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260327_add_discount_scope_controls.sql'));
+
+    assert.match(
+        migrationSql,
+        /ADD COLUMN IF NOT EXISTS applicable_site VARCHAR\(10\),/,
+        'discount scope-control migration should add an optional site restriction column'
+    );
+    assert.match(
+        migrationSql,
+        /ADD COLUMN IF NOT EXISTS max_uses_per_user INT DEFAULT 0,/,
+        'discount scope-control migration should add a per-user coupon usage cap column'
+    );
+    assert.match(
+        migrationSql,
+        /ADD COLUMN IF NOT EXISTS scope_type VARCHAR\(20\) DEFAULT 'all',/,
+        'discount scope-control migration should add an explicit scope type column'
+    );
+    assert.match(
+        migrationSql,
+        /ADD COLUMN IF NOT EXISTS scope_category VARCHAR\(100\),/,
+        'discount scope-control migration should add a category scope column'
+    );
+    assert.match(
+        migrationSql,
+        /ADD COLUMN IF NOT EXISTS scope_product_id UUID;/,
+        'discount scope-control migration should add a product scope column'
+    );
+    assert.match(
+        migrationSql,
+        /discount_codes_scope_target_check/,
+        'discount scope-control migration should constrain the allowed scope target combinations'
+    );
+    assert.match(
+        migrationSql,
+        /该优惠码仅适用于指定站点/,
+        'discount preview and purchase RPCs should reject coupons outside their site scope'
+    );
+    assert.match(
+        migrationSql,
+        /该优惠码仅适用于指定分类商品/,
+        'discount preview and purchase RPCs should reject coupons outside their category scope'
+    );
+    assert.match(
+        migrationSql,
+        /该优惠码仅适用于指定商品/,
+        'discount preview and purchase RPCs should reject coupons outside their product scope'
+    );
+    assert.match(
+        migrationSql,
+        /当前账号已达到该优惠码的使用上限/,
+        'discount preview and purchase RPCs should enforce per-user usage caps'
+    );
+    assert.match(
+        migrationSql,
+        /scope_category IS 'Required when scope_type=category\. Stores the category name used by shop_products\.category\.'/,
+        'scope-control migration should document that category restrictions use the shop product category name'
+    );
+});
+
 test('site-aware product filtering and admin discount semantics stay aligned in the frontend', () => {
     const siteConfigSource = readRepoFile(path.join('js', 'site-config.js'));
     const indexBootstrapSource = readRepoFile(path.join('js', 'index-home-bootstrap.js'));
@@ -317,6 +377,56 @@ test('admin and storefront surfaces wire the purchase-policy controls through to
         adminDiscountsSource,
         /allow_zero_total: allowZeroTotal/,
         'discount creation should persist the allow_zero_total flag'
+    );
+    assert.match(
+        adminStudioSource,
+        /id="discountApplicableSite"/,
+        'admin discount modal should expose the site-restriction field'
+    );
+    assert.match(
+        adminStudioSource,
+        /id="discountMaxUsesPerUser"/,
+        'admin discount modal should expose the per-user usage cap field'
+    );
+    assert.match(
+        adminStudioSource,
+        /id="discountScopeType"/,
+        'admin discount modal should expose the scope-type selector'
+    );
+    assert.match(
+        adminStudioSource,
+        /id="discountScopeCategory"/,
+        'admin discount modal should expose the category scope selector'
+    );
+    assert.match(
+        adminStudioSource,
+        /id="discountScopeProduct"/,
+        'admin discount modal should expose the product scope selector'
+    );
+    assert.match(
+        adminDiscountsSource,
+        /max_uses_per_user: maxUsesPerUser/,
+        'discount creation should persist the per-user usage cap'
+    );
+    assert.match(
+        adminDiscountsSource,
+        /applicable_site: applicableSite/,
+        'discount creation should persist the optional site restriction'
+    );
+    assert.match(
+        adminDiscountsSource,
+        /scope_type: scopeType/,
+        'discount creation should persist the coupon scope type'
+    );
+    assert.match(
+        adminDiscountsSource,
+        /scope_category: scopeCategory/,
+        'discount creation should persist the scoped category name'
+    );
+    assert.match(
+        adminDiscountsSource,
+        /scope_product_id: scopeProductId/,
+        'discount creation should persist the scoped product id'
     );
     assert.match(
         shopClientSource,

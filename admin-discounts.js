@@ -9,6 +9,12 @@ const AdminDiscounts = {
     currentPage: 1,
     itemsPerPage: 10,
     controlsBound: false,
+    restrictionOptionsLoaded: false,
+    restrictionOptionsPromise: null,
+    categories: [],
+    products: [],
+    categoryNameMap: new Map(),
+    productNameMap: new Map(),
     filters: {
         status: 'all', // all, active, used (includes expired/inactive)
         search: ''
@@ -76,16 +82,75 @@ const AdminDiscounts = {
         return `<span class="admin-discount-type-value admin-discount-type-value--fixed">立减 ${discount.discount_value} 积分</span>`;
     },
 
-    getDiscountPolicyMarkup: function (discount) {
-        if (discount.allow_zero_total) {
-            return '<span class="status-badge active"><i class="fas fa-unlock"></i> 允许全免</span>';
+    normalizeScopeType: function (value) {
+        if (value === 'category' || value === 'product') {
+            return value;
         }
-        return '<span class="admin-discount-status-muted"><i class="fas fa-shield-alt"></i> 禁止全免</span>';
+        return 'all';
+    },
+
+    getCategoryLabel: function (categoryId) {
+        const normalized = String(categoryId ?? '').trim();
+        if (!normalized) return '全部分类';
+        return this.categoryNameMap.get(normalized) || normalized;
+    },
+
+    getProductLabel: function (productId) {
+        const normalized = String(productId ?? '').trim();
+        if (!normalized) return '全部商品';
+        return this.productNameMap.get(normalized) || normalized;
+    },
+
+    getDiscountUsageMarkup: function (discount) {
+        const totalLimit = Number.parseInt(discount.max_uses, 10);
+        const perUserLimit = Number.parseInt(discount.max_uses_per_user, 10);
+        const usageParts = [
+            `<div class="admin-discount-usage-meta">已用: <span class="admin-discount-usage-count">${discount.used_count}</span> / ${totalLimit > 0 ? totalLimit : '∞'}</div>`
+        ];
+
+        if (perUserLimit > 0) {
+            usageParts.push(`<div class="admin-discount-expiry-meta">每人最多 ${perUserLimit} 次</div>`);
+        } else {
+            usageParts.push('<div class="admin-discount-expiry-meta">每人不限次数</div>');
+        }
+
+        return usageParts.join('');
+    },
+
+    getDiscountPolicyMarkup: function (discount) {
+        const policyLines = [];
+        const applicableSite = String(discount.applicable_site ?? '').trim().toLowerCase();
+        const scopeType = this.normalizeScopeType(discount.scope_type);
+
+        policyLines.push(
+            `<div class="admin-discount-expiry-meta"><i class="fas fa-earth-asia"></i> 站点: ${this.escapeHtml(applicableSite ? applicableSite.toUpperCase() : '全部')}</div>`
+        );
+
+        if (scopeType === 'category') {
+            policyLines.push(
+                `<div class="admin-discount-expiry-meta"><i class="fas fa-layer-group"></i> 分类: ${this.escapeHtml(this.getCategoryLabel(discount.scope_category))}</div>`
+            );
+        } else if (scopeType === 'product') {
+            policyLines.push(
+                `<div class="admin-discount-expiry-meta"><i class="fas fa-box-open"></i> 商品: ${this.escapeHtml(this.getProductLabel(discount.scope_product_id))}</div>`
+            );
+        } else {
+            policyLines.push('<div class="admin-discount-expiry-meta"><i class="fas fa-tags"></i> 范围: 全部商品</div>');
+        }
+
+        if (discount.allow_zero_total) {
+            policyLines.push('<div><span class="status-badge active"><i class="fas fa-unlock"></i> 允许全免</span></div>');
+        } else {
+            policyLines.push('<div><span class="admin-discount-status-muted"><i class="fas fa-shield-alt"></i> 禁止全免</span></div>');
+        }
+
+        return `<div class="admin-discount-status-stack">${policyLines.join('')}</div>`;
     },
 
     init: function () {
         console.log('🎟️ Initializing Discounts Module...');
         this.bindStaticControls();
+        this.loadRestrictionOptions();
         this.loadDiscounts();
     },
 
@@ -97,10 +162,10 @@ const AdminDiscounts = {
 
         const openBtn = document.querySelector('[data-admin-action="discounts-open-generate-modal"]');
         if (openBtn) {
-            openBtn.addEventListener('click', (event) => {
+            openBtn.addEventListener('click', async (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                this.openGenerateModal();
+                await this.openGenerateModal();
             });
         }
 
@@ -148,6 +213,13 @@ const AdminDiscounts = {
             });
         });
 
+        const scopeTypeSelect = document.getElementById('discountScopeType');
+        if (scopeTypeSelect) {
+            scopeTypeSelect.addEventListener('change', () => {
+                this.toggleScopeFields();
+            });
+        }
+
         const modal = document.getElementById('discountGenerateModal');
         if (modal) {
             modal.addEventListener('click', (event) => {
@@ -162,6 +234,156 @@ const AdminDiscounts = {
                     this.closeGenerateModal();
                 }
             });
+        }
+    },
+
+    ensureRestrictionOptionsLoaded: async function () {
+        if (this.restrictionOptionsLoaded) {
+            return;
+        }
+
+        if (!this.restrictionOptionsPromise) {
+            this.restrictionOptionsPromise = this.loadRestrictionOptions();
+        }
+
+        await this.restrictionOptionsPromise;
+    },
+
+    loadRestrictionOptions: async function () {
+        if (this.restrictionOptionsLoaded) {
+            return;
+        }
+
+        this.restrictionOptionsPromise = (async () => {
+            let productData = [];
+            let categoryData = [];
+
+            try {
+                const [{ data: products, error: productsError }, { data: categories, error: categoriesError }] = await Promise.all([
+                    supabaseClient
+                        .from('shop_products')
+                        .select('id, name, category')
+                        .eq('is_active', true)
+                        .order('display_order', { ascending: false }),
+                    supabaseClient
+                        .from('shop_categories')
+                        .select('id, name, sort_order')
+                        .order('sort_order', { ascending: true })
+                ]);
+
+                if (productsError) {
+                    console.warn('Failed to load discount product restriction options:', productsError);
+                } else if (Array.isArray(products)) {
+                    productData = products;
+                }
+
+                if (categoriesError) {
+                    console.warn('Failed to load discount category restriction options:', categoriesError);
+                } else if (Array.isArray(categories)) {
+                    categoryData = categories;
+                }
+            } catch (err) {
+                console.warn('Failed to load discount restriction options:', err);
+            }
+
+            if (categoryData.length === 0 && productData.length > 0) {
+                const seenCategories = new Set();
+                categoryData = productData
+                    .map((product) => String(product.category ?? '').trim())
+                    .filter((categoryId) => {
+                        if (!categoryId || seenCategories.has(categoryId)) {
+                            return false;
+                        }
+                        seenCategories.add(categoryId);
+                        return true;
+                    })
+                    .map((categoryId, index) => ({
+                        id: categoryId,
+                        name: categoryId,
+                        sort_order: index
+                    }));
+            }
+
+            this.products = productData;
+            this.categories = categoryData;
+            this.productNameMap = new Map(productData.map((product) => [String(product.id), product.name || String(product.id)]));
+            this.categoryNameMap = new Map();
+            categoryData.forEach((category) => {
+                const categoryId = String(category.id ?? '').trim();
+                const categoryName = String(category.name ?? category.id ?? '').trim();
+                if (categoryId) {
+                    this.categoryNameMap.set(categoryId, categoryName || categoryId);
+                }
+                if (categoryName) {
+                    this.categoryNameMap.set(categoryName, categoryName);
+                }
+            });
+            this.populateRestrictionSelects();
+            this.restrictionOptionsLoaded = true;
+
+            if (this.discounts.length > 0) {
+                this.render();
+            }
+        })();
+
+        try {
+            await this.restrictionOptionsPromise;
+        } finally {
+            this.restrictionOptionsPromise = null;
+        }
+    },
+
+    populateRestrictionSelects: function () {
+        const categorySelect = document.getElementById('discountScopeCategory');
+        const productSelect = document.getElementById('discountScopeProduct');
+
+        if (categorySelect) {
+            const currentValue = categorySelect.value;
+            categorySelect.innerHTML = [
+                '<option value="">请选择分类</option>',
+                ...this.categories.map((category) => {
+                    const categoryName = String(category.name ?? category.id ?? '').trim();
+                    return `<option value="${this.escapeHtml(categoryName)}">${this.escapeHtml(categoryName || String(category.id))}</option>`;
+                })
+            ].join('');
+
+            if (currentValue && this.categories.some((category) => String(category.name ?? category.id ?? '').trim() === currentValue)) {
+                categorySelect.value = currentValue;
+            }
+        }
+
+        if (productSelect) {
+            const currentValue = productSelect.value;
+            productSelect.innerHTML = [
+                '<option value="">请选择商品</option>',
+                ...this.products.map((product) => `<option value="${this.escapeHtml(String(product.id))}">${this.escapeHtml(product.name || String(product.id))}</option>`)
+            ].join('');
+
+            if (currentValue && this.products.some((product) => String(product.id) === currentValue)) {
+                productSelect.value = currentValue;
+            }
+        }
+    },
+
+    toggleScopeFields: function () {
+        const scopeType = this.normalizeScopeType(document.getElementById('discountScopeType')?.value);
+        const categoryWrapper = document.getElementById('discountScopeCategoryWrapper');
+        const productWrapper = document.getElementById('discountScopeProductWrapper');
+        const categorySelect = document.getElementById('discountScopeCategory');
+        const productSelect = document.getElementById('discountScopeProduct');
+
+        if (categoryWrapper) {
+            categoryWrapper.hidden = scopeType !== 'category';
+        }
+        if (productWrapper) {
+            productWrapper.hidden = scopeType !== 'product';
+        }
+
+        if (scopeType !== 'category' && categorySelect) {
+            categorySelect.value = '';
+        }
+        if (scopeType !== 'product' && productSelect) {
+            productSelect.value = '';
         }
     },
 
@@ -310,7 +532,7 @@ const AdminDiscounts = {
                 </td>
                 <td>${typeLabel}</td>
                 <td>
-                    <div class="admin-discount-usage-meta">已用: <span class="admin-discount-usage-count">${d.used_count}</span> / ${d.max_uses || '∞'}</div>
+                    ${this.getDiscountUsageMarkup(d)}
                 </td>
                 <td>
                     <div class="admin-discount-status-stack">
@@ -436,11 +658,18 @@ const AdminDiscounts = {
     // ----------------------------------------
     // GENERATE MODAL
     // ----------------------------------------
-    openGenerateModal: function () {
+    openGenerateModal: async function () {
+        await this.ensureRestrictionOptionsLoaded();
         document.getElementById('discountGenerateForm').reset();
         document.getElementById('discountCodeInput').value = '';
+        document.getElementById('discountApplicableSite').value = '';
+        document.getElementById('discountMaxUsesPerUser').value = '0';
+        document.getElementById('discountScopeType').value = 'all';
+        document.getElementById('discountScopeCategory').value = '';
+        document.getElementById('discountScopeProduct').value = '';
         document.getElementById('discountAllowZeroTotal').checked = false;
         this.selectDiscountType('percent');
+        this.toggleScopeFields();
         this.setGenerateModalVisible(true);
     },
 
@@ -527,6 +756,37 @@ const AdminDiscounts = {
         }
 
         const maxUses = parseInt(document.getElementById('discountMaxUses').value) || 0;
+        const maxUsesPerUser = parseInt(document.getElementById('discountMaxUsesPerUser').value) || 0;
+        if (maxUsesPerUser < 0) {
+            alert('每用户最多使用次数不能小于 0');
+            return;
+        }
+
+        const applicableSiteRaw = String(document.getElementById('discountApplicableSite')?.value || '').trim().toLowerCase();
+        const applicableSite = applicableSiteRaw || null;
+        if (applicableSite && !['cn', 'intl'].includes(applicableSite)) {
+            alert('适用站点配置无效');
+            return;
+        }
+
+        const scopeType = this.normalizeScopeType(document.getElementById('discountScopeType')?.value);
+        const scopeCategory = scopeType === 'category'
+            ? String(document.getElementById('discountScopeCategory')?.value || '').trim()
+            : null;
+        const scopeProductId = scopeType === 'product'
+            ? String(document.getElementById('discountScopeProduct')?.value || '').trim()
+            : null;
+
+        if (scopeType === 'category' && !scopeCategory) {
+            alert('请选择优惠券适用的分类');
+            return;
+        }
+
+        if (scopeType === 'product' && !scopeProductId) {
+            alert('请选择优惠券适用的商品');
+            return;
+        }
+
         const allowZeroTotal = !!document.getElementById('discountAllowZeroTotal')?.checked;
         const expiryRaw = (document.getElementById('discountExpiryDate') || {}).value || '';
         const expiryTime = (document.getElementById('discountExpiryTime') || {}).value || '23:59';
@@ -540,7 +800,12 @@ const AdminDiscounts = {
             discount_type: type,
             discount_value: value,
             max_uses: maxUses,
+            max_uses_per_user: maxUsesPerUser,
             expires_at: expires_at,
+            applicable_site: applicableSite,
+            scope_type: scopeType,
+            scope_category: scopeCategory,
+            scope_product_id: scopeProductId,
             allow_zero_total: allowZeroTotal,
             is_active: true
         };
