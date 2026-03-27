@@ -1232,6 +1232,8 @@ module.exports = async (req, res) => {
                 actionType: 'admin.ops_alerts.upsert',
                 details: {
                     enabled: nextConfig.enabled,
+                    temporary_mute_until: sanitizeText(nextConfig.temporary_mute?.until, 120) || null,
+                    temporary_mute_allow_critical: nextConfig.temporary_mute?.allow_critical !== false,
                     quiet_hours_enabled: nextConfig.quiet_hours?.enabled === true,
                     quiet_hours_start_hour: Number(nextConfig.quiet_hours?.start_hour),
                     quiet_hours_end_hour: Number(nextConfig.quiet_hours?.end_hour),

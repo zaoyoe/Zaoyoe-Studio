@@ -40,6 +40,10 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
     retry_base_delay_ms: 60000,
     retry_max_delay_ms: 1800000,
     timeout_ms: 5000,
+    temporary_mute: Object.freeze({
+        until: '',
+        allow_critical: true
+    }),
     quiet_hours: Object.freeze({
         enabled: false,
         start_hour: 23,
@@ -217,6 +221,10 @@ function cloneDefaultConfig() {
         retry_base_delay_ms: DEFAULT_OPS_ALERTS_CONFIG.retry_base_delay_ms,
         retry_max_delay_ms: DEFAULT_OPS_ALERTS_CONFIG.retry_max_delay_ms,
         timeout_ms: DEFAULT_OPS_ALERTS_CONFIG.timeout_ms,
+        temporary_mute: {
+            until: DEFAULT_OPS_ALERTS_CONFIG.temporary_mute.until,
+            allow_critical: DEFAULT_OPS_ALERTS_CONFIG.temporary_mute.allow_critical
+        },
         quiet_hours: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.quiet_hours.enabled,
             start_hour: DEFAULT_OPS_ALERTS_CONFIG.quiet_hours.start_hour,
@@ -317,6 +325,9 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
     const shopOrderRiskConfig = source.shop_order_risk && typeof source.shop_order_risk === 'object'
         ? source.shop_order_risk
         : {};
+    const temporaryMuteConfig = source.temporary_mute && typeof source.temporary_mute === 'object'
+        ? source.temporary_mute
+        : {};
     const quietHoursConfig = source.quiet_hours && typeof source.quiet_hours === 'object'
         ? source.quiet_hours
         : {};
@@ -378,6 +389,11 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         normalizeNumber(env?.OPS_ALERTS_TIMEOUT_MS, config.timeout_ms, 1000, 30000),
         1000,
         30000
+    );
+    config.temporary_mute.until = normalizeText(temporaryMuteConfig.until);
+    config.temporary_mute.allow_critical = normalizeBoolean(
+        temporaryMuteConfig.allow_critical,
+        config.temporary_mute.allow_critical
     );
     config.quiet_hours.enabled = normalizeBoolean(quietHoursConfig.enabled, config.quiet_hours.enabled);
     config.quiet_hours.start_hour = normalizeNumber(
@@ -801,6 +817,28 @@ function isAlertSuppressedByQuietHours(config = {}, alertSeverity = 'warning', o
     );
 }
 
+function isAlertSuppressedByTemporaryMute(config = {}, alertSeverity = 'warning', options = {}) {
+    const temporaryMute = normalizeJsonObject(config.temporary_mute);
+    const until = normalizeText(temporaryMute.until);
+    if (!until) {
+        return false;
+    }
+
+    if (temporaryMute.allow_critical && normalizeSeverity(alertSeverity, 'warning') === 'critical') {
+        return false;
+    }
+
+    const parsedUntil = Date.parse(until);
+    if (!Number.isFinite(parsedUntil)) {
+        return false;
+    }
+
+    const now = options.now instanceof Date
+        ? options.now
+        : new Date(options.now || Date.now());
+    return parsedUntil > now.getTime();
+}
+
 function resolveEnabledChannels(runtime = {}, alertSeverity = 'warning', alertTypeOrOptions = '', maybeOptions = {}) {
     const config = runtime.config || cloneDefaultConfig();
     const secrets = runtime.secrets || {};
@@ -813,6 +851,10 @@ function resolveEnabledChannels(runtime = {}, alertSeverity = 'warning', alertTy
     const channels = [];
 
     if (!config.enabled) {
+        return channels;
+    }
+
+    if (isAlertSuppressedByTemporaryMute(config, alertSeverity, options)) {
         return channels;
     }
 

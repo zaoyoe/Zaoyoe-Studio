@@ -445,6 +445,15 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-channel':
                 window.toggleOpsAlertChannelEnabled?.(actionEl.dataset.alertChannel);
                 break;
+            case 'settings-toggle-ops-alert-temporary-mute-allow-critical':
+                window.toggleOpsAlertTemporaryMuteAllowCritical?.();
+                break;
+            case 'settings-set-ops-alert-temporary-mute':
+                window.setOpsAlertTemporaryMutePreset?.(actionEl.dataset.muteHours);
+                break;
+            case 'settings-clear-ops-alert-temporary-mute':
+                window.clearOpsAlertTemporaryMute?.();
+                break;
             case 'settings-toggle-ops-alert-quiet-hours-enabled':
                 window.toggleOpsAlertQuietHoursEnabled?.();
                 break;

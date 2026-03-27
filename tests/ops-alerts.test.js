@@ -1492,6 +1492,64 @@ test('resolveEnabledChannels suppresses non-critical alerts during configured qu
     );
 });
 
+test('resolveEnabledChannels suppresses non-critical alerts during temporary mute window', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            enabled: true,
+            temporary_mute: {
+                until: '2026-03-27T10:00:00.000Z',
+                allow_critical: true
+            },
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['123456']
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: 'telegram-key'
+        }
+    });
+
+    assert.deepEqual(
+        __testUtils.resolveEnabledChannels(runtime, 'warning', 'shop_inventory_low', {
+            now: new Date('2026-03-27T09:00:00.000Z')
+        }),
+        []
+    );
+});
+
+test('resolveEnabledChannels still allows critical alerts during temporary mute when configured', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            enabled: true,
+            temporary_mute: {
+                until: '2026-03-27T10:00:00.000Z',
+                allow_critical: true
+            },
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['123456']
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: 'telegram-key'
+        }
+    });
+
+    assert.deepEqual(
+        __testUtils.resolveEnabledChannels(runtime, 'critical', 'shop_inventory_empty', {
+            now: new Date('2026-03-27T09:00:00.000Z')
+        }),
+        ['telegram']
+    );
+});
+
 test('resolveEnabledChannels still allows critical alerts during quiet hours when configured', () => {
     const runtime = createRuntimeConfig({
         config: {

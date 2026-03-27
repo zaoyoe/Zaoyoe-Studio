@@ -160,6 +160,29 @@ function formatVerifyMonitorDateTime(value) {
     });
 }
 
+function formatDateTimeLocalInputValue(value) {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const parts = [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0')
+    ];
+    const timeParts = [
+        String(date.getHours()).padStart(2, '0'),
+        String(date.getMinutes()).padStart(2, '0')
+    ];
+    return `${parts.join('-')}T${timeParts.join(':')}`;
+}
+
+function normalizeDateTimeLocalInputValue(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    const parsed = Date.parse(normalized);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : '';
+}
+
 function formatVerifyMonitorMinutes(value) {
     const num = Number(value);
     if (!Number.isFinite(num) || num < 0) return '—';
@@ -887,6 +910,10 @@ function getDefaultOpsAlertConfig() {
         retry_base_delay_ms: 60000,
         retry_max_delay_ms: 1800000,
         timeout_ms: 5000,
+        temporary_mute: {
+            until: '',
+            allow_critical: true
+        },
         quiet_hours: {
             enabled: false,
             start_hour: 23,
@@ -1315,6 +1342,9 @@ function normalizePaymentChannelsConfig(raw) {
 function normalizeOpsAlertConfig(raw) {
     const defaults = getDefaultOpsAlertConfig();
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const temporaryMuteSource = source.temporary_mute && typeof source.temporary_mute === 'object' && !Array.isArray(source.temporary_mute)
+        ? source.temporary_mute
+        : {};
     const quietHoursSource = source.quiet_hours && typeof source.quiet_hours === 'object' && !Array.isArray(source.quiet_hours)
         ? source.quiet_hours
         : {};
@@ -1374,6 +1404,10 @@ function normalizeOpsAlertConfig(raw) {
             24 * 60 * 60 * 1000
         ),
         timeout_ms: clamp(toWholeNumber(source.timeout_ms, defaults.timeout_ms), 1000, 30000),
+        temporary_mute: {
+            until: normalizeDateTimeLocalInputValue(temporaryMuteSource.until || '') || '',
+            allow_critical: normalizeConfigBoolean(temporaryMuteSource.allow_critical, defaults.temporary_mute.allow_critical)
+        },
         quiet_hours: {
             enabled: normalizeConfigBoolean(quietHoursSource.enabled, defaults.quiet_hours.enabled),
             start_hour: clamp(toWholeNumber(quietHoursSource.start_hour, defaults.quiet_hours.start_hour), 0, 23),
@@ -2063,8 +2097,51 @@ function getOpsAlertRoutingCheckboxId(routingKey, channelKey) {
     return `opsAlertRouting${routingIdMap[routingKey] || ''}${channelIdMap[channelKey] || ''}`;
 }
 
+function getOpsAlertTemporaryMuteState(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']), options = {}) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const temporaryMute = normalizedConfig.temporary_mute || getDefaultOpsAlertConfig().temporary_mute;
+    const normalizedUntil = String(temporaryMute.until || '').trim();
+    const parsedUntil = normalizedUntil ? Date.parse(normalizedUntil) : Number.NaN;
+    const referenceDate = options.now instanceof Date
+        ? options.now
+        : new Date(options.now || Date.now());
+    const isValid = Number.isFinite(parsedUntil);
+    const isActive = isValid && parsedUntil > referenceDate.getTime();
+
+    return {
+        active: isActive,
+        expired: isValid && !isActive,
+        until: isValid ? new Date(parsedUntil).toISOString() : '',
+        untilLabel: isValid ? formatVerifyMonitorDateTime(parsedUntil) : '—',
+        allowCritical: temporaryMute.allow_critical !== false
+    };
+}
+
 function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
+    const temporaryMute = normalizedConfig.temporary_mute || getDefaultOpsAlertConfig().temporary_mute;
+    const temporaryMuteState = getOpsAlertTemporaryMuteState(normalizedConfig);
+    const temporaryMuteUntilInput = document.getElementById('opsAlertTemporaryMuteUntil');
+    if (temporaryMuteUntilInput) {
+        temporaryMuteUntilInput.value = formatDateTimeLocalInputValue(temporaryMute.until || '');
+    }
+
+    const temporaryMuteAllowCriticalToggle = document.getElementById('opsAlertTemporaryMuteAllowCriticalToggle');
+    if (temporaryMuteAllowCriticalToggle) {
+        temporaryMuteAllowCriticalToggle.classList.toggle('active', temporaryMute.allow_critical !== false);
+    }
+
+    const temporaryMuteStatus = document.getElementById('opsAlertTemporaryMuteStatus');
+    if (temporaryMuteStatus) {
+        if (temporaryMuteState.active) {
+            temporaryMuteStatus.textContent = `当前已静默至 ${temporaryMuteState.untilLabel}，${temporaryMuteState.allowCritical ? 'critical 仍继续通知。' : '所有级别暂停外发。'}`;
+        } else if (temporaryMuteState.expired) {
+            temporaryMuteStatus.textContent = `上次静默已于 ${temporaryMuteState.untilLabel} 到期。点击“清除静默”可清掉旧时间。`;
+        } else {
+            temporaryMuteStatus.textContent = '当前未设置临时静默。点击预设按钮后，保存站外告警配置即可生效。';
+        }
+    }
+
     const quietHours = normalizedConfig.quiet_hours || getDefaultOpsAlertConfig().quiet_hours;
     const quietHoursEnabledToggle = document.getElementById('opsAlertQuietHoursEnabledToggle');
     if (quietHoursEnabledToggle) {
@@ -2610,6 +2687,7 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
     let channelsTitle = '未启用';
     let channelsBody = '当前未启用站外告警，退款和异常消息仍会保留在站内后台。';
     const enabledSeveritySummary = buildOpsAlertEnabledSeveritySummary(normalizedConfig);
+    const temporaryMuteState = getOpsAlertTemporaryMuteState(normalizedConfig);
 
     if (normalizedConfig.enabled && enabledChannelCount === 0) {
         channelsTone = 'warning';
@@ -2629,6 +2707,10 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
     }
     if (enabledSeveritySummary) {
         channelsBody += `${channelsBody.endsWith('。') ? '' : '。'} 当前级别：${enabledSeveritySummary}。`;
+    }
+    if (temporaryMuteState.active) {
+        channelsTone = channelsTone === 'danger' ? 'danger' : 'warning';
+        channelsBody += `${channelsBody.endsWith('。') ? '' : '。'} 当前临时静默至 ${temporaryMuteState.untilLabel}，${temporaryMuteState.allowCritical ? 'critical 仍继续通知。' : '所有级别暂停外发。'}`;
     }
     updateOpsAlertOverviewCard(
         'opsAlertOverviewChannelsCard',
@@ -5110,6 +5192,9 @@ function collectOpsAlertConfigFromForm() {
     const currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
     const nextConfig = {
         ...currentConfig,
+        temporary_mute: {
+            ...currentConfig.temporary_mute
+        },
         quiet_hours: {
             ...currentConfig.quiet_hours
         },
@@ -5156,6 +5241,11 @@ function collectOpsAlertConfigFromForm() {
     };
 
     nextConfig.enabled = document.getElementById('opsAlertEnabledToggle')?.classList.contains('active') ?? currentConfig.enabled;
+    nextConfig.temporary_mute.until = normalizeDateTimeLocalInputValue(
+        document.getElementById('opsAlertTemporaryMuteUntil')?.value ?? currentConfig.temporary_mute.until
+    );
+    nextConfig.temporary_mute.allow_critical = document.getElementById('opsAlertTemporaryMuteAllowCriticalToggle')?.classList.contains('active')
+        ?? currentConfig.temporary_mute.allow_critical;
     nextConfig.quiet_hours.enabled = document.getElementById('opsAlertQuietHoursEnabledToggle')?.classList.contains('active')
         ?? currentConfig.quiet_hours.enabled;
     nextConfig.quiet_hours.start_hour = clamp(
@@ -6370,6 +6460,35 @@ function toggleOpsAlertQuietHoursAllowCritical() {
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertTemporaryMuteAllowCritical() {
+    const toggleEl = document.getElementById('opsAlertTemporaryMuteAllowCriticalToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function setOpsAlertTemporaryMutePreset(hours) {
+    const numericHours = Math.max(1, Number(hours) || 0);
+    const input = document.getElementById('opsAlertTemporaryMuteUntil');
+    if (!input) return;
+
+    const target = new Date(Date.now() + numericHours * 60 * 60 * 1000);
+    input.value = formatDateTimeLocalInputValue(target);
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    showToast(`已设置临时静默 ${numericHours} 小时，保存站外告警配置后生效。`, 'info');
+}
+
+function clearOpsAlertTemporaryMute() {
+    const input = document.getElementById('opsAlertTemporaryMuteUntil');
+    if (!input) return;
+
+    input.value = '';
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    showToast('已清除临时静默时间，保存站外告警配置后生效。', 'info');
 }
 
 function toggleOpsAlertShopRiskAutoResponseEnabled() {
@@ -8646,6 +8765,9 @@ window.loadOpsAlertHealth = loadOpsAlertHealth;
 window.loadOpsAlertMonitor = loadOpsAlertMonitor;
 window.toggleOpsAlertsEnabled = toggleOpsAlertsEnabled;
 window.toggleOpsAlertChannelEnabled = toggleOpsAlertChannelEnabled;
+window.toggleOpsAlertTemporaryMuteAllowCritical = toggleOpsAlertTemporaryMuteAllowCritical;
+window.setOpsAlertTemporaryMutePreset = setOpsAlertTemporaryMutePreset;
+window.clearOpsAlertTemporaryMute = clearOpsAlertTemporaryMute;
 window.toggleOpsAlertQuietHoursEnabled = toggleOpsAlertQuietHoursEnabled;
 window.toggleOpsAlertQuietHoursAllowCritical = toggleOpsAlertQuietHoursAllowCritical;
 window.toggleOpsAlertShopRiskAutoResponseEnabled = toggleOpsAlertShopRiskAutoResponseEnabled;

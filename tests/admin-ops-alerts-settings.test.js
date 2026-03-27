@@ -40,6 +40,10 @@ function createDefaultState() {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
         config: {
             enabled: false,
+            temporary_mute: {
+                until: '',
+                allow_critical: true
+            },
             quiet_hours: {
                 enabled: false,
                 start_hour: 23,
@@ -178,6 +182,7 @@ function createNormalizedConfig(raw) {
     const telegram = channels.telegram && typeof channels.telegram === 'object' ? channels.telegram : {};
     const feishu = channels.feishu && typeof channels.feishu === 'object' ? channels.feishu : {};
     const email = channels.email && typeof channels.email === 'object' ? channels.email : {};
+    const temporaryMute = source.temporary_mute && typeof source.temporary_mute === 'object' ? source.temporary_mute : {};
     const quietHours = source.quiet_hours && typeof source.quiet_hours === 'object' ? source.quiet_hours : {};
     const shopOrderRisk = source.shop_order_risk && typeof source.shop_order_risk === 'object' ? source.shop_order_risk : {};
     const shopInventory = source.shop_inventory && typeof source.shop_inventory === 'object' ? source.shop_inventory : {};
@@ -192,6 +197,10 @@ function createNormalizedConfig(raw) {
 
     return {
         enabled: normalizeBoolean(source.enabled, false),
+        temporary_mute: {
+            until: typeof temporaryMute.until === 'string' ? temporaryMute.until.trim() : '',
+            allow_critical: normalizeBoolean(temporaryMute.allow_critical, true)
+        },
         quiet_hours: {
             enabled: normalizeBoolean(quietHours.enabled, false),
             start_hour: Math.min(23, Math.max(0, Number(quietHours.start_hour || 23) || 23)),
@@ -526,6 +535,8 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
         assert.equal(payload.config.enabled, true);
+        assert.equal(payload.config.temporary_mute.until, '');
+        assert.equal(payload.config.temporary_mute.allow_critical, true);
         assert.equal(payload.config.quiet_hours.enabled, false);
         assert.equal(payload.config.quiet_hours.start_hour, 23);
         assert.equal(payload.config.quiet_hours.end_hour, 8);
@@ -576,6 +587,10 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
             body: {
                 config: {
                     enabled: true,
+                    temporary_mute: {
+                        until: '2026-03-27T15:00:00.000Z',
+                        allow_critical: false
+                    },
                     quiet_hours: {
                         enabled: true,
                         start_hour: 22,
@@ -664,6 +679,8 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
         assert.equal(payload.config.enabled, true);
+        assert.equal(payload.config.temporary_mute.until, '2026-03-27T15:00:00.000Z');
+        assert.equal(payload.config.temporary_mute.allow_critical, false);
         assert.equal(payload.config.quiet_hours.enabled, true);
         assert.equal(payload.config.quiet_hours.start_hour, 22);
         assert.equal(payload.config.quiet_hours.end_hour, 7);
@@ -719,6 +736,8 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.upsertedSecrets.length, 2);
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.upsert');
+        assert.equal(state.auditLogs[0].details.temporary_mute_until, '2026-03-27T15:00:00.000Z');
+        assert.equal(state.auditLogs[0].details.temporary_mute_allow_critical, false);
         assert.equal(state.auditLogs[0].details.quiet_hours_enabled, true);
         assert.equal(state.auditLogs[0].details.quiet_hours_start_hour, 22);
         assert.equal(state.auditLogs[0].details.quiet_hours_end_hour, 7);
