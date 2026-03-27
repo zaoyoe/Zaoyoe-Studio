@@ -91,7 +91,7 @@ function applyRange(rows, range) {
 function createSupabaseStub(state) {
     return {
         from(table) {
-            if (table !== 'ops_alert_jobs' && table !== 'shop_risk_cases') {
+            if (!['ops_alert_jobs', 'ops_alert_cases', 'shop_risk_cases'].includes(table)) {
                 throw new Error(`Unexpected table access: ${table}`);
             }
 
@@ -413,7 +413,9 @@ test('ops alert monitor handler merges shop risk case ownership and case summary
         ],
         cases: [
             {
+                category_key: 'shop_risk',
                 target_id: 'shop_order_risk:coupon:FLASH0',
+                alert_type: 'shop_order_risk_anomaly',
                 status: 'claimed',
                 owner_admin_id: 'admin-user-2',
                 owner_label: 'ops@example.com',
@@ -443,6 +445,55 @@ test('ops alert monitor handler merges shop risk case ownership and case summary
         assert.equal(shopRisk.case_summary.resolved, 0);
         assert.equal(shopRisk.recent_threshold_hits[0].case_status, 'claimed');
         assert.equal(shopRisk.recent_auto_responses.length, 0);
+    });
+});
+
+test('ops alert monitor handler merges generic ops alert cases into non-shop-risk items', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('payment_gateway_degraded', {
+                id: 'gateway-problem-1',
+                severity: 'critical',
+                title: '虎皮椒支付通道异常',
+                content: '支付通道告警\n判定信号：成功率下降',
+                payload: {
+                    target_id: 'payment_gateway:hupijiao:cn'
+                },
+                created_at: hoursAgo(1)
+            })
+        ],
+        cases: [
+            {
+                category_key: 'payments',
+                target_id: 'payment_gateway:hupijiao:cn',
+                alert_type: 'payment_gateway_degraded',
+                status: 'claimed',
+                owner_admin_id: 'admin-user-3',
+                owner_label: 'payments-ops@example.com',
+                note: '已联系支付通道同学排查成功率下降原因。',
+                resolution: null,
+                last_action: 'claimed',
+                last_action_at: hoursAgo(0.5),
+                updated_at: hoursAgo(0.5)
+            }
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+
+        const payments = payload.categories.find((item) => item.key === 'payments');
+        assert.equal(payments.items[0].case_status, 'claimed');
+        assert.equal(payments.items[0].case_owner_label, 'payments-ops@example.com');
+        assert.equal(payments.items[0].case_note, '已联系支付通道同学排查成功率下降原因。');
+        assert.equal(payments.case_summary.open, 0);
+        assert.equal(payments.case_summary.claimed, 1);
+        assert.equal(payments.case_summary.resolved, 0);
     });
 });
 

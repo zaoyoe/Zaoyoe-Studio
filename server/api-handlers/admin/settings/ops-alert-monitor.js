@@ -9,6 +9,7 @@ const {
 const OPS_ALERT_MONITOR_LOOKBACK_HOURS = 7 * 24;
 const OPS_ALERT_MONITOR_PAGE_SIZE = 200;
 const OPS_ALERT_MONITOR_MAX_PAGES = 5;
+const OPS_ALERT_CASES_SELECT_FIELDS = 'category_key, target_id, alert_type, status, owner_admin_id, owner_label, note, resolution, metadata, last_action, last_action_at, updated_at';
 
 const ALERT_MONITOR_CATEGORIES = Object.freeze([
     {
@@ -73,6 +74,37 @@ function normalizePayload(value) {
         : {};
 }
 
+function buildOpsAlertCaseKey(categoryKey, targetId) {
+    return `${normalizeText(categoryKey, 80).toLowerCase()}::${normalizeText(targetId, 200)}`;
+}
+
+function buildOpsAlertCaseRecord(row = {}, categoryKeyFallback = '') {
+    return {
+        category_key: normalizeText(row.category_key, 80).toLowerCase() || normalizeText(categoryKeyFallback, 80).toLowerCase() || null,
+        target_id: normalizeText(row.target_id, 200) || null,
+        alert_type: normalizeText(row.alert_type, 120).toLowerCase() || null,
+        status: normalizeText(row.status, 40).toLowerCase() || 'open',
+        owner_admin_id: normalizeText(row.owner_admin_id, 160) || null,
+        owner_label: normalizeText(row.owner_label, 255) || null,
+        note: normalizeText(row.note, 2000) || null,
+        resolution: normalizeText(row.resolution, 2000) || null,
+        metadata: normalizePayload(row.metadata),
+        last_action: normalizeText(row.last_action, 80).toLowerCase() || 'opened',
+        last_action_at: normalizeText(row.last_action_at, 80) || null,
+        updated_at: normalizeText(row.updated_at, 80) || null
+    };
+}
+
+function isMissingOpsAlertCasesTableError(error) {
+    const message = normalizeText(error?.message || error?.details || error?.hint, 500).toLowerCase();
+    return message.includes('ops_alert_cases')
+        && (
+            message.includes('does not exist')
+            || message.includes('undefined table')
+            || message.includes('unexpected table access')
+        );
+}
+
 async function fetchPagedRows(buildQuery, pageSize = OPS_ALERT_MONITOR_PAGE_SIZE, maxPages = OPS_ALERT_MONITOR_MAX_PAGES) {
     const rows = [];
 
@@ -105,7 +137,7 @@ async function fetchRecentOpsAlertJobs(supabase, sinceIso) {
         .order('created_at', { ascending: false }));
 }
 
-async function fetchShopRiskCasesByTargetIds(supabase, targetIds = []) {
+async function fetchLegacyShopRiskCasesByTargetIds(supabase, targetIds = []) {
     const normalizedTargetIds = Array.from(new Set(
         (Array.isArray(targetIds) ? targetIds : [])
             .map((value) => normalizeText(value, 200))
@@ -118,7 +150,7 @@ async function fetchShopRiskCasesByTargetIds(supabase, targetIds = []) {
 
     const { data, error } = await supabase
         .from('shop_risk_cases')
-        .select('target_id, status, owner_admin_id, owner_label, note, resolution, last_action, last_action_at, updated_at')
+        .select('target_id, status, owner_admin_id, owner_label, note, resolution, metadata, last_action, last_action_at, updated_at')
         .in('target_id', normalizedTargetIds);
 
     if (error) {
@@ -126,21 +158,81 @@ async function fetchShopRiskCasesByTargetIds(supabase, targetIds = []) {
     }
 
     return new Map(
-        (Array.isArray(data) ? data : []).map((row) => [
-            normalizeText(row.target_id, 200),
-            {
-                target_id: normalizeText(row.target_id, 200),
-                status: normalizeText(row.status, 40).toLowerCase() || 'open',
-                owner_admin_id: normalizeText(row.owner_admin_id, 160) || null,
-                owner_label: normalizeText(row.owner_label, 255) || null,
-                note: normalizeText(row.note, 2000) || null,
-                resolution: normalizeText(row.resolution, 2000) || null,
-                last_action: normalizeText(row.last_action, 80).toLowerCase() || 'opened',
-                last_action_at: normalizeText(row.last_action_at, 80) || null,
-                updated_at: normalizeText(row.updated_at, 80) || null
-            }
-        ])
+        (Array.isArray(data) ? data : []).map((row) => {
+            const caseRecord = buildOpsAlertCaseRecord({
+                ...row,
+                category_key: 'shop_risk'
+            }, 'shop_risk');
+            return [
+                buildOpsAlertCaseKey('shop_risk', caseRecord.target_id),
+                caseRecord
+            ];
+        })
     );
+}
+
+async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
+    const normalizedTargets = Array.from(new Map(
+        (Array.isArray(targets) ? targets : [])
+            .map((item) => ({
+                category_key: normalizeText(item?.category_key || item?.categoryKey, 80).toLowerCase(),
+                target_id: normalizeText(item?.target_id || item?.targetId, 200)
+            }))
+            .filter((item) => item.category_key && item.target_id)
+            .map((item) => [buildOpsAlertCaseKey(item.category_key, item.target_id), item])
+    ).values());
+
+    if (!normalizedTargets.length) {
+        return new Map();
+    }
+
+    const groupedTargets = normalizedTargets.reduce((accumulator, item) => {
+        if (!accumulator.has(item.category_key)) {
+            accumulator.set(item.category_key, []);
+        }
+        accumulator.get(item.category_key).push(item.target_id);
+        return accumulator;
+    }, new Map());
+
+    const caseMap = new Map();
+
+    try {
+        for (const [categoryKey, targetIds] of groupedTargets.entries()) {
+            const { data, error } = await supabase
+                .from('ops_alert_cases')
+                .select(OPS_ALERT_CASES_SELECT_FIELDS)
+                .in('category_key', [categoryKey])
+                .in('target_id', Array.from(new Set(targetIds)));
+
+            if (error) {
+                throw error;
+            }
+
+            (Array.isArray(data) ? data : []).forEach((row) => {
+                const caseRecord = buildOpsAlertCaseRecord(row, categoryKey);
+                caseMap.set(
+                    buildOpsAlertCaseKey(caseRecord.category_key, caseRecord.target_id),
+                    caseRecord
+                );
+            });
+        }
+
+        return caseMap;
+    } catch (error) {
+        if (!isMissingOpsAlertCasesTableError(error)) {
+            throw error;
+        }
+    }
+
+    const legacyShopRiskCases = await fetchLegacyShopRiskCasesByTargetIds(
+        supabase,
+        groupedTargets.get('shop_risk') || []
+    );
+    legacyShopRiskCases.forEach((value, key) => {
+        caseMap.set(key, value);
+    });
+
+    return caseMap;
 }
 
 function getCreatedAtTime(row = {}) {
@@ -161,6 +253,15 @@ function getAlertTargetId(job = {}) {
         || normalizeText(payload.provider_order_no, 160)
         || normalizeText(job.id, 160)
         || 'unknown';
+}
+
+function getAlertCategoryKey(alertType = '') {
+    const normalizedAlertType = normalizeText(alertType, 120).toLowerCase();
+    const matchedCategory = ALERT_MONITOR_CATEGORIES.find((category) => (
+        category.problem_types.includes(normalizedAlertType)
+        || category.recovery_types.includes(normalizedAlertType)
+    ));
+    return normalizeText(matchedCategory?.key, 80).toLowerCase() || '';
 }
 
 function getAlertExcerpt(job = {}) {
@@ -288,11 +389,11 @@ function getAlertReference(job = {}) {
     };
 }
 
-function buildAlertItem(job = {}, shopRiskCasesByTargetId = new Map()) {
+function buildAlertItem(job = {}, categoryKey = '', opsAlertCasesByKey = new Map()) {
     const payload = normalizePayload(job.payload);
     const reference = getAlertReference(job);
     const targetId = getAlertTargetId(job);
-    const caseRecord = shopRiskCasesByTargetId.get(targetId) || null;
+    const caseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey(categoryKey, targetId)) || null;
     return {
         id: normalizeText(job.id, 160),
         alert_type: normalizeText(job.alert_type, 120).toLowerCase(),
@@ -350,7 +451,7 @@ function buildShopRiskThresholdConfig(config = {}) {
     };
 }
 
-function buildShopRiskThresholdHitEntries(jobs = [], config = {}, shopRiskCasesByTargetId = new Map()) {
+function buildShopRiskThresholdHitEntries(jobs = [], config = {}, opsAlertCasesByKey = new Map()) {
     const thresholdConfig = buildShopRiskThresholdConfig(config);
     const entries = [];
 
@@ -370,7 +471,7 @@ function buildShopRiskThresholdHitEntries(jobs = [], config = {}, shopRiskCasesB
         const autoResponseStatus = normalizeText(payload.auto_response_status, 80).toLowerCase()
             || (thresholdConfig.auto_response_enabled ? 'pending_review' : 'auto_response_disabled');
         const reference = getAlertReference(job);
-        const caseRecord = shopRiskCasesByTargetId.get(getAlertTargetId(job)) || null;
+        const caseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey('shop_risk', getAlertTargetId(job))) || null;
 
         if (
             primaryAction === 'disable-coupon'
@@ -453,7 +554,7 @@ function buildShopRiskThresholdHitEntries(jobs = [], config = {}, shopRiskCasesB
     return entries.slice(0, 5);
 }
 
-function buildShopRiskAutoResponseHistoryEntries(jobs = [], config = {}, shopRiskCasesByTargetId = new Map()) {
+function buildShopRiskAutoResponseHistoryEntries(jobs = [], config = {}, opsAlertCasesByKey = new Map()) {
     const thresholdConfig = buildShopRiskThresholdConfig(config);
 
     return sortByCreatedAtDesc(jobs)
@@ -469,7 +570,7 @@ function buildShopRiskAutoResponseHistoryEntries(jobs = [], config = {}, shopRis
             const reference = getAlertReference(job);
             const status = normalizeText(payload.auto_response_status, 80).toLowerCase()
                 || (thresholdConfig.auto_response_enabled ? 'pending_review' : 'auto_response_disabled');
-            const caseRecord = shopRiskCasesByTargetId.get(getAlertTargetId(job)) || null;
+            const caseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey('shop_risk', getAlertTargetId(job))) || null;
 
             return {
                 id: normalizeText(job.id, 160) || normalizeText(payload.target_id, 160),
@@ -492,7 +593,7 @@ function buildShopRiskAutoResponseHistoryEntries(jobs = [], config = {}, shopRis
         .slice(0, 5);
 }
 
-function buildShopRiskCaseSummary(items = []) {
+function buildOpsAlertCaseSummary(items = []) {
     return (Array.isArray(items) ? items : []).reduce((summary, item) => {
         const status = normalizeText(item?.case_status, 40).toLowerCase() || 'open';
         if (status === 'claimed') {
@@ -512,8 +613,8 @@ function buildShopRiskCaseSummary(items = []) {
 
 function buildCategorySnapshot(category, jobs = [], options = {}) {
     const shopRiskThresholdConfig = buildShopRiskThresholdConfig(options.shopRiskConfig);
-    const shopRiskCasesByTargetId = options.shopRiskCasesByTargetId instanceof Map
-        ? options.shopRiskCasesByTargetId
+    const opsAlertCasesByKey = options.opsAlertCasesByKey instanceof Map
+        ? options.opsAlertCasesByKey
         : new Map();
     const filteredJobs = sortByCreatedAtDesc(
         jobs.filter((job) => {
@@ -538,7 +639,7 @@ function buildCategorySnapshot(category, jobs = [], options = {}) {
     const latestState = latestJob
         ? (category.problem_types.includes(normalizeText(latestJob.alert_type, 120).toLowerCase()) ? 'problem' : 'recovered')
         : 'idle';
-    const builtItems = activeJobs.map((job) => buildAlertItem(job, shopRiskCasesByTargetId));
+    const builtItems = activeJobs.map((job) => buildAlertItem(job, category.key, opsAlertCasesByKey));
 
     return {
         key: category.key,
@@ -551,12 +652,12 @@ function buildCategorySnapshot(category, jobs = [], options = {}) {
         latest_at: normalizeText(latestJob?.created_at, 80) || null,
         latest_title: normalizeText(latestJob?.title, 240) || null,
         latest_message: latestJob ? getAlertExcerpt(latestJob) : '',
-        items: builtItems.slice(0, 3),
+        items: builtItems,
+        case_summary: buildOpsAlertCaseSummary(builtItems),
         ...(String(category.key || '').trim().toLowerCase() === 'shop_risk' ? {
             thresholds: shopRiskThresholdConfig,
-            case_summary: buildShopRiskCaseSummary(builtItems),
-            recent_threshold_hits: buildShopRiskThresholdHitEntries(filteredJobs, shopRiskThresholdConfig, shopRiskCasesByTargetId),
-            recent_auto_responses: buildShopRiskAutoResponseHistoryEntries(filteredJobs, shopRiskThresholdConfig, shopRiskCasesByTargetId)
+            recent_threshold_hits: buildShopRiskThresholdHitEntries(filteredJobs, shopRiskThresholdConfig, opsAlertCasesByKey),
+            recent_auto_responses: buildShopRiskAutoResponseHistoryEntries(filteredJobs, shopRiskThresholdConfig, opsAlertCasesByKey)
         } : {})
     };
 }
@@ -577,18 +678,17 @@ module.exports = async (req, res) => {
         const sinceIso = new Date(now.getTime() - OPS_ALERT_MONITOR_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
         const runtime = await loadOpsAlertsRuntimeConfig(supabase);
         const jobs = await fetchRecentOpsAlertJobs(supabase, sinceIso);
-        const shopRiskCasesByTargetId = await fetchShopRiskCasesByTargetIds(
+        const opsAlertCasesByKey = await fetchOpsAlertCasesByTargets(
             supabase,
             jobs
-                .filter((job) => {
-                    const alertType = normalizeText(job.alert_type, 120).toLowerCase();
-                    return alertType === 'shop_order_risk_anomaly' || alertType === 'shop_order_risk_recovered';
-                })
-                .map((job) => getAlertTargetId(job))
+                .map((job) => ({
+                    category_key: getAlertCategoryKey(job.alert_type),
+                    target_id: getAlertTargetId(job)
+                }))
         );
         const categories = ALERT_MONITOR_CATEGORIES.map((category) => buildCategorySnapshot(category, jobs, {
             shopRiskConfig: runtime?.config?.shop_order_risk || {},
-            shopRiskCasesByTargetId
+            opsAlertCasesByKey
         }));
         const totalActiveCount = categories.reduce((sum, category) => sum + Number(category.active_count || 0), 0);
         const totalCriticalCount = categories.reduce((sum, category) => sum + Number(category.critical_count || 0), 0);

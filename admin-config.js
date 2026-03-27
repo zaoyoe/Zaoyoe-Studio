@@ -12,6 +12,7 @@ let opsAlertHealthState = getDefaultOpsAlertHealthState();
 let opsAlertMonitorState = getDefaultOpsAlertMonitorState();
 let opsAlertMonitorViewState = getDefaultOpsAlertMonitorViewState();
 let shopRiskCaseComposerState = getDefaultShopRiskCaseComposerState();
+let opsAlertBatchMuteState = getDefaultOpsAlertBatchMuteState();
 let verifyMonitorState = getDefaultVerifyMonitorState();
 let adminAuditMonitorState = getDefaultAdminAuditMonitorState();
 let paymentChannelAccordionState = {
@@ -836,7 +837,21 @@ function getDefaultShopRiskCaseComposerState() {
     return {
         open: false,
         action: '',
+        mode: 'single',
         context: {},
+        items: [],
+        submitting: false
+    };
+}
+
+function getDefaultOpsAlertBatchMuteState() {
+    return {
+        open: false,
+        items: [],
+        moduleKeys: [],
+        categoryKey: '',
+        filters: getDefaultOpsAlertMonitorViewState(),
+        allowCritical: true,
         submitting: false
     };
 }
@@ -954,6 +969,10 @@ function getDefaultOpsAlertConfig() {
                     allow_critical: true
                 },
                 payments: {
+                    until: '',
+                    allow_critical: true
+                },
+                shop_risk: {
                     until: '',
                     allow_critical: true
                 },
@@ -1522,6 +1541,10 @@ function normalizeOpsAlertConfig(raw) {
                 payments: {
                     until: normalizeDateTimeLocalInputValue(moduleMuteRulesSource.payments?.until || '') || '',
                     allow_critical: normalizeConfigBoolean(moduleMuteRulesSource.payments?.allow_critical, defaults.mute_rules.modules.payments.allow_critical)
+                },
+                shop_risk: {
+                    until: normalizeDateTimeLocalInputValue(moduleMuteRulesSource.shop_risk?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(moduleMuteRulesSource.shop_risk?.allow_critical, defaults.mute_rules.modules.shop_risk.allow_critical)
                 },
                 verify: {
                     until: normalizeDateTimeLocalInputValue(moduleMuteRulesSource.verify?.until || '') || '',
@@ -2307,6 +2330,12 @@ const OPS_ALERT_MUTE_RULE_MODULE_DEFINITIONS = Object.freeze([
         id: 'Payments',
         label: '支付与退款',
         description: '统一静默支付通道、退款、支付配置相关告警。'
+    },
+    {
+        key: 'shop_risk',
+        id: 'ShopRisk',
+        label: '商城风控',
+        description: '统一静默优惠码异常、短时扫货、共享登录等商城风控告警。'
     },
     {
         key: 'verify',
@@ -3550,26 +3579,26 @@ function getOpsAlertMonitorRiskLevelLabel(riskLevel) {
     return labelMap[normalizedRiskLevel] || normalizedRiskLevel || '中';
 }
 
-function getShopRiskCaseStatusTone(status) {
+function getOpsAlertCaseStatusTone(status) {
     const normalizedStatus = String(status || '').trim().toLowerCase();
     if (normalizedStatus === 'resolved') return 'success';
     if (normalizedStatus === 'claimed') return 'neutral';
     return 'warning';
 }
 
-function getShopRiskCaseStatusLabel(status) {
+function getOpsAlertCaseStatusLabel(status) {
     const normalizedStatus = String(status || '').trim().toLowerCase();
     const labelMap = {
-        open: '待认领',
+        open: '待处理',
         claimed: '处理中',
         resolved: '已关闭'
     };
-    return labelMap[normalizedStatus] || '待认领';
+    return labelMap[normalizedStatus] || '待处理';
 }
 
-function getShopRiskCaseSummaryText(item = {}) {
+function getOpsAlertCaseSummaryText(item = {}) {
     const status = String(item.case_status || '').trim().toLowerCase() || 'open';
-    const statusLabel = getShopRiskCaseStatusLabel(status);
+    const statusLabel = getOpsAlertCaseStatusLabel(status);
     const ownerLabel = String(item.case_owner_label || '').trim();
     const resolution = String(item.case_resolution || '').trim();
     const note = String(item.case_note || '').trim();
@@ -3591,6 +3620,18 @@ function getShopRiskCaseSummaryText(item = {}) {
     }
 
     return summaryParts.join(' · ');
+}
+
+function getShopRiskCaseStatusTone(status) {
+    return getOpsAlertCaseStatusTone(status);
+}
+
+function getShopRiskCaseStatusLabel(status) {
+    return getOpsAlertCaseStatusLabel(status);
+}
+
+function getShopRiskCaseSummaryText(item = {}) {
+    return getOpsAlertCaseSummaryText(item);
 }
 
 function getOpsAlertMonitorItemAction(category = {}, item = {}) {
@@ -3677,12 +3718,8 @@ function getOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
 }
 
 function getOpsAlertMonitorItemCaseActions(category = {}, item = {}) {
-    if (String(category.key || '').trim().toLowerCase() !== 'shop_risk') {
-        return [];
-    }
-
-    const alertType = String(item.alert_type || '').trim().toLowerCase();
-    if (alertType !== 'shop_order_risk_anomaly' && alertType !== 'shop_order_risk_recovered') {
+    const categoryKey = String(category.key || '').trim().toLowerCase();
+    if (!categoryKey || !String(item.target_id || '').trim()) {
         return [];
     }
 
@@ -3693,8 +3730,8 @@ function getOpsAlertMonitorItemCaseActions(category = {}, item = {}) {
         if (status !== 'claimed') {
             actions.push({
                 action: 'claim',
-                label: '认领',
-                icon: 'fas fa-hand'
+                label: '指派给我',
+                icon: 'fas fa-user-check'
             });
         }
 
@@ -3781,6 +3818,7 @@ function buildOpsAlertMonitorCaseActionAttrs(action = {}, category = {}, item = 
 }
 
 function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
+    const categoryKey = String(category.key || '').trim().toLowerCase();
     const severity = String(item.severity || 'warning').trim().toLowerCase();
     const severityTone = getOpsAlertMonitorSeverityTone(severity);
     const riskLevel = String(item.risk_level || '').trim().toLowerCase();
@@ -3789,7 +3827,7 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
     const quickAction = getOpsAlertMonitorItemQuickAction(category, item);
     const caseActions = getOpsAlertMonitorItemCaseActions(category, item);
     const caseStatus = String(item.case_status || '').trim().toLowerCase() || 'open';
-    const caseTone = getShopRiskCaseStatusTone(caseStatus);
+    const caseTone = getOpsAlertCaseStatusTone(caseStatus);
     const metaParts = [
         item.reference_label && item.reference_value
             ? `${escapeConfigHtml(item.reference_label)}：${escapeConfigHtml(item.reference_value)}`
@@ -3802,11 +3840,15 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
             <div class="ops-alert-monitor-item__top">
                 ${buildOpsAlertMonitorBadge(severity === 'critical' ? 'critical' : 'warning', severityTone)}
                 ${riskLevel ? buildOpsAlertMonitorBadge(`风险 ${getOpsAlertMonitorRiskLevelLabel(riskLevel)}${Number.isFinite(Number(item.risk_score)) ? ` · ${formatVerifyMonitorInteger(item.risk_score)}` : ''}`, riskTone) : ''}
-                ${String(category.key || '').trim().toLowerCase() === 'shop_risk' ? buildOpsAlertMonitorBadge(`值班 ${getShopRiskCaseStatusLabel(caseStatus)}`, caseTone) : ''}
+                ${caseActions.length || item.case_owner_label || item.case_note || item.case_resolution
+        ? buildOpsAlertMonitorBadge(`处置 ${getOpsAlertCaseStatusLabel(caseStatus)}`, caseTone)
+        : ''}
                 <strong class="ops-alert-monitor-item__title">${escapeConfigHtml(item.title || '系统告警')}</strong>
             </div>
             ${item.message ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(item.message)}</div>` : ''}
-            ${String(category.key || '').trim().toLowerCase() === 'shop_risk' ? `<div class="ops-alert-monitor-item__summary"><strong>值班处理：</strong> ${escapeConfigHtml(getShopRiskCaseSummaryText(item))}</div>` : ''}
+            ${caseActions.length || item.case_owner_label || item.case_note || item.case_resolution
+        ? `<div class="ops-alert-monitor-item__summary"><strong>${categoryKey === 'shop_risk' ? '值班处理' : '处理进度'}：</strong> ${escapeConfigHtml(getOpsAlertCaseSummaryText(item))}</div>`
+        : ''}
             ${item.auto_response_summary ? `<div class="ops-alert-monitor-item__summary"><strong>自动处置：</strong> ${escapeConfigHtml(item.auto_response_summary)}</div>` : ''}
             ${item.response_summary ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(item.response_summary)}</div>` : ''}
             <div class="ops-alert-monitor-item__meta">${metaParts.length ? metaParts.join(' · ') : '等待更多上下文'}</div>
@@ -4313,6 +4355,9 @@ function buildOpsAlertMonitorCategoryMarkup(category = {}, filters = getOpsAlert
     const actions = getOpsAlertMonitorCategoryActions(category.key);
     const items = Array.isArray(category.items) ? category.items : [];
     const hiddenItemCount = Number(category.hidden_item_count || 0);
+    const caseSummary = category && typeof category.case_summary === 'object'
+        ? category.case_summary
+        : { open: 0, claimed: 0, resolved: 0 };
     const latestSummary = category.latest_title
         ? `${category.latest_title}${category.latest_at ? ` · ${formatVerifyMonitorDateTime(category.latest_at)}` : ''}`
         : '最近还没有收集到这类告警。';
@@ -4331,6 +4376,7 @@ function buildOpsAlertMonitorCategoryMarkup(category = {}, filters = getOpsAlert
                 </div>
                 <div class="ops-alert-monitor-card__stats">
                     ${buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(getOpsAlertMonitorDisplayActiveCount(category))} 待关注`, getOpsAlertMonitorDisplayActiveCount(category) > 0 ? 'warning' : 'neutral')}
+                    ${Number(caseSummary.claimed || 0) > 0 ? buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(caseSummary.claimed || 0)} 处理中`, 'neutral') : ''}
                     ${getOpsAlertMonitorDisplayCriticalCount(category) > 0 ? buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(getOpsAlertMonitorDisplayCriticalCount(category))} critical`, 'danger') : ''}
                     ${String(filters.scope || 'all') === 'recovered' || (getOpsAlertMonitorDisplayActiveCount(category) === 0 && String(category.latest_state || '').toLowerCase() === 'recovered')
         ? buildOpsAlertMonitorBadge('已恢复', 'success')
@@ -4393,6 +4439,115 @@ function setOpsAlertMonitorFilter(kind, value) {
     return true;
 }
 
+function buildOpsAlertCaseMutationItems(items = [], categoryKey = '') {
+    const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
+    return (Array.isArray(items) ? items : [])
+        .map((item) => ({
+            category_key: normalizedCategoryKey || String(item.category_key || item.category || '').trim().toLowerCase(),
+            target_id: String(item.target_id || item.targetId || '').trim(),
+            alert_type: String(item.alert_type || item.alertType || '').trim().toLowerCase(),
+            title: String(item.title || '').trim(),
+            reference_label: String(item.reference_label || item.referenceLabel || '').trim(),
+            reference_value: String(item.reference_value || item.referenceValue || '').trim()
+        }))
+        .filter((item) => item.category_key && item.target_id);
+}
+
+function getOpsAlertMonitorBatchMuteModuleKeys(filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
+    const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
+    const categoryToModuleKey = {
+        payments: 'payments',
+        tickets: 'tickets',
+        inventory: 'inventory',
+        fulfillment: 'fulfillment',
+        shop_risk: 'shop_risk'
+    };
+
+    return Array.from(new Set(
+        getOpsAlertMonitorPreparedCategories(filters)
+            .filter((category) => {
+                const currentCategoryKey = String(category.key || '').trim().toLowerCase();
+                if (normalizedCategoryKey && currentCategoryKey !== normalizedCategoryKey) {
+                    return false;
+                }
+                return Array.isArray(category.visible_items) && category.visible_items.length > 0;
+            })
+            .map((category) => categoryToModuleKey[String(category.key || '').trim().toLowerCase()])
+            .filter(Boolean)
+    ));
+}
+
+function getOpsAlertMuteModuleLabel(moduleKey = '') {
+    const definition = OPS_ALERT_MUTE_RULE_MODULE_DEFINITIONS.find((item) => item.key === String(moduleKey || '').trim().toLowerCase());
+    return definition?.label || String(moduleKey || '').trim() || '模块';
+}
+
+function getOpsAlertMonitorBatchItems(filters = getOpsAlertMonitorViewFilters(), action = '', categoryKey = '') {
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
+    const categories = getOpsAlertMonitorPreparedCategories(filters);
+
+    return categories.flatMap((category) => {
+        const currentCategoryKey = String(category.key || '').trim().toLowerCase();
+        if (normalizedCategoryKey && currentCategoryKey !== normalizedCategoryKey) {
+            return [];
+        }
+
+        return buildOpsAlertCaseMutationItems(category.visible_items || [], currentCategoryKey);
+    }).filter((item) => {
+        const matchingCategory = categories.find((category) => String(category.key || '').trim().toLowerCase() === item.category_key);
+        const sourceItem = Array.isArray(matchingCategory?.visible_items)
+            ? matchingCategory.visible_items.find((candidate) => String(candidate.target_id || '').trim() === item.target_id)
+            : null;
+        const status = String(sourceItem?.case_status || '').trim().toLowerCase() || 'open';
+
+        if (normalizedAction === 'claim') {
+            return status !== 'claimed' && status !== 'resolved';
+        }
+        if (normalizedAction === 'resolve') {
+            return status !== 'resolved';
+        }
+        if (normalizedAction === 'reopen') {
+            return status === 'resolved';
+        }
+        return true;
+    });
+}
+
+function renderOpsAlertMonitorBatchActions(filters = getOpsAlertMonitorViewFilters()) {
+    const setButtonState = (actionName, count, emptyTitle, activeTitle) => {
+        const button = document.querySelector(`[data-admin-action="${actionName}"]`);
+        if (!button) return;
+        button.disabled = count <= 0;
+        button.title = count > 0 ? activeTitle.replace('{count}', formatVerifyMonitorInteger(count)) : emptyTitle;
+    };
+
+    setButtonState(
+        'settings-batch-claim-ops-alert-monitor',
+        getOpsAlertMonitorBatchItems(filters, 'claim').length,
+        '当前筛选条件下没有可指派的告警',
+        '当前筛选将指派 {count} 条告警'
+    );
+    setButtonState(
+        'settings-batch-note-ops-alert-monitor',
+        getOpsAlertMonitorBatchItems(filters, 'add_note').length,
+        '当前筛选条件下没有可备注的告警',
+        '当前筛选将备注 {count} 条告警'
+    );
+    setButtonState(
+        'settings-batch-resolve-ops-alert-monitor',
+        getOpsAlertMonitorBatchItems(filters, 'resolve').length,
+        '当前筛选条件下没有可关闭的告警',
+        '当前筛选将关闭 {count} 条告警'
+    );
+    setButtonState(
+        'settings-batch-mute-ops-alert-monitor',
+        getOpsAlertMonitorBatchMuteModuleKeys(filters).length,
+        '当前筛选条件下没有可静默的告警模块',
+        '当前筛选将静默 {count} 个告警模块'
+    );
+}
+
 function renderOpsAlertMonitorPanel() {
     const panel = document.getElementById('opsAlertMonitorPanel');
     const meta = document.getElementById('opsAlertMonitorMeta');
@@ -4406,6 +4561,7 @@ function renderOpsAlertMonitorPanel() {
     panel.hidden = false;
     syncOpsAlertMonitorFilterToolbar(filters);
     renderOpsAlertRiskSpotlight(filters);
+    renderOpsAlertMonitorBatchActions(filters);
 
     if (state.status === 'loading') {
         meta.innerHTML = '<i class="fas fa-rotate fa-spin"></i><span>正在汇总支付、工单、库存、履约与商城风控五类告警...</span>';
@@ -5827,18 +5983,21 @@ function clearOpsAlertSecretInputs() {
     });
 }
 
-async function saveOpsAlertSettings() {
+function buildOpsAlertSettingsRequestBody(config) {
+    return {
+        config,
+        secrets: {
+            telegram_bot_token: document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '',
+            feishu_webhook_url: document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || '',
+            email_api_key: document.getElementById('opsAlertEmailApiKey')?.value?.trim() || ''
+        }
+    };
+}
+
+async function saveOpsAlertConfigOverride(config, options = {}) {
     try {
-        const config = collectOpsAlertConfigFromForm();
         const headers = await getAdminConfigApiHeaders();
-        const body = {
-            config,
-            secrets: {
-                telegram_bot_token: document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '',
-                feishu_webhook_url: document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || '',
-                email_api_key: document.getElementById('opsAlertEmailApiKey')?.value?.trim() || ''
-            }
-        };
+        const body = buildOpsAlertSettingsRequestBody(normalizeOpsAlertConfig(config));
 
         const response = await fetch('/api/admin/settings/ops-alerts', {
             method: 'POST',
@@ -5855,7 +6014,11 @@ async function saveOpsAlertSettings() {
         opsAlertSecretStatus = payload.secrets || getDefaultOpsAlertSecretStatus();
         renderOpsAlertSettings();
         clearOpsAlertSecretInputs();
-        showConfigSavedToast(payload.message || '站外退款告警配置已保存');
+        if (options.successMessage) {
+            showConfigSavedToast(options.successMessage);
+        } else {
+            showConfigSavedToast(payload.message || '站外退款告警配置已保存');
+        }
         return true;
     } catch (error) {
         console.error('[Config] Save ops alert settings failed:', error);
@@ -5863,6 +6026,10 @@ async function saveOpsAlertSettings() {
         renderOpsAlertSettings();
         return false;
     }
+}
+
+async function saveOpsAlertSettings() {
+    return saveOpsAlertConfigOverride(collectOpsAlertConfigFromForm());
 }
 
 async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
@@ -6514,49 +6681,72 @@ async function openOpsAlertWorkspace(workspaceKey, context = {}) {
     }
 }
 
-function getShopRiskCaseComposerTargetLabel(context = {}) {
+function getOpsAlertCaseComposerTargetLabel(context = {}) {
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
     if (normalizedContext.referenceLabel && normalizedContext.referenceValue) {
         return `${normalizedContext.referenceLabel}：${normalizedContext.referenceValue}`;
     }
-    return normalizedContext.title || normalizedContext.targetId || '商城风控案例';
+    return normalizedContext.title || normalizedContext.targetId || '集中告警';
 }
 
-function getShopRiskCaseComposerMeta(action, context = {}) {
-    const normalizedAction = String(action || '').trim().toLowerCase();
-    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
-    const targetLabel = getShopRiskCaseComposerTargetLabel(normalizedContext);
+function getOpsAlertCaseComposerBatchPreview(items = []) {
+    const previewLabels = (Array.isArray(items) ? items : [])
+        .slice(0, 3)
+        .map((item) => {
+            if (item.reference_label && item.reference_value) {
+                return `${item.reference_label}：${item.reference_value}`;
+            }
+            return item.title || item.target_id || '告警';
+        })
+        .filter(Boolean);
+
+    const overflowCount = Math.max(0, (Array.isArray(items) ? items.length : 0) - previewLabels.length);
+    return `${previewLabels.join(' / ')}${overflowCount > 0 ? ` 等 ${formatVerifyMonitorInteger(overflowCount)} 条` : ''}`;
+}
+
+function getOpsAlertCaseComposerMeta(state = {}) {
+    const normalizedAction = String(state.action || '').trim().toLowerCase();
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(state.context || {});
+    const items = Array.isArray(state.items) ? state.items : [];
+    const isBatch = String(state.mode || 'single').trim().toLowerCase() === 'batch';
+    const targetLabel = isBatch
+        ? `当前筛选命中 ${formatVerifyMonitorInteger(items.length)} 条告警${items.length ? ` · ${getOpsAlertCaseComposerBatchPreview(items)}` : ''}`
+        : getOpsAlertCaseComposerTargetLabel(normalizedContext);
     const ownerLabel = normalizedContext.caseOwnerLabel || '';
 
     if (normalizedAction === 'resolve') {
         return {
-            title: '关闭商城风控案例',
-            summary: `${targetLabel}${ownerLabel ? ` · 当前负责人 ${ownerLabel}` : ''}`,
-            description: '填写本次处置结论，关闭后仍可重新打开继续跟进。',
+            title: isBatch ? '批量关闭集中告警' : '关闭集中告警',
+            summary: isBatch ? targetLabel : `${targetLabel}${ownerLabel ? ` · 当前负责人 ${ownerLabel}` : ''}`,
+            description: isBatch
+                ? '填写统一的处理结论，当前筛选下尚未关闭的告警会一并写入处置记录。'
+                : '填写本次处置结论，关闭后仍可重新打开继续跟进。',
             fieldLabel: '关闭结论',
-            placeholder: '例如：已停用优惠码并核查关联订单，无进一步扩散迹象。',
-            submitLabel: '关闭案例'
+            placeholder: '例如：已完成人工复核并安排后续处理，当前无需继续外发升级。',
+            submitLabel: isBatch ? '批量关闭' : '关闭告警'
         };
     }
 
     return {
-        title: '记录商城风控备注',
-        summary: `${targetLabel}${ownerLabel ? ` · 当前负责人 ${ownerLabel}` : ''}`,
-        description: '适合记录调查进展、证据链接、交接说明或下一步动作。',
+        title: isBatch ? '批量记录集中告警备注' : '记录集中告警备注',
+        summary: isBatch ? targetLabel : `${targetLabel}${ownerLabel ? ` · 当前负责人 ${ownerLabel}` : ''}`,
+        description: isBatch
+            ? '适合为当前筛选结果补一条统一备注，记录交接说明、排查进展或下一步动作。'
+            : '适合记录调查进展、证据链接、交接说明或下一步动作。',
         fieldLabel: '备注内容',
-        placeholder: '例如：已初步排查共享 IP 情况，待继续核对关联账号和订单。',
-        submitLabel: '保存备注'
+        placeholder: '例如：已完成首轮排查，待值班同学继续跟进处理。',
+        submitLabel: isBatch ? '批量保存备注' : '保存备注'
     };
 }
 
-function setShopRiskCaseComposerVisible(visible) {
+function setOpsAlertCaseComposerVisible(visible) {
     const modal = document.getElementById('shopRiskCaseComposerModal');
     if (!modal) return;
     modal.classList.toggle('is-visible', visible);
     modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
 }
 
-function renderShopRiskCaseComposer() {
+function renderOpsAlertCaseComposer() {
     const modal = document.getElementById('shopRiskCaseComposerModal');
     const titleEl = document.getElementById('shopRiskCaseComposerTitle');
     const summaryEl = document.getElementById('shopRiskCaseComposerSummary');
@@ -6570,7 +6760,7 @@ function renderShopRiskCaseComposer() {
     }
 
     const state = shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState();
-    const meta = getShopRiskCaseComposerMeta(state.action, state.context);
+    const meta = getOpsAlertCaseComposerMeta(state);
 
     titleEl.textContent = meta.title;
     summaryEl.textContent = meta.summary;
@@ -6580,26 +6770,28 @@ function renderShopRiskCaseComposer() {
     submitBtn.textContent = state.submitting ? '提交中...' : meta.submitLabel;
     submitBtn.disabled = state.submitting;
 
-    setShopRiskCaseComposerVisible(Boolean(state.open));
+    setOpsAlertCaseComposerVisible(Boolean(state.open));
     if (state.open && !state.submitting) {
         window.setTimeout(() => textareaEl.focus(), 40);
     }
 }
 
-function closeShopRiskCaseComposer() {
+function closeOpsAlertCaseComposer() {
     shopRiskCaseComposerState = getDefaultShopRiskCaseComposerState();
     const textareaEl = document.getElementById('shopRiskCaseComposerTextarea');
     if (textareaEl) {
         textareaEl.value = '';
     }
-    renderShopRiskCaseComposer();
+    renderOpsAlertCaseComposer();
 }
 
-function openShopRiskCaseComposer(action, context = {}) {
+function openOpsAlertCaseComposer(action, context = {}, options = {}) {
     shopRiskCaseComposerState = {
         open: true,
         action: String(action || '').trim().toLowerCase(),
+        mode: String(options.mode || 'single').trim().toLowerCase() || 'single',
         context: normalizeOpsAlertWorkspaceContext(context),
+        items: buildOpsAlertCaseMutationItems(options.items || [], String(options.categoryKey || context.category || '').trim().toLowerCase()),
         submitting: false
     };
 
@@ -6608,70 +6800,284 @@ function openShopRiskCaseComposer(action, context = {}) {
         textareaEl.value = '';
     }
 
-    renderShopRiskCaseComposer();
+    renderOpsAlertCaseComposer();
 }
 
-async function submitShopRiskCaseMutation(action, context = {}, options = {}) {
+async function submitOpsAlertCaseMutation(action, context = {}, options = {}) {
     const normalizedAction = String(action || '').trim().toLowerCase();
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+    const items = buildOpsAlertCaseMutationItems(options.items || [], String(options.categoryKey || normalizedContext.category || '').trim().toLowerCase());
     const headers = await getAdminConfigApiHeaders();
+    const requestBody = {
+        action: normalizedAction,
+        note: String(options.note || '').trim(),
+        resolution: String(options.resolution || '').trim(),
+        metadata: {
+            alert_type: normalizedContext.alertType || '',
+            category: normalizedContext.category || '',
+            reference_label: normalizedContext.referenceLabel || '',
+            reference_value: normalizedContext.referenceValue || '',
+            signal_type: normalizedContext.signalType || '',
+            title: normalizedContext.title || ''
+        }
+    };
+
+    if (items.length) {
+        requestBody.items = items;
+    } else {
+        requestBody.category_key = normalizedContext.category || '';
+        requestBody.target_id = normalizedContext.targetId;
+        requestBody.alert_type = normalizedContext.alertType || '';
+        requestBody.title = normalizedContext.title || '';
+    }
+
     const response = await fetch('/api/admin/settings/ops-alert-monitor-cases', {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-            action: normalizedAction,
-            target_id: normalizedContext.targetId,
-            note: String(options.note || '').trim(),
-            resolution: String(options.resolution || '').trim(),
-            metadata: {
-                alert_type: normalizedContext.alertType || '',
-                category: normalizedContext.category || '',
-                reference_label: normalizedContext.referenceLabel || '',
-                reference_value: normalizedContext.referenceValue || '',
-                signal_type: normalizedContext.signalType || ''
-            }
-        })
+        body: JSON.stringify(requestBody)
     });
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.success) {
-        throw new Error(payload.message || '商城风控案例处理失败');
+        throw new Error(payload.message || '集中告警处理失败');
     }
 
     return payload;
 }
 
-async function handleShopRiskCaseAction(action, context = {}) {
+async function handleOpsAlertCaseAction(action, context = {}) {
     const normalizedAction = String(action || '').trim().toLowerCase();
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
 
     if (!normalizedContext.targetId) {
-        showToast('缺少商城风控案例标识', 'warning');
+        showToast('缺少集中告警标识', 'warning');
         return false;
     }
 
     try {
         if (normalizedAction === 'claim' || normalizedAction === 'reopen') {
-            const payload = await submitShopRiskCaseMutation(normalizedAction, normalizedContext);
+            const payload = await submitOpsAlertCaseMutation(normalizedAction, normalizedContext);
             await refreshOpsAlertMonitorPanel?.();
-            showToast(payload.message || '商城风控案例已更新', 'success');
+            showToast(payload.message || '集中告警已更新', 'success');
             return true;
         }
 
         if (normalizedAction === 'add_note' || normalizedAction === 'resolve') {
-            openShopRiskCaseComposer(normalizedAction, normalizedContext);
+            openOpsAlertCaseComposer(normalizedAction, normalizedContext);
             return true;
         }
 
-        throw new Error('未识别的商城风控案例动作');
+        throw new Error('未识别的集中告警动作');
     } catch (error) {
-        console.error('[Config] Handle shop risk case action failed:', error);
+        console.error('[Config] Handle ops alert case action failed:', error);
         showToast('处理失败: ' + (error.message || '未知错误'), 'error');
         return false;
     }
 }
 
-async function submitShopRiskCaseComposer() {
+async function handleOpsAlertMonitorBatchCaseAction(action, categoryKey = '') {
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    const items = getOpsAlertMonitorBatchItems(getOpsAlertMonitorViewFilters(), normalizedAction, categoryKey);
+
+    if (!items.length) {
+        const emptyMessageMap = {
+            claim: '当前筛选条件下没有可指派的告警',
+            add_note: '当前筛选条件下没有可备注的告警',
+            resolve: '当前筛选条件下没有可关闭的告警'
+        };
+        showToast(emptyMessageMap[normalizedAction] || '当前筛选条件下没有可处理的告警', 'info');
+        return false;
+    }
+
+    try {
+        if (normalizedAction === 'claim') {
+            const payload = await submitOpsAlertCaseMutation('claim', {}, {
+                items
+            });
+            await refreshOpsAlertMonitorPanel?.();
+            showToast(payload.message || '集中告警已批量指派', 'success');
+            return true;
+        }
+
+        if (normalizedAction === 'add_note' || normalizedAction === 'resolve') {
+            openOpsAlertCaseComposer(normalizedAction, {
+                category: categoryKey || getOpsAlertMonitorViewFilters().category || ''
+            }, {
+                mode: 'batch',
+                items,
+                categoryKey
+            });
+            return true;
+        }
+
+        throw new Error('未识别的批量告警动作');
+    } catch (error) {
+        console.error('[Config] Handle ops alert batch action failed:', error);
+        showToast('处理失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+function setOpsAlertBatchMuteModalVisible(visible) {
+    const modal = document.getElementById('opsAlertBatchMuteModal');
+    if (!modal) return;
+    modal.classList.toggle('is-visible', visible);
+    modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+}
+
+function getDefaultOpsAlertBatchMuteUntilInputValue() {
+    return formatDateTimeLocalInputValue(new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString());
+}
+
+function renderOpsAlertBatchMuteModal() {
+    const modal = document.getElementById('opsAlertBatchMuteModal');
+    const summaryEl = document.getElementById('opsAlertBatchMuteSummary');
+    const noteEl = document.getElementById('opsAlertBatchMuteDescription');
+    const untilInput = document.getElementById('opsAlertBatchMuteUntil');
+    const allowCriticalToggle = document.getElementById('opsAlertBatchMuteAllowCriticalToggle');
+    const submitBtn = document.getElementById('opsAlertBatchMuteSubmit');
+
+    if (!modal || !summaryEl || !noteEl || !untilInput || !allowCriticalToggle || !submitBtn) {
+        return;
+    }
+
+    const state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState();
+    const moduleLabels = state.moduleKeys.map((key) => getOpsAlertMuteModuleLabel(key));
+    const severityScopedNote = String(state.filters?.severity || 'all') !== 'all'
+        ? '当前筛选里的级别条件只用于确定命中模块；本次静默会作用到对应模块的全部告警。'
+        : '本次静默会直接写入模块级策略，命中的同类告警都会一起暂停外发。';
+
+    summaryEl.textContent = state.open
+        ? `当前筛选：${getOpsAlertMonitorFilterSummaryLabel(state.filters)} · 命中 ${formatVerifyMonitorInteger(state.moduleKeys.length)} 个模块（${moduleLabels.join('、') || '无'}）`
+        : '集中告警模块静默';
+    noteEl.textContent = severityScopedNote;
+    if (!untilInput.value) {
+        untilInput.value = getDefaultOpsAlertBatchMuteUntilInputValue();
+    }
+    allowCriticalToggle.classList.toggle('active', state.allowCritical !== false);
+    submitBtn.disabled = state.submitting;
+    submitBtn.textContent = state.submitting ? '静默中...' : '保存静默';
+
+    setOpsAlertBatchMuteModalVisible(Boolean(state.open));
+    if (state.open && !state.submitting) {
+        window.setTimeout(() => untilInput.focus(), 40);
+    }
+}
+
+function closeOpsAlertBatchMuteModal() {
+    opsAlertBatchMuteState = getDefaultOpsAlertBatchMuteState();
+    const untilInput = document.getElementById('opsAlertBatchMuteUntil');
+    if (untilInput) {
+        untilInput.value = '';
+    }
+    renderOpsAlertBatchMuteModal();
+}
+
+function toggleOpsAlertBatchMuteAllowCritical() {
+    const toggle = document.getElementById('opsAlertBatchMuteAllowCriticalToggle');
+    if (!toggle) return false;
+    const nextActive = !toggle.classList.contains('active');
+    toggle.classList.toggle('active', nextActive);
+    opsAlertBatchMuteState = {
+        ...(opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState()),
+        allowCritical: nextActive
+    };
+    return true;
+}
+
+function openOpsAlertBatchMuteModal(categoryKey = '') {
+    const filters = getOpsAlertMonitorViewFilters();
+    const moduleKeys = getOpsAlertMonitorBatchMuteModuleKeys(filters, categoryKey);
+    const items = getOpsAlertMonitorBatchItems(filters, 'add_note', categoryKey);
+
+    if (!moduleKeys.length || !items.length) {
+        showToast('当前筛选条件下没有可静默的告警模块', 'info');
+        return false;
+    }
+
+    opsAlertBatchMuteState = {
+        open: true,
+        items,
+        moduleKeys,
+        categoryKey: String(categoryKey || '').trim().toLowerCase(),
+        filters,
+        allowCritical: true,
+        submitting: false
+    };
+    renderOpsAlertBatchMuteModal();
+    return true;
+}
+
+async function submitOpsAlertBatchMuteModal() {
+    const state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState();
+    const untilInput = document.getElementById('opsAlertBatchMuteUntil');
+    const allowCriticalToggle = document.getElementById('opsAlertBatchMuteAllowCriticalToggle');
+    const untilValue = String(untilInput?.value || '').trim();
+    const normalizedUntil = normalizeDateTimeLocalInputValue(untilValue);
+    const moduleLabels = state.moduleKeys.map((key) => getOpsAlertMuteModuleLabel(key));
+
+    if (!state.open || !state.moduleKeys.length) {
+        return false;
+    }
+
+    if (!normalizedUntil) {
+        showToast('请先选择静默截止时间', 'warning');
+        untilInput?.focus?.();
+        return false;
+    }
+
+    try {
+        opsAlertBatchMuteState = {
+            ...state,
+            allowCritical: allowCriticalToggle?.classList.contains('active') !== false,
+            submitting: true
+        };
+        renderOpsAlertBatchMuteModal();
+
+        const nextConfig = collectOpsAlertConfigFromForm();
+        const allowCritical = allowCriticalToggle?.classList.contains('active') !== false;
+        state.moduleKeys.forEach((moduleKey) => {
+            const currentRule = nextConfig.mute_rules?.modules?.[moduleKey] || {
+                until: '',
+                allow_critical: true
+            };
+            nextConfig.mute_rules.modules[moduleKey] = {
+                ...currentRule,
+                until: normalizedUntil,
+                allow_critical: allowCritical
+            };
+        });
+
+        const success = await saveOpsAlertConfigOverride(nextConfig, {
+            successMessage: `已将 ${moduleLabels.join('、')} 静默至 ${formatVerifyMonitorDateTime(normalizedUntil)}`
+        });
+        if (!success) {
+            opsAlertBatchMuteState = {
+                ...state,
+                allowCritical,
+                submitting: false
+            };
+            renderOpsAlertBatchMuteModal();
+            return false;
+        }
+
+        closeOpsAlertBatchMuteModal();
+        renderOpsAlertMonitorPanel();
+        return true;
+    } catch (error) {
+        console.error('[Config] Submit ops alert batch mute failed:', error);
+        opsAlertBatchMuteState = {
+            ...state,
+            allowCritical: allowCriticalToggle?.classList.contains('active') !== false,
+            submitting: false
+        };
+        renderOpsAlertBatchMuteModal();
+        showToast('静默失败: ' + (error.message || '未知错误'), 'error');
+        return false;
+    }
+}
+
+async function submitOpsAlertCaseComposer() {
     const state = shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState();
     const textareaEl = document.getElementById('shopRiskCaseComposerTextarea');
     const textValue = String(textareaEl?.value || '').trim();
@@ -6691,27 +7097,69 @@ async function submitShopRiskCaseComposer() {
             ...state,
             submitting: true
         };
-        renderShopRiskCaseComposer();
+        renderOpsAlertCaseComposer();
 
-        const payload = await submitShopRiskCaseMutation(state.action, state.context, {
+        const payload = await submitOpsAlertCaseMutation(state.action, state.context, {
+            items: state.mode === 'batch' ? state.items : [],
             note: textValue,
             resolution: state.action === 'resolve' ? textValue : ''
         });
 
-        closeShopRiskCaseComposer();
+        closeOpsAlertCaseComposer();
         await refreshOpsAlertMonitorPanel?.();
-        showToast(payload.message || '商城风控案例已更新', 'success');
+        showToast(payload.message || '集中告警已更新', 'success');
         return true;
     } catch (error) {
-        console.error('[Config] Submit shop risk case composer failed:', error);
+        console.error('[Config] Submit ops alert case composer failed:', error);
         shopRiskCaseComposerState = {
             ...state,
             submitting: false
         };
-        renderShopRiskCaseComposer();
+        renderOpsAlertCaseComposer();
         showToast('处理失败: ' + (error.message || '未知错误'), 'error');
         return false;
     }
+}
+
+function getShopRiskCaseComposerTargetLabel(context = {}) {
+    return getOpsAlertCaseComposerTargetLabel(context);
+}
+
+function getShopRiskCaseComposerMeta(action, context = {}) {
+    return getOpsAlertCaseComposerMeta({
+        action,
+        context,
+        mode: 'single',
+        items: []
+    });
+}
+
+function setShopRiskCaseComposerVisible(visible) {
+    setOpsAlertCaseComposerVisible(visible);
+}
+
+function renderShopRiskCaseComposer() {
+    renderOpsAlertCaseComposer();
+}
+
+function closeShopRiskCaseComposer() {
+    closeOpsAlertCaseComposer();
+}
+
+function openShopRiskCaseComposer(action, context = {}) {
+    openOpsAlertCaseComposer(action, context);
+}
+
+async function submitShopRiskCaseMutation(action, context = {}, options = {}) {
+    return submitOpsAlertCaseMutation(action, context, options);
+}
+
+async function handleShopRiskCaseAction(action, context = {}) {
+    return handleOpsAlertCaseAction(action, context);
+}
+
+async function submitShopRiskCaseComposer() {
+    return submitOpsAlertCaseComposer();
 }
 
 async function handleShopRiskAction(action, context = {}) {
@@ -9274,6 +9722,14 @@ window.setOpsAlertMonitorFilter = setOpsAlertMonitorFilter;
 window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;
 window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;
 window.openOpsAlertWorkspace = openOpsAlertWorkspace;
+window.handleOpsAlertCaseAction = handleOpsAlertCaseAction;
+window.handleOpsAlertMonitorBatchCaseAction = handleOpsAlertMonitorBatchCaseAction;
+window.openOpsAlertBatchMuteModal = openOpsAlertBatchMuteModal;
+window.toggleOpsAlertBatchMuteAllowCritical = toggleOpsAlertBatchMuteAllowCritical;
+window.closeOpsAlertBatchMuteModal = closeOpsAlertBatchMuteModal;
+window.submitOpsAlertBatchMuteModal = submitOpsAlertBatchMuteModal;
+window.closeOpsAlertCaseComposer = closeOpsAlertCaseComposer;
+window.submitOpsAlertCaseComposer = submitOpsAlertCaseComposer;
 window.handleShopRiskAction = handleShopRiskAction;
 window.handleShopRiskCaseAction = handleShopRiskCaseAction;
 window.closeShopRiskCaseComposer = closeShopRiskCaseComposer;

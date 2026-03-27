@@ -1950,6 +1950,39 @@ test('resolveEnabledChannels suppresses alerts by module-scoped mute rules', () 
     );
 });
 
+test('resolveEnabledChannels suppresses shop risk alerts by module-scoped mute rules', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['123456']
+                }
+            },
+            mute_rules: {
+                modules: {
+                    shop_risk: {
+                        until: '2026-03-28T12:00:00.000Z',
+                        allow_critical: false
+                    }
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: 'telegram-key'
+        }
+    });
+
+    assert.deepEqual(
+        __testUtils.resolveEnabledChannels(runtime, 'critical', 'shop_order_risk_anomaly', {
+            now: new Date('2026-03-28T10:00:00.000Z')
+        }),
+        []
+    );
+});
+
 test('resolveEnabledChannels lets critical alerts bypass scoped mute rules when allowed', () => {
     const runtime = createRuntimeConfig({
         config: {

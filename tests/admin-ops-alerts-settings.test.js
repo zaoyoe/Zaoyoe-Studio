@@ -63,6 +63,7 @@ function createDefaultState() {
                     commerce: { until: '', allow_critical: true },
                     inventory: { until: '', allow_critical: true },
                     payments: { until: '', allow_critical: true },
+                    shop_risk: { until: '', allow_critical: true },
                     verify: { until: '', allow_critical: true },
                     tickets: { until: '', allow_critical: true },
                     fulfillment: { until: '', allow_critical: true },
@@ -273,6 +274,10 @@ function createNormalizedConfig(raw) {
                 payments: {
                     until: typeof moduleMuteRules.payments?.until === 'string' ? moduleMuteRules.payments.until.trim() : '',
                     allow_critical: normalizeBoolean(moduleMuteRules.payments?.allow_critical, true)
+                },
+                shop_risk: {
+                    until: typeof moduleMuteRules.shop_risk?.until === 'string' ? moduleMuteRules.shop_risk.until.trim() : '',
+                    allow_critical: normalizeBoolean(moduleMuteRules.shop_risk?.allow_critical, true)
                 },
                 verify: {
                     until: typeof moduleMuteRules.verify?.until === 'string' ? moduleMuteRules.verify.until.trim() : '',
@@ -719,6 +724,10 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                             payments: {
                                 until: '2026-03-28T08:00:00.000Z',
                                 allow_critical: true
+                            },
+                            shop_risk: {
+                                until: '2026-03-28T11:30:00.000Z',
+                                allow_critical: false
                             }
                         }
                     },
@@ -826,6 +835,8 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.mute_rules.modules.commerce.allow_critical, false);
         assert.equal(payload.config.mute_rules.modules.payments.until, '2026-03-28T08:00:00.000Z');
         assert.equal(payload.config.mute_rules.modules.payments.allow_critical, true);
+        assert.equal(payload.config.mute_rules.modules.shop_risk.until, '2026-03-28T11:30:00.000Z');
+        assert.equal(payload.config.mute_rules.modules.shop_risk.allow_critical, false);
         assert.equal(payload.config.channels.telegram.enabled, true);
         assert.deepEqual(payload.config.channels.telegram.chat_ids, ['123456', '789000']);
         assert.deepEqual(payload.config.routing.customer_chat_message, {
@@ -893,7 +904,7 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.quiet_hours_timezone, 'Asia/Shanghai');
         assert.equal(state.auditLogs[0].details.quiet_hours_allow_critical, false);
         assert.deepEqual(state.auditLogs[0].details.mute_type_keys_active, ['customer_chat_message', 'shop_inventory']);
-        assert.deepEqual(state.auditLogs[0].details.mute_module_keys_active, ['commerce', 'payments']);
+        assert.deepEqual(state.auditLogs[0].details.mute_module_keys_active, ['commerce', 'payments', 'shop_risk']);
         assert.deepEqual(state.auditLogs[0].details.mute_type_rules, {
             customer_chat_message: {
                 until: '2026-03-27T18:00:00.000Z',
@@ -912,6 +923,10 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
             payments: {
                 until: '2026-03-28T08:00:00.000Z',
                 allow_critical: true
+            },
+            shop_risk: {
+                until: '2026-03-28T11:30:00.000Z',
+                allow_critical: false
             }
         });
         assert.deepEqual(state.auditLogs[0].details.routing_customer_chat_message_channels, ['feishu', 'email']);

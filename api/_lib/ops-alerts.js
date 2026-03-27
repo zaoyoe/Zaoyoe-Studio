@@ -23,6 +23,7 @@ const SUPPORTED_MUTE_RULE_MODULE_KEYS = Object.freeze([
     'commerce',
     'inventory',
     'payments',
+    'shop_risk',
     'verify',
     'tickets',
     'fulfillment',
@@ -57,6 +58,8 @@ const ALERT_TYPE_MODULE_MAP = Object.freeze({
     payment_config_recovered: 'payments',
     payment_config_incident: 'payments',
     payment_config_incident_recovered: 'payments',
+    shop_order_risk_anomaly: 'shop_risk',
+    shop_order_risk_recovered: 'shop_risk',
     verify_quota_low: 'verify',
     verify_service_disabled: 'verify',
     verify_failure_rate_spike: 'verify',
@@ -149,6 +152,10 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
                 allow_critical: true
             }),
             payments: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            shop_risk: Object.freeze({
                 until: '',
                 allow_critical: true
             }),
@@ -430,6 +437,10 @@ function cloneDefaultConfig() {
                 payments: {
                     until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.payments.until,
                     allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.payments.allow_critical
+                },
+                shop_risk: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.shop_risk.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.shop_risk.allow_critical
                 },
                 verify: {
                     until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.modules.verify.until,

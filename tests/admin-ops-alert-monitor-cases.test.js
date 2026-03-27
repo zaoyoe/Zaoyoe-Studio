@@ -44,7 +44,7 @@ function createState(overrides = {}) {
 function createSupabaseStub(state) {
     return {
         from(table) {
-            if (table !== 'shop_risk_cases') {
+            if (table !== 'ops_alert_cases') {
                 throw new Error(`Unexpected table access: ${table}`);
             }
 
@@ -73,7 +73,10 @@ function createSupabaseStub(state) {
                     const payload = {
                         ...(queryState.payload || {})
                     };
-                    const existingIndex = state.cases.findIndex((row) => row.target_id === payload.target_id);
+                    const existingIndex = state.cases.findIndex((row) => (
+                        row.category_key === payload.category_key
+                        && row.target_id === payload.target_id
+                    ));
                     const nextRow = existingIndex >= 0
                         ? {
                             ...state.cases[existingIndex],
@@ -181,7 +184,7 @@ async function withHandler(stateOverrides, callback) {
     }
 }
 
-test('shop risk case handler claims a risk case and writes admin audit log', async () => {
+test('ops alert case handler claims a shop risk case and writes legacy-compatible audit log', async () => {
     await withHandler({}, async (handler, state) => {
         const req = {
             method: 'POST',
@@ -198,6 +201,7 @@ test('shop risk case handler claims a risk case and writes admin audit log', asy
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
+        assert.equal(payload.case.category_key, 'shop_risk');
         assert.equal(payload.case.status, 'claimed');
         assert.equal(payload.case.owner_admin_id, 'admin-user-1');
         assert.equal(payload.case.owner_label, 'admin@example.com');
@@ -207,14 +211,15 @@ test('shop risk case handler claims a risk case and writes admin audit log', asy
     });
 });
 
-test('shop risk case handler requires note content when resolving a case', async () => {
+test('ops alert case handler requires note content when resolving a case', async () => {
     await withHandler({}, async (handler) => {
         const req = {
             method: 'POST',
             headers: {},
             body: {
                 action: 'resolve',
-                target_id: 'shop_order_risk:user_velocity:user-1'
+                category_key: 'payments',
+                target_id: 'payment_gateway:hupijiao:cn'
             }
         };
         const res = createMockResponse();
@@ -224,16 +229,18 @@ test('shop risk case handler requires note content when resolving a case', async
 
         assert.equal(res.statusCode, 400);
         assert.equal(payload.success, false);
-        assert.equal(payload.message, '关闭案例时需要填写处理结论');
+        assert.equal(payload.message, '关闭告警时需要填写处理结论');
     });
 });
 
-test('shop risk case handler resolves an existing case while preserving owner information', async () => {
+test('ops alert case handler resolves an existing case while preserving owner information', async () => {
     await withHandler({
         cases: [
             {
                 id: 'case-1',
+                category_key: 'shop_risk',
                 target_id: 'shop_order_risk:coupon:FLASH0',
+                alert_type: 'shop_order_risk_anomaly',
                 status: 'claimed',
                 owner_admin_id: 'admin-user-2',
                 owner_label: 'ops@example.com',
@@ -270,5 +277,44 @@ test('shop risk case handler resolves an existing case while preserving owner in
         assert.equal(payload.case.resolution, '已停用优惠码并完成订单复核。');
         assert.equal(state.cases[0].status, 'resolved');
         assert.equal(state.auditLogs[0].actionType, 'admin.shop_risk_case.resolve');
+    });
+});
+
+test('ops alert case handler supports batch claim for generic monitor items', async () => {
+    await withHandler({}, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'claim',
+                items: [
+                    {
+                        category_key: 'payments',
+                        target_id: 'payment_gateway:hupijiao:cn',
+                        alert_type: 'payment_gateway_degraded',
+                        title: '支付通道异常'
+                    },
+                    {
+                        category_key: 'inventory',
+                        target_id: 'shop_inventory:product-a',
+                        alert_type: 'shop_inventory_low',
+                        title: '库存偏低'
+                    }
+                ]
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.summary.processed_count, 2);
+        assert.equal(payload.cases.length, 2);
+        assert.equal(state.cases.length, 2);
+        assert.equal(state.cases[0].status, 'claimed');
+        assert.equal(state.cases[1].status, 'claimed');
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alert_case.batch.claim');
     });
 });
