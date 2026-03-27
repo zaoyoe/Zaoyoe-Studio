@@ -20083,6 +20083,9 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 4px;
 }
 
 .ops-alert-routing-row {
@@ -20090,6 +20093,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(120px, 1fr));
     gap: 12px;
     align-items: center;
+    min-width: 700px;
     padding: 14px 16px;
     border-radius: 16px;
     border: 1px solid rgba(107, 158, 206, 0.14);
