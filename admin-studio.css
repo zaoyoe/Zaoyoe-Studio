@@ -20133,6 +20133,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 12px;
 }
 
+.ops-alert-strategy-card--wide .ops-alert-routing-options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .ops-alert-routing-check {
     display: inline-flex;
     align-items: center;
@@ -20145,7 +20149,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     background: rgba(107, 158, 206, 0.06);
     color: var(--text-main);
     font-size: 0.84rem;
-    white-space: nowrap;
+    white-space: normal;
 }
 
 .ops-alert-routing-check__label {

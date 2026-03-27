@@ -313,6 +313,128 @@ test('enqueueOpsAlertJob dedupes repeated refund alerts inside the recent window
     assert.deepEqual(state.jobs[0].remaining_channels, ['telegram', 'feishu']);
 });
 
+test('enqueueOpsAlertJob aggregates customer chat alerts into a single summary job when summary mode is enabled', async () => {
+    const state = { jobs: [] };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            customer_chat_message: {
+                enabled: true,
+                summary_enabled: true,
+                summary_window_minutes: 60,
+                summary_max_items: 5
+            }
+        }
+    });
+
+    const first = await enqueueOpsAlertJob(supabase, {
+        alertType: 'customer_chat_message_received',
+        severity: 'warning',
+        title: '客服新消息（阿木）',
+        content: '你好，想咨询一下购买后多久发货？',
+        payload: {
+            sender_label: '阿木',
+            user_id: 'user-001',
+            content_preview: '你好，想咨询一下购买后多久发货？',
+            created_at: '2026-03-27T05:12:00.000Z',
+            entry_path: '客服消息 -> 会话详情'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T05:12:00.000Z')
+    });
+    const second = await enqueueOpsAlertJob(supabase, {
+        alertType: 'customer_chat_message_received',
+        severity: 'warning',
+        title: '客服新消息（小羽）',
+        content: '请问购买成功后多久可以发货？',
+        payload: {
+            sender_label: '小羽',
+            user_id: 'user-002',
+            content_preview: '请问购买成功后多久可以发货？',
+            created_at: '2026-03-27T05:20:00.000Z',
+            entry_path: '客服消息 -> 会话详情'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T05:20:00.000Z')
+    });
+
+    assert.equal(first.queued, true);
+    assert.equal(first.summary, true);
+    assert.equal(second.queued, true);
+    assert.equal(second.summary, true);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].alert_type, 'customer_chat_message_summary');
+    assert.equal(state.jobs[0].payload.item_count, 2);
+    assert.equal(state.jobs[0].payload.items.length, 2);
+    assert.equal(state.jobs[0].payload.summary_window_minutes, 60);
+    assert.equal(state.jobs[0].payload.summary_max_items, 5);
+    assert.equal(state.jobs[0].title, '客服消息汇总（2 条新消息）');
+    assert.equal(state.jobs[0].next_retry_at, state.jobs[0].payload.window_end_at);
+    assert.equal(first.job.id, second.job.id);
+});
+
+test('enqueueOpsAlertJob aggregates purchase success alerts into a single summary job when summary mode is enabled', async () => {
+    const state = { jobs: [] };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            shop_purchase_success: {
+                enabled: true,
+                summary_enabled: true,
+                summary_window_minutes: 120,
+                summary_max_items: 3
+            }
+        }
+    });
+
+    await enqueueOpsAlertJob(supabase, {
+        alertType: 'shop_purchase_succeeded',
+        severity: 'warning',
+        title: '商城购买成功（Prompt Pro 年卡）',
+        content: 'Prompt Pro 年卡',
+        payload: {
+            order_id: 'shop-order-001',
+            buyer_label: '小羽',
+            product_name: 'Prompt Pro 年卡',
+            total_price: 59.8,
+            created_at: '2026-03-27T06:10:00.000Z',
+            entry_path: '商城管理 -> 订单列表'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T06:10:00.000Z')
+    });
+    const second = await enqueueOpsAlertJob(supabase, {
+        alertType: 'shop_purchase_succeeded',
+        severity: 'warning',
+        title: '商城购买成功（Prompt Pro 月卡）',
+        content: 'Prompt Pro 月卡',
+        payload: {
+            order_id: 'shop-order-002',
+            buyer_label: '阿木',
+            product_name: 'Prompt Pro 月卡',
+            total_price: 19.9,
+            created_at: '2026-03-27T06:35:00.000Z',
+            entry_path: '商城管理 -> 订单列表'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T06:35:00.000Z')
+    });
+
+    assert.equal(second.queued, true);
+    assert.equal(second.summary, true);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].alert_type, 'shop_purchase_summary');
+    assert.equal(state.jobs[0].payload.item_count, 2);
+    assert.equal(state.jobs[0].payload.items.length, 2);
+    assert.equal(state.jobs[0].payload.summary_window_minutes, 120);
+    assert.equal(state.jobs[0].payload.summary_max_items, 3);
+    assert.equal(state.jobs[0].title, '购买成功汇总（2 笔订单）');
+});
+
 test('buildExternalAlertText renders rich refund details for payment refund ops alerts', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'payment_refund_ops',
@@ -381,6 +503,47 @@ test('buildExternalAlertText renders customer chat message details', () => {
     assert.match(text, /处理入口：客服消息 -> 会话详情/);
 });
 
+test('buildExternalAlertText renders customer chat message summary details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'customer_chat_message_summary',
+        severity: 'warning',
+        title: '客服消息汇总（2 条新消息）',
+        payload: {
+            window_start_at: '2026-03-27T05:00:00.000Z',
+            window_end_at: '2026-03-27T06:00:00.000Z',
+            item_count: 2,
+            summary_max_items: 5,
+            items: [
+                {
+                    created_at: '2026-03-27T05:12:00.000Z',
+                    payload: {
+                        sender_label: '阿木',
+                        user_id: 'user-001',
+                        content_preview: '你好，想咨询一下购买后多久发货？'
+                    }
+                },
+                {
+                    created_at: '2026-03-27T05:20:00.000Z',
+                    payload: {
+                        sender_label: '小羽',
+                        user_id: 'user-002',
+                        content_preview: '请问购买成功后多久可以发货？'
+                    }
+                }
+            ],
+            entry_path: '客服消息 -> 会话详情'
+        }
+    });
+
+    assert.match(text, /客服消息汇总/);
+    assert.match(text, /累计消息：2 条/);
+    assert.match(text, /1\. 阿木/);
+    assert.match(text, /用户ID：user-001/);
+    assert.match(text, /内容：你好，想咨询一下购买后多久发货/);
+    assert.match(text, /2\. 小羽/);
+    assert.match(text, /处理入口：客服消息 -> 会话详情/);
+});
+
 test('buildExternalAlertText renders shop purchase success details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'shop_purchase_succeeded',
@@ -409,6 +572,49 @@ test('buildExternalAlertText renders shop purchase success details', () => {
     assert.match(text, /订单金额：59.80 元/);
 });
 
+test('buildExternalAlertText renders shop purchase summary details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'shop_purchase_summary',
+        severity: 'warning',
+        title: '购买成功汇总（2 笔订单）',
+        payload: {
+            window_start_at: '2026-03-27T06:00:00.000Z',
+            window_end_at: '2026-03-27T08:00:00.000Z',
+            item_count: 2,
+            summary_max_items: 3,
+            items: [
+                {
+                    created_at: '2026-03-27T06:10:00.000Z',
+                    payload: {
+                        order_id: 'shop-order-001',
+                        buyer_label: '小羽',
+                        product_name: 'Prompt Pro 年卡',
+                        total_price: 59.8
+                    }
+                },
+                {
+                    created_at: '2026-03-27T06:35:00.000Z',
+                    payload: {
+                        order_id: 'shop-order-002',
+                        buyer_label: '阿木',
+                        product_name: 'Prompt Pro 月卡',
+                        total_price: 19.9
+                    }
+                }
+            ],
+            entry_path: '商城管理 -> 订单列表'
+        }
+    });
+
+    assert.match(text, /购买成功汇总/);
+    assert.match(text, /累计订单：2 笔/);
+    assert.match(text, /1\. 小羽 · Prompt Pro 年卡/);
+    assert.match(text, /订单号：shop-order-001/);
+    assert.match(text, /金额：59.80 元/);
+    assert.match(text, /2\. 阿木 · Prompt Pro 月卡/);
+    assert.match(text, /处理入口：商城管理 -> 订单列表/);
+});
+
 test('buildExternalAlertText renders wallet recharge success details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'wallet_recharge_succeeded',
@@ -435,6 +641,49 @@ test('buildExternalAlertText renders wallet recharge success details', () => {
     assert.match(text, /充值单号：payment-order-001/);
     assert.match(text, /付款者：小羽/);
     assert.match(text, /到账积分：500 点/);
+    assert.match(text, /处理入口：支付对账 -> 最近订单/);
+});
+
+test('buildExternalAlertText renders wallet recharge summary details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'wallet_recharge_summary',
+        severity: 'warning',
+        title: '充值成功汇总（2 笔充值）',
+        payload: {
+            window_start_at: '2026-03-27T08:00:00.000Z',
+            window_end_at: '2026-03-27T09:00:00.000Z',
+            item_count: 2,
+            summary_max_items: 10,
+            items: [
+                {
+                    created_at: '2026-03-27T08:10:00.000Z',
+                    payload: {
+                        payment_order_id: 'payment-order-001',
+                        buyer_label: '小羽',
+                        package_name: '50元充值',
+                        paid_amount: 50
+                    }
+                },
+                {
+                    created_at: '2026-03-27T08:20:00.000Z',
+                    payload: {
+                        payment_order_id: 'payment-order-002',
+                        buyer_label: '阿木',
+                        package_name: '100元充值',
+                        paid_amount: 100
+                    }
+                }
+            ],
+            entry_path: '支付对账 -> 最近订单'
+        }
+    });
+
+    assert.match(text, /充值成功汇总/);
+    assert.match(text, /累计充值：2 笔/);
+    assert.match(text, /1\. 小羽 · 50元充值/);
+    assert.match(text, /充值单号：payment-order-001/);
+    assert.match(text, /金额：50.00 元/);
+    assert.match(text, /2\. 阿木 · 100元充值/);
     assert.match(text, /处理入口：支付对账 -> 最近订单/);
 });
 

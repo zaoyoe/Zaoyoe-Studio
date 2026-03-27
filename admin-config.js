@@ -1035,19 +1035,28 @@ function getDefaultOpsAlertConfig() {
             enabled: true,
             sweep_interval_ms: 60 * 1000,
             lookback_minutes: 15,
-            dedupe_window_minutes: 12 * 60
+            dedupe_window_minutes: 12 * 60,
+            summary_enabled: false,
+            summary_window_minutes: 60,
+            summary_max_items: 10
         },
         shop_purchase_success: {
             enabled: true,
             sweep_interval_ms: 2 * 60 * 1000,
             lookback_minutes: 30,
-            dedupe_window_minutes: 24 * 60
+            dedupe_window_minutes: 24 * 60,
+            summary_enabled: false,
+            summary_window_minutes: 60,
+            summary_max_items: 10
         },
         wallet_recharge_success: {
             enabled: true,
             sweep_interval_ms: 2 * 60 * 1000,
             lookback_minutes: 30,
-            dedupe_window_minutes: 24 * 60
+            dedupe_window_minutes: 24 * 60,
+            summary_enabled: false,
+            summary_window_minutes: 60,
+            summary_max_items: 10
         }
     };
 }
@@ -1639,6 +1648,17 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(customerChatMessageSource.dedupe_window_minutes, defaults.customer_chat_message.dedupe_window_minutes),
                 1,
                 7 * 24 * 60
+            ),
+            summary_enabled: normalizeConfigBoolean(customerChatMessageSource.summary_enabled, defaults.customer_chat_message.summary_enabled),
+            summary_window_minutes: clamp(
+                toWholeNumber(customerChatMessageSource.summary_window_minutes, defaults.customer_chat_message.summary_window_minutes),
+                5,
+                24 * 60
+            ),
+            summary_max_items: clamp(
+                toWholeNumber(customerChatMessageSource.summary_max_items, defaults.customer_chat_message.summary_max_items),
+                1,
+                50
             )
         },
         shop_purchase_success: {
@@ -1657,6 +1677,17 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(shopPurchaseSuccessSource.dedupe_window_minutes, defaults.shop_purchase_success.dedupe_window_minutes),
                 1,
                 30 * 24 * 60
+            ),
+            summary_enabled: normalizeConfigBoolean(shopPurchaseSuccessSource.summary_enabled, defaults.shop_purchase_success.summary_enabled),
+            summary_window_minutes: clamp(
+                toWholeNumber(shopPurchaseSuccessSource.summary_window_minutes, defaults.shop_purchase_success.summary_window_minutes),
+                5,
+                24 * 60
+            ),
+            summary_max_items: clamp(
+                toWholeNumber(shopPurchaseSuccessSource.summary_max_items, defaults.shop_purchase_success.summary_max_items),
+                1,
+                50
             )
         },
         wallet_recharge_success: {
@@ -1675,6 +1706,17 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(walletRechargeSuccessSource.dedupe_window_minutes, defaults.wallet_recharge_success.dedupe_window_minutes),
                 1,
                 30 * 24 * 60
+            ),
+            summary_enabled: normalizeConfigBoolean(walletRechargeSuccessSource.summary_enabled, defaults.wallet_recharge_success.summary_enabled),
+            summary_window_minutes: clamp(
+                toWholeNumber(walletRechargeSuccessSource.summary_window_minutes, defaults.wallet_recharge_success.summary_window_minutes),
+                5,
+                24 * 60
+            ),
+            summary_max_items: clamp(
+                toWholeNumber(walletRechargeSuccessSource.summary_max_items, defaults.wallet_recharge_success.summary_max_items),
+                1,
+                50
             )
         }
     };
@@ -2478,6 +2520,10 @@ function applyOpsAlertCustomerChatControls(config = normalizeOpsAlertConfig(syst
     if (toggleEl) {
         toggleEl.classList.toggle('active', monitorConfig.enabled);
     }
+    const summaryToggleEl = document.getElementById('opsAlertCustomerChatMessageSummaryEnabledToggle');
+    if (summaryToggleEl) {
+        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
+    }
 
     [
         'opsAlertCustomerChatMessageSweepIntervalMinutes',
@@ -2486,6 +2532,13 @@ function applyOpsAlertCustomerChatControls(config = normalizeOpsAlertConfig(syst
     ].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.disabled = !monitorConfig.enabled;
+    });
+    [
+        'opsAlertCustomerChatMessageSummaryWindowMinutes',
+        'opsAlertCustomerChatMessageSummaryMaxItems'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !monitorConfig.enabled || monitorConfig.summary_enabled !== true;
     });
 }
 
@@ -2496,6 +2549,10 @@ function applyOpsAlertShopPurchaseSuccessControls(config = normalizeOpsAlertConf
     if (toggleEl) {
         toggleEl.classList.toggle('active', monitorConfig.enabled);
     }
+    const summaryToggleEl = document.getElementById('opsAlertShopPurchaseSuccessSummaryEnabledToggle');
+    if (summaryToggleEl) {
+        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
+    }
 
     [
         'opsAlertShopPurchaseSuccessSweepIntervalMinutes',
@@ -2504,6 +2561,13 @@ function applyOpsAlertShopPurchaseSuccessControls(config = normalizeOpsAlertConf
     ].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.disabled = !monitorConfig.enabled;
+    });
+    [
+        'opsAlertShopPurchaseSuccessSummaryWindowMinutes',
+        'opsAlertShopPurchaseSuccessSummaryMaxItems'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !monitorConfig.enabled || monitorConfig.summary_enabled !== true;
     });
 }
 
@@ -2514,6 +2578,10 @@ function applyOpsAlertWalletRechargeSuccessControls(config = normalizeOpsAlertCo
     if (toggleEl) {
         toggleEl.classList.toggle('active', monitorConfig.enabled);
     }
+    const summaryToggleEl = document.getElementById('opsAlertWalletRechargeSuccessSummaryEnabledToggle');
+    if (summaryToggleEl) {
+        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
+    }
 
     [
         'opsAlertWalletRechargeSuccessSweepIntervalMinutes',
@@ -2522,6 +2590,13 @@ function applyOpsAlertWalletRechargeSuccessControls(config = normalizeOpsAlertCo
     ].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.disabled = !monitorConfig.enabled;
+    });
+    [
+        'opsAlertWalletRechargeSuccessSummaryWindowMinutes',
+        'opsAlertWalletRechargeSuccessSummaryMaxItems'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !monitorConfig.enabled || monitorConfig.summary_enabled !== true;
     });
 }
 
@@ -2637,6 +2712,14 @@ function renderOpsAlertSettings() {
     if (customerChatMessageDedupeWindowMinutes) {
         customerChatMessageDedupeWindowMinutes.value = String(config.customer_chat_message.dedupe_window_minutes);
     }
+    const customerChatMessageSummaryWindowMinutes = document.getElementById('opsAlertCustomerChatMessageSummaryWindowMinutes');
+    if (customerChatMessageSummaryWindowMinutes) {
+        customerChatMessageSummaryWindowMinutes.value = String(config.customer_chat_message.summary_window_minutes);
+    }
+    const customerChatMessageSummaryMaxItems = document.getElementById('opsAlertCustomerChatMessageSummaryMaxItems');
+    if (customerChatMessageSummaryMaxItems) {
+        customerChatMessageSummaryMaxItems.value = String(config.customer_chat_message.summary_max_items);
+    }
 
     const shopPurchaseSuccessSweepIntervalMinutes = document.getElementById('opsAlertShopPurchaseSuccessSweepIntervalMinutes');
     if (shopPurchaseSuccessSweepIntervalMinutes) {
@@ -2652,6 +2735,14 @@ function renderOpsAlertSettings() {
     if (shopPurchaseSuccessDedupeWindowMinutes) {
         shopPurchaseSuccessDedupeWindowMinutes.value = String(config.shop_purchase_success.dedupe_window_minutes);
     }
+    const shopPurchaseSuccessSummaryWindowMinutes = document.getElementById('opsAlertShopPurchaseSuccessSummaryWindowMinutes');
+    if (shopPurchaseSuccessSummaryWindowMinutes) {
+        shopPurchaseSuccessSummaryWindowMinutes.value = String(config.shop_purchase_success.summary_window_minutes);
+    }
+    const shopPurchaseSuccessSummaryMaxItems = document.getElementById('opsAlertShopPurchaseSuccessSummaryMaxItems');
+    if (shopPurchaseSuccessSummaryMaxItems) {
+        shopPurchaseSuccessSummaryMaxItems.value = String(config.shop_purchase_success.summary_max_items);
+    }
 
     const walletRechargeSuccessSweepIntervalMinutes = document.getElementById('opsAlertWalletRechargeSuccessSweepIntervalMinutes');
     if (walletRechargeSuccessSweepIntervalMinutes) {
@@ -2666,6 +2757,14 @@ function renderOpsAlertSettings() {
     const walletRechargeSuccessDedupeWindowMinutes = document.getElementById('opsAlertWalletRechargeSuccessDedupeWindowMinutes');
     if (walletRechargeSuccessDedupeWindowMinutes) {
         walletRechargeSuccessDedupeWindowMinutes.value = String(config.wallet_recharge_success.dedupe_window_minutes);
+    }
+    const walletRechargeSuccessSummaryWindowMinutes = document.getElementById('opsAlertWalletRechargeSuccessSummaryWindowMinutes');
+    if (walletRechargeSuccessSummaryWindowMinutes) {
+        walletRechargeSuccessSummaryWindowMinutes.value = String(config.wallet_recharge_success.summary_window_minutes);
+    }
+    const walletRechargeSuccessSummaryMaxItems = document.getElementById('opsAlertWalletRechargeSuccessSummaryMaxItems');
+    if (walletRechargeSuccessSummaryMaxItems) {
+        walletRechargeSuccessSummaryMaxItems.value = String(config.wallet_recharge_success.summary_max_items);
     }
 
     applyOpsAlertOverview(config);
@@ -5649,6 +5748,16 @@ function collectOpsAlertConfigFromForm() {
         document.getElementById('opsAlertCustomerChatMessageDedupeWindowMinutes')?.value,
         currentConfig.customer_chat_message.dedupe_window_minutes
     );
+    nextConfig.customer_chat_message.summary_enabled = document.getElementById('opsAlertCustomerChatMessageSummaryEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.customer_chat_message.summary_enabled;
+    nextConfig.customer_chat_message.summary_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertCustomerChatMessageSummaryWindowMinutes')?.value,
+        currentConfig.customer_chat_message.summary_window_minutes
+    );
+    nextConfig.customer_chat_message.summary_max_items = toWholeNumber(
+        document.getElementById('opsAlertCustomerChatMessageSummaryMaxItems')?.value,
+        currentConfig.customer_chat_message.summary_max_items
+    );
     nextConfig.shop_purchase_success.enabled = document.getElementById('opsAlertShopPurchaseSuccessEnabledToggle')?.classList.contains('active')
         ?? currentConfig.shop_purchase_success.enabled;
     nextConfig.shop_purchase_success.sweep_interval_ms = Math.max(
@@ -5666,6 +5775,16 @@ function collectOpsAlertConfigFromForm() {
         document.getElementById('opsAlertShopPurchaseSuccessDedupeWindowMinutes')?.value,
         currentConfig.shop_purchase_success.dedupe_window_minutes
     );
+    nextConfig.shop_purchase_success.summary_enabled = document.getElementById('opsAlertShopPurchaseSuccessSummaryEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.shop_purchase_success.summary_enabled;
+    nextConfig.shop_purchase_success.summary_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertShopPurchaseSuccessSummaryWindowMinutes')?.value,
+        currentConfig.shop_purchase_success.summary_window_minutes
+    );
+    nextConfig.shop_purchase_success.summary_max_items = toWholeNumber(
+        document.getElementById('opsAlertShopPurchaseSuccessSummaryMaxItems')?.value,
+        currentConfig.shop_purchase_success.summary_max_items
+    );
     nextConfig.wallet_recharge_success.enabled = document.getElementById('opsAlertWalletRechargeSuccessEnabledToggle')?.classList.contains('active')
         ?? currentConfig.wallet_recharge_success.enabled;
     nextConfig.wallet_recharge_success.sweep_interval_ms = Math.max(
@@ -5682,6 +5801,16 @@ function collectOpsAlertConfigFromForm() {
     nextConfig.wallet_recharge_success.dedupe_window_minutes = toWholeNumber(
         document.getElementById('opsAlertWalletRechargeSuccessDedupeWindowMinutes')?.value,
         currentConfig.wallet_recharge_success.dedupe_window_minutes
+    );
+    nextConfig.wallet_recharge_success.summary_enabled = document.getElementById('opsAlertWalletRechargeSuccessSummaryEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.wallet_recharge_success.summary_enabled;
+    nextConfig.wallet_recharge_success.summary_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertWalletRechargeSuccessSummaryWindowMinutes')?.value,
+        currentConfig.wallet_recharge_success.summary_window_minutes
+    );
+    nextConfig.wallet_recharge_success.summary_max_items = toWholeNumber(
+        document.getElementById('opsAlertWalletRechargeSuccessSummaryMaxItems')?.value,
+        currentConfig.wallet_recharge_success.summary_max_items
     );
 
     return normalizeOpsAlertConfig(nextConfig);
@@ -6820,6 +6949,18 @@ function toggleOpsAlertCustomerChatMessageEnabled() {
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertCustomerChatControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertCustomerChatMessageSummaryEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertCustomerChatMessageEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertCustomerChatMessageSummaryEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertCustomerChatControls(collectOpsAlertConfigFromForm());
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
@@ -6829,6 +6970,18 @@ function toggleOpsAlertShopPurchaseSuccessEnabled() {
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertShopPurchaseSuccessControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertShopPurchaseSuccessSummaryEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertShopPurchaseSuccessEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertShopPurchaseSuccessSummaryEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertShopPurchaseSuccessControls(collectOpsAlertConfigFromForm());
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
@@ -6838,6 +6991,18 @@ function toggleOpsAlertWalletRechargeSuccessEnabled() {
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertWalletRechargeSuccessControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertWalletRechargeSuccessSummaryEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertWalletRechargeSuccessEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertWalletRechargeSuccessSummaryEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertWalletRechargeSuccessControls(collectOpsAlertConfigFromForm());
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
@@ -9071,8 +9236,11 @@ window.toggleOpsAlertShopRiskAutoResponseEnabled = toggleOpsAlertShopRiskAutoRes
 window.toggleOpsAlertShopInventoryEnabled = toggleOpsAlertShopInventoryEnabled;
 window.toggleOpsAlertShopInventoryRecoveryNotificationEnabled = toggleOpsAlertShopInventoryRecoveryNotificationEnabled;
 window.toggleOpsAlertCustomerChatMessageEnabled = toggleOpsAlertCustomerChatMessageEnabled;
+window.toggleOpsAlertCustomerChatMessageSummaryEnabled = toggleOpsAlertCustomerChatMessageSummaryEnabled;
 window.toggleOpsAlertShopPurchaseSuccessEnabled = toggleOpsAlertShopPurchaseSuccessEnabled;
+window.toggleOpsAlertShopPurchaseSuccessSummaryEnabled = toggleOpsAlertShopPurchaseSuccessSummaryEnabled;
 window.toggleOpsAlertWalletRechargeSuccessEnabled = toggleOpsAlertWalletRechargeSuccessEnabled;
+window.toggleOpsAlertWalletRechargeSuccessSummaryEnabled = toggleOpsAlertWalletRechargeSuccessSummaryEnabled;
 window.saveOpsAlertSettings = saveOpsAlertSettings;
 window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;
 window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;

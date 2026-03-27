@@ -30,16 +30,22 @@ const SUPPORTED_MUTE_RULE_MODULE_KEYS = Object.freeze([
 ]);
 const ALERT_TYPE_ROUTING_MAP = Object.freeze({
     customer_chat_message_received: 'customer_chat_message',
+    customer_chat_message_summary: 'customer_chat_message',
     shop_purchase_succeeded: 'shop_purchase_success',
+    shop_purchase_summary: 'shop_purchase_success',
     wallet_recharge_succeeded: 'wallet_recharge_success',
+    wallet_recharge_summary: 'wallet_recharge_success',
     shop_inventory_low: 'shop_inventory',
     shop_inventory_empty: 'shop_inventory',
     shop_inventory_recovered: 'shop_inventory'
 });
 const ALERT_TYPE_MODULE_MAP = Object.freeze({
     customer_chat_message_received: 'customer_engagement',
+    customer_chat_message_summary: 'customer_engagement',
     shop_purchase_succeeded: 'commerce',
+    shop_purchase_summary: 'commerce',
     wallet_recharge_succeeded: 'commerce',
+    wallet_recharge_summary: 'commerce',
     shop_inventory_low: 'inventory',
     shop_inventory_empty: 'inventory',
     shop_inventory_recovered: 'inventory',
@@ -69,6 +75,26 @@ const SEVERITY_RANK = Object.freeze({
     info: 10,
     warning: 20,
     critical: 30
+});
+const SUMMARY_ALERT_DEFINITIONS = Object.freeze({
+    customer_chat_message_received: Object.freeze({
+        config_key: 'customer_chat_message',
+        summary_alert_type: 'customer_chat_message_summary',
+        default_title: '客服消息汇总',
+        unit: '条新消息'
+    }),
+    shop_purchase_succeeded: Object.freeze({
+        config_key: 'shop_purchase_success',
+        summary_alert_type: 'shop_purchase_summary',
+        default_title: '购买成功汇总',
+        unit: '笔订单'
+    }),
+    wallet_recharge_succeeded: Object.freeze({
+        config_key: 'wallet_recharge_success',
+        summary_alert_type: 'wallet_recharge_summary',
+        default_title: '充值成功汇总',
+        unit: '笔充值'
+    })
 });
 const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
     enabled: false,
@@ -196,19 +222,28 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         enabled: true,
         sweep_interval_ms: 60 * 1000,
         lookback_minutes: 15,
-        dedupe_window_minutes: 12 * 60
+        dedupe_window_minutes: 12 * 60,
+        summary_enabled: false,
+        summary_window_minutes: 60,
+        summary_max_items: 10
     }),
     shop_purchase_success: Object.freeze({
         enabled: true,
         sweep_interval_ms: 2 * 60 * 1000,
         lookback_minutes: 30,
-        dedupe_window_minutes: 24 * 60
+        dedupe_window_minutes: 24 * 60,
+        summary_enabled: false,
+        summary_window_minutes: 60,
+        summary_max_items: 10
     }),
     wallet_recharge_success: Object.freeze({
         enabled: true,
         sweep_interval_ms: 2 * 60 * 1000,
         lookback_minutes: 30,
-        dedupe_window_minutes: 24 * 60
+        dedupe_window_minutes: 24 * 60,
+        summary_enabled: false,
+        summary_window_minutes: 60,
+        summary_max_items: 10
     }),
     shop_inventory: Object.freeze({
         enabled: true,
@@ -302,6 +337,41 @@ function normalizeTimeZone(value, fallback = DEFAULT_QUIET_HOURS_TIMEZONE) {
     } catch (_error) {
         return fallback;
     }
+}
+
+function getOpsAlertSummaryDefinition(alertType = '') {
+    return SUMMARY_ALERT_DEFINITIONS[normalizeText(alertType).toLowerCase()] || null;
+}
+
+function getOpsAlertSummaryBucket(referenceDate, windowMinutes) {
+    const safeDate = referenceDate instanceof Date ? referenceDate : new Date(referenceDate || Date.now());
+    const referenceTimestamp = Number.isFinite(safeDate.getTime()) ? safeDate.getTime() : Date.now();
+    const intervalMs = Math.max(5, normalizeNumber(windowMinutes, 60, 5, 24 * 60)) * 60 * 1000;
+    const bucketStart = Math.floor(referenceTimestamp / intervalMs) * intervalMs;
+    return {
+        window_minutes: intervalMs / (60 * 1000),
+        start_at: new Date(bucketStart).toISOString(),
+        end_at: new Date(bucketStart + intervalMs).toISOString()
+    };
+}
+
+function getHigherSeverity(left = 'warning', right = 'warning') {
+    const normalizedLeft = normalizeSeverity(left, 'warning');
+    const normalizedRight = normalizeSeverity(right, 'warning');
+    return (SEVERITY_RANK[normalizedLeft] || 0) >= (SEVERITY_RANK[normalizedRight] || 0)
+        ? normalizedLeft
+        : normalizedRight;
+}
+
+function buildOpsAlertSummaryItem({ dedupeKey = '', payload = {}, title = '', content = '', createdAt = '' } = {}) {
+    return {
+        dedupe_key: normalizeText(dedupeKey),
+        target_id: normalizeText(payload?.target_id || payload?.order_id || payload?.payment_order_id || payload?.message_id || payload?.id),
+        title: normalizeText(title),
+        content: normalizeText(content),
+        created_at: normalizeText(createdAt) || new Date().toISOString(),
+        payload: normalizeJsonObject(payload)
+    };
 }
 
 function cloneDefaultConfig() {
@@ -431,19 +501,28 @@ function cloneDefaultConfig() {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.enabled,
             sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.sweep_interval_ms,
             lookback_minutes: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.lookback_minutes,
-            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.dedupe_window_minutes
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.dedupe_window_minutes,
+            summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_enabled,
+            summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_window_minutes,
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_max_items
         },
         shop_purchase_success: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.enabled,
             sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.sweep_interval_ms,
             lookback_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.lookback_minutes,
-            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.dedupe_window_minutes
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.dedupe_window_minutes,
+            summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.summary_enabled,
+            summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.summary_window_minutes,
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.summary_max_items
         },
         wallet_recharge_success: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.enabled,
             sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.sweep_interval_ms,
             lookback_minutes: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.lookback_minutes,
-            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.dedupe_window_minutes
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.dedupe_window_minutes,
+            summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.summary_enabled,
+            summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.summary_window_minutes,
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.summary_max_items
         },
         shop_inventory: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.enabled,
@@ -720,6 +799,22 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         1,
         7 * 24 * 60
     );
+    config.customer_chat_message.summary_enabled = normalizeBoolean(
+        customerChatMessageConfig.summary_enabled,
+        config.customer_chat_message.summary_enabled
+    );
+    config.customer_chat_message.summary_window_minutes = normalizeNumber(
+        customerChatMessageConfig.summary_window_minutes,
+        config.customer_chat_message.summary_window_minutes,
+        5,
+        24 * 60
+    );
+    config.customer_chat_message.summary_max_items = normalizeNumber(
+        customerChatMessageConfig.summary_max_items,
+        config.customer_chat_message.summary_max_items,
+        1,
+        50
+    );
 
     config.shop_purchase_success.enabled = normalizeBoolean(
         shopPurchaseSuccessConfig.enabled,
@@ -743,6 +838,22 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         1,
         30 * 24 * 60
     );
+    config.shop_purchase_success.summary_enabled = normalizeBoolean(
+        shopPurchaseSuccessConfig.summary_enabled,
+        config.shop_purchase_success.summary_enabled
+    );
+    config.shop_purchase_success.summary_window_minutes = normalizeNumber(
+        shopPurchaseSuccessConfig.summary_window_minutes,
+        config.shop_purchase_success.summary_window_minutes,
+        5,
+        24 * 60
+    );
+    config.shop_purchase_success.summary_max_items = normalizeNumber(
+        shopPurchaseSuccessConfig.summary_max_items,
+        config.shop_purchase_success.summary_max_items,
+        1,
+        50
+    );
 
     config.wallet_recharge_success.enabled = normalizeBoolean(
         walletRechargeSuccessConfig.enabled,
@@ -765,6 +876,22 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         normalizeNumber(env?.COMMERCE_SUCCESS_MONITOR_DEDUPE_WINDOW_MINUTES, config.wallet_recharge_success.dedupe_window_minutes, 1, 30 * 24 * 60),
         1,
         30 * 24 * 60
+    );
+    config.wallet_recharge_success.summary_enabled = normalizeBoolean(
+        walletRechargeSuccessConfig.summary_enabled,
+        config.wallet_recharge_success.summary_enabled
+    );
+    config.wallet_recharge_success.summary_window_minutes = normalizeNumber(
+        walletRechargeSuccessConfig.summary_window_minutes,
+        config.wallet_recharge_success.summary_window_minutes,
+        5,
+        24 * 60
+    );
+    config.wallet_recharge_success.summary_max_items = normalizeNumber(
+        walletRechargeSuccessConfig.summary_max_items,
+        config.wallet_recharge_success.summary_max_items,
+        1,
+        50
     );
 
     config.shop_inventory.enabled = normalizeBoolean(
@@ -1166,6 +1293,211 @@ async function hasRecentOpsAlertJob(supabase, {
     return Array.isArray(data) && data.length > 0;
 }
 
+function getOpsAlertSummaryConfig(runtimeConfig = {}, alertType = '') {
+    const definition = getOpsAlertSummaryDefinition(alertType);
+    if (!definition) {
+        return null;
+    }
+
+    const section = runtimeConfig?.[definition.config_key];
+    if (!section || section.summary_enabled !== true) {
+        return null;
+    }
+
+    return {
+        ...definition,
+        summary_window_minutes: Math.max(5, normalizeNumber(section.summary_window_minutes, 60, 5, 24 * 60)),
+        summary_max_items: Math.max(1, normalizeNumber(section.summary_max_items, 10, 1, 50))
+    };
+}
+
+function buildOpsAlertSummaryTitle(summaryConfig, itemCount) {
+    return `${summaryConfig.default_title}（${itemCount} ${summaryConfig.unit}）`;
+}
+
+function buildOpsAlertSummaryContent(summaryConfig, itemCount, bucket) {
+    return `最近 ${summaryConfig.summary_window_minutes} 分钟内累计 ${itemCount} ${summaryConfig.unit}，将在窗口结束后统一外发。窗口：${bucket.start_at} - ${bucket.end_at}`;
+}
+
+async function loadExistingOpsAlertSummaryJob(supabase, alertType, dedupeKey) {
+    const { data, error } = await supabase
+        .from('ops_alert_jobs')
+        .select('*')
+        .eq('alert_type', alertType)
+        .eq('dedupe_key', dedupeKey)
+        .single();
+
+    if (error) {
+        throw error;
+    }
+
+    return data || null;
+}
+
+async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
+    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, options.env);
+    const alertType = normalizeText(input.alertType || input.alert_type);
+    const summaryConfig = getOpsAlertSummaryConfig(runtime.config, alertType);
+
+    if (!summaryConfig) {
+        return null;
+    }
+
+    const explicitCreatedAt = normalizeText(input.createdAt || input.created_at);
+    const referenceDate = options.now instanceof Date
+        ? options.now
+        : new Date(options.now || explicitCreatedAt || Date.now());
+    const bucket = getOpsAlertSummaryBucket(referenceDate, summaryConfig.summary_window_minutes);
+    const itemCreatedAt = explicitCreatedAt || (Number.isFinite(referenceDate.getTime()) ? referenceDate.toISOString() : new Date().toISOString());
+    const itemDedupeKey = normalizeText(input.dedupeKey) || buildOpsAlertDedupeKey({
+        alertType,
+        title: input.title,
+        content: input.content,
+        payload: input.payload
+    });
+    const summaryDedupeKey = crypto
+        .createHash('sha256')
+        .update(`${summaryConfig.summary_alert_type}:${bucket.start_at}:${bucket.end_at}`)
+        .digest('hex');
+    const channels = resolveEnabledChannels(runtime, input.severity, summaryConfig.summary_alert_type, { now: referenceDate })
+        .filter((channel) => {
+            const requestedChannels = Array.isArray(input.allowedChannels)
+                ? input.allowedChannels.map((item) => normalizeChannelName(item)).filter(Boolean)
+                : [];
+            return !requestedChannels.length || requestedChannels.includes(channel);
+        });
+
+    if (!channels.length) {
+        return {
+            queued: false,
+            reason: 'no_active_channels'
+        };
+    }
+
+    const newItem = buildOpsAlertSummaryItem({
+        dedupeKey: itemDedupeKey,
+        payload: input.payload,
+        title: input.title,
+        content: input.content,
+        createdAt: itemCreatedAt
+    });
+    const existing = await loadExistingOpsAlertSummaryJob(supabase, summaryConfig.summary_alert_type, summaryDedupeKey);
+    const nowIso = itemCreatedAt;
+
+    if (existing) {
+        const existingPayload = normalizeJsonObject(existing.payload);
+        const existingItems = Array.isArray(existingPayload.items) ? existingPayload.items.slice() : [];
+        if (existingItems.some((item) => normalizeText(item?.dedupe_key) === itemDedupeKey)) {
+            return {
+                queued: false,
+                reason: 'deduped',
+                dedupeKey: itemDedupeKey,
+                summaryJob: existing
+            };
+        }
+
+        existingItems.push(newItem);
+        const nextSeverity = getHigherSeverity(existing.severity, input.severity);
+        const nextChannels = Array.from(new Set([
+            ...normalizeStringArray(existing.channels || []),
+            ...channels
+        ]));
+        const nextPayload = {
+            ...existingPayload,
+            summary_type: summaryConfig.summary_alert_type,
+            source_alert_type: alertType,
+            summary_window_minutes: summaryConfig.summary_window_minutes,
+            summary_max_items: summaryConfig.summary_max_items,
+            window_start_at: bucket.start_at,
+            window_end_at: bucket.end_at,
+            item_count: existingItems.length,
+            items: existingItems,
+            entry_path: normalizeText(existingPayload.entry_path || input.payload?.entry_path)
+        };
+        const updateRow = {
+            severity: nextSeverity,
+            title: buildOpsAlertSummaryTitle(summaryConfig, existingItems.length),
+            content: buildOpsAlertSummaryContent(summaryConfig, existingItems.length, bucket),
+            payload: nextPayload,
+            channels: nextChannels,
+            remaining_channels: nextChannels,
+            next_retry_at: bucket.end_at,
+            updated_at: nowIso
+        };
+
+        const { data, error } = await supabase
+            .from('ops_alert_jobs')
+            .update(updateRow)
+            .eq('id', existing.id)
+            .select('*')
+            .single();
+
+        if (error) {
+            throw error;
+        }
+
+        return {
+            queued: true,
+            dedupeKey: itemDedupeKey,
+            job: data || { ...existing, ...updateRow },
+            channels: nextChannels,
+            summary: true
+        };
+    }
+
+    const row = {
+        alert_type: summaryConfig.summary_alert_type,
+        severity: normalizeSeverity(input.severity, 'warning'),
+        dedupe_key: summaryDedupeKey,
+        title: buildOpsAlertSummaryTitle(summaryConfig, 1),
+        content: buildOpsAlertSummaryContent(summaryConfig, 1, bucket),
+        payload: {
+            summary_type: summaryConfig.summary_alert_type,
+            source_alert_type: alertType,
+            summary_window_minutes: summaryConfig.summary_window_minutes,
+            summary_max_items: summaryConfig.summary_max_items,
+            window_start_at: bucket.start_at,
+            window_end_at: bucket.end_at,
+            item_count: 1,
+            items: [newItem],
+            entry_path: normalizeText(input.payload?.entry_path)
+        },
+        channels,
+        remaining_channels: channels,
+        status: 'pending',
+        attempt_count: 0,
+        max_attempts: normalizeNumber(
+            input.maxAttempts,
+            runtime.config?.max_attempts || DEFAULT_OPS_ALERTS_CONFIG.max_attempts,
+            1,
+            20
+        ),
+        next_retry_at: bucket.end_at,
+        source: normalizeText(input.source) || 'admin_refund_ops',
+        created_by: normalizeText(input.createdBy) || null,
+        updated_at: nowIso,
+        created_at: nowIso
+    };
+
+    const { data, error } = await supabase
+        .from('ops_alert_jobs')
+        .insert(row)
+        .select('*')
+        .single();
+
+    if (error) {
+        throw error;
+    }
+
+    return {
+        queued: true,
+        dedupeKey: itemDedupeKey,
+        job: data || row,
+        channels,
+        summary: true
+    };
+}
+
 async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
     const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, options.env);
     const alertType = normalizeText(input.alertType || input.alert_type);
@@ -1183,6 +1515,14 @@ async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
 
     if (!alertType || !title || !content) {
         return { queued: false, reason: 'missing_fields' };
+    }
+
+    const summaryResult = await queueOpsAlertSummaryJob(supabase, input, {
+        ...options,
+        runtime
+    });
+    if (summaryResult) {
+        return summaryResult;
     }
 
     const explicitCreatedAt = normalizeText(input.createdAt || input.created_at);
@@ -1293,13 +1633,25 @@ function buildExternalAlertText(job = {}) {
     if (refundOpsText) {
         return refundOpsText;
     }
+    const customerChatSummaryText = buildCustomerChatMessageSummaryAlertText(job);
+    if (customerChatSummaryText) {
+        return customerChatSummaryText;
+    }
     const customerChatText = buildCustomerChatMessageReceivedAlertText(job);
     if (customerChatText) {
         return customerChatText;
     }
+    const shopPurchaseSummaryText = buildShopPurchaseSummaryAlertText(job);
+    if (shopPurchaseSummaryText) {
+        return shopPurchaseSummaryText;
+    }
     const shopPurchaseText = buildShopPurchaseSucceededAlertText(job);
     if (shopPurchaseText) {
         return shopPurchaseText;
+    }
+    const walletRechargeSummaryText = buildWalletRechargeSummaryAlertText(job);
+    if (walletRechargeSummaryText) {
+        return walletRechargeSummaryText;
     }
     const walletRechargeText = buildWalletRechargeSucceededAlertText(job);
     if (walletRechargeText) {
@@ -1476,6 +1828,120 @@ function getChatMessageTypeLabel(value) {
         return '图片消息';
     }
     return '文本消息';
+}
+
+function buildSummaryHeader(job = {}, fallbackTitle = '站外告警汇总') {
+    return `[站外告警汇总][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || fallbackTitle}`;
+}
+
+function getSummaryItems(payload = {}) {
+    return Array.isArray(payload?.items) ? payload.items : [];
+}
+
+function buildCustomerChatMessageSummaryAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'customer_chat_message_summary') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const items = getSummaryItems(payload).slice(0, Math.max(1, normalizeNumber(payload.summary_max_items, 10, 1, 50)));
+    const lines = [buildSummaryHeader(job, '客服消息汇总')];
+
+    if (normalizeText(payload.window_start_at) || normalizeText(payload.window_end_at)) {
+        lines.push(`时间窗口：${formatTimestamp(payload.window_start_at)} - ${formatTimestamp(payload.window_end_at)}`);
+    }
+    if (Number.isFinite(Number(payload.item_count))) {
+        lines.push(`累计消息：${Math.max(0, Math.round(Number(payload.item_count || 0)))} 条`);
+    }
+    items.forEach((item, index) => {
+        const itemPayload = normalizeJsonObject(item?.payload);
+        const sender = normalizeText(itemPayload.sender_label) || '访客';
+        const sentAt = formatTimestamp(itemPayload.created_at || item?.created_at);
+        const preview = normalizeText(itemPayload.content_preview || item?.content) || '[空消息]';
+        lines.push(`${index + 1}. ${sender}${sentAt ? ` · ${sentAt}` : ''}`);
+        if (normalizeText(itemPayload.user_id)) lines.push(`   用户ID：${normalizeText(itemPayload.user_id)}`);
+        if (preview) lines.push(`   内容：${preview}`);
+    });
+    if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
+        lines.push(`其余 ${Number(payload.item_count) - items.length} 条请前往后台查看。`);
+    }
+    if (normalizeText(payload.entry_path)) {
+        lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+    }
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildShopPurchaseSummaryAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'shop_purchase_summary') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const items = getSummaryItems(payload).slice(0, Math.max(1, normalizeNumber(payload.summary_max_items, 10, 1, 50)));
+    const lines = [buildSummaryHeader(job, '购买成功汇总')];
+
+    if (normalizeText(payload.window_start_at) || normalizeText(payload.window_end_at)) {
+        lines.push(`时间窗口：${formatTimestamp(payload.window_start_at)} - ${formatTimestamp(payload.window_end_at)}`);
+    }
+    if (Number.isFinite(Number(payload.item_count))) {
+        lines.push(`累计订单：${Math.max(0, Math.round(Number(payload.item_count || 0)))} 笔`);
+    }
+    items.forEach((item, index) => {
+        const itemPayload = normalizeJsonObject(item?.payload);
+        const buyer = normalizeText(itemPayload.buyer_label) || '未知用户';
+        const productName = normalizeText(itemPayload.product_name) || '商城商品';
+        const amount = formatCurrencyAmount(itemPayload.total_price ?? itemPayload.price_paid);
+        const createdAt = formatTimestamp(itemPayload.created_at || item?.created_at);
+        lines.push(`${index + 1}. ${buyer} · ${productName}`);
+        if (normalizeText(itemPayload.order_id)) lines.push(`   订单号：${normalizeText(itemPayload.order_id)}`);
+        if (amount) lines.push(`   金额：${amount}`);
+        if (createdAt) lines.push(`   时间：${createdAt}`);
+    });
+    if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
+        lines.push(`其余 ${Number(payload.item_count) - items.length} 笔请前往后台查看。`);
+    }
+    if (normalizeText(payload.entry_path)) {
+        lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+    }
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildWalletRechargeSummaryAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'wallet_recharge_summary') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const items = getSummaryItems(payload).slice(0, Math.max(1, normalizeNumber(payload.summary_max_items, 10, 1, 50)));
+    const lines = [buildSummaryHeader(job, '充值成功汇总')];
+
+    if (normalizeText(payload.window_start_at) || normalizeText(payload.window_end_at)) {
+        lines.push(`时间窗口：${formatTimestamp(payload.window_start_at)} - ${formatTimestamp(payload.window_end_at)}`);
+    }
+    if (Number.isFinite(Number(payload.item_count))) {
+        lines.push(`累计充值：${Math.max(0, Math.round(Number(payload.item_count || 0)))} 笔`);
+    }
+    items.forEach((item, index) => {
+        const itemPayload = normalizeJsonObject(item?.payload);
+        const buyer = normalizeText(itemPayload.buyer_label) || '未知用户';
+        const packageName = normalizeText(itemPayload.package_name) || '钱包充值';
+        const amount = formatCurrencyAmount(itemPayload.paid_amount ?? itemPayload.expected_amount);
+        const claimedAt = formatTimestamp(itemPayload.claimed_at || itemPayload.created_at || item?.created_at);
+        lines.push(`${index + 1}. ${buyer} · ${packageName}`);
+        if (normalizeText(itemPayload.payment_order_id)) lines.push(`   充值单号：${normalizeText(itemPayload.payment_order_id)}`);
+        if (amount) lines.push(`   金额：${amount}`);
+        if (claimedAt) lines.push(`   时间：${claimedAt}`);
+    });
+    if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
+        lines.push(`其余 ${Number(payload.item_count) - items.length} 笔请前往后台查看。`);
+    }
+    if (normalizeText(payload.entry_path)) {
+        lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+    }
+
+    return lines.filter(Boolean).join('\n');
 }
 
 function buildCustomerChatMessageReceivedAlertText(job = {}) {

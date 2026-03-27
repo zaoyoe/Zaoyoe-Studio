@@ -15,7 +15,9 @@ const DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG = Object.freeze({
 });
 const COMMERCE_SUCCESS_STATE_TYPES = Object.freeze([
     'shop_purchase_succeeded',
-    'wallet_recharge_succeeded'
+    'shop_purchase_summary',
+    'wallet_recharge_succeeded',
+    'wallet_recharge_summary'
 ]);
 
 function normalizeText(value) {
@@ -199,6 +201,20 @@ function getCommerceTargetId(value = {}) {
     return normalizeText(value.order_id || value.payment_order_id || value.id);
 }
 
+function payloadContainsCommerceTarget(value = {}, targetId = '') {
+    const normalizedTargetId = normalizeText(targetId);
+    if (!normalizedTargetId) {
+        return true;
+    }
+
+    if (getCommerceTargetId(value) === normalizedTargetId) {
+        return true;
+    }
+
+    const items = Array.isArray(value?.items) ? value.items : [];
+    return items.some((item) => getCommerceTargetId(item?.payload || item) === normalizedTargetId);
+}
+
 function compareCreatedAtDescending(left = {}, right = {}) {
     const leftTime = Date.parse(normalizeText(left.created_at));
     const rightTime = Date.parse(normalizeText(right.created_at));
@@ -208,9 +224,14 @@ function compareCreatedAtDescending(left = {}, right = {}) {
 function getLatestCommerceStateJob(stateJobs = [], alertType, targetId = '') {
     const normalizedType = normalizeText(alertType).toLowerCase();
     const normalizedTargetId = normalizeText(targetId);
+    const candidateTypes = normalizedType === 'shop_purchase_succeeded'
+        ? ['shop_purchase_succeeded', 'shop_purchase_summary']
+        : normalizedType === 'wallet_recharge_succeeded'
+            ? ['wallet_recharge_succeeded', 'wallet_recharge_summary']
+            : [normalizedType];
     return (stateJobs || [])
-        .filter((job) => normalizeText(job.alert_type).toLowerCase() === normalizedType)
-        .filter((job) => !normalizedTargetId || getCommerceTargetId(job.payload) === normalizedTargetId)
+        .filter((job) => candidateTypes.includes(normalizeText(job.alert_type).toLowerCase()))
+        .filter((job) => !normalizedTargetId || payloadContainsCommerceTarget(job.payload, normalizedTargetId))
         .sort(compareCreatedAtDescending)[0] || null;
 }
 

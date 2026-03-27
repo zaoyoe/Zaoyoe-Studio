@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260327_OPS_ALERT_ROUTING_LONGCARD_1">
+    <link rel="stylesheet" href="admin-studio.css?v=20260327_OPS_ALERT_ROUTING_LONGCARD_2">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -1174,7 +1174,7 @@
                                             </div>
                                         </section>
 
-                                        <section class="ops-alert-strategy-card">
+                                        <section class="ops-alert-strategy-card ops-alert-strategy-card--wide">
                                             <div class="ops-alert-strategy-card__head">
                                                 <div>
                                                     <h4>分类型通道路由</h4>
@@ -2085,9 +2085,30 @@
                                             <input type="number" min="1" max="10080" step="1" class="config-input" id="opsAlertCustomerChatMessageDedupeWindowMinutes" placeholder="720">
                                         </div>
                                     </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用定时汇总通知</div>
+                                            <div class="config-desc">将窗口内多条客服消息合并成一条站外通知，在窗口结束后统一外发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertCustomerChatMessageSummaryEnabledToggle" data-admin-action="settings-toggle-ops-alert-customer-chat-message-summary-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总窗口（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="5" max="1440" step="5" class="config-input" id="opsAlertCustomerChatMessageSummaryWindowMinutes" placeholder="60">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每条通知最多展示条目</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="50" step="1" class="config-input" id="opsAlertCustomerChatMessageSummaryMaxItems" placeholder="10">
+                                        </div>
+                                    </div>
                                     <div class="config-inline-note">
                                         <i class="fas fa-circle-info"></i>
-                                        <span>适合控制客服提醒的节奏。回看窗口决定每次扫描会补看多久内的新消息，去重冷却时间决定同一条消息在多长时间内不会重复外发。</span>
+                                        <span>适合控制客服提醒的节奏。回看窗口决定每次扫描会补看多久内的新消息，去重冷却时间决定同一条消息在多长时间内不会重复外发；启用汇总后，窗口内消息会在结束时合并外发。</span>
                                     </div>
                                 </div>
                             </div>
@@ -2127,9 +2148,30 @@
                                             <input type="number" min="1" max="43200" step="1" class="config-input" id="opsAlertShopPurchaseSuccessDedupeWindowMinutes" placeholder="1440">
                                         </div>
                                     </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用定时汇总通知</div>
+                                            <div class="config-desc">将窗口内多笔购买成功合并成一条站外通知，在窗口结束后统一外发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertShopPurchaseSuccessSummaryEnabledToggle" data-admin-action="settings-toggle-ops-alert-shop-purchase-success-summary-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总窗口（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="5" max="1440" step="5" class="config-input" id="opsAlertShopPurchaseSuccessSummaryWindowMinutes" placeholder="60">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每条通知最多展示条目</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="50" step="1" class="config-input" id="opsAlertShopPurchaseSuccessSummaryMaxItems" placeholder="10">
+                                        </div>
+                                    </div>
                                     <div class="config-inline-note">
                                         <i class="fas fa-circle-info"></i>
-                                        <span>适合控制购买成功通知的外发节奏。冷却时间越长，同一笔订单重复扫描时越不容易再次触发外部提醒。</span>
+                                        <span>适合控制购买成功通知的外发节奏。冷却时间越长，同一笔订单重复扫描时越不容易再次触发外部提醒；启用汇总后，会按窗口合并多笔订单。</span>
                                     </div>
                                 </div>
                             </div>
@@ -2169,9 +2211,30 @@
                                             <input type="number" min="1" max="43200" step="1" class="config-input" id="opsAlertWalletRechargeSuccessDedupeWindowMinutes" placeholder="1440">
                                         </div>
                                     </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用定时汇总通知</div>
+                                            <div class="config-desc">将窗口内多笔充值成功合并成一条站外通知，在窗口结束后统一外发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertWalletRechargeSuccessSummaryEnabledToggle" data-admin-action="settings-toggle-ops-alert-wallet-recharge-success-summary-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总窗口（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="5" max="1440" step="5" class="config-input" id="opsAlertWalletRechargeSuccessSummaryWindowMinutes" placeholder="60">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每条通知最多展示条目</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="50" step="1" class="config-input" id="opsAlertWalletRechargeSuccessSummaryMaxItems" placeholder="10">
+                                        </div>
+                                    </div>
                                     <div class="config-inline-note">
                                         <i class="fas fa-circle-info"></i>
-                                        <span>适合控制充值提醒频率。回看窗口越大，越能覆盖短时抖动；冷却时间越长，同一笔充值被重复补扫时越不会反复通知。</span>
+                                        <span>适合控制充值提醒频率。回看窗口越大，越能覆盖短时抖动；冷却时间越长，同一笔充值被重复补扫时越不会反复通知；启用汇总后，会按窗口合并多笔充值。</span>
                                     </div>
                                 </div>
                             </div>

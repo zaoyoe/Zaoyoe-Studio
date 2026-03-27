@@ -14,7 +14,8 @@ const DEFAULT_CHAT_MESSAGE_MONITOR_CONFIG = Object.freeze({
     max_pages: 10
 });
 const CHAT_MESSAGE_STATE_TYPES = Object.freeze([
-    'customer_chat_message_received'
+    'customer_chat_message_received',
+    'customer_chat_message_summary'
 ]);
 
 function normalizeText(value) {
@@ -242,6 +243,20 @@ function getMessageTargetId(value = {}) {
     return normalizeText(value.message_id || value.id);
 }
 
+function payloadContainsMessageTarget(value = {}, targetId = '') {
+    const normalizedTargetId = normalizeText(targetId);
+    if (!normalizedTargetId) {
+        return true;
+    }
+
+    if (getMessageTargetId(value) === normalizedTargetId) {
+        return true;
+    }
+
+    const items = Array.isArray(value?.items) ? value.items : [];
+    return items.some((item) => getMessageTargetId(item?.payload || item) === normalizedTargetId);
+}
+
 function compareCreatedAtDescending(left = {}, right = {}) {
     const leftTime = Date.parse(normalizeText(left.created_at));
     const rightTime = Date.parse(normalizeText(right.created_at));
@@ -251,9 +266,12 @@ function compareCreatedAtDescending(left = {}, right = {}) {
 function getLatestChatMessageStateJob(stateJobs = [], alertType, targetId = '') {
     const normalizedType = normalizeText(alertType).toLowerCase();
     const normalizedTargetId = normalizeText(targetId);
+    const candidateTypes = normalizedType === 'customer_chat_message_received'
+        ? ['customer_chat_message_received', 'customer_chat_message_summary']
+        : [normalizedType];
     return (stateJobs || [])
-        .filter((job) => normalizeText(job.alert_type).toLowerCase() === normalizedType)
-        .filter((job) => !normalizedTargetId || getMessageTargetId(job.payload) === normalizedTargetId)
+        .filter((job) => candidateTypes.includes(normalizeText(job.alert_type).toLowerCase()))
+        .filter((job) => !normalizedTargetId || payloadContainsMessageTarget(job.payload, normalizedTargetId))
         .sort(compareCreatedAtDescending)[0] || null;
 }
 
