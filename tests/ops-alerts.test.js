@@ -1136,6 +1136,70 @@ test('buildExternalAlertText renders shop order delivery recovery details', () =
     assert.match(text, /处理入口：商城管理 -> 履约任务 \/ 异常订单（示例）/);
 });
 
+test('buildExternalAlertText renders shop order risk anomaly details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'shop_order_risk_anomaly',
+        severity: 'critical',
+        title: '优惠码高频使用异常（FLASH0）',
+        payload: {
+            signal_type: 'discount_code_spike',
+            discount_code: 'FLASH0',
+            order_count: 4,
+            distinct_user_count: 3,
+            zero_total_count: 4,
+            window_minutes: 30,
+            site_labels: ['CN × 3', 'INTL × 1'],
+            sample_products: ['Prompt Pro 年卡 × 2', '卡密周卡 × 2'],
+            sample_users: ['Alpha', 'Beta', 'Gamma'],
+            order_refs: ['order-1', 'order-2'],
+            latest_order_at: '2026-03-27T10:06:00.000Z',
+            entry_path: '商城管理 -> 订单列表 / 优惠券码'
+        }
+    });
+
+    assert.match(text, /商城风控告警/);
+    assert.match(text, /风险类型：优惠码高频使用/);
+    assert.match(text, /优惠码：FLASH0/);
+    assert.match(text, /命中订单：4 笔/);
+    assert.match(text, /涉及账号：3 个/);
+    assert.match(text, /0 价订单：4 笔/);
+    assert.match(text, /统计窗口：30 分钟/);
+    assert.match(text, /热点商品：Prompt Pro 年卡 × 2、卡密周卡 × 2/);
+    assert.match(text, /处理入口：商城管理 -> 订单列表 \/ 优惠券码/);
+});
+
+test('buildExternalAlertText renders shop order risk recovery details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'shop_order_risk_recovered',
+        severity: 'warning',
+        title: '优惠码风险已恢复（FLASH0）',
+        payload: {
+            signal_type: 'discount_code_spike',
+            recovery_summary: '优惠码 FLASH0 在风险窗口内已回落到阈值以下',
+            discount_code: 'FLASH0',
+            previous_order_count: 4,
+            previous_distinct_user_count: 3,
+            previous_zero_total_count: 4,
+            previous_hot_discount_codes: ['FLASH0 × 4'],
+            previous_sample_products: ['Prompt Pro 年卡 × 2', '卡密周卡 × 2'],
+            incident_started_at: '2026-03-27T09:50:00.000Z',
+            incident_recovered_at: '2026-03-27T10:20:00.000Z',
+            incident_duration_minutes: 30,
+            entry_path: '商城管理 -> 订单列表 / 优惠券码'
+        }
+    });
+
+    assert.match(text, /商城风控恢复/);
+    assert.match(text, /风险类型：优惠码高频使用/);
+    assert.match(text, /恢复结论：优惠码 FLASH0 在风险窗口内已回落到阈值以下/);
+    assert.match(text, /优惠码：FLASH0/);
+    assert.match(text, /上次命中订单：4 笔/);
+    assert.match(text, /上次涉及账号：3 个/);
+    assert.match(text, /上次 0 价订单：4 笔/);
+    assert.match(text, /持续时长：30 分钟/);
+    assert.match(text, /处理入口：商城管理 -> 订单列表 \/ 优惠券码/);
+});
+
 test('buildExternalAlertText renders admin login anomaly details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'security_admin_login_anomaly',
