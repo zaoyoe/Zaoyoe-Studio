@@ -1864,6 +1864,12 @@ function switchOpsAlertsView(viewName) {
 
     organizeOpsAlertsModule();
 
+    const activeTab = opsAlertsModule.querySelector('.admin-tab[data-ops-alerts-view].active');
+    const currentViewName = activeTab?.dataset.opsAlertsView || '';
+    if (viewName !== currentViewName && window.confirmOpsAlertStrategyNavigation?.(currentViewName, viewName) === false) {
+        return;
+    }
+
     opsAlertsModule.querySelectorAll('.admin-tab[data-ops-alerts-view]').forEach(tab => {
         const isActive = tab.dataset.opsAlertsView === viewName;
         tab.classList.toggle('active', isActive);
