@@ -20627,7 +20627,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     border: 1px solid rgba(107, 158, 206, 0.14);
     border-radius: 18px;
     background: rgba(10, 19, 36, 0.3);
-    overflow: visible;
+    overflow: hidden;
 }
 
 .ops-alert-strategy-panel__header {
@@ -20665,6 +20665,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: flex;
     flex-direction: column;
     gap: 16px;
+}
+
+.ops-alert-strategy-panel__body[hidden] {
+    display: none !important;
 }
 
 .ops-alert-strategy-card-grid {
@@ -21076,16 +21080,19 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .ops-alert-date-picker__menu {
-    position: absolute;
-    top: calc(100% + 10px);
-    left: 0;
-    z-index: 40;
-    width: min(720px, calc(100vw - 64px));
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    z-index: 1200;
+    width: min(720px, calc(100vw - 48px));
+    max-height: calc(100vh - 48px);
+    overflow: auto;
     padding: 14px;
     border-radius: 20px;
     border: 1px solid rgba(107, 158, 206, 0.18);
     background: linear-gradient(180deg, rgba(11, 20, 37, 0.98), rgba(9, 17, 31, 0.99));
     box-shadow: 0 28px 64px rgba(3, 9, 20, 0.55);
+    transform: translate(-50%, -50%);
 }
 
 .ops-alert-date-picker__menu[hidden] {
@@ -21818,6 +21825,20 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     font-size: 0.95rem;
     text-align: center;
     transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+#module-ops-alerts .ops-alert-strategy-layout .ops-alert-inline-number-input.config-input,
+#module-ops-alerts .ops-alert-strategy-layout .ops-alert-inline-text-input.config-input,
+#module-ops-alerts .ops-alert-strategy-layout .ops-alert-date-picker__time-field .config-input {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+    display: block;
+}
+
+#module-ops-alerts .ops-alert-strategy-layout .ops-alert-inline-text-input.config-input {
+    text-align: left;
+    padding-left: 14px;
 }
 
 .config-input:focus {
