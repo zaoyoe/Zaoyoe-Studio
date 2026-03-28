@@ -2324,6 +2324,22 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
     }
 
+    const settingsEndIndex = adminStudioSource.indexOf('<!-- END SETTINGS MODULE -->');
+    const opsAlertsModuleIndex = adminStudioSource.indexOf('id="module-ops-alerts"');
+    const settingsSecurityViewIndex = adminStudioSource.indexOf('id="settings-view-security"');
+
+    assert.notEqual(settingsEndIndex, -1, 'admin-studio.html should include the end-of-settings marker');
+    assert.notEqual(opsAlertsModuleIndex, -1, 'admin-studio.html should include the standalone ops alerts module');
+    assert.notEqual(settingsSecurityViewIndex, -1, 'admin-studio.html should include settings-view-security');
+    assert.ok(
+        settingsSecurityViewIndex < settingsEndIndex,
+        'settings-view-security should remain inside the settings module'
+    );
+    assert.ok(
+        opsAlertsModuleIndex > settingsEndIndex,
+        'the standalone ops alerts module should render after the settings module closes'
+    );
+
     const delegatedHandlerMarkers = [
         "case 'switch-ops-alerts-view':",
         "case 'settings-toggle-ops-alerts-enabled':",
