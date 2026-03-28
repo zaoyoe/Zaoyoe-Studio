@@ -19491,6 +19491,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     box-shadow: 0 0 12px rgba(107, 158, 206, 0.2);
 }
 
+.ops-alert-config-card[data-config="ops-alerts-overview"]:hover {
+    border-color: var(--card-border);
+    box-shadow: none;
+}
+
 .config-card-header {
     display: flex;
     justify-content: space-between;
@@ -19844,9 +19849,9 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .ops-alert-overview-banner__icon {
-    width: 34px;
-    height: 34px;
-    border-radius: 12px;
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
     border: 1px solid rgba(107, 158, 206, 0.18);
     background: rgba(10, 19, 36, 0.36);
     display: flex;
@@ -19857,7 +19862,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .ops-alert-overview-banner__icon i {
     margin-top: 0;
-    font-size: 0.82rem;
+    font-size: 0.76rem;
     color: #8fb8e5;
 }
 
@@ -19943,6 +19948,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: flex;
     flex-direction: column;
     gap: 14px;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.ops-alert-overview-card:hover {
+    box-shadow: none;
 }
 
 .ops-alert-overview-card__eyebrow {
@@ -20269,14 +20279,29 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     box-shadow: inset 0 0 0 1px rgba(39, 174, 96, 0.08);
 }
 
+.ops-alert-overview-card--success:hover {
+    border-color: rgba(88, 196, 135, 0.62);
+    box-shadow: inset 0 0 0 1px rgba(88, 196, 135, 0.16), 0 0 0 1px rgba(88, 196, 135, 0.08);
+}
+
 .ops-alert-overview-card--warning {
     border-color: rgba(243, 156, 18, 0.32);
     box-shadow: inset 0 0 0 1px rgba(243, 156, 18, 0.08);
 }
 
+.ops-alert-overview-card--warning:hover {
+    border-color: rgba(246, 189, 96, 0.62);
+    box-shadow: inset 0 0 0 1px rgba(246, 189, 96, 0.16), 0 0 0 1px rgba(246, 189, 96, 0.08);
+}
+
 .ops-alert-overview-card--danger {
     border-color: rgba(231, 76, 60, 0.32);
     box-shadow: inset 0 0 0 1px rgba(231, 76, 60, 0.08);
+}
+
+.ops-alert-overview-card--danger:hover {
+    border-color: rgba(240, 98, 108, 0.62);
+    box-shadow: inset 0 0 0 1px rgba(240, 98, 108, 0.16), 0 0 0 1px rgba(240, 98, 108, 0.08);
 }
 
 .ops-alert-summary-orchestration-grid {
