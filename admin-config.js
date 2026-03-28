@@ -1600,6 +1600,47 @@ function formatOpsAlertHourMinute(hour, minute) {
     return `${formatOpsAlertTimeNumber(hour, 0, 23)}:${formatOpsAlertTimeNumber(minute, 0, 59)}`;
 }
 
+function formatOpsAlertHourRangePreview(startHour, endHour, options = {}) {
+    const startLabel = formatOpsAlertHourMinute(startHour, 0);
+    const endLabel = formatOpsAlertHourMinute(endHour, 0);
+    const timezone = String(options.timezone || '').trim();
+
+    if (startLabel === endLabel) {
+        return timezone
+            ? `每天全天生效（${timezone}）`
+            : '每天全天生效';
+    }
+
+    const crossesMidnight = clamp(toWholeNumber(startHour, 0), 0, 23) > clamp(toWholeNumber(endHour, 0), 0, 23);
+    const rangeLabel = crossesMidnight
+        ? `每天 ${startLabel} 开始，次日 ${endLabel} 结束`
+        : `每天 ${startLabel} - ${endLabel}`;
+    return timezone ? `${rangeLabel}（${timezone}）` : rangeLabel;
+}
+
+function formatOpsAlertRelativeDuration(targetDate, referenceDate = new Date()) {
+    const targetTime = targetDate instanceof Date ? targetDate.getTime() : Number(targetDate);
+    const referenceTime = referenceDate instanceof Date ? referenceDate.getTime() : Number(referenceDate);
+    const deltaMs = Math.max(0, targetTime - referenceTime);
+    const totalMinutes = Math.max(0, Math.round(deltaMs / 60000));
+    const totalHours = Math.floor(totalMinutes / 60);
+    const remainingMinutes = totalMinutes % 60;
+    const totalDays = Math.floor(totalHours / 24);
+    const remainingHours = totalHours % 24;
+
+    if (totalDays > 0) {
+        return remainingHours > 0
+            ? `${totalDays} 天 ${remainingHours} 小时`
+            : `${totalDays} 天`;
+    }
+    if (totalHours > 0) {
+        return remainingMinutes > 0
+            ? `${totalHours} 小时 ${remainingMinutes} 分钟`
+            : `${totalHours} 小时`;
+    }
+    return `${Math.max(1, totalMinutes)} 分钟`;
+}
+
 function formatOpsAlertSummaryScheduleDescription(section = {}) {
     const scheduleMode = normalizeOpsAlertSummaryScheduleMode(section.summary_schedule_mode, 'rolling_window');
     if (scheduleMode === 'hourly') {
@@ -4225,6 +4266,7 @@ function buildOpsAlertDateTimeFieldHtml(inputId) {
                         <div class="ops-alert-date-picker__selection">
                             <span>静默到</span>
                             <strong data-picker-selection-for="${escapeConfigHtml(inputId)}">未设置</strong>
+                            <p class="ops-alert-date-picker__range" data-picker-range-for="${escapeConfigHtml(inputId)}">从现在起开始静默，请先选日期，再补全小时和分钟。</p>
                         </div>
                         <div class="ops-alert-date-picker__time-grid">
                             <label class="ops-alert-date-picker__time-field">
@@ -4353,10 +4395,12 @@ function syncOpsAlertDatePickerStateFromInput(inputId, options = {}) {
 
 function getOpsAlertDatePickerDraftDate(inputId) {
     const state = getOpsAlertDatePickerState(inputId);
-    if (!Number.isInteger(state.day)) return null;
+    const hourText = String(state.hour || '').trim();
+    const minuteText = String(state.minute || '').trim();
+    if (!Number.isInteger(state.day) || !/^\d{1,2}$/.test(hourText) || !/^\d{1,2}$/.test(minuteText)) return null;
 
-    const hour = clamp(Number.parseInt(state.hour || '0', 10), 0, 23);
-    const minute = clamp(Number.parseInt(state.minute || '0', 10), 0, 59);
+    const hour = clamp(Number.parseInt(hourText, 10), 0, 23);
+    const minute = clamp(Number.parseInt(minuteText, 10), 0, 59);
     const candidate = new Date(state.year, state.month, state.day, hour, minute, 0, 0);
     const valid = (
         candidate.getFullYear() === state.year
@@ -4381,6 +4425,7 @@ function renderOpsAlertDatePickerSelection(inputId) {
 
     const state = getOpsAlertDatePickerState(inputId);
     const selectionEl = shell.querySelector(`[data-picker-selection-for="${inputId}"]`);
+    const rangeEl = shell.querySelector(`[data-picker-range-for="${inputId}"]`);
     const hourInput = shell.querySelector(`.ops-alert-date-picker__time-input[data-picker-input-id="${inputId}"][data-picker-time-part="hour"]`);
     const minuteInput = shell.querySelector(`.ops-alert-date-picker__time-input[data-picker-input-id="${inputId}"][data-picker-time-part="minute"]`);
     if (hourInput instanceof HTMLInputElement) {
@@ -4395,6 +4440,16 @@ function renderOpsAlertDatePickerSelection(inputId) {
         selectionEl.textContent = draftDate
             ? formatVerifyMonitorDateTime(draftDate.getTime())
             : '未设置';
+    }
+    if (rangeEl) {
+        if (draftDate) {
+            const now = new Date();
+            rangeEl.textContent = draftDate.getTime() > now.getTime()
+                ? `从现在开始静默，至 ${formatVerifyMonitorDateTime(draftDate.getTime())} 结束，约 ${formatOpsAlertRelativeDuration(draftDate, now)}。`
+                : '所选结束时间早于当前时间，保存后会立即视为已到期。';
+        } else {
+            rangeEl.textContent = '从现在起开始静默，请先选日期，再补全小时和分钟。';
+        }
     }
 }
 
@@ -4603,24 +4658,34 @@ function syncAllOpsAlertDateTimeFields(root = document) {
     });
 }
 
-function normalizeOpsAlertInlineNumberInput(inputEl) {
+function sanitizeOpsAlertInlineNumberInput(inputEl) {
     inputEl.value = String(inputEl.value || '').replace(/\D+/g, '').slice(0, 2);
-    if (!inputEl.value) return;
+    return inputEl.value;
+}
+
+function normalizeOpsAlertInlineNumberInput(inputEl, options = {}) {
+    const valueText = sanitizeOpsAlertInlineNumberInput(inputEl);
+    if (!valueText) return '';
 
     const min = Number.parseInt(inputEl.dataset.numberMin || '0', 10);
     const max = Number.parseInt(inputEl.dataset.numberMax || '59', 10);
-    const value = clamp(Number.parseInt(inputEl.value, 10), min, max);
-    inputEl.value = String(value).padStart(2, '0');
+    const value = clamp(Number.parseInt(valueText, 10), min, max);
+    inputEl.value = options.pad === true
+        ? String(value).padStart(2, '0')
+        : String(value);
+    return inputEl.value;
 }
 
-function syncOpsAlertDatePickerTimeInput(inputEl) {
-    normalizeOpsAlertInlineNumberInput(inputEl);
+function syncOpsAlertDatePickerTimeInput(inputEl, options = {}) {
+    const normalizedValue = options.commit === true
+        ? normalizeOpsAlertInlineNumberInput(inputEl, { pad: true })
+        : sanitizeOpsAlertInlineNumberInput(inputEl);
     const inputId = inputEl.dataset.pickerInputId;
     const part = inputEl.dataset.pickerTimePart;
     if (!inputId || !part) return;
 
     const state = getOpsAlertDatePickerState(inputId);
-    state[part] = inputEl.value || '00';
+    state[part] = normalizedValue || '';
     renderOpsAlertDatePickerSelection(inputId);
 }
 
@@ -4846,6 +4911,7 @@ function buildOpsAlertStrategyLayoutHtml() {
                                         <input type="text" class="config-input ops-alert-inline-text-input" id="opsAlertQuietHoursTimezone" placeholder="Asia/Shanghai" autocomplete="off" spellcheck="false">
                                     </label>
                                 </div>
+                                <div class="ops-alert-strategy-range-hint" id="opsAlertQuietHoursRangeHint">每天 23:00 开始，次日 08:00 结束（Asia/Shanghai）</div>
                                 <div class="ops-alert-mute-toggle-field ops-alert-mute-toggle-field--inline">
                                     <div class="ops-alert-mute-toggle-field__copy">
                                         <span>critical 继续通知</span>
@@ -4960,6 +5026,7 @@ function buildOpsAlertStrategyLayoutHtml() {
                                     <input type="text" class="config-input ops-alert-inline-text-input" id="opsAlertWorkHoursTimezone" placeholder="Asia/Shanghai" autocomplete="off" spellcheck="false">
                                 </label>
                             </div>
+                            <div class="ops-alert-strategy-range-hint" id="opsAlertWorkHoursRangeHint">每天 09:00 - 18:00（Asia/Shanghai）</div>
                             <div class="config-inline-note">
                                 <i class="fas fa-circle-info"></i>
                                 <span>这组时间不会替代静默时段或单独静默规则，只控制“仅工作时间通知”的那部分告警。</span>
@@ -4994,11 +5061,11 @@ function ensureOpsAlertStrategyLayout() {
             return;
         }
         if (target.classList.contains('ops-alert-date-picker__time-input')) {
-            syncOpsAlertDatePickerTimeInput(target);
+            syncOpsAlertDatePickerTimeInput(target, { commit: false });
             return;
         }
         if (target.classList.contains('ops-alert-inline-number-input')) {
-            normalizeOpsAlertInlineNumberInput(target);
+            sanitizeOpsAlertInlineNumberInput(target);
         }
     });
     root.addEventListener('blur', (event) => {
@@ -5007,12 +5074,13 @@ function ensureOpsAlertStrategyLayout() {
             return;
         }
         if (target.classList.contains('ops-alert-date-picker__time-input')) {
-            syncOpsAlertDatePickerTimeInput(target);
+            syncOpsAlertDatePickerTimeInput(target, { commit: true });
             return;
         }
         if (target.classList.contains('ops-alert-inline-number-input')) {
             normalizeOpsAlertInlineNumberInput(target);
         }
+        refreshOpsAlertStrategyDraftViews();
     }, true);
     syncAllOpsAlertDateTimeFields(root);
     switchOpsAlertStrategyMuteTab('types');
@@ -5341,6 +5409,14 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
         const input = document.getElementById(id);
         if (input) input.disabled = !quietHours.enabled;
     });
+    const quietHoursRangeHint = document.getElementById('opsAlertQuietHoursRangeHint');
+    if (quietHoursRangeHint) {
+        quietHoursRangeHint.textContent = formatOpsAlertHourRangePreview(
+            quietHours.start_hour,
+            quietHours.end_hour,
+            { timezone: quietHours.timezone }
+        );
+    }
 
     const workHours = normalizedConfig.work_hours || getDefaultOpsAlertConfig().work_hours;
     const workHoursEnabledToggle = document.getElementById('opsAlertWorkHoursEnabledToggle');
@@ -5356,6 +5432,14 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
         const input = document.getElementById(id);
         if (input) input.disabled = !workHours.enabled;
     });
+    const workHoursRangeHint = document.getElementById('opsAlertWorkHoursRangeHint');
+    if (workHoursRangeHint) {
+        workHoursRangeHint.textContent = formatOpsAlertHourRangePreview(
+            workHours.start_hour,
+            workHours.end_hour,
+            { timezone: workHours.timezone }
+        );
+    }
 
     ['types', 'modules'].forEach((scope) => {
         const scopeConfig = normalizedConfig.mute_rules?.[scope] || {};

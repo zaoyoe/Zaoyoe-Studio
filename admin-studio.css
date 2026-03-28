@@ -20371,7 +20371,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: grid;
     grid-template-columns: 56px minmax(220px, 1.2fr) repeat(3, minmax(0, 0.95fr));
     gap: 10px;
-    align-items: center;
+    align-items: start;
     padding: 14px 16px;
     border-radius: 16px;
     border: 1px solid rgba(107, 158, 206, 0.14);
@@ -20379,6 +20379,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .ops-alert-summary-orchestration-row--head {
+    align-items: center;
     padding-top: 10px;
     padding-bottom: 10px;
     color: var(--text-secondary);
@@ -20390,6 +20391,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .ops-alert-summary-orchestration-cell {
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 6px;
     color: var(--text-secondary);
     font-size: 0.83rem;
     line-height: 1.55;
@@ -20397,6 +20402,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .ops-alert-summary-orchestration-cell--select {
     display: flex;
+    align-items: center;
     justify-content: center;
 }
 
@@ -20421,7 +20427,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    margin-bottom: 6px;
+    align-self: flex-start;
     padding: 4px 10px;
     border-radius: 999px;
     border: 1px solid rgba(107, 158, 206, 0.18);
@@ -21246,6 +21252,13 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     line-height: 1.6;
 }
 
+.ops-alert-date-picker__range {
+    margin: 0;
+    color: rgba(219, 232, 248, 0.74);
+    font-size: 0.75rem;
+    line-height: 1.6;
+}
+
 .ops-alert-date-picker__time-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -21267,6 +21280,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .ops-alert-date-picker__time-field .config-input {
     text-align: center;
+}
+
+.ops-alert-strategy-range-hint {
+    color: rgba(219, 232, 248, 0.74);
+    font-size: 0.76rem;
+    line-height: 1.6;
 }
 
 .ops-alert-date-picker__footer {
