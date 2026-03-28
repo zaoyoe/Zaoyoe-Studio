@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260328_SECURITY_PANEL_INTEGRATED_1">
+    <link rel="stylesheet" href="admin-studio.css?v=20260328_SECURITY_PANEL_LAYOUT_POLISH_1">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -4170,7 +4170,7 @@
                             <div class="config-actions admin-studio-inline-style-attr-5">
                                 <span class="config-save-indicator admin-studio-inline-style-attr-6" id="loginSecuritySaveIndicator"
                                    >✓ 已保存</span>
-                                <button class="btn-sm btn-primary" data-admin-action="settings-save-login-security">
+                                <button class="btn-sm btn-primary" type="button" data-admin-action="settings-save-login-security">
                                     <i class="fas fa-save"></i> 保存
                                 </button>
                             </div>
@@ -4180,7 +4180,7 @@
                                     <div class="security-subcard__head">
                                         <h4><i class="fas fa-user-lock"></i> 锁定账户 <span class="locked-count-badge"
                                                 id="lockedCountBadge" hidden>0</span></h4>
-                                        <p>只保留待处理账户，列表区固定高度，避免少数长邮箱把整块区域继续往下撑。</p>
+                                        <p>保留待处理账户列表，点击刷新时会给出明显反馈，避免看起来像没点上。</p>
                                     </div>
                                     <div class="locked-accounts-container">
                                         <div class="locked-accounts-list" id="lockedAccountsList">
@@ -4191,10 +4191,11 @@
                                             <!-- Dynamic locked accounts will be inserted here -->
                                         </div>
                                         <div class="config-actions admin-studio-inline-style-attr-7">
-                                            <button class="btn-sm btn-secondary" data-admin-action="settings-refresh-locked-accounts">
+                                            <span class="config-save-indicator admin-studio-inline-style-attr-6" id="lockedAccountsRefreshIndicator" aria-live="polite">已刷新</span>
+                                            <button class="btn-sm btn-secondary" type="button" id="lockedAccountsRefreshButton" data-admin-action="settings-refresh-locked-accounts">
                                                 <i class="fas fa-sync-alt"></i> 刷新
                                             </button>
-                                            <button class="btn-sm btn-warning admin-studio-inline-style-attr-8" data-admin-action="settings-unlock-all-accounts" id="unlockAllBtn" hidden
+                                            <button class="btn-sm btn-warning admin-studio-inline-style-attr-8" type="button" data-admin-action="settings-unlock-all-accounts" id="unlockAllBtn" hidden
                                                >
                                                 <i class="fas fa-unlock"></i>全部解锁
                                             </button>
@@ -4213,7 +4214,7 @@
                                         <div class="config-actions admin-studio-inline-style-attr-11">
                                             <span class="config-save-indicator admin-studio-inline-style-attr-6" id="ipBlacklistSaveIndicator"
                                                >✓ 已保存</span>
-                                            <button class="btn-sm btn-primary" data-admin-action="settings-save-ip-blacklist">
+                                            <button class="btn-sm btn-primary" type="button" data-admin-action="settings-save-ip-blacklist">
                                                 <i class="fas fa-save"></i> 保存
                                             </button>
                                         </div>
@@ -9066,13 +9067,13 @@
     <script src="admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1"></script>
     <script src="admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_2"></script>
-    <script src="admin-config.js?v=20260328_SECURITY_PANEL_COMPACT_1"></script>
+    <script src="admin-config.js?v=20260328_SECURITY_PANEL_LAYOUT_POLISH_1"></script>
     <script src="admin-homepage.js?v=20260324_HOMEPAGE_RUNTIME_STYLE_2"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
     <script src="js/admin-tickets.js?v=20260324_ADMIN_TICKETS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-access.js"></script>
-    <script src="admin-studio.js?v=20260327_OPS_ALERT_SUMMARY_SCHEDULE_1"></script>
+    <script src="admin-studio.js?v=20260328_SECURITY_PANEL_LAYOUT_POLISH_1"></script>
     <script src="js/admin-shop.js?v=20260327_SHOP_MODAL_MOTION_1"></script>
 </body>
 

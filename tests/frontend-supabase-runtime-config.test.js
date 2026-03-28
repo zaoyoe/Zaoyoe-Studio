@@ -4029,6 +4029,11 @@ test('admin studio security, verify, affiliate, and experiment controls route th
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
 
+    assert.equal(adminStudioSource.includes('id="lockedAccountsRefreshButton"'), true, 'admin-studio.html should expose a dedicated locked accounts refresh button');
+    assert.equal(adminStudioSource.includes('id="lockedAccountsRefreshIndicator"'), true, 'admin-studio.html should expose locked accounts refresh feedback');
+    assert.equal(adminConfigSource.includes('setLockedAccountsRefreshButtonState'), true, 'admin-config.js should manage locked account refresh button state');
+    assert.equal(adminConfigSource.includes('showLockedAccountsRefreshIndicator'), true, 'admin-config.js should surface locked account refresh feedback');
+
     const removedDynamicMarkers = [
         `onclick="unlockAccount('`,
         `onclick="showABResults('`,

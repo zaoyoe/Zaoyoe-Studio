@@ -13317,7 +13317,7 @@ function setupSecurityEventListeners() {
     document.querySelectorAll('[data-settings-view="security"]').forEach(btn => {
         btn.addEventListener('click', () => {
             setTimeout(() => {
-                refreshLockedAccounts();
+                refreshLockedAccounts({ silent: true });
                 refreshAdminAuditMonitor().catch((error) => {
                     console.warn('[Config] Admin audit monitor refresh on security switch failed:', error.message);
                 });
@@ -13365,14 +13365,37 @@ async function saveLoginSecuritySettings() {
     }
 }
 
+function setLockedAccountsRefreshButtonState(isLoading) {
+    const button = document.getElementById('lockedAccountsRefreshButton');
+    if (!button) return;
+
+    if (!button.dataset.defaultLabel) {
+        button.dataset.defaultLabel = button.innerHTML;
+    }
+
+    button.disabled = !!isLoading;
+    button.innerHTML = isLoading
+        ? '<i class="fas fa-sync-alt fa-spin"></i> 刷新中'
+        : button.dataset.defaultLabel;
+}
+
+function showLockedAccountsRefreshIndicator(text = '已刷新', durationMs = 1800) {
+    const indicator = document.getElementById('lockedAccountsRefreshIndicator');
+    if (!indicator) return;
+    showAdminConfigSaveIndicator(indicator, text, durationMs);
+}
+
 // Refresh locked accounts list
-async function refreshLockedAccounts() {
+async function refreshLockedAccounts(options = {}) {
+    const { silent = false } = options;
     const listEl = document.getElementById('lockedAccountsList');
     const badgeEl = document.getElementById('lockedCountBadge');
     const unlockAllBtn = document.getElementById('unlockAllBtn');
     const emptyMsg = document.getElementById('noLockedAccountsMsg');
 
     if (!listEl) return;
+
+    setLockedAccountsRefreshButtonState(true);
 
     try {
         // Query profiles with locked_until > now
@@ -13464,11 +13487,20 @@ async function refreshLockedAccounts() {
             });
         }
 
+        if (!silent) {
+            showLockedAccountsRefreshIndicator(
+                accountsWithEmail.length > 0 ? `已刷新 ${accountsWithEmail.length} 个` : '已刷新',
+                1800
+            );
+        }
+
     } catch (err) {
         console.error('加载锁定账户失败:', err);
         if (typeof showToast === 'function') {
             showToast('加载失败: ' + err.message, 'error');
         }
+    } finally {
+        setLockedAccountsRefreshButtonState(false);
     }
 }
 
@@ -13486,7 +13518,7 @@ async function unlockAccount(userId) {
         }
 
         // Refresh list
-        await refreshLockedAccounts();
+        await refreshLockedAccounts({ silent: true });
 
     } catch (err) {
         console.error('解锁账户失败:', err);
@@ -13512,7 +13544,7 @@ async function unlockAllAccounts() {
         }
 
         // Refresh list
-        await refreshLockedAccounts();
+        await refreshLockedAccounts({ silent: true });
 
     } catch (err) {
         console.error('批量解锁失败:', err);
