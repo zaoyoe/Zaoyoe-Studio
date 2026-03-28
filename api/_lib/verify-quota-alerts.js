@@ -332,10 +332,15 @@ function buildVerifyQuotaLowAlerts(snapshot = {}, rawConfig = {}) {
 async function runVerifyQuotaLowSweep(supabase, options = {}) {
     const env = options.env || process.env;
     const verifyConfig = options.verifyConfig || {};
-    const config = normalizeVerifyQuotaMonitorConfig(
-        options.config || verifyConfig.monitorConfig,
-        env
-    );
+    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
+    const runtimeMonitorConfig = runtime?.config?.verify_quota && typeof runtime.config.verify_quota === 'object'
+        ? runtime.config.verify_quota
+        : {};
+    const config = normalizeVerifyQuotaMonitorConfig({
+        ...(verifyConfig.monitorConfig && typeof verifyConfig.monitorConfig === 'object' ? verifyConfig.monitorConfig : {}),
+        ...(options.config && typeof options.config === 'object' ? options.config : {}),
+        ...runtimeMonitorConfig
+    }, env);
 
     if (!config.enabled) {
         return {
@@ -346,7 +351,6 @@ async function runVerifyQuotaLowSweep(supabase, options = {}) {
         };
     }
 
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
     if (!runtime?.config?.enabled) {
         return {
             skipped: 'ops_alerts_disabled',

@@ -3033,7 +3033,16 @@ async function queueNextVerifyQuotaSweep(delayMs = null) {
     if (verifyQuotaSweepTimer) return;
 
     const verifyConfig = await getVerifyConfig();
-    const monitorConfig = normalizeVerifyQuotaMonitorConfig(verifyConfig?.monitorConfig, process.env);
+    let monitorConfig = normalizeVerifyQuotaMonitorConfig(verifyConfig?.monitorConfig, process.env);
+    try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        monitorConfig = normalizeVerifyQuotaMonitorConfig({
+            ...(verifyConfig?.monitorConfig && typeof verifyConfig.monitorConfig === 'object' ? verifyConfig.monitorConfig : {}),
+            ...(runtime?.config?.verify_quota && typeof runtime.config.verify_quota === 'object' ? runtime.config.verify_quota : {})
+        }, process.env);
+    } catch (error) {
+        console.warn('[VerifyQuotaMonitor] Failed to load runtime config for scheduling, falling back to legacy config:', error.message || error);
+    }
     const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 15 * 60 * 1000));
 
     verifyQuotaSweepTimer = setTimeout(() => {
@@ -3133,7 +3142,16 @@ async function queueNextVerifyQueueSweep(delayMs = null) {
     if (verifyQueueSweepTimer) return;
 
     const verifyConfig = await getVerifyConfig();
-    const monitorConfig = normalizeVerifyQueueMonitorConfig(verifyConfig?.queueMonitorConfig, process.env);
+    let monitorConfig = normalizeVerifyQueueMonitorConfig(verifyConfig?.queueMonitorConfig, process.env);
+    try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        monitorConfig = normalizeVerifyQueueMonitorConfig({
+            ...(verifyConfig?.queueMonitorConfig && typeof verifyConfig.queueMonitorConfig === 'object' ? verifyConfig.queueMonitorConfig : {}),
+            ...(runtime?.config?.verify_queue && typeof runtime.config.verify_queue === 'object' ? runtime.config.verify_queue : {})
+        }, process.env);
+    } catch (error) {
+        console.warn('[VerifyQueueMonitor] Failed to load runtime config for scheduling, falling back to legacy config:', error.message || error);
+    }
     const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
 
     verifyQueueSweepTimer = setTimeout(() => {
@@ -3183,7 +3201,16 @@ async function queueNextVerifyFailureSweep(delayMs = null) {
     if (verifyFailureSweepTimer) return;
 
     const verifyConfig = await getVerifyConfig();
-    const monitorConfig = normalizeVerifyFailureMonitorConfig(verifyConfig?.failureMonitorConfig, process.env);
+    let monitorConfig = normalizeVerifyFailureMonitorConfig(verifyConfig?.failureMonitorConfig, process.env);
+    try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        monitorConfig = normalizeVerifyFailureMonitorConfig({
+            ...(verifyConfig?.failureMonitorConfig && typeof verifyConfig.failureMonitorConfig === 'object' ? verifyConfig.failureMonitorConfig : {}),
+            ...(runtime?.config?.verify_failure && typeof runtime.config.verify_failure === 'object' ? runtime.config.verify_failure : {})
+        }, process.env);
+    } catch (error) {
+        console.warn('[VerifyFailureMonitor] Failed to load runtime config for scheduling, falling back to legacy config:', error.message || error);
+    }
     const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
 
     verifyFailureSweepTimer = setTimeout(() => {

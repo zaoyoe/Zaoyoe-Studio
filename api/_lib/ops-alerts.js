@@ -334,6 +334,42 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         summary_hourly_minute: 0,
         summary_daily_hour: 9,
         summary_daily_minute: 0
+    }),
+    verify_quota: Object.freeze({
+        enabled: true,
+        sweep_interval_ms: 15 * 60 * 1000,
+        request_timeout_ms: 10000,
+        low_balance_threshold: 20,
+        low_remaining_jobs_threshold: 20,
+        critical_balance_threshold: 5,
+        critical_remaining_jobs_threshold: 5,
+        min_queue_buffer_jobs: 5,
+        dedupe_window_minutes: 6 * 60
+    }),
+    verify_queue: Object.freeze({
+        enabled: true,
+        sweep_interval_ms: 10 * 60 * 1000,
+        request_timeout_ms: 10000,
+        recent_activity_lookback_hours: 12,
+        recent_failure_window_minutes: 30,
+        queue_size_threshold: 10,
+        active_job_threshold: 8,
+        oldest_pending_minutes_threshold: 20,
+        recent_failure_threshold: 4,
+        dedupe_window_minutes: 30,
+        page_size: 500,
+        max_pages: 10
+    }),
+    verify_failure: Object.freeze({
+        enabled: true,
+        sweep_interval_ms: 10 * 60 * 1000,
+        recent_window_minutes: 30,
+        min_total_jobs_threshold: 6,
+        failure_rate_threshold: 60,
+        affected_user_threshold: 3,
+        dedupe_window_minutes: 15,
+        page_size: 500,
+        max_pages: 10
     })
 });
 
@@ -893,6 +929,42 @@ function cloneDefaultConfig() {
             summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_hourly_minute,
             summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_daily_hour,
             summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_daily_minute
+        },
+        verify_quota: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.enabled,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.sweep_interval_ms,
+            request_timeout_ms: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.request_timeout_ms,
+            low_balance_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.low_balance_threshold,
+            low_remaining_jobs_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.low_remaining_jobs_threshold,
+            critical_balance_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.critical_balance_threshold,
+            critical_remaining_jobs_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.critical_remaining_jobs_threshold,
+            min_queue_buffer_jobs: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.min_queue_buffer_jobs,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.dedupe_window_minutes
+        },
+        verify_queue: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.enabled,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.sweep_interval_ms,
+            request_timeout_ms: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.request_timeout_ms,
+            recent_activity_lookback_hours: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.recent_activity_lookback_hours,
+            recent_failure_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.recent_failure_window_minutes,
+            queue_size_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.queue_size_threshold,
+            active_job_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.active_job_threshold,
+            oldest_pending_minutes_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.oldest_pending_minutes_threshold,
+            recent_failure_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.recent_failure_threshold,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.dedupe_window_minutes,
+            page_size: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.page_size,
+            max_pages: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.max_pages
+        },
+        verify_failure: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.enabled,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.sweep_interval_ms,
+            recent_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.recent_window_minutes,
+            min_total_jobs_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.min_total_jobs_threshold,
+            failure_rate_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.failure_rate_threshold,
+            affected_user_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.affected_user_threshold,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.dedupe_window_minutes,
+            page_size: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.page_size,
+            max_pages: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.max_pages
         }
     };
 }
@@ -948,6 +1020,15 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         : {};
     const ticketsConfig = source.tickets && typeof source.tickets === 'object'
         ? source.tickets
+        : {};
+    const verifyQuotaConfig = source.verify_quota && typeof source.verify_quota === 'object'
+        ? source.verify_quota
+        : {};
+    const verifyQueueConfig = source.verify_queue && typeof source.verify_queue === 'object'
+        ? source.verify_queue
+        : {};
+    const verifyFailureConfig = source.verify_failure && typeof source.verify_failure === 'object'
+        ? source.verify_failure
         : {};
 
     config.enabled = normalizeBoolean(source.enabled, normalizeBoolean(env?.OPS_ALERTS_ENABLED, config.enabled));
@@ -1535,6 +1616,183 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         config.tickets.summary_daily_minute,
         0,
         59
+    );
+
+    config.verify_quota.enabled = normalizeBoolean(
+        verifyQuotaConfig.enabled,
+        normalizeBoolean(env?.VERIFY_QUOTA_MONITOR_ENABLED, config.verify_quota.enabled)
+    );
+    config.verify_quota.sweep_interval_ms = normalizeNumber(
+        verifyQuotaConfig.sweep_interval_ms,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_SWEEP_INTERVAL_MS, config.verify_quota.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.verify_quota.request_timeout_ms = normalizeNumber(
+        verifyQuotaConfig.request_timeout_ms,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_REQUEST_TIMEOUT_MS, config.verify_quota.request_timeout_ms, 1000, 60 * 1000),
+        1000,
+        60 * 1000
+    );
+    config.verify_quota.low_balance_threshold = normalizeNumber(
+        verifyQuotaConfig.low_balance_threshold,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_LOW_BALANCE_THRESHOLD, config.verify_quota.low_balance_threshold, 0, 1000000),
+        0,
+        1000000
+    );
+    config.verify_quota.low_remaining_jobs_threshold = normalizeNumber(
+        verifyQuotaConfig.low_remaining_jobs_threshold,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_LOW_REMAINING_JOBS_THRESHOLD, config.verify_quota.low_remaining_jobs_threshold, 0, 1000000),
+        0,
+        1000000
+    );
+    config.verify_quota.critical_balance_threshold = normalizeNumber(
+        verifyQuotaConfig.critical_balance_threshold,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_CRITICAL_BALANCE_THRESHOLD, config.verify_quota.critical_balance_threshold, 0, 1000000),
+        0,
+        1000000
+    );
+    config.verify_quota.critical_remaining_jobs_threshold = normalizeNumber(
+        verifyQuotaConfig.critical_remaining_jobs_threshold,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_CRITICAL_REMAINING_JOBS_THRESHOLD, config.verify_quota.critical_remaining_jobs_threshold, 0, 1000000),
+        0,
+        1000000
+    );
+    config.verify_quota.min_queue_buffer_jobs = normalizeNumber(
+        verifyQuotaConfig.min_queue_buffer_jobs,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_MIN_QUEUE_BUFFER_JOBS, config.verify_quota.min_queue_buffer_jobs, 0, 1000000),
+        0,
+        1000000
+    );
+    config.verify_quota.dedupe_window_minutes = normalizeNumber(
+        verifyQuotaConfig.dedupe_window_minutes,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_DEDUPE_WINDOW_MINUTES, config.verify_quota.dedupe_window_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+
+    config.verify_queue.enabled = normalizeBoolean(
+        verifyQueueConfig.enabled,
+        normalizeBoolean(env?.VERIFY_QUEUE_MONITOR_ENABLED, config.verify_queue.enabled)
+    );
+    config.verify_queue.sweep_interval_ms = normalizeNumber(
+        verifyQueueConfig.sweep_interval_ms,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_SWEEP_INTERVAL_MS, config.verify_queue.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.verify_queue.request_timeout_ms = normalizeNumber(
+        verifyQueueConfig.request_timeout_ms,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_REQUEST_TIMEOUT_MS, config.verify_queue.request_timeout_ms, 1000, 60 * 1000),
+        1000,
+        60 * 1000
+    );
+    config.verify_queue.recent_activity_lookback_hours = normalizeNumber(
+        verifyQueueConfig.recent_activity_lookback_hours,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_RECENT_ACTIVITY_LOOKBACK_HOURS, config.verify_queue.recent_activity_lookback_hours, 1, 72),
+        1,
+        72
+    );
+    config.verify_queue.recent_failure_window_minutes = normalizeNumber(
+        verifyQueueConfig.recent_failure_window_minutes,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_RECENT_FAILURE_WINDOW_MINUTES, config.verify_queue.recent_failure_window_minutes, 5, 24 * 60),
+        5,
+        24 * 60
+    );
+    config.verify_queue.queue_size_threshold = normalizeNumber(
+        verifyQueueConfig.queue_size_threshold,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_QUEUE_SIZE_THRESHOLD, config.verify_queue.queue_size_threshold, 1, 100000),
+        1,
+        100000
+    );
+    config.verify_queue.active_job_threshold = normalizeNumber(
+        verifyQueueConfig.active_job_threshold,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_ACTIVE_JOB_THRESHOLD, config.verify_queue.active_job_threshold, 1, 100000),
+        1,
+        100000
+    );
+    config.verify_queue.oldest_pending_minutes_threshold = normalizeNumber(
+        verifyQueueConfig.oldest_pending_minutes_threshold,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_OLDEST_PENDING_MINUTES_THRESHOLD, config.verify_queue.oldest_pending_minutes_threshold, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.verify_queue.recent_failure_threshold = normalizeNumber(
+        verifyQueueConfig.recent_failure_threshold,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_RECENT_FAILURE_THRESHOLD, config.verify_queue.recent_failure_threshold, 1, 100000),
+        1,
+        100000
+    );
+    config.verify_queue.dedupe_window_minutes = normalizeNumber(
+        verifyQueueConfig.dedupe_window_minutes,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_DEDUPE_WINDOW_MINUTES, config.verify_queue.dedupe_window_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.verify_queue.page_size = normalizeNumber(
+        verifyQueueConfig.page_size,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_PAGE_SIZE, config.verify_queue.page_size, 50, 5000),
+        50,
+        5000
+    );
+    config.verify_queue.max_pages = normalizeNumber(
+        verifyQueueConfig.max_pages,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_MAX_PAGES, config.verify_queue.max_pages, 1, 100),
+        1,
+        100
+    );
+
+    config.verify_failure.enabled = normalizeBoolean(
+        verifyFailureConfig.enabled,
+        normalizeBoolean(env?.VERIFY_FAILURE_MONITOR_ENABLED, config.verify_failure.enabled)
+    );
+    config.verify_failure.sweep_interval_ms = normalizeNumber(
+        verifyFailureConfig.sweep_interval_ms,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_SWEEP_INTERVAL_MS, config.verify_failure.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.verify_failure.recent_window_minutes = normalizeNumber(
+        verifyFailureConfig.recent_window_minutes,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_RECENT_WINDOW_MINUTES, config.verify_failure.recent_window_minutes, 5, 24 * 60),
+        5,
+        24 * 60
+    );
+    config.verify_failure.min_total_jobs_threshold = normalizeNumber(
+        verifyFailureConfig.min_total_jobs_threshold,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_MIN_TOTAL_JOBS_THRESHOLD, config.verify_failure.min_total_jobs_threshold, 1, 100000),
+        1,
+        100000
+    );
+    config.verify_failure.failure_rate_threshold = normalizeNumber(
+        verifyFailureConfig.failure_rate_threshold,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_FAILURE_RATE_THRESHOLD, config.verify_failure.failure_rate_threshold, 1, 100),
+        1,
+        100
+    );
+    config.verify_failure.affected_user_threshold = normalizeNumber(
+        verifyFailureConfig.affected_user_threshold,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_AFFECTED_USER_THRESHOLD, config.verify_failure.affected_user_threshold, 1, 100000),
+        1,
+        100000
+    );
+    config.verify_failure.dedupe_window_minutes = normalizeNumber(
+        verifyFailureConfig.dedupe_window_minutes,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_DEDUPE_WINDOW_MINUTES, config.verify_failure.dedupe_window_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.verify_failure.page_size = normalizeNumber(
+        verifyFailureConfig.page_size,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_PAGE_SIZE, config.verify_failure.page_size, 50, 5000),
+        50,
+        5000
+    );
+    config.verify_failure.max_pages = normalizeNumber(
+        verifyFailureConfig.max_pages,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_MAX_PAGES, config.verify_failure.max_pages, 1, 100),
+        1,
+        100
     );
 
     return config;

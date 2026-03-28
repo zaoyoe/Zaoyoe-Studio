@@ -1224,6 +1224,42 @@ function getDefaultOpsAlertConfig() {
             summary_hourly_minute: 0,
             summary_daily_hour: 9,
             summary_daily_minute: 0
+        },
+        verify_quota: {
+            enabled: true,
+            sweep_interval_ms: 15 * 60 * 1000,
+            request_timeout_ms: 10000,
+            low_balance_threshold: 20,
+            low_remaining_jobs_threshold: 20,
+            critical_balance_threshold: 5,
+            critical_remaining_jobs_threshold: 5,
+            min_queue_buffer_jobs: 5,
+            dedupe_window_minutes: 6 * 60
+        },
+        verify_queue: {
+            enabled: true,
+            sweep_interval_ms: 10 * 60 * 1000,
+            request_timeout_ms: 10000,
+            recent_activity_lookback_hours: 12,
+            recent_failure_window_minutes: 30,
+            queue_size_threshold: 10,
+            active_job_threshold: 8,
+            oldest_pending_minutes_threshold: 20,
+            recent_failure_threshold: 4,
+            dedupe_window_minutes: 30,
+            page_size: 500,
+            max_pages: 10
+        },
+        verify_failure: {
+            enabled: true,
+            sweep_interval_ms: 10 * 60 * 1000,
+            recent_window_minutes: 30,
+            min_total_jobs_threshold: 6,
+            failure_rate_threshold: 60,
+            affected_user_threshold: 3,
+            dedupe_window_minutes: 15,
+            page_size: 500,
+            max_pages: 10
         }
     };
 }
@@ -1978,6 +2014,15 @@ function normalizeOpsAlertConfig(raw) {
     const ticketsSource = source.tickets && typeof source.tickets === 'object' && !Array.isArray(source.tickets)
         ? source.tickets
         : {};
+    const verifyQuotaSource = source.verify_quota && typeof source.verify_quota === 'object' && !Array.isArray(source.verify_quota)
+        ? source.verify_quota
+        : {};
+    const verifyQueueSource = source.verify_queue && typeof source.verify_queue === 'object' && !Array.isArray(source.verify_queue)
+        ? source.verify_queue
+        : {};
+    const verifyFailureSource = source.verify_failure && typeof source.verify_failure === 'object' && !Array.isArray(source.verify_failure)
+        ? source.verify_failure
+        : {};
     const routingSource = source.routing && typeof source.routing === 'object' && !Array.isArray(source.routing)
         ? source.routing
         : {};
@@ -2432,6 +2477,150 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(ticketsSource.summary_daily_minute, defaults.tickets.summary_daily_minute),
                 0,
                 59
+            )
+        },
+        verify_quota: {
+            enabled: normalizeConfigBoolean(verifyQuotaSource.enabled, defaults.verify_quota.enabled),
+            sweep_interval_ms: clamp(
+                toWholeNumber(verifyQuotaSource.sweep_interval_ms, defaults.verify_quota.sweep_interval_ms),
+                10000,
+                60 * 60 * 1000
+            ),
+            request_timeout_ms: clamp(
+                toWholeNumber(verifyQuotaSource.request_timeout_ms, defaults.verify_quota.request_timeout_ms),
+                1000,
+                60 * 1000
+            ),
+            low_balance_threshold: clamp(
+                toWholeNumber(verifyQuotaSource.low_balance_threshold, defaults.verify_quota.low_balance_threshold),
+                0,
+                1000000
+            ),
+            low_remaining_jobs_threshold: clamp(
+                toWholeNumber(verifyQuotaSource.low_remaining_jobs_threshold, defaults.verify_quota.low_remaining_jobs_threshold),
+                0,
+                1000000
+            ),
+            critical_balance_threshold: clamp(
+                toWholeNumber(verifyQuotaSource.critical_balance_threshold, defaults.verify_quota.critical_balance_threshold),
+                0,
+                1000000
+            ),
+            critical_remaining_jobs_threshold: clamp(
+                toWholeNumber(verifyQuotaSource.critical_remaining_jobs_threshold, defaults.verify_quota.critical_remaining_jobs_threshold),
+                0,
+                1000000
+            ),
+            min_queue_buffer_jobs: clamp(
+                toWholeNumber(verifyQuotaSource.min_queue_buffer_jobs, defaults.verify_quota.min_queue_buffer_jobs),
+                0,
+                1000000
+            ),
+            dedupe_window_minutes: clamp(
+                toWholeNumber(verifyQuotaSource.dedupe_window_minutes, defaults.verify_quota.dedupe_window_minutes),
+                1,
+                24 * 60
+            )
+        },
+        verify_queue: {
+            enabled: normalizeConfigBoolean(verifyQueueSource.enabled, defaults.verify_queue.enabled),
+            sweep_interval_ms: clamp(
+                toWholeNumber(verifyQueueSource.sweep_interval_ms, defaults.verify_queue.sweep_interval_ms),
+                10000,
+                60 * 60 * 1000
+            ),
+            request_timeout_ms: clamp(
+                toWholeNumber(verifyQueueSource.request_timeout_ms, defaults.verify_queue.request_timeout_ms),
+                1000,
+                60 * 1000
+            ),
+            recent_activity_lookback_hours: clamp(
+                toWholeNumber(verifyQueueSource.recent_activity_lookback_hours, defaults.verify_queue.recent_activity_lookback_hours),
+                1,
+                72
+            ),
+            recent_failure_window_minutes: clamp(
+                toWholeNumber(verifyQueueSource.recent_failure_window_minutes, defaults.verify_queue.recent_failure_window_minutes),
+                5,
+                24 * 60
+            ),
+            queue_size_threshold: clamp(
+                toWholeNumber(verifyQueueSource.queue_size_threshold, defaults.verify_queue.queue_size_threshold),
+                1,
+                100000
+            ),
+            active_job_threshold: clamp(
+                toWholeNumber(verifyQueueSource.active_job_threshold, defaults.verify_queue.active_job_threshold),
+                1,
+                100000
+            ),
+            oldest_pending_minutes_threshold: clamp(
+                toWholeNumber(verifyQueueSource.oldest_pending_minutes_threshold, defaults.verify_queue.oldest_pending_minutes_threshold),
+                1,
+                24 * 60
+            ),
+            recent_failure_threshold: clamp(
+                toWholeNumber(verifyQueueSource.recent_failure_threshold, defaults.verify_queue.recent_failure_threshold),
+                1,
+                100000
+            ),
+            dedupe_window_minutes: clamp(
+                toWholeNumber(verifyQueueSource.dedupe_window_minutes, defaults.verify_queue.dedupe_window_minutes),
+                1,
+                24 * 60
+            ),
+            page_size: clamp(
+                toWholeNumber(verifyQueueSource.page_size, defaults.verify_queue.page_size),
+                50,
+                5000
+            ),
+            max_pages: clamp(
+                toWholeNumber(verifyQueueSource.max_pages, defaults.verify_queue.max_pages),
+                1,
+                100
+            )
+        },
+        verify_failure: {
+            enabled: normalizeConfigBoolean(verifyFailureSource.enabled, defaults.verify_failure.enabled),
+            sweep_interval_ms: clamp(
+                toWholeNumber(verifyFailureSource.sweep_interval_ms, defaults.verify_failure.sweep_interval_ms),
+                10000,
+                60 * 60 * 1000
+            ),
+            recent_window_minutes: clamp(
+                toWholeNumber(verifyFailureSource.recent_window_minutes, defaults.verify_failure.recent_window_minutes),
+                5,
+                24 * 60
+            ),
+            min_total_jobs_threshold: clamp(
+                toWholeNumber(verifyFailureSource.min_total_jobs_threshold, defaults.verify_failure.min_total_jobs_threshold),
+                1,
+                100000
+            ),
+            failure_rate_threshold: clamp(
+                toWholeNumber(verifyFailureSource.failure_rate_threshold, defaults.verify_failure.failure_rate_threshold),
+                1,
+                100
+            ),
+            affected_user_threshold: clamp(
+                toWholeNumber(verifyFailureSource.affected_user_threshold, defaults.verify_failure.affected_user_threshold),
+                1,
+                100000
+            ),
+            dedupe_window_minutes: clamp(
+                toWholeNumber(verifyFailureSource.dedupe_window_minutes, defaults.verify_failure.dedupe_window_minutes),
+                1,
+                24 * 60
+            ),
+            page_size: clamp(
+                toWholeNumber(verifyFailureSource.page_size, defaults.verify_failure.page_size),
+                50,
+                5000
+            ),
+            max_pages: clamp(
+                toWholeNumber(verifyFailureSource.max_pages, defaults.verify_failure.max_pages),
+                1,
+                100
             )
         }
     };
@@ -2953,6 +3142,9 @@ function applyOpsAlertOverview(config) {
     applyOpsAlertShopPurchaseSuccessControls(normalizedConfig);
     applyOpsAlertWalletRechargeSuccessControls(normalizedConfig);
     applyOpsAlertTicketsControls(normalizedConfig);
+    applyOpsAlertVerifyQuotaControls(normalizedConfig);
+    applyOpsAlertVerifyQueueControls(normalizedConfig);
+    applyOpsAlertVerifyFailureControls(normalizedConfig);
     renderOpsAlertSummaryOrchestration(normalizedConfig);
     renderOpsAlertOverviewCards(normalizedConfig);
 }
@@ -3423,6 +3615,9 @@ function applyOpsAlertTicketsControls(config = normalizeOpsAlertConfig(systemCon
 
     [
         'opsAlertTicketsSweepIntervalMinutes',
+        'opsAlertTicketsPendingOverdueMinutes',
+        'opsAlertTicketsCriticalOverdueMinutes',
+        'opsAlertTicketsStateLookbackMinutes',
         'opsAlertTicketsDedupeWindowMinutes'
     ].forEach((id) => {
         const input = document.getElementById(id);
@@ -3435,6 +3630,72 @@ function applyOpsAlertTicketsControls(config = normalizeOpsAlertConfig(systemCon
         summaryDailyHour: 'opsAlertTicketsSummaryDailyHour',
         summaryDailyMinute: 'opsAlertTicketsSummaryDailyMinute',
         summaryMaxItems: 'opsAlertTicketsSummaryMaxItems'
+    });
+}
+
+function applyOpsAlertVerifyQuotaControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const monitorConfig = normalizedConfig.verify_quota || getDefaultOpsAlertConfig().verify_quota;
+    const toggleEl = document.getElementById('opsAlertVerifyQuotaEnabledToggle');
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+
+    [
+        'opsAlertVerifyQuotaLowBalanceThreshold',
+        'opsAlertVerifyQuotaLowRemainingJobsThreshold',
+        'opsAlertVerifyQuotaCriticalBalanceThreshold',
+        'opsAlertVerifyQuotaCriticalRemainingJobsThreshold',
+        'opsAlertVerifyQuotaMinQueueBufferJobs',
+        'opsAlertVerifyQuotaSweepIntervalMinutes',
+        'opsAlertVerifyQuotaDedupeWindowMinutes'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !monitorConfig.enabled;
+    });
+}
+
+function applyOpsAlertVerifyQueueControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const monitorConfig = normalizedConfig.verify_queue || getDefaultOpsAlertConfig().verify_queue;
+    const toggleEl = document.getElementById('opsAlertVerifyQueueEnabledToggle');
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+
+    [
+        'opsAlertVerifyQueueRecentActivityLookbackHours',
+        'opsAlertVerifyQueueRecentFailureWindowMinutes',
+        'opsAlertVerifyQueueSizeThreshold',
+        'opsAlertVerifyQueueActiveJobThreshold',
+        'opsAlertVerifyQueueOldestPendingMinutesThreshold',
+        'opsAlertVerifyQueueRecentFailureThreshold',
+        'opsAlertVerifyQueueSweepIntervalMinutes',
+        'opsAlertVerifyQueueDedupeWindowMinutes'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !monitorConfig.enabled;
+    });
+}
+
+function applyOpsAlertVerifyFailureControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const monitorConfig = normalizedConfig.verify_failure || getDefaultOpsAlertConfig().verify_failure;
+    const toggleEl = document.getElementById('opsAlertVerifyFailureEnabledToggle');
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+
+    [
+        'opsAlertVerifyFailureRecentWindowMinutes',
+        'opsAlertVerifyFailureMinTotalJobsThreshold',
+        'opsAlertVerifyFailureRateThreshold',
+        'opsAlertVerifyFailureAffectedUserThreshold',
+        'opsAlertVerifyFailureSweepIntervalMinutes',
+        'opsAlertVerifyFailureDedupeWindowMinutes'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !monitorConfig.enabled;
     });
 }
 
@@ -3696,6 +3957,18 @@ function renderOpsAlertSettings() {
     if (ticketsSweepIntervalMinutes) {
         ticketsSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.tickets.sweep_interval_ms || 0) / 60000)));
     }
+    const ticketsPendingOverdueMinutes = document.getElementById('opsAlertTicketsPendingOverdueMinutes');
+    if (ticketsPendingOverdueMinutes) {
+        ticketsPendingOverdueMinutes.value = String(config.tickets.pending_overdue_minutes);
+    }
+    const ticketsCriticalOverdueMinutes = document.getElementById('opsAlertTicketsCriticalOverdueMinutes');
+    if (ticketsCriticalOverdueMinutes) {
+        ticketsCriticalOverdueMinutes.value = String(config.tickets.critical_overdue_minutes);
+    }
+    const ticketsStateLookbackMinutes = document.getElementById('opsAlertTicketsStateLookbackMinutes');
+    if (ticketsStateLookbackMinutes) {
+        ticketsStateLookbackMinutes.value = String(config.tickets.state_lookback_minutes);
+    }
 
     const ticketsDedupeWindowMinutes = document.getElementById('opsAlertTicketsDedupeWindowMinutes');
     if (ticketsDedupeWindowMinutes) {
@@ -3724,6 +3997,93 @@ function renderOpsAlertSettings() {
     const ticketsSummaryMaxItems = document.getElementById('opsAlertTicketsSummaryMaxItems');
     if (ticketsSummaryMaxItems) {
         ticketsSummaryMaxItems.value = String(config.tickets.summary_max_items);
+    }
+
+    const verifyQuotaLowBalanceThreshold = document.getElementById('opsAlertVerifyQuotaLowBalanceThreshold');
+    if (verifyQuotaLowBalanceThreshold) {
+        verifyQuotaLowBalanceThreshold.value = String(config.verify_quota.low_balance_threshold);
+    }
+    const verifyQuotaLowRemainingJobsThreshold = document.getElementById('opsAlertVerifyQuotaLowRemainingJobsThreshold');
+    if (verifyQuotaLowRemainingJobsThreshold) {
+        verifyQuotaLowRemainingJobsThreshold.value = String(config.verify_quota.low_remaining_jobs_threshold);
+    }
+    const verifyQuotaCriticalBalanceThreshold = document.getElementById('opsAlertVerifyQuotaCriticalBalanceThreshold');
+    if (verifyQuotaCriticalBalanceThreshold) {
+        verifyQuotaCriticalBalanceThreshold.value = String(config.verify_quota.critical_balance_threshold);
+    }
+    const verifyQuotaCriticalRemainingJobsThreshold = document.getElementById('opsAlertVerifyQuotaCriticalRemainingJobsThreshold');
+    if (verifyQuotaCriticalRemainingJobsThreshold) {
+        verifyQuotaCriticalRemainingJobsThreshold.value = String(config.verify_quota.critical_remaining_jobs_threshold);
+    }
+    const verifyQuotaMinQueueBufferJobs = document.getElementById('opsAlertVerifyQuotaMinQueueBufferJobs');
+    if (verifyQuotaMinQueueBufferJobs) {
+        verifyQuotaMinQueueBufferJobs.value = String(config.verify_quota.min_queue_buffer_jobs);
+    }
+    const verifyQuotaSweepIntervalMinutes = document.getElementById('opsAlertVerifyQuotaSweepIntervalMinutes');
+    if (verifyQuotaSweepIntervalMinutes) {
+        verifyQuotaSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.verify_quota.sweep_interval_ms || 0) / 60000)));
+    }
+    const verifyQuotaDedupeWindowMinutes = document.getElementById('opsAlertVerifyQuotaDedupeWindowMinutes');
+    if (verifyQuotaDedupeWindowMinutes) {
+        verifyQuotaDedupeWindowMinutes.value = String(config.verify_quota.dedupe_window_minutes);
+    }
+
+    const verifyQueueRecentActivityLookbackHours = document.getElementById('opsAlertVerifyQueueRecentActivityLookbackHours');
+    if (verifyQueueRecentActivityLookbackHours) {
+        verifyQueueRecentActivityLookbackHours.value = String(config.verify_queue.recent_activity_lookback_hours);
+    }
+    const verifyQueueRecentFailureWindowMinutes = document.getElementById('opsAlertVerifyQueueRecentFailureWindowMinutes');
+    if (verifyQueueRecentFailureWindowMinutes) {
+        verifyQueueRecentFailureWindowMinutes.value = String(config.verify_queue.recent_failure_window_minutes);
+    }
+    const verifyQueueSizeThreshold = document.getElementById('opsAlertVerifyQueueSizeThreshold');
+    if (verifyQueueSizeThreshold) {
+        verifyQueueSizeThreshold.value = String(config.verify_queue.queue_size_threshold);
+    }
+    const verifyQueueActiveJobThreshold = document.getElementById('opsAlertVerifyQueueActiveJobThreshold');
+    if (verifyQueueActiveJobThreshold) {
+        verifyQueueActiveJobThreshold.value = String(config.verify_queue.active_job_threshold);
+    }
+    const verifyQueueOldestPendingMinutesThreshold = document.getElementById('opsAlertVerifyQueueOldestPendingMinutesThreshold');
+    if (verifyQueueOldestPendingMinutesThreshold) {
+        verifyQueueOldestPendingMinutesThreshold.value = String(config.verify_queue.oldest_pending_minutes_threshold);
+    }
+    const verifyQueueRecentFailureThreshold = document.getElementById('opsAlertVerifyQueueRecentFailureThreshold');
+    if (verifyQueueRecentFailureThreshold) {
+        verifyQueueRecentFailureThreshold.value = String(config.verify_queue.recent_failure_threshold);
+    }
+    const verifyQueueSweepIntervalMinutes = document.getElementById('opsAlertVerifyQueueSweepIntervalMinutes');
+    if (verifyQueueSweepIntervalMinutes) {
+        verifyQueueSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.verify_queue.sweep_interval_ms || 0) / 60000)));
+    }
+    const verifyQueueDedupeWindowMinutes = document.getElementById('opsAlertVerifyQueueDedupeWindowMinutes');
+    if (verifyQueueDedupeWindowMinutes) {
+        verifyQueueDedupeWindowMinutes.value = String(config.verify_queue.dedupe_window_minutes);
+    }
+
+    const verifyFailureRecentWindowMinutes = document.getElementById('opsAlertVerifyFailureRecentWindowMinutes');
+    if (verifyFailureRecentWindowMinutes) {
+        verifyFailureRecentWindowMinutes.value = String(config.verify_failure.recent_window_minutes);
+    }
+    const verifyFailureMinTotalJobsThreshold = document.getElementById('opsAlertVerifyFailureMinTotalJobsThreshold');
+    if (verifyFailureMinTotalJobsThreshold) {
+        verifyFailureMinTotalJobsThreshold.value = String(config.verify_failure.min_total_jobs_threshold);
+    }
+    const verifyFailureRateThreshold = document.getElementById('opsAlertVerifyFailureRateThreshold');
+    if (verifyFailureRateThreshold) {
+        verifyFailureRateThreshold.value = String(config.verify_failure.failure_rate_threshold);
+    }
+    const verifyFailureAffectedUserThreshold = document.getElementById('opsAlertVerifyFailureAffectedUserThreshold');
+    if (verifyFailureAffectedUserThreshold) {
+        verifyFailureAffectedUserThreshold.value = String(config.verify_failure.affected_user_threshold);
+    }
+    const verifyFailureSweepIntervalMinutes = document.getElementById('opsAlertVerifyFailureSweepIntervalMinutes');
+    if (verifyFailureSweepIntervalMinutes) {
+        verifyFailureSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.verify_failure.sweep_interval_ms || 0) / 60000)));
+    }
+    const verifyFailureDedupeWindowMinutes = document.getElementById('opsAlertVerifyFailureDedupeWindowMinutes');
+    if (verifyFailureDedupeWindowMinutes) {
+        verifyFailureDedupeWindowMinutes.value = String(config.verify_failure.dedupe_window_minutes);
     }
 
     applyOpsAlertOverview(config);
@@ -6778,6 +7138,15 @@ function collectOpsAlertConfigFromForm() {
         },
         tickets: {
             ...currentConfig.tickets
+        },
+        verify_quota: {
+            ...currentConfig.verify_quota
+        },
+        verify_queue: {
+            ...currentConfig.verify_queue
+        },
+        verify_failure: {
+            ...currentConfig.verify_failure
         }
     };
 
@@ -7103,6 +7472,18 @@ function collectOpsAlertConfigFromForm() {
             Math.max(1, Math.round(Number(currentConfig.tickets.sweep_interval_ms || 0) / 60000))
         ) * 60 * 1000
     );
+    nextConfig.tickets.pending_overdue_minutes = toWholeNumber(
+        document.getElementById('opsAlertTicketsPendingOverdueMinutes')?.value,
+        currentConfig.tickets.pending_overdue_minutes
+    );
+    nextConfig.tickets.critical_overdue_minutes = toWholeNumber(
+        document.getElementById('opsAlertTicketsCriticalOverdueMinutes')?.value,
+        currentConfig.tickets.critical_overdue_minutes
+    );
+    nextConfig.tickets.state_lookback_minutes = toWholeNumber(
+        document.getElementById('opsAlertTicketsStateLookbackMinutes')?.value,
+        currentConfig.tickets.state_lookback_minutes
+    );
     nextConfig.tickets.dedupe_window_minutes = toWholeNumber(
         document.getElementById('opsAlertTicketsDedupeWindowMinutes')?.value,
         currentConfig.tickets.dedupe_window_minutes
@@ -7134,6 +7515,105 @@ function collectOpsAlertConfigFromForm() {
     nextConfig.tickets.summary_max_items = toWholeNumber(
         document.getElementById('opsAlertTicketsSummaryMaxItems')?.value,
         currentConfig.tickets.summary_max_items
+    );
+    nextConfig.verify_quota.enabled = document.getElementById('opsAlertVerifyQuotaEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.verify_quota.enabled;
+    nextConfig.verify_quota.low_balance_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaLowBalanceThreshold')?.value,
+        currentConfig.verify_quota.low_balance_threshold
+    );
+    nextConfig.verify_quota.low_remaining_jobs_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaLowRemainingJobsThreshold')?.value,
+        currentConfig.verify_quota.low_remaining_jobs_threshold
+    );
+    nextConfig.verify_quota.critical_balance_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaCriticalBalanceThreshold')?.value,
+        currentConfig.verify_quota.critical_balance_threshold
+    );
+    nextConfig.verify_quota.critical_remaining_jobs_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaCriticalRemainingJobsThreshold')?.value,
+        currentConfig.verify_quota.critical_remaining_jobs_threshold
+    );
+    nextConfig.verify_quota.min_queue_buffer_jobs = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaMinQueueBufferJobs')?.value,
+        currentConfig.verify_quota.min_queue_buffer_jobs
+    );
+    nextConfig.verify_quota.sweep_interval_ms = Math.max(
+        10000,
+        toWholeNumber(
+            document.getElementById('opsAlertVerifyQuotaSweepIntervalMinutes')?.value,
+            Math.max(1, Math.round(Number(currentConfig.verify_quota.sweep_interval_ms || 0) / 60000))
+        ) * 60 * 1000
+    );
+    nextConfig.verify_quota.dedupe_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaDedupeWindowMinutes')?.value,
+        currentConfig.verify_quota.dedupe_window_minutes
+    );
+    nextConfig.verify_queue.enabled = document.getElementById('opsAlertVerifyQueueEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.verify_queue.enabled;
+    nextConfig.verify_queue.recent_activity_lookback_hours = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueRecentActivityLookbackHours')?.value,
+        currentConfig.verify_queue.recent_activity_lookback_hours
+    );
+    nextConfig.verify_queue.recent_failure_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueRecentFailureWindowMinutes')?.value,
+        currentConfig.verify_queue.recent_failure_window_minutes
+    );
+    nextConfig.verify_queue.queue_size_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueSizeThreshold')?.value,
+        currentConfig.verify_queue.queue_size_threshold
+    );
+    nextConfig.verify_queue.active_job_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueActiveJobThreshold')?.value,
+        currentConfig.verify_queue.active_job_threshold
+    );
+    nextConfig.verify_queue.oldest_pending_minutes_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueOldestPendingMinutesThreshold')?.value,
+        currentConfig.verify_queue.oldest_pending_minutes_threshold
+    );
+    nextConfig.verify_queue.recent_failure_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueRecentFailureThreshold')?.value,
+        currentConfig.verify_queue.recent_failure_threshold
+    );
+    nextConfig.verify_queue.sweep_interval_ms = Math.max(
+        10000,
+        toWholeNumber(
+            document.getElementById('opsAlertVerifyQueueSweepIntervalMinutes')?.value,
+            Math.max(1, Math.round(Number(currentConfig.verify_queue.sweep_interval_ms || 0) / 60000))
+        ) * 60 * 1000
+    );
+    nextConfig.verify_queue.dedupe_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueDedupeWindowMinutes')?.value,
+        currentConfig.verify_queue.dedupe_window_minutes
+    );
+    nextConfig.verify_failure.enabled = document.getElementById('opsAlertVerifyFailureEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.verify_failure.enabled;
+    nextConfig.verify_failure.recent_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureRecentWindowMinutes')?.value,
+        currentConfig.verify_failure.recent_window_minutes
+    );
+    nextConfig.verify_failure.min_total_jobs_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureMinTotalJobsThreshold')?.value,
+        currentConfig.verify_failure.min_total_jobs_threshold
+    );
+    nextConfig.verify_failure.failure_rate_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureRateThreshold')?.value,
+        currentConfig.verify_failure.failure_rate_threshold
+    );
+    nextConfig.verify_failure.affected_user_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureAffectedUserThreshold')?.value,
+        currentConfig.verify_failure.affected_user_threshold
+    );
+    nextConfig.verify_failure.sweep_interval_ms = Math.max(
+        10000,
+        toWholeNumber(
+            document.getElementById('opsAlertVerifyFailureSweepIntervalMinutes')?.value,
+            Math.max(1, Math.round(Number(currentConfig.verify_failure.sweep_interval_ms || 0) / 60000))
+        ) * 60 * 1000
+    );
+    nextConfig.verify_failure.dedupe_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureDedupeWindowMinutes')?.value,
+        currentConfig.verify_failure.dedupe_window_minutes
     );
 
     return normalizeOpsAlertConfig(nextConfig);
@@ -8858,6 +9338,36 @@ function toggleOpsAlertTicketsWorkHoursOnlyEnabled() {
 
 function handleOpsAlertTicketsSummaryScheduleModeChange() {
     applyOpsAlertTicketsControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertVerifyQuotaEnabled() {
+    const toggleEl = document.getElementById('opsAlertVerifyQuotaEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertVerifyQuotaControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertVerifyQueueEnabled() {
+    const toggleEl = document.getElementById('opsAlertVerifyQueueEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertVerifyQueueControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertVerifyFailureEnabled() {
+    const toggleEl = document.getElementById('opsAlertVerifyFailureEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertVerifyFailureControls(collectOpsAlertConfigFromForm());
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
@@ -11109,6 +11619,9 @@ window.toggleOpsAlertTicketsEnabled = toggleOpsAlertTicketsEnabled;
 window.toggleOpsAlertTicketsSummaryEnabled = toggleOpsAlertTicketsSummaryEnabled;
 window.toggleOpsAlertTicketsWorkHoursOnlyEnabled = toggleOpsAlertTicketsWorkHoursOnlyEnabled;
 window.handleOpsAlertTicketsSummaryScheduleModeChange = handleOpsAlertTicketsSummaryScheduleModeChange;
+window.toggleOpsAlertVerifyQuotaEnabled = toggleOpsAlertVerifyQuotaEnabled;
+window.toggleOpsAlertVerifyQueueEnabled = toggleOpsAlertVerifyQueueEnabled;
+window.toggleOpsAlertVerifyFailureEnabled = toggleOpsAlertVerifyFailureEnabled;
 window.selectOpsAlertUnifiedSummaryTargets = selectOpsAlertUnifiedSummaryTargets;
 window.handleOpsAlertUnifiedSummaryTargetChange = handleOpsAlertUnifiedSummaryTargetChange;
 window.handleOpsAlertUnifiedSummaryDraftChange = handleOpsAlertUnifiedSummaryDraftChange;

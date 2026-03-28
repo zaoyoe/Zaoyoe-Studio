@@ -143,7 +143,7 @@ function createSupabaseStub(state = {}) {
     };
 }
 
-function createOpsRuntime() {
+function createOpsRuntime(configOverrides = {}) {
     return {
         config: normalizeOpsAlertsConfig({
             enabled: true,
@@ -157,7 +157,8 @@ function createOpsRuntime() {
                     enabled: true,
                     minimum_severity: 'warning'
                 }
-            }
+            },
+            ...configOverrides
         }),
         secrets: {
             telegram_bot_token: 'telegram-token',
@@ -363,4 +364,75 @@ test('runVerifyFailureRateSpikeSweep enqueues failure spike alerts with stable d
     assert.equal(second.queued, 0);
     assert.equal(second.deduped, 1);
     assert.equal(state.jobs.length, 1);
+});
+
+test('runVerifyFailureRateSpikeSweep prefers ops alert runtime failure config over legacy verify settings config', async () => {
+    const state = {
+        jobs: [],
+        verificationLogs: [
+            {
+                id: 'failed-1',
+                status: 'failed',
+                user_id: 'user-1',
+                verification_id: 'job-1',
+                created_at: '2026-03-25T09:40:00.000Z',
+                site: 'cn',
+                message: buildLogMessage({ email: 'member1@example.com', error_message: 'otp_invalid' })
+            },
+            {
+                id: 'failed-2',
+                status: 'failed',
+                user_id: 'user-2',
+                verification_id: 'job-2',
+                created_at: '2026-03-25T09:41:00.000Z',
+                site: 'cn',
+                message: buildLogMessage({ email: 'member2@example.com', error_message: 'otp_invalid' })
+            },
+            {
+                id: 'failed-3',
+                status: 'failed',
+                user_id: 'user-3',
+                verification_id: 'job-3',
+                created_at: '2026-03-25T09:42:00.000Z',
+                site: 'cn',
+                message: buildLogMessage({ email: 'member3@example.com', error_message: 'lock_conflict' })
+            },
+            {
+                id: 'success-1',
+                status: 'success',
+                user_id: 'user-4',
+                verification_id: 'job-4',
+                created_at: '2026-03-25T09:43:00.000Z',
+                site: 'cn',
+                message: buildLogMessage({ email: 'member4@example.com' })
+            }
+        ]
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime({
+        verify_failure: {
+            min_total_jobs_threshold: 4,
+            failure_rate_threshold: 70,
+            affected_user_threshold: 3
+        }
+    });
+
+    const result = await runVerifyFailureRateSpikeSweep(supabase, {
+        runtime,
+        now: '2026-03-25T10:00:00.000Z',
+        verifyConfig: {
+            apiKey: 'verify-api-key',
+            apiBaseUrl: 'https://verify.test',
+            keyName: 'primary-key',
+            failureMonitorConfig: {
+                min_total_jobs_threshold: 10,
+                failure_rate_threshold: 90,
+                affected_user_threshold: 10
+            }
+        }
+    });
+
+    assert.equal(result.spike_count, 1);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].payload.failure_rate, 75);
 });

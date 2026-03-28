@@ -320,10 +320,15 @@ function buildVerifyQueueBacklogAlerts(snapshot = {}, activeLogs = [], failedLog
 async function runVerifyQueueBacklogSweep(supabase, options = {}) {
     const env = options.env || process.env;
     const verifyConfig = options.verifyConfig || {};
-    const config = normalizeVerifyQueueMonitorConfig(
-        options.config || verifyConfig.queueMonitorConfig,
-        env
-    );
+    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
+    const runtimeMonitorConfig = runtime?.config?.verify_queue && typeof runtime.config.verify_queue === 'object'
+        ? runtime.config.verify_queue
+        : {};
+    const config = normalizeVerifyQueueMonitorConfig({
+        ...(verifyConfig.queueMonitorConfig && typeof verifyConfig.queueMonitorConfig === 'object' ? verifyConfig.queueMonitorConfig : {}),
+        ...(options.config && typeof options.config === 'object' ? options.config : {}),
+        ...runtimeMonitorConfig
+    }, env);
 
     if (!config.enabled) {
         return {
@@ -334,7 +339,6 @@ async function runVerifyQueueBacklogSweep(supabase, options = {}) {
         };
     }
 
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
     if (!runtime?.config?.enabled) {
         return {
             skipped: 'ops_alerts_disabled',

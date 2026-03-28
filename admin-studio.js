@@ -517,6 +517,15 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-tickets-summary-enabled':
                 window.toggleOpsAlertTicketsSummaryEnabled?.();
                 break;
+            case 'settings-toggle-ops-alert-verify-quota-enabled':
+                window.toggleOpsAlertVerifyQuotaEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-verify-queue-enabled':
+                window.toggleOpsAlertVerifyQueueEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-verify-failure-enabled':
+                window.toggleOpsAlertVerifyFailureEnabled?.();
+                break;
             case 'settings-select-ops-alert-unified-summary-targets':
                 window.selectOpsAlertUnifiedSummaryTargets?.(actionEl.dataset.opsAlertSummaryTargetPreset);
                 break;
