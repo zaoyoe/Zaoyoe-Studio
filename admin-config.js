@@ -941,6 +941,12 @@ function getDefaultOpsAlertConfig() {
             timezone: 'Asia/Shanghai',
             allow_critical: true
         },
+        work_hours: {
+            enabled: false,
+            start_hour: 9,
+            end_hour: 18,
+            timezone: 'Asia/Shanghai'
+        },
         mute_rules: {
             types: {
                 customer_chat_message: {
@@ -1053,13 +1059,21 @@ function getDefaultOpsAlertConfig() {
             sweep_interval_ms: 15 * 60 * 1000,
             sales_window_days: 7,
             dedupe_window_minutes: 6 * 60,
-            recovery_notification_enabled: true
+            recovery_notification_enabled: true,
+            summary_enabled: false,
+            summary_window_minutes: 60,
+            summary_max_items: 10,
+            summary_schedule_mode: 'rolling_window',
+            summary_hourly_minute: 0,
+            summary_daily_hour: 9,
+            summary_daily_minute: 0
         },
         customer_chat_message: {
             enabled: true,
             sweep_interval_ms: 60 * 1000,
             lookback_minutes: 15,
             dedupe_window_minutes: 12 * 60,
+            work_hours_only_enabled: false,
             summary_enabled: false,
             summary_window_minutes: 60,
             summary_max_items: 10,
@@ -1073,6 +1087,7 @@ function getDefaultOpsAlertConfig() {
             sweep_interval_ms: 2 * 60 * 1000,
             lookback_minutes: 30,
             dedupe_window_minutes: 24 * 60,
+            work_hours_only_enabled: false,
             summary_enabled: false,
             summary_window_minutes: 60,
             summary_max_items: 10,
@@ -1086,6 +1101,7 @@ function getDefaultOpsAlertConfig() {
             sweep_interval_ms: 2 * 60 * 1000,
             lookback_minutes: 30,
             dedupe_window_minutes: 24 * 60,
+            work_hours_only_enabled: false,
             summary_enabled: false,
             summary_window_minutes: 60,
             summary_max_items: 10,
@@ -1452,6 +1468,9 @@ function normalizeOpsAlertConfig(raw) {
     const quietHoursSource = source.quiet_hours && typeof source.quiet_hours === 'object' && !Array.isArray(source.quiet_hours)
         ? source.quiet_hours
         : {};
+    const workHoursSource = source.work_hours && typeof source.work_hours === 'object' && !Array.isArray(source.work_hours)
+        ? source.work_hours
+        : {};
     const muteRulesSource = source.mute_rules && typeof source.mute_rules === 'object' && !Array.isArray(source.mute_rules)
         ? source.mute_rules
         : {};
@@ -1527,6 +1546,12 @@ function normalizeOpsAlertConfig(raw) {
             end_hour: clamp(toWholeNumber(quietHoursSource.end_hour, defaults.quiet_hours.end_hour), 0, 23),
             timezone: String(quietHoursSource.timezone || defaults.quiet_hours.timezone).trim() || defaults.quiet_hours.timezone,
             allow_critical: normalizeConfigBoolean(quietHoursSource.allow_critical, defaults.quiet_hours.allow_critical)
+        },
+        work_hours: {
+            enabled: normalizeConfigBoolean(workHoursSource.enabled, defaults.work_hours.enabled),
+            start_hour: clamp(toWholeNumber(workHoursSource.start_hour, defaults.work_hours.start_hour), 0, 23),
+            end_hour: clamp(toWholeNumber(workHoursSource.end_hour, defaults.work_hours.end_hour), 0, 23),
+            timezone: String(workHoursSource.timezone || defaults.work_hours.timezone).trim() || defaults.work_hours.timezone
         },
         mute_rules: {
             types: {
@@ -1675,6 +1700,39 @@ function normalizeOpsAlertConfig(raw) {
             recovery_notification_enabled: normalizeConfigBoolean(
                 shopInventorySource.recovery_notification_enabled,
                 defaults.shop_inventory.recovery_notification_enabled
+            ),
+            summary_enabled: normalizeConfigBoolean(
+                shopInventorySource.summary_enabled,
+                defaults.shop_inventory.summary_enabled
+            ),
+            summary_window_minutes: clamp(
+                toWholeNumber(shopInventorySource.summary_window_minutes, defaults.shop_inventory.summary_window_minutes),
+                5,
+                24 * 60
+            ),
+            summary_max_items: clamp(
+                toWholeNumber(shopInventorySource.summary_max_items, defaults.shop_inventory.summary_max_items),
+                1,
+                50
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                shopInventorySource.summary_schedule_mode,
+                defaults.shop_inventory.summary_schedule_mode
+            ),
+            summary_hourly_minute: clamp(
+                toWholeNumber(shopInventorySource.summary_hourly_minute, defaults.shop_inventory.summary_hourly_minute),
+                0,
+                59
+            ),
+            summary_daily_hour: clamp(
+                toWholeNumber(shopInventorySource.summary_daily_hour, defaults.shop_inventory.summary_daily_hour),
+                0,
+                23
+            ),
+            summary_daily_minute: clamp(
+                toWholeNumber(shopInventorySource.summary_daily_minute, defaults.shop_inventory.summary_daily_minute),
+                0,
+                59
             )
         },
         customer_chat_message: {
@@ -1693,6 +1751,10 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(customerChatMessageSource.dedupe_window_minutes, defaults.customer_chat_message.dedupe_window_minutes),
                 1,
                 7 * 24 * 60
+            ),
+            work_hours_only_enabled: normalizeConfigBoolean(
+                customerChatMessageSource.work_hours_only_enabled,
+                defaults.customer_chat_message.work_hours_only_enabled
             ),
             summary_enabled: normalizeConfigBoolean(customerChatMessageSource.summary_enabled, defaults.customer_chat_message.summary_enabled),
             summary_window_minutes: clamp(
@@ -1742,6 +1804,10 @@ function normalizeOpsAlertConfig(raw) {
                 1,
                 30 * 24 * 60
             ),
+            work_hours_only_enabled: normalizeConfigBoolean(
+                shopPurchaseSuccessSource.work_hours_only_enabled,
+                defaults.shop_purchase_success.work_hours_only_enabled
+            ),
             summary_enabled: normalizeConfigBoolean(shopPurchaseSuccessSource.summary_enabled, defaults.shop_purchase_success.summary_enabled),
             summary_window_minutes: clamp(
                 toWholeNumber(shopPurchaseSuccessSource.summary_window_minutes, defaults.shop_purchase_success.summary_window_minutes),
@@ -1789,6 +1855,10 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(walletRechargeSuccessSource.dedupe_window_minutes, defaults.wallet_recharge_success.dedupe_window_minutes),
                 1,
                 30 * 24 * 60
+            ),
+            work_hours_only_enabled: normalizeConfigBoolean(
+                walletRechargeSuccessSource.work_hours_only_enabled,
+                defaults.wallet_recharge_success.work_hours_only_enabled
             ),
             summary_enabled: normalizeConfigBoolean(walletRechargeSuccessSource.summary_enabled, defaults.wallet_recharge_success.summary_enabled),
             summary_window_minutes: clamp(
@@ -2538,6 +2608,21 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
         if (input) input.disabled = !quietHours.enabled;
     });
 
+    const workHours = normalizedConfig.work_hours || getDefaultOpsAlertConfig().work_hours;
+    const workHoursEnabledToggle = document.getElementById('opsAlertWorkHoursEnabledToggle');
+    if (workHoursEnabledToggle) {
+        workHoursEnabledToggle.classList.toggle('active', workHours.enabled);
+    }
+
+    [
+        'opsAlertWorkHoursStartHour',
+        'opsAlertWorkHoursEndHour',
+        'opsAlertWorkHoursTimezone'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !workHours.enabled;
+    });
+
     ['types', 'modules'].forEach((scope) => {
         const scopeConfig = normalizedConfig.mute_rules?.[scope] || {};
         getOpsAlertMuteRuleDefinitions(scope).forEach((definition) => {
@@ -2609,6 +2694,11 @@ function applyOpsAlertShopInventoryControls(config = normalizeOpsAlertConfig(sys
         recoveryToggleEl.classList.toggle('active', inventoryConfig.recovery_notification_enabled);
         recoveryToggleEl.classList.toggle('disabled', !inventoryConfig.enabled);
     }
+    const summaryToggleEl = document.getElementById('opsAlertShopInventorySummaryEnabledToggle');
+    if (summaryToggleEl) {
+        summaryToggleEl.classList.toggle('active', inventoryConfig.summary_enabled === true);
+        summaryToggleEl.classList.toggle('disabled', !inventoryConfig.enabled);
+    }
 
     [
         'opsAlertShopInventoryLowStockThreshold',
@@ -2618,6 +2708,14 @@ function applyOpsAlertShopInventoryControls(config = normalizeOpsAlertConfig(sys
     ].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.disabled = !inventoryConfig.enabled;
+    });
+    applyOpsAlertSummaryModeControls(inventoryConfig, {
+        summaryScheduleMode: 'opsAlertShopInventorySummaryScheduleMode',
+        summaryWindowMinutes: 'opsAlertShopInventorySummaryWindowMinutes',
+        summaryHourlyMinute: 'opsAlertShopInventorySummaryHourlyMinute',
+        summaryDailyHour: 'opsAlertShopInventorySummaryDailyHour',
+        summaryDailyMinute: 'opsAlertShopInventorySummaryDailyMinute',
+        summaryMaxItems: 'opsAlertShopInventorySummaryMaxItems'
     });
 }
 
@@ -2667,6 +2765,11 @@ function applyOpsAlertCustomerChatControls(config = normalizeOpsAlertConfig(syst
     if (summaryToggleEl) {
         summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
     }
+    const workHoursOnlyToggleEl = document.getElementById('opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle');
+    if (workHoursOnlyToggleEl) {
+        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
+        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
+    }
 
     [
         'opsAlertCustomerChatMessageSweepIntervalMinutes',
@@ -2697,6 +2800,11 @@ function applyOpsAlertShopPurchaseSuccessControls(config = normalizeOpsAlertConf
     if (summaryToggleEl) {
         summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
     }
+    const workHoursOnlyToggleEl = document.getElementById('opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle');
+    if (workHoursOnlyToggleEl) {
+        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
+        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
+    }
 
     [
         'opsAlertShopPurchaseSuccessSweepIntervalMinutes',
@@ -2726,6 +2834,11 @@ function applyOpsAlertWalletRechargeSuccessControls(config = normalizeOpsAlertCo
     const summaryToggleEl = document.getElementById('opsAlertWalletRechargeSuccessSummaryEnabledToggle');
     if (summaryToggleEl) {
         summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
+    }
+    const workHoursOnlyToggleEl = document.getElementById('opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle');
+    if (workHoursOnlyToggleEl) {
+        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
+        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
     }
 
     [
@@ -2762,6 +2875,21 @@ function renderOpsAlertSettings() {
     const quietHoursTimezone = document.getElementById('opsAlertQuietHoursTimezone');
     if (quietHoursTimezone) {
         quietHoursTimezone.value = config.quiet_hours.timezone;
+    }
+
+    const workHoursStartHour = document.getElementById('opsAlertWorkHoursStartHour');
+    if (workHoursStartHour) {
+        workHoursStartHour.value = String(config.work_hours.start_hour);
+    }
+
+    const workHoursEndHour = document.getElementById('opsAlertWorkHoursEndHour');
+    if (workHoursEndHour) {
+        workHoursEndHour.value = String(config.work_hours.end_hour);
+    }
+
+    const workHoursTimezone = document.getElementById('opsAlertWorkHoursTimezone');
+    if (workHoursTimezone) {
+        workHoursTimezone.value = config.work_hours.timezone;
     }
 
     const telegramChatIds = document.getElementById('opsAlertTelegramChatIds');
@@ -2842,6 +2970,30 @@ function renderOpsAlertSettings() {
     const inventoryDedupeWindowMinutes = document.getElementById('opsAlertShopInventoryDedupeWindowMinutes');
     if (inventoryDedupeWindowMinutes) {
         inventoryDedupeWindowMinutes.value = String(config.shop_inventory.dedupe_window_minutes);
+    }
+    const inventorySummaryWindowMinutes = document.getElementById('opsAlertShopInventorySummaryWindowMinutes');
+    if (inventorySummaryWindowMinutes) {
+        inventorySummaryWindowMinutes.value = String(config.shop_inventory.summary_window_minutes);
+    }
+    const inventorySummaryScheduleMode = document.getElementById('opsAlertShopInventorySummaryScheduleMode');
+    if (inventorySummaryScheduleMode) {
+        inventorySummaryScheduleMode.value = config.shop_inventory.summary_schedule_mode;
+    }
+    const inventorySummaryHourlyMinute = document.getElementById('opsAlertShopInventorySummaryHourlyMinute');
+    if (inventorySummaryHourlyMinute) {
+        inventorySummaryHourlyMinute.value = String(config.shop_inventory.summary_hourly_minute);
+    }
+    const inventorySummaryDailyHour = document.getElementById('opsAlertShopInventorySummaryDailyHour');
+    if (inventorySummaryDailyHour) {
+        inventorySummaryDailyHour.value = String(config.shop_inventory.summary_daily_hour);
+    }
+    const inventorySummaryDailyMinute = document.getElementById('opsAlertShopInventorySummaryDailyMinute');
+    if (inventorySummaryDailyMinute) {
+        inventorySummaryDailyMinute.value = String(config.shop_inventory.summary_daily_minute);
+    }
+    const inventorySummaryMaxItems = document.getElementById('opsAlertShopInventorySummaryMaxItems');
+    if (inventorySummaryMaxItems) {
+        inventorySummaryMaxItems.value = String(config.shop_inventory.summary_max_items);
     }
 
     const customerChatMessageSweepIntervalMinutes = document.getElementById('opsAlertCustomerChatMessageSweepIntervalMinutes');
@@ -6041,6 +6193,27 @@ function collectOpsAlertConfigFromForm() {
     ).trim() || currentConfig.quiet_hours.timezone;
     nextConfig.quiet_hours.allow_critical = document.getElementById('opsAlertQuietHoursAllowCriticalToggle')?.classList.contains('active')
         ?? currentConfig.quiet_hours.allow_critical;
+    nextConfig.work_hours.enabled = document.getElementById('opsAlertWorkHoursEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.work_hours.enabled;
+    nextConfig.work_hours.start_hour = clamp(
+        toWholeNumber(
+            document.getElementById('opsAlertWorkHoursStartHour')?.value,
+            currentConfig.work_hours.start_hour
+        ),
+        0,
+        23
+    );
+    nextConfig.work_hours.end_hour = clamp(
+        toWholeNumber(
+            document.getElementById('opsAlertWorkHoursEndHour')?.value,
+            currentConfig.work_hours.end_hour
+        ),
+        0,
+        23
+    );
+    nextConfig.work_hours.timezone = String(
+        document.getElementById('opsAlertWorkHoursTimezone')?.value ?? currentConfig.work_hours.timezone
+    ).trim() || currentConfig.work_hours.timezone;
     ['types', 'modules'].forEach((scope) => {
         getOpsAlertMuteRuleDefinitions(scope).forEach((definition) => {
             const currentRule = currentConfig.mute_rules?.[scope]?.[definition.key] || {
@@ -6143,6 +6316,32 @@ function collectOpsAlertConfigFromForm() {
     );
     nextConfig.shop_inventory.recovery_notification_enabled = document.getElementById('opsAlertShopInventoryRecoveryNotificationEnabledToggle')?.classList.contains('active')
         ?? currentConfig.shop_inventory.recovery_notification_enabled;
+    nextConfig.shop_inventory.summary_enabled = document.getElementById('opsAlertShopInventorySummaryEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.shop_inventory.summary_enabled;
+    nextConfig.shop_inventory.summary_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertShopInventorySummaryWindowMinutes')?.value,
+        currentConfig.shop_inventory.summary_window_minutes
+    );
+    nextConfig.shop_inventory.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+        document.getElementById('opsAlertShopInventorySummaryScheduleMode')?.value,
+        currentConfig.shop_inventory.summary_schedule_mode
+    );
+    nextConfig.shop_inventory.summary_hourly_minute = toWholeNumber(
+        document.getElementById('opsAlertShopInventorySummaryHourlyMinute')?.value,
+        currentConfig.shop_inventory.summary_hourly_minute
+    );
+    nextConfig.shop_inventory.summary_daily_hour = toWholeNumber(
+        document.getElementById('opsAlertShopInventorySummaryDailyHour')?.value,
+        currentConfig.shop_inventory.summary_daily_hour
+    );
+    nextConfig.shop_inventory.summary_daily_minute = toWholeNumber(
+        document.getElementById('opsAlertShopInventorySummaryDailyMinute')?.value,
+        currentConfig.shop_inventory.summary_daily_minute
+    );
+    nextConfig.shop_inventory.summary_max_items = toWholeNumber(
+        document.getElementById('opsAlertShopInventorySummaryMaxItems')?.value,
+        currentConfig.shop_inventory.summary_max_items
+    );
     nextConfig.customer_chat_message.enabled = document.getElementById('opsAlertCustomerChatMessageEnabledToggle')?.classList.contains('active')
         ?? currentConfig.customer_chat_message.enabled;
     nextConfig.customer_chat_message.sweep_interval_ms = Math.max(
@@ -6160,6 +6359,8 @@ function collectOpsAlertConfigFromForm() {
         document.getElementById('opsAlertCustomerChatMessageDedupeWindowMinutes')?.value,
         currentConfig.customer_chat_message.dedupe_window_minutes
     );
+    nextConfig.customer_chat_message.work_hours_only_enabled = document.getElementById('opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.customer_chat_message.work_hours_only_enabled;
     nextConfig.customer_chat_message.summary_enabled = document.getElementById('opsAlertCustomerChatMessageSummaryEnabledToggle')?.classList.contains('active')
         ?? currentConfig.customer_chat_message.summary_enabled;
     nextConfig.customer_chat_message.summary_window_minutes = toWholeNumber(
@@ -6203,6 +6404,8 @@ function collectOpsAlertConfigFromForm() {
         document.getElementById('opsAlertShopPurchaseSuccessDedupeWindowMinutes')?.value,
         currentConfig.shop_purchase_success.dedupe_window_minutes
     );
+    nextConfig.shop_purchase_success.work_hours_only_enabled = document.getElementById('opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.shop_purchase_success.work_hours_only_enabled;
     nextConfig.shop_purchase_success.summary_enabled = document.getElementById('opsAlertShopPurchaseSuccessSummaryEnabledToggle')?.classList.contains('active')
         ?? currentConfig.shop_purchase_success.summary_enabled;
     nextConfig.shop_purchase_success.summary_window_minutes = toWholeNumber(
@@ -6246,6 +6449,8 @@ function collectOpsAlertConfigFromForm() {
         document.getElementById('opsAlertWalletRechargeSuccessDedupeWindowMinutes')?.value,
         currentConfig.wallet_recharge_success.dedupe_window_minutes
     );
+    nextConfig.wallet_recharge_success.work_hours_only_enabled = document.getElementById('opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.wallet_recharge_success.work_hours_only_enabled;
     nextConfig.wallet_recharge_success.summary_enabled = document.getElementById('opsAlertWalletRechargeSuccessSummaryEnabledToggle')?.classList.contains('active')
         ?? currentConfig.wallet_recharge_success.summary_enabled;
     nextConfig.wallet_recharge_success.summary_window_minutes = toWholeNumber(
@@ -7747,6 +7952,16 @@ function toggleOpsAlertQuietHoursAllowCritical() {
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
+function toggleOpsAlertWorkHoursEnabled() {
+    const toggleEl = document.getElementById('opsAlertWorkHoursEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertStrategyControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
 function toggleOpsAlertTemporaryMuteAllowCritical() {
     const toggleEl = document.getElementById('opsAlertTemporaryMuteAllowCriticalToggle');
     if (!toggleEl) return;
@@ -7809,6 +8024,7 @@ function toggleOpsAlertShopInventoryEnabled() {
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertShopInventoryControls(collectOpsAlertConfigFromForm());
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
@@ -7819,6 +8035,23 @@ function toggleOpsAlertShopInventoryRecoveryNotificationEnabled() {
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertShopInventoryControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertShopInventorySummaryEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertShopInventoryEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertShopInventorySummaryEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertShopInventoryControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function handleOpsAlertShopInventorySummaryScheduleModeChange() {
+    applyOpsAlertShopInventoryControls(collectOpsAlertConfigFromForm());
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
@@ -7835,6 +8068,17 @@ function toggleOpsAlertCustomerChatMessageEnabled() {
 function toggleOpsAlertCustomerChatMessageSummaryEnabled() {
     const monitorToggleEl = document.getElementById('opsAlertCustomerChatMessageEnabledToggle');
     const toggleEl = document.getElementById('opsAlertCustomerChatMessageSummaryEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertCustomerChatControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertCustomerChatMessageEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle');
     if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
 
     toggleEl.classList.toggle('active');
@@ -7869,6 +8113,17 @@ function toggleOpsAlertShopPurchaseSuccessSummaryEnabled() {
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
+function toggleOpsAlertShopPurchaseSuccessWorkHoursOnlyEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertShopPurchaseSuccessEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertShopPurchaseSuccessControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
 function handleOpsAlertShopPurchaseSuccessSummaryScheduleModeChange() {
     applyOpsAlertShopPurchaseSuccessControls(collectOpsAlertConfigFromForm());
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
@@ -7887,6 +8142,17 @@ function toggleOpsAlertWalletRechargeSuccessEnabled() {
 function toggleOpsAlertWalletRechargeSuccessSummaryEnabled() {
     const monitorToggleEl = document.getElementById('opsAlertWalletRechargeSuccessEnabledToggle');
     const toggleEl = document.getElementById('opsAlertWalletRechargeSuccessSummaryEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertWalletRechargeSuccessControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertWalletRechargeSuccessEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle');
     if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
 
     toggleEl.classList.toggle('active');
@@ -10126,17 +10392,23 @@ window.toggleOpsAlertMuteRuleAllowCritical = toggleOpsAlertMuteRuleAllowCritical
 window.clearOpsAlertMuteRule = clearOpsAlertMuteRule;
 window.toggleOpsAlertQuietHoursEnabled = toggleOpsAlertQuietHoursEnabled;
 window.toggleOpsAlertQuietHoursAllowCritical = toggleOpsAlertQuietHoursAllowCritical;
+window.toggleOpsAlertWorkHoursEnabled = toggleOpsAlertWorkHoursEnabled;
 window.toggleOpsAlertShopRiskAutoResponseEnabled = toggleOpsAlertShopRiskAutoResponseEnabled;
 window.toggleOpsAlertShopInventoryEnabled = toggleOpsAlertShopInventoryEnabled;
 window.toggleOpsAlertShopInventoryRecoveryNotificationEnabled = toggleOpsAlertShopInventoryRecoveryNotificationEnabled;
+window.toggleOpsAlertShopInventorySummaryEnabled = toggleOpsAlertShopInventorySummaryEnabled;
+window.handleOpsAlertShopInventorySummaryScheduleModeChange = handleOpsAlertShopInventorySummaryScheduleModeChange;
 window.toggleOpsAlertCustomerChatMessageEnabled = toggleOpsAlertCustomerChatMessageEnabled;
 window.toggleOpsAlertCustomerChatMessageSummaryEnabled = toggleOpsAlertCustomerChatMessageSummaryEnabled;
+window.toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled = toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled;
 window.handleOpsAlertCustomerChatMessageSummaryScheduleModeChange = handleOpsAlertCustomerChatMessageSummaryScheduleModeChange;
 window.toggleOpsAlertShopPurchaseSuccessEnabled = toggleOpsAlertShopPurchaseSuccessEnabled;
 window.toggleOpsAlertShopPurchaseSuccessSummaryEnabled = toggleOpsAlertShopPurchaseSuccessSummaryEnabled;
+window.toggleOpsAlertShopPurchaseSuccessWorkHoursOnlyEnabled = toggleOpsAlertShopPurchaseSuccessWorkHoursOnlyEnabled;
 window.handleOpsAlertShopPurchaseSuccessSummaryScheduleModeChange = handleOpsAlertShopPurchaseSuccessSummaryScheduleModeChange;
 window.toggleOpsAlertWalletRechargeSuccessEnabled = toggleOpsAlertWalletRechargeSuccessEnabled;
 window.toggleOpsAlertWalletRechargeSuccessSummaryEnabled = toggleOpsAlertWalletRechargeSuccessSummaryEnabled;
+window.toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled = toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled;
 window.handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange = handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange;
 window.saveOpsAlertSettings = saveOpsAlertSettings;
 window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;

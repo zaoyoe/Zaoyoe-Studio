@@ -13,10 +13,12 @@ const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
 const SUPPORTED_CHANNELS = Object.freeze(['telegram', 'feishu', 'email']);
 const DEFAULT_QUIET_HOURS_TIMEZONE = 'Asia/Shanghai';
 const DEFAULT_SUMMARY_SCHEDULE_MODE = 'rolling_window';
+const WORK_HOURS_SUMMARY_SCHEDULE_MODE = 'work_hours';
 const SUPPORTED_SUMMARY_SCHEDULE_MODES = Object.freeze([
     DEFAULT_SUMMARY_SCHEDULE_MODE,
     'hourly',
-    'daily'
+    'daily',
+    WORK_HOURS_SUMMARY_SCHEDULE_MODE
 ]);
 const SUPPORTED_ROUTING_KEYS = Object.freeze([
     'customer_chat_message',
@@ -42,6 +44,7 @@ const ALERT_TYPE_ROUTING_MAP = Object.freeze({
     shop_purchase_summary: 'shop_purchase_success',
     wallet_recharge_succeeded: 'wallet_recharge_success',
     wallet_recharge_summary: 'wallet_recharge_success',
+    shop_inventory_summary: 'shop_inventory',
     shop_inventory_low: 'shop_inventory',
     shop_inventory_empty: 'shop_inventory',
     shop_inventory_recovered: 'shop_inventory'
@@ -53,6 +56,7 @@ const ALERT_TYPE_MODULE_MAP = Object.freeze({
     shop_purchase_summary: 'commerce',
     wallet_recharge_succeeded: 'commerce',
     wallet_recharge_summary: 'commerce',
+    shop_inventory_summary: 'inventory',
     shop_inventory_low: 'inventory',
     shop_inventory_empty: 'inventory',
     shop_inventory_recovered: 'inventory',
@@ -103,6 +107,18 @@ const SUMMARY_ALERT_DEFINITIONS = Object.freeze({
         summary_alert_type: 'wallet_recharge_summary',
         default_title: '充值成功汇总',
         unit: '笔充值'
+    }),
+    shop_inventory_low: Object.freeze({
+        config_key: 'shop_inventory',
+        summary_alert_type: 'shop_inventory_summary',
+        default_title: '库存与补货汇总',
+        unit: '条库存告警'
+    }),
+    shop_inventory_empty: Object.freeze({
+        config_key: 'shop_inventory',
+        summary_alert_type: 'shop_inventory_summary',
+        default_title: '库存与补货汇总',
+        unit: '条库存告警'
     })
 });
 const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
@@ -124,6 +140,12 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         end_hour: 8,
         timezone: DEFAULT_QUIET_HOURS_TIMEZONE,
         allow_critical: true
+    }),
+    work_hours: Object.freeze({
+        enabled: false,
+        start_hour: 9,
+        end_hour: 18,
+        timezone: DEFAULT_QUIET_HOURS_TIMEZONE
     }),
     mute_rules: Object.freeze({
         types: Object.freeze({
@@ -236,6 +258,7 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         sweep_interval_ms: 60 * 1000,
         lookback_minutes: 15,
         dedupe_window_minutes: 12 * 60,
+        work_hours_only_enabled: false,
         summary_enabled: false,
         summary_window_minutes: 60,
         summary_max_items: 10,
@@ -249,6 +272,7 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         sweep_interval_ms: 2 * 60 * 1000,
         lookback_minutes: 30,
         dedupe_window_minutes: 24 * 60,
+        work_hours_only_enabled: false,
         summary_enabled: false,
         summary_window_minutes: 60,
         summary_max_items: 10,
@@ -262,6 +286,7 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         sweep_interval_ms: 2 * 60 * 1000,
         lookback_minutes: 30,
         dedupe_window_minutes: 24 * 60,
+        work_hours_only_enabled: false,
         summary_enabled: false,
         summary_window_minutes: 60,
         summary_max_items: 10,
@@ -276,7 +301,14 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         sweep_interval_ms: 15 * 60 * 1000,
         sales_window_days: 7,
         dedupe_window_minutes: 6 * 60,
-        recovery_notification_enabled: true
+        recovery_notification_enabled: true,
+        summary_enabled: false,
+        summary_window_minutes: 60,
+        summary_max_items: 10,
+        summary_schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
+        summary_hourly_minute: 0,
+        summary_daily_hour: 9,
+        summary_daily_minute: 0
     })
 });
 
@@ -400,6 +432,14 @@ function getTimeZoneDateParts(referenceDate, timeZone) {
     };
 }
 
+function getCurrentMinuteInTimeZone(referenceDate, timeZone) {
+    const parts = getTimeZoneDateParts(referenceDate, timeZone);
+    if (!Number.isInteger(parts.hour) || !Number.isInteger(parts.minute)) {
+        return null;
+    }
+    return (parts.hour * 60) + parts.minute;
+}
+
 function getTimeZoneOffsetMs(referenceDate, timeZone) {
     const safeDate = referenceDate instanceof Date ? referenceDate : new Date(referenceDate || Date.now());
     const referenceTimestamp = Number.isFinite(safeDate.getTime()) ? safeDate.getTime() : Date.now();
@@ -459,6 +499,19 @@ function shiftTimeZoneParts(parts = {}, { days = 0, hours = 0, minutes = 0 } = {
         minute: pseudoDate.getUTCMinutes(),
         second: pseudoDate.getUTCSeconds()
     };
+}
+
+function isMinuteWithinWorkWindow(currentMinute, startMinute, endMinute) {
+    if (!Number.isInteger(currentMinute)) {
+        return false;
+    }
+    if (startMinute === endMinute) {
+        return true;
+    }
+    if (startMinute < endMinute) {
+        return currentMinute >= startMinute && currentMinute < endMinute;
+    }
+    return currentMinute >= startMinute || currentMinute < endMinute;
 }
 
 function getRollingOpsAlertSummaryBucket(referenceDate, windowMinutes) {
@@ -527,6 +580,53 @@ function getDailyOpsAlertSummaryBucket(referenceDate, summaryConfig = {}) {
     };
 }
 
+function getWorkHoursSummaryBucket(referenceDate, workHoursConfig = {}) {
+    const timeZone = normalizeTimeZone(workHoursConfig.timezone, DEFAULT_QUIET_HOURS_TIMEZONE);
+    const startHour = Math.round(normalizeNumber(workHoursConfig.start_hour, 9, 0, 23));
+    const endHour = Math.round(normalizeNumber(workHoursConfig.end_hour, 18, 0, 23));
+    const startMinuteOfDay = startHour * 60;
+    const endMinuteOfDay = endHour * 60;
+    const currentParts = getTimeZoneDateParts(referenceDate, timeZone);
+    const currentMinuteOfDay = getCurrentMinuteInTimeZone(referenceDate, timeZone);
+    if (isMinuteWithinWorkWindow(currentMinuteOfDay, startMinuteOfDay, endMinuteOfDay)) {
+        return null;
+    }
+
+    const buildBoundary = (hour, minute = 0, shift = {}) => {
+        const boundaryParts = shiftTimeZoneParts({
+            year: currentParts.year,
+            month: currentParts.month,
+            day: currentParts.day,
+            hour,
+            minute,
+            second: 0
+        }, shift);
+        return getUtcDateFromTimeZoneParts(boundaryParts, timeZone);
+    };
+
+    let startDate;
+    let endDate;
+    if (startMinuteOfDay < endMinuteOfDay) {
+        if (currentMinuteOfDay < startMinuteOfDay) {
+            startDate = buildBoundary(endHour, 0, { days: -1 });
+            endDate = buildBoundary(startHour, 0);
+        } else {
+            startDate = buildBoundary(endHour, 0);
+            endDate = buildBoundary(startHour, 0, { days: 1 });
+        }
+    } else {
+        startDate = buildBoundary(endHour, 0);
+        endDate = buildBoundary(startHour, 0);
+    }
+
+    return {
+        schedule_mode: WORK_HOURS_SUMMARY_SCHEDULE_MODE,
+        window_minutes: Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / 60000)),
+        start_at: startDate.toISOString(),
+        end_at: endDate.toISOString()
+    };
+}
+
 function getOpsAlertSummaryBucket(referenceDate, summaryConfig = {}) {
     const scheduleMode = normalizeSummaryScheduleMode(summaryConfig.summary_schedule_mode, DEFAULT_SUMMARY_SCHEDULE_MODE);
     if (scheduleMode === 'hourly') {
@@ -534,6 +634,9 @@ function getOpsAlertSummaryBucket(referenceDate, summaryConfig = {}) {
     }
     if (scheduleMode === 'daily') {
         return getDailyOpsAlertSummaryBucket(referenceDate, summaryConfig);
+    }
+    if (scheduleMode === WORK_HOURS_SUMMARY_SCHEDULE_MODE) {
+        return getWorkHoursSummaryBucket(referenceDate, summaryConfig.work_hours);
     }
     return getRollingOpsAlertSummaryBucket(referenceDate, summaryConfig.summary_window_minutes);
 }
@@ -550,6 +653,7 @@ function buildOpsAlertSummaryItem({ dedupeKey = '', payload = {}, title = '', co
     return {
         dedupe_key: normalizeText(dedupeKey),
         target_id: normalizeText(payload?.target_id || payload?.order_id || payload?.payment_order_id || payload?.message_id || payload?.id),
+        alert_type: normalizeText(payload?.summary_source_alert_type || ''),
         title: normalizeText(title),
         content: normalizeText(content),
         created_at: normalizeText(createdAt) || new Date().toISOString(),
@@ -577,6 +681,12 @@ function cloneDefaultConfig() {
             end_hour: DEFAULT_OPS_ALERTS_CONFIG.quiet_hours.end_hour,
             timezone: DEFAULT_OPS_ALERTS_CONFIG.quiet_hours.timezone,
             allow_critical: DEFAULT_OPS_ALERTS_CONFIG.quiet_hours.allow_critical
+        },
+        work_hours: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.work_hours.enabled,
+            start_hour: DEFAULT_OPS_ALERTS_CONFIG.work_hours.start_hour,
+            end_hour: DEFAULT_OPS_ALERTS_CONFIG.work_hours.end_hour,
+            timezone: DEFAULT_OPS_ALERTS_CONFIG.work_hours.timezone
         },
         mute_rules: {
             types: {
@@ -689,6 +799,7 @@ function cloneDefaultConfig() {
             sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.sweep_interval_ms,
             lookback_minutes: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.lookback_minutes,
             dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.dedupe_window_minutes,
+            work_hours_only_enabled: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.work_hours_only_enabled,
             summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_enabled,
             summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_window_minutes,
             summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_max_items,
@@ -702,6 +813,7 @@ function cloneDefaultConfig() {
             sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.sweep_interval_ms,
             lookback_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.lookback_minutes,
             dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.dedupe_window_minutes,
+            work_hours_only_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.work_hours_only_enabled,
             summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.summary_enabled,
             summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.summary_window_minutes,
             summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.summary_max_items,
@@ -715,6 +827,7 @@ function cloneDefaultConfig() {
             sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.sweep_interval_ms,
             lookback_minutes: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.lookback_minutes,
             dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.dedupe_window_minutes,
+            work_hours_only_enabled: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.work_hours_only_enabled,
             summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.summary_enabled,
             summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.summary_window_minutes,
             summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.summary_max_items,
@@ -729,7 +842,14 @@ function cloneDefaultConfig() {
             sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.sweep_interval_ms,
             sales_window_days: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.sales_window_days,
             dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.dedupe_window_minutes,
-            recovery_notification_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.recovery_notification_enabled
+            recovery_notification_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.recovery_notification_enabled,
+            summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_enabled,
+            summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_window_minutes,
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_max_items,
+            summary_schedule_mode: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_schedule_mode,
+            summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_hourly_minute,
+            summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_daily_hour,
+            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_daily_minute
         }
     };
 }
@@ -755,6 +875,9 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         : {};
     const quietHoursConfig = source.quiet_hours && typeof source.quiet_hours === 'object'
         ? source.quiet_hours
+        : {};
+    const workHoursConfig = source.work_hours && typeof source.work_hours === 'object'
+        ? source.work_hours
         : {};
     const muteRulesConfig = source.mute_rules && typeof source.mute_rules === 'object'
         ? source.mute_rules
@@ -847,6 +970,20 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         quietHoursConfig.allow_critical,
         config.quiet_hours.allow_critical
     );
+    config.work_hours.enabled = normalizeBoolean(workHoursConfig.enabled, config.work_hours.enabled);
+    config.work_hours.start_hour = normalizeNumber(
+        workHoursConfig.start_hour,
+        config.work_hours.start_hour,
+        0,
+        23
+    );
+    config.work_hours.end_hour = normalizeNumber(
+        workHoursConfig.end_hour,
+        config.work_hours.end_hour,
+        0,
+        23
+    );
+    config.work_hours.timezone = normalizeTimeZone(workHoursConfig.timezone, config.work_hours.timezone);
     for (const routingKey of SUPPORTED_ROUTING_KEYS) {
         const muteRuleSource = typeMuteRulesConfig[routingKey] && typeof typeMuteRulesConfig[routingKey] === 'object'
             ? typeMuteRulesConfig[routingKey]
@@ -998,6 +1135,10 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         1,
         7 * 24 * 60
     );
+    config.customer_chat_message.work_hours_only_enabled = normalizeBoolean(
+        customerChatMessageConfig.work_hours_only_enabled,
+        config.customer_chat_message.work_hours_only_enabled
+    );
     config.customer_chat_message.summary_enabled = normalizeBoolean(
         customerChatMessageConfig.summary_enabled,
         config.customer_chat_message.summary_enabled
@@ -1059,6 +1200,10 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         1,
         30 * 24 * 60
     );
+    config.shop_purchase_success.work_hours_only_enabled = normalizeBoolean(
+        shopPurchaseSuccessConfig.work_hours_only_enabled,
+        config.shop_purchase_success.work_hours_only_enabled
+    );
     config.shop_purchase_success.summary_enabled = normalizeBoolean(
         shopPurchaseSuccessConfig.summary_enabled,
         config.shop_purchase_success.summary_enabled
@@ -1119,6 +1264,10 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         normalizeNumber(env?.COMMERCE_SUCCESS_MONITOR_DEDUPE_WINDOW_MINUTES, config.wallet_recharge_success.dedupe_window_minutes, 1, 30 * 24 * 60),
         1,
         30 * 24 * 60
+    );
+    config.wallet_recharge_success.work_hours_only_enabled = normalizeBoolean(
+        walletRechargeSuccessConfig.work_hours_only_enabled,
+        config.wallet_recharge_success.work_hours_only_enabled
     );
     config.wallet_recharge_success.summary_enabled = normalizeBoolean(
         walletRechargeSuccessConfig.summary_enabled,
@@ -1213,6 +1362,44 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
             env?.SHOP_INVENTORY_MONITOR_RECOVERY_NOTIFICATION_ENABLED,
             config.shop_inventory.recovery_notification_enabled
         )
+    );
+    config.shop_inventory.summary_enabled = normalizeBoolean(
+        shopInventoryConfig.summary_enabled,
+        config.shop_inventory.summary_enabled
+    );
+    config.shop_inventory.summary_window_minutes = normalizeNumber(
+        shopInventoryConfig.summary_window_minutes,
+        config.shop_inventory.summary_window_minutes,
+        5,
+        24 * 60
+    );
+    config.shop_inventory.summary_max_items = normalizeNumber(
+        shopInventoryConfig.summary_max_items,
+        config.shop_inventory.summary_max_items,
+        1,
+        50
+    );
+    config.shop_inventory.summary_schedule_mode = normalizeSummaryScheduleMode(
+        shopInventoryConfig.summary_schedule_mode,
+        config.shop_inventory.summary_schedule_mode
+    );
+    config.shop_inventory.summary_hourly_minute = normalizeNumber(
+        shopInventoryConfig.summary_hourly_minute,
+        config.shop_inventory.summary_hourly_minute,
+        0,
+        59
+    );
+    config.shop_inventory.summary_daily_hour = normalizeNumber(
+        shopInventoryConfig.summary_daily_hour,
+        config.shop_inventory.summary_daily_hour,
+        0,
+        23
+    );
+    config.shop_inventory.summary_daily_minute = normalizeNumber(
+        shopInventoryConfig.summary_daily_minute,
+        config.shop_inventory.summary_daily_minute,
+        0,
+        59
     );
 
     return config;
@@ -1467,7 +1654,7 @@ function resolveEnabledChannels(runtime = {}, alertSeverity = 'warning', alertTy
         return channels;
     }
 
-    if (isAlertSuppressedByQuietHours(config, alertSeverity, options)) {
+    if (!options.ignoreQuietHours && isAlertSuppressedByQuietHours(config, alertSeverity, options)) {
         return channels;
     }
 
@@ -1558,20 +1745,46 @@ async function hasRecentOpsAlertJob(supabase, {
     return Array.isArray(data) && data.length > 0;
 }
 
-function getOpsAlertSummaryConfig(runtimeConfig = {}, alertType = '') {
+function getNormalizedOpsAlertWorkHoursConfig(runtimeConfig = {}) {
+    const workHours = normalizeJsonObject(runtimeConfig.work_hours);
+    return {
+        enabled: normalizeBoolean(workHours.enabled, DEFAULT_OPS_ALERTS_CONFIG.work_hours.enabled),
+        start_hour: Math.round(normalizeNumber(workHours.start_hour, DEFAULT_OPS_ALERTS_CONFIG.work_hours.start_hour, 0, 23)),
+        end_hour: Math.round(normalizeNumber(workHours.end_hour, DEFAULT_OPS_ALERTS_CONFIG.work_hours.end_hour, 0, 23)),
+        timezone: normalizeTimeZone(workHours.timezone, DEFAULT_OPS_ALERTS_CONFIG.work_hours.timezone)
+    };
+}
+
+function isWithinOpsAlertWorkHours(runtimeConfig = {}, referenceDate = new Date()) {
+    const workHours = getNormalizedOpsAlertWorkHoursConfig(runtimeConfig);
+    if (!workHours.enabled) {
+        return true;
+    }
+
+    const currentMinute = getCurrentMinuteInTimeZone(referenceDate, workHours.timezone);
+    return isMinuteWithinWorkWindow(
+        currentMinute,
+        workHours.start_hour * 60,
+        workHours.end_hour * 60
+    );
+}
+
+function getOpsAlertSummaryBaseConfig(runtimeConfig = {}, alertType = '') {
     const definition = getOpsAlertSummaryDefinition(alertType);
     if (!definition) {
         return null;
     }
 
     const section = runtimeConfig?.[definition.config_key];
-    if (!section || section.summary_enabled !== true) {
+    if (!section) {
         return null;
     }
 
     const defaultSection = DEFAULT_OPS_ALERTS_CONFIG[definition.config_key] || {};
     return {
         ...definition,
+        summary_enabled: section.summary_enabled === true,
+        work_hours_only_enabled: normalizeBoolean(section.work_hours_only_enabled, defaultSection.work_hours_only_enabled === true),
         summary_window_minutes: Math.max(5, normalizeNumber(section.summary_window_minutes, 60, 5, 24 * 60)),
         summary_max_items: Math.max(1, normalizeNumber(section.summary_max_items, 10, 1, 50)),
         summary_schedule_mode: normalizeSummaryScheduleMode(
@@ -1596,8 +1809,14 @@ function getOpsAlertSummaryConfig(runtimeConfig = {}, alertType = '') {
             0,
             59
         )),
-        summary_timezone: normalizeTimeZone(runtimeConfig?.quiet_hours?.timezone, DEFAULT_QUIET_HOURS_TIMEZONE)
+        summary_timezone: normalizeTimeZone(runtimeConfig?.quiet_hours?.timezone, DEFAULT_QUIET_HOURS_TIMEZONE),
+        work_hours: getNormalizedOpsAlertWorkHoursConfig(runtimeConfig)
     };
+}
+
+function getOpsAlertSummaryConfig(runtimeConfig = {}, alertType = '') {
+    const summaryConfig = getOpsAlertSummaryBaseConfig(runtimeConfig, alertType);
+    return summaryConfig?.summary_enabled === true ? summaryConfig : null;
 }
 
 function buildOpsAlertSummaryTitle(summaryConfig, itemCount) {
@@ -1605,6 +1824,10 @@ function buildOpsAlertSummaryTitle(summaryConfig, itemCount) {
 }
 
 function getOpsAlertSummaryScheduleLabel(summaryConfig = {}) {
+    if (summaryConfig.summary_schedule_mode === WORK_HOURS_SUMMARY_SCHEDULE_MODE) {
+        const workHours = summaryConfig.work_hours || getNormalizedOpsAlertWorkHoursConfig();
+        return `工作时段 ${String(workHours.start_hour || 0).padStart(2, '0')}:00-${String(workHours.end_hour || 0).padStart(2, '0')}:00（${normalizeTimeZone(workHours.timezone, DEFAULT_QUIET_HOURS_TIMEZONE)}）`;
+    }
     if (summaryConfig.summary_schedule_mode === 'hourly') {
         return `每小时 ${String(summaryConfig.summary_hourly_minute || 0).padStart(2, '0')} 分`;
     }
@@ -1615,6 +1838,9 @@ function getOpsAlertSummaryScheduleLabel(summaryConfig = {}) {
 }
 
 function buildOpsAlertSummaryContent(summaryConfig, itemCount, bucket) {
+    if (summaryConfig.summary_schedule_mode === WORK_HOURS_SUMMARY_SCHEDULE_MODE) {
+        return `当前非工作时段累计 ${itemCount} ${summaryConfig.unit}，将在下一个${getOpsAlertSummaryScheduleLabel(summaryConfig)}开始后统一外发。窗口：${bucket.start_at} - ${bucket.end_at}`;
+    }
     if (summaryConfig.summary_schedule_mode === DEFAULT_SUMMARY_SCHEDULE_MODE) {
         return `最近 ${summaryConfig.summary_window_minutes} 分钟内累计 ${itemCount} ${summaryConfig.unit}，将在窗口结束后统一外发。窗口：${bucket.start_at} - ${bucket.end_at}`;
     }
@@ -1639,17 +1865,35 @@ async function loadExistingOpsAlertSummaryJob(supabase, alertType, dedupeKey) {
 async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
     const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, options.env);
     const alertType = normalizeText(input.alertType || input.alert_type);
-    const summaryConfig = getOpsAlertSummaryConfig(runtime.config, alertType);
-
-    if (!summaryConfig) {
-        return null;
-    }
-
     const explicitCreatedAt = normalizeText(input.createdAt || input.created_at);
     const referenceDate = options.now instanceof Date
         ? options.now
         : new Date(options.now || explicitCreatedAt || Date.now());
+    const baseSummaryConfig = getOpsAlertSummaryBaseConfig(runtime.config, alertType);
+    if (!baseSummaryConfig) {
+        return null;
+    }
+
+    const shouldUseWorkHoursSummary = baseSummaryConfig.work_hours_only_enabled === true
+        && baseSummaryConfig.work_hours?.enabled === true
+        && !isWithinOpsAlertWorkHours(runtime.config, referenceDate);
+    const shouldUseConfiguredSummary = baseSummaryConfig.summary_enabled === true;
+
+    if (!shouldUseWorkHoursSummary && !shouldUseConfiguredSummary) {
+        return null;
+    }
+
+    const summaryConfig = shouldUseWorkHoursSummary
+        ? {
+            ...baseSummaryConfig,
+            summary_schedule_mode: WORK_HOURS_SUMMARY_SCHEDULE_MODE,
+            summary_timezone: baseSummaryConfig.work_hours?.timezone || baseSummaryConfig.summary_timezone
+        }
+        : baseSummaryConfig;
     const bucket = getOpsAlertSummaryBucket(referenceDate, summaryConfig);
+    if (!bucket?.start_at || !bucket?.end_at) {
+        return null;
+    }
     const itemCreatedAt = explicitCreatedAt || (Number.isFinite(referenceDate.getTime()) ? referenceDate.toISOString() : new Date().toISOString());
     const itemDedupeKey = normalizeText(input.dedupeKey) || buildOpsAlertDedupeKey({
         alertType,
@@ -1667,11 +1911,17 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
             summaryConfig.summary_daily_hour,
             summaryConfig.summary_daily_minute,
             summaryConfig.summary_timezone,
+            summaryConfig.work_hours?.start_hour,
+            summaryConfig.work_hours?.end_hour,
+            summaryConfig.work_hours?.timezone,
             bucket.start_at,
             bucket.end_at
         ].join(':'))
         .digest('hex');
-    const channels = resolveEnabledChannels(runtime, input.severity, summaryConfig.summary_alert_type, { now: referenceDate })
+    const channels = resolveEnabledChannels(runtime, input.severity, summaryConfig.summary_alert_type, {
+        now: referenceDate,
+        ignoreQuietHours: true
+    })
         .filter((channel) => {
             const requestedChannels = Array.isArray(input.allowedChannels)
                 ? input.allowedChannels.map((item) => normalizeChannelName(item)).filter(Boolean)
@@ -1687,8 +1937,12 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
     }
 
     const newItem = buildOpsAlertSummaryItem({
+        alertType,
         dedupeKey: itemDedupeKey,
-        payload: input.payload,
+        payload: {
+            ...normalizeJsonObject(input.payload),
+            summary_source_alert_type: alertType
+        },
         title: input.title,
         content: input.content,
         createdAt: itemCreatedAt
@@ -1725,6 +1979,9 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
             summary_daily_hour: summaryConfig.summary_daily_hour,
             summary_daily_minute: summaryConfig.summary_daily_minute,
             summary_timezone: summaryConfig.summary_timezone,
+            work_hours_start_hour: summaryConfig.work_hours?.start_hour,
+            work_hours_end_hour: summaryConfig.work_hours?.end_hour,
+            work_hours_timezone: summaryConfig.work_hours?.timezone,
             window_start_at: bucket.start_at,
             window_end_at: bucket.end_at,
             item_count: existingItems.length,
@@ -1778,6 +2035,9 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
             summary_daily_hour: summaryConfig.summary_daily_hour,
             summary_daily_minute: summaryConfig.summary_daily_minute,
             summary_timezone: summaryConfig.summary_timezone,
+            work_hours_start_hour: summaryConfig.work_hours?.start_hour,
+            work_hours_end_hour: summaryConfig.work_hours?.end_hour,
+            work_hours_timezone: summaryConfig.work_hours?.timezone,
             window_start_at: bucket.start_at,
             window_end_at: bucket.end_at,
             item_count: 1,
@@ -1974,6 +2234,10 @@ function buildExternalAlertText(job = {}) {
     const walletRechargeSummaryText = buildWalletRechargeSummaryAlertText(job);
     if (walletRechargeSummaryText) {
         return walletRechargeSummaryText;
+    }
+    const shopInventorySummaryText = buildShopInventorySummaryAlertText(job);
+    if (shopInventorySummaryText) {
+        return shopInventorySummaryText;
     }
     const walletRechargeText = buildWalletRechargeSucceededAlertText(job);
     if (walletRechargeText) {
@@ -2258,6 +2522,65 @@ function buildWalletRechargeSummaryAlertText(job = {}) {
     });
     if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
         lines.push(`其余 ${Number(payload.item_count) - items.length} 笔请前往后台查看。`);
+    }
+    if (normalizeText(payload.entry_path)) {
+        lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+    }
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function getShopInventorySummaryStatusLabel(item = {}, itemPayload = {}) {
+    const alertType = normalizeText(item?.alert_type || itemPayload.summary_source_alert_type || itemPayload.alert_type).toLowerCase();
+    if (alertType === 'shop_inventory_empty') {
+        return '已售罄';
+    }
+    if (alertType === 'shop_inventory_low') {
+        return '低库存';
+    }
+
+    return Number(itemPayload.stock_count) <= 0 ? '已售罄' : '低库存';
+}
+
+function buildShopInventorySummaryAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'shop_inventory_summary') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const items = getSummaryItems(payload).slice(0, Math.max(1, normalizeNumber(payload.summary_max_items, 10, 1, 50)));
+    const lines = [buildSummaryHeader(job, '库存与补货汇总')];
+
+    if (normalizeText(payload.window_start_at) || normalizeText(payload.window_end_at)) {
+        lines.push(`时间窗口：${formatTimestamp(payload.window_start_at)} - ${formatTimestamp(payload.window_end_at)}`);
+    }
+    if (Number.isFinite(Number(payload.item_count))) {
+        lines.push(`累计库存告警：${Math.max(0, Math.round(Number(payload.item_count || 0)))} 条`);
+    }
+    items.forEach((item, index) => {
+        const itemPayload = normalizeJsonObject(item?.payload);
+        const productName = normalizeText(itemPayload.product_name) || normalizeText(item?.title) || '未命名商品';
+        const statusLabel = getShopInventorySummaryStatusLabel(item, itemPayload);
+        lines.push(`${index + 1}. ${productName}${statusLabel ? ` · ${statusLabel}` : ''}`);
+        if (normalizeText(itemPayload.category)) lines.push(`   分类：${normalizeText(itemPayload.category)}`);
+        if (Number.isFinite(Number(itemPayload.stock_count))) {
+            const stockCount = Math.max(0, Math.round(Number(itemPayload.stock_count || 0)));
+            const threshold = Math.max(0, Math.round(Number(itemPayload.low_stock_threshold || 0)));
+            lines.push(
+                stockCount <= 0
+                    ? '   当前库存：0 件（已售罄）'
+                    : `   当前库存：${stockCount} 件（阈值 ${threshold} 件）`
+            );
+        }
+        if (Number.isFinite(Number(itemPayload.recent_sales_count))) {
+            const salesWindow = Math.max(1, Math.round(Number(itemPayload.recent_sales_days || 7)));
+            lines.push(`   近 ${salesWindow} 天销量：${Math.max(0, Math.round(Number(itemPayload.recent_sales_count || 0)))} 件`);
+        }
+        const updatedAt = formatTimestamp(itemPayload.updated_at || item?.created_at);
+        if (updatedAt) lines.push(`   时间：${updatedAt}`);
+    });
+    if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
+        lines.push(`其余 ${Number(payload.item_count) - items.length} 条请前往后台查看。`);
     }
     if (normalizeText(payload.entry_path)) {
         lines.push(`处理入口：${normalizeText(payload.entry_path)}`);

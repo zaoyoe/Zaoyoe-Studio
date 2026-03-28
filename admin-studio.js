@@ -466,6 +466,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-quiet-hours-allow-critical':
                 window.toggleOpsAlertQuietHoursAllowCritical?.();
                 break;
+            case 'settings-toggle-ops-alert-work-hours-enabled':
+                window.toggleOpsAlertWorkHoursEnabled?.();
+                break;
             case 'settings-toggle-ops-alert-shop-risk-auto-response':
                 window.toggleOpsAlertShopRiskAutoResponseEnabled?.();
                 break;
@@ -475,11 +478,17 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-shop-inventory-recovery-enabled':
                 window.toggleOpsAlertShopInventoryRecoveryNotificationEnabled?.();
                 break;
+            case 'settings-toggle-ops-alert-shop-inventory-summary-enabled':
+                window.toggleOpsAlertShopInventorySummaryEnabled?.();
+                break;
             case 'settings-toggle-ops-alert-customer-chat-message-enabled':
                 window.toggleOpsAlertCustomerChatMessageEnabled?.();
                 break;
             case 'settings-toggle-ops-alert-customer-chat-message-summary-enabled':
                 window.toggleOpsAlertCustomerChatMessageSummaryEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-customer-chat-message-work-hours-only':
+                window.toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled?.();
                 break;
             case 'settings-toggle-ops-alert-shop-purchase-success-enabled':
                 window.toggleOpsAlertShopPurchaseSuccessEnabled?.();
@@ -487,11 +496,17 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-shop-purchase-success-summary-enabled':
                 window.toggleOpsAlertShopPurchaseSuccessSummaryEnabled?.();
                 break;
+            case 'settings-toggle-ops-alert-shop-purchase-success-work-hours-only':
+                window.toggleOpsAlertShopPurchaseSuccessWorkHoursOnlyEnabled?.();
+                break;
             case 'settings-toggle-ops-alert-wallet-recharge-success-enabled':
                 window.toggleOpsAlertWalletRechargeSuccessEnabled?.();
                 break;
             case 'settings-toggle-ops-alert-wallet-recharge-success-summary-enabled':
                 window.toggleOpsAlertWalletRechargeSuccessSummaryEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-wallet-recharge-success-work-hours-only':
+                window.toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled?.();
                 break;
             case 'settings-save-ops-alerts':
                 window.saveOpsAlertSettings?.();
@@ -1289,6 +1304,9 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'settings-change-ops-alert-customer-chat-message-summary-schedule-mode':
                 window.handleOpsAlertCustomerChatMessageSummaryScheduleModeChange?.();
+                break;
+            case 'settings-change-ops-alert-shop-inventory-summary-schedule-mode':
+                window.handleOpsAlertShopInventorySummaryScheduleModeChange?.();
                 break;
             case 'settings-change-ops-alert-shop-purchase-success-summary-schedule-mode':
                 window.handleOpsAlertShopPurchaseSuccessSummaryScheduleModeChange?.();
