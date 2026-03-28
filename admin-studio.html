@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260328_SECURITY_PANEL_COMPACT_1">
+    <link rel="stylesheet" href="admin-studio.css?v=20260328_SECURITY_PANEL_INTEGRATED_1">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -4174,6 +4174,52 @@
                                     <i class="fas fa-save"></i> 保存
                                 </button>
                             </div>
+
+                            <div class="security-subcards-grid">
+                                <section class="security-subcard">
+                                    <div class="security-subcard__head">
+                                        <h4><i class="fas fa-user-lock"></i> 锁定账户 <span class="locked-count-badge"
+                                                id="lockedCountBadge" hidden>0</span></h4>
+                                        <p>只保留待处理账户，列表区固定高度，避免少数长邮箱把整块区域继续往下撑。</p>
+                                    </div>
+                                    <div class="locked-accounts-container">
+                                        <div class="locked-accounts-list" id="lockedAccountsList">
+                                            <div class="empty-state" id="noLockedAccountsMsg">
+                                                <i class="fas fa-check-circle"></i>
+                                                <span>暂无锁定账户</span>
+                                            </div>
+                                            <!-- Dynamic locked accounts will be inserted here -->
+                                        </div>
+                                        <div class="config-actions admin-studio-inline-style-attr-7">
+                                            <button class="btn-sm btn-secondary" data-admin-action="settings-refresh-locked-accounts">
+                                                <i class="fas fa-sync-alt"></i> 刷新
+                                            </button>
+                                            <button class="btn-sm btn-warning admin-studio-inline-style-attr-8" data-admin-action="settings-unlock-all-accounts" id="unlockAllBtn" hidden
+                                               >
+                                                <i class="fas fa-unlock"></i>全部解锁
+                                            </button>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section class="security-subcard">
+                                    <div class="security-subcard__head">
+                                        <h4><i class="fas fa-ban"></i> IP 黑名单</h4>
+                                        <p>一行一个 IP 地址，支持 CIDR 格式，集中管理被封禁来源。</p>
+                                    </div>
+                                    <div class="security-blacklist-editor">
+                                        <textarea class="config-textarea" id="cfgIpBlacklist" rows="8"
+                                            placeholder="192.168.1.100&#10;10.0.0.0/8&#10;..."></textarea>
+                                        <div class="config-actions admin-studio-inline-style-attr-11">
+                                            <span class="config-save-indicator admin-studio-inline-style-attr-6" id="ipBlacklistSaveIndicator"
+                                               >✓ 已保存</span>
+                                            <button class="btn-sm btn-primary" data-admin-action="settings-save-ip-blacklist">
+                                                <i class="fas fa-save"></i> 保存
+                                            </button>
+                                        </div>
+                                    </div>
+                                </section>
+                            </div>
                         </div>
 
                         <div class="settings-section admin-audit-monitor-section" id="adminAuditMonitorSection">
@@ -4241,50 +4287,6 @@
                             </div>
                         </div>
 
-                        <!-- Locked Accounts -->
-                        <div class="settings-section settings-section--compact">
-                            <h3><i class="fas fa-user-lock"></i> 锁定账户 <span class="locked-count-badge"
-                                    id="lockedCountBadge" hidden>0</span></h3>
-                            <p class="settings-section__intro">只保留待处理账户，列表区固定高度，避免少数长邮箱把整块区域继续往下撑。</p>
-                            <div class="locked-accounts-container">
-                                <div class="locked-accounts-list" id="lockedAccountsList">
-                                    <div class="empty-state" id="noLockedAccountsMsg">
-                                        <i class="fas fa-check-circle"></i>
-                                        <span>暂无锁定账户</span>
-                                    </div>
-                                    <!-- Dynamic locked accounts will be inserted here -->
-                                </div>
-                                <div class="config-actions admin-studio-inline-style-attr-7">
-                                    <button class="btn-sm btn-secondary" data-admin-action="settings-refresh-locked-accounts">
-                                        <i class="fas fa-sync-alt"></i> 刷新
-                                    </button>
-                                    <button class="btn-sm btn-warning admin-studio-inline-style-attr-8" data-admin-action="settings-unlock-all-accounts" id="unlockAllBtn" hidden
-                                       >
-                                        <i class="fas fa-unlock"></i>全部解锁
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- IP Blacklist -->
-                        <div class="settings-section">
-                            <h3><i class="fas fa-ban"></i> IP 黑名单</h3>
-                            <div class="config-item-row admin-studio-inline-style-attr-9">
-                                <div class="config-label admin-studio-inline-style-attr-10">
-                                    <span>被封禁的IP地址</span>
-                                    <span class="config-hint">一行一个IP地址，支持CIDR格式 (如 192.168.1.0/24)</span>
-                                </div>
-                                <textarea class="config-textarea" id="cfgIpBlacklist" rows="6"
-                                    placeholder="192.168.1.100&#10;10.0.0.0/8&#10;..."></textarea>
-                                <div class="config-actions admin-studio-inline-style-attr-11">
-                                    <span class="config-save-indicator admin-studio-inline-style-attr-6" id="ipBlacklistSaveIndicator"
-                                       >✓ 已保存</span>
-                                    <button class="btn-sm btn-primary" data-admin-action="settings-save-ip-blacklist">
-                                        <i class="fas fa-save"></i> 保存
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
 

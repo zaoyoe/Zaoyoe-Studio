@@ -19469,6 +19469,71 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     justify-content: space-between;
 }
 
+.security-subcards-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.security-subcard {
+    min-width: 0;
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(107, 158, 206, 0.16);
+    background: rgba(10, 19, 36, 0.38);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.security-subcard__head {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.security-subcard__head h4 {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-main);
+    font-size: 0.98rem;
+}
+
+.security-subcard__head p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+    line-height: 1.6;
+}
+
+.security-subcard .locked-accounts-container {
+    margin-top: 0;
+}
+
+.security-subcard .config-actions {
+    padding-top: 0;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.security-blacklist-editor {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.security-blacklist-editor .config-textarea {
+    min-height: 220px;
+}
+
+.security-blacklist-editor .config-actions {
+    justify-content: flex-end;
+}
+
 /* Custom Select Dropdown - Dark Theme */
 .config-select {
     appearance: none;
@@ -23916,6 +23981,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 @media (max-width: 860px) {
+    .security-subcards-grid {
+        grid-template-columns: 1fr;
+    }
+
     .admin-audit-monitor-head {
         flex-direction: column;
     }
