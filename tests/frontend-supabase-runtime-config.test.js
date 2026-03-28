@@ -2321,6 +2321,31 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
     }
 
+    const opsAlertsModuleSource = adminStudioSource.slice(
+        adminStudioSource.indexOf('id="module-ops-alerts"'),
+        adminStudioSource.indexOf('</div>', adminStudioSource.indexOf('id="module-ops-alerts"'))
+    );
+    const removedTabEmojiLabels = [
+        '🛰️ 概览',
+        '🎛️ 策略中心',
+        '📡 通知渠道',
+        '📊 监控规则',
+        '🧰 告警工作台',
+        '❤️ 通道健康'
+    ];
+    for (const label of removedTabEmojiLabels) {
+        assert.equal(
+            opsAlertsModuleSource.includes(label),
+            false,
+            `ops alerts tabs should not contain ${label}`
+        );
+    }
+    assert.equal(
+        adminConfigSource.includes('监控规则保存'),
+        false,
+        'admin-config.js should not inject a monitor-specific save card'
+    );
+
     const settingsEndIndex = adminStudioSource.indexOf('<!-- END SETTINGS MODULE -->');
     const opsAlertsModuleIndex = adminStudioSource.indexOf('id="module-ops-alerts"');
     const settingsSecurityViewIndex = adminStudioSource.indexOf('id="settings-view-security"');

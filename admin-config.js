@@ -14,6 +14,7 @@ let opsAlertMonitorViewState = getDefaultOpsAlertMonitorViewState();
 let shopRiskCaseComposerState = getDefaultShopRiskCaseComposerState();
 let opsAlertBatchMuteState = getDefaultOpsAlertBatchMuteState();
 let opsAlertStrategySaveInFlight = false;
+let opsAlertUnifiedSummaryDraftDirty = false;
 let opsAlertStrategyBeforeUnloadReady = false;
 let verifyMonitorState = getDefaultVerifyMonitorState();
 let adminAuditMonitorState = getDefaultAdminAuditMonitorState();
@@ -1695,6 +1696,145 @@ function getOpsAlertSummaryOrchestrationSelectedDefinitions() {
     ));
 }
 
+function setOpsAlertUnifiedSummaryDraftFieldValues(draft = {}) {
+    const summaryEnabledInput = document.getElementById('opsAlertUnifiedSummaryDraftEnabled');
+    if (summaryEnabledInput instanceof HTMLInputElement) {
+        summaryEnabledInput.checked = draft.summary_enabled === true;
+    }
+
+    const workHoursOnlyInput = document.getElementById('opsAlertUnifiedSummaryDraftWorkHoursOnlyEnabled');
+    if (workHoursOnlyInput instanceof HTMLInputElement) {
+        workHoursOnlyInput.checked = draft.work_hours_only_enabled === true;
+    }
+
+    const scheduleModeInput = document.getElementById('opsAlertUnifiedSummaryDraftScheduleMode');
+    if (scheduleModeInput instanceof HTMLSelectElement) {
+        scheduleModeInput.value = normalizeOpsAlertSummaryScheduleMode(
+            draft.summary_schedule_mode,
+            'rolling_window'
+        );
+    }
+
+    const windowMinutesInput = document.getElementById('opsAlertUnifiedSummaryDraftWindowMinutes');
+    if (windowMinutesInput instanceof HTMLInputElement) {
+        windowMinutesInput.value = String(clamp(toWholeNumber(draft.summary_window_minutes, 60), 5, 24 * 60));
+    }
+
+    const hourlyMinuteInput = document.getElementById('opsAlertUnifiedSummaryDraftHourlyMinute');
+    if (hourlyMinuteInput instanceof HTMLInputElement) {
+        hourlyMinuteInput.value = String(clamp(toWholeNumber(draft.summary_hourly_minute, 0), 0, 59));
+    }
+
+    const dailyHourInput = document.getElementById('opsAlertUnifiedSummaryDraftDailyHour');
+    if (dailyHourInput instanceof HTMLInputElement) {
+        dailyHourInput.value = String(clamp(toWholeNumber(draft.summary_daily_hour, 9), 0, 23));
+    }
+
+    const dailyMinuteInput = document.getElementById('opsAlertUnifiedSummaryDraftDailyMinute');
+    if (dailyMinuteInput instanceof HTMLInputElement) {
+        dailyMinuteInput.value = String(clamp(toWholeNumber(draft.summary_daily_minute, 0), 0, 59));
+    }
+
+    const maxItemsInput = document.getElementById('opsAlertUnifiedSummaryDraftMaxItems');
+    if (maxItemsInput instanceof HTMLInputElement) {
+        maxItemsInput.value = String(clamp(toWholeNumber(draft.summary_max_items, 10), 1, 50));
+    }
+}
+
+function getOpsAlertUnifiedSummaryDraftConsensus(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const selectedDefinitions = getOpsAlertSummaryOrchestrationSelectedDefinitions();
+    if (!selectedDefinitions.length) {
+        return null;
+    }
+
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const defaults = getDefaultOpsAlertConfig();
+    const selectedSections = selectedDefinitions.map((definition) => (
+        normalizedConfig[definition.key] || defaults[definition.key] || {}
+    ));
+    const pickConsensusValue = (definitions, sections, resolver) => {
+        if (!definitions.length || !sections.length) {
+            return undefined;
+        }
+
+        const values = sections.map((section, index) => resolver(section, definitions[index]));
+        const firstValue = values[0];
+        return values.every((value) => value === firstValue) ? firstValue : undefined;
+    };
+    const workHoursDefinitions = selectedDefinitions.filter((definition) => definition.supports_work_hours_only);
+    const workHoursSections = workHoursDefinitions.map((definition) => (
+        normalizedConfig[definition.key] || defaults[definition.key] || {}
+    ));
+
+    return {
+        summary_enabled: pickConsensusValue(
+            selectedDefinitions,
+            selectedSections,
+            (section) => section.summary_enabled === true
+        ),
+        work_hours_only_enabled: workHoursDefinitions.length
+            ? pickConsensusValue(
+                workHoursDefinitions,
+                workHoursSections,
+                (section) => section.work_hours_only_enabled === true
+            )
+            : false,
+        summary_schedule_mode: pickConsensusValue(
+            selectedDefinitions,
+            selectedSections,
+            (section) => normalizeOpsAlertSummaryScheduleMode(section.summary_schedule_mode, 'rolling_window')
+        ),
+        summary_window_minutes: pickConsensusValue(
+            selectedDefinitions,
+            selectedSections,
+            (section) => clamp(toWholeNumber(section.summary_window_minutes, 60), 5, 24 * 60)
+        ),
+        summary_hourly_minute: pickConsensusValue(
+            selectedDefinitions,
+            selectedSections,
+            (section) => clamp(toWholeNumber(section.summary_hourly_minute, 0), 0, 59)
+        ),
+        summary_daily_hour: pickConsensusValue(
+            selectedDefinitions,
+            selectedSections,
+            (section) => clamp(toWholeNumber(section.summary_daily_hour, 9), 0, 23)
+        ),
+        summary_daily_minute: pickConsensusValue(
+            selectedDefinitions,
+            selectedSections,
+            (section) => clamp(toWholeNumber(section.summary_daily_minute, 0), 0, 59)
+        ),
+        summary_max_items: pickConsensusValue(
+            selectedDefinitions,
+            selectedSections,
+            (section) => clamp(toWholeNumber(section.summary_max_items, 10), 1, 50)
+        )
+    };
+}
+
+function syncOpsAlertUnifiedSummaryDraftFromSelection(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']), options = {}) {
+    if (opsAlertUnifiedSummaryDraftDirty && options.force !== true) {
+        return;
+    }
+
+    const consensus = getOpsAlertUnifiedSummaryDraftConsensus(config);
+    if (!consensus) {
+        return;
+    }
+
+    const nextDraft = {
+        ...collectOpsAlertUnifiedSummaryDraftFromForm()
+    };
+    Object.entries(consensus).forEach(([key, value]) => {
+        if (value !== undefined) {
+            nextDraft[key] = value;
+        }
+    });
+
+    setOpsAlertUnifiedSummaryDraftFieldValues(nextDraft);
+    opsAlertUnifiedSummaryDraftDirty = false;
+}
+
 function collectOpsAlertUnifiedSummaryDraftFromForm() {
     return {
         summary_enabled: document.getElementById('opsAlertUnifiedSummaryDraftEnabled')?.checked === true,
@@ -2027,6 +2167,7 @@ function renderOpsAlertSummaryOrchestration(config = normalizeOpsAlertConfig(sys
         overviewSelectionMetaEl.textContent = `已勾选 ${formatVerifyMonitorInteger(selectedCount)} 类`;
     }
 
+    syncOpsAlertUnifiedSummaryDraftFromSelection(normalizedConfig);
     applyOpsAlertUnifiedSummaryDraftControls();
 }
 
@@ -2058,6 +2199,7 @@ function handleOpsAlertUnifiedSummaryTargetChange() {
 }
 
 function handleOpsAlertUnifiedSummaryDraftChange() {
+    opsAlertUnifiedSummaryDraftDirty = true;
     applyOpsAlertUnifiedSummaryDraftControls();
 }
 
@@ -2123,6 +2265,7 @@ function applyOpsAlertUnifiedSummaryDraft() {
         }
     });
 
+    opsAlertUnifiedSummaryDraftDirty = false;
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
     showToast(`已把统一汇总编排应用到 ${selectedDefinitions.length} 类告警，保存站外告警配置后生效。`, 'success');
     return true;
@@ -4320,51 +4463,8 @@ function getOpsAlertStrategyLayoutRoot() {
     return document.querySelector('[data-config="ops-alerts-strategy"] .config-card-body');
 }
 
-function getOpsAlertMonitorViewRoot() {
-    return document.getElementById('ops-alerts-view-monitors');
-}
-
-function ensureOpsAlertMonitorsSaveCard(monitorsView = getOpsAlertMonitorViewRoot()) {
-    if (!monitorsView) {
-        return null;
-    }
-
-    const sideColumn = monitorsView.querySelector('[data-ops-alerts-bucket="monitors-side"]');
-    if (!sideColumn) {
-        return null;
-    }
-
-    let card = document.getElementById('opsAlertMonitorsSaveCard');
-    if (card) {
-        return card;
-    }
-
-    card = document.createElement('div');
-    card.id = 'opsAlertMonitorsSaveCard';
-    card.className = 'config-card ops-alert-config-card ops-alert-monitors-save-card';
-    card.innerHTML = `
-        <div class="config-card-header">
-            <div class="config-card-title">
-                <i class="fas fa-save"></i>
-                <span>监控规则保存</span>
-            </div>
-        </div>
-        <div class="config-card-body">
-            <div class="ops-alert-monitors-save-card__summary">
-                <strong class="ops-alert-monitors-save-card__state" id="opsAlertMonitorsSaveState" data-tone="success">当前配置已保存</strong>
-                <p class="ops-alert-monitors-save-card__hint" id="opsAlertMonitorsSaveHint">监控规则里改完也可以直接保存，不用再切回概览。</p>
-            </div>
-            <div class="ops-alert-save-row ops-alert-save-row--compact">
-                <button type="button" class="btn-add-config" id="opsAlertMonitorsInlineSaveButton" data-admin-action="settings-save-ops-alerts" disabled>保存站外告警配置</button>
-            </div>
-        </div>
-    `;
-    sideColumn.prepend(card);
-    return card;
-}
-
 function ensureOpsAlertMonitorCards() {
-    const monitorsView = getOpsAlertMonitorViewRoot();
+    const monitorsView = document.getElementById('ops-alerts-view-monitors');
     if (!monitorsView) {
         return;
     }
@@ -4375,8 +4475,6 @@ function ensureOpsAlertMonitorCards() {
     if (!cards.length) {
         return;
     }
-
-    ensureOpsAlertMonitorsSaveCard(monitorsView);
 
     const firstPass = monitorsView.dataset.opsAlertMonitorCardsReady !== 'true';
     cards.forEach((card) => {
@@ -4442,18 +4540,10 @@ function updateOpsAlertStrategyDraftIndicators(config = null) {
     const hintEl = document.getElementById('opsAlertStrategySaveHint');
     const saveButton = document.getElementById('opsAlertStrategyInlineSaveButton');
     const dirtyBadge = document.getElementById('opsAlertStrategyDirtyBadge');
-    const monitorSaveCard = document.getElementById('opsAlertMonitorsSaveCard');
-    const monitorStateEl = document.getElementById('opsAlertMonitorsSaveState');
-    const monitorHintEl = document.getElementById('opsAlertMonitorsSaveHint');
-    const monitorSaveButton = document.getElementById('opsAlertMonitorsInlineSaveButton');
 
     if (saveBar) {
         saveBar.classList.toggle('is-dirty', dirty);
         saveBar.classList.toggle('is-saving', opsAlertStrategySaveInFlight);
-    }
-    if (monitorSaveCard) {
-        monitorSaveCard.classList.toggle('is-dirty', dirty);
-        monitorSaveCard.classList.toggle('is-saving', opsAlertStrategySaveInFlight);
     }
 
     if (stateEl) {
@@ -4468,19 +4558,6 @@ function updateOpsAlertStrategyDraftIndicators(config = null) {
             stateEl.dataset.tone = 'success';
         }
     }
-    if (monitorStateEl) {
-        if (opsAlertStrategySaveInFlight) {
-            monitorStateEl.textContent = '保存中';
-            monitorStateEl.dataset.tone = 'neutral';
-        } else if (dirty) {
-            monitorStateEl.textContent = '有未保存变更';
-            monitorStateEl.dataset.tone = 'warning';
-        } else {
-            monitorStateEl.textContent = '当前配置已保存';
-            monitorStateEl.dataset.tone = 'success';
-        }
-    }
-
     if (hintEl) {
         if (opsAlertStrategySaveInFlight) {
             hintEl.textContent = '正在把当前页改动写回站外告警配置。';
@@ -4490,25 +4567,10 @@ function updateOpsAlertStrategyDraftIndicators(config = null) {
             hintEl.textContent = '在这里改完就能就近保存，不用再切回概览。';
         }
     }
-    if (monitorHintEl) {
-        if (opsAlertStrategySaveInFlight) {
-            monitorHintEl.textContent = '正在把监控规则里的改动写回站外告警配置。';
-        } else if (dirty) {
-            monitorHintEl.textContent = '当前页里的改动会先停留在浏览器里，点击下方按钮即可保存。';
-        } else {
-            monitorHintEl.textContent = '监控规则里改完也可以直接保存，不用再切回概览。';
-        }
-    }
 
     if (saveButton) {
         saveButton.disabled = opsAlertStrategySaveInFlight || !dirty;
         saveButton.textContent = opsAlertStrategySaveInFlight
-            ? '保存中...'
-            : '保存站外告警配置';
-    }
-    if (monitorSaveButton) {
-        monitorSaveButton.disabled = opsAlertStrategySaveInFlight || !dirty;
-        monitorSaveButton.textContent = opsAlertStrategySaveInFlight
             ? '保存中...'
             : '保存站外告警配置';
     }
@@ -4541,8 +4603,7 @@ function confirmOpsAlertStrategyNavigation(currentViewName, nextViewName) {
     const currentView = String(currentViewName || '').trim();
     const nextView = String(nextViewName || '').trim();
     const guardedViews = {
-        strategy: '策略中心',
-        monitors: '监控规则'
+        strategy: '策略中心'
     };
     if (!guardedViews[currentView] || !nextView || nextView === currentView || !hasOpsAlertUnsavedChanges()) {
         return true;
@@ -5616,8 +5677,13 @@ function setOpsAlertStrategyPanelExpanded(panelKey, expanded) {
 
     panel.classList.toggle('is-expanded', expanded);
     const body = panel.querySelector('.ops-alert-strategy-panel__body');
+    const header = panel.querySelector('.ops-alert-strategy-panel__header');
     if (body) {
-        body.hidden = !expanded;
+        body.hidden = false;
+        body.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+    }
+    if (header) {
+        header.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     }
 }
 
@@ -5629,7 +5695,8 @@ function setOpsAlertStrategyMuteSubpanelExpanded(tabKey, expanded) {
     const body = panel.querySelector('.ops-alert-strategy-subpanel__body');
     const header = panel.querySelector('.ops-alert-strategy-subpanel__header');
     if (body) {
-        body.hidden = !expanded;
+        body.hidden = false;
+        body.setAttribute('aria-hidden', expanded ? 'false' : 'true');
     }
     if (header) {
         header.setAttribute('aria-expanded', expanded ? 'true' : 'false');
@@ -5684,7 +5751,8 @@ function setOpsAlertSummaryPanelExpanded(panelKey, expanded) {
     const body = panel.querySelector('.ops-alert-summary-orchestration-panel__body');
     const header = panel.querySelector('.ops-alert-summary-orchestration-panel__toggle');
     if (body) {
-        body.hidden = !expanded;
+        body.hidden = false;
+        body.setAttribute('aria-hidden', expanded ? 'false' : 'true');
     }
     if (header) {
         header.setAttribute('aria-expanded', expanded ? 'true' : 'false');
@@ -6331,6 +6399,7 @@ function applyOpsAlertPaymentGatewayControls(config = normalizeOpsAlertConfig(sy
 
 function renderOpsAlertSettings() {
     ensureOpsAlertStrategyLayout();
+    opsAlertUnifiedSummaryDraftDirty = false;
     const config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
 
     const quietHoursStartHour = document.getElementById('opsAlertQuietHoursStartHour');
