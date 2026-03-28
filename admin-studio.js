@@ -897,6 +897,9 @@ function bindAdminStudioDelegatedControls() {
             case 'homepage-toggle-config-card':
                 window.toggleConfigCard?.(actionEl);
                 break;
+            case 'settings-toggle-config-card':
+                window.toggleConfigCard?.(actionEl);
+                break;
             case 'homepage-upload-screenshot':
                 document.getElementById('hp-verify-file-input')?.click();
                 break;
