@@ -19981,6 +19981,139 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     box-shadow: inset 0 0 0 1px rgba(231, 76, 60, 0.08);
 }
 
+.ops-alert-summary-orchestration-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.ops-alert-summary-orchestration-panel {
+    min-width: 0;
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(107, 158, 206, 0.16);
+    background: rgba(10, 19, 36, 0.4);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.ops-alert-summary-orchestration-panel__head h4 {
+    margin: 0;
+    color: var(--text-main);
+    font-size: 0.98rem;
+    font-weight: 600;
+}
+
+.ops-alert-summary-orchestration-panel__head p {
+    margin: 6px 0 0;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+    line-height: 1.6;
+}
+
+.ops-alert-summary-orchestration-table {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ops-alert-summary-orchestration-row {
+    display: grid;
+    grid-template-columns: 56px minmax(148px, 1.15fr) minmax(126px, 1fr) minmax(126px, 1fr) minmax(176px, 1.35fr);
+    gap: 10px;
+    align-items: center;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(107, 158, 206, 0.14);
+    background: rgba(9, 16, 31, 0.42);
+}
+
+.ops-alert-summary-orchestration-row--head {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    background: rgba(107, 158, 206, 0.08);
+}
+
+.ops-alert-summary-orchestration-cell {
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 0.83rem;
+    line-height: 1.55;
+}
+
+.ops-alert-summary-orchestration-cell--select {
+    display: flex;
+    justify-content: center;
+}
+
+.ops-alert-summary-orchestration-checkbox {
+    width: 16px;
+    height: 16px;
+    accent-color: #6b9ece;
+}
+
+.ops-alert-summary-orchestration-type {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ops-alert-summary-orchestration-type strong {
+    color: var(--text-main);
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.ops-alert-summary-orchestration-type span {
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+}
+
+.ops-alert-summary-orchestration-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(107, 158, 206, 0.18);
+    background: rgba(107, 158, 206, 0.1);
+    color: var(--text-main);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.ops-alert-summary-orchestration-badge--success {
+    border-color: rgba(39, 174, 96, 0.26);
+    background: rgba(39, 174, 96, 0.14);
+    color: #c8f5d7;
+}
+
+.ops-alert-summary-orchestration-badge--warning {
+    border-color: rgba(243, 156, 18, 0.24);
+    background: rgba(243, 156, 18, 0.14);
+    color: #ffe2b0;
+}
+
+.ops-alert-summary-orchestration-badge--neutral {
+    border-color: rgba(107, 158, 206, 0.18);
+    background: rgba(107, 158, 206, 0.1);
+    color: var(--text-main);
+}
+
+.ops-alert-summary-orchestration-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
 .ops-alert-strategy-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -21947,6 +22080,29 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
     .ops-alert-overview-grid {
         grid-template-columns: 1fr;
+    }
+
+    .ops-alert-summary-orchestration-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ops-alert-summary-orchestration-row {
+        grid-template-columns: 44px 1fr;
+    }
+
+    .ops-alert-summary-orchestration-row--head {
+        display: none;
+    }
+
+    .ops-alert-summary-orchestration-cell {
+        font-size: 0.8rem;
+    }
+
+    .ops-alert-summary-orchestration-cell--select {
+        grid-row: span 4;
+        align-self: stretch;
+        align-items: flex-start;
+        padding-top: 4px;
     }
 
     .ops-alert-overview-trend__bars {
