@@ -71,6 +71,84 @@ const OPS_ALERT_OVERVIEW_CARD_TONE_CLASSES = [
     'ops-alert-overview-card--warning',
     'ops-alert-overview-card--danger'
 ];
+const OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS = Object.freeze([
+    Object.freeze({
+        key: 'customer_chat_message',
+        label: '客服消息',
+        preset_group: 'low_priority',
+        supports_work_hours_only: true,
+        target_checkbox_id: 'opsAlertSummaryTargetCustomerChatMessage',
+        monitor_status_id: 'opsAlertSummaryStatusCustomerChatMessageMonitor',
+        work_hours_status_id: 'opsAlertSummaryStatusCustomerChatMessageWorkHours',
+        summary_status_id: 'opsAlertSummaryStatusCustomerChatMessageSummary',
+        enabled_toggle_id: 'opsAlertCustomerChatMessageEnabledToggle',
+        work_hours_toggle_id: 'opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle',
+        summary_toggle_id: 'opsAlertCustomerChatMessageSummaryEnabledToggle',
+        summary_schedule_mode_id: 'opsAlertCustomerChatMessageSummaryScheduleMode',
+        summary_window_minutes_id: 'opsAlertCustomerChatMessageSummaryWindowMinutes',
+        summary_hourly_minute_id: 'opsAlertCustomerChatMessageSummaryHourlyMinute',
+        summary_daily_hour_id: 'opsAlertCustomerChatMessageSummaryDailyHour',
+        summary_daily_minute_id: 'opsAlertCustomerChatMessageSummaryDailyMinute',
+        summary_max_items_id: 'opsAlertCustomerChatMessageSummaryMaxItems'
+    }),
+    Object.freeze({
+        key: 'shop_purchase_success',
+        label: '购买成功',
+        preset_group: 'success',
+        supports_work_hours_only: true,
+        target_checkbox_id: 'opsAlertSummaryTargetShopPurchaseSuccess',
+        monitor_status_id: 'opsAlertSummaryStatusShopPurchaseSuccessMonitor',
+        work_hours_status_id: 'opsAlertSummaryStatusShopPurchaseSuccessWorkHours',
+        summary_status_id: 'opsAlertSummaryStatusShopPurchaseSuccessSummary',
+        enabled_toggle_id: 'opsAlertShopPurchaseSuccessEnabledToggle',
+        work_hours_toggle_id: 'opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle',
+        summary_toggle_id: 'opsAlertShopPurchaseSuccessSummaryEnabledToggle',
+        summary_schedule_mode_id: 'opsAlertShopPurchaseSuccessSummaryScheduleMode',
+        summary_window_minutes_id: 'opsAlertShopPurchaseSuccessSummaryWindowMinutes',
+        summary_hourly_minute_id: 'opsAlertShopPurchaseSuccessSummaryHourlyMinute',
+        summary_daily_hour_id: 'opsAlertShopPurchaseSuccessSummaryDailyHour',
+        summary_daily_minute_id: 'opsAlertShopPurchaseSuccessSummaryDailyMinute',
+        summary_max_items_id: 'opsAlertShopPurchaseSuccessSummaryMaxItems'
+    }),
+    Object.freeze({
+        key: 'wallet_recharge_success',
+        label: '充值成功',
+        preset_group: 'success',
+        supports_work_hours_only: true,
+        target_checkbox_id: 'opsAlertSummaryTargetWalletRechargeSuccess',
+        monitor_status_id: 'opsAlertSummaryStatusWalletRechargeSuccessMonitor',
+        work_hours_status_id: 'opsAlertSummaryStatusWalletRechargeSuccessWorkHours',
+        summary_status_id: 'opsAlertSummaryStatusWalletRechargeSuccessSummary',
+        enabled_toggle_id: 'opsAlertWalletRechargeSuccessEnabledToggle',
+        work_hours_toggle_id: 'opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle',
+        summary_toggle_id: 'opsAlertWalletRechargeSuccessSummaryEnabledToggle',
+        summary_schedule_mode_id: 'opsAlertWalletRechargeSuccessSummaryScheduleMode',
+        summary_window_minutes_id: 'opsAlertWalletRechargeSuccessSummaryWindowMinutes',
+        summary_hourly_minute_id: 'opsAlertWalletRechargeSuccessSummaryHourlyMinute',
+        summary_daily_hour_id: 'opsAlertWalletRechargeSuccessSummaryDailyHour',
+        summary_daily_minute_id: 'opsAlertWalletRechargeSuccessSummaryDailyMinute',
+        summary_max_items_id: 'opsAlertWalletRechargeSuccessSummaryMaxItems'
+    }),
+    Object.freeze({
+        key: 'shop_inventory',
+        label: '库存与补货',
+        preset_group: 'low_priority',
+        supports_work_hours_only: false,
+        target_checkbox_id: 'opsAlertSummaryTargetShopInventory',
+        monitor_status_id: 'opsAlertSummaryStatusShopInventoryMonitor',
+        work_hours_status_id: 'opsAlertSummaryStatusShopInventoryWorkHours',
+        summary_status_id: 'opsAlertSummaryStatusShopInventorySummary',
+        enabled_toggle_id: 'opsAlertShopInventoryEnabledToggle',
+        work_hours_toggle_id: '',
+        summary_toggle_id: 'opsAlertShopInventorySummaryEnabledToggle',
+        summary_schedule_mode_id: 'opsAlertShopInventorySummaryScheduleMode',
+        summary_window_minutes_id: 'opsAlertShopInventorySummaryWindowMinutes',
+        summary_hourly_minute_id: 'opsAlertShopInventorySummaryHourlyMinute',
+        summary_daily_hour_id: 'opsAlertShopInventorySummaryDailyHour',
+        summary_daily_minute_id: 'opsAlertShopInventorySummaryDailyMinute',
+        summary_max_items_id: 'opsAlertShopInventorySummaryMaxItems'
+    })
+]);
 const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 8000;
 const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 8000;
 const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 8000;
@@ -1147,6 +1225,350 @@ function normalizeOpsAlertSeverity(value, fallback = 'warning') {
 function normalizeOpsAlertSummaryScheduleMode(value, fallback = 'rolling_window') {
     const normalized = String(value ?? '').trim().toLowerCase();
     return ['rolling_window', 'hourly', 'daily'].includes(normalized) ? normalized : fallback;
+}
+
+function formatOpsAlertTimeNumber(value, fallback = 0, max = 59) {
+    return String(clamp(toWholeNumber(value, fallback), 0, max)).padStart(2, '0');
+}
+
+function formatOpsAlertHourMinute(hour, minute) {
+    return `${formatOpsAlertTimeNumber(hour, 0, 23)}:${formatOpsAlertTimeNumber(minute, 0, 59)}`;
+}
+
+function formatOpsAlertSummaryScheduleDescription(section = {}) {
+    const scheduleMode = normalizeOpsAlertSummaryScheduleMode(section.summary_schedule_mode, 'rolling_window');
+    if (scheduleMode === 'hourly') {
+        return `每小时 ${formatOpsAlertTimeNumber(section.summary_hourly_minute, 0, 59)} 分`;
+    }
+    if (scheduleMode === 'daily') {
+        return `每天 ${formatOpsAlertHourMinute(section.summary_daily_hour, section.summary_daily_minute)}`;
+    }
+    return `滚动窗口 ${formatVerifyMonitorInteger(section.summary_window_minutes || 0)} 分钟`;
+}
+
+function buildOpsAlertSummaryOrchestrationBadgeHtml(label, tone = 'neutral') {
+    return `<span class="ops-alert-summary-orchestration-badge ops-alert-summary-orchestration-badge--${escapeConfigHtml(tone)}">${escapeConfigHtml(label)}</span>`;
+}
+
+function setOpsAlertSummaryOrchestrationCell(cellId, tone, label, text) {
+    const cell = document.getElementById(cellId);
+    if (!cell) return;
+
+    const normalizedText = String(text || '').trim();
+    cell.innerHTML = `${buildOpsAlertSummaryOrchestrationBadgeHtml(label, tone)}${normalizedText ? `<div>${escapeConfigHtml(normalizedText)}</div>` : ''}`;
+}
+
+function getOpsAlertSummaryOrchestrationSelectedDefinitions() {
+    return OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS.filter((definition) => (
+        document.getElementById(definition.target_checkbox_id)?.checked === true
+    ));
+}
+
+function collectOpsAlertUnifiedSummaryDraftFromForm() {
+    return {
+        summary_enabled: document.getElementById('opsAlertUnifiedSummaryDraftEnabled')?.checked === true,
+        work_hours_only_enabled: document.getElementById('opsAlertUnifiedSummaryDraftWorkHoursOnlyEnabled')?.checked === true,
+        summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+            document.getElementById('opsAlertUnifiedSummaryDraftScheduleMode')?.value,
+            'rolling_window'
+        ),
+        summary_window_minutes: clamp(
+            toWholeNumber(document.getElementById('opsAlertUnifiedSummaryDraftWindowMinutes')?.value, 60),
+            5,
+            24 * 60
+        ),
+        summary_hourly_minute: clamp(
+            toWholeNumber(document.getElementById('opsAlertUnifiedSummaryDraftHourlyMinute')?.value, 0),
+            0,
+            59
+        ),
+        summary_daily_hour: clamp(
+            toWholeNumber(document.getElementById('opsAlertUnifiedSummaryDraftDailyHour')?.value, 9),
+            0,
+            23
+        ),
+        summary_daily_minute: clamp(
+            toWholeNumber(document.getElementById('opsAlertUnifiedSummaryDraftDailyMinute')?.value, 0),
+            0,
+            59
+        ),
+        summary_max_items: clamp(
+            toWholeNumber(document.getElementById('opsAlertUnifiedSummaryDraftMaxItems')?.value, 10),
+            1,
+            50
+        )
+    };
+}
+
+function applyOpsAlertUnifiedSummaryDraftControls() {
+    const draft = collectOpsAlertUnifiedSummaryDraftFromForm();
+    const summaryEnabled = draft.summary_enabled === true;
+    const scheduleModeInput = document.getElementById('opsAlertUnifiedSummaryDraftScheduleMode');
+    const rollingWindowInput = document.getElementById('opsAlertUnifiedSummaryDraftWindowMinutes');
+    const hourlyMinuteInput = document.getElementById('opsAlertUnifiedSummaryDraftHourlyMinute');
+    const dailyHourInput = document.getElementById('opsAlertUnifiedSummaryDraftDailyHour');
+    const dailyMinuteInput = document.getElementById('opsAlertUnifiedSummaryDraftDailyMinute');
+    const summaryMaxItemsInput = document.getElementById('opsAlertUnifiedSummaryDraftMaxItems');
+    const selectedCount = getOpsAlertSummaryOrchestrationSelectedDefinitions().length;
+    const applyButton = document.querySelector('[data-admin-action="settings-apply-ops-alert-unified-summary-draft"]');
+
+    if (scheduleModeInput) {
+        scheduleModeInput.value = draft.summary_schedule_mode;
+        scheduleModeInput.disabled = !summaryEnabled;
+    }
+    if (rollingWindowInput) {
+        rollingWindowInput.value = String(draft.summary_window_minutes);
+        rollingWindowInput.disabled = !summaryEnabled || draft.summary_schedule_mode !== 'rolling_window';
+    }
+    if (hourlyMinuteInput) {
+        hourlyMinuteInput.value = String(draft.summary_hourly_minute);
+        hourlyMinuteInput.disabled = !summaryEnabled || draft.summary_schedule_mode !== 'hourly';
+    }
+    if (dailyHourInput) {
+        dailyHourInput.value = String(draft.summary_daily_hour);
+        dailyHourInput.disabled = !summaryEnabled || draft.summary_schedule_mode !== 'daily';
+    }
+    if (dailyMinuteInput) {
+        dailyMinuteInput.value = String(draft.summary_daily_minute);
+        dailyMinuteInput.disabled = !summaryEnabled || draft.summary_schedule_mode !== 'daily';
+    }
+    if (summaryMaxItemsInput) {
+        summaryMaxItemsInput.value = String(draft.summary_max_items);
+        summaryMaxItemsInput.disabled = !summaryEnabled;
+    }
+    if (applyButton) {
+        applyButton.disabled = selectedCount <= 0;
+        applyButton.innerHTML = `<i class="fas fa-wand-magic-sparkles"></i> 应用到所选告警${selectedCount > 0 ? `（${escapeConfigHtml(formatVerifyMonitorInteger(selectedCount))} 类）` : ''}`;
+    }
+}
+
+function renderOpsAlertSummaryOrchestration(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const defaults = getDefaultOpsAlertConfig();
+    const workHours = normalizedConfig.work_hours || defaults.work_hours;
+    let enabledMonitorCount = 0;
+    let summaryEnabledCount = 0;
+    let workHoursOnlyCount = 0;
+
+    OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS.forEach((definition) => {
+        const section = normalizedConfig[definition.key] || defaults[definition.key] || {};
+        const sweepIntervalMinutes = Math.max(1, Math.round(Number(section.sweep_interval_ms || 0) / 60000));
+        const summaryDescription = formatOpsAlertSummaryScheduleDescription(section);
+
+        if (section.enabled) {
+            enabledMonitorCount += 1;
+        }
+        if (section.summary_enabled === true) {
+            summaryEnabledCount += 1;
+        }
+        if (definition.supports_work_hours_only && section.work_hours_only_enabled === true) {
+            workHoursOnlyCount += 1;
+        }
+
+        if (definition.key === 'shop_inventory') {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.monitor_status_id,
+                section.enabled ? 'success' : 'neutral',
+                section.enabled ? '已启用' : '已关闭',
+                section.enabled
+                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，低库存阈值 ${formatVerifyMonitorInteger(section.low_stock_threshold || 0)}。`
+                    : `库存巡检参数仍保留，阈值 ${formatVerifyMonitorInteger(section.low_stock_threshold || 0)}。`
+            );
+        } else {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.monitor_status_id,
+                section.enabled ? 'success' : 'neutral',
+                section.enabled ? '已启用' : '已关闭',
+                section.enabled
+                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，回看 ${formatVerifyMonitorInteger(section.lookback_minutes || 0)} 分钟。`
+                    : `巡检参数仍保留，回看 ${formatVerifyMonitorInteger(section.lookback_minutes || 0)} 分钟。`
+            );
+        }
+
+        if (!definition.supports_work_hours_only) {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.work_hours_status_id,
+                'neutral',
+                '不适用',
+                '当前库存类只支持定时汇总，不支持按工作时段顺延。'
+            );
+        } else if (!section.enabled) {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.work_hours_status_id,
+                'neutral',
+                '主监控关闭',
+                '开启主监控后才会应用工作时段顺延。'
+            );
+        } else if (section.work_hours_only_enabled === true && workHours.enabled) {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.work_hours_status_id,
+                'success',
+                '已顺延',
+                `非工作时段会顺延到 ${formatOpsAlertHourMinute(workHours.start_hour, 0)} 开始，工作时段 ${formatOpsAlertHourMinute(workHours.start_hour, 0)}-${formatOpsAlertHourMinute(workHours.end_hour, 0)}（${workHours.timezone || 'Asia/Shanghai'}）。`
+            );
+        } else if (section.work_hours_only_enabled === true) {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.work_hours_status_id,
+                'warning',
+                '待开启工作时段',
+                '已勾选顺延，但全局工作时段还没启用。'
+            );
+        } else if (workHours.enabled) {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.work_hours_status_id,
+                'neutral',
+                '全天直发',
+                `全局工作时段是 ${formatOpsAlertHourMinute(workHours.start_hour, 0)}-${formatOpsAlertHourMinute(workHours.end_hour, 0)}，但该告警仍全天直接外发。`
+            );
+        } else {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.work_hours_status_id,
+                'neutral',
+                '全天直发',
+                '当前未启用全局工作时段限制。'
+            );
+        }
+
+        if (!section.enabled) {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.summary_status_id,
+                section.summary_enabled === true ? 'warning' : 'neutral',
+                section.summary_enabled === true ? '等待主监控' : '即时通知',
+                section.summary_enabled === true
+                    ? `已预设 ${summaryDescription}，最多 ${formatVerifyMonitorInteger(section.summary_max_items || 0)} 条，开启主监控后生效。`
+                    : '主监控关闭时不会出队汇总。'
+            );
+        } else if (section.summary_enabled === true) {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.summary_status_id,
+                'success',
+                '已启用汇总',
+                `${summaryDescription}，最多 ${formatVerifyMonitorInteger(section.summary_max_items || 0)} 条。${definition.supports_work_hours_only && section.work_hours_only_enabled === true && workHours.enabled ? ' 非工作时段仍会顺延到上班时间。' : ''}`
+            );
+        } else if (definition.supports_work_hours_only && section.work_hours_only_enabled === true && workHours.enabled) {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.summary_status_id,
+                'warning',
+                '仅非工作时段汇总',
+                '工作时段内仍即时通知，非工作时段会顺延到下个上班时间。'
+            );
+        } else {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.summary_status_id,
+                'neutral',
+                '即时通知',
+                '当前不走固定汇总，命中后按原节奏直接外发。'
+            );
+        }
+    });
+
+    const selectedCount = getOpsAlertSummaryOrchestrationSelectedDefinitions().length;
+    const metaEl = document.getElementById('opsAlertSummaryOrchestrationMeta');
+    if (metaEl) {
+        metaEl.innerHTML = `
+            <i class="fas fa-layer-group"></i>
+            <span>共 ${escapeConfigHtml(formatVerifyMonitorInteger(OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS.length))} 类告警：${escapeConfigHtml(formatVerifyMonitorInteger(enabledMonitorCount))} 类已启用主监控，${escapeConfigHtml(formatVerifyMonitorInteger(summaryEnabledCount))} 类已启用定时汇总，${escapeConfigHtml(formatVerifyMonitorInteger(workHoursOnlyCount))} 类启用工作时段顺延。当前已勾选 ${escapeConfigHtml(formatVerifyMonitorInteger(selectedCount))} 类用于批量应用。</span>
+        `;
+    }
+
+    applyOpsAlertUnifiedSummaryDraftControls();
+}
+
+function selectOpsAlertUnifiedSummaryTargets(preset = 'all') {
+    OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS.forEach((definition) => {
+        const checkbox = document.getElementById(definition.target_checkbox_id);
+        if (!checkbox) return;
+
+        switch (preset) {
+            case 'none':
+                checkbox.checked = false;
+                break;
+            case 'success':
+            case 'low_priority':
+                checkbox.checked = definition.preset_group === preset;
+                break;
+            case 'all':
+            default:
+                checkbox.checked = true;
+                break;
+        }
+    });
+    renderOpsAlertSummaryOrchestration(collectOpsAlertConfigFromForm());
+}
+
+function handleOpsAlertUnifiedSummaryTargetChange() {
+    renderOpsAlertSummaryOrchestration(collectOpsAlertConfigFromForm());
+}
+
+function handleOpsAlertUnifiedSummaryDraftChange() {
+    applyOpsAlertUnifiedSummaryDraftControls();
+}
+
+function setOpsAlertToggleElementState(toggleEl, isActive) {
+    if (!toggleEl) return;
+    const nextActive = isActive === true;
+    const changed = toggleEl.classList.contains('active') !== nextActive;
+    toggleEl.classList.toggle('active', nextActive);
+    if (changed) {
+        pulseAdminConfigToggle(toggleEl);
+    }
+}
+
+function applyOpsAlertUnifiedSummaryDraft() {
+    const selectedDefinitions = getOpsAlertSummaryOrchestrationSelectedDefinitions();
+    if (!selectedDefinitions.length) {
+        showToast('请先勾选至少 1 类告警，再批量应用统一汇总编排。', 'warning');
+        return false;
+    }
+
+    const draft = collectOpsAlertUnifiedSummaryDraftFromForm();
+    selectedDefinitions.forEach((definition) => {
+        setOpsAlertToggleElementState(
+            document.getElementById(definition.summary_toggle_id),
+            draft.summary_enabled
+        );
+
+        if (definition.supports_work_hours_only && definition.work_hours_toggle_id) {
+            setOpsAlertToggleElementState(
+                document.getElementById(definition.work_hours_toggle_id),
+                draft.work_hours_only_enabled
+            );
+        }
+
+        const scheduleModeInput = document.getElementById(definition.summary_schedule_mode_id);
+        if (scheduleModeInput) {
+            scheduleModeInput.value = draft.summary_schedule_mode;
+        }
+
+        const summaryWindowInput = document.getElementById(definition.summary_window_minutes_id);
+        if (summaryWindowInput) {
+            summaryWindowInput.value = String(draft.summary_window_minutes);
+        }
+
+        const hourlyMinuteInput = document.getElementById(definition.summary_hourly_minute_id);
+        if (hourlyMinuteInput) {
+            hourlyMinuteInput.value = String(draft.summary_hourly_minute);
+        }
+
+        const dailyHourInput = document.getElementById(definition.summary_daily_hour_id);
+        if (dailyHourInput) {
+            dailyHourInput.value = String(draft.summary_daily_hour);
+        }
+
+        const dailyMinuteInput = document.getElementById(definition.summary_daily_minute_id);
+        if (dailyMinuteInput) {
+            dailyMinuteInput.value = String(draft.summary_daily_minute);
+        }
+
+        const summaryMaxItemsInput = document.getElementById(definition.summary_max_items_id);
+        if (summaryMaxItemsInput) {
+            summaryMaxItemsInput.value = String(draft.summary_max_items);
+        }
+    });
+
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    showToast(`已把统一汇总编排应用到 ${selectedDefinitions.length} 类告警，保存站外告警配置后生效。`, 'success');
+    return true;
 }
 
 function normalizePaymentChannelRuntimeState(raw) {
@@ -2409,6 +2831,7 @@ function applyOpsAlertOverview(config) {
     applyOpsAlertCustomerChatControls(normalizedConfig);
     applyOpsAlertShopPurchaseSuccessControls(normalizedConfig);
     applyOpsAlertWalletRechargeSuccessControls(normalizedConfig);
+    renderOpsAlertSummaryOrchestration(normalizedConfig);
     renderOpsAlertOverviewCards(normalizedConfig);
 }
 
@@ -10410,6 +10833,10 @@ window.toggleOpsAlertWalletRechargeSuccessEnabled = toggleOpsAlertWalletRecharge
 window.toggleOpsAlertWalletRechargeSuccessSummaryEnabled = toggleOpsAlertWalletRechargeSuccessSummaryEnabled;
 window.toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled = toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled;
 window.handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange = handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange;
+window.selectOpsAlertUnifiedSummaryTargets = selectOpsAlertUnifiedSummaryTargets;
+window.handleOpsAlertUnifiedSummaryTargetChange = handleOpsAlertUnifiedSummaryTargetChange;
+window.handleOpsAlertUnifiedSummaryDraftChange = handleOpsAlertUnifiedSummaryDraftChange;
+window.applyOpsAlertUnifiedSummaryDraft = applyOpsAlertUnifiedSummaryDraft;
 window.saveOpsAlertSettings = saveOpsAlertSettings;
 window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;
 window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;

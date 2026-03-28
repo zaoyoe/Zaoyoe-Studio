@@ -2122,6 +2122,179 @@
                                 </div>
                             </div>
 
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-summary-orchestration">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-layer-group"></i>
+                                        <span>统一汇总编排</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-inline-note" id="opsAlertSummaryOrchestrationMeta">
+                                        <i class="fas fa-layer-group"></i>
+                                        <span>正在整理成功类与低优先级告警的统一汇总状态...</span>
+                                    </div>
+
+                                    <div class="ops-alert-summary-orchestration-grid">
+                                        <section class="ops-alert-summary-orchestration-panel">
+                                            <div class="ops-alert-summary-orchestration-panel__head">
+                                                <h4>当前统一视图</h4>
+                                                <p>集中查看客服消息、购买成功、充值成功、库存与补货的主监控、工作时段顺延和当前汇总策略。</p>
+                                            </div>
+                                            <div class="ops-alert-summary-orchestration-table">
+                                                <div class="ops-alert-summary-orchestration-row ops-alert-summary-orchestration-row--head">
+                                                    <div class="ops-alert-summary-orchestration-cell ops-alert-summary-orchestration-cell--select">应用</div>
+                                                    <div class="ops-alert-summary-orchestration-cell">告警类型</div>
+                                                    <div class="ops-alert-summary-orchestration-cell">主监控</div>
+                                                    <div class="ops-alert-summary-orchestration-cell">工作时段</div>
+                                                    <div class="ops-alert-summary-orchestration-cell">当前汇总策略</div>
+                                                </div>
+                                                <label class="ops-alert-summary-orchestration-row" for="opsAlertSummaryTargetCustomerChatMessage">
+                                                    <div class="ops-alert-summary-orchestration-cell ops-alert-summary-orchestration-cell--select">
+                                                        <input type="checkbox" id="opsAlertSummaryTargetCustomerChatMessage" class="ops-alert-summary-orchestration-checkbox" data-admin-change-action="settings-change-ops-alert-unified-summary-target" data-ops-alert-summary-target-key="customer_chat_message" checked>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell">
+                                                        <div class="ops-alert-summary-orchestration-type">
+                                                            <strong>客服消息</strong>
+                                                            <span>客服 / 低优先级</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusCustomerChatMessageMonitor">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusCustomerChatMessageWorkHours">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusCustomerChatMessageSummary">等待加载</div>
+                                                </label>
+                                                <label class="ops-alert-summary-orchestration-row" for="opsAlertSummaryTargetShopPurchaseSuccess">
+                                                    <div class="ops-alert-summary-orchestration-cell ops-alert-summary-orchestration-cell--select">
+                                                        <input type="checkbox" id="opsAlertSummaryTargetShopPurchaseSuccess" class="ops-alert-summary-orchestration-checkbox" data-admin-change-action="settings-change-ops-alert-unified-summary-target" data-ops-alert-summary-target-key="shop_purchase_success" checked>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell">
+                                                        <div class="ops-alert-summary-orchestration-type">
+                                                            <strong>购买成功</strong>
+                                                            <span>成功类</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusShopPurchaseSuccessMonitor">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusShopPurchaseSuccessWorkHours">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusShopPurchaseSuccessSummary">等待加载</div>
+                                                </label>
+                                                <label class="ops-alert-summary-orchestration-row" for="opsAlertSummaryTargetWalletRechargeSuccess">
+                                                    <div class="ops-alert-summary-orchestration-cell ops-alert-summary-orchestration-cell--select">
+                                                        <input type="checkbox" id="opsAlertSummaryTargetWalletRechargeSuccess" class="ops-alert-summary-orchestration-checkbox" data-admin-change-action="settings-change-ops-alert-unified-summary-target" data-ops-alert-summary-target-key="wallet_recharge_success" checked>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell">
+                                                        <div class="ops-alert-summary-orchestration-type">
+                                                            <strong>充值成功</strong>
+                                                            <span>成功类</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusWalletRechargeSuccessMonitor">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusWalletRechargeSuccessWorkHours">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusWalletRechargeSuccessSummary">等待加载</div>
+                                                </label>
+                                                <label class="ops-alert-summary-orchestration-row" for="opsAlertSummaryTargetShopInventory">
+                                                    <div class="ops-alert-summary-orchestration-cell ops-alert-summary-orchestration-cell--select">
+                                                        <input type="checkbox" id="opsAlertSummaryTargetShopInventory" class="ops-alert-summary-orchestration-checkbox" data-admin-change-action="settings-change-ops-alert-unified-summary-target" data-ops-alert-summary-target-key="shop_inventory" checked>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell">
+                                                        <div class="ops-alert-summary-orchestration-type">
+                                                            <strong>库存与补货</strong>
+                                                            <span>低优先级</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusShopInventoryMonitor">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusShopInventoryWorkHours">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusShopInventorySummary">等待加载</div>
+                                                </label>
+                                            </div>
+                                            <div class="ops-alert-summary-orchestration-presets">
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-select-ops-alert-unified-summary-targets" data-ops-alert-summary-target-preset="all">
+                                                    <i class="fas fa-list-check"></i> 全部
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-select-ops-alert-unified-summary-targets" data-ops-alert-summary-target-preset="success">
+                                                    <i class="fas fa-bag-shopping"></i> 成功类
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-select-ops-alert-unified-summary-targets" data-ops-alert-summary-target-preset="low_priority">
+                                                    <i class="fas fa-bell"></i> 低优先级
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-select-ops-alert-unified-summary-targets" data-ops-alert-summary-target-preset="none">
+                                                    <i class="fas fa-eraser"></i> 清空
+                                                </button>
+                                            </div>
+                                        </section>
+
+                                        <section class="ops-alert-summary-orchestration-panel">
+                                            <div class="ops-alert-summary-orchestration-panel__head">
+                                                <h4>统一应用</h4>
+                                                <p>把同一套汇总参数批量写回所选告警。底层仍然保存到各自配置字段，单项卡片可以继续细调。</p>
+                                            </div>
+                                            <div class="config-row">
+                                                <div class="config-info">
+                                                    <div class="config-label">启用定时汇总通知</div>
+                                                    <div class="config-desc">应用后会同步切换所选告警的定时汇总开关。</div>
+                                                </div>
+                                                <div class="config-input-wrapper">
+                                                    <input type="checkbox" id="opsAlertUnifiedSummaryDraftEnabled" data-admin-change-action="settings-change-ops-alert-unified-summary-draft" checked>
+                                                </div>
+                                            </div>
+                                            <div class="config-row">
+                                                <div class="config-info">
+                                                    <div class="config-label">非工作时段顺延到上班时间</div>
+                                                    <div class="config-desc">只对客服消息、购买成功、充值成功生效；库存与补货会自动忽略这个选项。</div>
+                                                </div>
+                                                <div class="config-input-wrapper">
+                                                    <input type="checkbox" id="opsAlertUnifiedSummaryDraftWorkHoursOnlyEnabled" data-admin-change-action="settings-change-ops-alert-unified-summary-draft">
+                                                </div>
+                                            </div>
+                                            <div class="config-row">
+                                                <label>汇总方式</label>
+                                                <div class="config-input-wrapper">
+                                                    <select class="config-input" id="opsAlertUnifiedSummaryDraftScheduleMode" data-admin-change-action="settings-change-ops-alert-unified-summary-draft">
+                                                        <option value="rolling_window">滚动窗口</option>
+                                                        <option value="hourly">每小时固定时点</option>
+                                                        <option value="daily">每天固定时点</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="config-row">
+                                                <label>汇总窗口（分钟）</label>
+                                                <div class="config-input-wrapper">
+                                                    <input type="number" min="5" max="1440" step="5" class="config-input" id="opsAlertUnifiedSummaryDraftWindowMinutes" data-admin-change-action="settings-change-ops-alert-unified-summary-draft" value="60">
+                                                </div>
+                                            </div>
+                                            <div class="config-row">
+                                                <label>每小时发送分钟</label>
+                                                <div class="config-input-wrapper">
+                                                    <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertUnifiedSummaryDraftHourlyMinute" data-admin-change-action="settings-change-ops-alert-unified-summary-draft" value="0">
+                                                </div>
+                                            </div>
+                                            <div class="config-row">
+                                                <label>每天发送小时</label>
+                                                <div class="config-input-wrapper">
+                                                    <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertUnifiedSummaryDraftDailyHour" data-admin-change-action="settings-change-ops-alert-unified-summary-draft" value="9">
+                                                </div>
+                                            </div>
+                                            <div class="config-row">
+                                                <label>每天发送分钟</label>
+                                                <div class="config-input-wrapper">
+                                                    <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertUnifiedSummaryDraftDailyMinute" data-admin-change-action="settings-change-ops-alert-unified-summary-draft" value="0">
+                                                </div>
+                                            </div>
+                                            <div class="config-row">
+                                                <label>每条通知最多展示条目</label>
+                                                <div class="config-input-wrapper">
+                                                    <input type="number" min="1" max="50" step="1" class="config-input" id="opsAlertUnifiedSummaryDraftMaxItems" data-admin-change-action="settings-change-ops-alert-unified-summary-draft" value="10">
+                                                </div>
+                                            </div>
+                                            <div class="ops-alert-save-row">
+                                                <button type="button" class="btn-add-config" data-admin-action="settings-apply-ops-alert-unified-summary-draft">
+                                                    <i class="fas fa-wand-magic-sparkles"></i> 应用到所选告警
+                                                </button>
+                                            </div>
+                                        </section>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="config-card ops-alert-config-card" data-config="ops-alerts-customer-chat-message">
                                 <div class="config-card-header">
                                     <div class="config-card-title">
