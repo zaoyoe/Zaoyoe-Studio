@@ -297,6 +297,28 @@ const OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS = Object.freeze([
         summary_max_items_id: 'opsAlertVerifyFailureSummaryMaxItems'
     })
 ]);
+const OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS = Object.freeze({
+    summaryScheduleMode: 'opsAlertUnifiedSummaryDraftScheduleMode',
+    summaryWindowMinutes: 'opsAlertUnifiedSummaryDraftWindowMinutes',
+    summaryHourlyMinute: 'opsAlertUnifiedSummaryDraftHourlyMinute',
+    summaryDailyHour: 'opsAlertUnifiedSummaryDraftDailyHour',
+    summaryDailyMinute: 'opsAlertUnifiedSummaryDraftDailyMinute',
+    summaryMaxItems: 'opsAlertUnifiedSummaryDraftMaxItems',
+    summaryModeHint: 'opsAlertUnifiedSummaryDraftModeHint'
+});
+const OPS_ALERT_MONITOR_CARD_CONFIG_IDS = Object.freeze([
+    'ops-alerts-customer-chat-message',
+    'ops-alerts-shop-purchase-success',
+    'ops-alerts-wallet-recharge-success',
+    'ops-alerts-shop-inventory',
+    'ops-alerts-tickets',
+    'ops-alerts-shop-order-delivery',
+    'ops-alerts-payment-gateway',
+    'ops-alerts-verify-quota',
+    'ops-alerts-verify-queue',
+    'ops-alerts-verify-failure',
+    'ops-alerts-shop-risk'
+]);
 const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 8000;
 const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 8000;
 const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 8000;
@@ -1709,15 +1731,78 @@ function collectOpsAlertUnifiedSummaryDraftFromForm() {
     };
 }
 
+function getOpsAlertSummaryModeHintText(section = {}, options = {}) {
+    const monitorEnabled = options.monitorEnabled !== false;
+    const summaryEnabled = options.summaryEnabled !== false;
+    if (!monitorEnabled) {
+        return '当前主监控未启用，开启后才会按这里的节奏统一发送。';
+    }
+    if (!summaryEnabled) {
+        return '当前未启用定时汇总，开启后才会按这里的节奏统一发送。';
+    }
+
+    const scheduleMode = normalizeOpsAlertSummaryScheduleMode(section.summary_schedule_mode, 'rolling_window');
+    if (scheduleMode === 'hourly') {
+        return `当前会在每小时 ${formatOpsAlertTimeNumber(section.summary_hourly_minute, 0, 59)} 分统一发送。`;
+    }
+    if (scheduleMode === 'daily') {
+        return `当前会在每天 ${formatOpsAlertHourMinute(section.summary_daily_hour, section.summary_daily_minute)} 统一发送。`;
+    }
+    return `当前会把 ${formatVerifyMonitorInteger(section.summary_window_minutes || 0)} 分钟内的告警先合并，在窗口结束后统一发送。`;
+}
+
+function setOpsAlertSummaryModeRowVisibility(inputId, isVisible) {
+    const row = document.getElementById(inputId)?.closest('.config-row');
+    if (row) {
+        row.hidden = !isVisible;
+    }
+}
+
+function ensureOpsAlertSummaryModeHintElement(ids = {}) {
+    const hintId = ids.summaryModeHint || `${ids.summaryScheduleMode || 'opsAlertSummaryMode'}Hint`;
+    let hintEl = document.getElementById(hintId);
+    const anchorRow = document.getElementById(ids.summaryMaxItems)?.closest('.config-row');
+    if (!anchorRow) {
+        return null;
+    }
+
+    if (!hintEl) {
+        hintEl = document.createElement('div');
+        hintEl.id = hintId;
+        hintEl.className = 'config-inline-note ops-alert-summary-mode-note';
+        hintEl.innerHTML = '<i class="fas fa-circle-info" aria-hidden="true"></i><span></span>';
+        anchorRow.parentNode?.insertBefore(hintEl, anchorRow);
+    }
+
+    return hintEl;
+}
+
+function applyOpsAlertSummaryModePresentation(section = {}, ids = {}, options = {}) {
+    const scheduleMode = normalizeOpsAlertSummaryScheduleMode(section.summary_schedule_mode, 'rolling_window');
+    setOpsAlertSummaryModeRowVisibility(ids.summaryWindowMinutes, scheduleMode === 'rolling_window');
+    setOpsAlertSummaryModeRowVisibility(ids.summaryHourlyMinute, scheduleMode === 'hourly');
+    setOpsAlertSummaryModeRowVisibility(ids.summaryDailyHour, scheduleMode === 'daily');
+    setOpsAlertSummaryModeRowVisibility(ids.summaryDailyMinute, scheduleMode === 'daily');
+
+    const hintEl = ensureOpsAlertSummaryModeHintElement(ids);
+    const hintCopyEl = hintEl?.querySelector('span');
+    if (hintCopyEl) {
+        hintCopyEl.textContent = getOpsAlertSummaryModeHintText(section, options);
+    }
+    if (hintEl) {
+        hintEl.classList.toggle('is-disabled', options.summaryEnabled === false || options.monitorEnabled === false);
+    }
+}
+
 function applyOpsAlertUnifiedSummaryDraftControls() {
     const draft = collectOpsAlertUnifiedSummaryDraftFromForm();
     const summaryEnabled = draft.summary_enabled === true;
-    const scheduleModeInput = document.getElementById('opsAlertUnifiedSummaryDraftScheduleMode');
-    const rollingWindowInput = document.getElementById('opsAlertUnifiedSummaryDraftWindowMinutes');
-    const hourlyMinuteInput = document.getElementById('opsAlertUnifiedSummaryDraftHourlyMinute');
-    const dailyHourInput = document.getElementById('opsAlertUnifiedSummaryDraftDailyHour');
-    const dailyMinuteInput = document.getElementById('opsAlertUnifiedSummaryDraftDailyMinute');
-    const summaryMaxItemsInput = document.getElementById('opsAlertUnifiedSummaryDraftMaxItems');
+    const scheduleModeInput = document.getElementById(OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS.summaryScheduleMode);
+    const rollingWindowInput = document.getElementById(OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS.summaryWindowMinutes);
+    const hourlyMinuteInput = document.getElementById(OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS.summaryHourlyMinute);
+    const dailyHourInput = document.getElementById(OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS.summaryDailyHour);
+    const dailyMinuteInput = document.getElementById(OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS.summaryDailyMinute);
+    const summaryMaxItemsInput = document.getElementById(OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS.summaryMaxItems);
     const selectedCount = getOpsAlertSummaryOrchestrationSelectedDefinitions().length;
     const applyButton = document.querySelector('[data-admin-action="settings-apply-ops-alert-unified-summary-draft"]');
 
@@ -1745,6 +1830,10 @@ function applyOpsAlertUnifiedSummaryDraftControls() {
         summaryMaxItemsInput.value = String(draft.summary_max_items);
         summaryMaxItemsInput.disabled = !summaryEnabled;
     }
+    applyOpsAlertSummaryModePresentation(draft, OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS, {
+        monitorEnabled: true,
+        summaryEnabled
+    });
     if (applyButton) {
         applyButton.disabled = selectedCount <= 0;
         applyButton.innerHTML = `<i class="fas fa-wand-magic-sparkles"></i> 应用到所选告警${selectedCount > 0 ? `（${escapeConfigHtml(formatVerifyMonitorInteger(selectedCount))} 类）` : ''}`;
@@ -3954,6 +4043,7 @@ function applyOpsAlertOverview(config) {
     setOpsAlertDeleteButtonState('telegram_bot_token', telegramSecret);
     setOpsAlertDeleteButtonState('feishu_webhook_url', feishuSecret);
     setOpsAlertDeleteButtonState('email_api_key', emailSecret);
+    ensureOpsAlertMonitorCards();
     applyOpsAlertStrategyControls(normalizedConfig);
     applyOpsAlertShopRiskControls(normalizedConfig);
     applyOpsAlertShopInventoryControls(normalizedConfig);
@@ -4230,6 +4320,109 @@ function getOpsAlertStrategyLayoutRoot() {
     return document.querySelector('[data-config="ops-alerts-strategy"] .config-card-body');
 }
 
+function getOpsAlertMonitorViewRoot() {
+    return document.getElementById('ops-alerts-view-monitors');
+}
+
+function ensureOpsAlertMonitorsSaveCard(monitorsView = getOpsAlertMonitorViewRoot()) {
+    if (!monitorsView) {
+        return null;
+    }
+
+    const sideColumn = monitorsView.querySelector('[data-ops-alerts-bucket="monitors-side"]');
+    if (!sideColumn) {
+        return null;
+    }
+
+    let card = document.getElementById('opsAlertMonitorsSaveCard');
+    if (card) {
+        return card;
+    }
+
+    card = document.createElement('div');
+    card.id = 'opsAlertMonitorsSaveCard';
+    card.className = 'config-card ops-alert-config-card ops-alert-monitors-save-card';
+    card.innerHTML = `
+        <div class="config-card-header">
+            <div class="config-card-title">
+                <i class="fas fa-save"></i>
+                <span>监控规则保存</span>
+            </div>
+        </div>
+        <div class="config-card-body">
+            <div class="ops-alert-monitors-save-card__summary">
+                <strong class="ops-alert-monitors-save-card__state" id="opsAlertMonitorsSaveState" data-tone="success">当前配置已保存</strong>
+                <p class="ops-alert-monitors-save-card__hint" id="opsAlertMonitorsSaveHint">监控规则里改完也可以直接保存，不用再切回概览。</p>
+            </div>
+            <div class="ops-alert-save-row ops-alert-save-row--compact">
+                <button type="button" class="btn-add-config" id="opsAlertMonitorsInlineSaveButton" data-admin-action="settings-save-ops-alerts" disabled>保存站外告警配置</button>
+            </div>
+        </div>
+    `;
+    sideColumn.prepend(card);
+    return card;
+}
+
+function ensureOpsAlertMonitorCards() {
+    const monitorsView = getOpsAlertMonitorViewRoot();
+    if (!monitorsView) {
+        return;
+    }
+
+    const cards = OPS_ALERT_MONITOR_CARD_CONFIG_IDS
+        .map((configId) => monitorsView.querySelector(`[data-config="${configId}"]`))
+        .filter(Boolean);
+    if (!cards.length) {
+        return;
+    }
+
+    ensureOpsAlertMonitorsSaveCard(monitorsView);
+
+    const firstPass = monitorsView.dataset.opsAlertMonitorCardsReady !== 'true';
+    cards.forEach((card) => {
+        const header = card.querySelector('.config-card-header');
+        if (!header) {
+            return;
+        }
+
+        header.dataset.adminAction = 'settings-toggle-config-card';
+        header.classList.add('config-card-header--interactive');
+        if (!header.querySelector('.config-card-arrow')) {
+            const arrow = document.createElement('i');
+            arrow.className = 'fas fa-chevron-down config-card-arrow';
+            arrow.setAttribute('aria-hidden', 'true');
+            header.appendChild(arrow);
+        }
+
+        if (firstPass) {
+            card.classList.add('collapsed');
+        }
+        header.setAttribute('aria-expanded', String(!card.classList.contains('collapsed')));
+    });
+
+    if (!firstPass) {
+        return;
+    }
+
+    monitorsView.addEventListener('input', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) {
+            return;
+        }
+        updateOpsAlertStrategyDraftIndicators(collectOpsAlertConfigFromForm());
+    });
+
+    monitorsView.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) {
+            return;
+        }
+        applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    });
+
+    monitorsView.dataset.opsAlertMonitorCardsReady = 'true';
+}
+
 function getOpsAlertSavedConfigSnapshot() {
     return normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
 }
@@ -4249,10 +4442,18 @@ function updateOpsAlertStrategyDraftIndicators(config = null) {
     const hintEl = document.getElementById('opsAlertStrategySaveHint');
     const saveButton = document.getElementById('opsAlertStrategyInlineSaveButton');
     const dirtyBadge = document.getElementById('opsAlertStrategyDirtyBadge');
+    const monitorSaveCard = document.getElementById('opsAlertMonitorsSaveCard');
+    const monitorStateEl = document.getElementById('opsAlertMonitorsSaveState');
+    const monitorHintEl = document.getElementById('opsAlertMonitorsSaveHint');
+    const monitorSaveButton = document.getElementById('opsAlertMonitorsInlineSaveButton');
 
     if (saveBar) {
         saveBar.classList.toggle('is-dirty', dirty);
         saveBar.classList.toggle('is-saving', opsAlertStrategySaveInFlight);
+    }
+    if (monitorSaveCard) {
+        monitorSaveCard.classList.toggle('is-dirty', dirty);
+        monitorSaveCard.classList.toggle('is-saving', opsAlertStrategySaveInFlight);
     }
 
     if (stateEl) {
@@ -4267,6 +4468,18 @@ function updateOpsAlertStrategyDraftIndicators(config = null) {
             stateEl.dataset.tone = 'success';
         }
     }
+    if (monitorStateEl) {
+        if (opsAlertStrategySaveInFlight) {
+            monitorStateEl.textContent = '保存中';
+            monitorStateEl.dataset.tone = 'neutral';
+        } else if (dirty) {
+            monitorStateEl.textContent = '有未保存变更';
+            monitorStateEl.dataset.tone = 'warning';
+        } else {
+            monitorStateEl.textContent = '当前配置已保存';
+            monitorStateEl.dataset.tone = 'success';
+        }
+    }
 
     if (hintEl) {
         if (opsAlertStrategySaveInFlight) {
@@ -4277,10 +4490,25 @@ function updateOpsAlertStrategyDraftIndicators(config = null) {
             hintEl.textContent = '在这里改完就能就近保存，不用再切回概览。';
         }
     }
+    if (monitorHintEl) {
+        if (opsAlertStrategySaveInFlight) {
+            monitorHintEl.textContent = '正在把监控规则里的改动写回站外告警配置。';
+        } else if (dirty) {
+            monitorHintEl.textContent = '当前页里的改动会先停留在浏览器里，点击下方按钮即可保存。';
+        } else {
+            monitorHintEl.textContent = '监控规则里改完也可以直接保存，不用再切回概览。';
+        }
+    }
 
     if (saveButton) {
         saveButton.disabled = opsAlertStrategySaveInFlight || !dirty;
         saveButton.textContent = opsAlertStrategySaveInFlight
+            ? '保存中...'
+            : '保存站外告警配置';
+    }
+    if (monitorSaveButton) {
+        monitorSaveButton.disabled = opsAlertStrategySaveInFlight || !dirty;
+        monitorSaveButton.textContent = opsAlertStrategySaveInFlight
             ? '保存中...'
             : '保存站外告警配置';
     }
@@ -4312,11 +4540,15 @@ function ensureOpsAlertStrategyBeforeUnloadPrompt() {
 function confirmOpsAlertStrategyNavigation(currentViewName, nextViewName) {
     const currentView = String(currentViewName || '').trim();
     const nextView = String(nextViewName || '').trim();
-    if (currentView !== 'strategy' || !nextView || nextView === currentView || !hasOpsAlertUnsavedChanges()) {
+    const guardedViews = {
+        strategy: '策略中心',
+        monitors: '监控规则'
+    };
+    if (!guardedViews[currentView] || !nextView || nextView === currentView || !hasOpsAlertUnsavedChanges()) {
         return true;
     }
 
-    return window.confirm('当前页有未保存变更。现在切换标签后改动仍会保留在当前页面，但刷新或重新打开后会丢失。要继续切换吗？');
+    return window.confirm(`${guardedViews[currentView]}里还有未保存变更。现在切换标签后改动仍会保留在当前页面，但刷新或重新打开后会丢失。要继续切换吗？`);
 }
 
 function formatOpsAlertHourRange(startHour, endHour) {
@@ -5741,6 +5973,14 @@ function applyOpsAlertSummaryModeControls(monitorConfig = {}, ids = {}) {
     if (summaryMaxItemsInput) {
         summaryMaxItemsInput.disabled = !summaryInputsEnabled;
     }
+
+    applyOpsAlertSummaryModePresentation(monitorConfig, {
+        ...ids,
+        summaryModeHint: ids.summaryModeHint || `${ids.summaryScheduleMode || 'opsAlertSummaryMode'}Hint`
+    }, {
+        monitorEnabled: monitorConfig.enabled === true,
+        summaryEnabled: monitorConfig.summary_enabled === true
+    });
 }
 
 function applyOpsAlertCustomerChatControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
@@ -9785,7 +10025,10 @@ function setupGeneralSettingsEventListeners() {
 function toggleConfigCard(headerEl) {
     const card = headerEl.closest('.config-card');
     if (card) {
-        card.classList.toggle('collapsed');
+        const isCollapsed = card.classList.toggle('collapsed');
+        if (headerEl instanceof HTMLElement) {
+            headerEl.setAttribute('aria-expanded', String(!isCollapsed));
+        }
     }
 }
 
