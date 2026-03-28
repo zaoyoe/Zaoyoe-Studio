@@ -19013,6 +19013,16 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     #module-ops-alerts .module-content.ops-alert-settings-layout.ops-alert-settings-layout--single {
         grid-template-columns: minmax(0, 1fr);
     }
+
+    #ops-alerts-view-channels .module-content.ops-alert-settings-layout {
+        grid-template-columns: minmax(0, 1fr);
+        justify-items: center;
+    }
+
+    #ops-alerts-view-channels .ops-alert-settings-column {
+        width: min(100%, 880px);
+        margin-inline: auto;
+    }
 }
 
 @media (max-width: 1100px) {
@@ -19056,6 +19066,17 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
     #module-ops-alerts .ops-alert-settings-column {
         gap: 16px;
+    }
+
+    #ops-alerts-view-channels .module-content.ops-alert-settings-layout {
+        align-items: center;
+    }
+
+    #ops-alerts-view-channels .ops-alert-settings-column,
+    #ops-alerts-view-channels .ops-alert-settings-column .config-card {
+        width: 100%;
+        max-width: 760px;
+        margin-inline: auto;
     }
 }
 
