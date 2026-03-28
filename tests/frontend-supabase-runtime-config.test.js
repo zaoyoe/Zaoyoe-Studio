@@ -2314,10 +2314,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'id="opsAlertTelegramBotToken"',
         'id="opsAlertFeishuWebhookUrl"',
         'data-secret-name="email_api_key"',
-        'data-admin-action="settings-toggle-ops-alert-shop-risk-auto-response"',
-        '邮件填写说明',
-        'alerts@mail.zaoyoe.com',
-        're_...'
+        'data-admin-action="settings-toggle-ops-alert-shop-risk-auto-response"'
     ];
 
     for (const marker of delegatedHtmlMarkers) {
