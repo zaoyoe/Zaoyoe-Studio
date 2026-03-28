@@ -9833,7 +9833,7 @@ async function settleOpsAlertWorkspace(delayMs = 60) {
 
 async function scrollToOpsAlertHealthPanel() {
     if (typeof window.switchOpsAlertsView === 'function') {
-        window.switchOpsAlertsView('overview');
+        window.switchOpsAlertsView('health');
     }
     await settleOpsAlertWorkspace(80);
     scrollToOpsAlertWorkspaceTarget('opsAlertHealthPanel');

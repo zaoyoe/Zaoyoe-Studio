@@ -19844,9 +19844,9 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .ops-alert-overview-banner__icon {
-    width: 42px;
-    height: 42px;
-    border-radius: 14px;
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
     border: 1px solid rgba(107, 158, 206, 0.18);
     background: rgba(10, 19, 36, 0.36);
     display: flex;
@@ -19857,7 +19857,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .ops-alert-overview-banner__icon i {
     margin-top: 0;
-    font-size: 1rem;
+    font-size: 0.82rem;
     color: #8fb8e5;
 }
 
