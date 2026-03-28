@@ -71,6 +71,12 @@ const OPS_ALERT_OVERVIEW_CARD_TONE_CLASSES = [
     'ops-alert-overview-card--warning',
     'ops-alert-overview-card--danger'
 ];
+const OPS_ALERT_OVERVIEW_BANNER_TONE_CLASSES = [
+    'ops-alert-overview-banner--neutral',
+    'ops-alert-overview-banner--success',
+    'ops-alert-overview-banner--warning',
+    'ops-alert-overview-banner--danger'
+];
 const OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS = Object.freeze([
     Object.freeze({
         key: 'customer_chat_message',
@@ -3803,40 +3809,7 @@ function renderPaymentChannelsConfig() {
 function applyOpsAlertOverview(config) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const overviewStatus = getOpsAlertOverviewStatus(normalizedConfig);
-    const {
-        channelStates,
-        deliveryIssues,
-        telegramSecret,
-        feishuSecret,
-        emailSecret
-    } = overviewStatus;
-
-    const summaryEl = document.getElementById('opsAlertSummary');
-    if (summaryEl) {
-        const isEnabled = normalizedConfig.enabled;
-        const hasChannels = channelStates.length > 0;
-        const hasIssues = deliveryIssues.length > 0;
-        const summaryIcon = !isEnabled
-            ? 'fa-bell-slash'
-            : (hasIssues ? 'fa-exclamation-triangle' : 'fa-satellite-dish');
-        let summaryText = '当前未启用站外退款告警，退款异常仍只会保留站内后台通知。';
-
-        if (isEnabled && !hasChannels) {
-            summaryText = '已启用站外退款告警，但还没有打开任何外部通道。';
-        } else if (isEnabled) {
-            summaryText = `已启用站外退款告警：${channelStates.join('；')}。发送采用异步队列，不阻塞退款主流程。`;
-            if (deliveryIssues.length) {
-                summaryText += ` 当前待补充：${deliveryIssues.join('、')}。`;
-            }
-        } else if (hasChannels) {
-            summaryText = `当前未启用站外退款告警，已预设通道：${channelStates.join('；')}。保存后启用即可生效。`;
-        }
-
-        summaryEl.innerHTML = `
-            <i class="fas ${summaryIcon}"></i>
-            <span>${escapeConfigHtml(summaryText)}</span>
-        `;
-    }
+    const { telegramSecret, feishuSecret, emailSecret } = overviewStatus;
 
     const masterToggle = document.getElementById('opsAlertEnabledToggle');
     if (masterToggle) {
@@ -5273,13 +5246,240 @@ function setOpsAlertOverviewCardTone(card, tone = 'neutral') {
     }
 }
 
-function updateOpsAlertOverviewCard(cardId, titleId, bodyId, tone, titleText, bodyText) {
+function setOpsAlertOverviewBannerTone(banner, tone = 'neutral') {
+    if (!banner) return;
+    banner.classList.add('ops-alert-overview-banner');
+    OPS_ALERT_OVERVIEW_BANNER_TONE_CLASSES.forEach((className) => banner.classList.remove(className));
+    banner.classList.add(`ops-alert-overview-banner--${tone}`);
+}
+
+function buildOpsAlertOverviewEmptyMarkup(message) {
+    return `<div class="ops-alert-overview-empty">${escapeConfigHtml(message || '暂无数据')}</div>`;
+}
+
+function buildOpsAlertOverviewListMarkup(items = [], options = {}) {
+    const normalizedItems = Array.isArray(items) ? items.filter(Boolean) : [];
+    if (!normalizedItems.length) {
+        return buildOpsAlertOverviewEmptyMarkup(options.emptyMessage || '暂无数据');
+    }
+
+    return `
+        <div class="ops-alert-overview-list${options.compact ? ' ops-alert-overview-list--compact' : ''}">
+            ${normalizedItems.map((item) => {
+                const tone = String(item?.tone || 'neutral').trim().toLowerCase();
+                const toneClass = tone && tone !== 'neutral'
+                    ? ` ops-alert-overview-list__item--${escapeConfigHtml(tone)}`
+                    : '';
+                const badges = [];
+                if (item?.severityLabel) {
+                    badges.push(buildOpsAlertHealthBadge(item.severityLabel, 'neutral'));
+                }
+                if (item?.statusLabel) {
+                    badges.push(buildOpsAlertHealthBadge(item.statusLabel, item.statusTone || tone || 'neutral'));
+                }
+
+                return `
+                    <div class="ops-alert-overview-list__item${toneClass}">
+                        <div class="ops-alert-overview-list__top">
+                            <strong class="ops-alert-overview-list__label">${escapeConfigHtml(item?.label || '—')}</strong>
+                            ${badges.length ? `<div class="ops-alert-overview-list__badges">${badges.join('')}</div>` : ''}
+                        </div>
+                        ${item?.value ? `<div class="ops-alert-overview-list__value" title="${escapeConfigHtml(item.value)}">${escapeConfigHtml(item.value)}</div>` : ''}
+                        ${item?.meta ? `<div class="ops-alert-overview-list__meta">${escapeConfigHtml(item.meta)}</div>` : ''}
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function buildOpsAlertOverviewMetricMarkup(items = []) {
+    const normalizedItems = Array.isArray(items)
+        ? items.filter((item) => item && item.label && item.value != null && item.value !== '')
+        : [];
+    if (!normalizedItems.length) {
+        return '';
+    }
+
+    return `
+        <div class="ops-alert-overview-metrics">
+            ${normalizedItems.map((item) => `
+                <div class="ops-alert-overview-metric">
+                    <span>${escapeConfigHtml(item.label)}</span>
+                    <strong title="${escapeConfigHtml(item.value)}">${escapeConfigHtml(item.value)}</strong>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function buildOpsAlertOverviewKeyValueMarkup(items = [], options = {}) {
+    const normalizedItems = Array.isArray(items)
+        ? items.filter((item) => item && (item.label || item.value))
+        : [];
+    if (!normalizedItems.length) {
+        return options.emptyMessage ? buildOpsAlertOverviewEmptyMarkup(options.emptyMessage) : '';
+    }
+
+    return `
+        <div class="ops-alert-overview-kv-list${options.compact ? ' ops-alert-overview-kv-list--compact' : ''}">
+            ${normalizedItems.map((item) => {
+                const tone = String(item?.tone || 'neutral').trim().toLowerCase();
+                const toneClass = tone && tone !== 'neutral'
+                    ? ` ops-alert-overview-kv--${escapeConfigHtml(tone)}`
+                    : '';
+                return `
+                    <div class="ops-alert-overview-kv${toneClass}">
+                        <span class="ops-alert-overview-kv__label">${escapeConfigHtml(item?.label || '—')}</span>
+                        <strong class="ops-alert-overview-kv__value" title="${escapeConfigHtml(item?.value || '—')}">${escapeConfigHtml(item?.value || '—')}</strong>
+                        ${item?.meta ? `<em class="ops-alert-overview-kv__meta">${escapeConfigHtml(item.meta)}</em>` : ''}
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function renderOpsAlertOverviewBanner(overviewStatus, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+    const summaryEl = document.getElementById('opsAlertSummary');
+    if (!summaryEl) {
+        return;
+    }
+
+    const {
+        normalizedConfig,
+        deliveryIssues,
+        enabledChannelCount,
+        readyChannelCount,
+        configuredTargetChannelCount
+    } = overviewStatus;
+    const summary = healthState?.summary || getDefaultOpsAlertHealthState().summary;
+    const temporaryMuteState = getOpsAlertTemporaryMuteState(normalizedConfig);
+    const enabledSeveritySummary = buildOpsAlertEnabledSeveritySummary(normalizedConfig);
+    const failedCount = Math.max(0, Number(summary.failed_count || 0));
+    const deadLetterCount = Math.max(0, Number(summary.dead_letter_count || 0));
+    const totalAttemptCount = Math.max(0, Number(summary.total_attempt_count || 0));
+    const lookbackHours = formatVerifyMonitorInteger(summary.lookback_hours || 72);
+    let tone = 'neutral';
+    let icon = 'fa-bell-slash';
+    let headline = '站外告警未启用';
+    const detailParts = [];
+
+    if (!normalizedConfig.enabled) {
+        headline = enabledChannelCount > 0
+            ? '站外告警尚未启用，当前通道仅保存为预设'
+            : '站外告警未启用';
+        detailParts.push(
+            enabledChannelCount > 0
+                ? '保存并启用后才会真正开始站外投递。'
+                : '退款和异常消息仍会保留在站内后台。'
+        );
+    } else if (enabledChannelCount === 0) {
+        tone = 'warning';
+        icon = 'fa-triangle-exclamation';
+        headline = '站外告警已启用，但还没有打开外部通道';
+        detailParts.push('请至少打开一个外部通道，才会开始异步投递。');
+    } else if (deadLetterCount > 0) {
+        tone = 'danger';
+        icon = 'fa-circle-exclamation';
+        headline = '站外告警存在死信，建议优先处理异常通道';
+    } else if (failedCount > 0 || deliveryIssues.length > 0 || readyChannelCount < enabledChannelCount) {
+        tone = 'warning';
+        icon = 'fa-triangle-exclamation';
+        headline = '站外告警已启用，但部分通道仍需要关注';
+    } else {
+        tone = 'success';
+        icon = 'fa-satellite-dish';
+        headline = '站外告警已启用，当前通道可正常投递';
+    }
+
+    if (normalizedConfig.enabled) {
+        detailParts.push('发送采用异步队列，不阻塞退款主流程。');
+    }
+    if (deliveryIssues.length) {
+        detailParts.push(`待补充：${deliveryIssues.join('、')}。`);
+    }
+    if (enabledSeveritySummary) {
+        detailParts.push(`当前级别：${enabledSeveritySummary}。`);
+    }
+    if (temporaryMuteState.active) {
+        detailParts.push(
+            `临时静默至 ${temporaryMuteState.untilLabel}，${temporaryMuteState.allowCritical ? 'critical 仍继续通知。' : '所有级别暂停外发。'}`
+        );
+    }
+
+    const badges = [
+        buildOpsAlertHealthBadge(normalizedConfig.enabled ? '已启用' : '未启用', normalizedConfig.enabled ? (tone === 'neutral' ? 'success' : tone) : 'neutral'),
+        buildOpsAlertHealthBadge(
+            enabledChannelCount > 0 ? `${readyChannelCount} / ${enabledChannelCount} 通道就绪` : '0 / 0 通道就绪',
+            enabledChannelCount > 0
+                ? (readyChannelCount === enabledChannelCount ? 'success' : 'warning')
+                : 'neutral'
+        ),
+        buildOpsAlertHealthBadge(
+            `已配置 ${configuredTargetChannelCount} / 3`,
+            configuredTargetChannelCount > 0 ? 'success' : 'neutral'
+        )
+    ];
+
+    if (healthState?.status === 'loading') {
+        badges.push(buildOpsAlertHealthBadge('健康页刷新中', 'neutral'));
+    } else if (healthState?.status === 'error') {
+        badges.push(buildOpsAlertHealthBadge('健康查询失败', 'danger'));
+    } else if (normalizedConfig.enabled && totalAttemptCount > 0) {
+        badges.push(
+            buildOpsAlertHealthBadge(
+                `近 ${lookbackHours}h 失败 ${formatVerifyMonitorInteger(failedCount)}`,
+                deadLetterCount > 0 ? 'danger' : (failedCount > 0 ? 'warning' : 'success')
+            )
+        );
+        if (deadLetterCount > 0) {
+            badges.push(buildOpsAlertHealthBadge(`死信 ${formatVerifyMonitorInteger(deadLetterCount)}`, 'danger'));
+        }
+    }
+
+    const canSendTest = normalizedConfig.enabled && enabledChannelCount > 0 && deliveryIssues.length === 0;
+    const testButtonTitle = canSendTest
+        ? '向已启用的站外通道发送测试告警'
+        : (!normalizedConfig.enabled
+            ? '请先启用站外告警'
+            : (enabledChannelCount === 0 ? '请先打开至少一个通道' : '请先补齐通道配置'));
+
+    setOpsAlertOverviewBannerTone(summaryEl, tone);
+    summaryEl.innerHTML = `
+        <div class="ops-alert-overview-banner__icon">
+            <i class="fas ${escapeConfigHtml(icon)}"></i>
+        </div>
+        <div class="ops-alert-overview-banner__content">
+            <div class="ops-alert-overview-banner__headline">${escapeConfigHtml(headline)}</div>
+            <div class="ops-alert-overview-banner__meta">${badges.join('')}</div>
+            <div class="ops-alert-overview-banner__detail">${escapeConfigHtml(detailParts.join(' '))}</div>
+            ${healthState?.fetched_at ? `<div class="ops-alert-overview-banner__stamp">刷新于 ${escapeConfigHtml(formatVerifyMonitorDateTime(healthState.fetched_at))}</div>` : ''}
+        </div>
+        <div class="ops-alert-overview-banner__actions">
+            <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-scroll-ops-alert-health">
+                查看健康页
+            </button>
+            <button
+                type="button"
+                class="btn-add-config btn-add-config--compact"
+                data-admin-action="settings-send-ops-alert-telegram-test"
+                title="${escapeConfigHtml(testButtonTitle)}"
+                ${canSendTest ? '' : 'disabled'}
+            >
+                发送测试告警
+            </button>
+        </div>
+    `;
+}
+
+function updateOpsAlertOverviewCard(cardId, titleId, bodyId, tone, titleText, bodyMarkup) {
     const card = document.getElementById(cardId);
     const titleEl = document.getElementById(titleId);
     const bodyEl = document.getElementById(bodyId);
     setOpsAlertOverviewCardTone(card, tone);
     if (titleEl) titleEl.textContent = titleText;
-    if (bodyEl) bodyEl.textContent = bodyText;
+    if (bodyEl) bodyEl.innerHTML = bodyMarkup;
 }
 
 function formatOpsAlertTrendBucketLabel(value) {
@@ -5438,14 +5638,24 @@ function getOpsAlertOverviewStatus(config) {
     const channelStates = [];
     const deliveryIssues = [];
     const targetSummaries = [];
+    const channelOverviewItems = [];
+    const targetOverviewItems = [];
+    const targetDetailRows = [];
     let enabledChannelCount = 0;
     let readyChannelCount = 0;
     let configuredTargetChannelCount = 0;
+    const telegramEnabled = normalizedConfig.channels.telegram.enabled;
+    const feishuEnabled = normalizedConfig.channels.feishu.enabled;
+    const emailEnabled = normalizedConfig.channels.email.enabled;
+    const telegramReady = telegramSecret.configured && telegramChatCount > 0;
+    const feishuReady = feishuSecret.configured;
+    const emailHasFromAddress = Boolean(normalizedConfig.channels.email.from_address);
+    const emailReady = emailSecret.configured && emailRecipientCount > 0 && emailHasFromAddress;
 
-    if (normalizedConfig.channels.telegram.enabled) {
+    if (telegramEnabled) {
         enabledChannelCount += 1;
         const telegramSummary = `Telegram · ${normalizedConfig.channels.telegram.minimum_severity}+ · ${telegramChatCount || 0} 个 chat`;
-        if (telegramSecret.configured && telegramChatCount > 0) {
+        if (telegramReady) {
             readyChannelCount += 1;
             channelStates.push(`${telegramSummary} · 已就绪`);
         } else {
@@ -5458,11 +5668,35 @@ function getOpsAlertOverviewStatus(config) {
         configuredTargetChannelCount += 1;
         targetSummaries.push(`Telegram：${telegramChatCount} 个 chat`);
     }
+    channelOverviewItems.push({
+        key: 'telegram',
+        label: 'Telegram',
+        value: telegramChatCount > 0 ? `${telegramChatCount} 个 chat` : (telegramSecret.configured ? '等待填写 chat' : '未配置目标'),
+        meta: [
+            telegramEnabled
+                ? (telegramReady ? '可直接投递' : '启用中，仍需补齐配置')
+                : ((telegramChatCount > 0 || telegramSecret.configured) ? '当前为预设' : '尚未打开'),
+            telegramSecret.configured ? 'Bot Token 已配置' : 'Bot Token 未配置'
+        ].join(' · '),
+        tone: telegramEnabled ? (telegramReady ? 'success' : 'warning') : 'neutral',
+        severityLabel: `${normalizedConfig.channels.telegram.minimum_severity}+`,
+        statusLabel: telegramEnabled ? (telegramReady ? '已就绪' : '待补充') : '未打开',
+        statusTone: telegramEnabled ? (telegramReady ? 'success' : 'warning') : 'neutral'
+    });
+    targetOverviewItems.push({
+        key: 'telegram',
+        label: 'Telegram',
+        value: telegramChatCount > 0 ? `${telegramChatCount} 个 chat` : '未填写 chat',
+        meta: telegramEnabled ? '打开后会投递到配置的 chat' : '当前为预设目标',
+        tone: telegramChatCount > 0 ? 'success' : (telegramEnabled ? 'warning' : 'neutral'),
+        statusLabel: telegramChatCount > 0 ? '已配置' : (telegramEnabled ? '待配置' : '未配置'),
+        statusTone: telegramChatCount > 0 ? 'success' : (telegramEnabled ? 'warning' : 'neutral')
+    });
 
-    if (normalizedConfig.channels.feishu.enabled) {
+    if (feishuEnabled) {
         enabledChannelCount += 1;
         const feishuSummary = `飞书 · ${normalizedConfig.channels.feishu.minimum_severity}+`;
-        if (feishuSecret.configured) {
+        if (feishuReady) {
             readyChannelCount += 1;
             channelStates.push(`${feishuSummary} · 已就绪`);
         } else {
@@ -5474,18 +5708,39 @@ function getOpsAlertOverviewStatus(config) {
         configuredTargetChannelCount += 1;
         targetSummaries.push('飞书：Webhook 已配置');
     }
+    channelOverviewItems.push({
+        key: 'feishu',
+        label: '飞书',
+        value: feishuSecret.configured ? 'Webhook 已配置' : '未配置 Webhook',
+        meta: feishuEnabled
+            ? (feishuReady ? '可直接投递' : '启用中，仍需补齐 Webhook')
+            : (feishuSecret.configured ? '当前为预设' : '尚未打开'),
+        tone: feishuEnabled ? (feishuReady ? 'success' : 'warning') : 'neutral',
+        severityLabel: `${normalizedConfig.channels.feishu.minimum_severity}+`,
+        statusLabel: feishuEnabled ? (feishuReady ? '已就绪' : '待补充') : '未打开',
+        statusTone: feishuEnabled ? (feishuReady ? 'success' : 'warning') : 'neutral'
+    });
+    targetOverviewItems.push({
+        key: 'feishu',
+        label: '飞书',
+        value: feishuSecret.configured ? 'Webhook 已配置' : '未配置 Webhook',
+        meta: feishuEnabled ? '打开后会发往群机器人' : '当前为预设目标',
+        tone: feishuSecret.configured ? 'success' : (feishuEnabled ? 'warning' : 'neutral'),
+        statusLabel: feishuSecret.configured ? '已配置' : (feishuEnabled ? '待配置' : '未配置'),
+        statusTone: feishuSecret.configured ? 'success' : (feishuEnabled ? 'warning' : 'neutral')
+    });
 
-    if (normalizedConfig.channels.email.enabled) {
+    if (emailEnabled) {
         enabledChannelCount += 1;
         const emailSummary = `邮件 · ${normalizedConfig.channels.email.minimum_severity}+ · ${emailRecipientCount || 0} 个收件人`;
-        if (emailSecret.configured && emailRecipientCount > 0 && normalizedConfig.channels.email.from_address) {
+        if (emailReady) {
             readyChannelCount += 1;
             channelStates.push(`${emailSummary} · 已就绪`);
         } else {
             channelStates.push(`${emailSummary} · 待补充配置`);
             if (!emailSecret.configured) deliveryIssues.push('Email API Key 未配置');
             if (!emailRecipientCount) deliveryIssues.push('邮件收件人未填写');
-            if (!normalizedConfig.channels.email.from_address) deliveryIssues.push('邮件发件地址未填写');
+            if (!emailHasFromAddress) deliveryIssues.push('邮件发件地址未填写');
         }
     }
     if (emailRecipientCount > 0) {
@@ -5502,6 +5757,51 @@ function getOpsAlertOverviewStatus(config) {
     if (normalizedConfig.channels.email.reply_to) {
         targetSummaries.push(`Reply-To：${normalizedConfig.channels.email.reply_to}`);
     }
+    channelOverviewItems.push({
+        key: 'email',
+        label: '邮件',
+        value: emailRecipientCount > 0 ? `${emailRecipientCount} 个收件人` : '未填写收件人',
+        meta: [
+            emailEnabled
+                ? (emailReady ? '可直接投递' : '启用中，仍需补齐发件配置')
+                : ((emailRecipientCount > 0 || emailHasFromAddress) ? '当前为预设' : '尚未打开'),
+            emailHasFromAddress ? '发件地址已配置' : '缺少发件地址'
+        ].join(' · '),
+        tone: emailEnabled ? (emailReady ? 'success' : 'warning') : 'neutral',
+        severityLabel: `${normalizedConfig.channels.email.minimum_severity}+`,
+        statusLabel: emailEnabled ? (emailReady ? '已就绪' : '待补充') : '未打开',
+        statusTone: emailEnabled ? (emailReady ? 'success' : 'warning') : 'neutral'
+    });
+    targetOverviewItems.push({
+        key: 'email',
+        label: '邮件',
+        value: emailRecipientCount > 0 ? `${emailRecipientCount} 个收件人` : '未填写收件人',
+        meta: emailEnabled ? '打开后会发往已配置邮箱' : '当前为预设目标',
+        tone: (emailRecipientCount > 0 && emailHasFromAddress) ? 'success' : (emailEnabled ? 'warning' : 'neutral'),
+        statusLabel: (emailRecipientCount > 0 && emailHasFromAddress) ? '已配置' : (emailEnabled ? '待配置' : '未配置'),
+        statusTone: (emailRecipientCount > 0 && emailHasFromAddress) ? 'success' : (emailEnabled ? 'warning' : 'neutral')
+    });
+    if (normalizedConfig.channels.email.from_address) {
+        targetDetailRows.push({
+            label: '发件地址',
+            value: normalizedConfig.channels.email.from_address,
+            tone: 'neutral'
+        });
+    }
+    if (normalizedConfig.channels.email.reply_to) {
+        targetDetailRows.push({
+            label: 'Reply-To',
+            value: normalizedConfig.channels.email.reply_to,
+            tone: 'neutral'
+        });
+    }
+    if (normalizedConfig.channels.email.subject_prefix) {
+        targetDetailRows.push({
+            label: '主题前缀',
+            value: normalizedConfig.channels.email.subject_prefix,
+            tone: 'neutral'
+        });
+    }
 
     return {
         normalizedConfig,
@@ -5513,6 +5813,9 @@ function getOpsAlertOverviewStatus(config) {
         channelStates,
         deliveryIssues,
         targetSummaries,
+        channelOverviewItems,
+        targetOverviewItems,
+        targetDetailRows,
         enabledChannelCount,
         readyChannelCount,
         configuredTargetChannelCount
@@ -5524,40 +5827,43 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
         normalizedConfig,
         channelStates,
         deliveryIssues,
-        targetSummaries,
+        channelOverviewItems,
+        targetOverviewItems,
+        targetDetailRows,
         enabledChannelCount,
         readyChannelCount,
         configuredTargetChannelCount
     } = getOpsAlertOverviewStatus(config);
+    const healthState = opsAlertHealthState || getDefaultOpsAlertHealthState();
+    const summary = healthState.summary || getDefaultOpsAlertHealthState().summary;
+    renderOpsAlertOverviewBanner({
+        normalizedConfig,
+        channelStates,
+        deliveryIssues,
+        channelOverviewItems,
+        targetOverviewItems,
+        targetDetailRows,
+        enabledChannelCount,
+        readyChannelCount,
+        configuredTargetChannelCount
+    }, healthState);
 
     let channelsTone = 'neutral';
     let channelsTitle = '未启用';
-    let channelsBody = '当前未启用站外告警，退款和异常消息仍会保留在站内后台。';
-    const enabledSeveritySummary = buildOpsAlertEnabledSeveritySummary(normalizedConfig);
-    const temporaryMuteState = getOpsAlertTemporaryMuteState(normalizedConfig);
+    let channelsBody = buildOpsAlertOverviewListMarkup(channelOverviewItems, { compact: true });
 
     if (normalizedConfig.enabled && enabledChannelCount === 0) {
         channelsTone = 'warning';
         channelsTitle = '0 / 3 已打开';
-        channelsBody = '已启用站外告警，但还没有打开任何外部通道。';
+        channelsBody = buildOpsAlertOverviewListMarkup(channelOverviewItems, { compact: true });
     } else if (enabledChannelCount > 0 && deliveryIssues.length > 0) {
         channelsTone = normalizedConfig.enabled ? 'warning' : 'neutral';
         channelsTitle = `${readyChannelCount} / ${enabledChannelCount} 已就绪`;
-        channelsBody = `${channelStates.join('；')}。待补充：${deliveryIssues.join('、')}。`;
+        channelsBody = buildOpsAlertOverviewListMarkup(channelOverviewItems);
     } else if (enabledChannelCount > 0) {
         channelsTone = normalizedConfig.enabled ? 'success' : 'neutral';
         channelsTitle = `${readyChannelCount} / ${enabledChannelCount} 已就绪`;
-        channelsBody = channelStates.join('；');
-        if (!normalizedConfig.enabled) {
-            channelsBody += '。当前仍处于预设状态，保存并启用后才会真正开始站外投递。';
-        }
-    }
-    if (enabledSeveritySummary) {
-        channelsBody += `${channelsBody.endsWith('。') ? '' : '。'} 当前级别：${enabledSeveritySummary}。`;
-    }
-    if (temporaryMuteState.active) {
-        channelsTone = channelsTone === 'danger' ? 'danger' : 'warning';
-        channelsBody += `${channelsBody.endsWith('。') ? '' : '。'} 当前临时静默至 ${temporaryMuteState.untilLabel}，${temporaryMuteState.allowCritical ? 'critical 仍继续通知。' : '所有级别暂停外发。'}`;
+        channelsBody = buildOpsAlertOverviewListMarkup(channelOverviewItems);
     }
     updateOpsAlertOverviewCard(
         'opsAlertOverviewChannelsCard',
@@ -5570,11 +5876,17 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
 
     let targetsTone = 'neutral';
     let targetsTitle = '等待配置';
-    let targetsBody = '保存后会在这里显示 chat、邮箱和群机器人摘要。';
-    if (configuredTargetChannelCount > 0 || targetSummaries.length > 0) {
-        targetsTone = deliveryIssues.length > 0 ? 'warning' : 'success';
+    let targetsBody = buildOpsAlertOverviewListMarkup(targetOverviewItems, { compact: true });
+    if (targetOverviewItems.length > 0) {
+        if (configuredTargetChannelCount > 0) {
+            targetsTone = deliveryIssues.length > 0 ? 'warning' : 'success';
+        } else if (normalizedConfig.enabled) {
+            targetsTone = 'warning';
+        }
         targetsTitle = `已配置 ${configuredTargetChannelCount || 0} / 3`;
-        targetsBody = targetSummaries.join('；');
+        if (targetDetailRows.length) {
+            targetsBody += buildOpsAlertOverviewKeyValueMarkup(targetDetailRows, { compact: true });
+        }
     }
     updateOpsAlertOverviewCard(
         'opsAlertOverviewTargetsCard',
@@ -5585,28 +5897,30 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
         targetsBody
     );
 
-    const healthState = opsAlertHealthState || getDefaultOpsAlertHealthState();
-    const summary = healthState.summary || getDefaultOpsAlertHealthState().summary;
     let recentTone = 'neutral';
     let recentTitle = '等待刷新';
-    let recentBody = '告警通道健康页加载后，会在这里显示最近投递摘要。';
+    let recentBody = buildOpsAlertOverviewEmptyMarkup('告警通道健康页加载后，会在这里显示最近投递摘要。');
 
     if (healthState.status === 'loading') {
         recentTitle = '正在刷新';
-        recentBody = healthState.message || '正在加载站外告警通道健康状态...';
+        recentBody = buildOpsAlertOverviewEmptyMarkup(healthState.message || '正在加载站外告警通道健康状态...');
     } else if (healthState.status === 'error') {
         recentTone = 'danger';
         recentTitle = '查询失败';
-        recentBody = healthState.message || '加载站外告警通道健康状态失败。';
+        recentBody = buildOpsAlertOverviewEmptyMarkup(healthState.message || '加载站外告警通道健康状态失败。');
     } else if (healthState.status === 'ready') {
         const lookbackHours = formatVerifyMonitorInteger(summary.lookback_hours || 0);
         const recentDeliverySummary = buildOpsAlertRecentDeliverySummary(summary.recent_deliveries, {
             limit: 3,
             includeChannel: true
         });
-        const recentDeliveryTypeSummary = buildOpsAlertDeliveryTypeSummary(summary.recent_delivery_types, 3);
         const recentErrorSummary = buildOpsAlertRecentErrorSummary(summary.recent_errors, 2);
         const recentErrorChannelSummary = buildOpsAlertErrorSourceSummary(summary.recent_error_channels, 3);
+        const totalAttemptCount = Math.max(0, Number(summary.total_attempt_count || 0));
+        const deliveredCount = Math.max(0, Number(summary.delivered_count || 0));
+        const deliveryRateText = totalAttemptCount > 0
+            ? `${Math.round((deliveredCount / totalAttemptCount) * 100)}%`
+            : '—';
         if (Number(summary.total_attempt_count || 0) > 0) {
             if (Number(summary.dead_letter_count || 0) > 0) {
                 recentTone = 'danger';
@@ -5616,13 +5930,48 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
                 recentTone = 'success';
             }
             recentTitle = `近 ${lookbackHours} 小时`;
-            recentBody = `送达 ${formatVerifyMonitorInteger(summary.delivered_count || 0)} 次，失败 ${formatVerifyMonitorInteger(summary.failed_count || 0)} 次，死信 ${formatVerifyMonitorInteger(summary.dead_letter_count || 0)} 项。${recentDeliverySummary ? ` 最近投递：${recentDeliverySummary}。` : ''}${recentDeliveryTypeSummary ? ` 成功类型：${recentDeliveryTypeSummary}。` : ''}${recentErrorSummary ? ` 最近失败：${recentErrorSummary}。` : ''}${recentErrorChannelSummary ? ` 异常来源：${recentErrorChannelSummary}。` : ''}${healthState.fetched_at ? ` 刷新于 ${formatVerifyMonitorDateTime(healthState.fetched_at)}。` : ''}`;
+            const metricsMarkup = buildOpsAlertOverviewMetricMarkup([
+                { label: '总投递', value: formatVerifyMonitorInteger(totalAttemptCount) },
+                { label: '送达率', value: deliveryRateText },
+                { label: '刷新于', value: healthState.fetched_at ? formatVerifyMonitorDateTime(healthState.fetched_at) : '—' }
+            ]);
+            const detailsMarkup = buildOpsAlertOverviewKeyValueMarkup([
+                recentDeliverySummary
+                    ? { label: '最近投递', value: recentDeliverySummary, tone: 'neutral' }
+                    : null,
+                recentErrorSummary
+                    ? {
+                        label: '最近失败',
+                        value: recentErrorSummary,
+                        tone: Number(summary.dead_letter_count || 0) > 0 ? 'danger' : 'warning'
+                    }
+                    : { label: '最近失败', value: '最近没有失败明细', tone: 'success' },
+                recentErrorChannelSummary
+                    ? {
+                        label: '异常来源',
+                        value: recentErrorChannelSummary,
+                        tone: Number(summary.dead_letter_count || 0) > 0 ? 'danger' : 'warning'
+                    }
+                    : {
+                        label: '异常来源',
+                        value: '当前没有集中失败来源',
+                        tone: Number(summary.failed_count || 0) > 0 ? 'warning' : 'success'
+                    }
+            ]);
+            recentBody = `${metricsMarkup}${detailsMarkup}`;
         } else if (Array.isArray(healthState.channels) && healthState.channels.length > 0) {
             recentTitle = `近 ${lookbackHours} 小时`;
-            recentBody = '最近没有新的站外投递记录，但通道健康信息已经刷新。';
+            recentBody = [
+                buildOpsAlertOverviewMetricMarkup([
+                    { label: '总投递', value: '0' },
+                    { label: '送达率', value: '—' },
+                    { label: '刷新于', value: healthState.fetched_at ? formatVerifyMonitorDateTime(healthState.fetched_at) : '—' }
+                ]),
+                buildOpsAlertOverviewEmptyMarkup('最近没有新的站外投递记录，但通道健康信息已经刷新。')
+            ].join('');
         } else {
             recentTitle = '暂无投递';
-            recentBody = '最近没有可用于评估的站外告警通道数据。';
+            recentBody = buildOpsAlertOverviewEmptyMarkup('最近没有可用于评估的站外告警通道数据。');
         }
     }
     updateOpsAlertOverviewCard(
@@ -9482,6 +9831,14 @@ async function settleOpsAlertWorkspace(delayMs = 60) {
     }
 }
 
+async function scrollToOpsAlertHealthPanel() {
+    if (typeof window.switchOpsAlertsView === 'function') {
+        window.switchOpsAlertsView('overview');
+    }
+    await settleOpsAlertWorkspace(80);
+    scrollToOpsAlertWorkspaceTarget('opsAlertHealthPanel');
+}
+
 function scrollToOpsAlertWorkspaceTarget(targetId) {
     const target = document.getElementById(String(targetId || '').trim());
     if (target && typeof target.scrollIntoView === 'function') {
@@ -13270,6 +13627,7 @@ window.sendOpsAlertPaymentConfigIncidentSample = sendOpsAlertPaymentConfigIncide
 window.sendOpsAlertPaymentConfigIncidentRecoveredSample = sendOpsAlertPaymentConfigIncidentRecoveredSample;
 window.sendOpsAlertPaymentConfigRecoveredSample = sendOpsAlertPaymentConfigRecoveredSample;
 window.refreshOpsAlertHealthPanel = refreshOpsAlertHealthPanel;
+window.scrollToOpsAlertHealthPanel = scrollToOpsAlertHealthPanel;
 window.refreshOpsAlertMonitorPanel = refreshOpsAlertMonitorPanel;
 window.setOpsAlertMonitorFilter = setOpsAlertMonitorFilter;
 window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;
