@@ -410,6 +410,15 @@ function bindAdminStudioDelegatedControls() {
             case 'switch-ops-alerts-view':
                 window.switchOpsAlertsView?.(actionEl.dataset.opsAlertsView);
                 break;
+            case 'settings-toggle-ops-alert-strategy-panel':
+                window.toggleOpsAlertStrategyPanel?.(actionEl.dataset.strategyPanel);
+                break;
+            case 'settings-open-ops-alert-strategy-panel':
+                window.openOpsAlertStrategyPanel?.(actionEl.dataset.strategyPanel, actionEl.dataset.strategyTab);
+                break;
+            case 'settings-switch-ops-alert-strategy-tab':
+                window.switchOpsAlertStrategyMuteTab?.(actionEl.dataset.strategyTab);
+                break;
             case 'settings-toggle-custom-dropdown':
                 window.toggleCustomDropdown?.(actionEl.dataset.dropdownId);
                 break;
