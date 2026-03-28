@@ -20438,18 +20438,15 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: flex;
     flex-direction: column;
     gap: 16px;
-    max-height: 0;
+    height: 0;
     overflow: hidden;
     opacity: 0;
-    visibility: hidden;
     pointer-events: none;
-    transition: max-height 0.3s ease, opacity 0.22s ease, visibility 0.22s ease;
+    transition: height 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease;
 }
 
-.ops-alert-summary-orchestration-panel.is-expanded .ops-alert-summary-orchestration-panel__body {
-    max-height: 2600px;
+.ops-alert-summary-orchestration-panel__body.is-open {
     opacity: 1;
-    visibility: visible;
     pointer-events: auto;
 }
 
@@ -20881,19 +20878,17 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     flex-direction: column;
     gap: 12px;
     padding: 0 18px;
-    max-height: 0;
+    padding-bottom: 0;
+    height: 0;
     overflow: hidden;
     opacity: 0;
-    visibility: hidden;
     pointer-events: none;
-    transition: max-height 0.3s ease, opacity 0.22s ease, padding 0.22s ease, visibility 0.22s ease;
+    transition: height 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease, padding-bottom 0.26s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.ops-alert-strategy-panel.is-expanded .ops-alert-strategy-panel__body {
+.ops-alert-strategy-panel__body.is-open {
     padding-bottom: 18px;
-    max-height: 3200px;
     opacity: 1;
-    visibility: visible;
     pointer-events: auto;
 }
 
@@ -20966,19 +20961,17 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     flex-direction: column;
     gap: 12px;
     padding: 0 16px;
-    max-height: 0;
+    padding-bottom: 0;
+    height: 0;
     overflow: hidden;
     opacity: 0;
-    visibility: hidden;
     pointer-events: none;
-    transition: max-height 0.3s ease, opacity 0.22s ease, padding 0.22s ease, visibility 0.22s ease;
+    transition: height 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease, padding-bottom 0.26s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.ops-alert-strategy-subpanel.is-expanded .ops-alert-strategy-subpanel__body {
+.ops-alert-strategy-subpanel__body.is-open {
     padding-bottom: 16px;
-    max-height: 2600px;
     opacity: 1;
-    visibility: visible;
     pointer-events: auto;
 }
 
