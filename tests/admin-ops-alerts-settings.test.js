@@ -199,6 +199,29 @@ function createDefaultState() {
                 summary_daily_hour: 9,
                 summary_daily_minute: 0
             },
+            shop_order_delivery: {
+                enabled: true,
+                sweep_interval_ms: 10 * 60 * 1000,
+                lookback_days: 14,
+                state_lookback_minutes: 24 * 60,
+                retry_waiting_min_attempts: 2,
+                dedupe_window_minutes: 30,
+                incident_enabled: true,
+                incident_min_order_count: 3,
+                incident_min_dead_letter_count: 1,
+                incident_min_distinct_users: 2,
+                incident_dedupe_window_minutes: 20,
+                page_size: 500,
+                max_pages: 10,
+                work_hours_only_enabled: false,
+                summary_enabled: false,
+                summary_window_minutes: 60,
+                summary_max_items: 10,
+                summary_schedule_mode: 'rolling_window',
+                summary_hourly_minute: 0,
+                summary_daily_hour: 9,
+                summary_daily_minute: 0
+            },
             verify_quota: {
                 enabled: true,
                 sweep_interval_ms: 15 * 60 * 1000,
@@ -208,7 +231,15 @@ function createDefaultState() {
                 critical_balance_threshold: 5,
                 critical_remaining_jobs_threshold: 5,
                 min_queue_buffer_jobs: 5,
-                dedupe_window_minutes: 6 * 60
+                dedupe_window_minutes: 6 * 60,
+                work_hours_only_enabled: false,
+                summary_enabled: false,
+                summary_window_minutes: 60,
+                summary_max_items: 10,
+                summary_schedule_mode: 'rolling_window',
+                summary_hourly_minute: 0,
+                summary_daily_hour: 9,
+                summary_daily_minute: 0
             },
             verify_queue: {
                 enabled: true,
@@ -222,7 +253,15 @@ function createDefaultState() {
                 recent_failure_threshold: 4,
                 dedupe_window_minutes: 30,
                 page_size: 500,
-                max_pages: 10
+                max_pages: 10,
+                work_hours_only_enabled: false,
+                summary_enabled: false,
+                summary_window_minutes: 60,
+                summary_max_items: 10,
+                summary_schedule_mode: 'rolling_window',
+                summary_hourly_minute: 0,
+                summary_daily_hour: 9,
+                summary_daily_minute: 0
             },
             verify_failure: {
                 enabled: true,
@@ -233,7 +272,15 @@ function createDefaultState() {
                 affected_user_threshold: 3,
                 dedupe_window_minutes: 15,
                 page_size: 500,
-                max_pages: 10
+                max_pages: 10,
+                work_hours_only_enabled: false,
+                summary_enabled: false,
+                summary_window_minutes: 60,
+                summary_max_items: 10,
+                summary_schedule_mode: 'rolling_window',
+                summary_hourly_minute: 0,
+                summary_daily_hour: 9,
+                summary_daily_minute: 0
             },
             payment_gateway: {
                 enabled: true,
@@ -254,7 +301,15 @@ function createDefaultState() {
                 min_webhook_5xx_count: 3,
                 min_query_5xx_count: 3,
                 page_size: 500,
-                max_pages: 20
+                max_pages: 20,
+                work_hours_only_enabled: false,
+                summary_enabled: false,
+                summary_window_minutes: 60,
+                summary_max_items: 10,
+                summary_schedule_mode: 'rolling_window',
+                summary_hourly_minute: 0,
+                summary_daily_hour: 9,
+                summary_daily_minute: 0
             }
         },
         secretStatus: {
@@ -330,6 +385,7 @@ function createNormalizedConfig(raw) {
     const shopPurchaseSuccess = source.shop_purchase_success && typeof source.shop_purchase_success === 'object' ? source.shop_purchase_success : {};
     const walletRechargeSuccess = source.wallet_recharge_success && typeof source.wallet_recharge_success === 'object' ? source.wallet_recharge_success : {};
     const tickets = source.tickets && typeof source.tickets === 'object' ? source.tickets : {};
+    const shopOrderDelivery = source.shop_order_delivery && typeof source.shop_order_delivery === 'object' ? source.shop_order_delivery : {};
     const verifyQuota = source.verify_quota && typeof source.verify_quota === 'object' ? source.verify_quota : {};
     const verifyQueue = source.verify_queue && typeof source.verify_queue === 'object' ? source.verify_queue : {};
     const verifyFailure = source.verify_failure && typeof source.verify_failure === 'object' ? source.verify_failure : {};
@@ -546,6 +602,29 @@ function createNormalizedConfig(raw) {
             summary_daily_hour: Math.min(23, Math.max(0, Number(tickets.summary_daily_hour ?? 9) || 9)),
             summary_daily_minute: Math.min(59, Math.max(0, Number(tickets.summary_daily_minute || 0) || 0))
         },
+        shop_order_delivery: {
+            enabled: normalizeBoolean(shopOrderDelivery.enabled, true),
+            sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(shopOrderDelivery.sweep_interval_ms || 10 * 60 * 1000) || (10 * 60 * 1000))),
+            lookback_days: Math.min(90, Math.max(1, Number(shopOrderDelivery.lookback_days || 14) || 14)),
+            state_lookback_minutes: Math.min(7 * 24 * 60, Math.max(30, Number(shopOrderDelivery.state_lookback_minutes || 24 * 60) || (24 * 60))),
+            retry_waiting_min_attempts: Math.min(50, Math.max(1, Number(shopOrderDelivery.retry_waiting_min_attempts || 2) || 2)),
+            dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(shopOrderDelivery.dedupe_window_minutes || 30) || 30)),
+            incident_enabled: normalizeBoolean(shopOrderDelivery.incident_enabled, true),
+            incident_min_order_count: Math.min(50, Math.max(2, Number(shopOrderDelivery.incident_min_order_count || 3) || 3)),
+            incident_min_dead_letter_count: Math.min(50, Math.max(0, Number(shopOrderDelivery.incident_min_dead_letter_count || 1) || 1)),
+            incident_min_distinct_users: Math.min(50, Math.max(1, Number(shopOrderDelivery.incident_min_distinct_users || 2) || 2)),
+            incident_dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(shopOrderDelivery.incident_dedupe_window_minutes || 20) || 20)),
+            page_size: Math.min(5000, Math.max(50, Number(shopOrderDelivery.page_size || 500) || 500)),
+            max_pages: Math.min(100, Math.max(1, Number(shopOrderDelivery.max_pages || 10) || 10)),
+            work_hours_only_enabled: normalizeBoolean(shopOrderDelivery.work_hours_only_enabled, false),
+            summary_enabled: normalizeBoolean(shopOrderDelivery.summary_enabled, false),
+            summary_window_minutes: Math.min(24 * 60, Math.max(5, Number(shopOrderDelivery.summary_window_minutes || 60) || 60)),
+            summary_max_items: Math.min(50, Math.max(1, Number(shopOrderDelivery.summary_max_items || 10) || 10)),
+            summary_schedule_mode: normalizeSummaryScheduleMode(shopOrderDelivery.summary_schedule_mode, 'rolling_window'),
+            summary_hourly_minute: Math.min(59, Math.max(0, Number(shopOrderDelivery.summary_hourly_minute || 0) || 0)),
+            summary_daily_hour: Math.min(23, Math.max(0, Number(shopOrderDelivery.summary_daily_hour ?? 9) || 9)),
+            summary_daily_minute: Math.min(59, Math.max(0, Number(shopOrderDelivery.summary_daily_minute || 0) || 0))
+        },
         verify_quota: {
             enabled: normalizeBoolean(verifyQuota.enabled, true),
             sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(verifyQuota.sweep_interval_ms || 15 * 60 * 1000) || (15 * 60 * 1000))),
@@ -555,7 +634,15 @@ function createNormalizedConfig(raw) {
             critical_balance_threshold: Math.min(1000000, Math.max(0, Number(verifyQuota.critical_balance_threshold || 5) || 5)),
             critical_remaining_jobs_threshold: Math.min(1000000, Math.max(0, Number(verifyQuota.critical_remaining_jobs_threshold || 5) || 5)),
             min_queue_buffer_jobs: Math.min(1000000, Math.max(0, Number(verifyQuota.min_queue_buffer_jobs || 5) || 5)),
-            dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(verifyQuota.dedupe_window_minutes || 6 * 60) || (6 * 60)))
+            dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(verifyQuota.dedupe_window_minutes || 6 * 60) || (6 * 60))),
+            work_hours_only_enabled: normalizeBoolean(verifyQuota.work_hours_only_enabled, false),
+            summary_enabled: normalizeBoolean(verifyQuota.summary_enabled, false),
+            summary_window_minutes: Math.min(24 * 60, Math.max(5, Number(verifyQuota.summary_window_minutes || 60) || 60)),
+            summary_max_items: Math.min(50, Math.max(1, Number(verifyQuota.summary_max_items || 10) || 10)),
+            summary_schedule_mode: normalizeSummaryScheduleMode(verifyQuota.summary_schedule_mode, 'rolling_window'),
+            summary_hourly_minute: Math.min(59, Math.max(0, Number(verifyQuota.summary_hourly_minute || 0) || 0)),
+            summary_daily_hour: Math.min(23, Math.max(0, Number(verifyQuota.summary_daily_hour ?? 9) || 9)),
+            summary_daily_minute: Math.min(59, Math.max(0, Number(verifyQuota.summary_daily_minute || 0) || 0))
         },
         verify_queue: {
             enabled: normalizeBoolean(verifyQueue.enabled, true),
@@ -569,7 +656,15 @@ function createNormalizedConfig(raw) {
             recent_failure_threshold: Math.min(100000, Math.max(1, Number(verifyQueue.recent_failure_threshold || 4) || 4)),
             dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(verifyQueue.dedupe_window_minutes || 30) || 30)),
             page_size: Math.min(5000, Math.max(50, Number(verifyQueue.page_size || 500) || 500)),
-            max_pages: Math.min(100, Math.max(1, Number(verifyQueue.max_pages || 10) || 10))
+            max_pages: Math.min(100, Math.max(1, Number(verifyQueue.max_pages || 10) || 10)),
+            work_hours_only_enabled: normalizeBoolean(verifyQueue.work_hours_only_enabled, false),
+            summary_enabled: normalizeBoolean(verifyQueue.summary_enabled, false),
+            summary_window_minutes: Math.min(24 * 60, Math.max(5, Number(verifyQueue.summary_window_minutes || 60) || 60)),
+            summary_max_items: Math.min(50, Math.max(1, Number(verifyQueue.summary_max_items || 10) || 10)),
+            summary_schedule_mode: normalizeSummaryScheduleMode(verifyQueue.summary_schedule_mode, 'rolling_window'),
+            summary_hourly_minute: Math.min(59, Math.max(0, Number(verifyQueue.summary_hourly_minute || 0) || 0)),
+            summary_daily_hour: Math.min(23, Math.max(0, Number(verifyQueue.summary_daily_hour ?? 9) || 9)),
+            summary_daily_minute: Math.min(59, Math.max(0, Number(verifyQueue.summary_daily_minute || 0) || 0))
         },
         verify_failure: {
             enabled: normalizeBoolean(verifyFailure.enabled, true),
@@ -580,7 +675,15 @@ function createNormalizedConfig(raw) {
             affected_user_threshold: Math.min(100000, Math.max(1, Number(verifyFailure.affected_user_threshold || 3) || 3)),
             dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(verifyFailure.dedupe_window_minutes || 15) || 15)),
             page_size: Math.min(5000, Math.max(50, Number(verifyFailure.page_size || 500) || 500)),
-            max_pages: Math.min(100, Math.max(1, Number(verifyFailure.max_pages || 10) || 10))
+            max_pages: Math.min(100, Math.max(1, Number(verifyFailure.max_pages || 10) || 10)),
+            work_hours_only_enabled: normalizeBoolean(verifyFailure.work_hours_only_enabled, false),
+            summary_enabled: normalizeBoolean(verifyFailure.summary_enabled, false),
+            summary_window_minutes: Math.min(24 * 60, Math.max(5, Number(verifyFailure.summary_window_minutes || 60) || 60)),
+            summary_max_items: Math.min(50, Math.max(1, Number(verifyFailure.summary_max_items || 10) || 10)),
+            summary_schedule_mode: normalizeSummaryScheduleMode(verifyFailure.summary_schedule_mode, 'rolling_window'),
+            summary_hourly_minute: Math.min(59, Math.max(0, Number(verifyFailure.summary_hourly_minute || 0) || 0)),
+            summary_daily_hour: Math.min(23, Math.max(0, Number(verifyFailure.summary_daily_hour ?? 9) || 9)),
+            summary_daily_minute: Math.min(59, Math.max(0, Number(verifyFailure.summary_daily_minute || 0) || 0))
         },
         payment_gateway: {
             enabled: normalizeBoolean(paymentGateway.enabled, true),
@@ -601,7 +704,15 @@ function createNormalizedConfig(raw) {
             min_webhook_5xx_count: Math.min(100, Math.max(1, Number(paymentGateway.min_webhook_5xx_count || 3) || 3)),
             min_query_5xx_count: Math.min(100, Math.max(1, Number(paymentGateway.min_query_5xx_count || 3) || 3)),
             page_size: Math.min(5000, Math.max(50, Number(paymentGateway.page_size || 500) || 500)),
-            max_pages: Math.min(100, Math.max(1, Number(paymentGateway.max_pages || 20) || 20))
+            max_pages: Math.min(100, Math.max(1, Number(paymentGateway.max_pages || 20) || 20)),
+            work_hours_only_enabled: normalizeBoolean(paymentGateway.work_hours_only_enabled, false),
+            summary_enabled: normalizeBoolean(paymentGateway.summary_enabled, false),
+            summary_window_minutes: Math.min(24 * 60, Math.max(5, Number(paymentGateway.summary_window_minutes || 60) || 60)),
+            summary_max_items: Math.min(50, Math.max(1, Number(paymentGateway.summary_max_items || 10) || 10)),
+            summary_schedule_mode: normalizeSummaryScheduleMode(paymentGateway.summary_schedule_mode, 'rolling_window'),
+            summary_hourly_minute: Math.min(59, Math.max(0, Number(paymentGateway.summary_hourly_minute || 0) || 0)),
+            summary_daily_hour: Math.min(23, Math.max(0, Number(paymentGateway.summary_daily_hour ?? 9) || 9)),
+            summary_daily_minute: Math.min(59, Math.max(0, Number(paymentGateway.summary_daily_minute || 0) || 0))
         }
     };
 }
@@ -958,6 +1069,25 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.tickets.summary_hourly_minute, 0);
         assert.equal(payload.config.tickets.summary_daily_hour, 9);
         assert.equal(payload.config.tickets.summary_daily_minute, 0);
+        assert.equal(payload.config.shop_order_delivery.enabled, true);
+        assert.equal(payload.config.shop_order_delivery.sweep_interval_ms, 10 * 60 * 1000);
+        assert.equal(payload.config.shop_order_delivery.lookback_days, 14);
+        assert.equal(payload.config.shop_order_delivery.state_lookback_minutes, 24 * 60);
+        assert.equal(payload.config.shop_order_delivery.retry_waiting_min_attempts, 2);
+        assert.equal(payload.config.shop_order_delivery.dedupe_window_minutes, 30);
+        assert.equal(payload.config.shop_order_delivery.incident_enabled, true);
+        assert.equal(payload.config.shop_order_delivery.incident_min_order_count, 3);
+        assert.equal(payload.config.shop_order_delivery.incident_min_dead_letter_count, 1);
+        assert.equal(payload.config.shop_order_delivery.incident_min_distinct_users, 2);
+        assert.equal(payload.config.shop_order_delivery.incident_dedupe_window_minutes, 20);
+        assert.equal(payload.config.shop_order_delivery.work_hours_only_enabled, false);
+        assert.equal(payload.config.shop_order_delivery.summary_enabled, false);
+        assert.equal(payload.config.shop_order_delivery.summary_window_minutes, 60);
+        assert.equal(payload.config.shop_order_delivery.summary_max_items, 10);
+        assert.equal(payload.config.shop_order_delivery.summary_schedule_mode, 'rolling_window');
+        assert.equal(payload.config.shop_order_delivery.summary_hourly_minute, 0);
+        assert.equal(payload.config.shop_order_delivery.summary_daily_hour, 9);
+        assert.equal(payload.config.shop_order_delivery.summary_daily_minute, 0);
         assert.equal(payload.config.verify_quota.enabled, true);
         assert.equal(payload.config.verify_quota.sweep_interval_ms, 15 * 60 * 1000);
         assert.equal(payload.config.verify_quota.low_balance_threshold, 20);
@@ -1164,6 +1294,27 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         summary_daily_hour: 8,
                         summary_daily_minute: 15
                     },
+                    shop_order_delivery: {
+                        enabled: true,
+                        sweep_interval_ms: 11 * 60 * 1000,
+                        lookback_days: 21,
+                        state_lookback_minutes: 18 * 60,
+                        retry_waiting_min_attempts: 3,
+                        dedupe_window_minutes: 35,
+                        incident_enabled: true,
+                        incident_min_order_count: 4,
+                        incident_min_dead_letter_count: 2,
+                        incident_min_distinct_users: 3,
+                        incident_dedupe_window_minutes: 25,
+                        work_hours_only_enabled: true,
+                        summary_enabled: true,
+                        summary_window_minutes: 85,
+                        summary_max_items: 7,
+                        summary_schedule_mode: 'daily',
+                        summary_hourly_minute: 10,
+                        summary_daily_hour: 11,
+                        summary_daily_minute: 5
+                    },
                     verify_quota: {
                         enabled: true,
                         sweep_interval_ms: 12 * 60 * 1000,
@@ -1172,7 +1323,15 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         critical_balance_threshold: 6,
                         critical_remaining_jobs_threshold: 7,
                         min_queue_buffer_jobs: 9,
-                        dedupe_window_minutes: 240
+                        dedupe_window_minutes: 240,
+                        work_hours_only_enabled: true,
+                        summary_enabled: true,
+                        summary_window_minutes: 95,
+                        summary_max_items: 11,
+                        summary_schedule_mode: 'daily',
+                        summary_hourly_minute: 5,
+                        summary_daily_hour: 10,
+                        summary_daily_minute: 10
                     },
                     verify_queue: {
                         enabled: false,
@@ -1183,7 +1342,15 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         active_job_threshold: 12,
                         oldest_pending_minutes_threshold: 35,
                         recent_failure_threshold: 5,
-                        dedupe_window_minutes: 40
+                        dedupe_window_minutes: 40,
+                        work_hours_only_enabled: false,
+                        summary_enabled: true,
+                        summary_window_minutes: 80,
+                        summary_max_items: 13,
+                        summary_schedule_mode: 'hourly',
+                        summary_hourly_minute: 25,
+                        summary_daily_hour: 9,
+                        summary_daily_minute: 20
                     },
                     verify_failure: {
                         enabled: true,
@@ -1192,7 +1359,15 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         min_total_jobs_threshold: 10,
                         failure_rate_threshold: 72,
                         affected_user_threshold: 6,
-                        dedupe_window_minutes: 25
+                        dedupe_window_minutes: 25,
+                        work_hours_only_enabled: true,
+                        summary_enabled: false,
+                        summary_window_minutes: 70,
+                        summary_max_items: 6,
+                        summary_schedule_mode: 'rolling_window',
+                        summary_hourly_minute: 0,
+                        summary_daily_hour: 9,
+                        summary_daily_minute: 0
                     },
                     payment_gateway: {
                         enabled: true,
@@ -1204,7 +1379,15 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         max_query_success_rate_percent: 58,
                         min_webhook_5xx_count: 4,
                         min_query_5xx_count: 5,
-                        dedupe_window_minutes: 75
+                        dedupe_window_minutes: 75,
+                        work_hours_only_enabled: true,
+                        summary_enabled: true,
+                        summary_window_minutes: 110,
+                        summary_max_items: 8,
+                        summary_schedule_mode: 'hourly',
+                        summary_hourly_minute: 40,
+                        summary_daily_hour: 7,
+                        summary_daily_minute: 50
                     }
                 },
                 secrets: {
@@ -1331,6 +1514,25 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.tickets.summary_hourly_minute, 20);
         assert.equal(payload.config.tickets.summary_daily_hour, 8);
         assert.equal(payload.config.tickets.summary_daily_minute, 15);
+        assert.equal(payload.config.shop_order_delivery.enabled, true);
+        assert.equal(payload.config.shop_order_delivery.sweep_interval_ms, 11 * 60 * 1000);
+        assert.equal(payload.config.shop_order_delivery.lookback_days, 21);
+        assert.equal(payload.config.shop_order_delivery.state_lookback_minutes, 18 * 60);
+        assert.equal(payload.config.shop_order_delivery.retry_waiting_min_attempts, 3);
+        assert.equal(payload.config.shop_order_delivery.dedupe_window_minutes, 35);
+        assert.equal(payload.config.shop_order_delivery.incident_enabled, true);
+        assert.equal(payload.config.shop_order_delivery.incident_min_order_count, 4);
+        assert.equal(payload.config.shop_order_delivery.incident_min_dead_letter_count, 2);
+        assert.equal(payload.config.shop_order_delivery.incident_min_distinct_users, 3);
+        assert.equal(payload.config.shop_order_delivery.incident_dedupe_window_minutes, 25);
+        assert.equal(payload.config.shop_order_delivery.work_hours_only_enabled, true);
+        assert.equal(payload.config.shop_order_delivery.summary_enabled, true);
+        assert.equal(payload.config.shop_order_delivery.summary_window_minutes, 85);
+        assert.equal(payload.config.shop_order_delivery.summary_max_items, 7);
+        assert.equal(payload.config.shop_order_delivery.summary_schedule_mode, 'daily');
+        assert.equal(payload.config.shop_order_delivery.summary_hourly_minute, 10);
+        assert.equal(payload.config.shop_order_delivery.summary_daily_hour, 11);
+        assert.equal(payload.config.shop_order_delivery.summary_daily_minute, 5);
         assert.equal(payload.config.verify_quota.enabled, true);
         assert.equal(payload.config.verify_quota.sweep_interval_ms, 12 * 60 * 1000);
         assert.equal(payload.config.verify_quota.low_balance_threshold, 24);
@@ -1479,6 +1681,25 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.tickets_summary_hourly_minute, 20);
         assert.equal(state.auditLogs[0].details.tickets_summary_daily_hour, 8);
         assert.equal(state.auditLogs[0].details.tickets_summary_daily_minute, 15);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_enabled, true);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_sweep_interval_ms, 11 * 60 * 1000);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_lookback_days, 21);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_state_lookback_minutes, 18 * 60);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_retry_waiting_min_attempts, 3);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_dedupe_window_minutes, 35);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_incident_enabled, true);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_incident_min_order_count, 4);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_incident_min_dead_letter_count, 2);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_incident_min_distinct_users, 3);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_incident_dedupe_window_minutes, 25);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_work_hours_only_enabled, true);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_summary_enabled, true);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_summary_window_minutes, 85);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_summary_max_items, 7);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_summary_schedule_mode, 'daily');
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_summary_hourly_minute, 10);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_summary_daily_hour, 11);
+        assert.equal(state.auditLogs[0].details.shop_order_delivery_summary_daily_minute, 5);
         assert.equal(state.auditLogs[0].details.verify_quota_enabled, true);
         assert.equal(state.auditLogs[0].details.verify_quota_sweep_interval_ms, 12 * 60 * 1000);
         assert.equal(state.auditLogs[0].details.verify_quota_low_balance_threshold, 24);
@@ -1487,6 +1708,14 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.verify_quota_critical_remaining_jobs_threshold, 7);
         assert.equal(state.auditLogs[0].details.verify_quota_min_queue_buffer_jobs, 9);
         assert.equal(state.auditLogs[0].details.verify_quota_dedupe_window_minutes, 240);
+        assert.equal(state.auditLogs[0].details.verify_quota_work_hours_only_enabled, true);
+        assert.equal(state.auditLogs[0].details.verify_quota_summary_enabled, true);
+        assert.equal(state.auditLogs[0].details.verify_quota_summary_window_minutes, 95);
+        assert.equal(state.auditLogs[0].details.verify_quota_summary_max_items, 11);
+        assert.equal(state.auditLogs[0].details.verify_quota_summary_schedule_mode, 'daily');
+        assert.equal(state.auditLogs[0].details.verify_quota_summary_hourly_minute, 5);
+        assert.equal(state.auditLogs[0].details.verify_quota_summary_daily_hour, 10);
+        assert.equal(state.auditLogs[0].details.verify_quota_summary_daily_minute, 10);
         assert.equal(state.auditLogs[0].details.verify_queue_enabled, false);
         assert.equal(state.auditLogs[0].details.verify_queue_sweep_interval_ms, 9 * 60 * 1000);
         assert.equal(state.auditLogs[0].details.verify_queue_recent_activity_lookback_hours, 18);
@@ -1496,6 +1725,14 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.verify_queue_oldest_pending_minutes_threshold, 35);
         assert.equal(state.auditLogs[0].details.verify_queue_recent_failure_threshold, 5);
         assert.equal(state.auditLogs[0].details.verify_queue_dedupe_window_minutes, 40);
+        assert.equal(state.auditLogs[0].details.verify_queue_work_hours_only_enabled, false);
+        assert.equal(state.auditLogs[0].details.verify_queue_summary_enabled, true);
+        assert.equal(state.auditLogs[0].details.verify_queue_summary_window_minutes, 80);
+        assert.equal(state.auditLogs[0].details.verify_queue_summary_max_items, 13);
+        assert.equal(state.auditLogs[0].details.verify_queue_summary_schedule_mode, 'hourly');
+        assert.equal(state.auditLogs[0].details.verify_queue_summary_hourly_minute, 25);
+        assert.equal(state.auditLogs[0].details.verify_queue_summary_daily_hour, 9);
+        assert.equal(state.auditLogs[0].details.verify_queue_summary_daily_minute, 20);
         assert.equal(state.auditLogs[0].details.verify_failure_enabled, true);
         assert.equal(state.auditLogs[0].details.verify_failure_sweep_interval_ms, 8 * 60 * 1000);
         assert.equal(state.auditLogs[0].details.verify_failure_recent_window_minutes, 40);
@@ -1503,6 +1740,14 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.verify_failure_rate_threshold, 72);
         assert.equal(state.auditLogs[0].details.verify_failure_affected_user_threshold, 6);
         assert.equal(state.auditLogs[0].details.verify_failure_dedupe_window_minutes, 25);
+        assert.equal(state.auditLogs[0].details.verify_failure_work_hours_only_enabled, true);
+        assert.equal(state.auditLogs[0].details.verify_failure_summary_enabled, false);
+        assert.equal(state.auditLogs[0].details.verify_failure_summary_window_minutes, 70);
+        assert.equal(state.auditLogs[0].details.verify_failure_summary_max_items, 6);
+        assert.equal(state.auditLogs[0].details.verify_failure_summary_schedule_mode, 'rolling_window');
+        assert.equal(state.auditLogs[0].details.verify_failure_summary_hourly_minute, 0);
+        assert.equal(state.auditLogs[0].details.verify_failure_summary_daily_hour, 9);
+        assert.equal(state.auditLogs[0].details.verify_failure_summary_daily_minute, 0);
         assert.equal(state.auditLogs[0].details.payment_gateway_enabled, true);
         assert.equal(state.auditLogs[0].details.payment_gateway_window_minutes, 40);
         assert.equal(state.auditLogs[0].details.payment_gateway_sweep_interval_ms, 6 * 60 * 1000);
@@ -1513,6 +1758,14 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.payment_gateway_min_webhook_5xx_count, 4);
         assert.equal(state.auditLogs[0].details.payment_gateway_min_query_5xx_count, 5);
         assert.equal(state.auditLogs[0].details.payment_gateway_dedupe_window_minutes, 75);
+        assert.equal(state.auditLogs[0].details.payment_gateway_work_hours_only_enabled, true);
+        assert.equal(state.auditLogs[0].details.payment_gateway_summary_enabled, true);
+        assert.equal(state.auditLogs[0].details.payment_gateway_summary_window_minutes, 110);
+        assert.equal(state.auditLogs[0].details.payment_gateway_summary_max_items, 8);
+        assert.equal(state.auditLogs[0].details.payment_gateway_summary_schedule_mode, 'hourly');
+        assert.equal(state.auditLogs[0].details.payment_gateway_summary_hourly_minute, 40);
+        assert.equal(state.auditLogs[0].details.payment_gateway_summary_daily_hour, 7);
+        assert.equal(state.auditLogs[0].details.payment_gateway_summary_daily_minute, 50);
         assert.deepEqual(state.auditLogs[0].details.updated_secrets, ['telegram_bot_token', 'feishu_webhook_url']);
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.feishu_webhook_url.configured, true);

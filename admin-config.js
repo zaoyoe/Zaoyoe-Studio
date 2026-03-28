@@ -166,6 +166,101 @@ const OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS = Object.freeze([
         summary_daily_hour_id: 'opsAlertTicketsSummaryDailyHour',
         summary_daily_minute_id: 'opsAlertTicketsSummaryDailyMinute',
         summary_max_items_id: 'opsAlertTicketsSummaryMaxItems'
+    }),
+    Object.freeze({
+        key: 'shop_order_delivery',
+        label: '履约失败 / 死信',
+        preset_group: 'operations',
+        supports_work_hours_only: true,
+        target_checkbox_id: 'opsAlertSummaryTargetShopOrderDelivery',
+        monitor_status_id: 'opsAlertSummaryStatusShopOrderDeliveryMonitor',
+        work_hours_status_id: 'opsAlertSummaryStatusShopOrderDeliveryWorkHours',
+        summary_status_id: 'opsAlertSummaryStatusShopOrderDeliverySummary',
+        enabled_toggle_id: 'opsAlertShopOrderDeliveryEnabledToggle',
+        work_hours_toggle_id: 'opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle',
+        summary_toggle_id: 'opsAlertShopOrderDeliverySummaryEnabledToggle',
+        summary_schedule_mode_id: 'opsAlertShopOrderDeliverySummaryScheduleMode',
+        summary_window_minutes_id: 'opsAlertShopOrderDeliverySummaryWindowMinutes',
+        summary_hourly_minute_id: 'opsAlertShopOrderDeliverySummaryHourlyMinute',
+        summary_daily_hour_id: 'opsAlertShopOrderDeliverySummaryDailyHour',
+        summary_daily_minute_id: 'opsAlertShopOrderDeliverySummaryDailyMinute',
+        summary_max_items_id: 'opsAlertShopOrderDeliverySummaryMaxItems'
+    }),
+    Object.freeze({
+        key: 'payment_gateway',
+        label: '支付通道异常',
+        preset_group: 'operations',
+        supports_work_hours_only: true,
+        target_checkbox_id: 'opsAlertSummaryTargetPaymentGateway',
+        monitor_status_id: 'opsAlertSummaryStatusPaymentGatewayMonitor',
+        work_hours_status_id: 'opsAlertSummaryStatusPaymentGatewayWorkHours',
+        summary_status_id: 'opsAlertSummaryStatusPaymentGatewaySummary',
+        enabled_toggle_id: 'opsAlertPaymentGatewayEnabledToggle',
+        work_hours_toggle_id: 'opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle',
+        summary_toggle_id: 'opsAlertPaymentGatewaySummaryEnabledToggle',
+        summary_schedule_mode_id: 'opsAlertPaymentGatewaySummaryScheduleMode',
+        summary_window_minutes_id: 'opsAlertPaymentGatewaySummaryWindowMinutes',
+        summary_hourly_minute_id: 'opsAlertPaymentGatewaySummaryHourlyMinute',
+        summary_daily_hour_id: 'opsAlertPaymentGatewaySummaryDailyHour',
+        summary_daily_minute_id: 'opsAlertPaymentGatewaySummaryDailyMinute',
+        summary_max_items_id: 'opsAlertPaymentGatewaySummaryMaxItems'
+    }),
+    Object.freeze({
+        key: 'verify_quota',
+        label: '验证额度',
+        preset_group: 'operations',
+        supports_work_hours_only: true,
+        target_checkbox_id: 'opsAlertSummaryTargetVerifyQuota',
+        monitor_status_id: 'opsAlertSummaryStatusVerifyQuotaMonitor',
+        work_hours_status_id: 'opsAlertSummaryStatusVerifyQuotaWorkHours',
+        summary_status_id: 'opsAlertSummaryStatusVerifyQuotaSummary',
+        enabled_toggle_id: 'opsAlertVerifyQuotaEnabledToggle',
+        work_hours_toggle_id: 'opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle',
+        summary_toggle_id: 'opsAlertVerifyQuotaSummaryEnabledToggle',
+        summary_schedule_mode_id: 'opsAlertVerifyQuotaSummaryScheduleMode',
+        summary_window_minutes_id: 'opsAlertVerifyQuotaSummaryWindowMinutes',
+        summary_hourly_minute_id: 'opsAlertVerifyQuotaSummaryHourlyMinute',
+        summary_daily_hour_id: 'opsAlertVerifyQuotaSummaryDailyHour',
+        summary_daily_minute_id: 'opsAlertVerifyQuotaSummaryDailyMinute',
+        summary_max_items_id: 'opsAlertVerifyQuotaSummaryMaxItems'
+    }),
+    Object.freeze({
+        key: 'verify_queue',
+        label: '验证堆积',
+        preset_group: 'operations',
+        supports_work_hours_only: true,
+        target_checkbox_id: 'opsAlertSummaryTargetVerifyQueue',
+        monitor_status_id: 'opsAlertSummaryStatusVerifyQueueMonitor',
+        work_hours_status_id: 'opsAlertSummaryStatusVerifyQueueWorkHours',
+        summary_status_id: 'opsAlertSummaryStatusVerifyQueueSummary',
+        enabled_toggle_id: 'opsAlertVerifyQueueEnabledToggle',
+        work_hours_toggle_id: 'opsAlertVerifyQueueWorkHoursOnlyEnabledToggle',
+        summary_toggle_id: 'opsAlertVerifyQueueSummaryEnabledToggle',
+        summary_schedule_mode_id: 'opsAlertVerifyQueueSummaryScheduleMode',
+        summary_window_minutes_id: 'opsAlertVerifyQueueSummaryWindowMinutes',
+        summary_hourly_minute_id: 'opsAlertVerifyQueueSummaryHourlyMinute',
+        summary_daily_hour_id: 'opsAlertVerifyQueueSummaryDailyHour',
+        summary_daily_minute_id: 'opsAlertVerifyQueueSummaryDailyMinute',
+        summary_max_items_id: 'opsAlertVerifyQueueSummaryMaxItems'
+    }),
+    Object.freeze({
+        key: 'verify_failure',
+        label: '验证失败率',
+        preset_group: 'operations',
+        supports_work_hours_only: true,
+        target_checkbox_id: 'opsAlertSummaryTargetVerifyFailure',
+        monitor_status_id: 'opsAlertSummaryStatusVerifyFailureMonitor',
+        work_hours_status_id: 'opsAlertSummaryStatusVerifyFailureWorkHours',
+        summary_status_id: 'opsAlertSummaryStatusVerifyFailureSummary',
+        enabled_toggle_id: 'opsAlertVerifyFailureEnabledToggle',
+        work_hours_toggle_id: 'opsAlertVerifyFailureWorkHoursOnlyEnabledToggle',
+        summary_toggle_id: 'opsAlertVerifyFailureSummaryEnabledToggle',
+        summary_schedule_mode_id: 'opsAlertVerifyFailureSummaryScheduleMode',
+        summary_window_minutes_id: 'opsAlertVerifyFailureSummaryWindowMinutes',
+        summary_hourly_minute_id: 'opsAlertVerifyFailureSummaryHourlyMinute',
+        summary_daily_hour_id: 'opsAlertVerifyFailureSummaryDailyHour',
+        summary_daily_minute_id: 'opsAlertVerifyFailureSummaryDailyMinute',
+        summary_max_items_id: 'opsAlertVerifyFailureSummaryMaxItems'
     })
 ]);
 const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 8000;
@@ -1225,6 +1320,29 @@ function getDefaultOpsAlertConfig() {
             summary_daily_hour: 9,
             summary_daily_minute: 0
         },
+        shop_order_delivery: {
+            enabled: true,
+            sweep_interval_ms: 10 * 60 * 1000,
+            lookback_days: 14,
+            state_lookback_minutes: 24 * 60,
+            retry_waiting_min_attempts: 2,
+            dedupe_window_minutes: 30,
+            incident_enabled: true,
+            incident_min_order_count: 3,
+            incident_min_dead_letter_count: 1,
+            incident_min_distinct_users: 2,
+            incident_dedupe_window_minutes: 20,
+            page_size: 500,
+            max_pages: 10,
+            work_hours_only_enabled: false,
+            summary_enabled: false,
+            summary_window_minutes: 60,
+            summary_max_items: 10,
+            summary_schedule_mode: 'rolling_window',
+            summary_hourly_minute: 0,
+            summary_daily_hour: 9,
+            summary_daily_minute: 0
+        },
         verify_quota: {
             enabled: true,
             sweep_interval_ms: 15 * 60 * 1000,
@@ -1234,7 +1352,15 @@ function getDefaultOpsAlertConfig() {
             critical_balance_threshold: 5,
             critical_remaining_jobs_threshold: 5,
             min_queue_buffer_jobs: 5,
-            dedupe_window_minutes: 6 * 60
+            dedupe_window_minutes: 6 * 60,
+            work_hours_only_enabled: false,
+            summary_enabled: false,
+            summary_window_minutes: 60,
+            summary_max_items: 10,
+            summary_schedule_mode: 'rolling_window',
+            summary_hourly_minute: 0,
+            summary_daily_hour: 9,
+            summary_daily_minute: 0
         },
         verify_queue: {
             enabled: true,
@@ -1248,7 +1374,15 @@ function getDefaultOpsAlertConfig() {
             recent_failure_threshold: 4,
             dedupe_window_minutes: 30,
             page_size: 500,
-            max_pages: 10
+            max_pages: 10,
+            work_hours_only_enabled: false,
+            summary_enabled: false,
+            summary_window_minutes: 60,
+            summary_max_items: 10,
+            summary_schedule_mode: 'rolling_window',
+            summary_hourly_minute: 0,
+            summary_daily_hour: 9,
+            summary_daily_minute: 0
         },
         verify_failure: {
             enabled: true,
@@ -1259,7 +1393,15 @@ function getDefaultOpsAlertConfig() {
             affected_user_threshold: 3,
             dedupe_window_minutes: 15,
             page_size: 500,
-            max_pages: 10
+            max_pages: 10,
+            work_hours_only_enabled: false,
+            summary_enabled: false,
+            summary_window_minutes: 60,
+            summary_max_items: 10,
+            summary_schedule_mode: 'rolling_window',
+            summary_hourly_minute: 0,
+            summary_daily_hour: 9,
+            summary_daily_minute: 0
         },
         payment_gateway: {
             enabled: true,
@@ -1280,7 +1422,15 @@ function getDefaultOpsAlertConfig() {
             min_webhook_5xx_count: 3,
             min_query_5xx_count: 3,
             page_size: 500,
-            max_pages: 20
+            max_pages: 20,
+            work_hours_only_enabled: false,
+            summary_enabled: false,
+            summary_window_minutes: 60,
+            summary_max_items: 10,
+            summary_schedule_mode: 'rolling_window',
+            summary_hourly_minute: 0,
+            summary_daily_hour: 9,
+            summary_daily_minute: 0
         }
     };
 }
@@ -1477,6 +1627,51 @@ function renderOpsAlertSummaryOrchestration(config = normalizeOpsAlertConfig(sys
                     ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，超时阈值 ${formatVerifyMonitorInteger(section.pending_overdue_minutes || 0)} 分钟。`
                     : `工单 SLA 阈值仍保留为 ${formatVerifyMonitorInteger(section.pending_overdue_minutes || 0)} 分钟。`
             );
+        } else if (definition.key === 'shop_order_delivery') {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.monitor_status_id,
+                section.enabled ? 'success' : 'neutral',
+                section.enabled ? '已启用' : '已关闭',
+                section.enabled
+                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，重试阈值 ${formatVerifyMonitorInteger(section.retry_waiting_min_attempts || 0)} 次，事故阈值 ${formatVerifyMonitorInteger(section.incident_min_order_count || 0)} 笔。`
+                    : `履约异常阈值仍保留，重试 ${formatVerifyMonitorInteger(section.retry_waiting_min_attempts || 0)} 次触发。`
+            );
+        } else if (definition.key === 'payment_gateway') {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.monitor_status_id,
+                section.enabled ? 'success' : 'neutral',
+                section.enabled ? '已启用' : '已关闭',
+                section.enabled
+                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，异常窗口 ${formatVerifyMonitorInteger(section.window_minutes || 0)} 分钟，失败阈值 ${formatVerifyMonitorInteger(section.min_failed_orders || 0)} 笔。`
+                    : `支付通道异常阈值仍保留，窗口 ${formatVerifyMonitorInteger(section.window_minutes || 0)} 分钟。`
+            );
+        } else if (definition.key === 'verify_quota') {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.monitor_status_id,
+                section.enabled ? 'success' : 'neutral',
+                section.enabled ? '已启用' : '已关闭',
+                section.enabled
+                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，低余额 ${formatVerifyMonitorInteger(section.low_balance_threshold || 0)} 点 / 低剩余 ${formatVerifyMonitorInteger(section.low_remaining_jobs_threshold || 0)} 次。`
+                    : `验证额度阈值仍保留，低余额 ${formatVerifyMonitorInteger(section.low_balance_threshold || 0)} 点。`
+            );
+        } else if (definition.key === 'verify_queue') {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.monitor_status_id,
+                section.enabled ? 'success' : 'neutral',
+                section.enabled ? '已启用' : '已关闭',
+                section.enabled
+                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，队列阈值 ${formatVerifyMonitorInteger(section.queue_size_threshold || 0)} 个，最老待处理 ${formatVerifyMonitorInteger(section.oldest_pending_minutes_threshold || 0)} 分钟。`
+                    : `验证堆积阈值仍保留，队列阈值 ${formatVerifyMonitorInteger(section.queue_size_threshold || 0)} 个。`
+            );
+        } else if (definition.key === 'verify_failure') {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.monitor_status_id,
+                section.enabled ? 'success' : 'neutral',
+                section.enabled ? '已启用' : '已关闭',
+                section.enabled
+                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，失败率阈值 ${formatVerifyMonitorInteger(section.failure_rate_threshold || 0)}%，样本量至少 ${formatVerifyMonitorInteger(section.min_total_jobs_threshold || 0)} 次。`
+                    : `验证失败率阈值仍保留，失败率 ${formatVerifyMonitorInteger(section.failure_rate_threshold || 0)}%。`
+            );
         } else {
             setOpsAlertSummaryOrchestrationCell(
                 definition.monitor_status_id,
@@ -1588,6 +1783,7 @@ function selectOpsAlertUnifiedSummaryTargets(preset = 'all') {
                 break;
             case 'success':
             case 'low_priority':
+            case 'operations':
                 checkbox.checked = definition.preset_group === preset;
                 break;
             case 'all':
@@ -2034,6 +2230,9 @@ function normalizeOpsAlertConfig(raw) {
         : {};
     const ticketsSource = source.tickets && typeof source.tickets === 'object' && !Array.isArray(source.tickets)
         ? source.tickets
+        : {};
+    const shopOrderDeliverySource = source.shop_order_delivery && typeof source.shop_order_delivery === 'object' && !Array.isArray(source.shop_order_delivery)
+        ? source.shop_order_delivery
         : {};
     const verifyQuotaSource = source.verify_quota && typeof source.verify_quota === 'object' && !Array.isArray(source.verify_quota)
         ? source.verify_quota
@@ -2503,6 +2702,105 @@ function normalizeOpsAlertConfig(raw) {
                 59
             )
         },
+        shop_order_delivery: {
+            enabled: normalizeConfigBoolean(shopOrderDeliverySource.enabled, defaults.shop_order_delivery.enabled),
+            sweep_interval_ms: clamp(
+                toWholeNumber(shopOrderDeliverySource.sweep_interval_ms, defaults.shop_order_delivery.sweep_interval_ms),
+                10000,
+                60 * 60 * 1000
+            ),
+            lookback_days: clamp(
+                toWholeNumber(shopOrderDeliverySource.lookback_days, defaults.shop_order_delivery.lookback_days),
+                1,
+                90
+            ),
+            state_lookback_minutes: clamp(
+                toWholeNumber(shopOrderDeliverySource.state_lookback_minutes, defaults.shop_order_delivery.state_lookback_minutes),
+                30,
+                7 * 24 * 60
+            ),
+            retry_waiting_min_attempts: clamp(
+                toWholeNumber(shopOrderDeliverySource.retry_waiting_min_attempts, defaults.shop_order_delivery.retry_waiting_min_attempts),
+                1,
+                50
+            ),
+            dedupe_window_minutes: clamp(
+                toWholeNumber(shopOrderDeliverySource.dedupe_window_minutes, defaults.shop_order_delivery.dedupe_window_minutes),
+                1,
+                24 * 60
+            ),
+            incident_enabled: normalizeConfigBoolean(
+                shopOrderDeliverySource.incident_enabled,
+                defaults.shop_order_delivery.incident_enabled
+            ),
+            incident_min_order_count: clamp(
+                toWholeNumber(shopOrderDeliverySource.incident_min_order_count, defaults.shop_order_delivery.incident_min_order_count),
+                2,
+                50
+            ),
+            incident_min_dead_letter_count: clamp(
+                toWholeNumber(shopOrderDeliverySource.incident_min_dead_letter_count, defaults.shop_order_delivery.incident_min_dead_letter_count),
+                0,
+                50
+            ),
+            incident_min_distinct_users: clamp(
+                toWholeNumber(shopOrderDeliverySource.incident_min_distinct_users, defaults.shop_order_delivery.incident_min_distinct_users),
+                1,
+                50
+            ),
+            incident_dedupe_window_minutes: clamp(
+                toWholeNumber(shopOrderDeliverySource.incident_dedupe_window_minutes, defaults.shop_order_delivery.incident_dedupe_window_minutes),
+                1,
+                24 * 60
+            ),
+            page_size: clamp(
+                toWholeNumber(shopOrderDeliverySource.page_size, defaults.shop_order_delivery.page_size),
+                50,
+                5000
+            ),
+            max_pages: clamp(
+                toWholeNumber(shopOrderDeliverySource.max_pages, defaults.shop_order_delivery.max_pages),
+                1,
+                100
+            ),
+            work_hours_only_enabled: normalizeConfigBoolean(
+                shopOrderDeliverySource.work_hours_only_enabled,
+                defaults.shop_order_delivery.work_hours_only_enabled
+            ),
+            summary_enabled: normalizeConfigBoolean(
+                shopOrderDeliverySource.summary_enabled,
+                defaults.shop_order_delivery.summary_enabled
+            ),
+            summary_window_minutes: clamp(
+                toWholeNumber(shopOrderDeliverySource.summary_window_minutes, defaults.shop_order_delivery.summary_window_minutes),
+                5,
+                24 * 60
+            ),
+            summary_max_items: clamp(
+                toWholeNumber(shopOrderDeliverySource.summary_max_items, defaults.shop_order_delivery.summary_max_items),
+                1,
+                50
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                shopOrderDeliverySource.summary_schedule_mode,
+                defaults.shop_order_delivery.summary_schedule_mode
+            ),
+            summary_hourly_minute: clamp(
+                toWholeNumber(shopOrderDeliverySource.summary_hourly_minute, defaults.shop_order_delivery.summary_hourly_minute),
+                0,
+                59
+            ),
+            summary_daily_hour: clamp(
+                toWholeNumber(shopOrderDeliverySource.summary_daily_hour, defaults.shop_order_delivery.summary_daily_hour),
+                0,
+                23
+            ),
+            summary_daily_minute: clamp(
+                toWholeNumber(shopOrderDeliverySource.summary_daily_minute, defaults.shop_order_delivery.summary_daily_minute),
+                0,
+                59
+            )
+        },
         verify_quota: {
             enabled: normalizeConfigBoolean(verifyQuotaSource.enabled, defaults.verify_quota.enabled),
             sweep_interval_ms: clamp(
@@ -2544,6 +2842,43 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(verifyQuotaSource.dedupe_window_minutes, defaults.verify_quota.dedupe_window_minutes),
                 1,
                 24 * 60
+            ),
+            work_hours_only_enabled: normalizeConfigBoolean(
+                verifyQuotaSource.work_hours_only_enabled,
+                defaults.verify_quota.work_hours_only_enabled
+            ),
+            summary_enabled: normalizeConfigBoolean(
+                verifyQuotaSource.summary_enabled,
+                defaults.verify_quota.summary_enabled
+            ),
+            summary_window_minutes: clamp(
+                toWholeNumber(verifyQuotaSource.summary_window_minutes, defaults.verify_quota.summary_window_minutes),
+                5,
+                24 * 60
+            ),
+            summary_max_items: clamp(
+                toWholeNumber(verifyQuotaSource.summary_max_items, defaults.verify_quota.summary_max_items),
+                1,
+                50
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                verifyQuotaSource.summary_schedule_mode,
+                defaults.verify_quota.summary_schedule_mode
+            ),
+            summary_hourly_minute: clamp(
+                toWholeNumber(verifyQuotaSource.summary_hourly_minute, defaults.verify_quota.summary_hourly_minute),
+                0,
+                59
+            ),
+            summary_daily_hour: clamp(
+                toWholeNumber(verifyQuotaSource.summary_daily_hour, defaults.verify_quota.summary_daily_hour),
+                0,
+                23
+            ),
+            summary_daily_minute: clamp(
+                toWholeNumber(verifyQuotaSource.summary_daily_minute, defaults.verify_quota.summary_daily_minute),
+                0,
+                59
             )
         },
         verify_queue: {
@@ -2602,6 +2937,43 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(verifyQueueSource.max_pages, defaults.verify_queue.max_pages),
                 1,
                 100
+            ),
+            work_hours_only_enabled: normalizeConfigBoolean(
+                verifyQueueSource.work_hours_only_enabled,
+                defaults.verify_queue.work_hours_only_enabled
+            ),
+            summary_enabled: normalizeConfigBoolean(
+                verifyQueueSource.summary_enabled,
+                defaults.verify_queue.summary_enabled
+            ),
+            summary_window_minutes: clamp(
+                toWholeNumber(verifyQueueSource.summary_window_minutes, defaults.verify_queue.summary_window_minutes),
+                5,
+                24 * 60
+            ),
+            summary_max_items: clamp(
+                toWholeNumber(verifyQueueSource.summary_max_items, defaults.verify_queue.summary_max_items),
+                1,
+                50
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                verifyQueueSource.summary_schedule_mode,
+                defaults.verify_queue.summary_schedule_mode
+            ),
+            summary_hourly_minute: clamp(
+                toWholeNumber(verifyQueueSource.summary_hourly_minute, defaults.verify_queue.summary_hourly_minute),
+                0,
+                59
+            ),
+            summary_daily_hour: clamp(
+                toWholeNumber(verifyQueueSource.summary_daily_hour, defaults.verify_queue.summary_daily_hour),
+                0,
+                23
+            ),
+            summary_daily_minute: clamp(
+                toWholeNumber(verifyQueueSource.summary_daily_minute, defaults.verify_queue.summary_daily_minute),
+                0,
+                59
             )
         },
         verify_failure: {
@@ -2645,6 +3017,43 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(verifyFailureSource.max_pages, defaults.verify_failure.max_pages),
                 1,
                 100
+            ),
+            work_hours_only_enabled: normalizeConfigBoolean(
+                verifyFailureSource.work_hours_only_enabled,
+                defaults.verify_failure.work_hours_only_enabled
+            ),
+            summary_enabled: normalizeConfigBoolean(
+                verifyFailureSource.summary_enabled,
+                defaults.verify_failure.summary_enabled
+            ),
+            summary_window_minutes: clamp(
+                toWholeNumber(verifyFailureSource.summary_window_minutes, defaults.verify_failure.summary_window_minutes),
+                5,
+                24 * 60
+            ),
+            summary_max_items: clamp(
+                toWholeNumber(verifyFailureSource.summary_max_items, defaults.verify_failure.summary_max_items),
+                1,
+                50
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                verifyFailureSource.summary_schedule_mode,
+                defaults.verify_failure.summary_schedule_mode
+            ),
+            summary_hourly_minute: clamp(
+                toWholeNumber(verifyFailureSource.summary_hourly_minute, defaults.verify_failure.summary_hourly_minute),
+                0,
+                59
+            ),
+            summary_daily_hour: clamp(
+                toWholeNumber(verifyFailureSource.summary_daily_hour, defaults.verify_failure.summary_daily_hour),
+                0,
+                23
+            ),
+            summary_daily_minute: clamp(
+                toWholeNumber(verifyFailureSource.summary_daily_minute, defaults.verify_failure.summary_daily_minute),
+                0,
+                59
             )
         },
         payment_gateway: {
@@ -2738,6 +3147,43 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(paymentGatewaySource.max_pages, defaults.payment_gateway.max_pages),
                 1,
                 100
+            ),
+            work_hours_only_enabled: normalizeConfigBoolean(
+                paymentGatewaySource.work_hours_only_enabled,
+                defaults.payment_gateway.work_hours_only_enabled
+            ),
+            summary_enabled: normalizeConfigBoolean(
+                paymentGatewaySource.summary_enabled,
+                defaults.payment_gateway.summary_enabled
+            ),
+            summary_window_minutes: clamp(
+                toWholeNumber(paymentGatewaySource.summary_window_minutes, defaults.payment_gateway.summary_window_minutes),
+                5,
+                24 * 60
+            ),
+            summary_max_items: clamp(
+                toWholeNumber(paymentGatewaySource.summary_max_items, defaults.payment_gateway.summary_max_items),
+                1,
+                50
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                paymentGatewaySource.summary_schedule_mode,
+                defaults.payment_gateway.summary_schedule_mode
+            ),
+            summary_hourly_minute: clamp(
+                toWholeNumber(paymentGatewaySource.summary_hourly_minute, defaults.payment_gateway.summary_hourly_minute),
+                0,
+                59
+            ),
+            summary_daily_hour: clamp(
+                toWholeNumber(paymentGatewaySource.summary_daily_hour, defaults.payment_gateway.summary_daily_hour),
+                0,
+                23
+            ),
+            summary_daily_minute: clamp(
+                toWholeNumber(paymentGatewaySource.summary_daily_minute, defaults.payment_gateway.summary_daily_minute),
+                0,
+                59
             )
         }
     };
@@ -3259,6 +3705,7 @@ function applyOpsAlertOverview(config) {
     applyOpsAlertShopPurchaseSuccessControls(normalizedConfig);
     applyOpsAlertWalletRechargeSuccessControls(normalizedConfig);
     applyOpsAlertTicketsControls(normalizedConfig);
+    applyOpsAlertShopOrderDeliveryControls(normalizedConfig);
     applyOpsAlertVerifyQuotaControls(normalizedConfig);
     applyOpsAlertVerifyQueueControls(normalizedConfig);
     applyOpsAlertVerifyFailureControls(normalizedConfig);
@@ -3751,12 +4198,67 @@ function applyOpsAlertTicketsControls(config = normalizeOpsAlertConfig(systemCon
     });
 }
 
+function applyOpsAlertShopOrderDeliveryControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const monitorConfig = normalizedConfig.shop_order_delivery || getDefaultOpsAlertConfig().shop_order_delivery;
+    const toggleEl = document.getElementById('opsAlertShopOrderDeliveryEnabledToggle');
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+    const incidentToggleEl = document.getElementById('opsAlertShopOrderDeliveryIncidentEnabledToggle');
+    if (incidentToggleEl) {
+        incidentToggleEl.classList.toggle('active', monitorConfig.incident_enabled === true);
+        incidentToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
+    }
+    const summaryToggleEl = document.getElementById('opsAlertShopOrderDeliverySummaryEnabledToggle');
+    if (summaryToggleEl) {
+        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
+    }
+    const workHoursOnlyToggleEl = document.getElementById('opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle');
+    if (workHoursOnlyToggleEl) {
+        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
+        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
+    }
+
+    [
+        'opsAlertShopOrderDeliveryLookbackDays',
+        'opsAlertShopOrderDeliveryStateLookbackMinutes',
+        'opsAlertShopOrderDeliveryRetryWaitingMinAttempts',
+        'opsAlertShopOrderDeliverySweepIntervalMinutes',
+        'opsAlertShopOrderDeliveryDedupeWindowMinutes',
+        'opsAlertShopOrderDeliveryIncidentMinOrderCount',
+        'opsAlertShopOrderDeliveryIncidentMinDeadLetterCount',
+        'opsAlertShopOrderDeliveryIncidentMinDistinctUsers',
+        'opsAlertShopOrderDeliveryIncidentDedupeWindowMinutes'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !monitorConfig.enabled;
+    });
+    applyOpsAlertSummaryModeControls(monitorConfig, {
+        summaryScheduleMode: 'opsAlertShopOrderDeliverySummaryScheduleMode',
+        summaryWindowMinutes: 'opsAlertShopOrderDeliverySummaryWindowMinutes',
+        summaryHourlyMinute: 'opsAlertShopOrderDeliverySummaryHourlyMinute',
+        summaryDailyHour: 'opsAlertShopOrderDeliverySummaryDailyHour',
+        summaryDailyMinute: 'opsAlertShopOrderDeliverySummaryDailyMinute',
+        summaryMaxItems: 'opsAlertShopOrderDeliverySummaryMaxItems'
+    });
+}
+
 function applyOpsAlertVerifyQuotaControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const monitorConfig = normalizedConfig.verify_quota || getDefaultOpsAlertConfig().verify_quota;
     const toggleEl = document.getElementById('opsAlertVerifyQuotaEnabledToggle');
     if (toggleEl) {
         toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+    const summaryToggleEl = document.getElementById('opsAlertVerifyQuotaSummaryEnabledToggle');
+    if (summaryToggleEl) {
+        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
+    }
+    const workHoursOnlyToggleEl = document.getElementById('opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle');
+    if (workHoursOnlyToggleEl) {
+        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
+        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
     }
 
     [
@@ -3771,6 +4273,14 @@ function applyOpsAlertVerifyQuotaControls(config = normalizeOpsAlertConfig(syste
         const input = document.getElementById(id);
         if (input) input.disabled = !monitorConfig.enabled;
     });
+    applyOpsAlertSummaryModeControls(monitorConfig, {
+        summaryScheduleMode: 'opsAlertVerifyQuotaSummaryScheduleMode',
+        summaryWindowMinutes: 'opsAlertVerifyQuotaSummaryWindowMinutes',
+        summaryHourlyMinute: 'opsAlertVerifyQuotaSummaryHourlyMinute',
+        summaryDailyHour: 'opsAlertVerifyQuotaSummaryDailyHour',
+        summaryDailyMinute: 'opsAlertVerifyQuotaSummaryDailyMinute',
+        summaryMaxItems: 'opsAlertVerifyQuotaSummaryMaxItems'
+    });
 }
 
 function applyOpsAlertVerifyQueueControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
@@ -3779,6 +4289,15 @@ function applyOpsAlertVerifyQueueControls(config = normalizeOpsAlertConfig(syste
     const toggleEl = document.getElementById('opsAlertVerifyQueueEnabledToggle');
     if (toggleEl) {
         toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+    const summaryToggleEl = document.getElementById('opsAlertVerifyQueueSummaryEnabledToggle');
+    if (summaryToggleEl) {
+        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
+    }
+    const workHoursOnlyToggleEl = document.getElementById('opsAlertVerifyQueueWorkHoursOnlyEnabledToggle');
+    if (workHoursOnlyToggleEl) {
+        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
+        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
     }
 
     [
@@ -3794,6 +4313,14 @@ function applyOpsAlertVerifyQueueControls(config = normalizeOpsAlertConfig(syste
         const input = document.getElementById(id);
         if (input) input.disabled = !monitorConfig.enabled;
     });
+    applyOpsAlertSummaryModeControls(monitorConfig, {
+        summaryScheduleMode: 'opsAlertVerifyQueueSummaryScheduleMode',
+        summaryWindowMinutes: 'opsAlertVerifyQueueSummaryWindowMinutes',
+        summaryHourlyMinute: 'opsAlertVerifyQueueSummaryHourlyMinute',
+        summaryDailyHour: 'opsAlertVerifyQueueSummaryDailyHour',
+        summaryDailyMinute: 'opsAlertVerifyQueueSummaryDailyMinute',
+        summaryMaxItems: 'opsAlertVerifyQueueSummaryMaxItems'
+    });
 }
 
 function applyOpsAlertVerifyFailureControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
@@ -3802,6 +4329,15 @@ function applyOpsAlertVerifyFailureControls(config = normalizeOpsAlertConfig(sys
     const toggleEl = document.getElementById('opsAlertVerifyFailureEnabledToggle');
     if (toggleEl) {
         toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+    const summaryToggleEl = document.getElementById('opsAlertVerifyFailureSummaryEnabledToggle');
+    if (summaryToggleEl) {
+        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
+    }
+    const workHoursOnlyToggleEl = document.getElementById('opsAlertVerifyFailureWorkHoursOnlyEnabledToggle');
+    if (workHoursOnlyToggleEl) {
+        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
+        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
     }
 
     [
@@ -3815,6 +4351,14 @@ function applyOpsAlertVerifyFailureControls(config = normalizeOpsAlertConfig(sys
         const input = document.getElementById(id);
         if (input) input.disabled = !monitorConfig.enabled;
     });
+    applyOpsAlertSummaryModeControls(monitorConfig, {
+        summaryScheduleMode: 'opsAlertVerifyFailureSummaryScheduleMode',
+        summaryWindowMinutes: 'opsAlertVerifyFailureSummaryWindowMinutes',
+        summaryHourlyMinute: 'opsAlertVerifyFailureSummaryHourlyMinute',
+        summaryDailyHour: 'opsAlertVerifyFailureSummaryDailyHour',
+        summaryDailyMinute: 'opsAlertVerifyFailureSummaryDailyMinute',
+        summaryMaxItems: 'opsAlertVerifyFailureSummaryMaxItems'
+    });
 }
 
 function applyOpsAlertPaymentGatewayControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
@@ -3823,6 +4367,15 @@ function applyOpsAlertPaymentGatewayControls(config = normalizeOpsAlertConfig(sy
     const toggleEl = document.getElementById('opsAlertPaymentGatewayEnabledToggle');
     if (toggleEl) {
         toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+    const summaryToggleEl = document.getElementById('opsAlertPaymentGatewaySummaryEnabledToggle');
+    if (summaryToggleEl) {
+        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
+    }
+    const workHoursOnlyToggleEl = document.getElementById('opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle');
+    if (workHoursOnlyToggleEl) {
+        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
+        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
     }
 
     [
@@ -3838,6 +4391,14 @@ function applyOpsAlertPaymentGatewayControls(config = normalizeOpsAlertConfig(sy
     ].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.disabled = !monitorConfig.enabled;
+    });
+    applyOpsAlertSummaryModeControls(monitorConfig, {
+        summaryScheduleMode: 'opsAlertPaymentGatewaySummaryScheduleMode',
+        summaryWindowMinutes: 'opsAlertPaymentGatewaySummaryWindowMinutes',
+        summaryHourlyMinute: 'opsAlertPaymentGatewaySummaryHourlyMinute',
+        summaryDailyHour: 'opsAlertPaymentGatewaySummaryDailyHour',
+        summaryDailyMinute: 'opsAlertPaymentGatewaySummaryDailyMinute',
+        summaryMaxItems: 'opsAlertPaymentGatewaySummaryMaxItems'
     });
 }
 
@@ -4141,6 +4702,67 @@ function renderOpsAlertSettings() {
         ticketsSummaryMaxItems.value = String(config.tickets.summary_max_items);
     }
 
+    const shopOrderDeliveryLookbackDays = document.getElementById('opsAlertShopOrderDeliveryLookbackDays');
+    if (shopOrderDeliveryLookbackDays) {
+        shopOrderDeliveryLookbackDays.value = String(config.shop_order_delivery.lookback_days);
+    }
+    const shopOrderDeliveryStateLookbackMinutes = document.getElementById('opsAlertShopOrderDeliveryStateLookbackMinutes');
+    if (shopOrderDeliveryStateLookbackMinutes) {
+        shopOrderDeliveryStateLookbackMinutes.value = String(config.shop_order_delivery.state_lookback_minutes);
+    }
+    const shopOrderDeliveryRetryWaitingMinAttempts = document.getElementById('opsAlertShopOrderDeliveryRetryWaitingMinAttempts');
+    if (shopOrderDeliveryRetryWaitingMinAttempts) {
+        shopOrderDeliveryRetryWaitingMinAttempts.value = String(config.shop_order_delivery.retry_waiting_min_attempts);
+    }
+    const shopOrderDeliverySweepIntervalMinutes = document.getElementById('opsAlertShopOrderDeliverySweepIntervalMinutes');
+    if (shopOrderDeliverySweepIntervalMinutes) {
+        shopOrderDeliverySweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.shop_order_delivery.sweep_interval_ms || 0) / 60000)));
+    }
+    const shopOrderDeliveryDedupeWindowMinutes = document.getElementById('opsAlertShopOrderDeliveryDedupeWindowMinutes');
+    if (shopOrderDeliveryDedupeWindowMinutes) {
+        shopOrderDeliveryDedupeWindowMinutes.value = String(config.shop_order_delivery.dedupe_window_minutes);
+    }
+    const shopOrderDeliveryIncidentMinOrderCount = document.getElementById('opsAlertShopOrderDeliveryIncidentMinOrderCount');
+    if (shopOrderDeliveryIncidentMinOrderCount) {
+        shopOrderDeliveryIncidentMinOrderCount.value = String(config.shop_order_delivery.incident_min_order_count);
+    }
+    const shopOrderDeliveryIncidentMinDeadLetterCount = document.getElementById('opsAlertShopOrderDeliveryIncidentMinDeadLetterCount');
+    if (shopOrderDeliveryIncidentMinDeadLetterCount) {
+        shopOrderDeliveryIncidentMinDeadLetterCount.value = String(config.shop_order_delivery.incident_min_dead_letter_count);
+    }
+    const shopOrderDeliveryIncidentMinDistinctUsers = document.getElementById('opsAlertShopOrderDeliveryIncidentMinDistinctUsers');
+    if (shopOrderDeliveryIncidentMinDistinctUsers) {
+        shopOrderDeliveryIncidentMinDistinctUsers.value = String(config.shop_order_delivery.incident_min_distinct_users);
+    }
+    const shopOrderDeliveryIncidentDedupeWindowMinutes = document.getElementById('opsAlertShopOrderDeliveryIncidentDedupeWindowMinutes');
+    if (shopOrderDeliveryIncidentDedupeWindowMinutes) {
+        shopOrderDeliveryIncidentDedupeWindowMinutes.value = String(config.shop_order_delivery.incident_dedupe_window_minutes);
+    }
+    const shopOrderDeliverySummaryWindowMinutes = document.getElementById('opsAlertShopOrderDeliverySummaryWindowMinutes');
+    if (shopOrderDeliverySummaryWindowMinutes) {
+        shopOrderDeliverySummaryWindowMinutes.value = String(config.shop_order_delivery.summary_window_minutes);
+    }
+    const shopOrderDeliverySummaryScheduleMode = document.getElementById('opsAlertShopOrderDeliverySummaryScheduleMode');
+    if (shopOrderDeliverySummaryScheduleMode) {
+        shopOrderDeliverySummaryScheduleMode.value = config.shop_order_delivery.summary_schedule_mode;
+    }
+    const shopOrderDeliverySummaryHourlyMinute = document.getElementById('opsAlertShopOrderDeliverySummaryHourlyMinute');
+    if (shopOrderDeliverySummaryHourlyMinute) {
+        shopOrderDeliverySummaryHourlyMinute.value = String(config.shop_order_delivery.summary_hourly_minute);
+    }
+    const shopOrderDeliverySummaryDailyHour = document.getElementById('opsAlertShopOrderDeliverySummaryDailyHour');
+    if (shopOrderDeliverySummaryDailyHour) {
+        shopOrderDeliverySummaryDailyHour.value = String(config.shop_order_delivery.summary_daily_hour);
+    }
+    const shopOrderDeliverySummaryDailyMinute = document.getElementById('opsAlertShopOrderDeliverySummaryDailyMinute');
+    if (shopOrderDeliverySummaryDailyMinute) {
+        shopOrderDeliverySummaryDailyMinute.value = String(config.shop_order_delivery.summary_daily_minute);
+    }
+    const shopOrderDeliverySummaryMaxItems = document.getElementById('opsAlertShopOrderDeliverySummaryMaxItems');
+    if (shopOrderDeliverySummaryMaxItems) {
+        shopOrderDeliverySummaryMaxItems.value = String(config.shop_order_delivery.summary_max_items);
+    }
+
     const verifyQuotaLowBalanceThreshold = document.getElementById('opsAlertVerifyQuotaLowBalanceThreshold');
     if (verifyQuotaLowBalanceThreshold) {
         verifyQuotaLowBalanceThreshold.value = String(config.verify_quota.low_balance_threshold);
@@ -4168,6 +4790,30 @@ function renderOpsAlertSettings() {
     const verifyQuotaDedupeWindowMinutes = document.getElementById('opsAlertVerifyQuotaDedupeWindowMinutes');
     if (verifyQuotaDedupeWindowMinutes) {
         verifyQuotaDedupeWindowMinutes.value = String(config.verify_quota.dedupe_window_minutes);
+    }
+    const verifyQuotaSummaryWindowMinutes = document.getElementById('opsAlertVerifyQuotaSummaryWindowMinutes');
+    if (verifyQuotaSummaryWindowMinutes) {
+        verifyQuotaSummaryWindowMinutes.value = String(config.verify_quota.summary_window_minutes);
+    }
+    const verifyQuotaSummaryScheduleMode = document.getElementById('opsAlertVerifyQuotaSummaryScheduleMode');
+    if (verifyQuotaSummaryScheduleMode) {
+        verifyQuotaSummaryScheduleMode.value = config.verify_quota.summary_schedule_mode;
+    }
+    const verifyQuotaSummaryHourlyMinute = document.getElementById('opsAlertVerifyQuotaSummaryHourlyMinute');
+    if (verifyQuotaSummaryHourlyMinute) {
+        verifyQuotaSummaryHourlyMinute.value = String(config.verify_quota.summary_hourly_minute);
+    }
+    const verifyQuotaSummaryDailyHour = document.getElementById('opsAlertVerifyQuotaSummaryDailyHour');
+    if (verifyQuotaSummaryDailyHour) {
+        verifyQuotaSummaryDailyHour.value = String(config.verify_quota.summary_daily_hour);
+    }
+    const verifyQuotaSummaryDailyMinute = document.getElementById('opsAlertVerifyQuotaSummaryDailyMinute');
+    if (verifyQuotaSummaryDailyMinute) {
+        verifyQuotaSummaryDailyMinute.value = String(config.verify_quota.summary_daily_minute);
+    }
+    const verifyQuotaSummaryMaxItems = document.getElementById('opsAlertVerifyQuotaSummaryMaxItems');
+    if (verifyQuotaSummaryMaxItems) {
+        verifyQuotaSummaryMaxItems.value = String(config.verify_quota.summary_max_items);
     }
 
     const verifyQueueRecentActivityLookbackHours = document.getElementById('opsAlertVerifyQueueRecentActivityLookbackHours');
@@ -4202,6 +4848,30 @@ function renderOpsAlertSettings() {
     if (verifyQueueDedupeWindowMinutes) {
         verifyQueueDedupeWindowMinutes.value = String(config.verify_queue.dedupe_window_minutes);
     }
+    const verifyQueueSummaryWindowMinutes = document.getElementById('opsAlertVerifyQueueSummaryWindowMinutes');
+    if (verifyQueueSummaryWindowMinutes) {
+        verifyQueueSummaryWindowMinutes.value = String(config.verify_queue.summary_window_minutes);
+    }
+    const verifyQueueSummaryScheduleMode = document.getElementById('opsAlertVerifyQueueSummaryScheduleMode');
+    if (verifyQueueSummaryScheduleMode) {
+        verifyQueueSummaryScheduleMode.value = config.verify_queue.summary_schedule_mode;
+    }
+    const verifyQueueSummaryHourlyMinute = document.getElementById('opsAlertVerifyQueueSummaryHourlyMinute');
+    if (verifyQueueSummaryHourlyMinute) {
+        verifyQueueSummaryHourlyMinute.value = String(config.verify_queue.summary_hourly_minute);
+    }
+    const verifyQueueSummaryDailyHour = document.getElementById('opsAlertVerifyQueueSummaryDailyHour');
+    if (verifyQueueSummaryDailyHour) {
+        verifyQueueSummaryDailyHour.value = String(config.verify_queue.summary_daily_hour);
+    }
+    const verifyQueueSummaryDailyMinute = document.getElementById('opsAlertVerifyQueueSummaryDailyMinute');
+    if (verifyQueueSummaryDailyMinute) {
+        verifyQueueSummaryDailyMinute.value = String(config.verify_queue.summary_daily_minute);
+    }
+    const verifyQueueSummaryMaxItems = document.getElementById('opsAlertVerifyQueueSummaryMaxItems');
+    if (verifyQueueSummaryMaxItems) {
+        verifyQueueSummaryMaxItems.value = String(config.verify_queue.summary_max_items);
+    }
 
     const verifyFailureRecentWindowMinutes = document.getElementById('opsAlertVerifyFailureRecentWindowMinutes');
     if (verifyFailureRecentWindowMinutes) {
@@ -4226,6 +4896,30 @@ function renderOpsAlertSettings() {
     const verifyFailureDedupeWindowMinutes = document.getElementById('opsAlertVerifyFailureDedupeWindowMinutes');
     if (verifyFailureDedupeWindowMinutes) {
         verifyFailureDedupeWindowMinutes.value = String(config.verify_failure.dedupe_window_minutes);
+    }
+    const verifyFailureSummaryWindowMinutes = document.getElementById('opsAlertVerifyFailureSummaryWindowMinutes');
+    if (verifyFailureSummaryWindowMinutes) {
+        verifyFailureSummaryWindowMinutes.value = String(config.verify_failure.summary_window_minutes);
+    }
+    const verifyFailureSummaryScheduleMode = document.getElementById('opsAlertVerifyFailureSummaryScheduleMode');
+    if (verifyFailureSummaryScheduleMode) {
+        verifyFailureSummaryScheduleMode.value = config.verify_failure.summary_schedule_mode;
+    }
+    const verifyFailureSummaryHourlyMinute = document.getElementById('opsAlertVerifyFailureSummaryHourlyMinute');
+    if (verifyFailureSummaryHourlyMinute) {
+        verifyFailureSummaryHourlyMinute.value = String(config.verify_failure.summary_hourly_minute);
+    }
+    const verifyFailureSummaryDailyHour = document.getElementById('opsAlertVerifyFailureSummaryDailyHour');
+    if (verifyFailureSummaryDailyHour) {
+        verifyFailureSummaryDailyHour.value = String(config.verify_failure.summary_daily_hour);
+    }
+    const verifyFailureSummaryDailyMinute = document.getElementById('opsAlertVerifyFailureSummaryDailyMinute');
+    if (verifyFailureSummaryDailyMinute) {
+        verifyFailureSummaryDailyMinute.value = String(config.verify_failure.summary_daily_minute);
+    }
+    const verifyFailureSummaryMaxItems = document.getElementById('opsAlertVerifyFailureSummaryMaxItems');
+    if (verifyFailureSummaryMaxItems) {
+        verifyFailureSummaryMaxItems.value = String(config.verify_failure.summary_max_items);
     }
     const paymentGatewayWindowMinutes = document.getElementById('opsAlertPaymentGatewayWindowMinutes');
     if (paymentGatewayWindowMinutes) {
@@ -4262,6 +4956,30 @@ function renderOpsAlertSettings() {
     const paymentGatewayDedupeWindowMinutes = document.getElementById('opsAlertPaymentGatewayDedupeWindowMinutes');
     if (paymentGatewayDedupeWindowMinutes) {
         paymentGatewayDedupeWindowMinutes.value = String(config.payment_gateway.dedupe_window_minutes);
+    }
+    const paymentGatewaySummaryWindowMinutes = document.getElementById('opsAlertPaymentGatewaySummaryWindowMinutes');
+    if (paymentGatewaySummaryWindowMinutes) {
+        paymentGatewaySummaryWindowMinutes.value = String(config.payment_gateway.summary_window_minutes);
+    }
+    const paymentGatewaySummaryScheduleMode = document.getElementById('opsAlertPaymentGatewaySummaryScheduleMode');
+    if (paymentGatewaySummaryScheduleMode) {
+        paymentGatewaySummaryScheduleMode.value = config.payment_gateway.summary_schedule_mode;
+    }
+    const paymentGatewaySummaryHourlyMinute = document.getElementById('opsAlertPaymentGatewaySummaryHourlyMinute');
+    if (paymentGatewaySummaryHourlyMinute) {
+        paymentGatewaySummaryHourlyMinute.value = String(config.payment_gateway.summary_hourly_minute);
+    }
+    const paymentGatewaySummaryDailyHour = document.getElementById('opsAlertPaymentGatewaySummaryDailyHour');
+    if (paymentGatewaySummaryDailyHour) {
+        paymentGatewaySummaryDailyHour.value = String(config.payment_gateway.summary_daily_hour);
+    }
+    const paymentGatewaySummaryDailyMinute = document.getElementById('opsAlertPaymentGatewaySummaryDailyMinute');
+    if (paymentGatewaySummaryDailyMinute) {
+        paymentGatewaySummaryDailyMinute.value = String(config.payment_gateway.summary_daily_minute);
+    }
+    const paymentGatewaySummaryMaxItems = document.getElementById('opsAlertPaymentGatewaySummaryMaxItems');
+    if (paymentGatewaySummaryMaxItems) {
+        paymentGatewaySummaryMaxItems.value = String(config.payment_gateway.summary_max_items);
     }
 
     applyOpsAlertOverview(config);
@@ -5196,6 +5914,7 @@ function getOpsAlertMonitorItemAction(category = {}, item = {}) {
         ticket_sla_summary: { target: 'tickets-pending', label: '处理工单', icon: 'fas fa-ticket-alt' },
         shop_inventory_low: { target: 'shop-inventory', label: '去补货', icon: 'fas fa-box-open' },
         shop_inventory_empty: { target: 'shop-inventory', label: '去补货', icon: 'fas fa-box-open' },
+        shop_order_delivery_summary: { target: 'shop-fulfillment', label: '处理履约', icon: 'fas fa-truck-ramp-box' },
         shop_order_delivery_failed: { target: 'shop-fulfillment', label: '处理履约', icon: 'fas fa-truck-ramp-box' },
         shop_order_delivery_incident: { target: 'shop-fulfillment', label: '处理事故', icon: 'fas fa-triangle-exclamation' }
     };
@@ -7317,6 +8036,9 @@ function collectOpsAlertConfigFromForm() {
         tickets: {
             ...currentConfig.tickets
         },
+        shop_order_delivery: {
+            ...currentConfig.shop_order_delivery
+        },
         verify_quota: {
             ...currentConfig.verify_quota
         },
@@ -7325,6 +8047,9 @@ function collectOpsAlertConfigFromForm() {
         },
         verify_failure: {
             ...currentConfig.verify_failure
+        },
+        payment_gateway: {
+            ...currentConfig.payment_gateway
         }
     };
 
@@ -7694,6 +8419,77 @@ function collectOpsAlertConfigFromForm() {
         document.getElementById('opsAlertTicketsSummaryMaxItems')?.value,
         currentConfig.tickets.summary_max_items
     );
+    nextConfig.shop_order_delivery.enabled = document.getElementById('opsAlertShopOrderDeliveryEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.shop_order_delivery.enabled;
+    nextConfig.shop_order_delivery.lookback_days = toWholeNumber(
+        document.getElementById('opsAlertShopOrderDeliveryLookbackDays')?.value,
+        currentConfig.shop_order_delivery.lookback_days
+    );
+    nextConfig.shop_order_delivery.state_lookback_minutes = toWholeNumber(
+        document.getElementById('opsAlertShopOrderDeliveryStateLookbackMinutes')?.value,
+        currentConfig.shop_order_delivery.state_lookback_minutes
+    );
+    nextConfig.shop_order_delivery.retry_waiting_min_attempts = toWholeNumber(
+        document.getElementById('opsAlertShopOrderDeliveryRetryWaitingMinAttempts')?.value,
+        currentConfig.shop_order_delivery.retry_waiting_min_attempts
+    );
+    nextConfig.shop_order_delivery.sweep_interval_ms = Math.max(
+        10000,
+        toWholeNumber(
+            document.getElementById('opsAlertShopOrderDeliverySweepIntervalMinutes')?.value,
+            Math.max(1, Math.round(Number(currentConfig.shop_order_delivery.sweep_interval_ms || 0) / 60000))
+        ) * 60 * 1000
+    );
+    nextConfig.shop_order_delivery.dedupe_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertShopOrderDeliveryDedupeWindowMinutes')?.value,
+        currentConfig.shop_order_delivery.dedupe_window_minutes
+    );
+    nextConfig.shop_order_delivery.incident_enabled = document.getElementById('opsAlertShopOrderDeliveryIncidentEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.shop_order_delivery.incident_enabled;
+    nextConfig.shop_order_delivery.incident_min_order_count = toWholeNumber(
+        document.getElementById('opsAlertShopOrderDeliveryIncidentMinOrderCount')?.value,
+        currentConfig.shop_order_delivery.incident_min_order_count
+    );
+    nextConfig.shop_order_delivery.incident_min_dead_letter_count = toWholeNumber(
+        document.getElementById('opsAlertShopOrderDeliveryIncidentMinDeadLetterCount')?.value,
+        currentConfig.shop_order_delivery.incident_min_dead_letter_count
+    );
+    nextConfig.shop_order_delivery.incident_min_distinct_users = toWholeNumber(
+        document.getElementById('opsAlertShopOrderDeliveryIncidentMinDistinctUsers')?.value,
+        currentConfig.shop_order_delivery.incident_min_distinct_users
+    );
+    nextConfig.shop_order_delivery.incident_dedupe_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertShopOrderDeliveryIncidentDedupeWindowMinutes')?.value,
+        currentConfig.shop_order_delivery.incident_dedupe_window_minutes
+    );
+    nextConfig.shop_order_delivery.work_hours_only_enabled = document.getElementById('opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.shop_order_delivery.work_hours_only_enabled;
+    nextConfig.shop_order_delivery.summary_enabled = document.getElementById('opsAlertShopOrderDeliverySummaryEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.shop_order_delivery.summary_enabled;
+    nextConfig.shop_order_delivery.summary_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertShopOrderDeliverySummaryWindowMinutes')?.value,
+        currentConfig.shop_order_delivery.summary_window_minutes
+    );
+    nextConfig.shop_order_delivery.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+        document.getElementById('opsAlertShopOrderDeliverySummaryScheduleMode')?.value,
+        currentConfig.shop_order_delivery.summary_schedule_mode
+    );
+    nextConfig.shop_order_delivery.summary_hourly_minute = toWholeNumber(
+        document.getElementById('opsAlertShopOrderDeliverySummaryHourlyMinute')?.value,
+        currentConfig.shop_order_delivery.summary_hourly_minute
+    );
+    nextConfig.shop_order_delivery.summary_daily_hour = toWholeNumber(
+        document.getElementById('opsAlertShopOrderDeliverySummaryDailyHour')?.value,
+        currentConfig.shop_order_delivery.summary_daily_hour
+    );
+    nextConfig.shop_order_delivery.summary_daily_minute = toWholeNumber(
+        document.getElementById('opsAlertShopOrderDeliverySummaryDailyMinute')?.value,
+        currentConfig.shop_order_delivery.summary_daily_minute
+    );
+    nextConfig.shop_order_delivery.summary_max_items = toWholeNumber(
+        document.getElementById('opsAlertShopOrderDeliverySummaryMaxItems')?.value,
+        currentConfig.shop_order_delivery.summary_max_items
+    );
     nextConfig.verify_quota.enabled = document.getElementById('opsAlertVerifyQuotaEnabledToggle')?.classList.contains('active')
         ?? currentConfig.verify_quota.enabled;
     nextConfig.verify_quota.low_balance_threshold = toWholeNumber(
@@ -7726,6 +8522,34 @@ function collectOpsAlertConfigFromForm() {
     nextConfig.verify_quota.dedupe_window_minutes = toWholeNumber(
         document.getElementById('opsAlertVerifyQuotaDedupeWindowMinutes')?.value,
         currentConfig.verify_quota.dedupe_window_minutes
+    );
+    nextConfig.verify_quota.work_hours_only_enabled = document.getElementById('opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.verify_quota.work_hours_only_enabled;
+    nextConfig.verify_quota.summary_enabled = document.getElementById('opsAlertVerifyQuotaSummaryEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.verify_quota.summary_enabled;
+    nextConfig.verify_quota.summary_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaSummaryWindowMinutes')?.value,
+        currentConfig.verify_quota.summary_window_minutes
+    );
+    nextConfig.verify_quota.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+        document.getElementById('opsAlertVerifyQuotaSummaryScheduleMode')?.value,
+        currentConfig.verify_quota.summary_schedule_mode
+    );
+    nextConfig.verify_quota.summary_hourly_minute = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaSummaryHourlyMinute')?.value,
+        currentConfig.verify_quota.summary_hourly_minute
+    );
+    nextConfig.verify_quota.summary_daily_hour = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaSummaryDailyHour')?.value,
+        currentConfig.verify_quota.summary_daily_hour
+    );
+    nextConfig.verify_quota.summary_daily_minute = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaSummaryDailyMinute')?.value,
+        currentConfig.verify_quota.summary_daily_minute
+    );
+    nextConfig.verify_quota.summary_max_items = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaSummaryMaxItems')?.value,
+        currentConfig.verify_quota.summary_max_items
     );
     nextConfig.verify_queue.enabled = document.getElementById('opsAlertVerifyQueueEnabledToggle')?.classList.contains('active')
         ?? currentConfig.verify_queue.enabled;
@@ -7764,6 +8588,34 @@ function collectOpsAlertConfigFromForm() {
         document.getElementById('opsAlertVerifyQueueDedupeWindowMinutes')?.value,
         currentConfig.verify_queue.dedupe_window_minutes
     );
+    nextConfig.verify_queue.work_hours_only_enabled = document.getElementById('opsAlertVerifyQueueWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.verify_queue.work_hours_only_enabled;
+    nextConfig.verify_queue.summary_enabled = document.getElementById('opsAlertVerifyQueueSummaryEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.verify_queue.summary_enabled;
+    nextConfig.verify_queue.summary_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueSummaryWindowMinutes')?.value,
+        currentConfig.verify_queue.summary_window_minutes
+    );
+    nextConfig.verify_queue.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+        document.getElementById('opsAlertVerifyQueueSummaryScheduleMode')?.value,
+        currentConfig.verify_queue.summary_schedule_mode
+    );
+    nextConfig.verify_queue.summary_hourly_minute = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueSummaryHourlyMinute')?.value,
+        currentConfig.verify_queue.summary_hourly_minute
+    );
+    nextConfig.verify_queue.summary_daily_hour = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueSummaryDailyHour')?.value,
+        currentConfig.verify_queue.summary_daily_hour
+    );
+    nextConfig.verify_queue.summary_daily_minute = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueSummaryDailyMinute')?.value,
+        currentConfig.verify_queue.summary_daily_minute
+    );
+    nextConfig.verify_queue.summary_max_items = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueSummaryMaxItems')?.value,
+        currentConfig.verify_queue.summary_max_items
+    );
     nextConfig.verify_failure.enabled = document.getElementById('opsAlertVerifyFailureEnabledToggle')?.classList.contains('active')
         ?? currentConfig.verify_failure.enabled;
     nextConfig.verify_failure.recent_window_minutes = toWholeNumber(
@@ -7792,6 +8644,34 @@ function collectOpsAlertConfigFromForm() {
     nextConfig.verify_failure.dedupe_window_minutes = toWholeNumber(
         document.getElementById('opsAlertVerifyFailureDedupeWindowMinutes')?.value,
         currentConfig.verify_failure.dedupe_window_minutes
+    );
+    nextConfig.verify_failure.work_hours_only_enabled = document.getElementById('opsAlertVerifyFailureWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.verify_failure.work_hours_only_enabled;
+    nextConfig.verify_failure.summary_enabled = document.getElementById('opsAlertVerifyFailureSummaryEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.verify_failure.summary_enabled;
+    nextConfig.verify_failure.summary_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureSummaryWindowMinutes')?.value,
+        currentConfig.verify_failure.summary_window_minutes
+    );
+    nextConfig.verify_failure.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+        document.getElementById('opsAlertVerifyFailureSummaryScheduleMode')?.value,
+        currentConfig.verify_failure.summary_schedule_mode
+    );
+    nextConfig.verify_failure.summary_hourly_minute = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureSummaryHourlyMinute')?.value,
+        currentConfig.verify_failure.summary_hourly_minute
+    );
+    nextConfig.verify_failure.summary_daily_hour = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureSummaryDailyHour')?.value,
+        currentConfig.verify_failure.summary_daily_hour
+    );
+    nextConfig.verify_failure.summary_daily_minute = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureSummaryDailyMinute')?.value,
+        currentConfig.verify_failure.summary_daily_minute
+    );
+    nextConfig.verify_failure.summary_max_items = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureSummaryMaxItems')?.value,
+        currentConfig.verify_failure.summary_max_items
     );
     nextConfig.payment_gateway.enabled = document.getElementById('opsAlertPaymentGatewayEnabledToggle')?.classList.contains('active')
         ?? currentConfig.payment_gateway.enabled;
@@ -7833,6 +8713,34 @@ function collectOpsAlertConfigFromForm() {
     nextConfig.payment_gateway.dedupe_window_minutes = toWholeNumber(
         document.getElementById('opsAlertPaymentGatewayDedupeWindowMinutes')?.value,
         currentConfig.payment_gateway.dedupe_window_minutes
+    );
+    nextConfig.payment_gateway.work_hours_only_enabled = document.getElementById('opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.payment_gateway.work_hours_only_enabled;
+    nextConfig.payment_gateway.summary_enabled = document.getElementById('opsAlertPaymentGatewaySummaryEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.payment_gateway.summary_enabled;
+    nextConfig.payment_gateway.summary_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewaySummaryWindowMinutes')?.value,
+        currentConfig.payment_gateway.summary_window_minutes
+    );
+    nextConfig.payment_gateway.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+        document.getElementById('opsAlertPaymentGatewaySummaryScheduleMode')?.value,
+        currentConfig.payment_gateway.summary_schedule_mode
+    );
+    nextConfig.payment_gateway.summary_hourly_minute = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewaySummaryHourlyMinute')?.value,
+        currentConfig.payment_gateway.summary_hourly_minute
+    );
+    nextConfig.payment_gateway.summary_daily_hour = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewaySummaryDailyHour')?.value,
+        currentConfig.payment_gateway.summary_daily_hour
+    );
+    nextConfig.payment_gateway.summary_daily_minute = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewaySummaryDailyMinute')?.value,
+        currentConfig.payment_gateway.summary_daily_minute
+    );
+    nextConfig.payment_gateway.summary_max_items = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewaySummaryMaxItems')?.value,
+        currentConfig.payment_gateway.summary_max_items
     );
 
     return normalizeOpsAlertConfig(nextConfig);
@@ -9560,12 +10468,87 @@ function handleOpsAlertTicketsSummaryScheduleModeChange() {
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
+function toggleOpsAlertShopOrderDeliveryEnabled() {
+    const toggleEl = document.getElementById('opsAlertShopOrderDeliveryEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertShopOrderDeliveryControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertShopOrderDeliveryIncidentEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertShopOrderDeliveryEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertShopOrderDeliveryIncidentEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertShopOrderDeliveryControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertShopOrderDeliverySummaryEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertShopOrderDeliveryEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertShopOrderDeliverySummaryEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertShopOrderDeliveryControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertShopOrderDeliveryWorkHoursOnlyEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertShopOrderDeliveryEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertShopOrderDeliveryControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function handleOpsAlertShopOrderDeliverySummaryScheduleModeChange() {
+    applyOpsAlertShopOrderDeliveryControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
 function toggleOpsAlertVerifyQuotaEnabled() {
     const toggleEl = document.getElementById('opsAlertVerifyQuotaEnabledToggle');
     if (!toggleEl) return;
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertVerifyQuotaControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertVerifyQuotaSummaryEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertVerifyQuotaEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertVerifyQuotaSummaryEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertVerifyQuotaControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertVerifyQuotaWorkHoursOnlyEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertVerifyQuotaEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertVerifyQuotaControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function handleOpsAlertVerifyQuotaSummaryScheduleModeChange() {
     applyOpsAlertVerifyQuotaControls(collectOpsAlertConfigFromForm());
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
@@ -9580,6 +10563,33 @@ function toggleOpsAlertVerifyQueueEnabled() {
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
+function toggleOpsAlertVerifyQueueSummaryEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertVerifyQueueEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertVerifyQueueSummaryEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertVerifyQueueControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertVerifyQueueWorkHoursOnlyEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertVerifyQueueEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertVerifyQueueWorkHoursOnlyEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertVerifyQueueControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function handleOpsAlertVerifyQueueSummaryScheduleModeChange() {
+    applyOpsAlertVerifyQueueControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
 function toggleOpsAlertVerifyFailureEnabled() {
     const toggleEl = document.getElementById('opsAlertVerifyFailureEnabledToggle');
     if (!toggleEl) return;
@@ -9590,12 +10600,66 @@ function toggleOpsAlertVerifyFailureEnabled() {
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
+function toggleOpsAlertVerifyFailureSummaryEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertVerifyFailureEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertVerifyFailureSummaryEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertVerifyFailureControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertVerifyFailureWorkHoursOnlyEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertVerifyFailureEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertVerifyFailureWorkHoursOnlyEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertVerifyFailureControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function handleOpsAlertVerifyFailureSummaryScheduleModeChange() {
+    applyOpsAlertVerifyFailureControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
 function toggleOpsAlertPaymentGatewayEnabled() {
     const toggleEl = document.getElementById('opsAlertPaymentGatewayEnabledToggle');
     if (!toggleEl) return;
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertPaymentGatewayControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertPaymentGatewaySummaryEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertPaymentGatewayEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertPaymentGatewaySummaryEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertPaymentGatewayControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertPaymentGatewayWorkHoursOnlyEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertPaymentGatewayEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertPaymentGatewayControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function handleOpsAlertPaymentGatewaySummaryScheduleModeChange() {
     applyOpsAlertPaymentGatewayControls(collectOpsAlertConfigFromForm());
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
@@ -11848,10 +12912,27 @@ window.toggleOpsAlertTicketsEnabled = toggleOpsAlertTicketsEnabled;
 window.toggleOpsAlertTicketsSummaryEnabled = toggleOpsAlertTicketsSummaryEnabled;
 window.toggleOpsAlertTicketsWorkHoursOnlyEnabled = toggleOpsAlertTicketsWorkHoursOnlyEnabled;
 window.handleOpsAlertTicketsSummaryScheduleModeChange = handleOpsAlertTicketsSummaryScheduleModeChange;
+window.toggleOpsAlertShopOrderDeliveryEnabled = toggleOpsAlertShopOrderDeliveryEnabled;
+window.toggleOpsAlertShopOrderDeliveryIncidentEnabled = toggleOpsAlertShopOrderDeliveryIncidentEnabled;
+window.toggleOpsAlertShopOrderDeliverySummaryEnabled = toggleOpsAlertShopOrderDeliverySummaryEnabled;
+window.toggleOpsAlertShopOrderDeliveryWorkHoursOnlyEnabled = toggleOpsAlertShopOrderDeliveryWorkHoursOnlyEnabled;
+window.handleOpsAlertShopOrderDeliverySummaryScheduleModeChange = handleOpsAlertShopOrderDeliverySummaryScheduleModeChange;
 window.toggleOpsAlertVerifyQuotaEnabled = toggleOpsAlertVerifyQuotaEnabled;
+window.toggleOpsAlertVerifyQuotaSummaryEnabled = toggleOpsAlertVerifyQuotaSummaryEnabled;
+window.toggleOpsAlertVerifyQuotaWorkHoursOnlyEnabled = toggleOpsAlertVerifyQuotaWorkHoursOnlyEnabled;
+window.handleOpsAlertVerifyQuotaSummaryScheduleModeChange = handleOpsAlertVerifyQuotaSummaryScheduleModeChange;
 window.toggleOpsAlertVerifyQueueEnabled = toggleOpsAlertVerifyQueueEnabled;
+window.toggleOpsAlertVerifyQueueSummaryEnabled = toggleOpsAlertVerifyQueueSummaryEnabled;
+window.toggleOpsAlertVerifyQueueWorkHoursOnlyEnabled = toggleOpsAlertVerifyQueueWorkHoursOnlyEnabled;
+window.handleOpsAlertVerifyQueueSummaryScheduleModeChange = handleOpsAlertVerifyQueueSummaryScheduleModeChange;
 window.toggleOpsAlertVerifyFailureEnabled = toggleOpsAlertVerifyFailureEnabled;
+window.toggleOpsAlertVerifyFailureSummaryEnabled = toggleOpsAlertVerifyFailureSummaryEnabled;
+window.toggleOpsAlertVerifyFailureWorkHoursOnlyEnabled = toggleOpsAlertVerifyFailureWorkHoursOnlyEnabled;
+window.handleOpsAlertVerifyFailureSummaryScheduleModeChange = handleOpsAlertVerifyFailureSummaryScheduleModeChange;
 window.toggleOpsAlertPaymentGatewayEnabled = toggleOpsAlertPaymentGatewayEnabled;
+window.toggleOpsAlertPaymentGatewaySummaryEnabled = toggleOpsAlertPaymentGatewaySummaryEnabled;
+window.toggleOpsAlertPaymentGatewayWorkHoursOnlyEnabled = toggleOpsAlertPaymentGatewayWorkHoursOnlyEnabled;
+window.handleOpsAlertPaymentGatewaySummaryScheduleModeChange = handleOpsAlertPaymentGatewaySummaryScheduleModeChange;
 window.selectOpsAlertUnifiedSummaryTargets = selectOpsAlertUnifiedSummaryTargets;
 window.handleOpsAlertUnifiedSummaryTargetChange = handleOpsAlertUnifiedSummaryTargetChange;
 window.handleOpsAlertUnifiedSummaryDraftChange = handleOpsAlertUnifiedSummaryDraftChange;

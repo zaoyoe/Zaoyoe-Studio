@@ -806,7 +806,15 @@ function buildShopOrderDeliveryRecoveredAlerts(orders = [], stateJobs = [], rawC
 
 async function runShopOrderDeliveryFailedSweep(supabase, options = {}) {
     const env = options.env || process.env;
-    const config = normalizeShopOrderDeliveryMonitorConfig(options.config, env);
+    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
+    const config = normalizeShopOrderDeliveryMonitorConfig(
+        options.config && typeof options.config === 'object'
+            ? options.config
+            : (runtime?.config?.shop_order_delivery && typeof runtime.config.shop_order_delivery === 'object'
+                ? runtime.config.shop_order_delivery
+                : {}),
+        env
+    );
 
     if (!config.enabled) {
         return {
@@ -821,7 +829,6 @@ async function runShopOrderDeliveryFailedSweep(supabase, options = {}) {
         };
     }
 
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
     if (!runtime?.config?.enabled) {
         return {
             skipped: 'ops_alerts_disabled',
