@@ -407,6 +407,9 @@ function bindAdminStudioDelegatedControls() {
             case 'switch-settings-view':
                 window.switchSettingsView?.(actionEl.dataset.settingsView);
                 break;
+            case 'switch-ops-alerts-view':
+                window.switchOpsAlertsView?.(actionEl.dataset.opsAlertsView);
+                break;
             case 'settings-toggle-custom-dropdown':
                 window.toggleCustomDropdown?.(actionEl.dataset.dropdownId);
                 break;
@@ -1711,10 +1714,53 @@ function updateUIBasedOnPermissions() {
 // ========================================
 // VIEW SWITCHING
 // ========================================
+const OPS_ALERTS_MODULE_VIEW_CARD_ASSIGNMENTS = Object.freeze([
+    { configId: 'ops-alerts-overview', bucket: 'overview-main' },
+    { configId: 'ops-alerts-strategy', bucket: 'strategy-main' },
+    { configId: 'ops-alerts-summary-orchestration', bucket: 'strategy-side' },
+    { configId: 'ops-alerts-actions', bucket: 'channels-main' },
+    { configId: 'ops-alerts-telegram', bucket: 'channels-side' },
+    { configId: 'ops-alerts-feishu', bucket: 'channels-side' },
+    { configId: 'ops-alerts-email', bucket: 'channels-side' },
+    { configId: 'ops-alerts-customer-chat-message', bucket: 'monitors-main' },
+    { configId: 'ops-alerts-wallet-recharge-success', bucket: 'monitors-main' },
+    { configId: 'ops-alerts-shop-inventory', bucket: 'monitors-main' },
+    { configId: 'ops-alerts-tickets', bucket: 'monitors-main' },
+    { configId: 'ops-alerts-payment-gateway', bucket: 'monitors-main' },
+    { configId: 'ops-alerts-verify-queue', bucket: 'monitors-main' },
+    { configId: 'ops-alerts-shop-purchase-success', bucket: 'monitors-side' },
+    { configId: 'ops-alerts-shop-order-delivery', bucket: 'monitors-side' },
+    { configId: 'ops-alerts-verify-quota', bucket: 'monitors-side' },
+    { configId: 'ops-alerts-verify-failure', bucket: 'monitors-side' },
+    { configId: 'ops-alerts-shop-risk', bucket: 'monitors-side' },
+    { configId: 'ops-alerts-workspace', bucket: 'workspace-main' },
+    { configId: 'ops-alerts-monitor', bucket: 'workspace-side' },
+    { configId: 'ops-alerts-health', bucket: 'health-main' }
+]);
+
+function organizeOpsAlertsModule() {
+    const legacySource = document.getElementById('opsAlertsLegacySource');
+    const opsAlertsModule = document.getElementById('module-ops-alerts');
+    if (!legacySource || !opsAlertsModule) return;
+    if (opsAlertsModule.dataset.layoutReady === '1') return;
+
+    for (const assignment of OPS_ALERTS_MODULE_VIEW_CARD_ASSIGNMENTS) {
+        const card = legacySource.querySelector(`[data-config="${assignment.configId}"]`);
+        const bucket = opsAlertsModule.querySelector(`[data-ops-alerts-bucket="${assignment.bucket}"]`);
+        if (!card || !bucket) continue;
+        bucket.appendChild(card);
+    }
+
+    opsAlertsModule.dataset.layoutReady = '1';
+}
+
 // Switch between Create and Manage views
 function switchView(viewName) {
+    const galleryModule = document.getElementById('module-gallery');
+    if (!galleryModule) return;
+
     // Update active tab buttons
-    document.querySelectorAll('.admin-tab').forEach(tab => {
+    galleryModule.querySelectorAll('.admin-tab[data-view]').forEach(tab => {
         const isActive = tab.dataset.view === viewName;
         tab.classList.toggle('active', isActive);
 
@@ -1725,10 +1771,14 @@ function switchView(viewName) {
     });
 
     // Update view visibility
-    document.querySelectorAll('.view-section').forEach(section => {
+    galleryModule.querySelectorAll('.view-section').forEach(section => {
         section.classList.remove('active');
     });
-    document.getElementById(`view-${viewName}`).classList.add('active');
+
+    const targetView = galleryModule.querySelector(`#view-${viewName}`);
+    if (targetView) {
+        targetView.classList.add('active');
+    }
 
     // Load data if switching to Manage view
     if (viewName === 'manage') {
@@ -1764,6 +1814,43 @@ function switchSettingsView(viewName) {
         renderApiKeySelector();
     }
 }
+
+function switchOpsAlertsView(viewName) {
+    const opsAlertsModule = document.getElementById('module-ops-alerts');
+    if (!opsAlertsModule) return;
+
+    organizeOpsAlertsModule();
+
+    opsAlertsModule.querySelectorAll('.admin-tab[data-ops-alerts-view]').forEach(tab => {
+        const isActive = tab.dataset.opsAlertsView === viewName;
+        tab.classList.toggle('active', isActive);
+
+        if (isActive) {
+            updateAdminTabIndicator(tab);
+        }
+    });
+
+    opsAlertsModule.querySelectorAll('.view-section').forEach(section => {
+        section.classList.remove('active');
+    });
+
+    const targetView = document.getElementById(`ops-alerts-view-${viewName}`);
+    if (targetView) {
+        targetView.classList.add('active');
+    }
+}
+
+function initOpsAlertsModule() {
+    organizeOpsAlertsModule();
+
+    const opsAlertsModule = document.getElementById('module-ops-alerts');
+    if (!opsAlertsModule) return;
+
+    const activeTab = opsAlertsModule.querySelector('.admin-tab[data-ops-alerts-view].active');
+    switchOpsAlertsView(activeTab?.dataset.opsAlertsView || 'overview');
+}
+
+initOpsAlertsModule();
 
 // Initialize tab indicator (robust check)
 function initIndicator() {

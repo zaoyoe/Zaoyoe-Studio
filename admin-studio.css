@@ -18964,11 +18964,15 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 20px;
 }
 
-#settings-view-ops-alerts .module-content.ops-alert-settings-layout {
+#module-ops-alerts .module-content.ops-alert-settings-layout {
     display: grid;
     grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
     align-items: start;
     gap: 20px;
+}
+
+#module-ops-alerts .module-content.ops-alert-settings-layout.ops-alert-settings-layout--single {
+    grid-template-columns: minmax(0, 1fr);
 }
 
 #settings-view-pricing .pricing-settings-column {
@@ -18978,7 +18982,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     min-width: 0;
 }
 
-#settings-view-ops-alerts .ops-alert-settings-column {
+#module-ops-alerts .ops-alert-settings-column {
     display: flex;
     flex-direction: column;
     gap: 20px;
@@ -18989,7 +18993,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     width: 100%;
 }
 
-#settings-view-ops-alerts .ops-alert-settings-column .config-card {
+#module-ops-alerts .ops-alert-settings-column .config-card {
     width: 100%;
 }
 
@@ -19002,8 +19006,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    #settings-view-ops-alerts .module-content.ops-alert-settings-layout {
+    #module-ops-alerts .module-content.ops-alert-settings-layout {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #module-ops-alerts .module-content.ops-alert-settings-layout.ops-alert-settings-layout--single {
+        grid-template-columns: minmax(0, 1fr);
     }
 }
 
@@ -19036,7 +19044,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         gap: 16px;
     }
 
-    #settings-view-ops-alerts .module-content.ops-alert-settings-layout {
+    #module-ops-alerts .module-content.ops-alert-settings-layout {
         display: flex;
         flex-direction: column;
         gap: 16px;
@@ -19046,13 +19054,14 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         gap: 16px;
     }
 
-    #settings-view-ops-alerts .ops-alert-settings-column {
+    #module-ops-alerts .ops-alert-settings-column {
         gap: 16px;
     }
 }
 
 
-#module-settings .admin-tabs {
+#module-settings .admin-tabs,
+#module-ops-alerts .admin-tabs {
     justify-content: center;
     gap: 16px;
     padding: 20px 20px 0;
@@ -19061,7 +19070,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     /* Allow wrapping on smaller desktop screens */
 }
 
-#module-settings .admin-tab {
+#module-settings .admin-tab,
+#module-ops-alerts .admin-tab {
     padding: 10px 20px;
     font-size: 0.9rem;
     display: flex;
@@ -19072,7 +19082,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 /* Mobile Settings Layout */
 @media (max-width: 768px) {
-    #module-settings .admin-tabs {
+    #module-settings .admin-tabs,
+    #module-ops-alerts .admin-tabs {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
         /* 3 columns for tabs */
@@ -19080,7 +19091,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         gap: 8px;
     }
 
-    #module-settings .admin-tab {
+    #module-settings .admin-tab,
+    #module-ops-alerts .admin-tab {
         flex-direction: column;
         text-align: center;
         padding: 12px 4px;
@@ -19093,8 +19105,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
     /* Ensure emoji icons are visible and centered */
     #module-settings .admin-tab i,
+    #module-ops-alerts .admin-tab i,
     /* If using font awesome */
-    #module-settings .admin-tab::before {
+    #module-settings .admin-tab::before,
+    #module-ops-alerts .admin-tab::before {
         /* If relying on emoji as text content */
         font-size: 1.2rem;
         margin-bottom: 2px;
@@ -19102,7 +19116,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 
-#module-settings .view-section {
+#module-settings .view-section,
+#module-ops-alerts .view-section {
     padding-top: 20px;
 }
 
@@ -19536,7 +19551,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 #settings-view-pricing .config-card[data-config="payment-channels"]:not(.collapsed) .config-card-body,
-#settings-view-ops-alerts .config-card:not(.collapsed) .config-card-body {
+#module-ops-alerts .config-card:not(.collapsed) .config-card-body {
     max-height: none;
     overflow: visible;
 }
@@ -20387,54 +20402,54 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     margin-top: 1px;
 }
 
-#settings-view-ops-alerts .config-row {
+#module-ops-alerts .config-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
     align-items: start;
     gap: 18px;
 }
 
-#settings-view-ops-alerts .config-row > label {
+#module-ops-alerts .config-row > label {
     color: var(--text-main);
     font-size: 0.94rem;
     font-weight: 500;
     padding-top: 10px;
 }
 
-#settings-view-ops-alerts .config-info,
-#settings-view-ops-alerts .config-input-wrapper {
+#module-ops-alerts .config-info,
+#module-ops-alerts .config-input-wrapper {
     min-width: 0;
 }
 
-#settings-view-ops-alerts .config-desc {
+#module-ops-alerts .config-desc {
     max-width: none;
 }
 
-#settings-view-ops-alerts .config-input-wrapper {
+#module-ops-alerts .config-input-wrapper {
     width: 100%;
     justify-content: flex-end;
     margin-top: 0;
 }
 
-#settings-view-ops-alerts .config-input[type="text"],
-#settings-view-ops-alerts .config-input[type="url"],
-#settings-view-ops-alerts .config-input[type="password"],
-#settings-view-ops-alerts .config-input[type="number"],
-#settings-view-ops-alerts .config-input[type="email"],
-#settings-view-ops-alerts .config-input[type="search"],
-#settings-view-ops-alerts select.config-input,
-#settings-view-ops-alerts textarea.config-input {
+#module-ops-alerts .config-input[type="text"],
+#module-ops-alerts .config-input[type="url"],
+#module-ops-alerts .config-input[type="password"],
+#module-ops-alerts .config-input[type="number"],
+#module-ops-alerts .config-input[type="email"],
+#module-ops-alerts .config-input[type="search"],
+#module-ops-alerts select.config-input,
+#module-ops-alerts textarea.config-input {
     width: min(100%, 320px);
     min-width: 220px;
     text-align: left;
 }
 
-#settings-view-ops-alerts textarea.config-input {
+#module-ops-alerts textarea.config-input {
     min-height: 96px;
     resize: vertical;
 }
 
-#settings-view-ops-alerts .status-toggle {
+#module-ops-alerts .status-toggle {
     margin-left: auto;
 }
 
@@ -22073,7 +22088,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         white-space: normal;
     }
 
-    #settings-view-ops-alerts .config-row {
+    #module-ops-alerts .config-row {
         grid-template-columns: 1fr;
         gap: 12px;
     }
@@ -22118,22 +22133,22 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         font-size: 0.7rem;
     }
 
-    #settings-view-ops-alerts .config-row > label {
+    #module-ops-alerts .config-row > label {
         padding-top: 0;
     }
 
-    #settings-view-ops-alerts .config-input-wrapper {
+    #module-ops-alerts .config-input-wrapper {
         justify-content: flex-start;
     }
 
-    #settings-view-ops-alerts .config-input[type="text"],
-    #settings-view-ops-alerts .config-input[type="url"],
-    #settings-view-ops-alerts .config-input[type="password"],
-    #settings-view-ops-alerts .config-input[type="number"],
-    #settings-view-ops-alerts .config-input[type="email"],
-    #settings-view-ops-alerts .config-input[type="search"],
-    #settings-view-ops-alerts select.config-input,
-    #settings-view-ops-alerts textarea.config-input {
+    #module-ops-alerts .config-input[type="text"],
+    #module-ops-alerts .config-input[type="url"],
+    #module-ops-alerts .config-input[type="password"],
+    #module-ops-alerts .config-input[type="number"],
+    #module-ops-alerts .config-input[type="email"],
+    #module-ops-alerts .config-input[type="search"],
+    #module-ops-alerts select.config-input,
+    #module-ops-alerts textarea.config-input {
         width: 100%;
         min-width: 0;
     }

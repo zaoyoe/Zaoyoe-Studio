@@ -45,6 +45,7 @@
             if (moduleId === 'analytics') window.initAnalyticsModule?.();
             if (moduleId === 'payments' && window.AdminPayments?.init) window.AdminPayments.init();
             if (moduleId === 'shop') window.ShopAdmin?.init?.();
+            if (moduleId === 'ops-alerts') window.initOpsAlertsModule?.();
             if (moduleId === 'discounts' && typeof window.AdminDiscounts !== 'undefined') window.AdminDiscounts.init();
             if (moduleId === 'comments') {
                 window.initCommentsModule?.();

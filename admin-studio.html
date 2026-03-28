@@ -122,6 +122,10 @@
                     <i class="fas fa-credit-card"></i>
                     <span>支付对账</span>
                 </div>
+                <div class="sidebar-item" data-module="ops-alerts" data-admin-action="switch-module" data-module-id="ops-alerts">
+                    <i class="fas fa-bell"></i>
+                    <span>站外告警</span>
+                </div>
             </nav>
 
             <!-- Footer (Settings) -->
@@ -618,9 +622,6 @@
                     <button class="admin-tab" data-settings-view="security" data-admin-action="switch-settings-view">
                         🔒 安全设置
                     </button>
-                    <button class="admin-tab" data-settings-view="ops-alerts" data-admin-action="switch-settings-view">
-                        🔔 站外告警
-                    </button>
                     <button class="admin-tab" data-settings-view="notifications"
                         data-admin-action="switch-settings-view">
                         📧 系统公告
@@ -1035,7 +1036,7 @@
                 </div>
 
                 <!-- OPS ALERTS VIEW -->
-                <div id="settings-view-ops-alerts" class="view-section">
+                <div id="opsAlertsLegacySource" class="ops-alerts-legacy-source" hidden aria-hidden="true">
                     <div class="module-content ops-alert-settings-layout">
                         <div class="ops-alert-settings-column ops-alert-settings-column--main">
                             <div class="config-card ops-alert-config-card" data-config="ops-alerts-overview">
@@ -4001,49 +4002,115 @@
                                         <div class="ops-alert-health-grid" id="opsAlertHealthGrid"></div>
                                     </div>
                                 </div>
-                            </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+            </div>
+
+            <!-- ========== OPS ALERTS MODULE ========== -->
+            <div id="module-ops-alerts" class="module-container">
+                <nav class="admin-tabs" id="opsAlertsTabsNav">
+                    <button class="admin-tab active" data-ops-alerts-view="overview" data-admin-action="switch-ops-alerts-view">
+                        🛰️ 概览
+                    </button>
+                    <button class="admin-tab" data-ops-alerts-view="strategy" data-admin-action="switch-ops-alerts-view">
+                        🎛️ 策略中心
+                    </button>
+                    <button class="admin-tab" data-ops-alerts-view="channels" data-admin-action="switch-ops-alerts-view">
+                        📡 通知渠道
+                    </button>
+                    <button class="admin-tab" data-ops-alerts-view="monitors" data-admin-action="switch-ops-alerts-view">
+                        📊 监控规则
+                    </button>
+                    <button class="admin-tab" data-ops-alerts-view="workspace" data-admin-action="switch-ops-alerts-view">
+                        🧰 告警工作台
+                    </button>
+                    <button class="admin-tab" data-ops-alerts-view="health" data-admin-action="switch-ops-alerts-view">
+                        ❤️ 通道健康
+                    </button>
+                    <div class="admin-tab-indicator"></div>
+                </nav>
+
+                <div id="ops-alerts-view-overview" class="view-section active">
+                    <div class="module-content ops-alert-settings-layout ops-alert-settings-layout--single">
+                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="overview-main"></div>
                     </div>
                 </div>
 
-                <div id="shopRiskCaseComposerModal" class="modal-overlay admin-shop-risk-case-modal" data-admin-overlay-close="shop-risk-case-modal" aria-hidden="true">
-                    <div class="admin-shop-risk-case-modal__dialog">
-                        <div class="admin-shop-risk-case-modal__header">
-                            <div class="admin-shop-risk-case-modal__icon">
-                                <i class="fas fa-shield-halved"></i>
-                            </div>
-                            <div class="admin-shop-risk-case-modal__copy">
-                                <h2 id="shopRiskCaseComposerTitle">处理集中告警</h2>
-                                <p id="shopRiskCaseComposerSummary">集中告警记录</p>
-                            </div>
-                            <button type="button" class="modal-close-btn" data-admin-action="settings-close-shop-risk-case-modal" aria-label="关闭">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
-                        <form id="shopRiskCaseComposerForm" class="admin-shop-risk-case-modal__form">
-                            <div class="admin-shop-risk-case-modal__note" id="shopRiskCaseComposerDescription">
-                                记录处理备注、交接说明或关闭结论。
-                            </div>
-                            <div class="admin-shop-risk-case-modal__field" id="shopRiskCaseComposerOwnerField" hidden>
-                                <label for="shopRiskCaseComposerOwnerSelect">负责人</label>
-                                <select id="shopRiskCaseComposerOwnerSelect" class="config-input"></select>
-                                <div class="admin-shop-risk-case-modal__hint" id="shopRiskCaseComposerOwnerHint"></div>
-                            </div>
-                            <div class="admin-shop-risk-case-modal__field">
-                                <label for="shopRiskCaseComposerTextarea" id="shopRiskCaseComposerLabel">备注内容</label>
-                                <textarea id="shopRiskCaseComposerTextarea" rows="6" class="config-input" placeholder="请输入内容"></textarea>
-                            </div>
-                            <div class="admin-shop-risk-case-modal__actions">
-                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-close-shop-risk-case-modal">
-                                    <i class="fas fa-xmark"></i> 取消
-                                </button>
-                                <button type="submit" class="btn-add-config btn-add-config--compact btn-add-config--primary" id="shopRiskCaseComposerSubmit" data-admin-action="settings-submit-shop-risk-case-modal">
-                                    保存备注
-                                </button>
-                            </div>
-                        </form>
+                <div id="ops-alerts-view-strategy" class="view-section">
+                    <div class="module-content ops-alert-settings-layout">
+                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="strategy-main"></div>
+                        <div class="ops-alert-settings-column ops-alert-settings-column--side" data-ops-alerts-bucket="strategy-side"></div>
                     </div>
                 </div>
+
+                <div id="ops-alerts-view-channels" class="view-section">
+                    <div class="module-content ops-alert-settings-layout">
+                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="channels-main"></div>
+                        <div class="ops-alert-settings-column ops-alert-settings-column--side" data-ops-alerts-bucket="channels-side"></div>
+                    </div>
+                </div>
+
+                <div id="ops-alerts-view-monitors" class="view-section">
+                    <div class="module-content ops-alert-settings-layout">
+                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="monitors-main"></div>
+                        <div class="ops-alert-settings-column ops-alert-settings-column--side" data-ops-alerts-bucket="monitors-side"></div>
+                    </div>
+                </div>
+
+                <div id="ops-alerts-view-workspace" class="view-section">
+                    <div class="module-content ops-alert-settings-layout">
+                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="workspace-main"></div>
+                        <div class="ops-alert-settings-column ops-alert-settings-column--side" data-ops-alerts-bucket="workspace-side"></div>
+                    </div>
+                </div>
+
+                <div id="ops-alerts-view-health" class="view-section">
+                    <div class="module-content ops-alert-settings-layout ops-alert-settings-layout--single">
+                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="health-main"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="shopRiskCaseComposerModal" class="modal-overlay admin-shop-risk-case-modal" data-admin-overlay-close="shop-risk-case-modal" aria-hidden="true">
+                <div class="admin-shop-risk-case-modal__dialog">
+                    <div class="admin-shop-risk-case-modal__header">
+                        <div class="admin-shop-risk-case-modal__icon">
+                            <i class="fas fa-shield-halved"></i>
+                        </div>
+                        <div class="admin-shop-risk-case-modal__copy">
+                            <h2 id="shopRiskCaseComposerTitle">处理集中告警</h2>
+                            <p id="shopRiskCaseComposerSummary">集中告警记录</p>
+                        </div>
+                        <button type="button" class="modal-close-btn" data-admin-action="settings-close-shop-risk-case-modal" aria-label="关闭">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <form id="shopRiskCaseComposerForm" class="admin-shop-risk-case-modal__form">
+                        <div class="admin-shop-risk-case-modal__note" id="shopRiskCaseComposerDescription">
+                            记录处理备注、交接说明或关闭结论。
+                        </div>
+                        <div class="admin-shop-risk-case-modal__field" id="shopRiskCaseComposerOwnerField" hidden>
+                            <label for="shopRiskCaseComposerOwnerSelect">负责人</label>
+                            <select id="shopRiskCaseComposerOwnerSelect" class="config-input"></select>
+                            <div class="admin-shop-risk-case-modal__hint" id="shopRiskCaseComposerOwnerHint"></div>
+                        </div>
+                        <div class="admin-shop-risk-case-modal__field">
+                            <label for="shopRiskCaseComposerTextarea" id="shopRiskCaseComposerLabel">备注内容</label>
+                            <textarea id="shopRiskCaseComposerTextarea" rows="6" class="config-input" placeholder="请输入内容"></textarea>
+                        </div>
+                        <div class="admin-shop-risk-case-modal__actions">
+                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-close-shop-risk-case-modal">
+                                <i class="fas fa-xmark"></i> 取消
+                            </button>
+                            <button type="submit" class="btn-add-config btn-add-config--compact btn-add-config--primary" id="shopRiskCaseComposerSubmit" data-admin-action="settings-submit-shop-risk-case-modal">
+                                保存备注
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
 
                 <div id="opsAlertBatchMuteModal" class="modal-overlay admin-shop-risk-case-modal" data-admin-overlay-close="ops-alert-batch-mute-modal" aria-hidden="true">
                     <div class="admin-shop-risk-case-modal__dialog">
