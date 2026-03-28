@@ -20980,6 +20980,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 10px;
 }
 
+.ops-alert-mute-table__row[data-rule-state="inactive"] .ops-alert-mute-table__aside {
+    justify-content: flex-end;
+}
+
 .ops-alert-routing-matrix__row {
     grid-template-columns: minmax(260px, 1.55fr) repeat(3, minmax(140px, 0.75fr));
 }
@@ -21087,11 +21091,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .ops-alert-mute-clear-btn {
-    width: 40px;
-    min-width: 40px;
-    height: 40px;
+    width: 48px;
+    min-width: 48px;
+    height: 48px;
     border: 1px solid rgba(107, 158, 206, 0.16);
-    border-radius: 12px;
+    border-radius: 14px;
     background: rgba(13, 23, 42, 0.82);
     color: rgba(184, 208, 236, 0.84);
     display: inline-flex;
@@ -21105,6 +21109,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     border-color: rgba(107, 158, 206, 0.3);
     background: rgba(107, 158, 206, 0.12);
     color: var(--text-main);
+}
+
+.ops-alert-mute-clear-btn i {
+    font-size: 1rem;
+    line-height: 1;
 }
 
 .ops-alert-mute-clear-btn[hidden] {
