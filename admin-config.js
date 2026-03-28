@@ -4722,15 +4722,21 @@ function buildOpsAlertMuteTableHtml(scope) {
                 const statusId = getOpsAlertMuteRuleElementId(scope, definition.key, 'Status');
                 const untilId = getOpsAlertMuteRuleElementId(scope, definition.key, 'Until');
                 const toggleId = getOpsAlertMuteRuleElementId(scope, definition.key, 'AllowCriticalToggle');
+                const clearButtonId = getOpsAlertMuteRuleElementId(scope, definition.key, 'Clear');
                 return `
                     <div class="ops-alert-mute-table__row" data-mute-rule-row="${escapeConfigHtml(scope)}:${escapeConfigHtml(definition.key)}">
                         <div class="ops-alert-mute-table__main">
                             <div class="ops-alert-mute-table__subject">
                                 <strong>${escapeConfigHtml(definition.label)}${buildOpsAlertInfoTipHtml(definition.description)}</strong>
                             </div>
-                            <div class="ops-alert-mute-field ops-alert-mute-field--picker">
+                            <div class="ops-alert-mute-field ops-alert-mute-field--picker ops-alert-mute-field--actions">
                                 <span>静默至</span>
-                                ${buildOpsAlertDateTimeFieldHtml(untilId)}
+                                <div class="ops-alert-mute-picker-actions">
+                                    ${buildOpsAlertDateTimeFieldHtml(untilId)}
+                                    <button type="button" class="ops-alert-mute-clear-btn" id="${escapeConfigHtml(clearButtonId)}" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="${escapeConfigHtml(scope)}" data-rule-key="${escapeConfigHtml(definition.key)}" aria-label="清除此条静默" title="清除">
+                                        <i class="fas fa-xmark" aria-hidden="true"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         <div class="ops-alert-mute-table__aside">
@@ -4741,7 +4747,6 @@ function buildOpsAlertMuteTableHtml(scope) {
                                 </div>
                                 <div class="status-toggle" id="${escapeConfigHtml(toggleId)}" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="${escapeConfigHtml(scope)}" data-rule-key="${escapeConfigHtml(definition.key)}"></div>
                             </div>
-                            <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="${escapeConfigHtml(scope)}" data-rule-key="${escapeConfigHtml(definition.key)}">清除</button>
                         </div>
                     </div>
                 `;
@@ -4883,9 +4888,14 @@ function buildOpsAlertStrategyLayoutHtml() {
                                 </div>
                                 <div class="ops-alert-mute-status" id="opsAlertTemporaryMuteStatus">当前未设置临时静默。</div>
                                 <div class="ops-alert-strategy-stack">
-                                    <div class="ops-alert-strategy-field ops-alert-strategy-field--picker">
+                                    <div class="ops-alert-strategy-field ops-alert-strategy-field--picker ops-alert-mute-field--actions">
                                         <span>静默至</span>
-                                        ${buildOpsAlertDateTimeFieldHtml('opsAlertTemporaryMuteUntil')}
+                                        <div class="ops-alert-mute-picker-actions">
+                                            ${buildOpsAlertDateTimeFieldHtml('opsAlertTemporaryMuteUntil')}
+                                            <button type="button" class="ops-alert-mute-clear-btn" id="opsAlertTemporaryMuteInlineClear" data-admin-action="settings-clear-ops-alert-temporary-mute" aria-label="清除临时静默" title="清除">
+                                                <i class="fas fa-xmark" aria-hidden="true"></i>
+                                            </button>
+                                        </div>
                                     </div>
                                     <div class="ops-alert-mute-toggle-field">
                                         <div class="ops-alert-mute-toggle-field__copy">
@@ -4898,7 +4908,6 @@ function buildOpsAlertStrategyLayoutHtml() {
                                     <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-set-ops-alert-temporary-mute" data-mute-hours="1">静默 1 小时</button>
                                     <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-set-ops-alert-temporary-mute" data-mute-hours="6">静默 6 小时</button>
                                     <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-set-ops-alert-temporary-mute" data-mute-hours="24">静默 24 小时</button>
-                                    <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-temporary-mute">清除静默</button>
                                 </div>
                             </section>
 
@@ -5368,11 +5377,18 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
     if (temporaryMuteStatus) {
         if (temporaryMuteState.active) {
             temporaryMuteStatus.textContent = `当前已静默至 ${temporaryMuteState.untilLabel}，${temporaryMuteState.allowCritical ? 'critical 仍继续通知。' : '所有级别暂停外发。'}`;
+            temporaryMuteStatus.hidden = false;
         } else if (temporaryMuteState.expired) {
             temporaryMuteStatus.textContent = `上次静默已于 ${temporaryMuteState.untilLabel} 到期。点击“清除静默”可清掉旧时间。`;
+            temporaryMuteStatus.hidden = false;
         } else {
-            temporaryMuteStatus.textContent = '当前未设置临时静默。点击预设按钮后，保存站外告警配置即可生效。';
+            temporaryMuteStatus.textContent = '';
+            temporaryMuteStatus.hidden = true;
         }
+    }
+    const temporaryMuteInlineClear = document.getElementById('opsAlertTemporaryMuteInlineClear');
+    if (temporaryMuteInlineClear) {
+        temporaryMuteInlineClear.hidden = !(temporaryMuteState.active || temporaryMuteState.expired);
     }
 
     const quietHours = normalizedConfig.quiet_hours || getDefaultOpsAlertConfig().quiet_hours;
@@ -5446,11 +5462,18 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
             if (statusEl) {
                 if (state.active) {
                     statusEl.textContent = `${state.untilLabel} 前静默${state.allowCritical ? '，critical 继续通知。' : '，全部级别暂停。'}`;
+                    statusEl.hidden = false;
                 } else if (state.expired) {
                     statusEl.textContent = `已于 ${state.untilLabel} 到期，可清除旧时间。`;
+                    statusEl.hidden = false;
                 } else {
-                    statusEl.textContent = '未设置单独静默。';
+                    statusEl.textContent = '';
+                    statusEl.hidden = true;
                 }
+            }
+            const clearButton = document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'Clear'));
+            if (clearButton) {
+                clearButton.hidden = !(state.active || state.expired);
             }
 
             const row = document.querySelector(`[data-mute-rule-row="${scope}:${definition.key}"]`);
