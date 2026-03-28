@@ -170,26 +170,29 @@ function normalizeOpsAlertCaseTargetItems(items = [], defaults = {}) {
 }
 
 function isMissingOpsAlertCaseEventsTableError(error) {
-    const message = sanitizeText(error?.message || error?.details || error?.hint, 500).toLowerCase();
-    return message.includes('ops_alert_case_events')
-        && (
-            message.includes('does not exist')
-            || message.includes('undefined table')
-            || message.includes('unexpected table access')
-        );
+    return isMissingTableAccessError(error, 'ops_alert_case_events');
 }
 
 function isMissingTableAccessError(error, tableName = '') {
     const normalizedTableName = sanitizeText(tableName, 120).toLowerCase();
-    const message = sanitizeText(error?.message || error?.details || error?.hint, 500).toLowerCase();
+    const code = sanitizeText(error?.code, 40).toUpperCase();
+    const message = [
+        error?.message,
+        error?.details,
+        error?.hint
+    ].filter(Boolean).join(' ').toLowerCase();
     if (!normalizedTableName || !message.includes(normalizedTableName)) {
         return false;
     }
 
     return (
-        message.includes('does not exist')
+        code === '42P01'
+        || code === 'PGRST205'
+        || message.includes('does not exist')
         || message.includes('undefined table')
         || message.includes('unexpected table access')
+        || message.includes('schema cache')
+        || message.includes('could not find the table')
     );
 }
 

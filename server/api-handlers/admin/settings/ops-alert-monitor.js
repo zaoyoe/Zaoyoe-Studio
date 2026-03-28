@@ -10,6 +10,7 @@ const {
     fetchAssignableOpsAlertAdmins,
     fetchOpsAlertCaseEventsByTargets,
     getOpsAlertCaseEventActionLabel,
+    isMissingTableAccessError,
     mapCaseLastActionToEventAction
 } = require('./_ops-alert-case-events');
 
@@ -104,13 +105,7 @@ function buildOpsAlertCaseRecord(row = {}, categoryKeyFallback = '') {
 }
 
 function isMissingOpsAlertCasesTableError(error) {
-    const message = normalizeText(error?.message || error?.details || error?.hint, 500).toLowerCase();
-    return message.includes('ops_alert_cases')
-        && (
-            message.includes('does not exist')
-            || message.includes('undefined table')
-            || message.includes('unexpected table access')
-        );
+    return isMissingTableAccessError(error, 'ops_alert_cases');
 }
 
 async function fetchPagedRows(buildQuery, pageSize = OPS_ALERT_MONITOR_PAGE_SIZE, maxPages = OPS_ALERT_MONITOR_MAX_PAGES) {

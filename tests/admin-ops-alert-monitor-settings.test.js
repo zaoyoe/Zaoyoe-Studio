@@ -38,6 +38,8 @@ function createState(overrides = {}) {
         jobs: [],
         cases: [],
         events: [],
+        legacyCases: null,
+        tableErrors: {},
         adminRoles: [
             {
                 user_id: 'admin-user-1',
@@ -142,10 +144,20 @@ function createSupabaseStub(state) {
             };
 
             function execute(rangeOverride = queryState.range) {
+                const tableError = state.tableErrors?.[table] || null;
+                if (tableError) {
+                    return {
+                        data: queryState.maybeSingle ? null : [],
+                        error: tableError
+                    };
+                }
+
                 const sourceRows = table === 'ops_alert_jobs'
                     ? (state.jobs || [])
                     : table === 'ops_alert_case_events'
                         ? (state.events || [])
+                        : table === 'shop_risk_cases'
+                            ? (state.legacyCases || state.cases || [])
                         : table === 'admin_roles'
                             ? (state.adminRoles || [])
                             : table === 'profiles'
@@ -533,6 +545,65 @@ test('ops alert monitor handler merges shop risk case ownership and case summary
         assert.equal(shopRisk.case_summary.resolved, 0);
         assert.equal(shopRisk.recent_threshold_hits[0].case_status, 'claimed');
         assert.equal(shopRisk.recent_auto_responses.length, 0);
+    });
+});
+
+test('ops alert monitor handler falls back to legacy shop risk cases when ops_alert_cases is missing from schema cache', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('shop_order_risk_anomaly', {
+                id: 'shop-risk-legacy-1',
+                severity: 'critical',
+                title: '优惠码高频使用（FLASH0）',
+                content: '商城风控告警\n优惠码：FLASH0',
+                payload: {
+                    target_id: 'shop_order_risk:coupon:FLASH0',
+                    signal_type: 'discount_code_spike',
+                    discount_code: 'FLASH0',
+                    risk_level: 'critical',
+                    risk_score: 93
+                },
+                created_at: hoursAgo(1)
+            })
+        ],
+        legacyCases: [
+            {
+                id: 'legacy-case-1',
+                target_id: 'shop_order_risk:coupon:FLASH0',
+                status: 'claimed',
+                owner_admin_id: 'admin-user-2',
+                owner_label: 'ops@example.com',
+                note: '旧版 case 表里已认领。',
+                resolution: null,
+                metadata: {
+                    alert_type: 'shop_order_risk_anomaly'
+                },
+                last_action: 'claimed',
+                last_action_at: hoursAgo(0.5),
+                updated_at: hoursAgo(0.5)
+            }
+        ],
+        tableErrors: {
+            ops_alert_cases: {
+                code: 'PGRST205',
+                message: "Could not find the table 'public.ops_alert_cases' in the schema cache"
+            }
+        }
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+
+        const shopRisk = payload.categories.find((item) => item.key === 'shop_risk');
+        assert.equal(shopRisk.items[0].case_status, 'claimed');
+        assert.equal(shopRisk.items[0].case_owner_label, 'ops@example.com');
+        assert.equal(shopRisk.items[0].case_note, '旧版 case 表里已认领。');
+        assert.equal(shopRisk.case_summary.claimed, 1);
     });
 });
 
