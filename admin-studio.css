@@ -20550,6 +20550,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     line-height: 1.65;
 }
 
+#module-ops-alerts .ops-alert-strategy-summary-card__desc,
+#module-ops-alerts .ops-alert-strategy-panel__copy p,
+#module-ops-alerts .ops-alert-strategy-card__head p {
+    color: rgba(219, 232, 248, 0.78);
+}
+
 .ops-alert-strategy-summary-card__metrics {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -21274,6 +21280,9 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .ops-alert-inline-number-input,
 .ops-alert-inline-text-input {
+    width: 100%;
+    box-sizing: border-box;
+    display: block;
     min-height: 54px;
     border-radius: 16px;
     border-color: rgba(107, 158, 206, 0.16);
@@ -21281,6 +21290,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     appearance: none;
     -webkit-appearance: none;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.ops-alert-inline-text-input {
+    text-align: left;
+    padding-left: 14px;
 }
 
 #module-ops-alerts .config-input[type="number"],
