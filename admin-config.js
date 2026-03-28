@@ -5494,9 +5494,11 @@ function ensureOpsAlertStrategyLayout() {
         refreshOpsAlertStrategyDraftViews();
     }, true);
     syncAllOpsAlertDateTimeFields(root);
-    setOpsAlertStrategyPanelExpanded('mute', false);
-    setOpsAlertStrategyMuteSubpanelExpanded('types', false);
-    setOpsAlertStrategyMuteSubpanelExpanded('modules', false);
+    setOpsAlertStrategyPanelExpanded('mute', false, { immediate: true });
+    setOpsAlertStrategyPanelExpanded('routing', false, { immediate: true });
+    setOpsAlertStrategyPanelExpanded('work-hours', false, { immediate: true });
+    setOpsAlertStrategyMuteSubpanelExpanded('types', false, { immediate: true });
+    setOpsAlertStrategyMuteSubpanelExpanded('modules', false, { immediate: true });
     updateOpsAlertStrategyDraftIndicators(getOpsAlertSavedConfigSnapshot());
 }
 
@@ -5671,7 +5673,69 @@ function renderOpsAlertStrategySummary(config = normalizeOpsAlertConfig(systemCo
     }
 }
 
-function setOpsAlertStrategyPanelExpanded(panelKey, expanded) {
+function setOpsAlertCollapsibleBodyExpanded(body, expanded, options = {}) {
+    if (!(body instanceof HTMLElement)) {
+        return;
+    }
+
+    const nextExpanded = expanded === true;
+    const immediate = options.immediate === true
+        || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    const transitionToken = String((Number.parseInt(body.dataset.opsAlertCollapseToken || '0', 10) || 0) + 1);
+
+    body.dataset.opsAlertCollapseToken = transitionToken;
+    body.hidden = false;
+    body.setAttribute('aria-hidden', nextExpanded ? 'false' : 'true');
+    body.style.willChange = 'height, opacity, padding-bottom';
+
+    const finalize = () => {
+        if (body.dataset.opsAlertCollapseToken !== transitionToken) {
+            return;
+        }
+        body.classList.toggle('is-open', nextExpanded);
+        body.dataset.opsAlertExpanded = nextExpanded ? 'true' : 'false';
+        body.style.height = nextExpanded ? 'auto' : '0px';
+        body.style.overflow = nextExpanded ? 'visible' : 'hidden';
+        body.style.visibility = nextExpanded ? 'visible' : 'hidden';
+        body.style.willChange = '';
+    };
+
+    if (immediate) {
+        finalize();
+        return;
+    }
+
+    const startHeight = body.getBoundingClientRect().height;
+    body.style.height = `${Math.max(0, startHeight)}px`;
+    body.style.overflow = 'hidden';
+    body.style.visibility = 'visible';
+    body.classList.toggle('is-open', nextExpanded);
+
+    const targetHeight = nextExpanded ? body.scrollHeight : 0;
+    if (Math.abs(targetHeight - startHeight) < 1) {
+        finalize();
+        return;
+    }
+
+    const handleTransitionEnd = (event) => {
+        if (event.target !== body || event.propertyName !== 'height') {
+            return;
+        }
+        body.removeEventListener('transitionend', handleTransitionEnd);
+        finalize();
+    };
+
+    body.addEventListener('transitionend', handleTransitionEnd);
+    void body.offsetHeight;
+    requestAnimationFrame(() => {
+        if (body.dataset.opsAlertCollapseToken !== transitionToken) {
+            return;
+        }
+        body.style.height = `${Math.max(0, targetHeight)}px`;
+    });
+}
+
+function setOpsAlertStrategyPanelExpanded(panelKey, expanded, options = {}) {
     const panel = document.querySelector(`.ops-alert-strategy-panel[data-strategy-panel="${panelKey}"]`);
     if (!panel) return;
 
@@ -5679,15 +5743,14 @@ function setOpsAlertStrategyPanelExpanded(panelKey, expanded) {
     const body = panel.querySelector('.ops-alert-strategy-panel__body');
     const header = panel.querySelector('.ops-alert-strategy-panel__header');
     if (body) {
-        body.hidden = false;
-        body.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+        setOpsAlertCollapsibleBodyExpanded(body, expanded, options);
     }
     if (header) {
         header.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     }
 }
 
-function setOpsAlertStrategyMuteSubpanelExpanded(tabKey, expanded) {
+function setOpsAlertStrategyMuteSubpanelExpanded(tabKey, expanded, options = {}) {
     const panel = document.querySelector(`.ops-alert-strategy-subpanel[data-strategy-tab-panel="${tabKey}"]`);
     if (!panel) return;
 
@@ -5695,8 +5758,7 @@ function setOpsAlertStrategyMuteSubpanelExpanded(tabKey, expanded) {
     const body = panel.querySelector('.ops-alert-strategy-subpanel__body');
     const header = panel.querySelector('.ops-alert-strategy-subpanel__header');
     if (body) {
-        body.hidden = false;
-        body.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+        setOpsAlertCollapsibleBodyExpanded(body, expanded, options);
     }
     if (header) {
         header.setAttribute('aria-expanded', expanded ? 'true' : 'false');
@@ -5743,7 +5805,7 @@ function openOpsAlertStrategyPanel(panelKey, tabKey = '') {
     panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function setOpsAlertSummaryPanelExpanded(panelKey, expanded) {
+function setOpsAlertSummaryPanelExpanded(panelKey, expanded, options = {}) {
     const panel = document.querySelector(`.ops-alert-summary-orchestration-panel[data-ops-alert-summary-panel="${panelKey}"]`);
     if (!panel) return;
 
@@ -5751,8 +5813,7 @@ function setOpsAlertSummaryPanelExpanded(panelKey, expanded) {
     const body = panel.querySelector('.ops-alert-summary-orchestration-panel__body');
     const header = panel.querySelector('.ops-alert-summary-orchestration-panel__toggle');
     if (body) {
-        body.hidden = false;
-        body.setAttribute('aria-hidden', expanded ? 'false' : 'true');
+        setOpsAlertCollapsibleBodyExpanded(body, expanded, options);
     }
     if (header) {
         header.setAttribute('aria-expanded', expanded ? 'true' : 'false');
