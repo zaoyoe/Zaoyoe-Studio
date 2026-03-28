@@ -4001,77 +4001,11 @@
                                         </div>
                                         <div class="ops-alert-health-grid" id="opsAlertHealthGrid"></div>
                                     </div>
+                                    </div>
                                 </div>
                         </div>
                     </div>
                 </div>
-            </div>
-            </div>
-
-            <!-- ========== OPS ALERTS MODULE ========== -->
-            <div id="module-ops-alerts" class="module-container">
-                <nav class="admin-tabs" id="opsAlertsTabsNav">
-                    <button class="admin-tab active" data-ops-alerts-view="overview" data-admin-action="switch-ops-alerts-view">
-                        🛰️ 概览
-                    </button>
-                    <button class="admin-tab" data-ops-alerts-view="strategy" data-admin-action="switch-ops-alerts-view">
-                        🎛️ 策略中心
-                    </button>
-                    <button class="admin-tab" data-ops-alerts-view="channels" data-admin-action="switch-ops-alerts-view">
-                        📡 通知渠道
-                    </button>
-                    <button class="admin-tab" data-ops-alerts-view="monitors" data-admin-action="switch-ops-alerts-view">
-                        📊 监控规则
-                    </button>
-                    <button class="admin-tab" data-ops-alerts-view="workspace" data-admin-action="switch-ops-alerts-view">
-                        🧰 告警工作台
-                    </button>
-                    <button class="admin-tab" data-ops-alerts-view="health" data-admin-action="switch-ops-alerts-view">
-                        ❤️ 通道健康
-                    </button>
-                    <div class="admin-tab-indicator"></div>
-                </nav>
-
-                <div id="ops-alerts-view-overview" class="view-section active">
-                    <div class="module-content ops-alert-settings-layout ops-alert-settings-layout--single">
-                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="overview-main"></div>
-                    </div>
-                </div>
-
-                <div id="ops-alerts-view-strategy" class="view-section">
-                    <div class="module-content ops-alert-settings-layout">
-                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="strategy-main"></div>
-                        <div class="ops-alert-settings-column ops-alert-settings-column--side" data-ops-alerts-bucket="strategy-side"></div>
-                    </div>
-                </div>
-
-                <div id="ops-alerts-view-channels" class="view-section">
-                    <div class="module-content ops-alert-settings-layout">
-                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="channels-main"></div>
-                        <div class="ops-alert-settings-column ops-alert-settings-column--side" data-ops-alerts-bucket="channels-side"></div>
-                    </div>
-                </div>
-
-                <div id="ops-alerts-view-monitors" class="view-section">
-                    <div class="module-content ops-alert-settings-layout">
-                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="monitors-main"></div>
-                        <div class="ops-alert-settings-column ops-alert-settings-column--side" data-ops-alerts-bucket="monitors-side"></div>
-                    </div>
-                </div>
-
-                <div id="ops-alerts-view-workspace" class="view-section">
-                    <div class="module-content ops-alert-settings-layout">
-                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="workspace-main"></div>
-                        <div class="ops-alert-settings-column ops-alert-settings-column--side" data-ops-alerts-bucket="workspace-side"></div>
-                    </div>
-                </div>
-
-                <div id="ops-alerts-view-health" class="view-section">
-                    <div class="module-content ops-alert-settings-layout ops-alert-settings-layout--single">
-                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="health-main"></div>
-                    </div>
-                </div>
-            </div>
 
             <div id="shopRiskCaseComposerModal" class="modal-overlay admin-shop-risk-case-modal" data-admin-overlay-close="shop-risk-case-modal" aria-hidden="true">
                 <div class="admin-shop-risk-case-modal__dialog">
@@ -5489,6 +5423,71 @@
                 </div>
             </div>
             <!-- END SETTINGS MODULE -->
+
+            <!-- ========== OPS ALERTS MODULE ========== -->
+            <div id="module-ops-alerts" class="module-container">
+                <nav class="admin-tabs" id="opsAlertsTabsNav">
+                    <button class="admin-tab active" data-ops-alerts-view="overview" data-admin-action="switch-ops-alerts-view">
+                        🛰️ 概览
+                    </button>
+                    <button class="admin-tab" data-ops-alerts-view="strategy" data-admin-action="switch-ops-alerts-view">
+                        🎛️ 策略中心
+                    </button>
+                    <button class="admin-tab" data-ops-alerts-view="channels" data-admin-action="switch-ops-alerts-view">
+                        📡 通知渠道
+                    </button>
+                    <button class="admin-tab" data-ops-alerts-view="monitors" data-admin-action="switch-ops-alerts-view">
+                        📊 监控规则
+                    </button>
+                    <button class="admin-tab" data-ops-alerts-view="workspace" data-admin-action="switch-ops-alerts-view">
+                        🧰 告警工作台
+                    </button>
+                    <button class="admin-tab" data-ops-alerts-view="health" data-admin-action="switch-ops-alerts-view">
+                        ❤️ 通道健康
+                    </button>
+                    <div class="admin-tab-indicator"></div>
+                </nav>
+
+                <div id="ops-alerts-view-overview" class="view-section active">
+                    <div class="module-content ops-alert-settings-layout ops-alert-settings-layout--single">
+                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="overview-main"></div>
+                    </div>
+                </div>
+
+                <div id="ops-alerts-view-strategy" class="view-section">
+                    <div class="module-content ops-alert-settings-layout">
+                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="strategy-main"></div>
+                        <div class="ops-alert-settings-column ops-alert-settings-column--side" data-ops-alerts-bucket="strategy-side"></div>
+                    </div>
+                </div>
+
+                <div id="ops-alerts-view-channels" class="view-section">
+                    <div class="module-content ops-alert-settings-layout">
+                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="channels-main"></div>
+                        <div class="ops-alert-settings-column ops-alert-settings-column--side" data-ops-alerts-bucket="channels-side"></div>
+                    </div>
+                </div>
+
+                <div id="ops-alerts-view-monitors" class="view-section">
+                    <div class="module-content ops-alert-settings-layout">
+                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="monitors-main"></div>
+                        <div class="ops-alert-settings-column ops-alert-settings-column--side" data-ops-alerts-bucket="monitors-side"></div>
+                    </div>
+                </div>
+
+                <div id="ops-alerts-view-workspace" class="view-section">
+                    <div class="module-content ops-alert-settings-layout">
+                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="workspace-main"></div>
+                        <div class="ops-alert-settings-column ops-alert-settings-column--side" data-ops-alerts-bucket="workspace-side"></div>
+                    </div>
+                </div>
+
+                <div id="ops-alerts-view-health" class="view-section">
+                    <div class="module-content ops-alert-settings-layout ops-alert-settings-layout--single">
+                        <div class="ops-alert-settings-column ops-alert-settings-column--main" data-ops-alerts-bucket="health-main"></div>
+                    </div>
+                </div>
+            </div>
 
             <!-- ========== POINTS MANAGEMENT MODULE ========== -->
             <div id="module-points" class="module-container">
