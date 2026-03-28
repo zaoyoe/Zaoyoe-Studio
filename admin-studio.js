@@ -658,6 +658,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-refresh-ops-alert-health':
                 window.refreshOpsAlertHealthPanel?.();
                 break;
+            case 'settings-scroll-ops-alert-health':
+                window.scrollToOpsAlertHealthPanel?.();
+                break;
             case 'settings-filter-ops-alert-monitor':
                 window.setOpsAlertMonitorFilter?.(
                     actionEl.dataset.opsAlertMonitorFilterKind,
