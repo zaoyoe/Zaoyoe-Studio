@@ -2983,7 +2983,18 @@ async function sweepPaymentGatewayHealth() {
 async function queueNextPaymentGatewaySweep(delayMs = null) {
     if (paymentGatewaySweepTimer) return;
 
-    const monitorConfig = normalizePaymentGatewayMonitorConfig({}, process.env);
+    let monitorConfig = normalizePaymentGatewayMonitorConfig({}, process.env);
+    try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        monitorConfig = normalizePaymentGatewayMonitorConfig(
+            runtime?.config?.payment_gateway && typeof runtime.config.payment_gateway === 'object'
+                ? runtime.config.payment_gateway
+                : {},
+            process.env
+        );
+    } catch (error) {
+        console.warn('[PaymentGatewayMonitor] Failed to load runtime config for scheduling, falling back to default config:', error.message || error);
+    }
     const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 5 * 60 * 1000));
 
     paymentGatewaySweepTimer = setTimeout(() => {

@@ -1260,6 +1260,27 @@ function getDefaultOpsAlertConfig() {
             dedupe_window_minutes: 15,
             page_size: 500,
             max_pages: 10
+        },
+        payment_gateway: {
+            enabled: true,
+            window_minutes: 30,
+            state_lookback_minutes: 24 * 60,
+            sweep_interval_ms: 5 * 60 * 1000,
+            dedupe_window_minutes: 60,
+            min_order_volume: 6,
+            min_review_orders: 4,
+            min_failed_orders: 3,
+            min_webhook_volume: 5,
+            min_query_volume: 5,
+            max_paid_rate_percent: 65,
+            min_review_ratio_percent: 45,
+            min_failed_ratio_percent: 25,
+            max_webhook_success_rate_percent: 70,
+            max_query_success_rate_percent: 60,
+            min_webhook_5xx_count: 3,
+            min_query_5xx_count: 3,
+            page_size: 500,
+            max_pages: 20
         }
     };
 }
@@ -2023,6 +2044,9 @@ function normalizeOpsAlertConfig(raw) {
     const verifyFailureSource = source.verify_failure && typeof source.verify_failure === 'object' && !Array.isArray(source.verify_failure)
         ? source.verify_failure
         : {};
+    const paymentGatewaySource = source.payment_gateway && typeof source.payment_gateway === 'object' && !Array.isArray(source.payment_gateway)
+        ? source.payment_gateway
+        : {};
     const routingSource = source.routing && typeof source.routing === 'object' && !Array.isArray(source.routing)
         ? source.routing
         : {};
@@ -2622,6 +2646,99 @@ function normalizeOpsAlertConfig(raw) {
                 1,
                 100
             )
+        },
+        payment_gateway: {
+            enabled: normalizeConfigBoolean(paymentGatewaySource.enabled, defaults.payment_gateway.enabled),
+            window_minutes: clamp(
+                toWholeNumber(paymentGatewaySource.window_minutes, defaults.payment_gateway.window_minutes),
+                5,
+                24 * 60
+            ),
+            state_lookback_minutes: clamp(
+                toWholeNumber(paymentGatewaySource.state_lookback_minutes, defaults.payment_gateway.state_lookback_minutes),
+                30,
+                7 * 24 * 60
+            ),
+            sweep_interval_ms: clamp(
+                toWholeNumber(paymentGatewaySource.sweep_interval_ms, defaults.payment_gateway.sweep_interval_ms),
+                10000,
+                60 * 60 * 1000
+            ),
+            dedupe_window_minutes: clamp(
+                toWholeNumber(paymentGatewaySource.dedupe_window_minutes, defaults.payment_gateway.dedupe_window_minutes),
+                1,
+                24 * 60
+            ),
+            min_order_volume: clamp(
+                toWholeNumber(paymentGatewaySource.min_order_volume, defaults.payment_gateway.min_order_volume),
+                1,
+                200
+            ),
+            min_review_orders: clamp(
+                toWholeNumber(paymentGatewaySource.min_review_orders, defaults.payment_gateway.min_review_orders),
+                1,
+                100
+            ),
+            min_failed_orders: clamp(
+                toWholeNumber(paymentGatewaySource.min_failed_orders, defaults.payment_gateway.min_failed_orders),
+                1,
+                100
+            ),
+            min_webhook_volume: clamp(
+                toWholeNumber(paymentGatewaySource.min_webhook_volume, defaults.payment_gateway.min_webhook_volume),
+                1,
+                500
+            ),
+            min_query_volume: clamp(
+                toWholeNumber(paymentGatewaySource.min_query_volume, defaults.payment_gateway.min_query_volume),
+                1,
+                500
+            ),
+            max_paid_rate_percent: clamp(
+                toWholeNumber(paymentGatewaySource.max_paid_rate_percent, defaults.payment_gateway.max_paid_rate_percent),
+                1,
+                100
+            ),
+            min_review_ratio_percent: clamp(
+                toWholeNumber(paymentGatewaySource.min_review_ratio_percent, defaults.payment_gateway.min_review_ratio_percent),
+                1,
+                100
+            ),
+            min_failed_ratio_percent: clamp(
+                toWholeNumber(paymentGatewaySource.min_failed_ratio_percent, defaults.payment_gateway.min_failed_ratio_percent),
+                1,
+                100
+            ),
+            max_webhook_success_rate_percent: clamp(
+                toWholeNumber(paymentGatewaySource.max_webhook_success_rate_percent, defaults.payment_gateway.max_webhook_success_rate_percent),
+                1,
+                100
+            ),
+            max_query_success_rate_percent: clamp(
+                toWholeNumber(paymentGatewaySource.max_query_success_rate_percent, defaults.payment_gateway.max_query_success_rate_percent),
+                1,
+                100
+            ),
+            min_webhook_5xx_count: clamp(
+                toWholeNumber(paymentGatewaySource.min_webhook_5xx_count, defaults.payment_gateway.min_webhook_5xx_count),
+                1,
+                100
+            ),
+            min_query_5xx_count: clamp(
+                toWholeNumber(paymentGatewaySource.min_query_5xx_count, defaults.payment_gateway.min_query_5xx_count),
+                1,
+                100
+            ),
+            page_size: clamp(
+                toWholeNumber(paymentGatewaySource.page_size, defaults.payment_gateway.page_size),
+                50,
+                5000
+            ),
+            max_pages: clamp(
+                toWholeNumber(paymentGatewaySource.max_pages, defaults.payment_gateway.max_pages),
+                1,
+                100
+            )
         }
     };
 }
@@ -3145,6 +3262,7 @@ function applyOpsAlertOverview(config) {
     applyOpsAlertVerifyQuotaControls(normalizedConfig);
     applyOpsAlertVerifyQueueControls(normalizedConfig);
     applyOpsAlertVerifyFailureControls(normalizedConfig);
+    applyOpsAlertPaymentGatewayControls(normalizedConfig);
     renderOpsAlertSummaryOrchestration(normalizedConfig);
     renderOpsAlertOverviewCards(normalizedConfig);
 }
@@ -3699,6 +3817,30 @@ function applyOpsAlertVerifyFailureControls(config = normalizeOpsAlertConfig(sys
     });
 }
 
+function applyOpsAlertPaymentGatewayControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const monitorConfig = normalizedConfig.payment_gateway || getDefaultOpsAlertConfig().payment_gateway;
+    const toggleEl = document.getElementById('opsAlertPaymentGatewayEnabledToggle');
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+
+    [
+        'opsAlertPaymentGatewayWindowMinutes',
+        'opsAlertPaymentGatewayFailedOrdersThreshold',
+        'opsAlertPaymentGatewayFailedRatioThreshold',
+        'opsAlertPaymentGatewayWebhookSuccessRateThreshold',
+        'opsAlertPaymentGatewayQuerySuccessRateThreshold',
+        'opsAlertPaymentGatewayWebhook5xxThreshold',
+        'opsAlertPaymentGatewayQuery5xxThreshold',
+        'opsAlertPaymentGatewaySweepIntervalMinutes',
+        'opsAlertPaymentGatewayDedupeWindowMinutes'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !monitorConfig.enabled;
+    });
+}
+
 function renderOpsAlertSettings() {
     const config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
 
@@ -4084,6 +4226,42 @@ function renderOpsAlertSettings() {
     const verifyFailureDedupeWindowMinutes = document.getElementById('opsAlertVerifyFailureDedupeWindowMinutes');
     if (verifyFailureDedupeWindowMinutes) {
         verifyFailureDedupeWindowMinutes.value = String(config.verify_failure.dedupe_window_minutes);
+    }
+    const paymentGatewayWindowMinutes = document.getElementById('opsAlertPaymentGatewayWindowMinutes');
+    if (paymentGatewayWindowMinutes) {
+        paymentGatewayWindowMinutes.value = String(config.payment_gateway.window_minutes);
+    }
+    const paymentGatewayFailedOrdersThreshold = document.getElementById('opsAlertPaymentGatewayFailedOrdersThreshold');
+    if (paymentGatewayFailedOrdersThreshold) {
+        paymentGatewayFailedOrdersThreshold.value = String(config.payment_gateway.min_failed_orders);
+    }
+    const paymentGatewayFailedRatioThreshold = document.getElementById('opsAlertPaymentGatewayFailedRatioThreshold');
+    if (paymentGatewayFailedRatioThreshold) {
+        paymentGatewayFailedRatioThreshold.value = String(config.payment_gateway.min_failed_ratio_percent);
+    }
+    const paymentGatewayWebhookSuccessRateThreshold = document.getElementById('opsAlertPaymentGatewayWebhookSuccessRateThreshold');
+    if (paymentGatewayWebhookSuccessRateThreshold) {
+        paymentGatewayWebhookSuccessRateThreshold.value = String(config.payment_gateway.max_webhook_success_rate_percent);
+    }
+    const paymentGatewayQuerySuccessRateThreshold = document.getElementById('opsAlertPaymentGatewayQuerySuccessRateThreshold');
+    if (paymentGatewayQuerySuccessRateThreshold) {
+        paymentGatewayQuerySuccessRateThreshold.value = String(config.payment_gateway.max_query_success_rate_percent);
+    }
+    const paymentGatewayWebhook5xxThreshold = document.getElementById('opsAlertPaymentGatewayWebhook5xxThreshold');
+    if (paymentGatewayWebhook5xxThreshold) {
+        paymentGatewayWebhook5xxThreshold.value = String(config.payment_gateway.min_webhook_5xx_count);
+    }
+    const paymentGatewayQuery5xxThreshold = document.getElementById('opsAlertPaymentGatewayQuery5xxThreshold');
+    if (paymentGatewayQuery5xxThreshold) {
+        paymentGatewayQuery5xxThreshold.value = String(config.payment_gateway.min_query_5xx_count);
+    }
+    const paymentGatewaySweepIntervalMinutes = document.getElementById('opsAlertPaymentGatewaySweepIntervalMinutes');
+    if (paymentGatewaySweepIntervalMinutes) {
+        paymentGatewaySweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.payment_gateway.sweep_interval_ms || 0) / 60000)));
+    }
+    const paymentGatewayDedupeWindowMinutes = document.getElementById('opsAlertPaymentGatewayDedupeWindowMinutes');
+    if (paymentGatewayDedupeWindowMinutes) {
+        paymentGatewayDedupeWindowMinutes.value = String(config.payment_gateway.dedupe_window_minutes);
     }
 
     applyOpsAlertOverview(config);
@@ -7615,6 +7793,47 @@ function collectOpsAlertConfigFromForm() {
         document.getElementById('opsAlertVerifyFailureDedupeWindowMinutes')?.value,
         currentConfig.verify_failure.dedupe_window_minutes
     );
+    nextConfig.payment_gateway.enabled = document.getElementById('opsAlertPaymentGatewayEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.payment_gateway.enabled;
+    nextConfig.payment_gateway.window_minutes = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayWindowMinutes')?.value,
+        currentConfig.payment_gateway.window_minutes
+    );
+    nextConfig.payment_gateway.min_failed_orders = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayFailedOrdersThreshold')?.value,
+        currentConfig.payment_gateway.min_failed_orders
+    );
+    nextConfig.payment_gateway.min_failed_ratio_percent = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayFailedRatioThreshold')?.value,
+        currentConfig.payment_gateway.min_failed_ratio_percent
+    );
+    nextConfig.payment_gateway.max_webhook_success_rate_percent = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayWebhookSuccessRateThreshold')?.value,
+        currentConfig.payment_gateway.max_webhook_success_rate_percent
+    );
+    nextConfig.payment_gateway.max_query_success_rate_percent = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayQuerySuccessRateThreshold')?.value,
+        currentConfig.payment_gateway.max_query_success_rate_percent
+    );
+    nextConfig.payment_gateway.min_webhook_5xx_count = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayWebhook5xxThreshold')?.value,
+        currentConfig.payment_gateway.min_webhook_5xx_count
+    );
+    nextConfig.payment_gateway.min_query_5xx_count = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayQuery5xxThreshold')?.value,
+        currentConfig.payment_gateway.min_query_5xx_count
+    );
+    nextConfig.payment_gateway.sweep_interval_ms = Math.max(
+        10000,
+        toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewaySweepIntervalMinutes')?.value,
+            Math.max(1, Math.round(Number(currentConfig.payment_gateway.sweep_interval_ms || 0) / 60000))
+        ) * 60 * 1000
+    );
+    nextConfig.payment_gateway.dedupe_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayDedupeWindowMinutes')?.value,
+        currentConfig.payment_gateway.dedupe_window_minutes
+    );
 
     return normalizeOpsAlertConfig(nextConfig);
 }
@@ -9368,6 +9587,16 @@ function toggleOpsAlertVerifyFailureEnabled() {
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
     applyOpsAlertVerifyFailureControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertPaymentGatewayEnabled() {
+    const toggleEl = document.getElementById('opsAlertPaymentGatewayEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertPaymentGatewayControls(collectOpsAlertConfigFromForm());
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
@@ -11622,6 +11851,7 @@ window.handleOpsAlertTicketsSummaryScheduleModeChange = handleOpsAlertTicketsSum
 window.toggleOpsAlertVerifyQuotaEnabled = toggleOpsAlertVerifyQuotaEnabled;
 window.toggleOpsAlertVerifyQueueEnabled = toggleOpsAlertVerifyQueueEnabled;
 window.toggleOpsAlertVerifyFailureEnabled = toggleOpsAlertVerifyFailureEnabled;
+window.toggleOpsAlertPaymentGatewayEnabled = toggleOpsAlertPaymentGatewayEnabled;
 window.selectOpsAlertUnifiedSummaryTargets = selectOpsAlertUnifiedSummaryTargets;
 window.handleOpsAlertUnifiedSummaryTargetChange = handleOpsAlertUnifiedSummaryTargetChange;
 window.handleOpsAlertUnifiedSummaryDraftChange = handleOpsAlertUnifiedSummaryDraftChange;

@@ -12,6 +12,7 @@ const DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG = Object.freeze({
     window_minutes: 30,
     state_lookback_minutes: 24 * 60,
     sweep_interval_ms: 5 * 60 * 1000,
+    dedupe_window_minutes: 60,
     min_order_volume: 6,
     min_review_orders: 4,
     min_failed_orders: 3,
@@ -158,6 +159,7 @@ function normalizePaymentGatewayMonitorConfig(rawConfig = {}, env = process.env)
         window_minutes: normalizeNumber(source.window_minutes, normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_WINDOW_MINUTES, DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.window_minutes, 5, 24 * 60), 5, 24 * 60),
         state_lookback_minutes: normalizeNumber(source.state_lookback_minutes, normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_STATE_LOOKBACK_MINUTES, DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.state_lookback_minutes, 30, 7 * 24 * 60), 30, 7 * 24 * 60),
         sweep_interval_ms: normalizeNumber(source.sweep_interval_ms, normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_SWEEP_INTERVAL_MS, DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.sweep_interval_ms, 10000, 60 * 60 * 1000), 10000, 60 * 60 * 1000),
+        dedupe_window_minutes: normalizeNumber(source.dedupe_window_minutes, normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_DEDUPE_WINDOW_MINUTES, DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.dedupe_window_minutes, 1, 24 * 60), 1, 24 * 60),
         min_order_volume: normalizeNumber(source.min_order_volume, normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_ORDER_VOLUME, DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.min_order_volume, 1, 200), 1, 200),
         min_review_orders: normalizeNumber(source.min_review_orders, normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_REVIEW_ORDERS, DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.min_review_orders, 1, 100), 1, 100),
         min_failed_orders: normalizeNumber(source.min_failed_orders, normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_FAILED_ORDERS, DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.min_failed_orders, 1, 100), 1, 100),
@@ -379,7 +381,8 @@ function buildPaymentGatewayDegradedAlerts(providerStats = [], config = {}) {
                 dedupeKey: crypto
                     .createHash('sha256')
                     .update(`payment_gateway_degraded:${stats.provider}:${stats.site || 'all'}`)
-                    .digest('hex')
+                    .digest('hex'),
+                dedupeWindowMinutes: Number(monitorConfig.dedupe_window_minutes || DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.dedupe_window_minutes)
             };
         })
         .filter(Boolean);
@@ -535,7 +538,7 @@ function buildPaymentGatewayRecoveredAlerts(providerStats = [], stateJobs = [], 
                 .createHash('sha256')
                 .update(`payment_gateway_recovered:${targetId}:${normalizeText(latestDegraded.id) || normalizeText(latestDegraded.created_at) || 'unknown'}`)
                 .digest('hex'),
-            dedupeWindowMinutes: 60
+            dedupeWindowMinutes: Number(monitorConfig.dedupe_window_minutes || DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.dedupe_window_minutes)
         };
     }).filter(Boolean);
 }
@@ -605,7 +608,14 @@ async function fetchRecentPaymentGatewayStateJobs(client, sinceIso, config) {
 
 async function runPaymentGatewayDegradationSweep(supabase, options = {}) {
     const env = options.env || process.env;
-    const config = normalizePaymentGatewayMonitorConfig(options.config, env);
+    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
+    const runtimeMonitorConfig = runtime?.config?.payment_gateway && typeof runtime.config.payment_gateway === 'object'
+        ? runtime.config.payment_gateway
+        : {};
+    const config = normalizePaymentGatewayMonitorConfig({
+        ...(options.config && typeof options.config === 'object' ? options.config : {}),
+        ...runtimeMonitorConfig
+    }, env);
 
     if (!config.enabled) {
         return {
@@ -616,7 +626,6 @@ async function runPaymentGatewayDegradationSweep(supabase, options = {}) {
         };
     }
 
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
     if (!runtime?.config?.enabled) {
         return {
             skipped: 'ops_alerts_disabled',
@@ -702,7 +711,10 @@ async function runPaymentGatewayDegradationSweep(supabase, options = {}) {
             title: alert.title,
             content: alert.content,
             type: 'success',
-            dedupeWindowMinutes: Math.max(Number(alert.dedupeWindowMinutes || 0), 60)
+            dedupeWindowMinutes: Math.max(
+                1,
+                Number(alert.dedupeWindowMinutes || DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.dedupe_window_minutes || 0)
+            )
         }).catch((error) => ({
             error: error.message || 'notify_failed'
         }));

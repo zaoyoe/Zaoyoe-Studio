@@ -234,6 +234,27 @@ function createDefaultState() {
                 dedupe_window_minutes: 15,
                 page_size: 500,
                 max_pages: 10
+            },
+            payment_gateway: {
+                enabled: true,
+                window_minutes: 30,
+                state_lookback_minutes: 24 * 60,
+                sweep_interval_ms: 5 * 60 * 1000,
+                dedupe_window_minutes: 60,
+                min_order_volume: 6,
+                min_review_orders: 4,
+                min_failed_orders: 3,
+                min_webhook_volume: 5,
+                min_query_volume: 5,
+                max_paid_rate_percent: 65,
+                min_review_ratio_percent: 45,
+                min_failed_ratio_percent: 25,
+                max_webhook_success_rate_percent: 70,
+                max_query_success_rate_percent: 60,
+                min_webhook_5xx_count: 3,
+                min_query_5xx_count: 3,
+                page_size: 500,
+                max_pages: 20
             }
         },
         secretStatus: {
@@ -312,6 +333,7 @@ function createNormalizedConfig(raw) {
     const verifyQuota = source.verify_quota && typeof source.verify_quota === 'object' ? source.verify_quota : {};
     const verifyQueue = source.verify_queue && typeof source.verify_queue === 'object' ? source.verify_queue : {};
     const verifyFailure = source.verify_failure && typeof source.verify_failure === 'object' ? source.verify_failure : {};
+    const paymentGateway = source.payment_gateway && typeof source.payment_gateway === 'object' ? source.payment_gateway : {};
     const routing = source.routing && typeof source.routing === 'object' ? source.routing : {};
     const routingCustomerChatMessage = routing.customer_chat_message && typeof routing.customer_chat_message === 'object' ? routing.customer_chat_message : {};
     const routingShopPurchaseSuccess = routing.shop_purchase_success && typeof routing.shop_purchase_success === 'object' ? routing.shop_purchase_success : {};
@@ -559,6 +581,27 @@ function createNormalizedConfig(raw) {
             dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(verifyFailure.dedupe_window_minutes || 15) || 15)),
             page_size: Math.min(5000, Math.max(50, Number(verifyFailure.page_size || 500) || 500)),
             max_pages: Math.min(100, Math.max(1, Number(verifyFailure.max_pages || 10) || 10))
+        },
+        payment_gateway: {
+            enabled: normalizeBoolean(paymentGateway.enabled, true),
+            window_minutes: Math.min(24 * 60, Math.max(5, Number(paymentGateway.window_minutes || 30) || 30)),
+            state_lookback_minutes: Math.min(7 * 24 * 60, Math.max(30, Number(paymentGateway.state_lookback_minutes || 24 * 60) || (24 * 60))),
+            sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(paymentGateway.sweep_interval_ms || 5 * 60 * 1000) || (5 * 60 * 1000))),
+            dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(paymentGateway.dedupe_window_minutes || 60) || 60)),
+            min_order_volume: Math.min(200, Math.max(1, Number(paymentGateway.min_order_volume || 6) || 6)),
+            min_review_orders: Math.min(100, Math.max(1, Number(paymentGateway.min_review_orders || 4) || 4)),
+            min_failed_orders: Math.min(100, Math.max(1, Number(paymentGateway.min_failed_orders || 3) || 3)),
+            min_webhook_volume: Math.min(500, Math.max(1, Number(paymentGateway.min_webhook_volume || 5) || 5)),
+            min_query_volume: Math.min(500, Math.max(1, Number(paymentGateway.min_query_volume || 5) || 5)),
+            max_paid_rate_percent: Math.min(100, Math.max(1, Number(paymentGateway.max_paid_rate_percent || 65) || 65)),
+            min_review_ratio_percent: Math.min(100, Math.max(1, Number(paymentGateway.min_review_ratio_percent || 45) || 45)),
+            min_failed_ratio_percent: Math.min(100, Math.max(1, Number(paymentGateway.min_failed_ratio_percent || 25) || 25)),
+            max_webhook_success_rate_percent: Math.min(100, Math.max(1, Number(paymentGateway.max_webhook_success_rate_percent || 70) || 70)),
+            max_query_success_rate_percent: Math.min(100, Math.max(1, Number(paymentGateway.max_query_success_rate_percent || 60) || 60)),
+            min_webhook_5xx_count: Math.min(100, Math.max(1, Number(paymentGateway.min_webhook_5xx_count || 3) || 3)),
+            min_query_5xx_count: Math.min(100, Math.max(1, Number(paymentGateway.min_query_5xx_count || 3) || 3)),
+            page_size: Math.min(5000, Math.max(50, Number(paymentGateway.page_size || 500) || 500)),
+            max_pages: Math.min(100, Math.max(1, Number(paymentGateway.max_pages || 20) || 20))
         }
     };
 }
@@ -939,6 +982,16 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.verify_failure.failure_rate_threshold, 60);
         assert.equal(payload.config.verify_failure.affected_user_threshold, 3);
         assert.equal(payload.config.verify_failure.dedupe_window_minutes, 15);
+        assert.equal(payload.config.payment_gateway.enabled, true);
+        assert.equal(payload.config.payment_gateway.window_minutes, 30);
+        assert.equal(payload.config.payment_gateway.sweep_interval_ms, 5 * 60 * 1000);
+        assert.equal(payload.config.payment_gateway.min_failed_orders, 3);
+        assert.equal(payload.config.payment_gateway.min_failed_ratio_percent, 25);
+        assert.equal(payload.config.payment_gateway.max_webhook_success_rate_percent, 70);
+        assert.equal(payload.config.payment_gateway.max_query_success_rate_percent, 60);
+        assert.equal(payload.config.payment_gateway.min_webhook_5xx_count, 3);
+        assert.equal(payload.config.payment_gateway.min_query_5xx_count, 3);
+        assert.equal(payload.config.payment_gateway.dedupe_window_minutes, 60);
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.telegram_bot_token.source, 'stored');
         assert.equal(payload.secrets.feishu_webhook_url.configured, false);
@@ -1140,6 +1193,18 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         failure_rate_threshold: 72,
                         affected_user_threshold: 6,
                         dedupe_window_minutes: 25
+                    },
+                    payment_gateway: {
+                        enabled: true,
+                        window_minutes: 40,
+                        sweep_interval_ms: 6 * 60 * 1000,
+                        min_failed_orders: 4,
+                        min_failed_ratio_percent: 30,
+                        max_webhook_success_rate_percent: 68,
+                        max_query_success_rate_percent: 58,
+                        min_webhook_5xx_count: 4,
+                        min_query_5xx_count: 5,
+                        dedupe_window_minutes: 75
                     }
                 },
                 secrets: {
@@ -1290,6 +1355,16 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.verify_failure.failure_rate_threshold, 72);
         assert.equal(payload.config.verify_failure.affected_user_threshold, 6);
         assert.equal(payload.config.verify_failure.dedupe_window_minutes, 25);
+        assert.equal(payload.config.payment_gateway.enabled, true);
+        assert.equal(payload.config.payment_gateway.window_minutes, 40);
+        assert.equal(payload.config.payment_gateway.sweep_interval_ms, 6 * 60 * 1000);
+        assert.equal(payload.config.payment_gateway.min_failed_orders, 4);
+        assert.equal(payload.config.payment_gateway.min_failed_ratio_percent, 30);
+        assert.equal(payload.config.payment_gateway.max_webhook_success_rate_percent, 68);
+        assert.equal(payload.config.payment_gateway.max_query_success_rate_percent, 58);
+        assert.equal(payload.config.payment_gateway.min_webhook_5xx_count, 4);
+        assert.equal(payload.config.payment_gateway.min_query_5xx_count, 5);
+        assert.equal(payload.config.payment_gateway.dedupe_window_minutes, 75);
         assert.equal(state.systemConfigUpserts.length, 1);
         assert.equal(state.systemConfigUpserts[0].config_key, 'ops_alerts');
         assert.equal(state.upsertedSecrets.length, 2);
@@ -1428,6 +1503,16 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.verify_failure_rate_threshold, 72);
         assert.equal(state.auditLogs[0].details.verify_failure_affected_user_threshold, 6);
         assert.equal(state.auditLogs[0].details.verify_failure_dedupe_window_minutes, 25);
+        assert.equal(state.auditLogs[0].details.payment_gateway_enabled, true);
+        assert.equal(state.auditLogs[0].details.payment_gateway_window_minutes, 40);
+        assert.equal(state.auditLogs[0].details.payment_gateway_sweep_interval_ms, 6 * 60 * 1000);
+        assert.equal(state.auditLogs[0].details.payment_gateway_min_failed_orders, 4);
+        assert.equal(state.auditLogs[0].details.payment_gateway_min_failed_ratio_percent, 30);
+        assert.equal(state.auditLogs[0].details.payment_gateway_max_webhook_success_rate_percent, 68);
+        assert.equal(state.auditLogs[0].details.payment_gateway_max_query_success_rate_percent, 58);
+        assert.equal(state.auditLogs[0].details.payment_gateway_min_webhook_5xx_count, 4);
+        assert.equal(state.auditLogs[0].details.payment_gateway_min_query_5xx_count, 5);
+        assert.equal(state.auditLogs[0].details.payment_gateway_dedupe_window_minutes, 75);
         assert.deepEqual(state.auditLogs[0].details.updated_secrets, ['telegram_bot_token', 'feishu_webhook_url']);
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.feishu_webhook_url.configured, true);

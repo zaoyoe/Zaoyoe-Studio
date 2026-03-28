@@ -370,6 +370,27 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         dedupe_window_minutes: 15,
         page_size: 500,
         max_pages: 10
+    }),
+    payment_gateway: Object.freeze({
+        enabled: true,
+        window_minutes: 30,
+        state_lookback_minutes: 24 * 60,
+        sweep_interval_ms: 5 * 60 * 1000,
+        dedupe_window_minutes: 60,
+        min_order_volume: 6,
+        min_review_orders: 4,
+        min_failed_orders: 3,
+        min_webhook_volume: 5,
+        min_query_volume: 5,
+        max_paid_rate_percent: 65,
+        min_review_ratio_percent: 45,
+        min_failed_ratio_percent: 25,
+        max_webhook_success_rate_percent: 70,
+        max_query_success_rate_percent: 60,
+        min_webhook_5xx_count: 3,
+        min_query_5xx_count: 3,
+        page_size: 500,
+        max_pages: 20
     })
 });
 
@@ -965,6 +986,27 @@ function cloneDefaultConfig() {
             dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.dedupe_window_minutes,
             page_size: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.page_size,
             max_pages: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.max_pages
+        },
+        payment_gateway: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.enabled,
+            window_minutes: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.window_minutes,
+            state_lookback_minutes: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.state_lookback_minutes,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.sweep_interval_ms,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.dedupe_window_minutes,
+            min_order_volume: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_order_volume,
+            min_review_orders: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_review_orders,
+            min_failed_orders: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_failed_orders,
+            min_webhook_volume: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_webhook_volume,
+            min_query_volume: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_query_volume,
+            max_paid_rate_percent: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.max_paid_rate_percent,
+            min_review_ratio_percent: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_review_ratio_percent,
+            min_failed_ratio_percent: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_failed_ratio_percent,
+            max_webhook_success_rate_percent: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.max_webhook_success_rate_percent,
+            max_query_success_rate_percent: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.max_query_success_rate_percent,
+            min_webhook_5xx_count: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_webhook_5xx_count,
+            min_query_5xx_count: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_query_5xx_count,
+            page_size: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.page_size,
+            max_pages: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.max_pages
         }
     };
 }
@@ -1029,6 +1071,9 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         : {};
     const verifyFailureConfig = source.verify_failure && typeof source.verify_failure === 'object'
         ? source.verify_failure
+        : {};
+    const paymentGatewayConfig = source.payment_gateway && typeof source.payment_gateway === 'object'
+        ? source.payment_gateway
         : {};
 
     config.enabled = normalizeBoolean(source.enabled, normalizeBoolean(env?.OPS_ALERTS_ENABLED, config.enabled));
@@ -1791,6 +1836,119 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
     config.verify_failure.max_pages = normalizeNumber(
         verifyFailureConfig.max_pages,
         normalizeNumber(env?.VERIFY_FAILURE_MONITOR_MAX_PAGES, config.verify_failure.max_pages, 1, 100),
+        1,
+        100
+    );
+
+    config.payment_gateway.enabled = normalizeBoolean(
+        paymentGatewayConfig.enabled,
+        normalizeBoolean(env?.PAYMENT_GATEWAY_MONITOR_ENABLED, config.payment_gateway.enabled)
+    );
+    config.payment_gateway.window_minutes = normalizeNumber(
+        paymentGatewayConfig.window_minutes,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_WINDOW_MINUTES, config.payment_gateway.window_minutes, 5, 24 * 60),
+        5,
+        24 * 60
+    );
+    config.payment_gateway.state_lookback_minutes = normalizeNumber(
+        paymentGatewayConfig.state_lookback_minutes,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_STATE_LOOKBACK_MINUTES, config.payment_gateway.state_lookback_minutes, 30, 7 * 24 * 60),
+        30,
+        7 * 24 * 60
+    );
+    config.payment_gateway.sweep_interval_ms = normalizeNumber(
+        paymentGatewayConfig.sweep_interval_ms,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_SWEEP_INTERVAL_MS, config.payment_gateway.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.payment_gateway.dedupe_window_minutes = normalizeNumber(
+        paymentGatewayConfig.dedupe_window_minutes,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_DEDUPE_WINDOW_MINUTES, config.payment_gateway.dedupe_window_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.payment_gateway.min_order_volume = normalizeNumber(
+        paymentGatewayConfig.min_order_volume,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_ORDER_VOLUME, config.payment_gateway.min_order_volume, 1, 200),
+        1,
+        200
+    );
+    config.payment_gateway.min_review_orders = normalizeNumber(
+        paymentGatewayConfig.min_review_orders,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_REVIEW_ORDERS, config.payment_gateway.min_review_orders, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.min_failed_orders = normalizeNumber(
+        paymentGatewayConfig.min_failed_orders,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_FAILED_ORDERS, config.payment_gateway.min_failed_orders, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.min_webhook_volume = normalizeNumber(
+        paymentGatewayConfig.min_webhook_volume,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_WEBHOOK_VOLUME, config.payment_gateway.min_webhook_volume, 1, 500),
+        1,
+        500
+    );
+    config.payment_gateway.min_query_volume = normalizeNumber(
+        paymentGatewayConfig.min_query_volume,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_QUERY_VOLUME, config.payment_gateway.min_query_volume, 1, 500),
+        1,
+        500
+    );
+    config.payment_gateway.max_paid_rate_percent = normalizeNumber(
+        paymentGatewayConfig.max_paid_rate_percent,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MAX_PAID_RATE_PERCENT, config.payment_gateway.max_paid_rate_percent, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.min_review_ratio_percent = normalizeNumber(
+        paymentGatewayConfig.min_review_ratio_percent,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_REVIEW_RATIO_PERCENT, config.payment_gateway.min_review_ratio_percent, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.min_failed_ratio_percent = normalizeNumber(
+        paymentGatewayConfig.min_failed_ratio_percent,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_FAILED_RATIO_PERCENT, config.payment_gateway.min_failed_ratio_percent, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.max_webhook_success_rate_percent = normalizeNumber(
+        paymentGatewayConfig.max_webhook_success_rate_percent,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MAX_WEBHOOK_SUCCESS_RATE_PERCENT, config.payment_gateway.max_webhook_success_rate_percent, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.max_query_success_rate_percent = normalizeNumber(
+        paymentGatewayConfig.max_query_success_rate_percent,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MAX_QUERY_SUCCESS_RATE_PERCENT, config.payment_gateway.max_query_success_rate_percent, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.min_webhook_5xx_count = normalizeNumber(
+        paymentGatewayConfig.min_webhook_5xx_count,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_WEBHOOK_5XX_COUNT, config.payment_gateway.min_webhook_5xx_count, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.min_query_5xx_count = normalizeNumber(
+        paymentGatewayConfig.min_query_5xx_count,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_QUERY_5XX_COUNT, config.payment_gateway.min_query_5xx_count, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.page_size = normalizeNumber(
+        paymentGatewayConfig.page_size,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_PAGE_SIZE, config.payment_gateway.page_size, 50, 5000),
+        50,
+        5000
+    );
+    config.payment_gateway.max_pages = normalizeNumber(
+        paymentGatewayConfig.max_pages,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MAX_PAGES, config.payment_gateway.max_pages, 1, 100),
         1,
         100
     );

@@ -206,7 +206,7 @@ function createSupabaseStub(state = {}) {
     };
 }
 
-function createOpsRuntime() {
+function createOpsRuntime(configOverrides = {}) {
     return {
         config: normalizeOpsAlertsConfig({
             enabled: true,
@@ -220,7 +220,8 @@ function createOpsRuntime() {
                     enabled: true,
                     minimum_severity: 'warning'
                 }
-            }
+            },
+            ...configOverrides
         }),
         secrets: {
             telegram_bot_token: 'telegram-token',
@@ -261,6 +262,7 @@ test('buildPaymentGatewayDegradedAlerts flags real provider degradation and igno
     assert.equal(alerts[0].alertType, 'payment_gateway_degraded');
     assert.equal(alerts[0].payload.provider, 'afdian');
     assert.equal(alerts[0].payload.site, 'cn');
+    assert.equal(alerts[0].dedupeWindowMinutes, 60);
     assert.match(alerts[0].title, /爱发电/);
 });
 
@@ -312,9 +314,53 @@ test('buildPaymentGatewayRecoveredAlerts emits a recovery notice when provider h
     assert.equal(alerts[0].alertType, 'payment_gateway_recovered');
     assert.equal(alerts[0].severity, 'warning');
     assert.deepEqual(alerts[0].allowedChannels, ['feishu']);
+    assert.equal(alerts[0].dedupeWindowMinutes, 60);
     assert.match(alerts[0].content, /恢复结论：支付通道异常阈值已解除/);
     assert.equal(alerts[0].payload.gateway_alert_job_id, 'gateway-incident-1');
     assert.equal(alerts[0].payload.incident_duration_minutes, 24);
+});
+
+test('runPaymentGatewayDegradationSweep prefers runtime payment gateway config over passed options', async () => {
+    const now = new Date('2026-03-25T10:00:00.000Z');
+    const state = {
+        orders: [
+            { id: 'po-1', provider: 'afdian', status: 'paid', site: 'cn', created_at: '2026-03-25T09:40:00.000Z' },
+            { id: 'po-2', provider: 'afdian', status: 'paid', site: 'cn', created_at: '2026-03-25T09:41:00.000Z' },
+            { id: 'po-3', provider: 'afdian', status: 'paid', site: 'cn', created_at: '2026-03-25T09:42:00.000Z' },
+            { id: 'po-4', provider: 'afdian', status: 'amount_mismatch', site: 'cn', created_at: '2026-03-25T09:43:00.000Z' },
+            { id: 'po-5', provider: 'afdian', status: 'amount_mismatch', site: 'cn', created_at: '2026-03-25T09:44:00.000Z' },
+            { id: 'po-6', provider: 'afdian', status: 'amount_mismatch', site: 'cn', created_at: '2026-03-25T09:45:00.000Z' }
+        ],
+        events: [],
+        queryAttempts: [],
+        jobs: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime({
+        payment_gateway: {
+            enabled: true,
+            min_failed_orders: 3,
+            min_failed_ratio_percent: 30,
+            dedupe_window_minutes: 75
+        }
+    });
+
+    const result = await runPaymentGatewayDegradationSweep(supabase, {
+        now,
+        runtime,
+        config: {
+            enabled: false,
+            min_failed_orders: 99,
+            min_failed_ratio_percent: 90,
+            dedupe_window_minutes: 5
+        }
+    });
+
+    assert.equal(result.skipped, undefined);
+    assert.equal(result.degraded_count, 1);
+    assert.equal(result.queued, 1);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].alert_type, 'payment_gateway_degraded');
 });
 
 test('runPaymentGatewayDegradationSweep enqueues degraded alerts with stable provider dedupe', async () => {

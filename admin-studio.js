@@ -526,6 +526,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-verify-failure-enabled':
                 window.toggleOpsAlertVerifyFailureEnabled?.();
                 break;
+            case 'settings-toggle-ops-alert-payment-gateway-enabled':
+                window.toggleOpsAlertPaymentGatewayEnabled?.();
+                break;
             case 'settings-select-ops-alert-unified-summary-targets':
                 window.selectOpsAlertUnifiedSummaryTargets?.(actionEl.dataset.opsAlertSummaryTargetPreset);
                 break;
