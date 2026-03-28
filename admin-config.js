@@ -77,6 +77,8 @@ const OPS_ALERT_OVERVIEW_BANNER_TONE_CLASSES = [
     'ops-alert-overview-banner--warning',
     'ops-alert-overview-banner--danger'
 ];
+const OPS_ALERT_STRATEGY_PANEL_KEYS = Object.freeze(['mute', 'routing', 'work-hours']);
+const OPS_ALERT_STRATEGY_MUTE_TAB_KEYS = Object.freeze(['types', 'modules']);
 const OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS = Object.freeze([
     Object.freeze({
         key: 'customer_chat_message',
@@ -3923,6 +3925,79 @@ function getOpsAlertRoutingCheckboxId(routingKey, channelKey) {
     return `opsAlertRouting${routingIdMap[routingKey] || ''}${channelIdMap[channelKey] || ''}`;
 }
 
+const OPS_ALERT_ROUTING_DEFINITIONS = Object.freeze([
+    {
+        key: 'customer_chat_message',
+        label: '客服消息',
+        description: '用户给客服机器人发新消息时触发。'
+    },
+    {
+        key: 'shop_purchase_success',
+        label: '购买成功',
+        description: '商城订单支付完成并创建成功后触发。'
+    },
+    {
+        key: 'wallet_recharge_success',
+        label: '充值成功',
+        description: '钱包充值入账成功后触发。'
+    },
+    {
+        key: 'shop_inventory',
+        label: '库存与补货',
+        description: '低库存、售罄和库存恢复都使用同一组路由。'
+    },
+    {
+        key: 'payment_refund_ops',
+        label: '退款运营',
+        description: '退款失败、补偿失败和积分回滚异常使用同一组路由。'
+    },
+    {
+        key: 'payment_config',
+        label: '支付配置变更',
+        description: '支付配置变更、事故升级和恢复通知使用同一组路由。'
+    },
+    {
+        key: 'shop_order_risk',
+        label: '商城风控',
+        description: '商城风控异常和恢复通知使用同一组路由。'
+    },
+    {
+        key: 'admin_login_anomaly',
+        label: '管理员异常登录',
+        description: '管理员异常登录安全告警使用单独一组路由。'
+    },
+    {
+        key: 'tickets',
+        label: '工单超时',
+        description: '工单超时提醒、汇总和恢复通知共用同一组路由。'
+    },
+    {
+        key: 'shop_order_delivery',
+        label: '履约失败 / 死信',
+        description: '履约失败、死信、集中事故和恢复通知使用同一组路由。'
+    },
+    {
+        key: 'payment_gateway',
+        label: '支付通道异常',
+        description: '支付通道退化、恢复和汇总通知使用同一组路由。'
+    },
+    {
+        key: 'verify_quota',
+        label: '验证额度 / 停摆',
+        description: '验证额度不足、服务停摆和对应汇总通知使用同一组路由。'
+    },
+    {
+        key: 'verify_queue',
+        label: '验证堆积',
+        description: '验证队列堆积和对应汇总通知使用同一组路由。'
+    },
+    {
+        key: 'verify_failure',
+        label: '验证失败率 / 综合事故',
+        description: '验证失败率异常、综合事故升级和恢复通知使用同一组路由。'
+    }
+]);
+
 const OPS_ALERT_MUTE_RULE_TYPE_DEFINITIONS = Object.freeze([
     {
         key: 'customer_chat_message',
@@ -4079,6 +4154,622 @@ function getOpsAlertMuteRuleElementId(scope, key, suffix) {
     return `opsAlert${scopeId}Mute${definition?.id || ''}${suffix}`;
 }
 
+function getOpsAlertStrategyLayoutRoot() {
+    return document.querySelector('[data-config="ops-alerts-strategy"] .config-card-body');
+}
+
+function formatOpsAlertHourRange(startHour, endHour) {
+    return `${formatOpsAlertTimeNumber(startHour, 0, 23)}:00 - ${formatOpsAlertTimeNumber(endHour, 0, 23)}:00`;
+}
+
+function buildOpsAlertMuteTableHtml(scope) {
+    return `
+        <div class="ops-alert-mute-table__head" aria-hidden="true">
+            <span>静默对象</span>
+            <span>当前状态</span>
+            <span>静默至</span>
+            <span>critical</span>
+            <span>操作</span>
+        </div>
+        <div class="ops-alert-mute-table__body">
+            ${getOpsAlertMuteRuleDefinitions(scope).map((definition) => {
+                const statusId = getOpsAlertMuteRuleElementId(scope, definition.key, 'Status');
+                const untilId = getOpsAlertMuteRuleElementId(scope, definition.key, 'Until');
+                const toggleId = getOpsAlertMuteRuleElementId(scope, definition.key, 'AllowCriticalToggle');
+                return `
+                    <div class="ops-alert-mute-table__row">
+                        <div class="ops-alert-mute-table__subject">
+                            <strong>${escapeConfigHtml(definition.label)}</strong>
+                            <span>${escapeConfigHtml(definition.description)}</span>
+                        </div>
+                        <div class="ops-alert-mute-status ops-alert-mute-status--compact" id="${escapeConfigHtml(statusId)}">当前未设置单独静默。</div>
+                        <label class="ops-alert-mute-field">
+                            <span>静默至</span>
+                            <input type="datetime-local" class="config-input" id="${escapeConfigHtml(untilId)}">
+                        </label>
+                        <div class="ops-alert-mute-toggle-field">
+                            <div class="ops-alert-mute-toggle-field__copy">
+                                <span>critical 继续通知</span>
+                                <small>高危仍继续外发</small>
+                            </div>
+                            <div class="status-toggle" id="${escapeConfigHtml(toggleId)}" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="${escapeConfigHtml(scope)}" data-rule-key="${escapeConfigHtml(definition.key)}"></div>
+                        </div>
+                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="${escapeConfigHtml(scope)}" data-rule-key="${escapeConfigHtml(definition.key)}">清除</button>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function buildOpsAlertRoutingMatrixHtml() {
+    const channelLabels = {
+        telegram: 'Telegram',
+        feishu: '飞书',
+        email: '邮件'
+    };
+    const channelOrder = ['telegram', 'feishu', 'email'];
+
+    return `
+        <div class="ops-alert-routing-matrix__head" aria-hidden="true">
+            <span>事件类型</span>
+            ${channelOrder.map((channelKey) => `<span>${escapeConfigHtml(channelLabels[channelKey])}</span>`).join('')}
+        </div>
+        <div class="ops-alert-routing-matrix__body">
+            ${OPS_ALERT_ROUTING_DEFINITIONS.map((definition) => `
+                <div class="ops-alert-routing-matrix__row">
+                    <div class="ops-alert-routing-matrix__subject">
+                        <strong>${escapeConfigHtml(definition.label)}</strong>
+                        <span>${escapeConfigHtml(definition.description)}</span>
+                    </div>
+                    ${channelOrder.map((channelKey) => `
+                        <label class="ops-alert-routing-matrix__cell" data-channel-label="${escapeConfigHtml(channelLabels[channelKey])}">
+                            <input type="checkbox" id="${escapeConfigHtml(getOpsAlertRoutingCheckboxId(definition.key, channelKey))}">
+                            <span class="ops-alert-routing-matrix__cell-label">${escapeConfigHtml(channelLabels[channelKey])}</span>
+                        </label>
+                    `).join('')}
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function buildOpsAlertStrategyLayoutHtml() {
+    return `
+        <div class="ops-alert-strategy-layout">
+            <div class="ops-alert-strategy-summary-grid">
+                <article class="ops-alert-strategy-summary-card">
+                    <div class="ops-alert-strategy-summary-card__head">
+                        <div>
+                            <p class="ops-alert-strategy-summary-card__eyebrow">策略摘要</p>
+                            <h4>静默与降噪</h4>
+                        </div>
+                        <span class="ops-alert-strategy-badge" id="opsAlertStrategySummaryMuteBadge" data-tone="neutral">按需启用</span>
+                    </div>
+                    <p class="ops-alert-strategy-summary-card__desc" id="opsAlertStrategySummaryMuteText">维护窗口、夜间降噪和单类静默会汇总在这里。</p>
+                    <div class="ops-alert-strategy-summary-card__metrics">
+                        <div class="ops-alert-strategy-summary-card__metric">
+                            <span>临时静默</span>
+                            <strong id="opsAlertStrategySummaryMuteTemporary">未设置</strong>
+                        </div>
+                        <div class="ops-alert-strategy-summary-card__metric">
+                            <span>静默时段</span>
+                            <strong id="opsAlertStrategySummaryMuteQuietHours">已关闭</strong>
+                        </div>
+                        <div class="ops-alert-strategy-summary-card__metric">
+                            <span>单类 / 模块</span>
+                            <strong id="opsAlertStrategySummaryMuteRules">0 / 0 生效</strong>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-open-ops-alert-strategy-panel" data-strategy-panel="mute" data-strategy-tab="types">管理静默</button>
+                </article>
+
+                <article class="ops-alert-strategy-summary-card">
+                    <div class="ops-alert-strategy-summary-card__head">
+                        <div>
+                            <p class="ops-alert-strategy-summary-card__eyebrow">策略摘要</p>
+                            <h4>分类型路由</h4>
+                        </div>
+                        <span class="ops-alert-strategy-badge" id="opsAlertStrategySummaryRoutingBadge" data-tone="neutral">全通道默认</span>
+                    </div>
+                    <p class="ops-alert-strategy-summary-card__desc" id="opsAlertStrategySummaryRoutingText">每类事件都可以单独选择 Telegram、飞书和邮件。</p>
+                    <div class="ops-alert-strategy-summary-card__metrics">
+                        <div class="ops-alert-strategy-summary-card__metric">
+                            <span>Telegram</span>
+                            <strong id="opsAlertStrategySummaryRoutingTelegram">0 / 0</strong>
+                        </div>
+                        <div class="ops-alert-strategy-summary-card__metric">
+                            <span>飞书</span>
+                            <strong id="opsAlertStrategySummaryRoutingFeishu">0 / 0</strong>
+                        </div>
+                        <div class="ops-alert-strategy-summary-card__metric">
+                            <span>邮件</span>
+                            <strong id="opsAlertStrategySummaryRoutingEmail">0 / 0</strong>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-open-ops-alert-strategy-panel" data-strategy-panel="routing">配置路由</button>
+                </article>
+
+                <article class="ops-alert-strategy-summary-card">
+                    <div class="ops-alert-strategy-summary-card__head">
+                        <div>
+                            <p class="ops-alert-strategy-summary-card__eyebrow">策略摘要</p>
+                            <h4>工作时段</h4>
+                        </div>
+                        <span class="ops-alert-strategy-badge" id="opsAlertStrategySummaryWorkHoursBadge" data-tone="neutral">未启用</span>
+                    </div>
+                    <p class="ops-alert-strategy-summary-card__desc" id="opsAlertStrategySummaryWorkHoursText">只影响开启“仅工作时间通知”的低优先级告警。</p>
+                    <div class="ops-alert-strategy-summary-card__metrics">
+                        <div class="ops-alert-strategy-summary-card__metric">
+                            <span>工作时间</span>
+                            <strong id="opsAlertStrategySummaryWorkHoursRange">09:00 - 18:00</strong>
+                        </div>
+                        <div class="ops-alert-strategy-summary-card__metric">
+                            <span>时区</span>
+                            <strong id="opsAlertStrategySummaryWorkHoursTimezone">Asia/Shanghai</strong>
+                        </div>
+                        <div class="ops-alert-strategy-summary-card__metric">
+                            <span>影响规则</span>
+                            <strong id="opsAlertStrategySummaryWorkHoursRules">0 类</strong>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-open-ops-alert-strategy-panel" data-strategy-panel="work-hours">编辑时段</button>
+                </article>
+            </div>
+
+            <div class="ops-alert-strategy-panels">
+                <section class="ops-alert-strategy-panel is-expanded" data-strategy-panel="mute">
+                    <button type="button" class="ops-alert-strategy-panel__header" data-admin-action="settings-toggle-ops-alert-strategy-panel" data-strategy-panel="mute">
+                        <div class="ops-alert-strategy-panel__copy">
+                            <span class="ops-alert-strategy-panel__eyebrow">分类编辑</span>
+                            <h4>静默与降噪</h4>
+                            <p id="opsAlertStrategyPanelMuteText">集中管理临时静默、夜间静默和分组降噪。</p>
+                        </div>
+                        <div class="ops-alert-strategy-panel__meta">
+                            <span class="ops-alert-strategy-badge" id="opsAlertStrategyPanelMuteBadge" data-tone="neutral">按需启用</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                    </button>
+                    <div class="ops-alert-strategy-panel__body">
+                        <div class="ops-alert-strategy-card-grid ops-alert-strategy-card-grid--dual">
+                            <section class="ops-alert-strategy-card">
+                                <div class="ops-alert-strategy-card__head">
+                                    <div>
+                                        <h4>临时静默</h4>
+                                        <p>适合维护窗口或短时降噪。设置到期时间后，保存配置即可暂停外发。</p>
+                                    </div>
+                                </div>
+                                <div class="ops-alert-mute-status" id="opsAlertTemporaryMuteStatus">当前未设置临时静默。</div>
+                                <div class="ops-alert-strategy-inline-grid">
+                                    <label class="ops-alert-strategy-field">
+                                        <span>静默至</span>
+                                        <input type="datetime-local" class="config-input" id="opsAlertTemporaryMuteUntil">
+                                    </label>
+                                    <div class="ops-alert-mute-toggle-field">
+                                        <div class="ops-alert-mute-toggle-field__copy">
+                                            <span>critical 继续通知</span>
+                                            <small>维护期间保留真正高危的告警外发。</small>
+                                        </div>
+                                        <div class="status-toggle" id="opsAlertTemporaryMuteAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-temporary-mute-allow-critical"></div>
+                                    </div>
+                                </div>
+                                <div class="ops-alert-mute-actions">
+                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-set-ops-alert-temporary-mute" data-mute-hours="1">静默 1 小时</button>
+                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-set-ops-alert-temporary-mute" data-mute-hours="6">静默 6 小时</button>
+                                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-set-ops-alert-temporary-mute" data-mute-hours="24">静默 24 小时</button>
+                                    <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-temporary-mute">清除静默</button>
+                                </div>
+                                <div class="config-inline-note">
+                                    <i class="fas fa-circle-info"></i>
+                                    <span>预设按钮会直接填入时间；点击顶部“保存站外告警配置”后才会真正生效。</span>
+                                </div>
+                            </section>
+
+                            <section class="ops-alert-strategy-card">
+                                <div class="ops-alert-strategy-card__head">
+                                    <div>
+                                        <h4>静默时段</h4>
+                                        <p>适合夜间降噪。启用后，非 critical 告警会在指定时段内暂停外发。</p>
+                                    </div>
+                                    <div class="status-toggle" id="opsAlertQuietHoursEnabledToggle" data-admin-action="settings-toggle-ops-alert-quiet-hours-enabled"></div>
+                                </div>
+                                <div class="ops-alert-strategy-inline-grid ops-alert-strategy-inline-grid--triple">
+                                    <label class="ops-alert-strategy-field">
+                                        <span>开始小时</span>
+                                        <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertQuietHoursStartHour" placeholder="23">
+                                    </label>
+                                    <label class="ops-alert-strategy-field">
+                                        <span>结束小时</span>
+                                        <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertQuietHoursEndHour" placeholder="8">
+                                    </label>
+                                    <label class="ops-alert-strategy-field">
+                                        <span>时区</span>
+                                        <input type="text" class="config-input" id="opsAlertQuietHoursTimezone" placeholder="Asia/Shanghai">
+                                    </label>
+                                </div>
+                                <div class="ops-alert-mute-toggle-field ops-alert-mute-toggle-field--inline">
+                                    <div class="ops-alert-mute-toggle-field__copy">
+                                        <span>critical 继续通知</span>
+                                        <small>静默时段里只屏蔽普通告警，保留真正高危的异常。</small>
+                                    </div>
+                                    <div class="status-toggle" id="opsAlertQuietHoursAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-quiet-hours-allow-critical"></div>
+                                </div>
+                            </section>
+                        </div>
+
+                        <div class="ops-alert-strategy-tab-strip" role="tablist" aria-label="静默范围选择">
+                            <button type="button" class="ops-alert-strategy-tab-btn is-active" data-admin-action="settings-switch-ops-alert-strategy-tab" data-strategy-tab="types">
+                                <span>按单类静默</span>
+                                <strong id="opsAlertMuteTabTypesCount">0 生效</strong>
+                            </button>
+                            <button type="button" class="ops-alert-strategy-tab-btn" data-admin-action="settings-switch-ops-alert-strategy-tab" data-strategy-tab="modules">
+                                <span>按模块静默</span>
+                                <strong id="opsAlertMuteTabModulesCount">0 生效</strong>
+                            </button>
+                        </div>
+
+                        <div class="ops-alert-strategy-tab-panel is-active" data-strategy-tab-panel="types">
+                            <section class="ops-alert-strategy-card ops-alert-strategy-card--table">
+                                <div class="ops-alert-strategy-card__head">
+                                    <div>
+                                        <h4>按单类静默</h4>
+                                        <p>把长列表收成表格，优先处理当前真正需要降噪的单类事件。</p>
+                                    </div>
+                                    <div class="ops-alert-strategy-inline-meta" id="opsAlertTypeMutePanelMeta">共 14 类</div>
+                                </div>
+                                <div class="ops-alert-mute-table" id="opsAlertTypeMuteTable">${buildOpsAlertMuteTableHtml('types')}</div>
+                            </section>
+                        </div>
+
+                        <div class="ops-alert-strategy-tab-panel" data-strategy-tab-panel="modules" hidden>
+                            <section class="ops-alert-strategy-card ops-alert-strategy-card--table">
+                                <div class="ops-alert-strategy-card__head">
+                                    <div>
+                                        <h4>按模块静默</h4>
+                                        <p>以模块为单位批量降噪，适合维护窗口、集中排障或阶段性静默。</p>
+                                    </div>
+                                    <div class="ops-alert-strategy-inline-meta" id="opsAlertModuleMutePanelMeta">共 9 类</div>
+                                </div>
+                                <div class="ops-alert-mute-table" id="opsAlertModuleMuteTable">${buildOpsAlertMuteTableHtml('modules')}</div>
+                            </section>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="ops-alert-strategy-panel" data-strategy-panel="routing">
+                    <button type="button" class="ops-alert-strategy-panel__header" data-admin-action="settings-toggle-ops-alert-strategy-panel" data-strategy-panel="routing">
+                        <div class="ops-alert-strategy-panel__copy">
+                            <span class="ops-alert-strategy-panel__eyebrow">分类编辑</span>
+                            <h4>分类型通道路由</h4>
+                            <p id="opsAlertStrategyPanelRoutingText">把路由改成矩阵后，可以更快看清哪类告警发到哪个通道。</p>
+                        </div>
+                        <div class="ops-alert-strategy-panel__meta">
+                            <span class="ops-alert-strategy-badge" id="opsAlertStrategyPanelRoutingBadge" data-tone="neutral">全通道默认</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                    </button>
+                    <div class="ops-alert-strategy-panel__body" hidden>
+                        <section class="ops-alert-strategy-card ops-alert-strategy-card--table">
+                            <div class="ops-alert-strategy-card__head">
+                                <div>
+                                    <h4>事件路由矩阵</h4>
+                                    <p>行是事件类型，列是目标通道。取消勾选即可把该类事件从对应通道移除。</p>
+                                </div>
+                                <div class="ops-alert-strategy-inline-meta" id="opsAlertRoutingMatrixMeta">共 14 类事件</div>
+                            </div>
+                            <div class="ops-alert-routing-matrix" id="opsAlertRoutingMatrix">${buildOpsAlertRoutingMatrixHtml()}</div>
+                            <div class="config-inline-note">
+                                <i class="fas fa-circle-info"></i>
+                                <span>默认所有事件都会走三条通道；矩阵更适合快速收敛噪音或做分流。</span>
+                            </div>
+                        </section>
+                    </div>
+                </section>
+
+                <section class="ops-alert-strategy-panel" data-strategy-panel="work-hours">
+                    <button type="button" class="ops-alert-strategy-panel__header" data-admin-action="settings-toggle-ops-alert-strategy-panel" data-strategy-panel="work-hours">
+                        <div class="ops-alert-strategy-panel__copy">
+                            <span class="ops-alert-strategy-panel__eyebrow">分类编辑</span>
+                            <h4>工作时段</h4>
+                            <p id="opsAlertStrategyPanelWorkHoursText">这组时间只影响开启“仅工作时间通知”的低优先级告警。</p>
+                        </div>
+                        <div class="ops-alert-strategy-panel__meta">
+                            <span class="ops-alert-strategy-badge" id="opsAlertStrategyPanelWorkHoursBadge" data-tone="neutral">未启用</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                    </button>
+                    <div class="ops-alert-strategy-panel__body" hidden>
+                        <section class="ops-alert-strategy-card">
+                            <div class="ops-alert-strategy-card__head">
+                                <div>
+                                    <h4>工作时段</h4>
+                                    <p>适合低优先级通知只在白天处理。非工作时间会先汇总，等到下一个工作开始时再统一外发。</p>
+                                </div>
+                                <div class="status-toggle" id="opsAlertWorkHoursEnabledToggle" data-admin-action="settings-toggle-ops-alert-work-hours-enabled"></div>
+                            </div>
+                            <div class="ops-alert-strategy-inline-grid ops-alert-strategy-inline-grid--triple">
+                                <label class="ops-alert-strategy-field">
+                                    <span>开始小时</span>
+                                    <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertWorkHoursStartHour" placeholder="9">
+                                </label>
+                                <label class="ops-alert-strategy-field">
+                                    <span>结束小时</span>
+                                    <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertWorkHoursEndHour" placeholder="18">
+                                </label>
+                                <label class="ops-alert-strategy-field">
+                                    <span>时区</span>
+                                    <input type="text" class="config-input" id="opsAlertWorkHoursTimezone" placeholder="Asia/Shanghai">
+                                </label>
+                            </div>
+                            <div class="config-inline-note">
+                                <i class="fas fa-circle-info"></i>
+                                <span>这组时间不会替代静默时段或单独静默规则，只控制“仅工作时间通知”的那部分告警。</span>
+                            </div>
+                        </section>
+                    </div>
+                </section>
+            </div>
+        </div>
+    `;
+}
+
+function ensureOpsAlertStrategyLayout() {
+    const root = getOpsAlertStrategyLayoutRoot();
+    if (!root || root.dataset.opsAlertStrategyLayoutReady === 'true') {
+        return;
+    }
+
+    root.innerHTML = buildOpsAlertStrategyLayoutHtml();
+    root.dataset.opsAlertStrategyLayoutReady = 'true';
+    root.addEventListener('change', (event) => {
+        const target = event.target instanceof HTMLElement ? event.target : null;
+        if (!target || !target.closest('.ops-alert-strategy-layout')) {
+            return;
+        }
+        refreshOpsAlertStrategyDraftViews();
+    });
+    switchOpsAlertStrategyMuteTab('types');
+}
+
+function setOpsAlertStrategyBadgeState(elementId, label, tone = 'neutral') {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+
+    element.textContent = label;
+    element.dataset.tone = tone;
+}
+
+function renderOpsAlertStrategySummary(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const defaults = getDefaultOpsAlertConfig();
+    const temporaryMuteState = getOpsAlertTemporaryMuteState(normalizedConfig);
+    const quietHours = normalizedConfig.quiet_hours || defaults.quiet_hours;
+    const workHours = normalizedConfig.work_hours || defaults.work_hours;
+
+    const typeStates = OPS_ALERT_MUTE_RULE_TYPE_DEFINITIONS.map((definition) => (
+        getOpsAlertMuteRuleState(normalizedConfig.mute_rules?.types?.[definition.key] || {})
+    ));
+    const moduleStates = OPS_ALERT_MUTE_RULE_MODULE_DEFINITIONS.map((definition) => (
+        getOpsAlertMuteRuleState(normalizedConfig.mute_rules?.modules?.[definition.key] || {})
+    ));
+    const activeTypeCount = typeStates.filter((state) => state.active).length;
+    const activeModuleCount = moduleStates.filter((state) => state.active).length;
+    const expiredTypeCount = typeStates.filter((state) => state.expired).length;
+    const expiredModuleCount = moduleStates.filter((state) => state.expired).length;
+    const totalActiveMuteCount = activeTypeCount + activeModuleCount + (temporaryMuteState.active ? 1 : 0) + (quietHours.enabled ? 1 : 0);
+    const totalExpiredMuteCount = expiredTypeCount + expiredModuleCount + (temporaryMuteState.expired ? 1 : 0);
+
+    let routingCustomizedCount = 0;
+    const routingChannelCounts = {
+        telegram: 0,
+        feishu: 0,
+        email: 0
+    };
+    OPS_ALERT_ROUTING_DEFINITIONS.forEach((definition) => {
+        const route = normalizedConfig.routing?.[definition.key] || defaults.routing?.[definition.key] || {};
+        const telegramEnabled = route.telegram !== false;
+        const feishuEnabled = route.feishu !== false;
+        const emailEnabled = route.email !== false;
+        if (telegramEnabled) routingChannelCounts.telegram += 1;
+        if (feishuEnabled) routingChannelCounts.feishu += 1;
+        if (emailEnabled) routingChannelCounts.email += 1;
+        if (!(telegramEnabled && feishuEnabled && emailEnabled)) {
+            routingCustomizedCount += 1;
+        }
+    });
+
+    const workHoursOnlyCount = OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS.filter((definition) => (
+        definition.supports_work_hours_only && normalizedConfig[definition.key]?.work_hours_only_enabled === true
+    )).length;
+    const totalRoutingCount = OPS_ALERT_ROUTING_DEFINITIONS.length;
+
+    const muteBadgeLabel = temporaryMuteState.active
+        ? '临时静默中'
+        : totalActiveMuteCount > 0
+            ? `生效 ${formatVerifyMonitorInteger(totalActiveMuteCount)} 项`
+            : quietHours.enabled
+                ? '夜间静默开启'
+                : '按需启用';
+    const muteBadgeTone = totalActiveMuteCount > 0 || quietHours.enabled ? 'warning' : 'neutral';
+    const muteSummaryText = temporaryMuteState.active
+        ? `当前外发已静默到 ${temporaryMuteState.untilLabel}，适合维护窗口快速止噪。`
+        : totalActiveMuteCount > 0
+            ? `当前有 ${formatVerifyMonitorInteger(totalActiveMuteCount)} 项静默策略生效，建议只保留真正需要降噪的规则。`
+            : totalExpiredMuteCount > 0
+                ? `检测到 ${formatVerifyMonitorInteger(totalExpiredMuteCount)} 条过期静默记录，建议清理旧时间，减少误判。`
+                : '维护窗口、夜间降噪和单类静默会汇总在这里。';
+
+    setOpsAlertStrategyBadgeState('opsAlertStrategySummaryMuteBadge', muteBadgeLabel, muteBadgeTone);
+    setOpsAlertStrategyBadgeState('opsAlertStrategyPanelMuteBadge', muteBadgeLabel, muteBadgeTone);
+    const muteSummaryTextEl = document.getElementById('opsAlertStrategySummaryMuteText');
+    if (muteSummaryTextEl) muteSummaryTextEl.textContent = muteSummaryText;
+    const mutePanelTextEl = document.getElementById('opsAlertStrategyPanelMuteText');
+    if (mutePanelTextEl) {
+        mutePanelTextEl.textContent = totalActiveMuteCount > 0
+            ? `当前有 ${formatVerifyMonitorInteger(totalActiveMuteCount)} 项静默策略生效，优先处理仍在生效的规则。`
+            : '集中管理临时静默、夜间静默和分组降噪。';
+    }
+    const muteTemporaryEl = document.getElementById('opsAlertStrategySummaryMuteTemporary');
+    if (muteTemporaryEl) {
+        muteTemporaryEl.textContent = temporaryMuteState.active
+            ? `至 ${temporaryMuteState.untilLabel}`
+            : temporaryMuteState.expired
+                ? '已过期'
+                : '未设置';
+    }
+    const muteQuietHoursEl = document.getElementById('opsAlertStrategySummaryMuteQuietHours');
+    if (muteQuietHoursEl) {
+        muteQuietHoursEl.textContent = quietHours.enabled
+            ? formatOpsAlertHourRange(quietHours.start_hour, quietHours.end_hour)
+            : '已关闭';
+    }
+    const muteRulesEl = document.getElementById('opsAlertStrategySummaryMuteRules');
+    if (muteRulesEl) {
+        muteRulesEl.textContent = `${formatVerifyMonitorInteger(activeTypeCount)} / ${formatVerifyMonitorInteger(activeModuleCount)} 生效`;
+    }
+    const typeMuteMetaEl = document.getElementById('opsAlertTypeMutePanelMeta');
+    if (typeMuteMetaEl) {
+        typeMuteMetaEl.textContent = `共 ${formatVerifyMonitorInteger(OPS_ALERT_MUTE_RULE_TYPE_DEFINITIONS.length)} 类，${formatVerifyMonitorInteger(activeTypeCount)} 类生效`;
+    }
+    const moduleMuteMetaEl = document.getElementById('opsAlertModuleMutePanelMeta');
+    if (moduleMuteMetaEl) {
+        moduleMuteMetaEl.textContent = `共 ${formatVerifyMonitorInteger(OPS_ALERT_MUTE_RULE_MODULE_DEFINITIONS.length)} 类，${formatVerifyMonitorInteger(activeModuleCount)} 类生效`;
+    }
+    const typeTabCountEl = document.getElementById('opsAlertMuteTabTypesCount');
+    if (typeTabCountEl) {
+        typeTabCountEl.textContent = `${formatVerifyMonitorInteger(activeTypeCount)} 生效`;
+    }
+    const moduleTabCountEl = document.getElementById('opsAlertMuteTabModulesCount');
+    if (moduleTabCountEl) {
+        moduleTabCountEl.textContent = `${formatVerifyMonitorInteger(activeModuleCount)} 生效`;
+    }
+
+    const routingBadgeLabel = routingCustomizedCount > 0
+        ? `已定制 ${formatVerifyMonitorInteger(routingCustomizedCount)} 类`
+        : '全通道默认';
+    const routingBadgeTone = routingCustomizedCount > 0 ? 'success' : 'neutral';
+    setOpsAlertStrategyBadgeState('opsAlertStrategySummaryRoutingBadge', routingBadgeLabel, routingBadgeTone);
+    setOpsAlertStrategyBadgeState('opsAlertStrategyPanelRoutingBadge', routingBadgeLabel, routingBadgeTone);
+    const routingSummaryTextEl = document.getElementById('opsAlertStrategySummaryRoutingText');
+    if (routingSummaryTextEl) {
+        routingSummaryTextEl.textContent = routingCustomizedCount > 0
+            ? `已有 ${formatVerifyMonitorInteger(routingCustomizedCount)} 类事件被改成非默认路由，矩阵更适合快速复核。`
+            : '当前 14 类事件都保留 Telegram、飞书、邮件三通道默认投递。';
+    }
+    const routingPanelTextEl = document.getElementById('opsAlertStrategyPanelRoutingText');
+    if (routingPanelTextEl) {
+        routingPanelTextEl.textContent = routingCustomizedCount > 0
+            ? `已对 ${formatVerifyMonitorInteger(routingCustomizedCount)} 类事件做了分流，建议重点检查核心告警是否还保留至少一条主通道。`
+            : '把路由改成矩阵后，可以更快看清哪类告警发到哪个通道。';
+    }
+    const routingMatrixMetaEl = document.getElementById('opsAlertRoutingMatrixMeta');
+    if (routingMatrixMetaEl) {
+        routingMatrixMetaEl.textContent = `共 ${formatVerifyMonitorInteger(totalRoutingCount)} 类事件，已定制 ${formatVerifyMonitorInteger(routingCustomizedCount)} 类`;
+    }
+    const routingTelegramEl = document.getElementById('opsAlertStrategySummaryRoutingTelegram');
+    if (routingTelegramEl) {
+        routingTelegramEl.textContent = `${formatVerifyMonitorInteger(routingChannelCounts.telegram)} / ${formatVerifyMonitorInteger(totalRoutingCount)}`;
+    }
+    const routingFeishuEl = document.getElementById('opsAlertStrategySummaryRoutingFeishu');
+    if (routingFeishuEl) {
+        routingFeishuEl.textContent = `${formatVerifyMonitorInteger(routingChannelCounts.feishu)} / ${formatVerifyMonitorInteger(totalRoutingCount)}`;
+    }
+    const routingEmailEl = document.getElementById('opsAlertStrategySummaryRoutingEmail');
+    if (routingEmailEl) {
+        routingEmailEl.textContent = `${formatVerifyMonitorInteger(routingChannelCounts.email)} / ${formatVerifyMonitorInteger(totalRoutingCount)}`;
+    }
+
+    const workHoursBadgeTone = workHours.enabled ? 'success' : (workHoursOnlyCount > 0 ? 'warning' : 'neutral');
+    const workHoursBadgeLabel = workHours.enabled
+        ? '已启用'
+        : workHoursOnlyCount > 0
+            ? '待启用'
+            : '未启用';
+    setOpsAlertStrategyBadgeState('opsAlertStrategySummaryWorkHoursBadge', workHoursBadgeLabel, workHoursBadgeTone);
+    setOpsAlertStrategyBadgeState('opsAlertStrategyPanelWorkHoursBadge', workHoursBadgeLabel, workHoursBadgeTone);
+    const workHoursSummaryTextEl = document.getElementById('opsAlertStrategySummaryWorkHoursText');
+    if (workHoursSummaryTextEl) {
+        workHoursSummaryTextEl.textContent = workHoursOnlyCount > 0
+            ? `当前有 ${formatVerifyMonitorInteger(workHoursOnlyCount)} 类告警启用了“仅工作时间通知”。`
+            : '只影响开启“仅工作时间通知”的低优先级告警。';
+    }
+    const workHoursPanelTextEl = document.getElementById('opsAlertStrategyPanelWorkHoursText');
+    if (workHoursPanelTextEl) {
+        workHoursPanelTextEl.textContent = workHours.enabled
+            ? `当前工作时段为 ${formatOpsAlertHourRange(workHours.start_hour, workHours.end_hour)}，会影响 ${formatVerifyMonitorInteger(workHoursOnlyCount)} 类告警。`
+            : '这组时间只影响开启“仅工作时间通知”的低优先级告警。';
+    }
+    const workHoursRangeEl = document.getElementById('opsAlertStrategySummaryWorkHoursRange');
+    if (workHoursRangeEl) {
+        workHoursRangeEl.textContent = formatOpsAlertHourRange(workHours.start_hour, workHours.end_hour);
+    }
+    const workHoursTimezoneEl = document.getElementById('opsAlertStrategySummaryWorkHoursTimezone');
+    if (workHoursTimezoneEl) {
+        workHoursTimezoneEl.textContent = workHours.timezone || defaults.work_hours.timezone;
+    }
+    const workHoursRulesEl = document.getElementById('opsAlertStrategySummaryWorkHoursRules');
+    if (workHoursRulesEl) {
+        workHoursRulesEl.textContent = `${formatVerifyMonitorInteger(workHoursOnlyCount)} 类`;
+    }
+}
+
+function setOpsAlertStrategyPanelExpanded(panelKey, expanded) {
+    const panel = document.querySelector(`.ops-alert-strategy-panel[data-strategy-panel="${panelKey}"]`);
+    if (!panel) return;
+
+    panel.classList.toggle('is-expanded', expanded);
+    const body = panel.querySelector('.ops-alert-strategy-panel__body');
+    if (body) {
+        body.hidden = !expanded;
+    }
+}
+
+function toggleOpsAlertStrategyPanel(panelKey) {
+    ensureOpsAlertStrategyLayout();
+    const targetPanel = document.querySelector(`.ops-alert-strategy-panel[data-strategy-panel="${panelKey}"]`);
+    if (!targetPanel) return;
+
+    const shouldExpand = !targetPanel.classList.contains('is-expanded');
+    OPS_ALERT_STRATEGY_PANEL_KEYS.forEach((key) => {
+        setOpsAlertStrategyPanelExpanded(key, shouldExpand && key === panelKey);
+    });
+}
+
+function switchOpsAlertStrategyMuteTab(tabKey = 'types') {
+    ensureOpsAlertStrategyLayout();
+    const nextTabKey = OPS_ALERT_STRATEGY_MUTE_TAB_KEYS.includes(tabKey) ? tabKey : 'types';
+
+    document.querySelectorAll('.ops-alert-strategy-tab-btn').forEach((button) => {
+        button.classList.toggle('is-active', button.dataset.strategyTab === nextTabKey);
+    });
+    document.querySelectorAll('.ops-alert-strategy-tab-panel').forEach((panel) => {
+        const isActive = panel.dataset.strategyTabPanel === nextTabKey;
+        panel.classList.toggle('is-active', isActive);
+        panel.hidden = !isActive;
+    });
+}
+
+function openOpsAlertStrategyPanel(panelKey, tabKey = '') {
+    ensureOpsAlertStrategyLayout();
+    const nextPanelKey = OPS_ALERT_STRATEGY_PANEL_KEYS.includes(panelKey) ? panelKey : 'mute';
+    OPS_ALERT_STRATEGY_PANEL_KEYS.forEach((key) => {
+        setOpsAlertStrategyPanelExpanded(key, key === nextPanelKey);
+    });
+    if (nextPanelKey === 'mute' && tabKey) {
+        switchOpsAlertStrategyMuteTab(tabKey);
+    }
+
+    const panel = document.querySelector(`.ops-alert-strategy-panel[data-strategy-panel="${nextPanelKey}"]`);
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function refreshOpsAlertStrategyDraftViews() {
+    ensureOpsAlertStrategyLayout();
+    const nextConfig = collectOpsAlertConfigFromForm();
+    applyOpsAlertStrategyControls(nextConfig);
+    applyOpsAlertOverview(nextConfig);
+}
+
 function getOpsAlertMuteRuleState(rule = {}, options = {}) {
     const normalizedUntil = String(rule?.until || '').trim();
     const parsedUntil = normalizedUntil ? Date.parse(normalizedUntil) : Number.NaN;
@@ -4118,6 +4809,7 @@ function getOpsAlertTemporaryMuteState(config = normalizeOpsAlertConfig(systemCo
 }
 
 function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    ensureOpsAlertStrategyLayout();
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const temporaryMute = normalizedConfig.temporary_mute || getDefaultOpsAlertConfig().temporary_mute;
     const temporaryMuteState = getOpsAlertTemporaryMuteState(normalizedConfig);
@@ -4196,11 +4888,11 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
             const statusEl = document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'Status'));
             if (statusEl) {
                 if (state.active) {
-                    statusEl.textContent = `当前已静默至 ${state.untilLabel}，${state.allowCritical ? 'critical 仍继续通知。' : '所有级别暂停外发。'}`;
+                    statusEl.textContent = `${state.untilLabel} 前静默${state.allowCritical ? '，critical 继续通知。' : '，全部级别暂停。'}`;
                 } else if (state.expired) {
-                    statusEl.textContent = `上次静默已于 ${state.untilLabel} 到期。可清除旧时间后重新保存。`;
+                    statusEl.textContent = `已于 ${state.untilLabel} 到期，可清除旧时间。`;
                 } else {
-                    statusEl.textContent = '当前未设置单独静默。设置到期时间后，保存站外告警配置即可生效。';
+                    statusEl.textContent = '未设置单独静默。';
                 }
             }
         });
@@ -4215,6 +4907,8 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
             checkbox.checked = normalizedConfig.routing?.[routingKey]?.[channelKey] !== false;
         });
     });
+
+    renderOpsAlertStrategySummary(normalizedConfig);
 }
 
 function applyOpsAlertShopRiskControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
@@ -4656,6 +5350,7 @@ function applyOpsAlertPaymentGatewayControls(config = normalizeOpsAlertConfig(sy
 }
 
 function renderOpsAlertSettings() {
+    ensureOpsAlertStrategyLayout();
     const config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
 
     const quietHoursStartHour = document.getElementById('opsAlertQuietHoursStartHour');
@@ -10866,7 +11561,7 @@ function toggleOpsAlertQuietHoursEnabled() {
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    refreshOpsAlertStrategyDraftViews();
 }
 
 function toggleOpsAlertQuietHoursAllowCritical() {
@@ -10876,7 +11571,7 @@ function toggleOpsAlertQuietHoursAllowCritical() {
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    refreshOpsAlertStrategyDraftViews();
 }
 
 function toggleOpsAlertWorkHoursEnabled() {
@@ -10885,8 +11580,7 @@ function toggleOpsAlertWorkHoursEnabled() {
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertStrategyControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    refreshOpsAlertStrategyDraftViews();
 }
 
 function toggleOpsAlertTemporaryMuteAllowCritical() {
@@ -10895,7 +11589,7 @@ function toggleOpsAlertTemporaryMuteAllowCritical() {
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    refreshOpsAlertStrategyDraftViews();
 }
 
 function setOpsAlertTemporaryMutePreset(hours) {
@@ -10905,7 +11599,7 @@ function setOpsAlertTemporaryMutePreset(hours) {
 
     const target = new Date(Date.now() + numericHours * 60 * 60 * 1000);
     input.value = formatDateTimeLocalInputValue(target);
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    refreshOpsAlertStrategyDraftViews();
     showToast(`已设置临时静默 ${numericHours} 小时，保存站外告警配置后生效。`, 'info');
 }
 
@@ -10914,7 +11608,7 @@ function clearOpsAlertTemporaryMute() {
     if (!input) return;
 
     input.value = '';
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    refreshOpsAlertStrategyDraftViews();
     showToast('已清除临时静默时间，保存站外告警配置后生效。', 'info');
 }
 
@@ -10924,7 +11618,7 @@ function toggleOpsAlertMuteRuleAllowCritical(scope, key) {
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    refreshOpsAlertStrategyDraftViews();
 }
 
 function clearOpsAlertMuteRule(scope, key) {
@@ -10932,7 +11626,7 @@ function clearOpsAlertMuteRule(scope, key) {
     if (!input) return;
 
     input.value = '';
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    refreshOpsAlertStrategyDraftViews();
     showToast('已清除该条静默时间，保存站外告警配置后生效。', 'info');
 }
 
@@ -13553,6 +14247,9 @@ window.clearOpsAlertMuteRule = clearOpsAlertMuteRule;
 window.toggleOpsAlertQuietHoursEnabled = toggleOpsAlertQuietHoursEnabled;
 window.toggleOpsAlertQuietHoursAllowCritical = toggleOpsAlertQuietHoursAllowCritical;
 window.toggleOpsAlertWorkHoursEnabled = toggleOpsAlertWorkHoursEnabled;
+window.toggleOpsAlertStrategyPanel = toggleOpsAlertStrategyPanel;
+window.openOpsAlertStrategyPanel = openOpsAlertStrategyPanel;
+window.switchOpsAlertStrategyMuteTab = switchOpsAlertStrategyMuteTab;
 window.toggleOpsAlertShopRiskAutoResponseEnabled = toggleOpsAlertShopRiskAutoResponseEnabled;
 window.toggleOpsAlertShopInventoryEnabled = toggleOpsAlertShopInventoryEnabled;
 window.toggleOpsAlertShopInventoryRecoveryNotificationEnabled = toggleOpsAlertShopInventoryRecoveryNotificationEnabled;
