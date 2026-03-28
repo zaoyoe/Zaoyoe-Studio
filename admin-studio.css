@@ -18957,6 +18957,18 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     padding: 20px 24px;
 }
 
+#module-settings #settings-view-security .module-content {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+#module-settings #settings-view-security .settings-section {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+}
+
 #settings-view-pricing .module-content.pricing-settings-layout {
     display: grid;
     grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
@@ -24031,6 +24043,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 /* Config Textarea */
 .config-textarea {
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
     padding: 12px;
     border: 1px solid var(--card-border);
     border-radius: 8px;
@@ -24040,6 +24054,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
     line-height: 1.5;
     resize: vertical;
+    box-sizing: border-box;
     transition: border-color 0.2s, box-shadow 0.2s;
 }
 

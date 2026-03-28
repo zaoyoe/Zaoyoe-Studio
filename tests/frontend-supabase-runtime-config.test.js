@@ -3948,6 +3948,7 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
 test('admin studio security, verify, affiliate, and experiment controls route through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
     const adminConfigSource = readRepoFile('admin-config.js');
     const analyticsSource = readRepoFile('admin-analytics.js');
 
@@ -4031,6 +4032,9 @@ test('admin studio security, verify, affiliate, and experiment controls route th
 
     assert.equal(adminStudioSource.includes('id="lockedAccountsRefreshButton"'), true, 'admin-studio.html should expose a dedicated locked accounts refresh button');
     assert.equal(adminStudioSource.includes('id="lockedAccountsRefreshIndicator"'), true, 'admin-studio.html should expose locked accounts refresh feedback');
+    assert.equal(adminStudioStyles.includes('#module-settings #settings-view-security .module-content'), true, 'admin-studio.css should give the security settings view a dedicated full-width layout');
+    assert.equal(adminStudioStyles.includes('#module-settings #settings-view-security .settings-section'), true, 'admin-studio.css should let security settings sections span the available width');
+    assert.match(adminStudioStyles, /\.config-textarea\s*\{[\s\S]*box-sizing: border-box;/, 'admin-studio.css should keep config textareas inside their cards');
     assert.equal(adminConfigSource.includes('setLockedAccountsRefreshButtonState'), true, 'admin-config.js should manage locked account refresh button state');
     assert.equal(adminConfigSource.includes('showLockedAccountsRefreshIndicator'), true, 'admin-config.js should surface locked account refresh feedback');
 
