@@ -180,6 +180,24 @@ function createDefaultState() {
                 summary_hourly_minute: 0,
                 summary_daily_hour: 9,
                 summary_daily_minute: 0
+            },
+            tickets: {
+                enabled: true,
+                sweep_interval_ms: 10 * 60 * 1000,
+                pending_overdue_minutes: 120,
+                critical_overdue_minutes: 12 * 60,
+                state_lookback_minutes: 24 * 60,
+                dedupe_window_minutes: 60,
+                page_size: 500,
+                max_pages: 10,
+                work_hours_only_enabled: false,
+                summary_enabled: false,
+                summary_window_minutes: 60,
+                summary_max_items: 10,
+                summary_schedule_mode: 'rolling_window',
+                summary_hourly_minute: 0,
+                summary_daily_hour: 9,
+                summary_daily_minute: 0
             }
         },
         secretStatus: {
@@ -254,6 +272,7 @@ function createNormalizedConfig(raw) {
     const customerChatMessage = source.customer_chat_message && typeof source.customer_chat_message === 'object' ? source.customer_chat_message : {};
     const shopPurchaseSuccess = source.shop_purchase_success && typeof source.shop_purchase_success === 'object' ? source.shop_purchase_success : {};
     const walletRechargeSuccess = source.wallet_recharge_success && typeof source.wallet_recharge_success === 'object' ? source.wallet_recharge_success : {};
+    const tickets = source.tickets && typeof source.tickets === 'object' ? source.tickets : {};
     const routing = source.routing && typeof source.routing === 'object' ? source.routing : {};
     const routingCustomerChatMessage = routing.customer_chat_message && typeof routing.customer_chat_message === 'object' ? routing.customer_chat_message : {};
     const routingShopPurchaseSuccess = routing.shop_purchase_success && typeof routing.shop_purchase_success === 'object' ? routing.shop_purchase_success : {};
@@ -447,6 +466,24 @@ function createNormalizedConfig(raw) {
             summary_hourly_minute: Math.min(59, Math.max(0, Number(walletRechargeSuccess.summary_hourly_minute || 0) || 0)),
             summary_daily_hour: Math.min(23, Math.max(0, Number(walletRechargeSuccess.summary_daily_hour ?? 9) || 9)),
             summary_daily_minute: Math.min(59, Math.max(0, Number(walletRechargeSuccess.summary_daily_minute || 0) || 0))
+        },
+        tickets: {
+            enabled: normalizeBoolean(tickets.enabled, true),
+            sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(tickets.sweep_interval_ms || 10 * 60 * 1000) || (10 * 60 * 1000))),
+            pending_overdue_minutes: Math.min(14 * 24 * 60, Math.max(5, Number(tickets.pending_overdue_minutes || 120) || 120)),
+            critical_overdue_minutes: Math.min(30 * 24 * 60, Math.max(30, Number(tickets.critical_overdue_minutes || 12 * 60) || (12 * 60))),
+            state_lookback_minutes: Math.min(7 * 24 * 60, Math.max(30, Number(tickets.state_lookback_minutes || 24 * 60) || (24 * 60))),
+            dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(tickets.dedupe_window_minutes || 60) || 60)),
+            page_size: Math.min(5000, Math.max(50, Number(tickets.page_size || 500) || 500)),
+            max_pages: Math.min(100, Math.max(1, Number(tickets.max_pages || 10) || 10)),
+            work_hours_only_enabled: normalizeBoolean(tickets.work_hours_only_enabled, false),
+            summary_enabled: normalizeBoolean(tickets.summary_enabled, false),
+            summary_window_minutes: Math.min(24 * 60, Math.max(5, Number(tickets.summary_window_minutes || 60) || 60)),
+            summary_max_items: Math.min(50, Math.max(1, Number(tickets.summary_max_items || 10) || 10)),
+            summary_schedule_mode: normalizeSummaryScheduleMode(tickets.summary_schedule_mode, 'rolling_window'),
+            summary_hourly_minute: Math.min(59, Math.max(0, Number(tickets.summary_hourly_minute || 0) || 0)),
+            summary_daily_hour: Math.min(23, Math.max(0, Number(tickets.summary_daily_hour ?? 9) || 9)),
+            summary_daily_minute: Math.min(59, Math.max(0, Number(tickets.summary_daily_minute || 0) || 0))
         }
     };
 }
@@ -789,6 +826,20 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.wallet_recharge_success.summary_hourly_minute, 0);
         assert.equal(payload.config.wallet_recharge_success.summary_daily_hour, 9);
         assert.equal(payload.config.wallet_recharge_success.summary_daily_minute, 0);
+        assert.equal(payload.config.tickets.enabled, true);
+        assert.equal(payload.config.tickets.sweep_interval_ms, 10 * 60 * 1000);
+        assert.equal(payload.config.tickets.pending_overdue_minutes, 120);
+        assert.equal(payload.config.tickets.critical_overdue_minutes, 12 * 60);
+        assert.equal(payload.config.tickets.state_lookback_minutes, 24 * 60);
+        assert.equal(payload.config.tickets.dedupe_window_minutes, 60);
+        assert.equal(payload.config.tickets.work_hours_only_enabled, false);
+        assert.equal(payload.config.tickets.summary_enabled, false);
+        assert.equal(payload.config.tickets.summary_window_minutes, 60);
+        assert.equal(payload.config.tickets.summary_max_items, 10);
+        assert.equal(payload.config.tickets.summary_schedule_mode, 'rolling_window');
+        assert.equal(payload.config.tickets.summary_hourly_minute, 0);
+        assert.equal(payload.config.tickets.summary_daily_hour, 9);
+        assert.equal(payload.config.tickets.summary_daily_minute, 0);
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.telegram_bot_token.source, 'stored');
         assert.equal(payload.secrets.feishu_webhook_url.configured, false);
@@ -942,6 +993,24 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         summary_hourly_minute: 30,
                         summary_daily_hour: 9,
                         summary_daily_minute: 30
+                    },
+                    tickets: {
+                        enabled: true,
+                        sweep_interval_ms: 15 * 60 * 1000,
+                        pending_overdue_minutes: 135,
+                        critical_overdue_minutes: 10 * 60,
+                        state_lookback_minutes: 12 * 60,
+                        dedupe_window_minutes: 90,
+                        page_size: 500,
+                        max_pages: 10,
+                        work_hours_only_enabled: true,
+                        summary_enabled: true,
+                        summary_window_minutes: 75,
+                        summary_max_items: 9,
+                        summary_schedule_mode: 'hourly',
+                        summary_hourly_minute: 20,
+                        summary_daily_hour: 8,
+                        summary_daily_minute: 15
                     }
                 },
                 secrets: {
@@ -1054,6 +1123,20 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.wallet_recharge_success.summary_hourly_minute, 30);
         assert.equal(payload.config.wallet_recharge_success.summary_daily_hour, 9);
         assert.equal(payload.config.wallet_recharge_success.summary_daily_minute, 30);
+        assert.equal(payload.config.tickets.enabled, true);
+        assert.equal(payload.config.tickets.sweep_interval_ms, 15 * 60 * 1000);
+        assert.equal(payload.config.tickets.pending_overdue_minutes, 135);
+        assert.equal(payload.config.tickets.critical_overdue_minutes, 10 * 60);
+        assert.equal(payload.config.tickets.state_lookback_minutes, 12 * 60);
+        assert.equal(payload.config.tickets.dedupe_window_minutes, 90);
+        assert.equal(payload.config.tickets.work_hours_only_enabled, true);
+        assert.equal(payload.config.tickets.summary_enabled, true);
+        assert.equal(payload.config.tickets.summary_window_minutes, 75);
+        assert.equal(payload.config.tickets.summary_max_items, 9);
+        assert.equal(payload.config.tickets.summary_schedule_mode, 'hourly');
+        assert.equal(payload.config.tickets.summary_hourly_minute, 20);
+        assert.equal(payload.config.tickets.summary_daily_hour, 8);
+        assert.equal(payload.config.tickets.summary_daily_minute, 15);
         assert.equal(state.systemConfigUpserts.length, 1);
         assert.equal(state.systemConfigUpserts[0].config_key, 'ops_alerts');
         assert.equal(state.upsertedSecrets.length, 2);
@@ -1154,6 +1237,20 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.wallet_recharge_success_summary_hourly_minute, 30);
         assert.equal(state.auditLogs[0].details.wallet_recharge_success_summary_daily_hour, 9);
         assert.equal(state.auditLogs[0].details.wallet_recharge_success_summary_daily_minute, 30);
+        assert.equal(state.auditLogs[0].details.tickets_enabled, true);
+        assert.equal(state.auditLogs[0].details.tickets_sweep_interval_ms, 15 * 60 * 1000);
+        assert.equal(state.auditLogs[0].details.tickets_pending_overdue_minutes, 135);
+        assert.equal(state.auditLogs[0].details.tickets_critical_overdue_minutes, 10 * 60);
+        assert.equal(state.auditLogs[0].details.tickets_state_lookback_minutes, 12 * 60);
+        assert.equal(state.auditLogs[0].details.tickets_dedupe_window_minutes, 90);
+        assert.equal(state.auditLogs[0].details.tickets_work_hours_only_enabled, true);
+        assert.equal(state.auditLogs[0].details.tickets_summary_enabled, true);
+        assert.equal(state.auditLogs[0].details.tickets_summary_window_minutes, 75);
+        assert.equal(state.auditLogs[0].details.tickets_summary_max_items, 9);
+        assert.equal(state.auditLogs[0].details.tickets_summary_schedule_mode, 'hourly');
+        assert.equal(state.auditLogs[0].details.tickets_summary_hourly_minute, 20);
+        assert.equal(state.auditLogs[0].details.tickets_summary_daily_hour, 8);
+        assert.equal(state.auditLogs[0].details.tickets_summary_daily_minute, 15);
         assert.deepEqual(state.auditLogs[0].details.updated_secrets, ['telegram_bot_token', 'feishu_webhook_url']);
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.feishu_webhook_url.configured, true);

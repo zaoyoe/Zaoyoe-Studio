@@ -147,6 +147,25 @@ const OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS = Object.freeze([
         summary_daily_hour_id: 'opsAlertShopInventorySummaryDailyHour',
         summary_daily_minute_id: 'opsAlertShopInventorySummaryDailyMinute',
         summary_max_items_id: 'opsAlertShopInventorySummaryMaxItems'
+    }),
+    Object.freeze({
+        key: 'tickets',
+        label: '工单与售后',
+        preset_group: 'low_priority',
+        supports_work_hours_only: true,
+        target_checkbox_id: 'opsAlertSummaryTargetTickets',
+        monitor_status_id: 'opsAlertSummaryStatusTicketsMonitor',
+        work_hours_status_id: 'opsAlertSummaryStatusTicketsWorkHours',
+        summary_status_id: 'opsAlertSummaryStatusTicketsSummary',
+        enabled_toggle_id: 'opsAlertTicketsEnabledToggle',
+        work_hours_toggle_id: 'opsAlertTicketsWorkHoursOnlyEnabledToggle',
+        summary_toggle_id: 'opsAlertTicketsSummaryEnabledToggle',
+        summary_schedule_mode_id: 'opsAlertTicketsSummaryScheduleMode',
+        summary_window_minutes_id: 'opsAlertTicketsSummaryWindowMinutes',
+        summary_hourly_minute_id: 'opsAlertTicketsSummaryHourlyMinute',
+        summary_daily_hour_id: 'opsAlertTicketsSummaryDailyHour',
+        summary_daily_minute_id: 'opsAlertTicketsSummaryDailyMinute',
+        summary_max_items_id: 'opsAlertTicketsSummaryMaxItems'
     })
 ]);
 const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 8000;
@@ -1187,6 +1206,24 @@ function getDefaultOpsAlertConfig() {
             summary_hourly_minute: 0,
             summary_daily_hour: 9,
             summary_daily_minute: 0
+        },
+        tickets: {
+            enabled: true,
+            sweep_interval_ms: 10 * 60 * 1000,
+            pending_overdue_minutes: 120,
+            critical_overdue_minutes: 12 * 60,
+            state_lookback_minutes: 24 * 60,
+            dedupe_window_minutes: 60,
+            page_size: 500,
+            max_pages: 10,
+            work_hours_only_enabled: false,
+            summary_enabled: false,
+            summary_window_minutes: 60,
+            summary_max_items: 10,
+            summary_schedule_mode: 'rolling_window',
+            summary_hourly_minute: 0,
+            summary_daily_hour: 9,
+            summary_daily_minute: 0
         }
     };
 }
@@ -1373,6 +1410,15 @@ function renderOpsAlertSummaryOrchestration(config = normalizeOpsAlertConfig(sys
                 section.enabled
                     ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，低库存阈值 ${formatVerifyMonitorInteger(section.low_stock_threshold || 0)}。`
                     : `库存巡检参数仍保留，阈值 ${formatVerifyMonitorInteger(section.low_stock_threshold || 0)}。`
+            );
+        } else if (definition.key === 'tickets') {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.monitor_status_id,
+                section.enabled ? 'success' : 'neutral',
+                section.enabled ? '已启用' : '已关闭',
+                section.enabled
+                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，超时阈值 ${formatVerifyMonitorInteger(section.pending_overdue_minutes || 0)} 分钟。`
+                    : `工单 SLA 阈值仍保留为 ${formatVerifyMonitorInteger(section.pending_overdue_minutes || 0)} 分钟。`
             );
         } else {
             setOpsAlertSummaryOrchestrationCell(
@@ -1929,6 +1975,9 @@ function normalizeOpsAlertConfig(raw) {
     const walletRechargeSuccessSource = source.wallet_recharge_success && typeof source.wallet_recharge_success === 'object' && !Array.isArray(source.wallet_recharge_success)
         ? source.wallet_recharge_success
         : {};
+    const ticketsSource = source.tickets && typeof source.tickets === 'object' && !Array.isArray(source.tickets)
+        ? source.tickets
+        : {};
     const routingSource = source.routing && typeof source.routing === 'object' && !Array.isArray(source.routing)
         ? source.routing
         : {};
@@ -2309,6 +2358,78 @@ function normalizeOpsAlertConfig(raw) {
             ),
             summary_daily_minute: clamp(
                 toWholeNumber(walletRechargeSuccessSource.summary_daily_minute, defaults.wallet_recharge_success.summary_daily_minute),
+                0,
+                59
+            )
+        },
+        tickets: {
+            enabled: normalizeConfigBoolean(ticketsSource.enabled, defaults.tickets.enabled),
+            sweep_interval_ms: clamp(
+                toWholeNumber(ticketsSource.sweep_interval_ms, defaults.tickets.sweep_interval_ms),
+                10000,
+                60 * 60 * 1000
+            ),
+            pending_overdue_minutes: clamp(
+                toWholeNumber(ticketsSource.pending_overdue_minutes, defaults.tickets.pending_overdue_minutes),
+                5,
+                14 * 24 * 60
+            ),
+            critical_overdue_minutes: clamp(
+                toWholeNumber(ticketsSource.critical_overdue_minutes, defaults.tickets.critical_overdue_minutes),
+                30,
+                30 * 24 * 60
+            ),
+            state_lookback_minutes: clamp(
+                toWholeNumber(ticketsSource.state_lookback_minutes, defaults.tickets.state_lookback_minutes),
+                30,
+                7 * 24 * 60
+            ),
+            dedupe_window_minutes: clamp(
+                toWholeNumber(ticketsSource.dedupe_window_minutes, defaults.tickets.dedupe_window_minutes),
+                1,
+                24 * 60
+            ),
+            page_size: clamp(
+                toWholeNumber(ticketsSource.page_size, defaults.tickets.page_size),
+                50,
+                5000
+            ),
+            max_pages: clamp(
+                toWholeNumber(ticketsSource.max_pages, defaults.tickets.max_pages),
+                1,
+                100
+            ),
+            work_hours_only_enabled: normalizeConfigBoolean(
+                ticketsSource.work_hours_only_enabled,
+                defaults.tickets.work_hours_only_enabled
+            ),
+            summary_enabled: normalizeConfigBoolean(ticketsSource.summary_enabled, defaults.tickets.summary_enabled),
+            summary_window_minutes: clamp(
+                toWholeNumber(ticketsSource.summary_window_minutes, defaults.tickets.summary_window_minutes),
+                5,
+                24 * 60
+            ),
+            summary_max_items: clamp(
+                toWholeNumber(ticketsSource.summary_max_items, defaults.tickets.summary_max_items),
+                1,
+                50
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                ticketsSource.summary_schedule_mode,
+                defaults.tickets.summary_schedule_mode
+            ),
+            summary_hourly_minute: clamp(
+                toWholeNumber(ticketsSource.summary_hourly_minute, defaults.tickets.summary_hourly_minute),
+                0,
+                59
+            ),
+            summary_daily_hour: clamp(
+                toWholeNumber(ticketsSource.summary_daily_hour, defaults.tickets.summary_daily_hour),
+                0,
+                23
+            ),
+            summary_daily_minute: clamp(
+                toWholeNumber(ticketsSource.summary_daily_minute, defaults.tickets.summary_daily_minute),
                 0,
                 59
             )
@@ -2831,6 +2952,7 @@ function applyOpsAlertOverview(config) {
     applyOpsAlertCustomerChatControls(normalizedConfig);
     applyOpsAlertShopPurchaseSuccessControls(normalizedConfig);
     applyOpsAlertWalletRechargeSuccessControls(normalizedConfig);
+    applyOpsAlertTicketsControls(normalizedConfig);
     renderOpsAlertSummaryOrchestration(normalizedConfig);
     renderOpsAlertOverviewCards(normalizedConfig);
 }
@@ -3282,6 +3404,40 @@ function applyOpsAlertWalletRechargeSuccessControls(config = normalizeOpsAlertCo
     });
 }
 
+function applyOpsAlertTicketsControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const monitorConfig = normalizedConfig.tickets || getDefaultOpsAlertConfig().tickets;
+    const toggleEl = document.getElementById('opsAlertTicketsEnabledToggle');
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+    const summaryToggleEl = document.getElementById('opsAlertTicketsSummaryEnabledToggle');
+    if (summaryToggleEl) {
+        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
+    }
+    const workHoursOnlyToggleEl = document.getElementById('opsAlertTicketsWorkHoursOnlyEnabledToggle');
+    if (workHoursOnlyToggleEl) {
+        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
+        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
+    }
+
+    [
+        'opsAlertTicketsSweepIntervalMinutes',
+        'opsAlertTicketsDedupeWindowMinutes'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !monitorConfig.enabled;
+    });
+    applyOpsAlertSummaryModeControls(monitorConfig, {
+        summaryScheduleMode: 'opsAlertTicketsSummaryScheduleMode',
+        summaryWindowMinutes: 'opsAlertTicketsSummaryWindowMinutes',
+        summaryHourlyMinute: 'opsAlertTicketsSummaryHourlyMinute',
+        summaryDailyHour: 'opsAlertTicketsSummaryDailyHour',
+        summaryDailyMinute: 'opsAlertTicketsSummaryDailyMinute',
+        summaryMaxItems: 'opsAlertTicketsSummaryMaxItems'
+    });
+}
+
 function renderOpsAlertSettings() {
     const config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
 
@@ -3534,6 +3690,40 @@ function renderOpsAlertSettings() {
     const walletRechargeSuccessSummaryMaxItems = document.getElementById('opsAlertWalletRechargeSuccessSummaryMaxItems');
     if (walletRechargeSuccessSummaryMaxItems) {
         walletRechargeSuccessSummaryMaxItems.value = String(config.wallet_recharge_success.summary_max_items);
+    }
+
+    const ticketsSweepIntervalMinutes = document.getElementById('opsAlertTicketsSweepIntervalMinutes');
+    if (ticketsSweepIntervalMinutes) {
+        ticketsSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.tickets.sweep_interval_ms || 0) / 60000)));
+    }
+
+    const ticketsDedupeWindowMinutes = document.getElementById('opsAlertTicketsDedupeWindowMinutes');
+    if (ticketsDedupeWindowMinutes) {
+        ticketsDedupeWindowMinutes.value = String(config.tickets.dedupe_window_minutes);
+    }
+    const ticketsSummaryWindowMinutes = document.getElementById('opsAlertTicketsSummaryWindowMinutes');
+    if (ticketsSummaryWindowMinutes) {
+        ticketsSummaryWindowMinutes.value = String(config.tickets.summary_window_minutes);
+    }
+    const ticketsSummaryScheduleMode = document.getElementById('opsAlertTicketsSummaryScheduleMode');
+    if (ticketsSummaryScheduleMode) {
+        ticketsSummaryScheduleMode.value = config.tickets.summary_schedule_mode;
+    }
+    const ticketsSummaryHourlyMinute = document.getElementById('opsAlertTicketsSummaryHourlyMinute');
+    if (ticketsSummaryHourlyMinute) {
+        ticketsSummaryHourlyMinute.value = String(config.tickets.summary_hourly_minute);
+    }
+    const ticketsSummaryDailyHour = document.getElementById('opsAlertTicketsSummaryDailyHour');
+    if (ticketsSummaryDailyHour) {
+        ticketsSummaryDailyHour.value = String(config.tickets.summary_daily_hour);
+    }
+    const ticketsSummaryDailyMinute = document.getElementById('opsAlertTicketsSummaryDailyMinute');
+    if (ticketsSummaryDailyMinute) {
+        ticketsSummaryDailyMinute.value = String(config.tickets.summary_daily_minute);
+    }
+    const ticketsSummaryMaxItems = document.getElementById('opsAlertTicketsSummaryMaxItems');
+    if (ticketsSummaryMaxItems) {
+        ticketsSummaryMaxItems.value = String(config.tickets.summary_max_items);
     }
 
     applyOpsAlertOverview(config);
@@ -4465,6 +4655,7 @@ function getOpsAlertMonitorItemAction(category = {}, item = {}) {
         payment_config_changed: { target: 'admin-audit-monitor', label: '查看审计', icon: 'fas fa-user-shield' },
         payment_config_incident: { target: 'admin-audit-monitor', label: '排查配置风险', icon: 'fas fa-user-shield' },
         ticket_sla_overdue: { target: 'tickets-pending', label: '处理工单', icon: 'fas fa-ticket-alt' },
+        ticket_sla_summary: { target: 'tickets-pending', label: '处理工单', icon: 'fas fa-ticket-alt' },
         shop_inventory_low: { target: 'shop-inventory', label: '去补货', icon: 'fas fa-box-open' },
         shop_inventory_empty: { target: 'shop-inventory', label: '去补货', icon: 'fas fa-box-open' },
         shop_order_delivery_failed: { target: 'shop-fulfillment', label: '处理履约', icon: 'fas fa-truck-ramp-box' },
@@ -6584,6 +6775,9 @@ function collectOpsAlertConfigFromForm() {
         },
         wallet_recharge_success: {
             ...currentConfig.wallet_recharge_success
+        },
+        tickets: {
+            ...currentConfig.tickets
         }
     };
 
@@ -6899,6 +7093,47 @@ function collectOpsAlertConfigFromForm() {
     nextConfig.wallet_recharge_success.summary_max_items = toWholeNumber(
         document.getElementById('opsAlertWalletRechargeSuccessSummaryMaxItems')?.value,
         currentConfig.wallet_recharge_success.summary_max_items
+    );
+    nextConfig.tickets.enabled = document.getElementById('opsAlertTicketsEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.tickets.enabled;
+    nextConfig.tickets.sweep_interval_ms = Math.max(
+        10000,
+        toWholeNumber(
+            document.getElementById('opsAlertTicketsSweepIntervalMinutes')?.value,
+            Math.max(1, Math.round(Number(currentConfig.tickets.sweep_interval_ms || 0) / 60000))
+        ) * 60 * 1000
+    );
+    nextConfig.tickets.dedupe_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertTicketsDedupeWindowMinutes')?.value,
+        currentConfig.tickets.dedupe_window_minutes
+    );
+    nextConfig.tickets.work_hours_only_enabled = document.getElementById('opsAlertTicketsWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.tickets.work_hours_only_enabled;
+    nextConfig.tickets.summary_enabled = document.getElementById('opsAlertTicketsSummaryEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.tickets.summary_enabled;
+    nextConfig.tickets.summary_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertTicketsSummaryWindowMinutes')?.value,
+        currentConfig.tickets.summary_window_minutes
+    );
+    nextConfig.tickets.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+        document.getElementById('opsAlertTicketsSummaryScheduleMode')?.value,
+        currentConfig.tickets.summary_schedule_mode
+    );
+    nextConfig.tickets.summary_hourly_minute = toWholeNumber(
+        document.getElementById('opsAlertTicketsSummaryHourlyMinute')?.value,
+        currentConfig.tickets.summary_hourly_minute
+    );
+    nextConfig.tickets.summary_daily_hour = toWholeNumber(
+        document.getElementById('opsAlertTicketsSummaryDailyHour')?.value,
+        currentConfig.tickets.summary_daily_hour
+    );
+    nextConfig.tickets.summary_daily_minute = toWholeNumber(
+        document.getElementById('opsAlertTicketsSummaryDailyMinute')?.value,
+        currentConfig.tickets.summary_daily_minute
+    );
+    nextConfig.tickets.summary_max_items = toWholeNumber(
+        document.getElementById('opsAlertTicketsSummaryMaxItems')?.value,
+        currentConfig.tickets.summary_max_items
     );
 
     return normalizeOpsAlertConfig(nextConfig);
@@ -8586,6 +8821,43 @@ function toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled() {
 
 function handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange() {
     applyOpsAlertWalletRechargeSuccessControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertTicketsEnabled() {
+    const toggleEl = document.getElementById('opsAlertTicketsEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertTicketsControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertTicketsSummaryEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertTicketsEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertTicketsSummaryEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertTicketsControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertTicketsWorkHoursOnlyEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertTicketsEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertTicketsWorkHoursOnlyEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertTicketsControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function handleOpsAlertTicketsSummaryScheduleModeChange() {
+    applyOpsAlertTicketsControls(collectOpsAlertConfigFromForm());
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
@@ -10833,6 +11105,10 @@ window.toggleOpsAlertWalletRechargeSuccessEnabled = toggleOpsAlertWalletRecharge
 window.toggleOpsAlertWalletRechargeSuccessSummaryEnabled = toggleOpsAlertWalletRechargeSuccessSummaryEnabled;
 window.toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled = toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled;
 window.handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange = handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange;
+window.toggleOpsAlertTicketsEnabled = toggleOpsAlertTicketsEnabled;
+window.toggleOpsAlertTicketsSummaryEnabled = toggleOpsAlertTicketsSummaryEnabled;
+window.toggleOpsAlertTicketsWorkHoursOnlyEnabled = toggleOpsAlertTicketsWorkHoursOnlyEnabled;
+window.handleOpsAlertTicketsSummaryScheduleModeChange = handleOpsAlertTicketsSummaryScheduleModeChange;
 window.selectOpsAlertUnifiedSummaryTargets = selectOpsAlertUnifiedSummaryTargets;
 window.handleOpsAlertUnifiedSummaryTargetChange = handleOpsAlertUnifiedSummaryTargetChange;
 window.handleOpsAlertUnifiedSummaryDraftChange = handleOpsAlertUnifiedSummaryDraftChange;

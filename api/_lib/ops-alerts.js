@@ -76,6 +76,7 @@ const ALERT_TYPE_MODULE_MAP = Object.freeze({
     verify_queue_backlog: 'verify',
     verify_incident_escalated: 'verify',
     verify_incident_recovered: 'verify',
+    ticket_sla_summary: 'tickets',
     ticket_sla_overdue: 'tickets',
     ticket_sla_recovered: 'tickets',
     shop_order_delivery_failed: 'fulfillment',
@@ -119,6 +120,12 @@ const SUMMARY_ALERT_DEFINITIONS = Object.freeze({
         summary_alert_type: 'shop_inventory_summary',
         default_title: '库存与补货汇总',
         unit: '条库存告警'
+    }),
+    ticket_sla_overdue: Object.freeze({
+        config_key: 'tickets',
+        summary_alert_type: 'ticket_sla_summary',
+        default_title: '工单超时汇总',
+        unit: '条超时工单'
     })
 });
 const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
@@ -302,6 +309,24 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         sales_window_days: 7,
         dedupe_window_minutes: 6 * 60,
         recovery_notification_enabled: true,
+        summary_enabled: false,
+        summary_window_minutes: 60,
+        summary_max_items: 10,
+        summary_schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
+        summary_hourly_minute: 0,
+        summary_daily_hour: 9,
+        summary_daily_minute: 0
+    }),
+    tickets: Object.freeze({
+        enabled: true,
+        sweep_interval_ms: 10 * 60 * 1000,
+        pending_overdue_minutes: 120,
+        critical_overdue_minutes: 12 * 60,
+        state_lookback_minutes: 24 * 60,
+        dedupe_window_minutes: 60,
+        page_size: 500,
+        max_pages: 10,
+        work_hours_only_enabled: false,
         summary_enabled: false,
         summary_window_minutes: 60,
         summary_max_items: 10,
@@ -850,6 +875,24 @@ function cloneDefaultConfig() {
             summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_hourly_minute,
             summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_daily_hour,
             summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_daily_minute
+        },
+        tickets: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.tickets.enabled,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.tickets.sweep_interval_ms,
+            pending_overdue_minutes: DEFAULT_OPS_ALERTS_CONFIG.tickets.pending_overdue_minutes,
+            critical_overdue_minutes: DEFAULT_OPS_ALERTS_CONFIG.tickets.critical_overdue_minutes,
+            state_lookback_minutes: DEFAULT_OPS_ALERTS_CONFIG.tickets.state_lookback_minutes,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.tickets.dedupe_window_minutes,
+            page_size: DEFAULT_OPS_ALERTS_CONFIG.tickets.page_size,
+            max_pages: DEFAULT_OPS_ALERTS_CONFIG.tickets.max_pages,
+            work_hours_only_enabled: DEFAULT_OPS_ALERTS_CONFIG.tickets.work_hours_only_enabled,
+            summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_enabled,
+            summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_window_minutes,
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_max_items,
+            summary_schedule_mode: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_schedule_mode,
+            summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_hourly_minute,
+            summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_daily_hour,
+            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_daily_minute
         }
     };
 }
@@ -902,6 +945,9 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         : {};
     const shopInventoryConfig = source.shop_inventory && typeof source.shop_inventory === 'object'
         ? source.shop_inventory
+        : {};
+    const ticketsConfig = source.tickets && typeof source.tickets === 'object'
+        ? source.tickets
         : {};
 
     config.enabled = normalizeBoolean(source.enabled, normalizeBoolean(env?.OPS_ALERTS_ENABLED, config.enabled));
@@ -1398,6 +1444,95 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
     config.shop_inventory.summary_daily_minute = normalizeNumber(
         shopInventoryConfig.summary_daily_minute,
         config.shop_inventory.summary_daily_minute,
+        0,
+        59
+    );
+
+    config.tickets.enabled = normalizeBoolean(
+        ticketsConfig.enabled,
+        normalizeBoolean(env?.TICKET_SLA_MONITOR_ENABLED, config.tickets.enabled)
+    );
+    config.tickets.sweep_interval_ms = normalizeNumber(
+        ticketsConfig.sweep_interval_ms,
+        normalizeNumber(env?.TICKET_SLA_MONITOR_SWEEP_INTERVAL_MS, config.tickets.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.tickets.pending_overdue_minutes = normalizeNumber(
+        ticketsConfig.pending_overdue_minutes,
+        normalizeNumber(env?.TICKET_SLA_MONITOR_PENDING_OVERDUE_MINUTES, config.tickets.pending_overdue_minutes, 5, 14 * 24 * 60),
+        5,
+        14 * 24 * 60
+    );
+    config.tickets.critical_overdue_minutes = normalizeNumber(
+        ticketsConfig.critical_overdue_minutes,
+        normalizeNumber(env?.TICKET_SLA_MONITOR_CRITICAL_OVERDUE_MINUTES, config.tickets.critical_overdue_minutes, 30, 30 * 24 * 60),
+        30,
+        30 * 24 * 60
+    );
+    config.tickets.state_lookback_minutes = normalizeNumber(
+        ticketsConfig.state_lookback_minutes,
+        normalizeNumber(env?.TICKET_SLA_MONITOR_STATE_LOOKBACK_MINUTES, config.tickets.state_lookback_minutes, 30, 7 * 24 * 60),
+        30,
+        7 * 24 * 60
+    );
+    config.tickets.dedupe_window_minutes = normalizeNumber(
+        ticketsConfig.dedupe_window_minutes,
+        normalizeNumber(env?.TICKET_SLA_MONITOR_DEDUPE_WINDOW_MINUTES, config.tickets.dedupe_window_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.tickets.page_size = normalizeNumber(
+        ticketsConfig.page_size,
+        normalizeNumber(env?.TICKET_SLA_MONITOR_PAGE_SIZE, config.tickets.page_size, 50, 5000),
+        50,
+        5000
+    );
+    config.tickets.max_pages = normalizeNumber(
+        ticketsConfig.max_pages,
+        normalizeNumber(env?.TICKET_SLA_MONITOR_MAX_PAGES, config.tickets.max_pages, 1, 100),
+        1,
+        100
+    );
+    config.tickets.work_hours_only_enabled = normalizeBoolean(
+        ticketsConfig.work_hours_only_enabled,
+        config.tickets.work_hours_only_enabled
+    );
+    config.tickets.summary_enabled = normalizeBoolean(
+        ticketsConfig.summary_enabled,
+        config.tickets.summary_enabled
+    );
+    config.tickets.summary_window_minutes = normalizeNumber(
+        ticketsConfig.summary_window_minutes,
+        config.tickets.summary_window_minutes,
+        5,
+        24 * 60
+    );
+    config.tickets.summary_max_items = normalizeNumber(
+        ticketsConfig.summary_max_items,
+        config.tickets.summary_max_items,
+        1,
+        50
+    );
+    config.tickets.summary_schedule_mode = normalizeSummaryScheduleMode(
+        ticketsConfig.summary_schedule_mode,
+        config.tickets.summary_schedule_mode
+    );
+    config.tickets.summary_hourly_minute = normalizeNumber(
+        ticketsConfig.summary_hourly_minute,
+        config.tickets.summary_hourly_minute,
+        0,
+        59
+    );
+    config.tickets.summary_daily_hour = normalizeNumber(
+        ticketsConfig.summary_daily_hour,
+        config.tickets.summary_daily_hour,
+        0,
+        23
+    );
+    config.tickets.summary_daily_minute = normalizeNumber(
+        ticketsConfig.summary_daily_minute,
+        config.tickets.summary_daily_minute,
         0,
         59
     );
@@ -2235,6 +2370,10 @@ function buildExternalAlertText(job = {}) {
     if (walletRechargeSummaryText) {
         return walletRechargeSummaryText;
     }
+    const ticketSlaSummaryText = buildTicketSlaSummaryAlertText(job);
+    if (ticketSlaSummaryText) {
+        return ticketSlaSummaryText;
+    }
     const shopInventorySummaryText = buildShopInventorySummaryAlertText(job);
     if (shopInventorySummaryText) {
         return shopInventorySummaryText;
@@ -2522,6 +2661,46 @@ function buildWalletRechargeSummaryAlertText(job = {}) {
     });
     if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
         lines.push(`其余 ${Number(payload.item_count) - items.length} 笔请前往后台查看。`);
+    }
+    if (normalizeText(payload.entry_path)) {
+        lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+    }
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildTicketSlaSummaryAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'ticket_sla_summary') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const items = getSummaryItems(payload).slice(0, Math.max(1, normalizeNumber(payload.summary_max_items, 10, 1, 50)));
+    const lines = [buildSummaryHeader(job, '工单超时汇总')];
+
+    if (normalizeText(payload.window_start_at) || normalizeText(payload.window_end_at)) {
+        lines.push(`时间窗口：${formatTimestamp(payload.window_start_at)} - ${formatTimestamp(payload.window_end_at)}`);
+    }
+    if (Number.isFinite(Number(payload.item_count))) {
+        lines.push(`累计超时工单：${Math.max(0, Math.round(Number(payload.item_count || 0)))} 条`);
+    }
+    items.forEach((item, index) => {
+        const itemPayload = normalizeJsonObject(item?.payload);
+        const ticketId = normalizeText(itemPayload.ticket_id) || normalizeText(itemPayload.target_id) || `ticket-${index + 1}`;
+        const waitLabel = normalizeText(itemPayload.wait_label)
+            || (Number.isFinite(Number(itemPayload.wait_minutes)) ? `${Math.max(0, Math.round(Number(itemPayload.wait_minutes || 0)))} 分钟` : '');
+        const statusLabel = normalizeText(itemPayload.ticket_status_label) || getTicketStatusLabel(itemPayload.ticket_status);
+        const updatedAt = formatTimestamp(itemPayload.updated_at || itemPayload.created_at || item?.created_at);
+        lines.push(`${index + 1}. ${ticketId}${waitLabel ? ` · 已等待 ${waitLabel}` : ''}`);
+        if (normalizeText(itemPayload.order_id)) lines.push(`   订单号：${normalizeText(itemPayload.order_id)}`);
+        if (normalizeText(itemPayload.user_id)) lines.push(`   用户ID：${normalizeText(itemPayload.user_id)}`);
+        if (statusLabel) lines.push(`   当前状态：${statusLabel}`);
+        if (normalizeText(itemPayload.reason)) lines.push(`   原因：${normalizeText(itemPayload.reason)}`);
+        if (normalizeText(itemPayload.responsible_label)) lines.push(`   当前负责人：${normalizeText(itemPayload.responsible_label)}`);
+        if (updatedAt) lines.push(`   时间：${updatedAt}`);
+    });
+    if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
+        lines.push(`其余 ${Number(payload.item_count) - items.length} 条请前往后台查看。`);
     }
     if (normalizeText(payload.entry_path)) {
         lines.push(`处理入口：${normalizeText(payload.entry_path)}`);

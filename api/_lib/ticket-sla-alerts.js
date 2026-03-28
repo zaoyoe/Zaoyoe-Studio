@@ -413,7 +413,14 @@ function buildTicketSlaRecoveryAlerts(tickets = [], stateJobs = [], rawConfig = 
 
 async function runTicketSlaOverdueSweep(supabase, options = {}) {
     const env = options.env || process.env;
-    const config = normalizeTicketSlaMonitorConfig(options.config, env);
+    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
+    const runtimeMonitorConfig = runtime?.config?.tickets && typeof runtime.config.tickets === 'object'
+        ? runtime.config.tickets
+        : {};
+    const config = normalizeTicketSlaMonitorConfig({
+        ...runtimeMonitorConfig,
+        ...(options.config && typeof options.config === 'object' ? options.config : {})
+    }, env);
 
     if (!config.enabled) {
         return {
@@ -424,7 +431,6 @@ async function runTicketSlaOverdueSweep(supabase, options = {}) {
         };
     }
 
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
     if (!runtime?.config?.enabled) {
         return {
             skipped: 'ops_alerts_disabled',

@@ -3292,7 +3292,13 @@ async function sweepTicketSlaHealth() {
 async function queueNextTicketSlaSweep(delayMs = null) {
     if (ticketSlaSweepTimer) return;
 
-    const monitorConfig = normalizeTicketSlaMonitorConfig({}, process.env);
+    let monitorConfig = normalizeTicketSlaMonitorConfig({}, process.env);
+    try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        monitorConfig = normalizeTicketSlaMonitorConfig(runtime?.config?.tickets || {}, process.env);
+    } catch (error) {
+        console.error('[TicketSlaMonitor] Failed to load runtime config for scheduling, falling back to env defaults:', error);
+    }
     const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
 
     ticketSlaSweepTimer = setTimeout(() => {
