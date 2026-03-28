@@ -20981,6 +20981,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .ops-alert-mute-table__row[data-rule-state="inactive"] .ops-alert-mute-table__aside {
+    align-self: end;
     justify-content: flex-end;
 }
 
