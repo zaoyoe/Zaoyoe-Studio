@@ -786,6 +786,17 @@ function buildAdminAuditMonitorInfoChip(label, value, options = {}) {
     `;
 }
 
+function summarizeAdminAuditMonitorList(values = [], maxItems = 2) {
+    if (!Array.isArray(values) || !values.length) return '';
+    const normalized = values
+        .map((item) => String(item || '').trim())
+        .filter(Boolean);
+    if (!normalized.length) return '';
+    const visibleItems = normalized.slice(0, maxItems);
+    const suffix = normalized.length > maxItems ? ` +${normalized.length - maxItems}` : '';
+    return summarizeAdminAuditMonitorText(`${visibleItems.join('、')}${suffix}`, 48);
+}
+
 function renderAdminAuditMonitorTimestamp() {
     const target = document.getElementById('adminAuditMonitorLastRefresh');
     if (!target) return;
@@ -959,16 +970,36 @@ function buildAdminAuditAnomalyRowMarkup(row) {
 }
 
 function buildAdminAuditConfigRowMarkup(row) {
-    const providerSummary = row.updated_provider_labels?.length
-        ? `启用通道：${row.updated_provider_labels.join('、')}`
-        : (row.active_provider_label ? `当前生效通道：${row.active_provider_label}` : '');
-    const secretSummary = row.secret_name
-        ? `删除密钥：${row.secret_name}`
-        : (row.updated_secrets?.length ? `更新密钥：${row.updated_secrets.join('、')}` : '');
-    const riskSummary = row.risk_flags?.length
-        ? `风险提示：${row.risk_flags.join('；')}`
-        : '当前没有额外风险提示。';
-    const detailParts = [providerSummary, secretSummary, riskSummary].filter(Boolean);
+    const summaryParts = [
+        row.action_label ? escapeConfigHtml(row.action_label) : '配置变更',
+        row.severity ? escapeConfigHtml(row.severity.toUpperCase()) : 'INFO'
+    ];
+    const detailChips = [
+        row.updated_provider_labels?.length
+            ? buildAdminAuditMonitorInfoChip('通道', row.updated_provider_labels.join('、'), {
+                displayValue: summarizeAdminAuditMonitorList(row.updated_provider_labels, 2)
+            })
+            : (row.active_provider_label
+                ? buildAdminAuditMonitorInfoChip('当前', row.active_provider_label, {
+                    displayValue: summarizeAdminAuditMonitorText(row.active_provider_label, 24)
+                })
+                : ''),
+        row.secret_name
+            ? buildAdminAuditMonitorInfoChip('删密钥', row.secret_name, {
+                displayValue: summarizeAdminAuditMonitorText(row.secret_name, 26)
+            })
+            : (row.updated_secrets?.length
+                ? buildAdminAuditMonitorInfoChip('更密钥', row.updated_secrets.join('、'), {
+                    displayValue: summarizeAdminAuditMonitorList(row.updated_secrets, 2)
+                })
+                : ''),
+        row.risk_flags?.length
+            ? buildAdminAuditMonitorInfoChip('风险', row.risk_flags.join('；'), {
+                displayValue: summarizeAdminAuditMonitorList(row.risk_flags, 1),
+                tone: 'warning'
+            })
+            : ''
+    ].filter(Boolean);
     const tone = getAdminAuditMonitorBadgeTone(
         row.risk_flags?.length ? 'warning' : row.severity
     );
@@ -981,7 +1012,8 @@ function buildAdminAuditConfigRowMarkup(row) {
                 <span class="admin-audit-monitor-item__time">${escapeConfigHtml(formatVerifyMonitorDateTime(row.created_at))}</span>
             </div>
             <div class="admin-audit-monitor-item__summary">${escapeConfigHtml(row.title || '支付配置审计')}</div>
-            <div class="admin-audit-monitor-item__detail">${detailParts.map((item) => escapeConfigHtml(item)).join(' · ')}</div>
+            <div class="admin-audit-monitor-item__meta">${summaryParts.join(' · ')}</div>
+            ${detailChips.length ? `<div class="admin-audit-monitor-item__chips">${detailChips.join('')}</div>` : ''}
         </article>
     `;
 }
@@ -13406,14 +13438,18 @@ async function refreshLockedAccounts() {
                 const now = new Date();
                 const remainingMs = expiresAt - now;
                 const remainingMins = Math.ceil(remainingMs / 60000);
+                const displayEmail = String(account.email || '').trim() || (account.username || `${account.id.substring(0, 8)}...`);
+                const lockoutSummary = remainingMins >= 60
+                    ? `${Math.ceil(remainingMins / 60)} 小时后解锁`
+                    : `${remainingMins} 分钟后解锁`;
 
                 const itemHtml = `
                     <div class="locked-account-item" data-user-id="${account.id}">
                         <div class="locked-account-info">
-                            <div class="locked-account-email">${escapeHtml(account.email)}</div>
+                            <div class="locked-account-email" title="${escapeHtml(displayEmail)}">${escapeHtml(displayEmail)}</div>
                             <div class="locked-account-meta">
                                 <span class="attempts">${account.failed_login_attempts} 次失败</span>
-                                <span class="expires"><i class="fas fa-clock"></i> ${remainingMins} 分钟后解锁</span>
+                                <span class="expires"><i class="fas fa-clock"></i> ${lockoutSummary}</span>
                             </div>
                         </div>
                         <button class="btn-unlock"
