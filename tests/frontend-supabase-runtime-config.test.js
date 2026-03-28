@@ -5490,12 +5490,12 @@ test('admin studio modal scrollers auto-hide after scroll activity settles', () 
 
     assert.match(
         adminStudioHtml,
-        /admin-studio\.css\?v=20260327_[A-Z0-9_]+/,
+        /admin-studio\.css\?v=20\d{6}_[A-Z0-9_]+/,
         'admin-studio.html should reference a cache-busted admin-studio.css asset'
     );
     assert.match(
         adminStudioHtml,
-        /admin-studio\.js\?v=20260327_[A-Z0-9_]+/,
+        /admin-studio\.js\?v=20\d{6}_[A-Z0-9_]+/,
         'admin-studio.html should reference a cache-busted admin-studio.js asset'
     );
 });
