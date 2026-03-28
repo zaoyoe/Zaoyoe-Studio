@@ -4037,6 +4037,8 @@ test('admin studio security, verify, affiliate, and experiment controls route th
     assert.match(adminStudioStyles, /#module-settings #settings-view-security \.module-content\s*\{[\s\S]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);/, 'admin-studio.css should give the security settings view a dedicated two-column layout');
     assert.match(adminStudioStyles, /#module-settings #settings-view-security \.settings-section\s*\{[\s\S]*box-sizing: border-box;/, 'admin-studio.css should keep security settings sections inside the available width');
     assert.equal(adminStudioStyles.includes('.security-group__head'), true, 'admin-studio.css should define an explicit login security group header layout');
+    assert.equal(adminStudioStyles.includes('.security-setting-card:hover'), true, 'admin-studio.css should highlight login rule cards on hover');
+    assert.equal(adminStudioStyles.includes('.security-subcard:focus-within'), true, 'admin-studio.css should highlight nested security cards while interacting with their contents');
     assert.match(adminStudioStyles, /\.config-textarea\s*\{[\s\S]*box-sizing: border-box;/, 'admin-studio.css should keep config textareas inside their cards');
     assert.equal(adminConfigSource.includes('setLockedAccountsRefreshButtonState'), true, 'admin-config.js should manage locked account refresh button state');
     assert.equal(adminConfigSource.includes('showLockedAccountsRefreshIndicator'), true, 'admin-config.js should surface locked account refresh feedback');
