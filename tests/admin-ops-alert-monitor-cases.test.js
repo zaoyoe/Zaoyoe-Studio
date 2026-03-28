@@ -36,8 +36,10 @@ function createState(overrides = {}) {
     return {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
         cases: [],
+        legacyCases: [],
         events: [],
         auditLogs: [],
+        tableErrors: {},
         ...overrides
     };
 }
@@ -45,7 +47,7 @@ function createState(overrides = {}) {
 function createSupabaseStub(state) {
     return {
         from(table) {
-            if (!['ops_alert_cases', 'ops_alert_case_events'].includes(table)) {
+            if (!['ops_alert_cases', 'ops_alert_case_events', 'shop_risk_cases'].includes(table)) {
                 throw new Error(`Unexpected table access: ${table}`);
             }
 
@@ -63,8 +65,20 @@ function createSupabaseStub(state) {
             }
 
             function execute() {
+                const tableError = state.tableErrors?.[table] || null;
+                if (tableError) {
+                    return {
+                        data: queryState.maybeSingle ? null : [],
+                        error: tableError
+                    };
+                }
+
                 if (queryState.mode === 'select') {
-                    const sourceRows = table === 'ops_alert_case_events' ? (state.events || []) : (state.cases || []);
+                    const sourceRows = table === 'ops_alert_case_events'
+                        ? (state.events || [])
+                        : table === 'shop_risk_cases'
+                            ? (state.legacyCases || [])
+                            : (state.cases || []);
                     const rows = applyFilters(sourceRows);
                     return {
                         data: queryState.maybeSingle ? (rows[0] || null) : rows,
@@ -76,17 +90,21 @@ function createSupabaseStub(state) {
                     const payload = {
                         ...(queryState.payload || {})
                     };
-                    const existingIndex = state.cases.findIndex((row) => (
-                        row.category_key === payload.category_key
-                        && row.target_id === payload.target_id
+                    const targetRows = table === 'shop_risk_cases'
+                        ? (state.legacyCases || [])
+                        : (state.cases || []);
+                    const existingIndex = targetRows.findIndex((row) => (
+                        table === 'shop_risk_cases'
+                            ? row.target_id === payload.target_id
+                            : (row.category_key === payload.category_key && row.target_id === payload.target_id)
                     ));
                     const nextRow = existingIndex >= 0
                         ? {
-                            ...state.cases[existingIndex],
+                            ...targetRows[existingIndex],
                             ...payload
                         }
                         : {
-                            id: payload.id || `case-${state.cases.length + 1}`,
+                            id: payload.id || `${table === 'shop_risk_cases' ? 'legacy-case' : 'case'}-${targetRows.length + 1}`,
                             created_at: payload.created_at || new Date().toISOString(),
                             ...payload
                         };
@@ -96,9 +114,9 @@ function createSupabaseStub(state) {
                     }
 
                     if (existingIndex >= 0) {
-                        state.cases[existingIndex] = nextRow;
+                        targetRows[existingIndex] = nextRow;
                     } else {
-                        state.cases.push(nextRow);
+                        targetRows.push(nextRow);
                     }
 
                     return {
@@ -239,6 +257,40 @@ test('ops alert case handler claims a shop risk case and writes legacy-compatibl
     });
 });
 
+test('ops alert case handler falls back to legacy shop_risk_cases when ops_alert_cases is missing from schema cache', async () => {
+    await withHandler({
+        tableErrors: {
+            ops_alert_cases: {
+                code: 'PGRST205',
+                message: "Could not find the table 'public.ops_alert_cases' in the schema cache"
+            }
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'claim',
+                target_id: 'shop_order_risk:coupon:FLASH0'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.case.category_key, 'shop_risk');
+        assert.equal(payload.case.status, 'claimed');
+        assert.equal(state.cases.length, 0);
+        assert.equal(state.legacyCases.length, 1);
+        assert.equal(state.legacyCases[0].target_id, 'shop_order_risk:coupon:FLASH0');
+        assert.equal(state.events.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.shop_risk_case.claim');
+    });
+});
+
 test('ops alert case handler requires note content when resolving a case', async () => {
     await withHandler({}, async (handler) => {
         const req = {
@@ -258,6 +310,35 @@ test('ops alert case handler requires note content when resolving a case', async
         assert.equal(res.statusCode, 400);
         assert.equal(payload.success, false);
         assert.equal(payload.message, '关闭告警时需要填写处理结论');
+    });
+});
+
+test('ops alert case handler returns a friendly migration message for generic cases when ops_alert_cases is missing', async () => {
+    await withHandler({
+        tableErrors: {
+            ops_alert_cases: {
+                code: 'PGRST205',
+                message: "Could not find the table 'public.ops_alert_cases' in the schema cache"
+            }
+        }
+    }, async (handler) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'claim',
+                category_key: 'payments',
+                target_id: 'payment_gateway:hupijiao:cn'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 503);
+        assert.equal(payload.success, false);
+        assert.equal(payload.message, '集中告警处置表尚未完成迁移，请先执行最新数据库迁移后再试');
     });
 });
 

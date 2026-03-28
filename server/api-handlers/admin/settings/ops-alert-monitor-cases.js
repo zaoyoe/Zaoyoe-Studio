@@ -5,7 +5,8 @@ const {
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
 const {
-    insertOpsAlertCaseEvents
+    insertOpsAlertCaseEvents,
+    isMissingTableAccessError
 } = require('./_ops-alert-case-events');
 
 const VALID_ACTIONS = new Set(['claim', 'assign', 'add_note', 'resolve', 'reopen']);
@@ -58,11 +59,14 @@ function buildCaseResponse(row = {}) {
     };
 }
 
-async function fetchExistingCase(supabase, categoryKey, targetId) {
+function isMissingOpsAlertCasesTableError(error) {
+    return isMissingTableAccessError(error, 'ops_alert_cases');
+}
+
+async function fetchLegacyShopRiskCase(supabase, targetId) {
     const { data, error } = await supabase
-        .from('ops_alert_cases')
+        .from('shop_risk_cases')
         .select('*')
-        .eq('category_key', categoryKey)
         .eq('target_id', targetId)
         .maybeSingle();
 
@@ -70,7 +74,37 @@ async function fetchExistingCase(supabase, categoryKey, targetId) {
         throw error;
     }
 
-    return data || null;
+    if (!data) {
+        return null;
+    }
+
+    return {
+        ...data,
+        category_key: 'shop_risk',
+        alert_type: sanitizeText(data?.alert_type || data?.metadata?.alert_type, 120).toLowerCase() || null
+    };
+}
+
+async function fetchExistingCase(supabase, categoryKey, targetId) {
+    try {
+        const { data, error } = await supabase
+            .from('ops_alert_cases')
+            .select('*')
+            .eq('category_key', categoryKey)
+            .eq('target_id', targetId)
+            .maybeSingle();
+
+        if (error) {
+            throw error;
+        }
+
+        return data || null;
+    } catch (error) {
+        if (categoryKey === 'shop_risk' && isMissingOpsAlertCasesTableError(error)) {
+            return fetchLegacyShopRiskCase(supabase, targetId);
+        }
+        throw error;
+    }
 }
 
 function buildCaseMetadata(existingCase = {}, item = {}, requestMetadata = {}) {
@@ -188,17 +222,51 @@ function applyCaseAction(existingCase = null, action, item = {}, options = {}) {
 }
 
 async function persistCase(supabase, record = {}) {
-    const { data, error } = await supabase
-        .from('ops_alert_cases')
-        .upsert(record, { onConflict: 'category_key,target_id' })
-        .select('*')
-        .single();
+    try {
+        const { data, error } = await supabase
+            .from('ops_alert_cases')
+            .upsert(record, { onConflict: 'category_key,target_id' })
+            .select('*')
+            .single();
 
-    if (error) {
-        throw error;
+        if (error) {
+            throw error;
+        }
+
+        return data;
+    } catch (error) {
+        if (record.category_key !== 'shop_risk' || !isMissingOpsAlertCasesTableError(error)) {
+            throw error;
+        }
+
+        const legacyRecord = {
+            target_id: sanitizeText(record.target_id, 200),
+            status: sanitizeText(record.status, 40).toLowerCase() || 'open',
+            owner_admin_id: sanitizeText(record.owner_admin_id, 160) || null,
+            owner_label: sanitizeText(record.owner_label, 255) || null,
+            note: sanitizeText(record.note, 4000) || null,
+            resolution: sanitizeText(record.resolution, 4000) || null,
+            metadata: normalizeJsonObject(record.metadata),
+            last_action: sanitizeText(record.last_action, 80).toLowerCase() || 'opened',
+            last_action_by: sanitizeText(record.last_action_by, 160) || null,
+            last_action_at: sanitizeText(record.last_action_at, 80) || new Date().toISOString()
+        };
+        const { data, error: legacyError } = await supabase
+            .from('shop_risk_cases')
+            .upsert(legacyRecord, { onConflict: 'target_id' })
+            .select('*')
+            .single();
+
+        if (legacyError) {
+            throw legacyError;
+        }
+
+        return {
+            ...data,
+            category_key: 'shop_risk',
+            alert_type: sanitizeText(record.alert_type || data?.alert_type || data?.metadata?.alert_type, 120).toLowerCase() || null
+        };
     }
-
-    return data;
 }
 
 function buildActionMessage(action, results = [], skippedCount = 0) {
@@ -416,6 +484,12 @@ module.exports = async (req, res) => {
             }
         });
     } catch (error) {
+        if (isMissingOpsAlertCasesTableError(error)) {
+            return sendJson(res, 503, {
+                success: false,
+                message: '集中告警处置表尚未完成迁移，请先执行最新数据库迁移后再试'
+            });
+        }
         return sendJson(res, error.statusCode || 500, {
             success: false,
             message: error.message || 'Ops alert case action failed'
