@@ -2051,8 +2051,13 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     }
 
     const delegatedHtmlMarkers = [
-        'data-settings-view="ops-alerts"',
-        'id="settings-view-ops-alerts"',
+        'data-module-id="ops-alerts"',
+        'id="module-ops-alerts"',
+        'data-admin-action="switch-ops-alerts-view"',
+        'data-ops-alerts-view="overview"',
+        'data-ops-alerts-view="monitors"',
+        'data-ops-alerts-bucket="strategy-main"',
+        'data-ops-alerts-bucket="channels-side"',
         'data-config="ops-alerts-overview"',
         'data-config="ops-alerts-strategy"',
         'data-config="ops-alerts-actions"',
@@ -2320,6 +2325,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     }
 
     const delegatedHandlerMarkers = [
+        "case 'switch-ops-alerts-view':",
         "case 'settings-toggle-ops-alerts-enabled':",
         "case 'settings-toggle-ops-alert-quiet-hours-enabled':",
         "case 'settings-toggle-ops-alert-quiet-hours-allow-critical':",
@@ -2391,6 +2397,17 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     ];
 
     for (const marker of delegatedHandlerMarkers) {
+        assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
+    }
+
+    const opsAlertModuleScriptMarkers = [
+        'const OPS_ALERTS_MODULE_VIEW_CARD_ASSIGNMENTS = Object.freeze([',
+        'function organizeOpsAlertsModule()',
+        'function switchOpsAlertsView(viewName)',
+        'function initOpsAlertsModule()'
+    ];
+
+    for (const marker of opsAlertModuleScriptMarkers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
 
@@ -2516,7 +2533,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     }
 
     assert.equal(
-        adminStudioCss.includes('#settings-view-ops-alerts .config-card:not(.collapsed) .config-card-body'),
+        adminStudioCss.includes('#module-ops-alerts .config-card:not(.collapsed) .config-card-body'),
         true,
         'admin-studio.css should allow the dedicated ops alert cards to grow beyond the shared 500px config body cap'
     );
@@ -2668,6 +2685,7 @@ test('admin studio routes hardened shell and dashboard controls through delegate
         'data-admin-action="switch-gallery-view"',
         'data-admin-action="switch-comment-view"',
         'data-admin-action="switch-settings-view"',
+        'data-admin-action="switch-ops-alerts-view"',
         'data-admin-action="homepage-switch-section"',
         'data-admin-action="payments-switch-tab"',
         'data-admin-action="analytics-switch-tab"',
