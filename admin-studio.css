@@ -22714,6 +22714,21 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 10px;
 }
 
+.admin-audit-monitor-panel__body--compact {
+    max-height: 420px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.admin-audit-monitor-panel__body--compact::-webkit-scrollbar {
+    width: 8px;
+}
+
+.admin-audit-monitor-panel__body--compact::-webkit-scrollbar-thumb {
+    background: rgba(143, 184, 229, 0.24);
+    border-radius: 999px;
+}
+
 .admin-audit-monitor-empty {
     padding: 18px 14px;
     border-radius: 14px;
@@ -23703,18 +23718,18 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .admin-audit-monitor-item {
-    padding: 14px;
+    padding: 12px 14px;
     border-radius: 14px;
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.05);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 
 .admin-audit-monitor-item__top {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
     flex-wrap: wrap;
 }
@@ -23723,12 +23738,17 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     color: var(--text-main);
     font-size: 0.94rem;
     font-weight: 600;
+    flex: 1 1 180px;
+    min-width: 0;
+    line-height: 1.4;
 }
 
 .admin-audit-monitor-item__time {
     margin-left: auto;
     color: var(--text-secondary);
     font-size: 0.8rem;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .admin-audit-monitor-item__meta,
@@ -23736,10 +23756,44 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .admin-audit-monitor-item__summary {
     color: var(--text-secondary);
     font-size: 0.84rem;
-    line-height: 1.6;
+    line-height: 1.5;
 }
 
 .admin-audit-monitor-item__summary {
+    color: var(--text-main);
+}
+
+.admin-audit-monitor-item__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.admin-audit-monitor-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    min-width: 0;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(143, 184, 229, 0.08);
+    border: 1px solid rgba(143, 184, 229, 0.14);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    line-height: 1.2;
+}
+
+.admin-audit-monitor-chip__label {
+    flex-shrink: 0;
+}
+
+.admin-audit-monitor-chip__value {
+    min-width: 0;
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     color: var(--text-main);
 }
 

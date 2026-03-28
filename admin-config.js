@@ -751,6 +751,41 @@ function buildAdminAuditMonitorBadge(label, tone = 'neutral') {
     return `<span class="admin-audit-monitor-badge admin-audit-monitor-badge--${escapeConfigHtml(tone)}">${escapeConfigHtml(label)}</span>`;
 }
 
+function summarizeAdminAuditMonitorText(value, maxLength = 48) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    if (normalized.length <= maxLength) return normalized;
+    return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function formatAdminAuditMonitorUrlLabel(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+
+    try {
+        const parsed = new URL(normalized);
+        const path = parsed.pathname && parsed.pathname !== '/' ? parsed.pathname : '';
+        return summarizeAdminAuditMonitorText(`${parsed.hostname}${path}`, 44);
+    } catch (error) {
+        return summarizeAdminAuditMonitorText(normalized, 44);
+    }
+}
+
+function buildAdminAuditMonitorInfoChip(label, value, options = {}) {
+    const normalizedValue = String(value || '').trim();
+    if (!normalizedValue) return '';
+
+    const displayValue = String(options.displayValue || normalizedValue).trim() || normalizedValue;
+    const toneClass = options.tone ? ` admin-audit-monitor-chip--${escapeConfigHtml(options.tone)}` : '';
+
+    return `
+        <span class="admin-audit-monitor-chip${toneClass}" title="${escapeConfigHtml(`${label}：${normalizedValue}`)}">
+            <span class="admin-audit-monitor-chip__label">${escapeConfigHtml(label)}</span>
+            <span class="admin-audit-monitor-chip__value">${escapeConfigHtml(displayValue)}</span>
+        </span>
+    `;
+}
+
 function renderAdminAuditMonitorTimestamp() {
     const target = document.getElementById('adminAuditMonitorLastRefresh');
     if (!target) return;
@@ -867,14 +902,27 @@ function renderAdminAuditMonitorOverview() {
 }
 
 function buildAdminAuditAccessRowMarkup(row) {
-    const identity = [
-        row.admin_email || row.admin_id || 'unknown-admin',
-        row.client_ip || '未知 IP'
-    ].filter(Boolean).map((item) => escapeConfigHtml(item)).join(' · ');
-    const detailParts = [];
-    if (row.origin) detailParts.push(`Origin：${escapeConfigHtml(row.origin)}`);
-    if (row.referer) detailParts.push(`Referer：${escapeConfigHtml(row.referer)}`);
-    if (row.user_agent_summary) detailParts.push(`设备：${escapeConfigHtml(row.user_agent_summary)}`);
+    const summaryParts = [
+        row.client_ip ? `IP ${escapeConfigHtml(row.client_ip)}` : '未记录来源 IP',
+        row.granted ? '凭证已签发' : '仅记录访问'
+    ];
+    const detailChips = [
+        row.user_agent_summary
+            ? buildAdminAuditMonitorInfoChip('设备', row.user_agent_summary, {
+                displayValue: summarizeAdminAuditMonitorText(row.user_agent_summary, 38)
+            })
+            : '',
+        row.origin
+            ? buildAdminAuditMonitorInfoChip('Origin', row.origin, {
+                displayValue: formatAdminAuditMonitorUrlLabel(row.origin)
+            })
+            : '',
+        row.referer
+            ? buildAdminAuditMonitorInfoChip('Referer', row.referer, {
+                displayValue: formatAdminAuditMonitorUrlLabel(row.referer)
+            })
+            : ''
+    ].filter(Boolean);
 
     return `
         <article class="admin-audit-monitor-item">
@@ -883,8 +931,8 @@ function buildAdminAuditAccessRowMarkup(row) {
                 <strong class="admin-audit-monitor-item__title">${escapeConfigHtml(row.admin_email || row.admin_id || 'unknown-admin')}</strong>
                 <span class="admin-audit-monitor-item__time">${escapeConfigHtml(formatVerifyMonitorDateTime(row.created_at))}</span>
             </div>
-            <div class="admin-audit-monitor-item__summary">${identity || '未记录管理员身份'}</div>
-            ${detailParts.length ? `<div class="admin-audit-monitor-item__detail">${detailParts.join(' · ')}</div>` : ''}
+            <div class="admin-audit-monitor-item__summary">${summaryParts.join(' · ')}</div>
+            ${detailChips.length ? `<div class="admin-audit-monitor-item__chips">${detailChips.join('')}</div>` : ''}
         </article>
     `;
 }
