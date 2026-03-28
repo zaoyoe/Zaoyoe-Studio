@@ -1178,7 +1178,7 @@
                                             <div class="ops-alert-strategy-card__head">
                                                 <div>
                                                     <h4>分类型通道路由</h4>
-                                                    <p>为高频业务通知单独指定外发通道，避免所有消息都打到同一端。</p>
+                                                    <p>为高频业务通知和核心监控告警单独指定外发通道，避免所有消息都打到同一端。</p>
                                                 </div>
                                             </div>
                                             <div class="ops-alert-routing-grid">
@@ -1224,6 +1224,116 @@
                                                         <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopInventoryTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
                                                         <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopInventoryFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
                                                         <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopInventoryEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    </div>
+                                                </div>
+                                                <div class="ops-alert-routing-row">
+                                                    <div class="ops-alert-routing-head">
+                                                        <strong>退款运营</strong>
+                                                        <span>退款失败、补偿失败和积分回滚异常使用同一组路由。</span>
+                                                    </div>
+                                                    <div class="ops-alert-routing-options">
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingPaymentRefundOpsTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingPaymentRefundOpsFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingPaymentRefundOpsEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    </div>
+                                                </div>
+                                                <div class="ops-alert-routing-row">
+                                                    <div class="ops-alert-routing-head">
+                                                        <strong>支付配置变更</strong>
+                                                        <span>支付配置变更、事故升级和恢复通知使用同一组路由。</span>
+                                                    </div>
+                                                    <div class="ops-alert-routing-options">
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingPaymentConfigTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingPaymentConfigFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingPaymentConfigEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    </div>
+                                                </div>
+                                                <div class="ops-alert-routing-row">
+                                                    <div class="ops-alert-routing-head">
+                                                        <strong>商城风控</strong>
+                                                        <span>商城风控异常和恢复通知使用同一组路由。</span>
+                                                    </div>
+                                                    <div class="ops-alert-routing-options">
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopOrderRiskTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopOrderRiskFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopOrderRiskEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    </div>
+                                                </div>
+                                                <div class="ops-alert-routing-row">
+                                                    <div class="ops-alert-routing-head">
+                                                        <strong>管理员异常登录</strong>
+                                                        <span>管理员异常登录安全告警使用单独一组路由。</span>
+                                                    </div>
+                                                    <div class="ops-alert-routing-options">
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingAdminLoginAnomalyTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingAdminLoginAnomalyFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingAdminLoginAnomalyEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    </div>
+                                                </div>
+                                                <div class="ops-alert-routing-row">
+                                                    <div class="ops-alert-routing-head">
+                                                        <strong>工单超时</strong>
+                                                        <span>工单超时提醒、汇总和恢复通知共用同一组路由。</span>
+                                                    </div>
+                                                    <div class="ops-alert-routing-options">
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingTicketsTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingTicketsFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingTicketsEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    </div>
+                                                </div>
+                                                <div class="ops-alert-routing-row">
+                                                    <div class="ops-alert-routing-head">
+                                                        <strong>履约失败 / 死信</strong>
+                                                        <span>履约失败、死信、集中事故和恢复通知使用同一组路由。</span>
+                                                    </div>
+                                                    <div class="ops-alert-routing-options">
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopOrderDeliveryTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopOrderDeliveryFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingShopOrderDeliveryEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    </div>
+                                                </div>
+                                                <div class="ops-alert-routing-row">
+                                                    <div class="ops-alert-routing-head">
+                                                        <strong>支付通道异常</strong>
+                                                        <span>支付通道退化、恢复和汇总通知使用同一组路由。</span>
+                                                    </div>
+                                                    <div class="ops-alert-routing-options">
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingPaymentGatewayTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingPaymentGatewayFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingPaymentGatewayEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    </div>
+                                                </div>
+                                                <div class="ops-alert-routing-row">
+                                                    <div class="ops-alert-routing-head">
+                                                        <strong>验证额度 / 停摆</strong>
+                                                        <span>验证额度不足、服务停摆和对应汇总通知使用同一组路由。</span>
+                                                    </div>
+                                                    <div class="ops-alert-routing-options">
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingVerifyQuotaTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingVerifyQuotaFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingVerifyQuotaEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    </div>
+                                                </div>
+                                                <div class="ops-alert-routing-row">
+                                                    <div class="ops-alert-routing-head">
+                                                        <strong>验证堆积</strong>
+                                                        <span>验证队列堆积和对应汇总通知使用同一组路由。</span>
+                                                    </div>
+                                                    <div class="ops-alert-routing-options">
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingVerifyQueueTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingVerifyQueueFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingVerifyQueueEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
+                                                    </div>
+                                                </div>
+                                                <div class="ops-alert-routing-row">
+                                                    <div class="ops-alert-routing-head">
+                                                        <strong>验证失败率 / 综合事故</strong>
+                                                        <span>失败率异常、综合事故升级/恢复和对应汇总通知使用同一组路由。</span>
+                                                    </div>
+                                                    <div class="ops-alert-routing-options">
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingVerifyFailureTelegram"><span class="ops-alert-routing-check__label">Telegram</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingVerifyFailureFeishu"><span class="ops-alert-routing-check__label">飞书</span></label>
+                                                        <label class="ops-alert-routing-check"><input type="checkbox" id="opsAlertRoutingVerifyFailureEmail"><span class="ops-alert-routing-check__label">邮件</span></label>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1372,6 +1482,266 @@
                                                     </div>
                                                     <div class="ops-alert-mute-actions">
                                                         <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="shop_inventory">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>退款运营</strong>
+                                                        <span>只静默退款失败、补偿失败和积分回滚异常，不影响支付通道或配置告警。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertTypeMutePaymentRefundOpsStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertTypeMutePaymentRefundOpsUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">允许真正的退款 critical 异常继续外发，普通运营噪音可先压住。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertTypeMutePaymentRefundOpsAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="types" data-rule-key="payment_refund_ops"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="payment_refund_ops">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>支付配置变更</strong>
+                                                        <span>只静默支付配置变更、事故升级和恢复，不影响通道异常或退款告警。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertTypeMutePaymentConfigStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertTypeMutePaymentConfigUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">如支付配置风险已升到 critical，仍可以继续外发。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertTypeMutePaymentConfigAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="types" data-rule-key="payment_config"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="payment_config">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>商城风控</strong>
+                                                        <span>只静默商城风控异常和恢复，不影响支付、验证或履约告警。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertTypeMuteShopOrderRiskStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertTypeMuteShopOrderRiskUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">保留真正的高风险风控告警继续外发，避免维护期间彻底失明。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertTypeMuteShopOrderRiskAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="types" data-rule-key="shop_order_risk"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="shop_order_risk">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>管理员异常登录</strong>
+                                                        <span>只静默管理员异常登录安全告警，不影响其它安全审计通知。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertTypeMuteAdminLoginAnomalyStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertTypeMuteAdminLoginAnomalyUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">如果安全风险已标成 critical，仍然允许继续外发。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertTypeMuteAdminLoginAnomalyAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="types" data-rule-key="admin_login_anomaly"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="admin_login_anomaly">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>工单超时</strong>
+                                                        <span>只静默工单超时汇总、超时提醒和恢复，不影响其它模块继续外发。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertTypeMuteTicketsStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertTypeMuteTicketsUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">如果工单异常已升级到 critical，仍可以继续外发。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertTypeMuteTicketsAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="types" data-rule-key="tickets"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="tickets">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>履约失败 / 死信</strong>
+                                                        <span>只静默履约失败、死信、集中事故和恢复通知，不影响支付或验证告警。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertTypeMuteShopOrderDeliveryStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertTypeMuteShopOrderDeliveryUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">保留最重要的履约事故继续外发，普通异常可以单独降噪。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertTypeMuteShopOrderDeliveryAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="types" data-rule-key="shop_order_delivery"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="shop_order_delivery">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>支付通道异常</strong>
+                                                        <span>只静默支付通道退化、恢复和异常汇总，不影响退款或支付配置告警。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertTypeMutePaymentGatewayStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertTypeMutePaymentGatewayUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">资金链路里真正的 critical 风险仍可继续外发。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertTypeMutePaymentGatewayAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="types" data-rule-key="payment_gateway"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="payment_gateway">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>验证额度 / 停摆</strong>
+                                                        <span>只静默验证额度不足、停摆和对应汇总，不影响验证堆积、失败率等其它类告警。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertTypeMuteVerifyQuotaStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertTypeMuteVerifyQuotaUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">保留真正的高危验证停摆继续外发，普通额度提醒可以先降噪。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertTypeMuteVerifyQuotaAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="types" data-rule-key="verify_quota"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="verify_quota">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>验证堆积</strong>
+                                                        <span>只静默验证队列堆积和对应汇总，不影响额度、失败率等其它验证告警。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertTypeMuteVerifyQueueStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertTypeMuteVerifyQueueUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">如果堆积已升级成 critical，仍可以继续走站外通知。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertTypeMuteVerifyQueueAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="types" data-rule-key="verify_queue"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="verify_queue">清除此静默</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="ops-alert-scoped-mute-row">
+                                                    <div class="ops-alert-scoped-mute-row__head">
+                                                        <strong>验证失败率 / 综合事故</strong>
+                                                        <span>只静默失败率异常、综合事故升级/恢复和对应汇总，不影响其它业务模块。</span>
+                                                    </div>
+                                                    <div class="ops-alert-mute-status" id="opsAlertTypeMuteVerifyFailureStatus"></div>
+                                                    <div class="config-row">
+                                                        <label>静默至</label>
+                                                        <div class="config-input-wrapper">
+                                                            <input type="datetime-local" class="config-input" id="opsAlertTypeMuteVerifyFailureUntil">
+                                                        </div>
+                                                    </div>
+                                                    <div class="config-row">
+                                                        <div class="config-info">
+                                                            <div class="config-label">critical 继续通知</div>
+                                                            <div class="config-desc">允许真正的验证事故继续外发，避免维护期间彻底失明。</div>
+                                                        </div>
+                                                        <div class="config-input-wrapper">
+                                                            <div class="status-toggle" id="opsAlertTypeMuteVerifyFailureAllowCriticalToggle" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="types" data-rule-key="verify_failure"></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-mute-actions">
+                                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="types" data-rule-key="verify_failure">清除此静默</button>
                                                     </div>
                                                 </div>
                                             </div>

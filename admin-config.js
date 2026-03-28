@@ -1156,6 +1156,46 @@ function getDefaultOpsAlertConfig() {
                 shop_inventory: {
                     until: '',
                     allow_critical: true
+                },
+                payment_refund_ops: {
+                    until: '',
+                    allow_critical: true
+                },
+                payment_config: {
+                    until: '',
+                    allow_critical: true
+                },
+                shop_order_risk: {
+                    until: '',
+                    allow_critical: true
+                },
+                admin_login_anomaly: {
+                    until: '',
+                    allow_critical: true
+                },
+                tickets: {
+                    until: '',
+                    allow_critical: true
+                },
+                shop_order_delivery: {
+                    until: '',
+                    allow_critical: true
+                },
+                payment_gateway: {
+                    until: '',
+                    allow_critical: true
+                },
+                verify_quota: {
+                    until: '',
+                    allow_critical: true
+                },
+                verify_queue: {
+                    until: '',
+                    allow_critical: true
+                },
+                verify_failure: {
+                    until: '',
+                    allow_critical: true
                 }
             },
             modules: {
@@ -1233,6 +1273,56 @@ function getDefaultOpsAlertConfig() {
                 email: true
             },
             shop_inventory: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            payment_refund_ops: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            payment_config: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            shop_order_risk: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            admin_login_anomaly: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            tickets: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            shop_order_delivery: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            payment_gateway: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            verify_quota: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            verify_queue: {
+                telegram: true,
+                feishu: true,
+                email: true
+            },
+            verify_failure: {
                 telegram: true,
                 feishu: true,
                 email: true
@@ -2261,6 +2351,36 @@ function normalizeOpsAlertConfig(raw) {
     const routingShopInventorySource = routingSource.shop_inventory && typeof routingSource.shop_inventory === 'object' && !Array.isArray(routingSource.shop_inventory)
         ? routingSource.shop_inventory
         : {};
+    const routingPaymentRefundOpsSource = routingSource.payment_refund_ops && typeof routingSource.payment_refund_ops === 'object' && !Array.isArray(routingSource.payment_refund_ops)
+        ? routingSource.payment_refund_ops
+        : {};
+    const routingPaymentConfigSource = routingSource.payment_config && typeof routingSource.payment_config === 'object' && !Array.isArray(routingSource.payment_config)
+        ? routingSource.payment_config
+        : {};
+    const routingShopOrderRiskSource = routingSource.shop_order_risk && typeof routingSource.shop_order_risk === 'object' && !Array.isArray(routingSource.shop_order_risk)
+        ? routingSource.shop_order_risk
+        : {};
+    const routingAdminLoginAnomalySource = routingSource.admin_login_anomaly && typeof routingSource.admin_login_anomaly === 'object' && !Array.isArray(routingSource.admin_login_anomaly)
+        ? routingSource.admin_login_anomaly
+        : {};
+    const routingTicketsSource = routingSource.tickets && typeof routingSource.tickets === 'object' && !Array.isArray(routingSource.tickets)
+        ? routingSource.tickets
+        : {};
+    const routingShopOrderDeliverySource = routingSource.shop_order_delivery && typeof routingSource.shop_order_delivery === 'object' && !Array.isArray(routingSource.shop_order_delivery)
+        ? routingSource.shop_order_delivery
+        : {};
+    const routingPaymentGatewaySource = routingSource.payment_gateway && typeof routingSource.payment_gateway === 'object' && !Array.isArray(routingSource.payment_gateway)
+        ? routingSource.payment_gateway
+        : {};
+    const routingVerifyQuotaSource = routingSource.verify_quota && typeof routingSource.verify_quota === 'object' && !Array.isArray(routingSource.verify_quota)
+        ? routingSource.verify_quota
+        : {};
+    const routingVerifyQueueSource = routingSource.verify_queue && typeof routingSource.verify_queue === 'object' && !Array.isArray(routingSource.verify_queue)
+        ? routingSource.verify_queue
+        : {};
+    const routingVerifyFailureSource = routingSource.verify_failure && typeof routingSource.verify_failure === 'object' && !Array.isArray(routingSource.verify_failure)
+        ? routingSource.verify_failure
+        : {};
 
     return {
         enabled: normalizeConfigBoolean(source.enabled, defaults.enabled),
@@ -2309,6 +2429,46 @@ function normalizeOpsAlertConfig(raw) {
                 shop_inventory: {
                     until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.shop_inventory?.until || '') || '',
                     allow_critical: normalizeConfigBoolean(typeMuteRulesSource.shop_inventory?.allow_critical, defaults.mute_rules.types.shop_inventory.allow_critical)
+                },
+                payment_refund_ops: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.payment_refund_ops?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.payment_refund_ops?.allow_critical, defaults.mute_rules.types.payment_refund_ops.allow_critical)
+                },
+                payment_config: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.payment_config?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.payment_config?.allow_critical, defaults.mute_rules.types.payment_config.allow_critical)
+                },
+                shop_order_risk: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.shop_order_risk?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.shop_order_risk?.allow_critical, defaults.mute_rules.types.shop_order_risk.allow_critical)
+                },
+                admin_login_anomaly: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.admin_login_anomaly?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.admin_login_anomaly?.allow_critical, defaults.mute_rules.types.admin_login_anomaly.allow_critical)
+                },
+                tickets: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.tickets?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.tickets?.allow_critical, defaults.mute_rules.types.tickets.allow_critical)
+                },
+                shop_order_delivery: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.shop_order_delivery?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.shop_order_delivery?.allow_critical, defaults.mute_rules.types.shop_order_delivery.allow_critical)
+                },
+                payment_gateway: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.payment_gateway?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.payment_gateway?.allow_critical, defaults.mute_rules.types.payment_gateway.allow_critical)
+                },
+                verify_quota: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.verify_quota?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.verify_quota?.allow_critical, defaults.mute_rules.types.verify_quota.allow_critical)
+                },
+                verify_queue: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.verify_queue?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.verify_queue?.allow_critical, defaults.mute_rules.types.verify_queue.allow_critical)
+                },
+                verify_failure: {
+                    until: normalizeDateTimeLocalInputValue(typeMuteRulesSource.verify_failure?.until || '') || '',
+                    allow_critical: normalizeConfigBoolean(typeMuteRulesSource.verify_failure?.allow_critical, defaults.mute_rules.types.verify_failure.allow_critical)
                 }
             },
             modules: {
@@ -2389,6 +2549,56 @@ function normalizeOpsAlertConfig(raw) {
                 telegram: normalizeConfigBoolean(routingShopInventorySource.telegram, defaults.routing.shop_inventory.telegram),
                 feishu: normalizeConfigBoolean(routingShopInventorySource.feishu, defaults.routing.shop_inventory.feishu),
                 email: normalizeConfigBoolean(routingShopInventorySource.email, defaults.routing.shop_inventory.email)
+            },
+            payment_refund_ops: {
+                telegram: normalizeConfigBoolean(routingPaymentRefundOpsSource.telegram, defaults.routing.payment_refund_ops.telegram),
+                feishu: normalizeConfigBoolean(routingPaymentRefundOpsSource.feishu, defaults.routing.payment_refund_ops.feishu),
+                email: normalizeConfigBoolean(routingPaymentRefundOpsSource.email, defaults.routing.payment_refund_ops.email)
+            },
+            payment_config: {
+                telegram: normalizeConfigBoolean(routingPaymentConfigSource.telegram, defaults.routing.payment_config.telegram),
+                feishu: normalizeConfigBoolean(routingPaymentConfigSource.feishu, defaults.routing.payment_config.feishu),
+                email: normalizeConfigBoolean(routingPaymentConfigSource.email, defaults.routing.payment_config.email)
+            },
+            shop_order_risk: {
+                telegram: normalizeConfigBoolean(routingShopOrderRiskSource.telegram, defaults.routing.shop_order_risk.telegram),
+                feishu: normalizeConfigBoolean(routingShopOrderRiskSource.feishu, defaults.routing.shop_order_risk.feishu),
+                email: normalizeConfigBoolean(routingShopOrderRiskSource.email, defaults.routing.shop_order_risk.email)
+            },
+            admin_login_anomaly: {
+                telegram: normalizeConfigBoolean(routingAdminLoginAnomalySource.telegram, defaults.routing.admin_login_anomaly.telegram),
+                feishu: normalizeConfigBoolean(routingAdminLoginAnomalySource.feishu, defaults.routing.admin_login_anomaly.feishu),
+                email: normalizeConfigBoolean(routingAdminLoginAnomalySource.email, defaults.routing.admin_login_anomaly.email)
+            },
+            tickets: {
+                telegram: normalizeConfigBoolean(routingTicketsSource.telegram, defaults.routing.tickets.telegram),
+                feishu: normalizeConfigBoolean(routingTicketsSource.feishu, defaults.routing.tickets.feishu),
+                email: normalizeConfigBoolean(routingTicketsSource.email, defaults.routing.tickets.email)
+            },
+            shop_order_delivery: {
+                telegram: normalizeConfigBoolean(routingShopOrderDeliverySource.telegram, defaults.routing.shop_order_delivery.telegram),
+                feishu: normalizeConfigBoolean(routingShopOrderDeliverySource.feishu, defaults.routing.shop_order_delivery.feishu),
+                email: normalizeConfigBoolean(routingShopOrderDeliverySource.email, defaults.routing.shop_order_delivery.email)
+            },
+            payment_gateway: {
+                telegram: normalizeConfigBoolean(routingPaymentGatewaySource.telegram, defaults.routing.payment_gateway.telegram),
+                feishu: normalizeConfigBoolean(routingPaymentGatewaySource.feishu, defaults.routing.payment_gateway.feishu),
+                email: normalizeConfigBoolean(routingPaymentGatewaySource.email, defaults.routing.payment_gateway.email)
+            },
+            verify_quota: {
+                telegram: normalizeConfigBoolean(routingVerifyQuotaSource.telegram, defaults.routing.verify_quota.telegram),
+                feishu: normalizeConfigBoolean(routingVerifyQuotaSource.feishu, defaults.routing.verify_quota.feishu),
+                email: normalizeConfigBoolean(routingVerifyQuotaSource.email, defaults.routing.verify_quota.email)
+            },
+            verify_queue: {
+                telegram: normalizeConfigBoolean(routingVerifyQueueSource.telegram, defaults.routing.verify_queue.telegram),
+                feishu: normalizeConfigBoolean(routingVerifyQueueSource.feishu, defaults.routing.verify_queue.feishu),
+                email: normalizeConfigBoolean(routingVerifyQueueSource.email, defaults.routing.verify_queue.email)
+            },
+            verify_failure: {
+                telegram: normalizeConfigBoolean(routingVerifyFailureSource.telegram, defaults.routing.verify_failure.telegram),
+                feishu: normalizeConfigBoolean(routingVerifyFailureSource.feishu, defaults.routing.verify_failure.feishu),
+                email: normalizeConfigBoolean(routingVerifyFailureSource.email, defaults.routing.verify_failure.email)
             }
         },
         shop_order_risk: {
@@ -3719,7 +3929,17 @@ function getOpsAlertRoutingCheckboxId(routingKey, channelKey) {
         customer_chat_message: 'CustomerChatMessage',
         shop_purchase_success: 'ShopPurchaseSuccess',
         wallet_recharge_success: 'WalletRechargeSuccess',
-        shop_inventory: 'ShopInventory'
+        shop_inventory: 'ShopInventory',
+        payment_refund_ops: 'PaymentRefundOps',
+        payment_config: 'PaymentConfig',
+        shop_order_risk: 'ShopOrderRisk',
+        admin_login_anomaly: 'AdminLoginAnomaly',
+        tickets: 'Tickets',
+        shop_order_delivery: 'ShopOrderDelivery',
+        payment_gateway: 'PaymentGateway',
+        verify_quota: 'VerifyQuota',
+        verify_queue: 'VerifyQueue',
+        verify_failure: 'VerifyFailure'
     };
     const channelIdMap = {
         telegram: 'Telegram',
@@ -3754,6 +3974,66 @@ const OPS_ALERT_MUTE_RULE_TYPE_DEFINITIONS = Object.freeze([
         id: 'ShopInventory',
         label: '库存与补货',
         description: '静默低库存、售罄和库存恢复相关通知。'
+    },
+    {
+        key: 'payment_refund_ops',
+        id: 'PaymentRefundOps',
+        label: '退款运营',
+        description: '静默退款失败、退款补偿和积分回滚异常通知。'
+    },
+    {
+        key: 'payment_config',
+        id: 'PaymentConfig',
+        label: '支付配置变更',
+        description: '静默支付配置变更、事故升级和恢复通知。'
+    },
+    {
+        key: 'shop_order_risk',
+        id: 'ShopOrderRisk',
+        label: '商城风控',
+        description: '静默商城风控异常与恢复通知。'
+    },
+    {
+        key: 'admin_login_anomaly',
+        id: 'AdminLoginAnomaly',
+        label: '管理员异常登录',
+        description: '静默管理员异常登录安全告警。'
+    },
+    {
+        key: 'tickets',
+        id: 'Tickets',
+        label: '工单超时',
+        description: '静默工单超时汇总、超时提醒和恢复通知。'
+    },
+    {
+        key: 'shop_order_delivery',
+        id: 'ShopOrderDelivery',
+        label: '履约失败 / 死信',
+        description: '静默履约失败、死信、集中事故和恢复通知。'
+    },
+    {
+        key: 'payment_gateway',
+        id: 'PaymentGateway',
+        label: '支付通道异常',
+        description: '静默支付通道退化、恢复与异常汇总通知。'
+    },
+    {
+        key: 'verify_quota',
+        id: 'VerifyQuota',
+        label: '验证额度 / 停摆',
+        description: '静默验证额度不足、服务停摆与对应汇总通知。'
+    },
+    {
+        key: 'verify_queue',
+        id: 'VerifyQueue',
+        label: '验证堆积',
+        description: '静默验证队列堆积和对应汇总通知。'
+    },
+    {
+        key: 'verify_failure',
+        id: 'VerifyFailure',
+        label: '验证失败率 / 综合事故',
+        description: '静默验证失败率异常、综合事故升级/恢复和对应汇总通知。'
     }
 ]);
 
@@ -3953,7 +4233,7 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
         });
     });
 
-    const routingKeys = ['customer_chat_message', 'shop_purchase_success', 'wallet_recharge_success', 'shop_inventory'];
+    const routingKeys = Object.keys(normalizedConfig.routing || getDefaultOpsAlertConfig().routing || {});
     const channelKeys = ['telegram', 'feishu', 'email'];
     routingKeys.forEach((routingKey) => {
         channelKeys.forEach((channelKey) => {
@@ -8016,6 +8296,36 @@ function collectOpsAlertConfigFromForm() {
             },
             shop_inventory: {
                 ...currentConfig.routing.shop_inventory
+            },
+            payment_refund_ops: {
+                ...currentConfig.routing.payment_refund_ops
+            },
+            payment_config: {
+                ...currentConfig.routing.payment_config
+            },
+            shop_order_risk: {
+                ...currentConfig.routing.shop_order_risk
+            },
+            admin_login_anomaly: {
+                ...currentConfig.routing.admin_login_anomaly
+            },
+            tickets: {
+                ...currentConfig.routing.tickets
+            },
+            shop_order_delivery: {
+                ...currentConfig.routing.shop_order_delivery
+            },
+            payment_gateway: {
+                ...currentConfig.routing.payment_gateway
+            },
+            verify_quota: {
+                ...currentConfig.routing.verify_quota
+            },
+            verify_queue: {
+                ...currentConfig.routing.verify_queue
+            },
+            verify_failure: {
+                ...currentConfig.routing.verify_failure
             }
         },
         shop_order_risk: {
@@ -8152,12 +8462,7 @@ function collectOpsAlertConfigFromForm() {
     nextConfig.channels.email.subject_prefix = String(
         document.getElementById('opsAlertEmailSubjectPrefix')?.value ?? currentConfig.channels.email.subject_prefix
     ).trim() || currentConfig.channels.email.subject_prefix;
-    [
-        'customer_chat_message',
-        'shop_purchase_success',
-        'wallet_recharge_success',
-        'shop_inventory'
-    ].forEach((routingKey) => {
+    Object.keys(nextConfig.routing || {}).forEach((routingKey) => {
         ['telegram', 'feishu', 'email'].forEach((channelKey) => {
             const checkbox = document.getElementById(getOpsAlertRoutingCheckboxId(routingKey, channelKey));
             if (!checkbox) return;

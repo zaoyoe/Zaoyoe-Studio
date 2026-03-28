@@ -1465,6 +1465,56 @@ module.exports = async (req, res) => {
                         nextConfig.routing?.shop_inventory?.feishu !== false ? 'feishu' : null,
                         nextConfig.routing?.shop_inventory?.email !== false ? 'email' : null
                     ].filter(Boolean),
+                    routing_payment_refund_ops_channels: [
+                        nextConfig.routing?.payment_refund_ops?.telegram !== false ? 'telegram' : null,
+                        nextConfig.routing?.payment_refund_ops?.feishu !== false ? 'feishu' : null,
+                        nextConfig.routing?.payment_refund_ops?.email !== false ? 'email' : null
+                    ].filter(Boolean),
+                    routing_payment_config_channels: [
+                        nextConfig.routing?.payment_config?.telegram !== false ? 'telegram' : null,
+                        nextConfig.routing?.payment_config?.feishu !== false ? 'feishu' : null,
+                        nextConfig.routing?.payment_config?.email !== false ? 'email' : null
+                    ].filter(Boolean),
+                    routing_shop_order_risk_channels: [
+                        nextConfig.routing?.shop_order_risk?.telegram !== false ? 'telegram' : null,
+                        nextConfig.routing?.shop_order_risk?.feishu !== false ? 'feishu' : null,
+                        nextConfig.routing?.shop_order_risk?.email !== false ? 'email' : null
+                    ].filter(Boolean),
+                    routing_admin_login_anomaly_channels: [
+                        nextConfig.routing?.admin_login_anomaly?.telegram !== false ? 'telegram' : null,
+                        nextConfig.routing?.admin_login_anomaly?.feishu !== false ? 'feishu' : null,
+                        nextConfig.routing?.admin_login_anomaly?.email !== false ? 'email' : null
+                    ].filter(Boolean),
+                    routing_tickets_channels: [
+                        nextConfig.routing?.tickets?.telegram !== false ? 'telegram' : null,
+                        nextConfig.routing?.tickets?.feishu !== false ? 'feishu' : null,
+                        nextConfig.routing?.tickets?.email !== false ? 'email' : null
+                    ].filter(Boolean),
+                    routing_shop_order_delivery_channels: [
+                        nextConfig.routing?.shop_order_delivery?.telegram !== false ? 'telegram' : null,
+                        nextConfig.routing?.shop_order_delivery?.feishu !== false ? 'feishu' : null,
+                        nextConfig.routing?.shop_order_delivery?.email !== false ? 'email' : null
+                    ].filter(Boolean),
+                    routing_payment_gateway_channels: [
+                        nextConfig.routing?.payment_gateway?.telegram !== false ? 'telegram' : null,
+                        nextConfig.routing?.payment_gateway?.feishu !== false ? 'feishu' : null,
+                        nextConfig.routing?.payment_gateway?.email !== false ? 'email' : null
+                    ].filter(Boolean),
+                    routing_verify_quota_channels: [
+                        nextConfig.routing?.verify_quota?.telegram !== false ? 'telegram' : null,
+                        nextConfig.routing?.verify_quota?.feishu !== false ? 'feishu' : null,
+                        nextConfig.routing?.verify_quota?.email !== false ? 'email' : null
+                    ].filter(Boolean),
+                    routing_verify_queue_channels: [
+                        nextConfig.routing?.verify_queue?.telegram !== false ? 'telegram' : null,
+                        nextConfig.routing?.verify_queue?.feishu !== false ? 'feishu' : null,
+                        nextConfig.routing?.verify_queue?.email !== false ? 'email' : null
+                    ].filter(Boolean),
+                    routing_verify_failure_channels: [
+                        nextConfig.routing?.verify_failure?.telegram !== false ? 'telegram' : null,
+                        nextConfig.routing?.verify_failure?.feishu !== false ? 'feishu' : null,
+                        nextConfig.routing?.verify_failure?.email !== false ? 'email' : null
+                    ].filter(Boolean),
                     shop_risk_auto_response_enabled: nextConfig.shop_order_risk?.auto_response_enabled === true,
                     shop_risk_auto_disable_coupon_min_risk_score: Number(nextConfig.shop_order_risk?.auto_disable_coupon_min_risk_score || 0) || null,
                     shop_risk_auto_ban_user_min_risk_score: Number(nextConfig.shop_order_risk?.auto_ban_user_min_risk_score || 0) || null,

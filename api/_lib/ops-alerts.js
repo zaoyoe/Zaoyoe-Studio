@@ -24,7 +24,17 @@ const SUPPORTED_ROUTING_KEYS = Object.freeze([
     'customer_chat_message',
     'shop_purchase_success',
     'wallet_recharge_success',
-    'shop_inventory'
+    'shop_inventory',
+    'payment_refund_ops',
+    'payment_config',
+    'shop_order_risk',
+    'admin_login_anomaly',
+    'tickets',
+    'shop_order_delivery',
+    'payment_gateway',
+    'verify_quota',
+    'verify_queue',
+    'verify_failure'
 ]);
 const SUPPORTED_MUTE_RULE_MODULE_KEYS = Object.freeze([
     'customer_engagement',
@@ -47,7 +57,36 @@ const ALERT_TYPE_ROUTING_MAP = Object.freeze({
     shop_inventory_summary: 'shop_inventory',
     shop_inventory_low: 'shop_inventory',
     shop_inventory_empty: 'shop_inventory',
-    shop_inventory_recovered: 'shop_inventory'
+    shop_inventory_recovered: 'shop_inventory',
+    payment_refund_ops: 'payment_refund_ops',
+    payment_refund_alert: 'payment_refund_ops',
+    payment_config_changed: 'payment_config',
+    payment_config_recovered: 'payment_config',
+    payment_config_incident: 'payment_config',
+    payment_config_incident_recovered: 'payment_config',
+    shop_order_risk_anomaly: 'shop_order_risk',
+    shop_order_risk_recovered: 'shop_order_risk',
+    security_admin_login_anomaly: 'admin_login_anomaly',
+    ticket_sla_summary: 'tickets',
+    ticket_sla_overdue: 'tickets',
+    ticket_sla_recovered: 'tickets',
+    shop_order_delivery_summary: 'shop_order_delivery',
+    shop_order_delivery_failed: 'shop_order_delivery',
+    shop_order_delivery_recovered: 'shop_order_delivery',
+    shop_order_delivery_incident: 'shop_order_delivery',
+    shop_order_delivery_incident_recovered: 'shop_order_delivery',
+    payment_gateway_summary: 'payment_gateway',
+    payment_gateway_degraded: 'payment_gateway',
+    payment_gateway_recovered: 'payment_gateway',
+    verify_quota_summary: 'verify_quota',
+    verify_quota_low: 'verify_quota',
+    verify_service_disabled: 'verify_quota',
+    verify_queue_summary: 'verify_queue',
+    verify_queue_backlog: 'verify_queue',
+    verify_failure_summary: 'verify_failure',
+    verify_failure_rate_spike: 'verify_failure',
+    verify_incident_escalated: 'verify_failure',
+    verify_incident_recovered: 'verify_failure'
 });
 const ALERT_TYPE_MODULE_MAP = Object.freeze({
     customer_chat_message_received: 'customer_engagement',
@@ -206,6 +245,46 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
             shop_inventory: Object.freeze({
                 until: '',
                 allow_critical: true
+            }),
+            payment_refund_ops: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            payment_config: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            shop_order_risk: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            admin_login_anomaly: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            tickets: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            shop_order_delivery: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            payment_gateway: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            verify_quota: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            verify_queue: Object.freeze({
+                until: '',
+                allow_critical: true
+            }),
+            verify_failure: Object.freeze({
+                until: '',
+                allow_critical: true
             })
         }),
         modules: Object.freeze({
@@ -290,6 +369,56 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
             email: true
         }),
         shop_inventory: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        }),
+        payment_refund_ops: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        }),
+        payment_config: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        }),
+        shop_order_risk: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        }),
+        admin_login_anomaly: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        }),
+        tickets: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        }),
+        shop_order_delivery: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        }),
+        payment_gateway: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        }),
+        verify_quota: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        }),
+        verify_queue: Object.freeze({
+            telegram: true,
+            feishu: true,
+            email: true
+        }),
+        verify_failure: Object.freeze({
             telegram: true,
             feishu: true,
             email: true
@@ -877,6 +1006,46 @@ function cloneDefaultConfig() {
                 shop_inventory: {
                     until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.shop_inventory.until,
                     allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.shop_inventory.allow_critical
+                },
+                payment_refund_ops: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.payment_refund_ops.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.payment_refund_ops.allow_critical
+                },
+                payment_config: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.payment_config.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.payment_config.allow_critical
+                },
+                shop_order_risk: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.shop_order_risk.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.shop_order_risk.allow_critical
+                },
+                admin_login_anomaly: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.admin_login_anomaly.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.admin_login_anomaly.allow_critical
+                },
+                tickets: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.tickets.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.tickets.allow_critical
+                },
+                shop_order_delivery: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.shop_order_delivery.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.shop_order_delivery.allow_critical
+                },
+                payment_gateway: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.payment_gateway.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.payment_gateway.allow_critical
+                },
+                verify_quota: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.verify_quota.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.verify_quota.allow_critical
+                },
+                verify_queue: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.verify_queue.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.verify_queue.allow_critical
+                },
+                verify_failure: {
+                    until: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.verify_failure.until,
+                    allow_critical: DEFAULT_OPS_ALERTS_CONFIG.mute_rules.types.verify_failure.allow_critical
                 }
             },
             modules: {
@@ -964,6 +1133,56 @@ function cloneDefaultConfig() {
                 telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_inventory.telegram,
                 feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_inventory.feishu,
                 email: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_inventory.email
+            },
+            payment_refund_ops: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.payment_refund_ops.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.payment_refund_ops.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.payment_refund_ops.email
+            },
+            payment_config: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.payment_config.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.payment_config.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.payment_config.email
+            },
+            shop_order_risk: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_order_risk.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_order_risk.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_order_risk.email
+            },
+            admin_login_anomaly: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.admin_login_anomaly.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.admin_login_anomaly.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.admin_login_anomaly.email
+            },
+            tickets: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.tickets.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.tickets.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.tickets.email
+            },
+            shop_order_delivery: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_order_delivery.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_order_delivery.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.shop_order_delivery.email
+            },
+            payment_gateway: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.payment_gateway.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.payment_gateway.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.payment_gateway.email
+            },
+            verify_quota: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.verify_quota.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.verify_quota.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.verify_quota.email
+            },
+            verify_queue: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.verify_queue.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.verify_queue.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.verify_queue.email
+            },
+            verify_failure: {
+                telegram: DEFAULT_OPS_ALERTS_CONFIG.routing.verify_failure.telegram,
+                feishu: DEFAULT_OPS_ALERTS_CONFIG.routing.verify_failure.feishu,
+                email: DEFAULT_OPS_ALERTS_CONFIG.routing.verify_failure.email
             }
         },
         customer_chat_message: {

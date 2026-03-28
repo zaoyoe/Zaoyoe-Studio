@@ -2827,6 +2827,92 @@ test('resolveEnabledChannels filters channels by alert-type routing', () => {
     );
 });
 
+test('resolveEnabledChannels filters channels by expanded alert-type routing', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['123456']
+                },
+                feishu: {
+                    enabled: true,
+                    minimum_severity: 'warning'
+                },
+                email: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    recipients: ['ops@example.com'],
+                    from_address: 'Zaoyoe Ops <alerts@zaoyoe.com>',
+                    subject_prefix: '[Zaoyoe告警]'
+                }
+            },
+            routing: {
+                payment_gateway: {
+                    telegram: true,
+                    feishu: false,
+                    email: false
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: 'telegram-key',
+            feishu_webhook_url: 'https://open.feishu.cn/webhook/test',
+            email_api_key: 're_email_key'
+        }
+    });
+
+    assert.deepEqual(
+        __testUtils.resolveEnabledChannels(runtime, 'critical', 'payment_gateway_degraded'),
+        ['telegram']
+    );
+});
+
+test('resolveEnabledChannels routes payment config alerts through the grouped payment config key', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['123456']
+                },
+                feishu: {
+                    enabled: true,
+                    minimum_severity: 'warning'
+                },
+                email: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    recipients: ['ops@example.com'],
+                    from_address: 'Zaoyoe Ops <alerts@zaoyoe.com>',
+                    subject_prefix: '[Zaoyoe告警]'
+                }
+            },
+            routing: {
+                payment_config: {
+                    telegram: false,
+                    feishu: true,
+                    email: true
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: 'telegram-key',
+            feishu_webhook_url: 'https://open.feishu.cn/webhook/test',
+            email_api_key: 're_email_key'
+        }
+    });
+
+    assert.deepEqual(
+        __testUtils.resolveEnabledChannels(runtime, 'critical', 'payment_config_incident'),
+        ['feishu', 'email']
+    );
+});
+
 test('resolveEnabledChannels suppresses alerts by type-scoped mute rules', () => {
     const runtime = createRuntimeConfig({
         config: {
@@ -2860,6 +2946,72 @@ test('resolveEnabledChannels suppresses alerts by type-scoped mute rules', () =>
     assert.deepEqual(
         __testUtils.resolveEnabledChannels(runtime, 'warning', 'customer_chat_message_received', {
             now: new Date('2026-03-27T10:00:00.000Z')
+        }),
+        []
+    );
+});
+
+test('resolveEnabledChannels suppresses expanded type-scoped verify incident rules', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['123456']
+                }
+            },
+            mute_rules: {
+                types: {
+                    verify_failure: {
+                        until: '2026-03-28T12:00:00.000Z',
+                        allow_critical: false
+                    }
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: 'telegram-key'
+        }
+    });
+
+    assert.deepEqual(
+        __testUtils.resolveEnabledChannels(runtime, 'critical', 'verify_incident_escalated', {
+            now: new Date('2026-03-28T10:00:00.000Z')
+        }),
+        []
+    );
+});
+
+test('resolveEnabledChannels suppresses admin login alerts by the grouped admin login type mute rule', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['123456']
+                }
+            },
+            mute_rules: {
+                types: {
+                    admin_login_anomaly: {
+                        until: '2026-03-28T12:00:00.000Z',
+                        allow_critical: false
+                    }
+                }
+            }
+        },
+        secrets: {
+            telegram_bot_token: 'telegram-key'
+        }
+    });
+
+    assert.deepEqual(
+        __testUtils.resolveEnabledChannels(runtime, 'critical', 'security_admin_login_anomaly', {
+            now: new Date('2026-03-28T10:00:00.000Z')
         }),
         []
     );

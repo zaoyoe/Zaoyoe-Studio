@@ -62,7 +62,17 @@ function createDefaultState() {
                     customer_chat_message: { until: '', allow_critical: true },
                     shop_purchase_success: { until: '', allow_critical: true },
                     wallet_recharge_success: { until: '', allow_critical: true },
-                    shop_inventory: { until: '', allow_critical: true }
+                    shop_inventory: { until: '', allow_critical: true },
+                    payment_refund_ops: { until: '', allow_critical: true },
+                    payment_config: { until: '', allow_critical: true },
+                    shop_order_risk: { until: '', allow_critical: true },
+                    admin_login_anomaly: { until: '', allow_critical: true },
+                    tickets: { until: '', allow_critical: true },
+                    shop_order_delivery: { until: '', allow_critical: true },
+                    payment_gateway: { until: '', allow_critical: true },
+                    verify_quota: { until: '', allow_critical: true },
+                    verify_queue: { until: '', allow_critical: true },
+                    verify_failure: { until: '', allow_critical: true }
                 },
                 modules: {
                     customer_engagement: { until: '', allow_critical: true },
@@ -112,6 +122,56 @@ function createDefaultState() {
                     email: true
                 },
                 shop_inventory: {
+                    telegram: true,
+                    feishu: true,
+                    email: true
+                },
+                payment_refund_ops: {
+                    telegram: true,
+                    feishu: true,
+                    email: true
+                },
+                payment_config: {
+                    telegram: true,
+                    feishu: true,
+                    email: true
+                },
+                shop_order_risk: {
+                    telegram: true,
+                    feishu: true,
+                    email: true
+                },
+                admin_login_anomaly: {
+                    telegram: true,
+                    feishu: true,
+                    email: true
+                },
+                tickets: {
+                    telegram: true,
+                    feishu: true,
+                    email: true
+                },
+                shop_order_delivery: {
+                    telegram: true,
+                    feishu: true,
+                    email: true
+                },
+                payment_gateway: {
+                    telegram: true,
+                    feishu: true,
+                    email: true
+                },
+                verify_quota: {
+                    telegram: true,
+                    feishu: true,
+                    email: true
+                },
+                verify_queue: {
+                    telegram: true,
+                    feishu: true,
+                    email: true
+                },
+                verify_failure: {
                     telegram: true,
                     feishu: true,
                     email: true
@@ -395,6 +455,16 @@ function createNormalizedConfig(raw) {
     const routingShopPurchaseSuccess = routing.shop_purchase_success && typeof routing.shop_purchase_success === 'object' ? routing.shop_purchase_success : {};
     const routingWalletRechargeSuccess = routing.wallet_recharge_success && typeof routing.wallet_recharge_success === 'object' ? routing.wallet_recharge_success : {};
     const routingShopInventory = routing.shop_inventory && typeof routing.shop_inventory === 'object' ? routing.shop_inventory : {};
+    const routingPaymentRefundOps = routing.payment_refund_ops && typeof routing.payment_refund_ops === 'object' ? routing.payment_refund_ops : {};
+    const routingPaymentConfig = routing.payment_config && typeof routing.payment_config === 'object' ? routing.payment_config : {};
+    const routingShopOrderRisk = routing.shop_order_risk && typeof routing.shop_order_risk === 'object' ? routing.shop_order_risk : {};
+    const routingAdminLoginAnomaly = routing.admin_login_anomaly && typeof routing.admin_login_anomaly === 'object' ? routing.admin_login_anomaly : {};
+    const routingTickets = routing.tickets && typeof routing.tickets === 'object' ? routing.tickets : {};
+    const routingShopOrderDelivery = routing.shop_order_delivery && typeof routing.shop_order_delivery === 'object' ? routing.shop_order_delivery : {};
+    const routingPaymentGateway = routing.payment_gateway && typeof routing.payment_gateway === 'object' ? routing.payment_gateway : {};
+    const routingVerifyQuota = routing.verify_quota && typeof routing.verify_quota === 'object' ? routing.verify_quota : {};
+    const routingVerifyQueue = routing.verify_queue && typeof routing.verify_queue === 'object' ? routing.verify_queue : {};
+    const routingVerifyFailure = routing.verify_failure && typeof routing.verify_failure === 'object' ? routing.verify_failure : {};
 
     return {
         enabled: normalizeBoolean(source.enabled, false),
@@ -432,6 +502,46 @@ function createNormalizedConfig(raw) {
                 shop_inventory: {
                     until: typeof typeMuteRules.shop_inventory?.until === 'string' ? typeMuteRules.shop_inventory.until.trim() : '',
                     allow_critical: normalizeBoolean(typeMuteRules.shop_inventory?.allow_critical, true)
+                },
+                payment_refund_ops: {
+                    until: typeof typeMuteRules.payment_refund_ops?.until === 'string' ? typeMuteRules.payment_refund_ops.until.trim() : '',
+                    allow_critical: normalizeBoolean(typeMuteRules.payment_refund_ops?.allow_critical, true)
+                },
+                payment_config: {
+                    until: typeof typeMuteRules.payment_config?.until === 'string' ? typeMuteRules.payment_config.until.trim() : '',
+                    allow_critical: normalizeBoolean(typeMuteRules.payment_config?.allow_critical, true)
+                },
+                shop_order_risk: {
+                    until: typeof typeMuteRules.shop_order_risk?.until === 'string' ? typeMuteRules.shop_order_risk.until.trim() : '',
+                    allow_critical: normalizeBoolean(typeMuteRules.shop_order_risk?.allow_critical, true)
+                },
+                admin_login_anomaly: {
+                    until: typeof typeMuteRules.admin_login_anomaly?.until === 'string' ? typeMuteRules.admin_login_anomaly.until.trim() : '',
+                    allow_critical: normalizeBoolean(typeMuteRules.admin_login_anomaly?.allow_critical, true)
+                },
+                tickets: {
+                    until: typeof typeMuteRules.tickets?.until === 'string' ? typeMuteRules.tickets.until.trim() : '',
+                    allow_critical: normalizeBoolean(typeMuteRules.tickets?.allow_critical, true)
+                },
+                shop_order_delivery: {
+                    until: typeof typeMuteRules.shop_order_delivery?.until === 'string' ? typeMuteRules.shop_order_delivery.until.trim() : '',
+                    allow_critical: normalizeBoolean(typeMuteRules.shop_order_delivery?.allow_critical, true)
+                },
+                payment_gateway: {
+                    until: typeof typeMuteRules.payment_gateway?.until === 'string' ? typeMuteRules.payment_gateway.until.trim() : '',
+                    allow_critical: normalizeBoolean(typeMuteRules.payment_gateway?.allow_critical, true)
+                },
+                verify_quota: {
+                    until: typeof typeMuteRules.verify_quota?.until === 'string' ? typeMuteRules.verify_quota.until.trim() : '',
+                    allow_critical: normalizeBoolean(typeMuteRules.verify_quota?.allow_critical, true)
+                },
+                verify_queue: {
+                    until: typeof typeMuteRules.verify_queue?.until === 'string' ? typeMuteRules.verify_queue.until.trim() : '',
+                    allow_critical: normalizeBoolean(typeMuteRules.verify_queue?.allow_critical, true)
+                },
+                verify_failure: {
+                    until: typeof typeMuteRules.verify_failure?.until === 'string' ? typeMuteRules.verify_failure.until.trim() : '',
+                    allow_critical: normalizeBoolean(typeMuteRules.verify_failure?.allow_critical, true)
                 }
             },
             modules: {
@@ -518,6 +628,56 @@ function createNormalizedConfig(raw) {
                 telegram: normalizeBoolean(routingShopInventory.telegram, true),
                 feishu: normalizeBoolean(routingShopInventory.feishu, true),
                 email: normalizeBoolean(routingShopInventory.email, true)
+            },
+            payment_refund_ops: {
+                telegram: normalizeBoolean(routingPaymentRefundOps.telegram, true),
+                feishu: normalizeBoolean(routingPaymentRefundOps.feishu, true),
+                email: normalizeBoolean(routingPaymentRefundOps.email, true)
+            },
+            payment_config: {
+                telegram: normalizeBoolean(routingPaymentConfig.telegram, true),
+                feishu: normalizeBoolean(routingPaymentConfig.feishu, true),
+                email: normalizeBoolean(routingPaymentConfig.email, true)
+            },
+            shop_order_risk: {
+                telegram: normalizeBoolean(routingShopOrderRisk.telegram, true),
+                feishu: normalizeBoolean(routingShopOrderRisk.feishu, true),
+                email: normalizeBoolean(routingShopOrderRisk.email, true)
+            },
+            admin_login_anomaly: {
+                telegram: normalizeBoolean(routingAdminLoginAnomaly.telegram, true),
+                feishu: normalizeBoolean(routingAdminLoginAnomaly.feishu, true),
+                email: normalizeBoolean(routingAdminLoginAnomaly.email, true)
+            },
+            tickets: {
+                telegram: normalizeBoolean(routingTickets.telegram, true),
+                feishu: normalizeBoolean(routingTickets.feishu, true),
+                email: normalizeBoolean(routingTickets.email, true)
+            },
+            shop_order_delivery: {
+                telegram: normalizeBoolean(routingShopOrderDelivery.telegram, true),
+                feishu: normalizeBoolean(routingShopOrderDelivery.feishu, true),
+                email: normalizeBoolean(routingShopOrderDelivery.email, true)
+            },
+            payment_gateway: {
+                telegram: normalizeBoolean(routingPaymentGateway.telegram, true),
+                feishu: normalizeBoolean(routingPaymentGateway.feishu, true),
+                email: normalizeBoolean(routingPaymentGateway.email, true)
+            },
+            verify_quota: {
+                telegram: normalizeBoolean(routingVerifyQuota.telegram, true),
+                feishu: normalizeBoolean(routingVerifyQuota.feishu, true),
+                email: normalizeBoolean(routingVerifyQuota.email, true)
+            },
+            verify_queue: {
+                telegram: normalizeBoolean(routingVerifyQueue.telegram, true),
+                feishu: normalizeBoolean(routingVerifyQueue.feishu, true),
+                email: normalizeBoolean(routingVerifyQueue.email, true)
+            },
+            verify_failure: {
+                telegram: normalizeBoolean(routingVerifyFailure.telegram, true),
+                feishu: normalizeBoolean(routingVerifyFailure.feishu, true),
+                email: normalizeBoolean(routingVerifyFailure.email, true)
             }
         },
         shop_order_risk: {
@@ -1001,6 +1161,36 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.routing.shop_inventory.telegram, true);
         assert.equal(payload.config.routing.shop_inventory.feishu, true);
         assert.equal(payload.config.routing.shop_inventory.email, true);
+        assert.equal(payload.config.routing.payment_refund_ops.telegram, true);
+        assert.equal(payload.config.routing.payment_refund_ops.feishu, true);
+        assert.equal(payload.config.routing.payment_refund_ops.email, true);
+        assert.equal(payload.config.routing.payment_config.telegram, true);
+        assert.equal(payload.config.routing.payment_config.feishu, true);
+        assert.equal(payload.config.routing.payment_config.email, true);
+        assert.equal(payload.config.routing.shop_order_risk.telegram, true);
+        assert.equal(payload.config.routing.shop_order_risk.feishu, true);
+        assert.equal(payload.config.routing.shop_order_risk.email, true);
+        assert.equal(payload.config.routing.admin_login_anomaly.telegram, true);
+        assert.equal(payload.config.routing.admin_login_anomaly.feishu, true);
+        assert.equal(payload.config.routing.admin_login_anomaly.email, true);
+        assert.equal(payload.config.routing.tickets.telegram, true);
+        assert.equal(payload.config.routing.tickets.feishu, true);
+        assert.equal(payload.config.routing.tickets.email, true);
+        assert.equal(payload.config.routing.shop_order_delivery.telegram, true);
+        assert.equal(payload.config.routing.shop_order_delivery.feishu, true);
+        assert.equal(payload.config.routing.shop_order_delivery.email, true);
+        assert.equal(payload.config.routing.payment_gateway.telegram, true);
+        assert.equal(payload.config.routing.payment_gateway.feishu, true);
+        assert.equal(payload.config.routing.payment_gateway.email, true);
+        assert.equal(payload.config.routing.verify_quota.telegram, true);
+        assert.equal(payload.config.routing.verify_quota.feishu, true);
+        assert.equal(payload.config.routing.verify_quota.email, true);
+        assert.equal(payload.config.routing.verify_queue.telegram, true);
+        assert.equal(payload.config.routing.verify_queue.feishu, true);
+        assert.equal(payload.config.routing.verify_queue.email, true);
+        assert.equal(payload.config.routing.verify_failure.telegram, true);
+        assert.equal(payload.config.routing.verify_failure.feishu, true);
+        assert.equal(payload.config.routing.verify_failure.email, true);
         assert.equal(payload.config.shop_order_risk.auto_response_enabled, true);
         assert.equal(payload.config.shop_order_risk.auto_disable_coupon_min_risk_score, 90);
         assert.equal(payload.config.shop_order_risk.auto_ban_user_min_risk_score, 96);
@@ -1162,6 +1352,42 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                             shop_inventory: {
                                 until: '2026-03-28T09:30:00.000Z',
                                 allow_critical: true
+                            },
+                            payment_refund_ops: {
+                                until: '2026-03-28T08:30:00.000Z',
+                                allow_critical: false
+                            },
+                            payment_config: {
+                                until: '2026-03-28T14:15:00.000Z',
+                                allow_critical: true
+                            },
+                            shop_order_risk: {
+                                until: '2026-03-28T15:00:00.000Z',
+                                allow_critical: false
+                            },
+                            admin_login_anomaly: {
+                                until: '2026-03-28T16:30:00.000Z',
+                                allow_critical: true
+                            },
+                            tickets: {
+                                until: '2026-03-28T10:15:00.000Z',
+                                allow_critical: false
+                            },
+                            shop_order_delivery: {
+                                until: '2026-03-28T12:15:00.000Z',
+                                allow_critical: true
+                            },
+                            payment_gateway: {
+                                until: '2026-03-28T07:45:00.000Z',
+                                allow_critical: false
+                            },
+                            verify_quota: {
+                                until: '2026-03-28T13:00:00.000Z',
+                                allow_critical: true
+                            },
+                            verify_failure: {
+                                until: '2026-03-28T13:30:00.000Z',
+                                allow_critical: false
                             }
                         },
                         modules: {
@@ -1210,6 +1436,56 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                             telegram: false,
                             feishu: true,
                             email: false
+                        },
+                        payment_refund_ops: {
+                            telegram: true,
+                            feishu: false,
+                            email: true
+                        },
+                        payment_config: {
+                            telegram: false,
+                            feishu: true,
+                            email: true
+                        },
+                        shop_order_risk: {
+                            telegram: true,
+                            feishu: true,
+                            email: false
+                        },
+                        admin_login_anomaly: {
+                            telegram: false,
+                            feishu: true,
+                            email: false
+                        },
+                        tickets: {
+                            telegram: false,
+                            feishu: true,
+                            email: true
+                        },
+                        shop_order_delivery: {
+                            telegram: true,
+                            feishu: false,
+                            email: false
+                        },
+                        payment_gateway: {
+                            telegram: true,
+                            feishu: true,
+                            email: false
+                        },
+                        verify_quota: {
+                            telegram: false,
+                            feishu: true,
+                            email: false
+                        },
+                        verify_queue: {
+                            telegram: true,
+                            feishu: false,
+                            email: true
+                        },
+                        verify_failure: {
+                            telegram: false,
+                            feishu: true,
+                            email: true
                         }
                     },
                     shop_order_risk: {
@@ -1418,6 +1694,24 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.mute_rules.types.customer_chat_message.until, '2026-03-27T18:00:00.000Z');
         assert.equal(payload.config.mute_rules.types.customer_chat_message.allow_critical, false);
         assert.equal(payload.config.mute_rules.types.shop_inventory.until, '2026-03-28T09:30:00.000Z');
+        assert.equal(payload.config.mute_rules.types.payment_refund_ops.until, '2026-03-28T08:30:00.000Z');
+        assert.equal(payload.config.mute_rules.types.payment_refund_ops.allow_critical, false);
+        assert.equal(payload.config.mute_rules.types.payment_config.until, '2026-03-28T14:15:00.000Z');
+        assert.equal(payload.config.mute_rules.types.payment_config.allow_critical, true);
+        assert.equal(payload.config.mute_rules.types.shop_order_risk.until, '2026-03-28T15:00:00.000Z');
+        assert.equal(payload.config.mute_rules.types.shop_order_risk.allow_critical, false);
+        assert.equal(payload.config.mute_rules.types.admin_login_anomaly.until, '2026-03-28T16:30:00.000Z');
+        assert.equal(payload.config.mute_rules.types.admin_login_anomaly.allow_critical, true);
+        assert.equal(payload.config.mute_rules.types.tickets.until, '2026-03-28T10:15:00.000Z');
+        assert.equal(payload.config.mute_rules.types.tickets.allow_critical, false);
+        assert.equal(payload.config.mute_rules.types.shop_order_delivery.until, '2026-03-28T12:15:00.000Z');
+        assert.equal(payload.config.mute_rules.types.shop_order_delivery.allow_critical, true);
+        assert.equal(payload.config.mute_rules.types.payment_gateway.until, '2026-03-28T07:45:00.000Z');
+        assert.equal(payload.config.mute_rules.types.payment_gateway.allow_critical, false);
+        assert.equal(payload.config.mute_rules.types.verify_quota.until, '2026-03-28T13:00:00.000Z');
+        assert.equal(payload.config.mute_rules.types.verify_quota.allow_critical, true);
+        assert.equal(payload.config.mute_rules.types.verify_failure.until, '2026-03-28T13:30:00.000Z');
+        assert.equal(payload.config.mute_rules.types.verify_failure.allow_critical, false);
         assert.equal(payload.config.mute_rules.modules.commerce.until, '2026-03-27T20:00:00.000Z');
         assert.equal(payload.config.mute_rules.modules.commerce.allow_critical, false);
         assert.equal(payload.config.mute_rules.modules.payments.until, '2026-03-28T08:00:00.000Z');
@@ -1445,6 +1739,56 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
             telegram: false,
             feishu: true,
             email: false
+        });
+        assert.deepEqual(payload.config.routing.payment_refund_ops, {
+            telegram: true,
+            feishu: false,
+            email: true
+        });
+        assert.deepEqual(payload.config.routing.payment_config, {
+            telegram: false,
+            feishu: true,
+            email: true
+        });
+        assert.deepEqual(payload.config.routing.shop_order_risk, {
+            telegram: true,
+            feishu: true,
+            email: false
+        });
+        assert.deepEqual(payload.config.routing.admin_login_anomaly, {
+            telegram: false,
+            feishu: true,
+            email: false
+        });
+        assert.deepEqual(payload.config.routing.tickets, {
+            telegram: false,
+            feishu: true,
+            email: true
+        });
+        assert.deepEqual(payload.config.routing.shop_order_delivery, {
+            telegram: true,
+            feishu: false,
+            email: false
+        });
+        assert.deepEqual(payload.config.routing.payment_gateway, {
+            telegram: true,
+            feishu: true,
+            email: false
+        });
+        assert.deepEqual(payload.config.routing.verify_quota, {
+            telegram: false,
+            feishu: true,
+            email: false
+        });
+        assert.deepEqual(payload.config.routing.verify_queue, {
+            telegram: true,
+            feishu: false,
+            email: true
+        });
+        assert.deepEqual(payload.config.routing.verify_failure, {
+            telegram: false,
+            feishu: true,
+            email: true
         });
         assert.equal(payload.config.shop_order_risk.auto_response_enabled, true);
         assert.equal(payload.config.shop_order_risk.auto_disable_coupon_min_risk_score, 88);
@@ -1583,7 +1927,19 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.work_hours_start_hour, 9);
         assert.equal(state.auditLogs[0].details.work_hours_end_hour, 18);
         assert.equal(state.auditLogs[0].details.work_hours_timezone, 'Asia/Shanghai');
-        assert.deepEqual(state.auditLogs[0].details.mute_type_keys_active, ['customer_chat_message', 'shop_inventory']);
+        assert.deepEqual(state.auditLogs[0].details.mute_type_keys_active, [
+            'customer_chat_message',
+            'shop_inventory',
+            'payment_refund_ops',
+            'payment_config',
+            'shop_order_risk',
+            'admin_login_anomaly',
+            'tickets',
+            'shop_order_delivery',
+            'payment_gateway',
+            'verify_quota',
+            'verify_failure'
+        ]);
         assert.deepEqual(state.auditLogs[0].details.mute_module_keys_active, ['commerce', 'payments', 'shop_risk']);
         assert.deepEqual(state.auditLogs[0].details.mute_type_rules, {
             customer_chat_message: {
@@ -1593,6 +1949,42 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
             shop_inventory: {
                 until: '2026-03-28T09:30:00.000Z',
                 allow_critical: true
+            },
+            payment_refund_ops: {
+                until: '2026-03-28T08:30:00.000Z',
+                allow_critical: false
+            },
+            payment_config: {
+                until: '2026-03-28T14:15:00.000Z',
+                allow_critical: true
+            },
+            shop_order_risk: {
+                until: '2026-03-28T15:00:00.000Z',
+                allow_critical: false
+            },
+            admin_login_anomaly: {
+                until: '2026-03-28T16:30:00.000Z',
+                allow_critical: true
+            },
+            tickets: {
+                until: '2026-03-28T10:15:00.000Z',
+                allow_critical: false
+            },
+            shop_order_delivery: {
+                until: '2026-03-28T12:15:00.000Z',
+                allow_critical: true
+            },
+            payment_gateway: {
+                until: '2026-03-28T07:45:00.000Z',
+                allow_critical: false
+            },
+            verify_quota: {
+                until: '2026-03-28T13:00:00.000Z',
+                allow_critical: true
+            },
+            verify_failure: {
+                until: '2026-03-28T13:30:00.000Z',
+                allow_critical: false
             }
         });
         assert.deepEqual(state.auditLogs[0].details.mute_module_rules, {
@@ -1613,6 +2005,16 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.deepEqual(state.auditLogs[0].details.routing_shop_purchase_success_channels, ['telegram', 'email']);
         assert.deepEqual(state.auditLogs[0].details.routing_wallet_recharge_success_channels, ['telegram', 'feishu']);
         assert.deepEqual(state.auditLogs[0].details.routing_shop_inventory_channels, ['feishu']);
+        assert.deepEqual(state.auditLogs[0].details.routing_payment_refund_ops_channels, ['telegram', 'email']);
+        assert.deepEqual(state.auditLogs[0].details.routing_payment_config_channels, ['feishu', 'email']);
+        assert.deepEqual(state.auditLogs[0].details.routing_shop_order_risk_channels, ['telegram', 'feishu']);
+        assert.deepEqual(state.auditLogs[0].details.routing_admin_login_anomaly_channels, ['feishu']);
+        assert.deepEqual(state.auditLogs[0].details.routing_tickets_channels, ['feishu', 'email']);
+        assert.deepEqual(state.auditLogs[0].details.routing_shop_order_delivery_channels, ['telegram']);
+        assert.deepEqual(state.auditLogs[0].details.routing_payment_gateway_channels, ['telegram', 'feishu']);
+        assert.deepEqual(state.auditLogs[0].details.routing_verify_quota_channels, ['feishu']);
+        assert.deepEqual(state.auditLogs[0].details.routing_verify_queue_channels, ['telegram', 'email']);
+        assert.deepEqual(state.auditLogs[0].details.routing_verify_failure_channels, ['feishu', 'email']);
         assert.equal(state.auditLogs[0].details.shop_risk_auto_response_enabled, true);
         assert.equal(state.auditLogs[0].details.shop_risk_auto_disable_coupon_min_risk_score, 88);
         assert.equal(state.auditLogs[0].details.shop_risk_auto_ban_user_min_risk_score, 95);
