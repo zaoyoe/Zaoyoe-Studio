@@ -1287,6 +1287,15 @@ function bindAdminStudioDelegatedControls() {
             case 'payments-change-active-provider':
                 window.handlePaymentChannelActiveChange?.(actionEl.value);
                 break;
+            case 'settings-change-ops-alert-customer-chat-message-summary-schedule-mode':
+                window.handleOpsAlertCustomerChatMessageSummaryScheduleModeChange?.();
+                break;
+            case 'settings-change-ops-alert-shop-purchase-success-summary-schedule-mode':
+                window.handleOpsAlertShopPurchaseSuccessSummaryScheduleModeChange?.();
+                break;
+            case 'settings-change-ops-alert-wallet-recharge-success-summary-schedule-mode':
+                window.handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange?.();
+                break;
             case 'points-toggle-select-all-batches':
                 window.toggleSelectAllBatches?.();
                 break;

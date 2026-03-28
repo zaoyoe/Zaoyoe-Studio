@@ -12,6 +12,12 @@ const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
 });
 const SUPPORTED_CHANNELS = Object.freeze(['telegram', 'feishu', 'email']);
 const DEFAULT_QUIET_HOURS_TIMEZONE = 'Asia/Shanghai';
+const DEFAULT_SUMMARY_SCHEDULE_MODE = 'rolling_window';
+const SUPPORTED_SUMMARY_SCHEDULE_MODES = Object.freeze([
+    DEFAULT_SUMMARY_SCHEDULE_MODE,
+    'hourly',
+    'daily'
+]);
 const SUPPORTED_ROUTING_KEYS = Object.freeze([
     'customer_chat_message',
     'shop_purchase_success',
@@ -232,7 +238,11 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         dedupe_window_minutes: 12 * 60,
         summary_enabled: false,
         summary_window_minutes: 60,
-        summary_max_items: 10
+        summary_max_items: 10,
+        summary_schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
+        summary_hourly_minute: 0,
+        summary_daily_hour: 9,
+        summary_daily_minute: 0
     }),
     shop_purchase_success: Object.freeze({
         enabled: true,
@@ -241,7 +251,11 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         dedupe_window_minutes: 24 * 60,
         summary_enabled: false,
         summary_window_minutes: 60,
-        summary_max_items: 10
+        summary_max_items: 10,
+        summary_schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
+        summary_hourly_minute: 0,
+        summary_daily_hour: 9,
+        summary_daily_minute: 0
     }),
     wallet_recharge_success: Object.freeze({
         enabled: true,
@@ -250,7 +264,11 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         dedupe_window_minutes: 24 * 60,
         summary_enabled: false,
         summary_window_minutes: 60,
-        summary_max_items: 10
+        summary_max_items: 10,
+        summary_schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
+        summary_hourly_minute: 0,
+        summary_daily_hour: 9,
+        summary_daily_minute: 0
     }),
     shop_inventory: Object.freeze({
         enabled: true,
@@ -346,20 +364,178 @@ function normalizeTimeZone(value, fallback = DEFAULT_QUIET_HOURS_TIMEZONE) {
     }
 }
 
+function normalizeSummaryScheduleMode(value, fallback = DEFAULT_SUMMARY_SCHEDULE_MODE) {
+    const normalized = normalizeText(value).toLowerCase();
+    return SUPPORTED_SUMMARY_SCHEDULE_MODES.includes(normalized)
+        ? normalized
+        : fallback;
+}
+
 function getOpsAlertSummaryDefinition(alertType = '') {
     return SUMMARY_ALERT_DEFINITIONS[normalizeText(alertType).toLowerCase()] || null;
 }
 
-function getOpsAlertSummaryBucket(referenceDate, windowMinutes) {
+function getTimeZoneDateParts(referenceDate, timeZone) {
+    const safeDate = referenceDate instanceof Date ? referenceDate : new Date(referenceDate || Date.now());
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: normalizeTimeZone(timeZone),
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+    const parts = formatter.formatToParts(safeDate);
+    const getPart = (type) => Number.parseInt(parts.find((part) => part.type === type)?.value || '', 10);
+
+    return {
+        year: getPart('year'),
+        month: getPart('month'),
+        day: getPart('day'),
+        hour: getPart('hour') % 24,
+        minute: getPart('minute'),
+        second: getPart('second')
+    };
+}
+
+function getTimeZoneOffsetMs(referenceDate, timeZone) {
+    const safeDate = referenceDate instanceof Date ? referenceDate : new Date(referenceDate || Date.now());
+    const referenceTimestamp = Number.isFinite(safeDate.getTime()) ? safeDate.getTime() : Date.now();
+    const parts = getTimeZoneDateParts(safeDate, timeZone);
+    const pseudoUtc = Date.UTC(
+        parts.year,
+        Math.max(0, parts.month - 1),
+        parts.day,
+        parts.hour,
+        parts.minute,
+        parts.second
+    );
+    return pseudoUtc - referenceTimestamp;
+}
+
+function getUtcDateFromTimeZoneParts(parts = {}, timeZone = DEFAULT_QUIET_HOURS_TIMEZONE) {
+    const guess = new Date(Date.UTC(
+        Number(parts.year) || 1970,
+        Math.max(0, (Number(parts.month) || 1) - 1),
+        Number(parts.day) || 1,
+        Number(parts.hour) || 0,
+        Number(parts.minute) || 0,
+        Number(parts.second) || 0
+    ));
+    if (!Number.isFinite(guess.getTime())) {
+        return new Date();
+    }
+
+    let offsetMs = getTimeZoneOffsetMs(guess, timeZone);
+    let resolvedDate = new Date(guess.getTime() - offsetMs);
+    const adjustedOffsetMs = getTimeZoneOffsetMs(resolvedDate, timeZone);
+    if (adjustedOffsetMs !== offsetMs) {
+        resolvedDate = new Date(guess.getTime() - adjustedOffsetMs);
+    }
+
+    return resolvedDate;
+}
+
+function shiftTimeZoneParts(parts = {}, { days = 0, hours = 0, minutes = 0 } = {}) {
+    const pseudoDate = new Date(Date.UTC(
+        Number(parts.year) || 1970,
+        Math.max(0, (Number(parts.month) || 1) - 1),
+        Number(parts.day) || 1,
+        Number(parts.hour) || 0,
+        Number(parts.minute) || 0,
+        Number(parts.second) || 0
+    ));
+    pseudoDate.setUTCDate(pseudoDate.getUTCDate() + Number(days || 0));
+    pseudoDate.setUTCHours(pseudoDate.getUTCHours() + Number(hours || 0));
+    pseudoDate.setUTCMinutes(pseudoDate.getUTCMinutes() + Number(minutes || 0));
+
+    return {
+        year: pseudoDate.getUTCFullYear(),
+        month: pseudoDate.getUTCMonth() + 1,
+        day: pseudoDate.getUTCDate(),
+        hour: pseudoDate.getUTCHours(),
+        minute: pseudoDate.getUTCMinutes(),
+        second: pseudoDate.getUTCSeconds()
+    };
+}
+
+function getRollingOpsAlertSummaryBucket(referenceDate, windowMinutes) {
     const safeDate = referenceDate instanceof Date ? referenceDate : new Date(referenceDate || Date.now());
     const referenceTimestamp = Number.isFinite(safeDate.getTime()) ? safeDate.getTime() : Date.now();
     const intervalMs = Math.max(5, normalizeNumber(windowMinutes, 60, 5, 24 * 60)) * 60 * 1000;
     const bucketStart = Math.floor(referenceTimestamp / intervalMs) * intervalMs;
     return {
+        schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
         window_minutes: intervalMs / (60 * 1000),
         start_at: new Date(bucketStart).toISOString(),
         end_at: new Date(bucketStart + intervalMs).toISOString()
     };
+}
+
+function getHourlyOpsAlertSummaryBucket(referenceDate, summaryConfig = {}) {
+    const timeZone = normalizeTimeZone(summaryConfig.summary_timezone, DEFAULT_QUIET_HOURS_TIMEZONE);
+    const parts = getTimeZoneDateParts(referenceDate, timeZone);
+    const targetMinute = Math.round(normalizeNumber(summaryConfig.summary_hourly_minute, 0, 0, 59));
+    const currentBoundary = {
+        year: parts.year,
+        month: parts.month,
+        day: parts.day,
+        hour: parts.hour,
+        minute: targetMinute,
+        second: 0
+    };
+    const startBoundary = parts.minute < targetMinute
+        ? shiftTimeZoneParts(currentBoundary, { hours: -1 })
+        : currentBoundary;
+    const endBoundary = shiftTimeZoneParts(startBoundary, { hours: 1 });
+
+    return {
+        schedule_mode: 'hourly',
+        window_minutes: 60,
+        start_at: getUtcDateFromTimeZoneParts(startBoundary, timeZone).toISOString(),
+        end_at: getUtcDateFromTimeZoneParts(endBoundary, timeZone).toISOString()
+    };
+}
+
+function getDailyOpsAlertSummaryBucket(referenceDate, summaryConfig = {}) {
+    const timeZone = normalizeTimeZone(summaryConfig.summary_timezone, DEFAULT_QUIET_HOURS_TIMEZONE);
+    const parts = getTimeZoneDateParts(referenceDate, timeZone);
+    const targetHour = Math.round(normalizeNumber(summaryConfig.summary_daily_hour, 9, 0, 23));
+    const targetMinute = Math.round(normalizeNumber(summaryConfig.summary_daily_minute, 0, 0, 59));
+    const currentMinuteOfDay = (parts.hour * 60) + parts.minute;
+    const targetMinuteOfDay = (targetHour * 60) + targetMinute;
+    const currentBoundary = {
+        year: parts.year,
+        month: parts.month,
+        day: parts.day,
+        hour: targetHour,
+        minute: targetMinute,
+        second: 0
+    };
+    const startBoundary = currentMinuteOfDay < targetMinuteOfDay
+        ? shiftTimeZoneParts(currentBoundary, { days: -1 })
+        : currentBoundary;
+    const endBoundary = shiftTimeZoneParts(startBoundary, { days: 1 });
+
+    return {
+        schedule_mode: 'daily',
+        window_minutes: 24 * 60,
+        start_at: getUtcDateFromTimeZoneParts(startBoundary, timeZone).toISOString(),
+        end_at: getUtcDateFromTimeZoneParts(endBoundary, timeZone).toISOString()
+    };
+}
+
+function getOpsAlertSummaryBucket(referenceDate, summaryConfig = {}) {
+    const scheduleMode = normalizeSummaryScheduleMode(summaryConfig.summary_schedule_mode, DEFAULT_SUMMARY_SCHEDULE_MODE);
+    if (scheduleMode === 'hourly') {
+        return getHourlyOpsAlertSummaryBucket(referenceDate, summaryConfig);
+    }
+    if (scheduleMode === 'daily') {
+        return getDailyOpsAlertSummaryBucket(referenceDate, summaryConfig);
+    }
+    return getRollingOpsAlertSummaryBucket(referenceDate, summaryConfig.summary_window_minutes);
 }
 
 function getHigherSeverity(left = 'warning', right = 'warning') {
@@ -515,7 +691,11 @@ function cloneDefaultConfig() {
             dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.dedupe_window_minutes,
             summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_enabled,
             summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_window_minutes,
-            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_max_items
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_max_items,
+            summary_schedule_mode: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_schedule_mode,
+            summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_hourly_minute,
+            summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_daily_hour,
+            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_daily_minute
         },
         shop_purchase_success: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.enabled,
@@ -524,7 +704,11 @@ function cloneDefaultConfig() {
             dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.dedupe_window_minutes,
             summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.summary_enabled,
             summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.summary_window_minutes,
-            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.summary_max_items
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.summary_max_items,
+            summary_schedule_mode: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.summary_schedule_mode,
+            summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.summary_hourly_minute,
+            summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.summary_daily_hour,
+            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.summary_daily_minute
         },
         wallet_recharge_success: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.enabled,
@@ -533,7 +717,11 @@ function cloneDefaultConfig() {
             dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.dedupe_window_minutes,
             summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.summary_enabled,
             summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.summary_window_minutes,
-            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.summary_max_items
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.summary_max_items,
+            summary_schedule_mode: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.summary_schedule_mode,
+            summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.summary_hourly_minute,
+            summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.summary_daily_hour,
+            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.wallet_recharge_success.summary_daily_minute
         },
         shop_inventory: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.enabled,
@@ -826,6 +1014,28 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         1,
         50
     );
+    config.customer_chat_message.summary_schedule_mode = normalizeSummaryScheduleMode(
+        customerChatMessageConfig.summary_schedule_mode,
+        config.customer_chat_message.summary_schedule_mode
+    );
+    config.customer_chat_message.summary_hourly_minute = normalizeNumber(
+        customerChatMessageConfig.summary_hourly_minute,
+        config.customer_chat_message.summary_hourly_minute,
+        0,
+        59
+    );
+    config.customer_chat_message.summary_daily_hour = normalizeNumber(
+        customerChatMessageConfig.summary_daily_hour,
+        config.customer_chat_message.summary_daily_hour,
+        0,
+        23
+    );
+    config.customer_chat_message.summary_daily_minute = normalizeNumber(
+        customerChatMessageConfig.summary_daily_minute,
+        config.customer_chat_message.summary_daily_minute,
+        0,
+        59
+    );
 
     config.shop_purchase_success.enabled = normalizeBoolean(
         shopPurchaseSuccessConfig.enabled,
@@ -865,6 +1075,28 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         1,
         50
     );
+    config.shop_purchase_success.summary_schedule_mode = normalizeSummaryScheduleMode(
+        shopPurchaseSuccessConfig.summary_schedule_mode,
+        config.shop_purchase_success.summary_schedule_mode
+    );
+    config.shop_purchase_success.summary_hourly_minute = normalizeNumber(
+        shopPurchaseSuccessConfig.summary_hourly_minute,
+        config.shop_purchase_success.summary_hourly_minute,
+        0,
+        59
+    );
+    config.shop_purchase_success.summary_daily_hour = normalizeNumber(
+        shopPurchaseSuccessConfig.summary_daily_hour,
+        config.shop_purchase_success.summary_daily_hour,
+        0,
+        23
+    );
+    config.shop_purchase_success.summary_daily_minute = normalizeNumber(
+        shopPurchaseSuccessConfig.summary_daily_minute,
+        config.shop_purchase_success.summary_daily_minute,
+        0,
+        59
+    );
 
     config.wallet_recharge_success.enabled = normalizeBoolean(
         walletRechargeSuccessConfig.enabled,
@@ -903,6 +1135,28 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         config.wallet_recharge_success.summary_max_items,
         1,
         50
+    );
+    config.wallet_recharge_success.summary_schedule_mode = normalizeSummaryScheduleMode(
+        walletRechargeSuccessConfig.summary_schedule_mode,
+        config.wallet_recharge_success.summary_schedule_mode
+    );
+    config.wallet_recharge_success.summary_hourly_minute = normalizeNumber(
+        walletRechargeSuccessConfig.summary_hourly_minute,
+        config.wallet_recharge_success.summary_hourly_minute,
+        0,
+        59
+    );
+    config.wallet_recharge_success.summary_daily_hour = normalizeNumber(
+        walletRechargeSuccessConfig.summary_daily_hour,
+        config.wallet_recharge_success.summary_daily_hour,
+        0,
+        23
+    );
+    config.wallet_recharge_success.summary_daily_minute = normalizeNumber(
+        walletRechargeSuccessConfig.summary_daily_minute,
+        config.wallet_recharge_success.summary_daily_minute,
+        0,
+        59
     );
 
     config.shop_inventory.enabled = normalizeBoolean(
@@ -1315,10 +1569,34 @@ function getOpsAlertSummaryConfig(runtimeConfig = {}, alertType = '') {
         return null;
     }
 
+    const defaultSection = DEFAULT_OPS_ALERTS_CONFIG[definition.config_key] || {};
     return {
         ...definition,
         summary_window_minutes: Math.max(5, normalizeNumber(section.summary_window_minutes, 60, 5, 24 * 60)),
-        summary_max_items: Math.max(1, normalizeNumber(section.summary_max_items, 10, 1, 50))
+        summary_max_items: Math.max(1, normalizeNumber(section.summary_max_items, 10, 1, 50)),
+        summary_schedule_mode: normalizeSummaryScheduleMode(
+            section.summary_schedule_mode,
+            defaultSection.summary_schedule_mode || DEFAULT_SUMMARY_SCHEDULE_MODE
+        ),
+        summary_hourly_minute: Math.round(normalizeNumber(
+            section.summary_hourly_minute,
+            defaultSection.summary_hourly_minute ?? 0,
+            0,
+            59
+        )),
+        summary_daily_hour: Math.round(normalizeNumber(
+            section.summary_daily_hour,
+            defaultSection.summary_daily_hour ?? 9,
+            0,
+            23
+        )),
+        summary_daily_minute: Math.round(normalizeNumber(
+            section.summary_daily_minute,
+            defaultSection.summary_daily_minute ?? 0,
+            0,
+            59
+        )),
+        summary_timezone: normalizeTimeZone(runtimeConfig?.quiet_hours?.timezone, DEFAULT_QUIET_HOURS_TIMEZONE)
     };
 }
 
@@ -1326,8 +1604,21 @@ function buildOpsAlertSummaryTitle(summaryConfig, itemCount) {
     return `${summaryConfig.default_title}（${itemCount} ${summaryConfig.unit}）`;
 }
 
+function getOpsAlertSummaryScheduleLabel(summaryConfig = {}) {
+    if (summaryConfig.summary_schedule_mode === 'hourly') {
+        return `每小时 ${String(summaryConfig.summary_hourly_minute || 0).padStart(2, '0')} 分`;
+    }
+    if (summaryConfig.summary_schedule_mode === 'daily') {
+        return `每天 ${String(summaryConfig.summary_daily_hour || 0).padStart(2, '0')}:${String(summaryConfig.summary_daily_minute || 0).padStart(2, '0')}（${normalizeTimeZone(summaryConfig.summary_timezone, DEFAULT_QUIET_HOURS_TIMEZONE)}）`;
+    }
+    return `最近 ${summaryConfig.summary_window_minutes} 分钟`;
+}
+
 function buildOpsAlertSummaryContent(summaryConfig, itemCount, bucket) {
-    return `最近 ${summaryConfig.summary_window_minutes} 分钟内累计 ${itemCount} ${summaryConfig.unit}，将在窗口结束后统一外发。窗口：${bucket.start_at} - ${bucket.end_at}`;
+    if (summaryConfig.summary_schedule_mode === DEFAULT_SUMMARY_SCHEDULE_MODE) {
+        return `最近 ${summaryConfig.summary_window_minutes} 分钟内累计 ${itemCount} ${summaryConfig.unit}，将在窗口结束后统一外发。窗口：${bucket.start_at} - ${bucket.end_at}`;
+    }
+    return `当前固定时点汇总窗口内累计 ${itemCount} ${summaryConfig.unit}，将按 ${getOpsAlertSummaryScheduleLabel(summaryConfig)} 统一外发。窗口：${bucket.start_at} - ${bucket.end_at}`;
 }
 
 async function loadExistingOpsAlertSummaryJob(supabase, alertType, dedupeKey) {
@@ -1358,7 +1649,7 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
     const referenceDate = options.now instanceof Date
         ? options.now
         : new Date(options.now || explicitCreatedAt || Date.now());
-    const bucket = getOpsAlertSummaryBucket(referenceDate, summaryConfig.summary_window_minutes);
+    const bucket = getOpsAlertSummaryBucket(referenceDate, summaryConfig);
     const itemCreatedAt = explicitCreatedAt || (Number.isFinite(referenceDate.getTime()) ? referenceDate.toISOString() : new Date().toISOString());
     const itemDedupeKey = normalizeText(input.dedupeKey) || buildOpsAlertDedupeKey({
         alertType,
@@ -1368,7 +1659,17 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
     });
     const summaryDedupeKey = crypto
         .createHash('sha256')
-        .update(`${summaryConfig.summary_alert_type}:${bucket.start_at}:${bucket.end_at}`)
+        .update([
+            summaryConfig.summary_alert_type,
+            summaryConfig.summary_schedule_mode,
+            summaryConfig.summary_window_minutes,
+            summaryConfig.summary_hourly_minute,
+            summaryConfig.summary_daily_hour,
+            summaryConfig.summary_daily_minute,
+            summaryConfig.summary_timezone,
+            bucket.start_at,
+            bucket.end_at
+        ].join(':'))
         .digest('hex');
     const channels = resolveEnabledChannels(runtime, input.severity, summaryConfig.summary_alert_type, { now: referenceDate })
         .filter((channel) => {
@@ -1419,6 +1720,11 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
             source_alert_type: alertType,
             summary_window_minutes: summaryConfig.summary_window_minutes,
             summary_max_items: summaryConfig.summary_max_items,
+            summary_schedule_mode: summaryConfig.summary_schedule_mode,
+            summary_hourly_minute: summaryConfig.summary_hourly_minute,
+            summary_daily_hour: summaryConfig.summary_daily_hour,
+            summary_daily_minute: summaryConfig.summary_daily_minute,
+            summary_timezone: summaryConfig.summary_timezone,
             window_start_at: bucket.start_at,
             window_end_at: bucket.end_at,
             item_count: existingItems.length,
@@ -1467,6 +1773,11 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
             source_alert_type: alertType,
             summary_window_minutes: summaryConfig.summary_window_minutes,
             summary_max_items: summaryConfig.summary_max_items,
+            summary_schedule_mode: summaryConfig.summary_schedule_mode,
+            summary_hourly_minute: summaryConfig.summary_hourly_minute,
+            summary_daily_hour: summaryConfig.summary_daily_hour,
+            summary_daily_minute: summaryConfig.summary_daily_minute,
+            summary_timezone: summaryConfig.summary_timezone,
             window_start_at: bucket.start_at,
             window_end_at: bucket.end_at,
             item_count: 1,
