@@ -13,6 +13,8 @@ let opsAlertMonitorState = getDefaultOpsAlertMonitorState();
 let opsAlertMonitorViewState = getDefaultOpsAlertMonitorViewState();
 let shopRiskCaseComposerState = getDefaultShopRiskCaseComposerState();
 let opsAlertBatchMuteState = getDefaultOpsAlertBatchMuteState();
+let opsAlertStrategySaveInFlight = false;
+let opsAlertStrategyBeforeUnloadReady = false;
 let verifyMonitorState = getDefaultVerifyMonitorState();
 let adminAuditMonitorState = getDefaultAdminAuditMonitorState();
 let paymentChannelAccordionState = {
@@ -3961,6 +3963,7 @@ function applyOpsAlertOverview(config) {
     applyOpsAlertPaymentGatewayControls(normalizedConfig);
     renderOpsAlertSummaryOrchestration(normalizedConfig);
     renderOpsAlertOverviewCards(normalizedConfig);
+    updateOpsAlertStrategyDraftIndicators(normalizedConfig);
 }
 
 function getOpsAlertRoutingCheckboxId(routingKey, channelKey) {
@@ -4220,6 +4223,95 @@ function getOpsAlertMuteRuleElementId(scope, key, suffix) {
 
 function getOpsAlertStrategyLayoutRoot() {
     return document.querySelector('[data-config="ops-alerts-strategy"] .config-card-body');
+}
+
+function getOpsAlertSavedConfigSnapshot() {
+    return normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
+}
+
+function hasOpsAlertUnsavedChanges(config = null) {
+    const savedSnapshot = JSON.stringify(getOpsAlertSavedConfigSnapshot());
+    const draftSnapshot = JSON.stringify(
+        normalizeOpsAlertConfig(config || collectOpsAlertConfigFromForm())
+    );
+    return savedSnapshot !== draftSnapshot;
+}
+
+function updateOpsAlertStrategyDraftIndicators(config = null) {
+    const dirty = hasOpsAlertUnsavedChanges(config);
+    const saveBar = document.getElementById('opsAlertStrategySaveBar');
+    const stateEl = document.getElementById('opsAlertStrategySaveState');
+    const hintEl = document.getElementById('opsAlertStrategySaveHint');
+    const saveButton = document.getElementById('opsAlertStrategyInlineSaveButton');
+    const dirtyBadge = document.getElementById('opsAlertStrategyDirtyBadge');
+
+    if (saveBar) {
+        saveBar.classList.toggle('is-dirty', dirty);
+        saveBar.classList.toggle('is-saving', opsAlertStrategySaveInFlight);
+    }
+
+    if (stateEl) {
+        if (opsAlertStrategySaveInFlight) {
+            stateEl.textContent = '保存中';
+            stateEl.dataset.tone = 'neutral';
+        } else if (dirty) {
+            stateEl.textContent = '有未保存变更';
+            stateEl.dataset.tone = 'warning';
+        } else {
+            stateEl.textContent = '当前配置已保存';
+            stateEl.dataset.tone = 'success';
+        }
+    }
+
+    if (hintEl) {
+        if (opsAlertStrategySaveInFlight) {
+            hintEl.textContent = '正在把当前页改动写回站外告警配置。';
+        } else if (dirty) {
+            hintEl.textContent = '当前页里的改动会先停留在浏览器里，点击右侧按钮即可直接保存。';
+        } else {
+            hintEl.textContent = '在这里改完就能就近保存，不用再切回概览。';
+        }
+    }
+
+    if (saveButton) {
+        saveButton.disabled = opsAlertStrategySaveInFlight || !dirty;
+        saveButton.textContent = opsAlertStrategySaveInFlight
+            ? '保存中...'
+            : '保存站外告警配置';
+    }
+
+    if (dirtyBadge) {
+        dirtyBadge.hidden = !dirty;
+    }
+}
+
+function setOpsAlertStrategySaveBusy(isSaving) {
+    opsAlertStrategySaveInFlight = isSaving === true;
+    updateOpsAlertStrategyDraftIndicators();
+}
+
+function ensureOpsAlertStrategyBeforeUnloadPrompt() {
+    if (opsAlertStrategyBeforeUnloadReady) return;
+
+    window.addEventListener('beforeunload', (event) => {
+        if (!hasOpsAlertUnsavedChanges()) {
+            return;
+        }
+        event.preventDefault();
+        event.returnValue = '';
+    });
+
+    opsAlertStrategyBeforeUnloadReady = true;
+}
+
+function confirmOpsAlertStrategyNavigation(currentViewName, nextViewName) {
+    const currentView = String(currentViewName || '').trim();
+    const nextView = String(nextViewName || '').trim();
+    if (currentView !== 'strategy' || !nextView || nextView === currentView || !hasOpsAlertUnsavedChanges()) {
+        return true;
+    }
+
+    return window.confirm('当前页有未保存变更。现在切换标签后改动仍会保留在当前页面，但刷新或重新打开后会丢失。要继续切换吗？');
 }
 
 function formatOpsAlertHourRange(startHour, endHour) {
@@ -4789,6 +4881,20 @@ function buildOpsAlertRoutingMatrixHtml() {
 function buildOpsAlertStrategyLayoutHtml() {
     return `
         <div class="ops-alert-strategy-layout">
+            <div class="ops-alert-strategy-savebar" id="opsAlertStrategySaveBar">
+                <div class="ops-alert-strategy-savebar__copy">
+                    <span class="ops-alert-strategy-savebar__eyebrow">策略中心</span>
+                    <div class="ops-alert-strategy-savebar__summary">
+                        <strong class="ops-alert-strategy-savebar__state" id="opsAlertStrategySaveState" data-tone="success">当前配置已保存</strong>
+                        <p class="ops-alert-strategy-savebar__hint" id="opsAlertStrategySaveHint">在这里改完就能就近保存，不用再切回概览。</p>
+                    </div>
+                </div>
+                <div class="ops-alert-strategy-savebar__actions">
+                    <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="switch-ops-alerts-view" data-ops-alerts-view="overview">查看概览</button>
+                    <button type="button" class="btn-add-config btn-add-config--compact" id="opsAlertStrategyInlineSaveButton" data-admin-action="settings-save-ops-alerts" disabled>保存站外告警配置</button>
+                </div>
+            </div>
+
             <div class="ops-alert-strategy-summary-grid">
                 <article class="ops-alert-strategy-summary-card">
                     <div class="ops-alert-strategy-summary-card__head">
@@ -4883,7 +4989,7 @@ function buildOpsAlertStrategyLayoutHtml() {
                             <section class="ops-alert-strategy-card">
                                 <div class="ops-alert-strategy-card__head">
                                     <div>
-                                        <h4>临时静默${buildOpsAlertInfoTipHtml('适合维护窗口或短时降噪。设置到期时间后保存配置即可暂停外发。预设按钮会直接填入时间；点击顶部“保存站外告警配置”后才会真正生效。')}</h4>
+                                        <h4>临时静默${buildOpsAlertInfoTipHtml('适合维护窗口或短时降噪。设置到期时间后保存配置即可暂停外发。预设按钮会直接填入时间；点击“保存站外告警配置”后才会真正生效。')}</h4>
                                     </div>
                                 </div>
                                 <div class="ops-alert-mute-status" id="opsAlertTemporaryMuteStatus">当前未设置临时静默。</div>
@@ -5054,6 +5160,7 @@ function ensureOpsAlertStrategyLayout() {
     root.innerHTML = buildOpsAlertStrategyLayoutHtml();
     root.dataset.opsAlertStrategyLayoutReady = 'true';
     ensureOpsAlertDatePickerEvents();
+    ensureOpsAlertStrategyBeforeUnloadPrompt();
     root.addEventListener('change', (event) => {
         const target = event.target instanceof HTMLElement ? event.target : null;
         if (!target || !target.closest('.ops-alert-strategy-layout')) {
@@ -5073,6 +5180,7 @@ function ensureOpsAlertStrategyLayout() {
         if (target.classList.contains('ops-alert-inline-number-input')) {
             sanitizeOpsAlertInlineNumberInput(target);
         }
+        updateOpsAlertStrategyDraftIndicators();
     });
     root.addEventListener('blur', (event) => {
         const target = event.target instanceof HTMLInputElement ? event.target : null;
@@ -5090,6 +5198,7 @@ function ensureOpsAlertStrategyLayout() {
     }, true);
     syncAllOpsAlertDateTimeFields(root);
     switchOpsAlertStrategyMuteTab('types');
+    updateOpsAlertStrategyDraftIndicators(getOpsAlertSavedConfigSnapshot());
 }
 
 function setOpsAlertStrategyBadgeState(elementId, label, tone = 'neutral') {
@@ -10710,6 +10819,7 @@ function buildOpsAlertSettingsRequestBody(config, options = {}) {
 }
 
 async function saveOpsAlertConfigOverride(config, options = {}) {
+    setOpsAlertStrategySaveBusy(true);
     try {
         const headers = await getAdminConfigApiHeaders();
         const body = buildOpsAlertSettingsRequestBody(normalizeOpsAlertConfig(config), options);
@@ -10740,6 +10850,8 @@ async function saveOpsAlertConfigOverride(config, options = {}) {
         showToast('保存失败: ' + (error.message || '未知错误'), 'error');
         renderOpsAlertSettings();
         return false;
+    } finally {
+        setOpsAlertStrategySaveBusy(false);
     }
 }
 
@@ -14888,6 +15000,7 @@ window.selectOpsAlertUnifiedSummaryTargets = selectOpsAlertUnifiedSummaryTargets
 window.handleOpsAlertUnifiedSummaryTargetChange = handleOpsAlertUnifiedSummaryTargetChange;
 window.handleOpsAlertUnifiedSummaryDraftChange = handleOpsAlertUnifiedSummaryDraftChange;
 window.applyOpsAlertUnifiedSummaryDraft = applyOpsAlertUnifiedSummaryDraft;
+window.confirmOpsAlertStrategyNavigation = confirmOpsAlertStrategyNavigation;
 window.saveOpsAlertSettings = saveOpsAlertSettings;
 window.sendOpsAlertTelegramTest = sendOpsAlertTelegramTest;
 window.sendOpsAlertRefundSample = sendOpsAlertRefundSample;
