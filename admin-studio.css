@@ -20558,7 +20558,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .ops-alert-strategy-summary-card__metrics {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 10px;
 }
 
@@ -20579,9 +20579,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .ops-alert-strategy-summary-card__metric strong {
+    display: block;
     color: var(--text-main);
     font-size: 0.9rem;
     line-height: 1.45;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .ops-alert-strategy-badge {
@@ -20721,7 +20724,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .ops-alert-strategy-inline-grid--triple {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 .ops-alert-strategy-field {
@@ -21831,6 +21834,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 #module-ops-alerts .ops-alert-strategy-layout .ops-alert-inline-text-input.config-input,
 #module-ops-alerts .ops-alert-strategy-layout .ops-alert-date-picker__time-field .config-input {
     width: 100%;
+    min-width: 0;
     max-width: none;
     box-sizing: border-box;
     display: block;
