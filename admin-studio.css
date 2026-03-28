@@ -18958,15 +18958,17 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 #module-settings #settings-view-security .module-content {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
     gap: 20px;
 }
 
 #module-settings #settings-view-security .settings-section {
-    width: 100%;
     max-width: none;
     min-width: 0;
+    margin-bottom: 0;
+    box-sizing: border-box;
 }
 
 #settings-view-pricing .module-content.pricing-settings-layout {
@@ -19012,6 +19014,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 @media (max-width: 1024px) {
     #module-settings .module-content {
         grid-template-columns: repeat(2, 1fr);
+    }
+
+    #module-settings #settings-view-security .module-content {
+        grid-template-columns: minmax(0, 1fr);
     }
 
     #settings-view-pricing .module-content.pricing-settings-layout {
