@@ -4978,7 +4978,7 @@ function buildOpsAlertStrategyLayoutHtml() {
             </div>
 
             <div class="ops-alert-strategy-panels">
-                <section class="ops-alert-strategy-panel is-expanded" data-strategy-panel="mute">
+                <section class="ops-alert-strategy-panel" data-strategy-panel="mute">
                     <button type="button" class="ops-alert-strategy-panel__header" data-admin-action="settings-toggle-ops-alert-strategy-panel" data-strategy-panel="mute">
                         <div class="ops-alert-strategy-panel__copy">
                             <span class="ops-alert-strategy-panel__eyebrow">分类编辑</span>
@@ -4989,7 +4989,7 @@ function buildOpsAlertStrategyLayoutHtml() {
                             <i class="fas fa-chevron-down"></i>
                         </div>
                     </button>
-                    <div class="ops-alert-strategy-panel__body">
+                    <div class="ops-alert-strategy-panel__body" hidden>
                         <div class="ops-alert-strategy-card-grid ops-alert-strategy-card-grid--dual">
                             <section class="ops-alert-strategy-card">
                                 <div class="ops-alert-strategy-card__head">
@@ -5054,8 +5054,8 @@ function buildOpsAlertStrategyLayoutHtml() {
                         </div>
 
                         <div class="ops-alert-strategy-subpanels">
-                            <section class="ops-alert-strategy-subpanel is-expanded" data-strategy-tab-panel="types">
-                                <button type="button" class="ops-alert-strategy-subpanel__header" data-admin-action="settings-switch-ops-alert-strategy-tab" data-strategy-tab="types" aria-expanded="true">
+                            <section class="ops-alert-strategy-subpanel" data-strategy-tab-panel="types">
+                                <button type="button" class="ops-alert-strategy-subpanel__header" data-admin-action="settings-switch-ops-alert-strategy-tab" data-strategy-tab="types" aria-expanded="false">
                                     <div class="ops-alert-strategy-subpanel__copy">
                                         <h4>按单类静默${buildOpsAlertInfoTipHtml('把长列表收成表格，优先处理当前真正需要降噪的单类事件。')}</h4>
                                     </div>
@@ -5064,7 +5064,7 @@ function buildOpsAlertStrategyLayoutHtml() {
                                         <i class="fas fa-chevron-down" aria-hidden="true"></i>
                                     </div>
                                 </button>
-                                <div class="ops-alert-strategy-subpanel__body">
+                                <div class="ops-alert-strategy-subpanel__body" hidden>
                                     <div class="ops-alert-strategy-inline-meta" id="opsAlertTypeMutePanelMeta">共 14 类</div>
                                     <div class="ops-alert-mute-table" id="opsAlertTypeMuteTable">${buildOpsAlertMuteTableHtml('types')}</div>
                                 </div>
@@ -5201,7 +5201,8 @@ function ensureOpsAlertStrategyLayout() {
         refreshOpsAlertStrategyDraftViews();
     }, true);
     syncAllOpsAlertDateTimeFields(root);
-    setOpsAlertStrategyMuteSubpanelExpanded('types', true);
+    setOpsAlertStrategyPanelExpanded('mute', false);
+    setOpsAlertStrategyMuteSubpanelExpanded('types', false);
     setOpsAlertStrategyMuteSubpanelExpanded('modules', false);
     updateOpsAlertStrategyDraftIndicators(getOpsAlertSavedConfigSnapshot());
 }

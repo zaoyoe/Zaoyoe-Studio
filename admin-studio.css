@@ -20421,7 +20421,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .ops-alert-summary-orchestration-panel__head p {
     margin: 6px 0 0;
-    color: var(--text-secondary);
+    color: rgba(219, 232, 248, 0.82);
     font-size: 0.84rem;
     line-height: 1.6;
 }
