@@ -21180,9 +21180,195 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     transform: translateX(22px);
 }
 
-/* Backward-compatible strategy markers kept for delegated runtime tests. */
+/* Strategy grid: flex column ensures each section has its own boundary box. */
 .ops-alert-strategy-grid {
-    display: contents;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* ── Collapsible scoped mute rows ── */
+.ops-alert-scoped-mute-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.ops-alert-scoped-mute-row {
+    border-bottom: 1px solid rgba(107, 158, 206, 0.1);
+}
+
+.ops-alert-scoped-mute-row:last-child {
+    border-bottom: none;
+}
+
+.ops-alert-scoped-mute-row__summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 4px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s ease;
+}
+
+.ops-alert-scoped-mute-row__summary:hover {
+    background: rgba(107, 158, 206, 0.06);
+    border-radius: 10px;
+}
+
+.ops-alert-scoped-mute-row__summary strong {
+    color: var(--text-main);
+    font-size: 0.88rem;
+    font-weight: 600;
+    flex: 0 0 auto;
+}
+
+.ops-alert-scoped-mute-row__summary .ops-alert-mute-status--inline {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ops-alert-scoped-mute-row__toggle {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: rgba(107, 158, 206, 0.1);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.2s ease, background 0.15s ease;
+}
+
+.ops-alert-scoped-mute-row__toggle:hover {
+    background: rgba(107, 158, 206, 0.2);
+}
+
+.ops-alert-scoped-mute-row.is-expanded .ops-alert-scoped-mute-row__toggle {
+    transform: rotate(180deg);
+}
+
+.ops-alert-scoped-mute-row__body {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.2s ease;
+    padding: 0 4px;
+}
+
+.ops-alert-scoped-mute-row.is-expanded .ops-alert-scoped-mute-row__body {
+    max-height: 320px;
+    opacity: 1;
+    padding: 8px 4px 16px;
+}
+
+/* ── Compact routing matrix table ── */
+.ops-alert-routing-matrix-compact {
+    border: 1px solid rgba(107, 158, 206, 0.12);
+    border-radius: 16px;
+    overflow: hidden;
+    background: rgba(10, 19, 36, 0.26);
+}
+
+.ops-alert-routing-matrix-compact__head {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) repeat(3, 72px);
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(107, 158, 206, 0.12);
+    background: rgba(107, 158, 206, 0.06);
+    color: rgba(184, 208, 236, 0.86);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+.ops-alert-routing-matrix-compact__head span {
+    text-align: center;
+}
+
+.ops-alert-routing-matrix-compact__head span:first-child {
+    text-align: left;
+}
+
+.ops-alert-routing-matrix-compact__body {
+    display: flex;
+    flex-direction: column;
+}
+
+.ops-alert-routing-matrix-compact__row {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) repeat(3, 72px);
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(107, 158, 206, 0.08);
+    transition: background 0.12s ease;
+}
+
+.ops-alert-routing-matrix-compact__row:last-child {
+    border-bottom: none;
+}
+
+.ops-alert-routing-matrix-compact__row:hover {
+    background: rgba(107, 158, 206, 0.05);
+}
+
+.ops-alert-routing-matrix-compact__label {
+    min-width: 0;
+    color: var(--text-main);
+    font-size: 0.84rem;
+    font-weight: 500;
+}
+
+.ops-alert-routing-matrix-compact__cell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.ops-alert-routing-matrix-compact__cell input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    border-radius: 7px;
+    border: 1px solid rgba(107, 158, 206, 0.3);
+    background: rgba(13, 23, 42, 0.96);
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+    position: relative;
+    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.ops-alert-routing-matrix-compact__cell input[type="checkbox"]::after {
+    content: '';
+    position: absolute;
+    inset: 4px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.96);
+    transform: scale(0);
+    transition: transform 0.16s ease;
+}
+
+.ops-alert-routing-matrix-compact__cell input[type="checkbox"]:checked {
+    border-color: rgba(107, 158, 206, 0.56);
+    background: linear-gradient(180deg, #73b2ff, #4d88d8);
+    box-shadow: 0 0 0 1px rgba(77, 136, 216, 0.16);
+}
+
+.ops-alert-routing-matrix-compact__cell input[type="checkbox"]:checked::after {
+    transform: scale(1);
 }
 
 .ops-alert-quiet-hours-grid {

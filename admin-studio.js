@@ -469,6 +469,11 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-mute-rule-allow-critical':
                 window.toggleOpsAlertMuteRuleAllowCritical?.(actionEl.dataset.ruleScope, actionEl.dataset.ruleKey);
                 break;
+            case 'ops-alert-toggle-mute-row': {
+                const muteRow = actionEl.closest('.ops-alert-scoped-mute-row');
+                if (muteRow) muteRow.classList.toggle('is-expanded');
+                break;
+            }
             case 'settings-clear-ops-alert-mute-rule':
                 window.clearOpsAlertMuteRule?.(actionEl.dataset.ruleScope, actionEl.dataset.ruleKey);
                 break;
