@@ -81,6 +81,7 @@ const OPS_ALERT_OVERVIEW_BANNER_TONE_CLASSES = [
 ];
 const OPS_ALERT_STRATEGY_PANEL_KEYS = Object.freeze(['mute', 'routing', 'work-hours']);
 const OPS_ALERT_STRATEGY_MUTE_TAB_KEYS = Object.freeze(['types', 'modules']);
+const OPS_ALERT_SUMMARY_PANEL_KEYS = Object.freeze(['overview']);
 const OPS_ALERT_DATE_PICKER_MONTH_NAMES = Object.freeze([
     '一月',
     '二月',
@@ -1926,11 +1927,15 @@ function renderOpsAlertSummaryOrchestration(config = normalizeOpsAlertConfig(sys
 
     const selectedCount = getOpsAlertSummaryOrchestrationSelectedDefinitions().length;
     const metaEl = document.getElementById('opsAlertSummaryOrchestrationMeta');
+    const overviewSelectionMetaEl = document.getElementById('opsAlertSummaryOverviewSelectionMeta');
     if (metaEl) {
         metaEl.innerHTML = `
             <i class="fas fa-layer-group"></i>
             <span>共 ${escapeConfigHtml(formatVerifyMonitorInteger(OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS.length))} 类告警：${escapeConfigHtml(formatVerifyMonitorInteger(enabledMonitorCount))} 类已启用主监控，${escapeConfigHtml(formatVerifyMonitorInteger(summaryEnabledCount))} 类已启用定时汇总，${escapeConfigHtml(formatVerifyMonitorInteger(workHoursOnlyCount))} 类启用工作时段顺延。当前已勾选 ${escapeConfigHtml(formatVerifyMonitorInteger(selectedCount))} 类用于批量应用。</span>
         `;
+    }
+    if (overviewSelectionMetaEl) {
+        overviewSelectionMetaEl.textContent = `已勾选 ${formatVerifyMonitorInteger(selectedCount)} 类`;
     }
 
     applyOpsAlertUnifiedSummaryDraftControls();
@@ -5048,38 +5053,37 @@ function buildOpsAlertStrategyLayoutHtml() {
                             </section>
                         </div>
 
-                        <div class="ops-alert-strategy-tab-strip" role="tablist" aria-label="静默范围选择">
-                            <button type="button" class="ops-alert-strategy-tab-btn is-active" data-admin-action="settings-switch-ops-alert-strategy-tab" data-strategy-tab="types">
-                                <span>按单类静默</span>
-                                <strong id="opsAlertMuteTabTypesCount">0 生效</strong>
-                            </button>
-                            <button type="button" class="ops-alert-strategy-tab-btn" data-admin-action="settings-switch-ops-alert-strategy-tab" data-strategy-tab="modules">
-                                <span>按模块静默</span>
-                                <strong id="opsAlertMuteTabModulesCount">0 生效</strong>
-                            </button>
-                        </div>
-
-                        <div class="ops-alert-strategy-tab-panel is-active" data-strategy-tab-panel="types">
-                            <section class="ops-alert-strategy-card ops-alert-strategy-card--table">
-                                <div class="ops-alert-strategy-card__head">
-                                    <div>
+                        <div class="ops-alert-strategy-subpanels">
+                            <section class="ops-alert-strategy-subpanel is-expanded" data-strategy-tab-panel="types">
+                                <button type="button" class="ops-alert-strategy-subpanel__header" data-admin-action="settings-switch-ops-alert-strategy-tab" data-strategy-tab="types" aria-expanded="true">
+                                    <div class="ops-alert-strategy-subpanel__copy">
                                         <h4>按单类静默${buildOpsAlertInfoTipHtml('把长列表收成表格，优先处理当前真正需要降噪的单类事件。')}</h4>
                                     </div>
+                                    <div class="ops-alert-strategy-subpanel__meta">
+                                        <div class="ops-alert-strategy-inline-meta" id="opsAlertMuteTabTypesCount">0 生效</div>
+                                        <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                                    </div>
+                                </button>
+                                <div class="ops-alert-strategy-subpanel__body">
                                     <div class="ops-alert-strategy-inline-meta" id="opsAlertTypeMutePanelMeta">共 14 类</div>
+                                    <div class="ops-alert-mute-table" id="opsAlertTypeMuteTable">${buildOpsAlertMuteTableHtml('types')}</div>
                                 </div>
-                                <div class="ops-alert-mute-table" id="opsAlertTypeMuteTable">${buildOpsAlertMuteTableHtml('types')}</div>
                             </section>
-                        </div>
 
-                        <div class="ops-alert-strategy-tab-panel" data-strategy-tab-panel="modules" hidden>
-                            <section class="ops-alert-strategy-card ops-alert-strategy-card--table">
-                                <div class="ops-alert-strategy-card__head">
-                                    <div>
+                            <section class="ops-alert-strategy-subpanel" data-strategy-tab-panel="modules">
+                                <button type="button" class="ops-alert-strategy-subpanel__header" data-admin-action="settings-switch-ops-alert-strategy-tab" data-strategy-tab="modules" aria-expanded="false">
+                                    <div class="ops-alert-strategy-subpanel__copy">
                                         <h4>按模块静默${buildOpsAlertInfoTipHtml('以模块为单位批量降噪，适合维护窗口、集中排障或阶段性静默。')}</h4>
                                     </div>
+                                    <div class="ops-alert-strategy-subpanel__meta">
+                                        <div class="ops-alert-strategy-inline-meta" id="opsAlertMuteTabModulesCount">0 生效</div>
+                                        <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                                    </div>
+                                </button>
+                                <div class="ops-alert-strategy-subpanel__body" hidden>
                                     <div class="ops-alert-strategy-inline-meta" id="opsAlertModuleMutePanelMeta">共 9 类</div>
+                                    <div class="ops-alert-mute-table" id="opsAlertModuleMuteTable">${buildOpsAlertMuteTableHtml('modules')}</div>
                                 </div>
-                                <div class="ops-alert-mute-table" id="opsAlertModuleMuteTable">${buildOpsAlertMuteTableHtml('modules')}</div>
                             </section>
                         </div>
                     </div>
@@ -5197,7 +5201,8 @@ function ensureOpsAlertStrategyLayout() {
         refreshOpsAlertStrategyDraftViews();
     }, true);
     syncAllOpsAlertDateTimeFields(root);
-    switchOpsAlertStrategyMuteTab('types');
+    setOpsAlertStrategyMuteSubpanelExpanded('types', true);
+    setOpsAlertStrategyMuteSubpanelExpanded('modules', false);
     updateOpsAlertStrategyDraftIndicators(getOpsAlertSavedConfigSnapshot());
 }
 
@@ -5383,6 +5388,21 @@ function setOpsAlertStrategyPanelExpanded(panelKey, expanded) {
     }
 }
 
+function setOpsAlertStrategyMuteSubpanelExpanded(tabKey, expanded) {
+    const panel = document.querySelector(`.ops-alert-strategy-subpanel[data-strategy-tab-panel="${tabKey}"]`);
+    if (!panel) return;
+
+    panel.classList.toggle('is-expanded', expanded);
+    const body = panel.querySelector('.ops-alert-strategy-subpanel__body');
+    const header = panel.querySelector('.ops-alert-strategy-subpanel__header');
+    if (body) {
+        body.hidden = !expanded;
+    }
+    if (header) {
+        header.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    }
+}
+
 function toggleOpsAlertStrategyPanel(panelKey) {
     ensureOpsAlertStrategyLayout();
     const targetPanel = document.querySelector(`.ops-alert-strategy-panel[data-strategy-panel="${panelKey}"]`);
@@ -5397,14 +5417,10 @@ function toggleOpsAlertStrategyPanel(panelKey) {
 function switchOpsAlertStrategyMuteTab(tabKey = 'types') {
     ensureOpsAlertStrategyLayout();
     const nextTabKey = OPS_ALERT_STRATEGY_MUTE_TAB_KEYS.includes(tabKey) ? tabKey : 'types';
-
-    document.querySelectorAll('.ops-alert-strategy-tab-btn').forEach((button) => {
-        button.classList.toggle('is-active', button.dataset.strategyTab === nextTabKey);
-    });
-    document.querySelectorAll('.ops-alert-strategy-tab-panel').forEach((panel) => {
-        const isActive = panel.dataset.strategyTabPanel === nextTabKey;
-        panel.classList.toggle('is-active', isActive);
-        panel.hidden = !isActive;
+    const targetPanel = document.querySelector(`.ops-alert-strategy-subpanel[data-strategy-tab-panel="${nextTabKey}"]`);
+    const shouldExpand = !targetPanel?.classList.contains('is-expanded');
+    OPS_ALERT_STRATEGY_MUTE_TAB_KEYS.forEach((key) => {
+        setOpsAlertStrategyMuteSubpanelExpanded(key, shouldExpand && key === nextTabKey);
     });
 }
 
@@ -5415,11 +5431,39 @@ function openOpsAlertStrategyPanel(panelKey, tabKey = '') {
         setOpsAlertStrategyPanelExpanded(key, key === nextPanelKey);
     });
     if (nextPanelKey === 'mute' && tabKey) {
-        switchOpsAlertStrategyMuteTab(tabKey);
+        OPS_ALERT_STRATEGY_MUTE_TAB_KEYS.forEach((key) => {
+            setOpsAlertStrategyMuteSubpanelExpanded(key, key === tabKey);
+        });
     }
 
-    const panel = document.querySelector(`.ops-alert-strategy-panel[data-strategy-panel="${nextPanelKey}"]`);
+    const targetSubpanel = nextPanelKey === 'mute' && tabKey
+        ? document.querySelector(`.ops-alert-strategy-subpanel[data-strategy-tab-panel="${tabKey}"]`)
+        : null;
+    const panel = targetSubpanel || document.querySelector(`.ops-alert-strategy-panel[data-strategy-panel="${nextPanelKey}"]`);
     panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function setOpsAlertSummaryPanelExpanded(panelKey, expanded) {
+    const panel = document.querySelector(`.ops-alert-summary-orchestration-panel[data-ops-alert-summary-panel="${panelKey}"]`);
+    if (!panel) return;
+
+    panel.classList.toggle('is-expanded', expanded);
+    const body = panel.querySelector('.ops-alert-summary-orchestration-panel__body');
+    const header = panel.querySelector('.ops-alert-summary-orchestration-panel__toggle');
+    if (body) {
+        body.hidden = !expanded;
+    }
+    if (header) {
+        header.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    }
+}
+
+function toggleOpsAlertSummaryPanel(panelKey = 'overview') {
+    const nextPanelKey = OPS_ALERT_SUMMARY_PANEL_KEYS.includes(panelKey) ? panelKey : 'overview';
+    const panel = document.querySelector(`.ops-alert-summary-orchestration-panel[data-ops-alert-summary-panel="${nextPanelKey}"]`);
+    if (!panel) return;
+
+    setOpsAlertSummaryPanelExpanded(nextPanelKey, !panel.classList.contains('is-expanded'));
 }
 
 function refreshOpsAlertStrategyDraftViews() {
@@ -14946,6 +14990,7 @@ window.toggleOpsAlertQuietHoursEnabled = toggleOpsAlertQuietHoursEnabled;
 window.toggleOpsAlertQuietHoursAllowCritical = toggleOpsAlertQuietHoursAllowCritical;
 window.toggleOpsAlertWorkHoursEnabled = toggleOpsAlertWorkHoursEnabled;
 window.toggleOpsAlertStrategyPanel = toggleOpsAlertStrategyPanel;
+window.toggleOpsAlertSummaryPanel = toggleOpsAlertSummaryPanel;
 window.openOpsAlertStrategyPanel = openOpsAlertStrategyPanel;
 window.switchOpsAlertStrategyMuteTab = switchOpsAlertStrategyMuteTab;
 window.toggleOpsAlertDatePicker = toggleOpsAlertDatePicker;

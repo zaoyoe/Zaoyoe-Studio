@@ -413,6 +413,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-strategy-panel':
                 window.toggleOpsAlertStrategyPanel?.(actionEl.dataset.strategyPanel);
                 break;
+            case 'settings-toggle-ops-alert-summary-panel':
+                window.toggleOpsAlertSummaryPanel?.(actionEl.dataset.opsAlertSummaryPanel);
+                break;
             case 'settings-open-ops-alert-strategy-panel':
                 window.openOpsAlertStrategyPanel?.(actionEl.dataset.strategyPanel, actionEl.dataset.strategyTab);
                 break;

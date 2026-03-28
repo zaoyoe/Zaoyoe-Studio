@@ -2493,11 +2493,18 @@
                                     </div>
 
                                     <div class="ops-alert-summary-orchestration-grid">
-                                        <section class="ops-alert-summary-orchestration-panel">
-                                            <div class="ops-alert-summary-orchestration-panel__head">
-                                                <h4>当前统一视图</h4>
-                                                <p>集中查看客服消息、购买成功、充值成功、库存与补货、工单与售后、履约失败 / 死信、验证告警和支付通道异常的主监控、工作时段顺延和当前汇总策略。</p>
-                                            </div>
+                                        <section class="ops-alert-summary-orchestration-panel is-expanded" data-ops-alert-summary-panel="overview">
+                                            <button type="button" class="ops-alert-summary-orchestration-panel__toggle" data-admin-action="settings-toggle-ops-alert-summary-panel" data-ops-alert-summary-panel="overview" aria-expanded="true">
+                                                <div class="ops-alert-summary-orchestration-panel__head">
+                                                    <h4>当前统一视图</h4>
+                                                    <p>集中查看客服消息、购买成功、充值成功、库存与补货、工单与售后、履约失败 / 死信、验证告警和支付通道异常的主监控、工作时段顺延和当前汇总策略。</p>
+                                                </div>
+                                                <div class="ops-alert-summary-orchestration-panel__meta">
+                                                    <div class="ops-alert-strategy-inline-meta" id="opsAlertSummaryOverviewSelectionMeta">已勾选 0 类</div>
+                                                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                                                </div>
+                                            </button>
+                                            <div class="ops-alert-summary-orchestration-panel__body">
                                             <div class="ops-alert-summary-orchestration-table">
                                                 <div class="ops-alert-summary-orchestration-row ops-alert-summary-orchestration-row--head">
                                                     <div class="ops-alert-summary-orchestration-cell ops-alert-summary-orchestration-cell--select">应用</div>
@@ -2663,6 +2670,7 @@
                                                 <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-select-ops-alert-unified-summary-targets" data-ops-alert-summary-target-preset="none">
                                                     <i class="fas fa-eraser"></i> 清空
                                                 </button>
+                                            </div>
                                             </div>
                                         </section>
 
