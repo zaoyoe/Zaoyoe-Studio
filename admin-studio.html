@@ -2472,9 +2472,58 @@
                                             <div class="status-toggle" id="opsAlertShopInventoryRecoveryNotificationEnabledToggle" data-admin-action="settings-toggle-ops-alert-shop-inventory-recovery-enabled"></div>
                                         </div>
                                     </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用定时汇总通知</div>
+                                            <div class="config-desc">将低库存和售罄提醒合并成一条站外通知，在窗口结束后统一外发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertShopInventorySummaryEnabledToggle" data-admin-action="settings-toggle-ops-alert-shop-inventory-summary-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总方式</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertShopInventorySummaryScheduleMode" data-admin-change-action="settings-change-ops-alert-shop-inventory-summary-schedule-mode">
+                                                <option value="rolling_window">滚动窗口</option>
+                                                <option value="hourly">每小时固定时点</option>
+                                                <option value="daily">每天固定时点</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总窗口（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="5" max="1440" step="5" class="config-input" id="opsAlertShopInventorySummaryWindowMinutes" placeholder="60">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每小时发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertShopInventorySummaryHourlyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送小时</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertShopInventorySummaryDailyHour" placeholder="9">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertShopInventorySummaryDailyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每条通知最多展示条目</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="50" step="1" class="config-input" id="opsAlertShopInventorySummaryMaxItems" placeholder="10">
+                                        </div>
+                                    </div>
                                     <div class="config-inline-note">
                                         <i class="fas fa-circle-info"></i>
-                                        <span>当前这组配置会优先覆盖环境变量，适合在值班阶段快速调整库存告警节奏；更深的静默时段、定时汇总和按商品差异化策略已纳入后续计划。</span>
+                                        <span>当前这组配置会优先覆盖环境变量，适合在值班阶段快速调整库存告警节奏；低库存和售罄支持按滚动窗口、每小时整点或每天固定时间汇总，恢复通知仍保持即时发送。</span>
                                     </div>
                                 </div>
                             </div>

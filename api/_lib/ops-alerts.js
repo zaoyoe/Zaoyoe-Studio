@@ -44,6 +44,7 @@ const ALERT_TYPE_ROUTING_MAP = Object.freeze({
     shop_purchase_summary: 'shop_purchase_success',
     wallet_recharge_succeeded: 'wallet_recharge_success',
     wallet_recharge_summary: 'wallet_recharge_success',
+    shop_inventory_summary: 'shop_inventory',
     shop_inventory_low: 'shop_inventory',
     shop_inventory_empty: 'shop_inventory',
     shop_inventory_recovered: 'shop_inventory'
@@ -55,6 +56,7 @@ const ALERT_TYPE_MODULE_MAP = Object.freeze({
     shop_purchase_summary: 'commerce',
     wallet_recharge_succeeded: 'commerce',
     wallet_recharge_summary: 'commerce',
+    shop_inventory_summary: 'inventory',
     shop_inventory_low: 'inventory',
     shop_inventory_empty: 'inventory',
     shop_inventory_recovered: 'inventory',
@@ -105,6 +107,18 @@ const SUMMARY_ALERT_DEFINITIONS = Object.freeze({
         summary_alert_type: 'wallet_recharge_summary',
         default_title: '充值成功汇总',
         unit: '笔充值'
+    }),
+    shop_inventory_low: Object.freeze({
+        config_key: 'shop_inventory',
+        summary_alert_type: 'shop_inventory_summary',
+        default_title: '库存与补货汇总',
+        unit: '条库存告警'
+    }),
+    shop_inventory_empty: Object.freeze({
+        config_key: 'shop_inventory',
+        summary_alert_type: 'shop_inventory_summary',
+        default_title: '库存与补货汇总',
+        unit: '条库存告警'
     })
 });
 const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
@@ -287,7 +301,14 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         sweep_interval_ms: 15 * 60 * 1000,
         sales_window_days: 7,
         dedupe_window_minutes: 6 * 60,
-        recovery_notification_enabled: true
+        recovery_notification_enabled: true,
+        summary_enabled: false,
+        summary_window_minutes: 60,
+        summary_max_items: 10,
+        summary_schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
+        summary_hourly_minute: 0,
+        summary_daily_hour: 9,
+        summary_daily_minute: 0
     })
 });
 
@@ -632,6 +653,7 @@ function buildOpsAlertSummaryItem({ dedupeKey = '', payload = {}, title = '', co
     return {
         dedupe_key: normalizeText(dedupeKey),
         target_id: normalizeText(payload?.target_id || payload?.order_id || payload?.payment_order_id || payload?.message_id || payload?.id),
+        alert_type: normalizeText(payload?.summary_source_alert_type || ''),
         title: normalizeText(title),
         content: normalizeText(content),
         created_at: normalizeText(createdAt) || new Date().toISOString(),
@@ -820,7 +842,14 @@ function cloneDefaultConfig() {
             sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.sweep_interval_ms,
             sales_window_days: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.sales_window_days,
             dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.dedupe_window_minutes,
-            recovery_notification_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.recovery_notification_enabled
+            recovery_notification_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.recovery_notification_enabled,
+            summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_enabled,
+            summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_window_minutes,
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_max_items,
+            summary_schedule_mode: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_schedule_mode,
+            summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_hourly_minute,
+            summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_daily_hour,
+            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_daily_minute
         }
     };
 }
@@ -1334,6 +1363,44 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
             config.shop_inventory.recovery_notification_enabled
         )
     );
+    config.shop_inventory.summary_enabled = normalizeBoolean(
+        shopInventoryConfig.summary_enabled,
+        config.shop_inventory.summary_enabled
+    );
+    config.shop_inventory.summary_window_minutes = normalizeNumber(
+        shopInventoryConfig.summary_window_minutes,
+        config.shop_inventory.summary_window_minutes,
+        5,
+        24 * 60
+    );
+    config.shop_inventory.summary_max_items = normalizeNumber(
+        shopInventoryConfig.summary_max_items,
+        config.shop_inventory.summary_max_items,
+        1,
+        50
+    );
+    config.shop_inventory.summary_schedule_mode = normalizeSummaryScheduleMode(
+        shopInventoryConfig.summary_schedule_mode,
+        config.shop_inventory.summary_schedule_mode
+    );
+    config.shop_inventory.summary_hourly_minute = normalizeNumber(
+        shopInventoryConfig.summary_hourly_minute,
+        config.shop_inventory.summary_hourly_minute,
+        0,
+        59
+    );
+    config.shop_inventory.summary_daily_hour = normalizeNumber(
+        shopInventoryConfig.summary_daily_hour,
+        config.shop_inventory.summary_daily_hour,
+        0,
+        23
+    );
+    config.shop_inventory.summary_daily_minute = normalizeNumber(
+        shopInventoryConfig.summary_daily_minute,
+        config.shop_inventory.summary_daily_minute,
+        0,
+        59
+    );
 
     return config;
 }
@@ -1717,7 +1784,7 @@ function getOpsAlertSummaryBaseConfig(runtimeConfig = {}, alertType = '') {
     return {
         ...definition,
         summary_enabled: section.summary_enabled === true,
-        work_hours_only_enabled: normalizeBoolean(section.work_hours_only_enabled, defaultSection.work_hours_only_enabled),
+        work_hours_only_enabled: normalizeBoolean(section.work_hours_only_enabled, defaultSection.work_hours_only_enabled === true),
         summary_window_minutes: Math.max(5, normalizeNumber(section.summary_window_minutes, 60, 5, 24 * 60)),
         summary_max_items: Math.max(1, normalizeNumber(section.summary_max_items, 10, 1, 50)),
         summary_schedule_mode: normalizeSummaryScheduleMode(
@@ -1870,8 +1937,12 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
     }
 
     const newItem = buildOpsAlertSummaryItem({
+        alertType,
         dedupeKey: itemDedupeKey,
-        payload: input.payload,
+        payload: {
+            ...normalizeJsonObject(input.payload),
+            summary_source_alert_type: alertType
+        },
         title: input.title,
         content: input.content,
         createdAt: itemCreatedAt
@@ -2164,6 +2235,10 @@ function buildExternalAlertText(job = {}) {
     if (walletRechargeSummaryText) {
         return walletRechargeSummaryText;
     }
+    const shopInventorySummaryText = buildShopInventorySummaryAlertText(job);
+    if (shopInventorySummaryText) {
+        return shopInventorySummaryText;
+    }
     const walletRechargeText = buildWalletRechargeSucceededAlertText(job);
     if (walletRechargeText) {
         return walletRechargeText;
@@ -2447,6 +2522,65 @@ function buildWalletRechargeSummaryAlertText(job = {}) {
     });
     if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
         lines.push(`其余 ${Number(payload.item_count) - items.length} 笔请前往后台查看。`);
+    }
+    if (normalizeText(payload.entry_path)) {
+        lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+    }
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function getShopInventorySummaryStatusLabel(item = {}, itemPayload = {}) {
+    const alertType = normalizeText(item?.alert_type || itemPayload.summary_source_alert_type || itemPayload.alert_type).toLowerCase();
+    if (alertType === 'shop_inventory_empty') {
+        return '已售罄';
+    }
+    if (alertType === 'shop_inventory_low') {
+        return '低库存';
+    }
+
+    return Number(itemPayload.stock_count) <= 0 ? '已售罄' : '低库存';
+}
+
+function buildShopInventorySummaryAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'shop_inventory_summary') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const items = getSummaryItems(payload).slice(0, Math.max(1, normalizeNumber(payload.summary_max_items, 10, 1, 50)));
+    const lines = [buildSummaryHeader(job, '库存与补货汇总')];
+
+    if (normalizeText(payload.window_start_at) || normalizeText(payload.window_end_at)) {
+        lines.push(`时间窗口：${formatTimestamp(payload.window_start_at)} - ${formatTimestamp(payload.window_end_at)}`);
+    }
+    if (Number.isFinite(Number(payload.item_count))) {
+        lines.push(`累计库存告警：${Math.max(0, Math.round(Number(payload.item_count || 0)))} 条`);
+    }
+    items.forEach((item, index) => {
+        const itemPayload = normalizeJsonObject(item?.payload);
+        const productName = normalizeText(itemPayload.product_name) || normalizeText(item?.title) || '未命名商品';
+        const statusLabel = getShopInventorySummaryStatusLabel(item, itemPayload);
+        lines.push(`${index + 1}. ${productName}${statusLabel ? ` · ${statusLabel}` : ''}`);
+        if (normalizeText(itemPayload.category)) lines.push(`   分类：${normalizeText(itemPayload.category)}`);
+        if (Number.isFinite(Number(itemPayload.stock_count))) {
+            const stockCount = Math.max(0, Math.round(Number(itemPayload.stock_count || 0)));
+            const threshold = Math.max(0, Math.round(Number(itemPayload.low_stock_threshold || 0)));
+            lines.push(
+                stockCount <= 0
+                    ? '   当前库存：0 件（已售罄）'
+                    : `   当前库存：${stockCount} 件（阈值 ${threshold} 件）`
+            );
+        }
+        if (Number.isFinite(Number(itemPayload.recent_sales_count))) {
+            const salesWindow = Math.max(1, Math.round(Number(itemPayload.recent_sales_days || 7)));
+            lines.push(`   近 ${salesWindow} 天销量：${Math.max(0, Math.round(Number(itemPayload.recent_sales_count || 0)))} 件`);
+        }
+        const updatedAt = formatTimestamp(itemPayload.updated_at || item?.created_at);
+        if (updatedAt) lines.push(`   时间：${updatedAt}`);
+    });
+    if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
+        lines.push(`其余 ${Number(payload.item_count) - items.length} 条请前往后台查看。`);
     }
     if (normalizeText(payload.entry_path)) {
         lines.push(`处理入口：${normalizeText(payload.entry_path)}`);

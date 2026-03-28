@@ -478,6 +478,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-shop-inventory-recovery-enabled':
                 window.toggleOpsAlertShopInventoryRecoveryNotificationEnabled?.();
                 break;
+            case 'settings-toggle-ops-alert-shop-inventory-summary-enabled':
+                window.toggleOpsAlertShopInventorySummaryEnabled?.();
+                break;
             case 'settings-toggle-ops-alert-customer-chat-message-enabled':
                 window.toggleOpsAlertCustomerChatMessageEnabled?.();
                 break;
@@ -1301,6 +1304,9 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'settings-change-ops-alert-customer-chat-message-summary-schedule-mode':
                 window.handleOpsAlertCustomerChatMessageSummaryScheduleModeChange?.();
+                break;
+            case 'settings-change-ops-alert-shop-inventory-summary-schedule-mode':
+                window.handleOpsAlertShopInventorySummaryScheduleModeChange?.();
                 break;
             case 'settings-change-ops-alert-shop-purchase-success-summary-schedule-mode':
                 window.handleOpsAlertShopPurchaseSuccessSummaryScheduleModeChange?.();

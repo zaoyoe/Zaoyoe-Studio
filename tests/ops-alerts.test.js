@@ -435,6 +435,75 @@ test('enqueueOpsAlertJob aggregates purchase success alerts into a single summar
     assert.equal(state.jobs[0].title, '购买成功汇总（2 笔订单）');
 });
 
+test('enqueueOpsAlertJob aggregates inventory low and empty alerts into a single summary job when summary mode is enabled', async () => {
+    const state = { jobs: [] };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            shop_inventory: {
+                enabled: true,
+                summary_enabled: true,
+                summary_window_minutes: 120,
+                summary_max_items: 4
+            }
+        }
+    });
+
+    await enqueueOpsAlertJob(supabase, {
+        alertType: 'shop_inventory_low',
+        severity: 'warning',
+        title: 'Prompt Pro 月卡 库存不足',
+        content: 'Prompt Pro 月卡 当前库存仅剩 3 件，已低于阈值 5 件。',
+        payload: {
+            product_id: 'product-low',
+            product_name: 'Prompt Pro 月卡',
+            category: '提示词',
+            stock_count: 3,
+            low_stock_threshold: 5,
+            recent_sales_days: 7,
+            recent_sales_count: 12,
+            updated_at: '2026-03-27T06:10:00.000Z',
+            entry_path: '商城管理 -> 商品列表 -> 库存 / 补货'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T06:10:00.000Z')
+    });
+    const second = await enqueueOpsAlertJob(supabase, {
+        alertType: 'shop_inventory_empty',
+        severity: 'critical',
+        title: '账号季卡 已售罄',
+        content: '账号季卡 当前已无可售库存，请尽快补货。',
+        payload: {
+            product_id: 'product-empty',
+            product_name: '账号季卡',
+            category: '账号',
+            stock_count: 0,
+            low_stock_threshold: 5,
+            recent_sales_days: 7,
+            recent_sales_count: 4,
+            updated_at: '2026-03-27T06:45:00.000Z',
+            entry_path: '商城管理 -> 商品列表 -> 库存 / 补货'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T06:45:00.000Z')
+    });
+
+    assert.equal(second.queued, true);
+    assert.equal(second.summary, true);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].alert_type, 'shop_inventory_summary');
+    assert.equal(state.jobs[0].severity, 'critical');
+    assert.equal(state.jobs[0].payload.item_count, 2);
+    assert.equal(state.jobs[0].payload.items.length, 2);
+    assert.equal(state.jobs[0].payload.items[0].alert_type, 'shop_inventory_low');
+    assert.equal(state.jobs[0].payload.items[1].alert_type, 'shop_inventory_empty');
+    assert.equal(state.jobs[0].payload.summary_window_minutes, 120);
+    assert.equal(state.jobs[0].payload.summary_max_items, 4);
+    assert.equal(state.jobs[0].title, '库存与补货汇总（2 条库存告警）');
+});
+
 test('enqueueOpsAlertJob schedules customer chat summaries on the hourly fixed minute when configured', async () => {
     const state = { jobs: [] };
     const supabase = createSupabaseStub(state);
@@ -1486,6 +1555,55 @@ test('buildExternalAlertText renders shop inventory recovery details', () => {
     assert.match(text, /上次告警库存：3 件/);
     assert.match(text, /近 7 天销量：12 件/);
     assert.match(text, /持续时长：54 分钟/);
+    assert.match(text, /处理入口：商城管理 -> 商品列表 -> 库存 \/ 补货/);
+});
+
+test('buildExternalAlertText renders shop inventory summary details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'shop_inventory_summary',
+        severity: 'critical',
+        title: '库存与补货汇总（2 条库存告警）',
+        payload: {
+            window_start_at: '2026-03-27T06:00:00.000Z',
+            window_end_at: '2026-03-27T08:00:00.000Z',
+            item_count: 2,
+            summary_max_items: 4,
+            entry_path: '商城管理 -> 商品列表 -> 库存 / 补货',
+            items: [
+                {
+                    alert_type: 'shop_inventory_low',
+                    payload: {
+                        product_name: 'Prompt Pro 月卡',
+                        category: '提示词',
+                        stock_count: 3,
+                        low_stock_threshold: 5,
+                        recent_sales_days: 7,
+                        recent_sales_count: 12,
+                        updated_at: '2026-03-27T06:10:00.000Z'
+                    }
+                },
+                {
+                    alert_type: 'shop_inventory_empty',
+                    payload: {
+                        product_name: '账号季卡',
+                        category: '账号',
+                        stock_count: 0,
+                        low_stock_threshold: 5,
+                        recent_sales_days: 7,
+                        recent_sales_count: 4,
+                        updated_at: '2026-03-27T06:45:00.000Z'
+                    }
+                }
+            ]
+        }
+    });
+
+    assert.match(text, /站外告警汇总/);
+    assert.match(text, /库存与补货汇总/);
+    assert.match(text, /累计库存告警：2 条/);
+    assert.match(text, /Prompt Pro 月卡 · 低库存/);
+    assert.match(text, /账号季卡 · 已售罄/);
+    assert.match(text, /当前库存：0 件（已售罄）/);
     assert.match(text, /处理入口：商城管理 -> 商品列表 -> 库存 \/ 补货/);
 });
 

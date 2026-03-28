@@ -1059,7 +1059,14 @@ function getDefaultOpsAlertConfig() {
             sweep_interval_ms: 15 * 60 * 1000,
             sales_window_days: 7,
             dedupe_window_minutes: 6 * 60,
-            recovery_notification_enabled: true
+            recovery_notification_enabled: true,
+            summary_enabled: false,
+            summary_window_minutes: 60,
+            summary_max_items: 10,
+            summary_schedule_mode: 'rolling_window',
+            summary_hourly_minute: 0,
+            summary_daily_hour: 9,
+            summary_daily_minute: 0
         },
         customer_chat_message: {
             enabled: true,
@@ -1693,6 +1700,39 @@ function normalizeOpsAlertConfig(raw) {
             recovery_notification_enabled: normalizeConfigBoolean(
                 shopInventorySource.recovery_notification_enabled,
                 defaults.shop_inventory.recovery_notification_enabled
+            ),
+            summary_enabled: normalizeConfigBoolean(
+                shopInventorySource.summary_enabled,
+                defaults.shop_inventory.summary_enabled
+            ),
+            summary_window_minutes: clamp(
+                toWholeNumber(shopInventorySource.summary_window_minutes, defaults.shop_inventory.summary_window_minutes),
+                5,
+                24 * 60
+            ),
+            summary_max_items: clamp(
+                toWholeNumber(shopInventorySource.summary_max_items, defaults.shop_inventory.summary_max_items),
+                1,
+                50
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                shopInventorySource.summary_schedule_mode,
+                defaults.shop_inventory.summary_schedule_mode
+            ),
+            summary_hourly_minute: clamp(
+                toWholeNumber(shopInventorySource.summary_hourly_minute, defaults.shop_inventory.summary_hourly_minute),
+                0,
+                59
+            ),
+            summary_daily_hour: clamp(
+                toWholeNumber(shopInventorySource.summary_daily_hour, defaults.shop_inventory.summary_daily_hour),
+                0,
+                23
+            ),
+            summary_daily_minute: clamp(
+                toWholeNumber(shopInventorySource.summary_daily_minute, defaults.shop_inventory.summary_daily_minute),
+                0,
+                59
             )
         },
         customer_chat_message: {
@@ -2654,6 +2694,11 @@ function applyOpsAlertShopInventoryControls(config = normalizeOpsAlertConfig(sys
         recoveryToggleEl.classList.toggle('active', inventoryConfig.recovery_notification_enabled);
         recoveryToggleEl.classList.toggle('disabled', !inventoryConfig.enabled);
     }
+    const summaryToggleEl = document.getElementById('opsAlertShopInventorySummaryEnabledToggle');
+    if (summaryToggleEl) {
+        summaryToggleEl.classList.toggle('active', inventoryConfig.summary_enabled === true);
+        summaryToggleEl.classList.toggle('disabled', !inventoryConfig.enabled);
+    }
 
     [
         'opsAlertShopInventoryLowStockThreshold',
@@ -2663,6 +2708,14 @@ function applyOpsAlertShopInventoryControls(config = normalizeOpsAlertConfig(sys
     ].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.disabled = !inventoryConfig.enabled;
+    });
+    applyOpsAlertSummaryModeControls(inventoryConfig, {
+        summaryScheduleMode: 'opsAlertShopInventorySummaryScheduleMode',
+        summaryWindowMinutes: 'opsAlertShopInventorySummaryWindowMinutes',
+        summaryHourlyMinute: 'opsAlertShopInventorySummaryHourlyMinute',
+        summaryDailyHour: 'opsAlertShopInventorySummaryDailyHour',
+        summaryDailyMinute: 'opsAlertShopInventorySummaryDailyMinute',
+        summaryMaxItems: 'opsAlertShopInventorySummaryMaxItems'
     });
 }
 
@@ -2917,6 +2970,30 @@ function renderOpsAlertSettings() {
     const inventoryDedupeWindowMinutes = document.getElementById('opsAlertShopInventoryDedupeWindowMinutes');
     if (inventoryDedupeWindowMinutes) {
         inventoryDedupeWindowMinutes.value = String(config.shop_inventory.dedupe_window_minutes);
+    }
+    const inventorySummaryWindowMinutes = document.getElementById('opsAlertShopInventorySummaryWindowMinutes');
+    if (inventorySummaryWindowMinutes) {
+        inventorySummaryWindowMinutes.value = String(config.shop_inventory.summary_window_minutes);
+    }
+    const inventorySummaryScheduleMode = document.getElementById('opsAlertShopInventorySummaryScheduleMode');
+    if (inventorySummaryScheduleMode) {
+        inventorySummaryScheduleMode.value = config.shop_inventory.summary_schedule_mode;
+    }
+    const inventorySummaryHourlyMinute = document.getElementById('opsAlertShopInventorySummaryHourlyMinute');
+    if (inventorySummaryHourlyMinute) {
+        inventorySummaryHourlyMinute.value = String(config.shop_inventory.summary_hourly_minute);
+    }
+    const inventorySummaryDailyHour = document.getElementById('opsAlertShopInventorySummaryDailyHour');
+    if (inventorySummaryDailyHour) {
+        inventorySummaryDailyHour.value = String(config.shop_inventory.summary_daily_hour);
+    }
+    const inventorySummaryDailyMinute = document.getElementById('opsAlertShopInventorySummaryDailyMinute');
+    if (inventorySummaryDailyMinute) {
+        inventorySummaryDailyMinute.value = String(config.shop_inventory.summary_daily_minute);
+    }
+    const inventorySummaryMaxItems = document.getElementById('opsAlertShopInventorySummaryMaxItems');
+    if (inventorySummaryMaxItems) {
+        inventorySummaryMaxItems.value = String(config.shop_inventory.summary_max_items);
     }
 
     const customerChatMessageSweepIntervalMinutes = document.getElementById('opsAlertCustomerChatMessageSweepIntervalMinutes');
@@ -6239,6 +6316,32 @@ function collectOpsAlertConfigFromForm() {
     );
     nextConfig.shop_inventory.recovery_notification_enabled = document.getElementById('opsAlertShopInventoryRecoveryNotificationEnabledToggle')?.classList.contains('active')
         ?? currentConfig.shop_inventory.recovery_notification_enabled;
+    nextConfig.shop_inventory.summary_enabled = document.getElementById('opsAlertShopInventorySummaryEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.shop_inventory.summary_enabled;
+    nextConfig.shop_inventory.summary_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertShopInventorySummaryWindowMinutes')?.value,
+        currentConfig.shop_inventory.summary_window_minutes
+    );
+    nextConfig.shop_inventory.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+        document.getElementById('opsAlertShopInventorySummaryScheduleMode')?.value,
+        currentConfig.shop_inventory.summary_schedule_mode
+    );
+    nextConfig.shop_inventory.summary_hourly_minute = toWholeNumber(
+        document.getElementById('opsAlertShopInventorySummaryHourlyMinute')?.value,
+        currentConfig.shop_inventory.summary_hourly_minute
+    );
+    nextConfig.shop_inventory.summary_daily_hour = toWholeNumber(
+        document.getElementById('opsAlertShopInventorySummaryDailyHour')?.value,
+        currentConfig.shop_inventory.summary_daily_hour
+    );
+    nextConfig.shop_inventory.summary_daily_minute = toWholeNumber(
+        document.getElementById('opsAlertShopInventorySummaryDailyMinute')?.value,
+        currentConfig.shop_inventory.summary_daily_minute
+    );
+    nextConfig.shop_inventory.summary_max_items = toWholeNumber(
+        document.getElementById('opsAlertShopInventorySummaryMaxItems')?.value,
+        currentConfig.shop_inventory.summary_max_items
+    );
     nextConfig.customer_chat_message.enabled = document.getElementById('opsAlertCustomerChatMessageEnabledToggle')?.classList.contains('active')
         ?? currentConfig.customer_chat_message.enabled;
     nextConfig.customer_chat_message.sweep_interval_ms = Math.max(
@@ -7921,6 +8024,7 @@ function toggleOpsAlertShopInventoryEnabled() {
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertShopInventoryControls(collectOpsAlertConfigFromForm());
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
@@ -7931,6 +8035,23 @@ function toggleOpsAlertShopInventoryRecoveryNotificationEnabled() {
 
     toggleEl.classList.toggle('active');
     pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertShopInventoryControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertShopInventorySummaryEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertShopInventoryEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertShopInventorySummaryEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertShopInventoryControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function handleOpsAlertShopInventorySummaryScheduleModeChange() {
+    applyOpsAlertShopInventoryControls(collectOpsAlertConfigFromForm());
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
@@ -10275,6 +10396,8 @@ window.toggleOpsAlertWorkHoursEnabled = toggleOpsAlertWorkHoursEnabled;
 window.toggleOpsAlertShopRiskAutoResponseEnabled = toggleOpsAlertShopRiskAutoResponseEnabled;
 window.toggleOpsAlertShopInventoryEnabled = toggleOpsAlertShopInventoryEnabled;
 window.toggleOpsAlertShopInventoryRecoveryNotificationEnabled = toggleOpsAlertShopInventoryRecoveryNotificationEnabled;
+window.toggleOpsAlertShopInventorySummaryEnabled = toggleOpsAlertShopInventorySummaryEnabled;
+window.handleOpsAlertShopInventorySummaryScheduleModeChange = handleOpsAlertShopInventorySummaryScheduleModeChange;
 window.toggleOpsAlertCustomerChatMessageEnabled = toggleOpsAlertCustomerChatMessageEnabled;
 window.toggleOpsAlertCustomerChatMessageSummaryEnabled = toggleOpsAlertCustomerChatMessageSummaryEnabled;
 window.toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled = toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled;

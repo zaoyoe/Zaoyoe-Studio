@@ -130,7 +130,14 @@ function createDefaultState() {
                 sweep_interval_ms: 15 * 60 * 1000,
                 sales_window_days: 7,
                 dedupe_window_minutes: 6 * 60,
-                recovery_notification_enabled: true
+                recovery_notification_enabled: true,
+                summary_enabled: false,
+                summary_window_minutes: 60,
+                summary_max_items: 10,
+                summary_schedule_mode: 'rolling_window',
+                summary_hourly_minute: 0,
+                summary_daily_hour: 9,
+                summary_daily_minute: 0
             },
             customer_chat_message: {
                 enabled: true,
@@ -390,7 +397,14 @@ function createNormalizedConfig(raw) {
             sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(shopInventory.sweep_interval_ms || 15 * 60 * 1000) || (15 * 60 * 1000))),
             sales_window_days: Math.min(30, Math.max(1, Number(shopInventory.sales_window_days || 7) || 7)),
             dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(shopInventory.dedupe_window_minutes || 6 * 60) || (6 * 60))),
-            recovery_notification_enabled: normalizeBoolean(shopInventory.recovery_notification_enabled, true)
+            recovery_notification_enabled: normalizeBoolean(shopInventory.recovery_notification_enabled, true),
+            summary_enabled: normalizeBoolean(shopInventory.summary_enabled, false),
+            summary_window_minutes: Math.min(24 * 60, Math.max(5, Number(shopInventory.summary_window_minutes || 60) || 60)),
+            summary_max_items: Math.min(50, Math.max(1, Number(shopInventory.summary_max_items || 10) || 10)),
+            summary_schedule_mode: normalizeSummaryScheduleMode(shopInventory.summary_schedule_mode, 'rolling_window'),
+            summary_hourly_minute: Math.min(59, Math.max(0, Number(shopInventory.summary_hourly_minute || 0) || 0)),
+            summary_daily_hour: Math.min(23, Math.max(0, Number(shopInventory.summary_daily_hour ?? 9) || 9)),
+            summary_daily_minute: Math.min(59, Math.max(0, Number(shopInventory.summary_daily_minute || 0) || 0))
         },
         customer_chat_message: {
             enabled: normalizeBoolean(customerChatMessage.enabled, true),
@@ -732,6 +746,13 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.shop_inventory.sales_window_days, 7);
         assert.equal(payload.config.shop_inventory.dedupe_window_minutes, 6 * 60);
         assert.equal(payload.config.shop_inventory.recovery_notification_enabled, true);
+        assert.equal(payload.config.shop_inventory.summary_enabled, false);
+        assert.equal(payload.config.shop_inventory.summary_window_minutes, 60);
+        assert.equal(payload.config.shop_inventory.summary_max_items, 10);
+        assert.equal(payload.config.shop_inventory.summary_schedule_mode, 'rolling_window');
+        assert.equal(payload.config.shop_inventory.summary_hourly_minute, 0);
+        assert.equal(payload.config.shop_inventory.summary_daily_hour, 9);
+        assert.equal(payload.config.shop_inventory.summary_daily_minute, 0);
         assert.equal(payload.config.customer_chat_message.enabled, true);
         assert.equal(payload.config.customer_chat_message.sweep_interval_ms, 60 * 1000);
         assert.equal(payload.config.customer_chat_message.lookback_minutes, 15);
@@ -871,7 +892,14 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         sweep_interval_ms: 20 * 60 * 1000,
                         sales_window_days: 5,
                         dedupe_window_minutes: 180,
-                        recovery_notification_enabled: false
+                        recovery_notification_enabled: false,
+                        summary_enabled: true,
+                        summary_window_minutes: 120,
+                        summary_max_items: 7,
+                        summary_schedule_mode: 'hourly',
+                        summary_hourly_minute: 10,
+                        summary_daily_hour: 9,
+                        summary_daily_minute: 0
                     },
                     customer_chat_message: {
                         enabled: true,
@@ -983,6 +1011,13 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.shop_inventory.sales_window_days, 5);
         assert.equal(payload.config.shop_inventory.dedupe_window_minutes, 180);
         assert.equal(payload.config.shop_inventory.recovery_notification_enabled, false);
+        assert.equal(payload.config.shop_inventory.summary_enabled, true);
+        assert.equal(payload.config.shop_inventory.summary_window_minutes, 120);
+        assert.equal(payload.config.shop_inventory.summary_max_items, 7);
+        assert.equal(payload.config.shop_inventory.summary_schedule_mode, 'hourly');
+        assert.equal(payload.config.shop_inventory.summary_hourly_minute, 10);
+        assert.equal(payload.config.shop_inventory.summary_daily_hour, 9);
+        assert.equal(payload.config.shop_inventory.summary_daily_minute, 0);
         assert.equal(payload.config.customer_chat_message.enabled, true);
         assert.equal(payload.config.customer_chat_message.sweep_interval_ms, 3 * 60 * 1000);
         assert.equal(payload.config.customer_chat_message.lookback_minutes, 20);
@@ -1076,6 +1111,13 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.shop_inventory_sales_window_days, 5);
         assert.equal(state.auditLogs[0].details.shop_inventory_dedupe_window_minutes, 180);
         assert.equal(state.auditLogs[0].details.shop_inventory_recovery_notification_enabled, false);
+        assert.equal(state.auditLogs[0].details.shop_inventory_summary_enabled, true);
+        assert.equal(state.auditLogs[0].details.shop_inventory_summary_window_minutes, 120);
+        assert.equal(state.auditLogs[0].details.shop_inventory_summary_max_items, 7);
+        assert.equal(state.auditLogs[0].details.shop_inventory_summary_schedule_mode, 'hourly');
+        assert.equal(state.auditLogs[0].details.shop_inventory_summary_hourly_minute, 10);
+        assert.equal(state.auditLogs[0].details.shop_inventory_summary_daily_hour, 9);
+        assert.equal(state.auditLogs[0].details.shop_inventory_summary_daily_minute, 0);
         assert.equal(state.auditLogs[0].details.customer_chat_message_enabled, true);
         assert.equal(state.auditLogs[0].details.customer_chat_message_sweep_interval_ms, 3 * 60 * 1000);
         assert.equal(state.auditLogs[0].details.customer_chat_message_lookback_minutes, 20);
