@@ -551,6 +551,123 @@ test('enqueueOpsAlertJob schedules wallet recharge summaries on the daily fixed 
     assert.match(state.jobs[0].content, /每天 09:00（UTC）/);
 });
 
+test('enqueueOpsAlertJob aggregates off-hours customer chat alerts into the next work-hours summary even during quiet hours', async () => {
+    const state = { jobs: [] };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            quiet_hours: {
+                enabled: true,
+                start_hour: 23,
+                end_hour: 8,
+                timezone: 'UTC',
+                allow_critical: true
+            },
+            work_hours: {
+                enabled: true,
+                start_hour: 9,
+                end_hour: 18,
+                timezone: 'UTC'
+            },
+            customer_chat_message: {
+                enabled: true,
+                work_hours_only_enabled: true,
+                summary_enabled: false,
+                summary_max_items: 5
+            }
+        }
+    });
+
+    await enqueueOpsAlertJob(supabase, {
+        alertType: 'customer_chat_message_received',
+        severity: 'warning',
+        title: '客服新消息（阿木）',
+        content: '夜里咨询发货时间',
+        payload: {
+            sender_label: '阿木',
+            user_id: 'user-001',
+            content_preview: '夜里咨询发货时间',
+            created_at: '2026-03-27T23:30:00.000Z',
+            entry_path: '客服消息 -> 会话详情'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T23:30:00.000Z')
+    });
+    const second = await enqueueOpsAlertJob(supabase, {
+        alertType: 'customer_chat_message_received',
+        severity: 'warning',
+        title: '客服新消息（小羽）',
+        content: '早上补充一个问题',
+        payload: {
+            sender_label: '小羽',
+            user_id: 'user-002',
+            content_preview: '早上补充一个问题',
+            created_at: '2026-03-28T07:20:00.000Z',
+            entry_path: '客服消息 -> 会话详情'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-28T07:20:00.000Z')
+    });
+
+    assert.equal(second.queued, true);
+    assert.equal(second.summary, true);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].alert_type, 'customer_chat_message_summary');
+    assert.equal(state.jobs[0].payload.summary_schedule_mode, 'work_hours');
+    assert.equal(state.jobs[0].payload.work_hours_start_hour, 9);
+    assert.equal(state.jobs[0].payload.work_hours_end_hour, 18);
+    assert.equal(state.jobs[0].payload.work_hours_timezone, 'UTC');
+    assert.equal(state.jobs[0].payload.window_start_at, '2026-03-27T18:00:00.000Z');
+    assert.equal(state.jobs[0].payload.window_end_at, '2026-03-28T09:00:00.000Z');
+    assert.equal(state.jobs[0].payload.item_count, 2);
+    assert.equal(state.jobs[0].next_retry_at, '2026-03-28T09:00:00.000Z');
+    assert.match(state.jobs[0].content, /工作时段 09:00-18:00（UTC）/);
+});
+
+test('enqueueOpsAlertJob still sends direct alerts during work hours when work-hours-only mode is enabled', async () => {
+    const state = { jobs: [] };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            work_hours: {
+                enabled: true,
+                start_hour: 9,
+                end_hour: 18,
+                timezone: 'UTC'
+            },
+            customer_chat_message: {
+                enabled: true,
+                work_hours_only_enabled: true,
+                summary_enabled: false
+            }
+        }
+    });
+
+    const result = await enqueueOpsAlertJob(supabase, {
+        alertType: 'customer_chat_message_received',
+        severity: 'warning',
+        title: '客服新消息（白班）',
+        content: '白天咨询',
+        payload: {
+            sender_label: '白班',
+            user_id: 'user-003',
+            content_preview: '白天咨询',
+            created_at: '2026-03-28T10:15:00.000Z',
+            entry_path: '客服消息 -> 会话详情'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-28T10:15:00.000Z')
+    });
+
+    assert.equal(result.queued, true);
+    assert.equal(result.summary, undefined);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].alert_type, 'customer_chat_message_received');
+});
+
 test('buildExternalAlertText renders rich refund details for payment refund ops alerts', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'payment_refund_ops',

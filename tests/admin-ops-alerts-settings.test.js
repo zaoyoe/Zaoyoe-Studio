@@ -51,6 +51,12 @@ function createDefaultState() {
                 timezone: 'Asia/Shanghai',
                 allow_critical: true
             },
+            work_hours: {
+                enabled: false,
+                start_hour: 9,
+                end_hour: 18,
+                timezone: 'Asia/Shanghai'
+            },
             mute_rules: {
                 types: {
                     customer_chat_message: { until: '', allow_critical: true },
@@ -131,6 +137,7 @@ function createDefaultState() {
                 sweep_interval_ms: 60 * 1000,
                 lookback_minutes: 15,
                 dedupe_window_minutes: 12 * 60,
+                work_hours_only_enabled: false,
                 summary_enabled: false,
                 summary_window_minutes: 60,
                 summary_max_items: 10,
@@ -144,6 +151,7 @@ function createDefaultState() {
                 sweep_interval_ms: 2 * 60 * 1000,
                 lookback_minutes: 30,
                 dedupe_window_minutes: 24 * 60,
+                work_hours_only_enabled: false,
                 summary_enabled: false,
                 summary_window_minutes: 60,
                 summary_max_items: 10,
@@ -157,6 +165,7 @@ function createDefaultState() {
                 sweep_interval_ms: 2 * 60 * 1000,
                 lookback_minutes: 30,
                 dedupe_window_minutes: 24 * 60,
+                work_hours_only_enabled: false,
                 summary_enabled: false,
                 summary_window_minutes: 60,
                 summary_max_items: 10,
@@ -256,6 +265,12 @@ function createNormalizedConfig(raw) {
             end_hour: Math.min(23, Math.max(0, Number(quietHours.end_hour || 8) || 8)),
             timezone: String(quietHours.timezone || 'Asia/Shanghai').trim() || 'Asia/Shanghai',
             allow_critical: normalizeBoolean(quietHours.allow_critical, true)
+        },
+        work_hours: {
+            enabled: normalizeBoolean(source.work_hours?.enabled, false),
+            start_hour: Math.min(23, Math.max(0, Number(source.work_hours?.start_hour || 9) || 9)),
+            end_hour: Math.min(23, Math.max(0, Number(source.work_hours?.end_hour || 18) || 18)),
+            timezone: String(source.work_hours?.timezone || 'Asia/Shanghai').trim() || 'Asia/Shanghai'
         },
         mute_rules: {
             types: {
@@ -382,6 +397,7 @@ function createNormalizedConfig(raw) {
             sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(customerChatMessage.sweep_interval_ms || 60 * 1000) || (60 * 1000))),
             lookback_minutes: Math.min(24 * 60, Math.max(1, Number(customerChatMessage.lookback_minutes || 15) || 15)),
             dedupe_window_minutes: Math.min(7 * 24 * 60, Math.max(1, Number(customerChatMessage.dedupe_window_minutes || 12 * 60) || (12 * 60))),
+            work_hours_only_enabled: normalizeBoolean(customerChatMessage.work_hours_only_enabled, false),
             summary_enabled: normalizeBoolean(customerChatMessage.summary_enabled, false),
             summary_window_minutes: Math.min(24 * 60, Math.max(5, Number(customerChatMessage.summary_window_minutes || 60) || 60)),
             summary_max_items: Math.min(50, Math.max(1, Number(customerChatMessage.summary_max_items || 10) || 10)),
@@ -395,6 +411,7 @@ function createNormalizedConfig(raw) {
             sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(shopPurchaseSuccess.sweep_interval_ms || 2 * 60 * 1000) || (2 * 60 * 1000))),
             lookback_minutes: Math.min(24 * 60, Math.max(1, Number(shopPurchaseSuccess.lookback_minutes || 30) || 30)),
             dedupe_window_minutes: Math.min(30 * 24 * 60, Math.max(1, Number(shopPurchaseSuccess.dedupe_window_minutes || 24 * 60) || (24 * 60))),
+            work_hours_only_enabled: normalizeBoolean(shopPurchaseSuccess.work_hours_only_enabled, false),
             summary_enabled: normalizeBoolean(shopPurchaseSuccess.summary_enabled, false),
             summary_window_minutes: Math.min(24 * 60, Math.max(5, Number(shopPurchaseSuccess.summary_window_minutes || 60) || 60)),
             summary_max_items: Math.min(50, Math.max(1, Number(shopPurchaseSuccess.summary_max_items || 10) || 10)),
@@ -408,6 +425,7 @@ function createNormalizedConfig(raw) {
             sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(walletRechargeSuccess.sweep_interval_ms || 2 * 60 * 1000) || (2 * 60 * 1000))),
             lookback_minutes: Math.min(24 * 60, Math.max(1, Number(walletRechargeSuccess.lookback_minutes || 30) || 30)),
             dedupe_window_minutes: Math.min(30 * 24 * 60, Math.max(1, Number(walletRechargeSuccess.dedupe_window_minutes || 24 * 60) || (24 * 60))),
+            work_hours_only_enabled: normalizeBoolean(walletRechargeSuccess.work_hours_only_enabled, false),
             summary_enabled: normalizeBoolean(walletRechargeSuccess.summary_enabled, false),
             summary_window_minutes: Math.min(24 * 60, Math.max(5, Number(walletRechargeSuccess.summary_window_minutes || 60) || 60)),
             summary_max_items: Math.min(50, Math.max(1, Number(walletRechargeSuccess.summary_max_items || 10) || 10)),
@@ -691,6 +709,10 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.quiet_hours.end_hour, 8);
         assert.equal(payload.config.quiet_hours.timezone, 'Asia/Shanghai');
         assert.equal(payload.config.quiet_hours.allow_critical, true);
+        assert.equal(payload.config.work_hours.enabled, false);
+        assert.equal(payload.config.work_hours.start_hour, 9);
+        assert.equal(payload.config.work_hours.end_hour, 18);
+        assert.equal(payload.config.work_hours.timezone, 'Asia/Shanghai');
         assert.equal(payload.config.channels.telegram.minimum_severity, 'critical');
         assert.deepEqual(payload.config.channels.telegram.chat_ids, ['123456']);
         assert.equal(payload.config.routing.customer_chat_message.telegram, true);
@@ -714,6 +736,7 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.customer_chat_message.sweep_interval_ms, 60 * 1000);
         assert.equal(payload.config.customer_chat_message.lookback_minutes, 15);
         assert.equal(payload.config.customer_chat_message.dedupe_window_minutes, 12 * 60);
+        assert.equal(payload.config.customer_chat_message.work_hours_only_enabled, false);
         assert.equal(payload.config.customer_chat_message.summary_enabled, false);
         assert.equal(payload.config.customer_chat_message.summary_window_minutes, 60);
         assert.equal(payload.config.customer_chat_message.summary_max_items, 10);
@@ -725,6 +748,7 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.shop_purchase_success.sweep_interval_ms, 2 * 60 * 1000);
         assert.equal(payload.config.shop_purchase_success.lookback_minutes, 30);
         assert.equal(payload.config.shop_purchase_success.dedupe_window_minutes, 24 * 60);
+        assert.equal(payload.config.shop_purchase_success.work_hours_only_enabled, false);
         assert.equal(payload.config.shop_purchase_success.summary_enabled, false);
         assert.equal(payload.config.shop_purchase_success.summary_window_minutes, 60);
         assert.equal(payload.config.shop_purchase_success.summary_max_items, 10);
@@ -736,6 +760,7 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.wallet_recharge_success.sweep_interval_ms, 2 * 60 * 1000);
         assert.equal(payload.config.wallet_recharge_success.lookback_minutes, 30);
         assert.equal(payload.config.wallet_recharge_success.dedupe_window_minutes, 24 * 60);
+        assert.equal(payload.config.wallet_recharge_success.work_hours_only_enabled, false);
         assert.equal(payload.config.wallet_recharge_success.summary_enabled, false);
         assert.equal(payload.config.wallet_recharge_success.summary_window_minutes, 60);
         assert.equal(payload.config.wallet_recharge_success.summary_max_items, 10);
@@ -767,6 +792,12 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         end_hour: 7,
                         timezone: 'Asia/Shanghai',
                         allow_critical: false
+                    },
+                    work_hours: {
+                        enabled: true,
+                        start_hour: 9,
+                        end_hour: 18,
+                        timezone: 'Asia/Shanghai'
                     },
                     mute_rules: {
                         types: {
@@ -847,6 +878,7 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         sweep_interval_ms: 3 * 60 * 1000,
                         lookback_minutes: 20,
                         dedupe_window_minutes: 240,
+                        work_hours_only_enabled: true,
                         summary_enabled: true,
                         summary_window_minutes: 90,
                         summary_max_items: 6,
@@ -860,6 +892,7 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         sweep_interval_ms: 4 * 60 * 1000,
                         lookback_minutes: 45,
                         dedupe_window_minutes: 360,
+                        work_hours_only_enabled: false,
                         summary_enabled: false,
                         summary_window_minutes: 120,
                         summary_max_items: 8,
@@ -873,6 +906,7 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         sweep_interval_ms: 5 * 60 * 1000,
                         lookback_minutes: 60,
                         dedupe_window_minutes: 480,
+                        work_hours_only_enabled: true,
                         summary_enabled: true,
                         summary_window_minutes: 180,
                         summary_max_items: 12,
@@ -903,6 +937,10 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.quiet_hours.end_hour, 7);
         assert.equal(payload.config.quiet_hours.timezone, 'Asia/Shanghai');
         assert.equal(payload.config.quiet_hours.allow_critical, false);
+        assert.equal(payload.config.work_hours.enabled, true);
+        assert.equal(payload.config.work_hours.start_hour, 9);
+        assert.equal(payload.config.work_hours.end_hour, 18);
+        assert.equal(payload.config.work_hours.timezone, 'Asia/Shanghai');
         assert.equal(payload.config.mute_rules.types.customer_chat_message.until, '2026-03-27T18:00:00.000Z');
         assert.equal(payload.config.mute_rules.types.customer_chat_message.allow_critical, false);
         assert.equal(payload.config.mute_rules.types.shop_inventory.until, '2026-03-28T09:30:00.000Z');
@@ -949,6 +987,7 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.customer_chat_message.sweep_interval_ms, 3 * 60 * 1000);
         assert.equal(payload.config.customer_chat_message.lookback_minutes, 20);
         assert.equal(payload.config.customer_chat_message.dedupe_window_minutes, 240);
+        assert.equal(payload.config.customer_chat_message.work_hours_only_enabled, true);
         assert.equal(payload.config.customer_chat_message.summary_enabled, true);
         assert.equal(payload.config.customer_chat_message.summary_window_minutes, 90);
         assert.equal(payload.config.customer_chat_message.summary_max_items, 6);
@@ -960,6 +999,7 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.shop_purchase_success.sweep_interval_ms, 4 * 60 * 1000);
         assert.equal(payload.config.shop_purchase_success.lookback_minutes, 45);
         assert.equal(payload.config.shop_purchase_success.dedupe_window_minutes, 360);
+        assert.equal(payload.config.shop_purchase_success.work_hours_only_enabled, false);
         assert.equal(payload.config.shop_purchase_success.summary_enabled, false);
         assert.equal(payload.config.shop_purchase_success.summary_window_minutes, 120);
         assert.equal(payload.config.shop_purchase_success.summary_max_items, 8);
@@ -971,6 +1011,7 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.wallet_recharge_success.sweep_interval_ms, 5 * 60 * 1000);
         assert.equal(payload.config.wallet_recharge_success.lookback_minutes, 60);
         assert.equal(payload.config.wallet_recharge_success.dedupe_window_minutes, 480);
+        assert.equal(payload.config.wallet_recharge_success.work_hours_only_enabled, true);
         assert.equal(payload.config.wallet_recharge_success.summary_enabled, true);
         assert.equal(payload.config.wallet_recharge_success.summary_window_minutes, 180);
         assert.equal(payload.config.wallet_recharge_success.summary_max_items, 12);
@@ -990,6 +1031,10 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.quiet_hours_end_hour, 7);
         assert.equal(state.auditLogs[0].details.quiet_hours_timezone, 'Asia/Shanghai');
         assert.equal(state.auditLogs[0].details.quiet_hours_allow_critical, false);
+        assert.equal(state.auditLogs[0].details.work_hours_enabled, true);
+        assert.equal(state.auditLogs[0].details.work_hours_start_hour, 9);
+        assert.equal(state.auditLogs[0].details.work_hours_end_hour, 18);
+        assert.equal(state.auditLogs[0].details.work_hours_timezone, 'Asia/Shanghai');
         assert.deepEqual(state.auditLogs[0].details.mute_type_keys_active, ['customer_chat_message', 'shop_inventory']);
         assert.deepEqual(state.auditLogs[0].details.mute_module_keys_active, ['commerce', 'payments', 'shop_risk']);
         assert.deepEqual(state.auditLogs[0].details.mute_type_rules, {
@@ -1035,6 +1080,7 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.customer_chat_message_sweep_interval_ms, 3 * 60 * 1000);
         assert.equal(state.auditLogs[0].details.customer_chat_message_lookback_minutes, 20);
         assert.equal(state.auditLogs[0].details.customer_chat_message_dedupe_window_minutes, 240);
+        assert.equal(state.auditLogs[0].details.customer_chat_message_work_hours_only_enabled, true);
         assert.equal(state.auditLogs[0].details.customer_chat_message_summary_enabled, true);
         assert.equal(state.auditLogs[0].details.customer_chat_message_summary_window_minutes, 90);
         assert.equal(state.auditLogs[0].details.customer_chat_message_summary_max_items, 6);
@@ -1046,6 +1092,7 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.shop_purchase_success_sweep_interval_ms, 4 * 60 * 1000);
         assert.equal(state.auditLogs[0].details.shop_purchase_success_lookback_minutes, 45);
         assert.equal(state.auditLogs[0].details.shop_purchase_success_dedupe_window_minutes, 360);
+        assert.equal(state.auditLogs[0].details.shop_purchase_success_work_hours_only_enabled, false);
         assert.equal(state.auditLogs[0].details.shop_purchase_success_summary_enabled, false);
         assert.equal(state.auditLogs[0].details.shop_purchase_success_summary_window_minutes, 120);
         assert.equal(state.auditLogs[0].details.shop_purchase_success_summary_max_items, 8);
@@ -1057,6 +1104,7 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.wallet_recharge_success_sweep_interval_ms, 5 * 60 * 1000);
         assert.equal(state.auditLogs[0].details.wallet_recharge_success_lookback_minutes, 60);
         assert.equal(state.auditLogs[0].details.wallet_recharge_success_dedupe_window_minutes, 480);
+        assert.equal(state.auditLogs[0].details.wallet_recharge_success_work_hours_only_enabled, true);
         assert.equal(state.auditLogs[0].details.wallet_recharge_success_summary_enabled, true);
         assert.equal(state.auditLogs[0].details.wallet_recharge_success_summary_window_minutes, 180);
         assert.equal(state.auditLogs[0].details.wallet_recharge_success_summary_max_items, 12);

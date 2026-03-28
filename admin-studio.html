@@ -1232,6 +1232,40 @@
                                         <section class="ops-alert-strategy-card ops-alert-strategy-card--wide">
                                             <div class="ops-alert-strategy-card__head">
                                                 <div>
+                                                    <h4>工作时段</h4>
+                                                    <p>适合低优先级通知只在白天处理。启用后，勾选了“仅工作时间通知”的告警会在非工作时段先汇总，等到下一个工作开始时再统一外发。</p>
+                                                </div>
+                                                <div class="status-toggle" id="opsAlertWorkHoursEnabledToggle" data-admin-action="settings-toggle-ops-alert-work-hours-enabled"></div>
+                                            </div>
+                                            <div class="ops-alert-quiet-hours-grid">
+                                                <div class="config-row">
+                                                    <label>开始小时</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertWorkHoursStartHour" placeholder="9">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>结束小时</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertWorkHoursEndHour" placeholder="18">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>时区</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="text" class="config-input" id="opsAlertWorkHoursTimezone" placeholder="Asia/Shanghai">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="config-inline-note">
+                                                <i class="fas fa-circle-info"></i>
+                                                <span>这组时间只影响开启了“仅工作时间通知”的低优先级告警，不会替代静默时段或单独静默规则。</span>
+                                            </div>
+                                        </section>
+
+                                        <section class="ops-alert-strategy-card ops-alert-strategy-card--wide">
+                                            <div class="ops-alert-strategy-card__head">
+                                                <div>
                                                     <h4>按单类静默</h4>
                                                     <p>针对单一业务通知单独静默到某个时间，不影响其它告警继续外发。</p>
                                                 </div>
@@ -2125,6 +2159,15 @@
                                     </div>
                                     <div class="config-row">
                                         <div class="config-info">
+                                            <div class="config-label">仅工作时间通知</div>
+                                            <div class="config-desc">非工作时段先不直接外发，统一汇总到下一个工作开始时间再发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle" data-admin-action="settings-toggle-ops-alert-customer-chat-message-work-hours-only"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
                                             <div class="config-label">启用定时汇总通知</div>
                                             <div class="config-desc">将窗口内多条客服消息合并成一条站外通知，在窗口结束后统一外发。</div>
                                         </div>
@@ -2216,6 +2259,15 @@
                                     </div>
                                     <div class="config-row">
                                         <div class="config-info">
+                                            <div class="config-label">仅工作时间通知</div>
+                                            <div class="config-desc">非工作时段先不直接外发，统一汇总到下一个工作开始时间再发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle" data-admin-action="settings-toggle-ops-alert-shop-purchase-success-work-hours-only"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
                                             <div class="config-label">启用定时汇总通知</div>
                                             <div class="config-desc">将窗口内多笔购买成功合并成一条站外通知，在窗口结束后统一外发。</div>
                                         </div>
@@ -2303,6 +2355,15 @@
                                         <label>去重冷却时间（分钟）</label>
                                         <div class="config-input-wrapper">
                                             <input type="number" min="1" max="43200" step="1" class="config-input" id="opsAlertWalletRechargeSuccessDedupeWindowMinutes" placeholder="1440">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">仅工作时间通知</div>
+                                            <div class="config-desc">非工作时段先不直接外发，统一汇总到下一个工作开始时间再发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle" data-admin-action="settings-toggle-ops-alert-wallet-recharge-success-work-hours-only"></div>
                                         </div>
                                     </div>
                                     <div class="config-row">
