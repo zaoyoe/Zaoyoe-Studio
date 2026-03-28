@@ -36,6 +36,7 @@ function createState(overrides = {}) {
     return {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
         cases: [],
+        events: [],
         auditLogs: [],
         ...overrides
     };
@@ -44,7 +45,7 @@ function createState(overrides = {}) {
 function createSupabaseStub(state) {
     return {
         from(table) {
-            if (table !== 'ops_alert_cases') {
+            if (!['ops_alert_cases', 'ops_alert_case_events'].includes(table)) {
                 throw new Error(`Unexpected table access: ${table}`);
             }
 
@@ -52,6 +53,7 @@ function createSupabaseStub(state) {
                 mode: 'select',
                 filters: [],
                 payload: null,
+                payloads: null,
                 maybeSingle: false,
                 single: false
             };
@@ -62,7 +64,8 @@ function createSupabaseStub(state) {
 
             function execute() {
                 if (queryState.mode === 'select') {
-                    const rows = applyFilters(state.cases || []);
+                    const sourceRows = table === 'ops_alert_case_events' ? (state.events || []) : (state.cases || []);
+                    const rows = applyFilters(sourceRows);
                     return {
                         data: queryState.maybeSingle ? (rows[0] || null) : rows,
                         error: null
@@ -104,6 +107,23 @@ function createSupabaseStub(state) {
                     };
                 }
 
+                if (queryState.mode === 'insert') {
+                    const payloads = Array.isArray(queryState.payloads) ? queryState.payloads : [];
+                    const rows = payloads.map((payload, index) => {
+                        const nextRow = {
+                            id: payload.id || `event-${state.events.length + index + 1}`,
+                            created_at: payload.created_at || new Date().toISOString(),
+                            ...payload
+                        };
+                        state.events.push(nextRow);
+                        return nextRow;
+                    });
+                    return {
+                        data: rows,
+                        error: null
+                    };
+                }
+
                 throw new Error(`Unsupported mode: ${queryState.mode}`);
             }
 
@@ -122,6 +142,11 @@ function createSupabaseStub(state) {
                 upsert(payload) {
                     queryState.mode = 'upsert';
                     queryState.payload = payload;
+                    return query;
+                },
+                insert(payload) {
+                    queryState.mode = 'insert';
+                    queryState.payloads = Array.isArray(payload) ? payload : [payload];
                     return query;
                 },
                 single() {
@@ -206,6 +231,9 @@ test('ops alert case handler claims a shop risk case and writes legacy-compatibl
         assert.equal(payload.case.owner_admin_id, 'admin-user-1');
         assert.equal(payload.case.owner_label, 'admin@example.com');
         assert.equal(state.cases.length, 1);
+        assert.equal(state.events.length, 1);
+        assert.equal(state.events[0].action, 'claim');
+        assert.equal(state.events[0].owner_admin_id, 'admin-user-1');
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.auditLogs[0].actionType, 'admin.shop_risk_case.claim');
     });
@@ -276,6 +304,9 @@ test('ops alert case handler resolves an existing case while preserving owner in
         assert.equal(payload.case.owner_label, 'ops@example.com');
         assert.equal(payload.case.resolution, '已停用优惠码并完成订单复核。');
         assert.equal(state.cases[0].status, 'resolved');
+        assert.equal(state.events.length, 1);
+        assert.equal(state.events[0].action, 'resolve');
+        assert.equal(state.events[0].resolution, '已停用优惠码并完成订单复核。');
         assert.equal(state.auditLogs[0].actionType, 'admin.shop_risk_case.resolve');
     });
 });
@@ -315,6 +346,9 @@ test('ops alert case handler supports batch claim for generic monitor items', as
         assert.equal(state.cases.length, 2);
         assert.equal(state.cases[0].status, 'claimed');
         assert.equal(state.cases[1].status, 'claimed');
+        assert.equal(state.events.length, 2);
+        assert.equal(state.events[0].action, 'claim');
+        assert.equal(state.events[1].action, 'claim');
         assert.equal(state.auditLogs[0].actionType, 'admin.ops_alert_case.batch.claim');
     });
 });

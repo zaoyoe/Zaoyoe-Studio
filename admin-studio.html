@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260327_OPS_ALERT_BATCH_MUTE_MODAL_3">
+    <link rel="stylesheet" href="admin-studio.css?v=20260327_OPS_ALERT_SUMMARY_SCHEDULE_1">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -1893,7 +1893,7 @@
                                         </div>
                                         <div class="ops-alert-monitor-batch-actions" id="opsAlertMonitorBatchActions">
                                             <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-batch-claim-ops-alert-monitor">
-                                                <i class="fas fa-user-check"></i> 当前筛选指派给我
+                                                <i class="fas fa-user-check"></i> 当前筛选指派负责人
                                             </button>
                                             <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-batch-note-ops-alert-monitor">
                                                 <i class="fas fa-note-sticky"></i> 当前筛选批量备注
@@ -2133,9 +2133,37 @@
                                         </div>
                                     </div>
                                     <div class="config-row">
+                                        <label>汇总方式</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertCustomerChatMessageSummaryScheduleMode" data-admin-change-action="settings-change-ops-alert-customer-chat-message-summary-schedule-mode">
+                                                <option value="rolling_window">滚动窗口</option>
+                                                <option value="hourly">每小时固定时点</option>
+                                                <option value="daily">每天固定时点</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
                                         <label>汇总窗口（分钟）</label>
                                         <div class="config-input-wrapper">
                                             <input type="number" min="5" max="1440" step="5" class="config-input" id="opsAlertCustomerChatMessageSummaryWindowMinutes" placeholder="60">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每小时发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertCustomerChatMessageSummaryHourlyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送小时</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertCustomerChatMessageSummaryDailyHour" placeholder="9">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertCustomerChatMessageSummaryDailyMinute" placeholder="0">
                                         </div>
                                     </div>
                                     <div class="config-row">
@@ -2146,7 +2174,7 @@
                                     </div>
                                     <div class="config-inline-note">
                                         <i class="fas fa-circle-info"></i>
-                                        <span>适合控制客服提醒的节奏。回看窗口决定每次扫描会补看多久内的新消息，去重冷却时间决定同一条消息在多长时间内不会重复外发；启用汇总后，窗口内消息会在结束时合并外发。</span>
+                                        <span>适合控制客服提醒的节奏。可以继续用滚动窗口，也可以改成每小时固定分钟或每天固定时间统一汇总；回看窗口和去重冷却时间仍决定补扫范围与重复外发控制。</span>
                                     </div>
                                 </div>
                             </div>
@@ -2196,9 +2224,37 @@
                                         </div>
                                     </div>
                                     <div class="config-row">
+                                        <label>汇总方式</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertShopPurchaseSuccessSummaryScheduleMode" data-admin-change-action="settings-change-ops-alert-shop-purchase-success-summary-schedule-mode">
+                                                <option value="rolling_window">滚动窗口</option>
+                                                <option value="hourly">每小时固定时点</option>
+                                                <option value="daily">每天固定时点</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
                                         <label>汇总窗口（分钟）</label>
                                         <div class="config-input-wrapper">
                                             <input type="number" min="5" max="1440" step="5" class="config-input" id="opsAlertShopPurchaseSuccessSummaryWindowMinutes" placeholder="60">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每小时发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertShopPurchaseSuccessSummaryHourlyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送小时</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertShopPurchaseSuccessSummaryDailyHour" placeholder="9">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertShopPurchaseSuccessSummaryDailyMinute" placeholder="0">
                                         </div>
                                     </div>
                                     <div class="config-row">
@@ -2209,7 +2265,7 @@
                                     </div>
                                     <div class="config-inline-note">
                                         <i class="fas fa-circle-info"></i>
-                                        <span>适合控制购买成功通知的外发节奏。冷却时间越长，同一笔订单重复扫描时越不容易再次触发外部提醒；启用汇总后，会按窗口合并多笔订单。</span>
+                                        <span>适合控制购买成功通知的外发节奏。可以按滚动窗口合并，也可以固定在每小时某分钟或每天某个时间统一发送；冷却时间仍控制重复扫描时的重复提醒。</span>
                                     </div>
                                 </div>
                             </div>
@@ -2259,9 +2315,37 @@
                                         </div>
                                     </div>
                                     <div class="config-row">
+                                        <label>汇总方式</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertWalletRechargeSuccessSummaryScheduleMode" data-admin-change-action="settings-change-ops-alert-wallet-recharge-success-summary-schedule-mode">
+                                                <option value="rolling_window">滚动窗口</option>
+                                                <option value="hourly">每小时固定时点</option>
+                                                <option value="daily">每天固定时点</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
                                         <label>汇总窗口（分钟）</label>
                                         <div class="config-input-wrapper">
                                             <input type="number" min="5" max="1440" step="5" class="config-input" id="opsAlertWalletRechargeSuccessSummaryWindowMinutes" placeholder="60">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每小时发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertWalletRechargeSuccessSummaryHourlyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送小时</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertWalletRechargeSuccessSummaryDailyHour" placeholder="9">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertWalletRechargeSuccessSummaryDailyMinute" placeholder="0">
                                         </div>
                                     </div>
                                     <div class="config-row">
@@ -2272,7 +2356,7 @@
                                     </div>
                                     <div class="config-inline-note">
                                         <i class="fas fa-circle-info"></i>
-                                        <span>适合控制充值提醒频率。回看窗口越大，越能覆盖短时抖动；冷却时间越长，同一笔充值被重复补扫时越不会反复通知；启用汇总后，会按窗口合并多笔充值。</span>
+                                        <span>适合控制充值提醒频率。可以按滚动窗口合并，也可以固定在每小时某分钟或每天某个时间统一发送；回看窗口和冷却时间仍负责覆盖补扫抖动与去重。</span>
                                     </div>
                                 </div>
                             </div>
@@ -2434,6 +2518,11 @@
                         <form id="shopRiskCaseComposerForm" class="admin-shop-risk-case-modal__form">
                             <div class="admin-shop-risk-case-modal__note" id="shopRiskCaseComposerDescription">
                                 记录处理备注、交接说明或关闭结论。
+                            </div>
+                            <div class="admin-shop-risk-case-modal__field" id="shopRiskCaseComposerOwnerField" hidden>
+                                <label for="shopRiskCaseComposerOwnerSelect">负责人</label>
+                                <select id="shopRiskCaseComposerOwnerSelect" class="config-input"></select>
+                                <div class="admin-shop-risk-case-modal__hint" id="shopRiskCaseComposerOwnerHint"></div>
                             </div>
                             <div class="admin-shop-risk-case-modal__field">
                                 <label for="shopRiskCaseComposerTextarea" id="shopRiskCaseComposerLabel">备注内容</label>
@@ -7412,13 +7501,13 @@
     <script src="admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1"></script>
     <script src="admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_2"></script>
-    <script src="admin-config.js?v=20260327_SHOP_INVENTORY_CONFIG_1"></script>
+    <script src="admin-config.js?v=20260327_OPS_ALERT_SUMMARY_SCHEDULE_1"></script>
     <script src="admin-homepage.js?v=20260324_HOMEPAGE_RUNTIME_STYLE_2"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
     <script src="js/admin-tickets.js?v=20260324_ADMIN_TICKETS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-access.js"></script>
-    <script src="admin-studio.js?v=20260327_SHOP_RISK_CASE_WORKFLOW_1"></script>
+    <script src="admin-studio.js?v=20260327_OPS_ALERT_SUMMARY_SCHEDULE_1"></script>
     <script src="js/admin-shop.js?v=20260327_SHOP_MODAL_MOTION_1"></script>
 </body>
 

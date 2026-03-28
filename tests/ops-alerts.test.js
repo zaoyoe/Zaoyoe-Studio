@@ -435,6 +435,122 @@ test('enqueueOpsAlertJob aggregates purchase success alerts into a single summar
     assert.equal(state.jobs[0].title, '购买成功汇总（2 笔订单）');
 });
 
+test('enqueueOpsAlertJob schedules customer chat summaries on the hourly fixed minute when configured', async () => {
+    const state = { jobs: [] };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            quiet_hours: {
+                timezone: 'UTC'
+            },
+            customer_chat_message: {
+                enabled: true,
+                summary_enabled: true,
+                summary_window_minutes: 60,
+                summary_max_items: 5,
+                summary_schedule_mode: 'hourly',
+                summary_hourly_minute: 0
+            }
+        }
+    });
+
+    const result = await enqueueOpsAlertJob(supabase, {
+        alertType: 'customer_chat_message_received',
+        severity: 'warning',
+        title: '客服新消息（阿木）',
+        content: '你好，想咨询一下购买后多久发货？',
+        payload: {
+            sender_label: '阿木',
+            user_id: 'user-001',
+            content_preview: '你好，想咨询一下购买后多久发货？',
+            created_at: '2026-03-27T05:12:00.000Z',
+            entry_path: '客服消息 -> 会话详情'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T05:12:00.000Z')
+    });
+
+    assert.equal(result.queued, true);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].payload.summary_schedule_mode, 'hourly');
+    assert.equal(state.jobs[0].payload.summary_hourly_minute, 0);
+    assert.equal(state.jobs[0].payload.summary_timezone, 'UTC');
+    assert.equal(state.jobs[0].payload.window_start_at, '2026-03-27T05:00:00.000Z');
+    assert.equal(state.jobs[0].payload.window_end_at, '2026-03-27T06:00:00.000Z');
+    assert.equal(state.jobs[0].next_retry_at, '2026-03-27T06:00:00.000Z');
+    assert.match(state.jobs[0].content, /每小时 00 分/);
+});
+
+test('enqueueOpsAlertJob schedules wallet recharge summaries on the daily fixed time when configured', async () => {
+    const state = { jobs: [] };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            quiet_hours: {
+                timezone: 'UTC'
+            },
+            wallet_recharge_success: {
+                enabled: true,
+                summary_enabled: true,
+                summary_window_minutes: 180,
+                summary_max_items: 12,
+                summary_schedule_mode: 'daily',
+                summary_daily_hour: 9,
+                summary_daily_minute: 0
+            }
+        }
+    });
+
+    await enqueueOpsAlertJob(supabase, {
+        alertType: 'wallet_recharge_succeeded',
+        severity: 'warning',
+        title: '充值成功（50元充值）',
+        content: '50元充值',
+        payload: {
+            payment_order_id: 'payment-order-001',
+            buyer_label: '小羽',
+            package_name: '50元充值',
+            paid_amount: 50,
+            paid_at: '2026-03-27T08:10:00.000Z',
+            entry_path: '支付对账 -> 最近订单'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T08:10:00.000Z')
+    });
+    const second = await enqueueOpsAlertJob(supabase, {
+        alertType: 'wallet_recharge_succeeded',
+        severity: 'warning',
+        title: '充值成功（100元充值）',
+        content: '100元充值',
+        payload: {
+            payment_order_id: 'payment-order-002',
+            buyer_label: '阿木',
+            package_name: '100元充值',
+            paid_amount: 100,
+            paid_at: '2026-03-27T08:20:00.000Z',
+            entry_path: '支付对账 -> 最近订单'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T08:20:00.000Z')
+    });
+
+    assert.equal(second.queued, true);
+    assert.equal(second.summary, true);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].payload.summary_schedule_mode, 'daily');
+    assert.equal(state.jobs[0].payload.summary_daily_hour, 9);
+    assert.equal(state.jobs[0].payload.summary_daily_minute, 0);
+    assert.equal(state.jobs[0].payload.summary_timezone, 'UTC');
+    assert.equal(state.jobs[0].payload.window_start_at, '2026-03-26T09:00:00.000Z');
+    assert.equal(state.jobs[0].payload.window_end_at, '2026-03-27T09:00:00.000Z');
+    assert.equal(state.jobs[0].next_retry_at, '2026-03-27T09:00:00.000Z');
+    assert.equal(state.jobs[0].payload.item_count, 2);
+    assert.match(state.jobs[0].content, /每天 09:00（UTC）/);
+});
+
 test('buildExternalAlertText renders rich refund details for payment refund ops alerts', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'payment_refund_ops',

@@ -608,6 +608,7 @@ function bindAdminStudioDelegatedControls() {
                     discountCode: actionEl.dataset.workspaceDiscountCode,
                     signalType: actionEl.dataset.workspaceSignalType,
                     caseStatus: actionEl.dataset.workspaceCaseStatus,
+                    caseOwnerAdminId: actionEl.dataset.workspaceCaseOwnerAdminId,
                     caseOwnerLabel: actionEl.dataset.workspaceCaseOwnerLabel
                 });
                 break;
@@ -624,6 +625,7 @@ function bindAdminStudioDelegatedControls() {
                     discountCode: actionEl.dataset.workspaceDiscountCode,
                     signalType: actionEl.dataset.workspaceSignalType,
                     caseStatus: actionEl.dataset.workspaceCaseStatus,
+                    caseOwnerAdminId: actionEl.dataset.workspaceCaseOwnerAdminId,
                     caseOwnerLabel: actionEl.dataset.workspaceCaseOwnerLabel
                 });
                 break;
@@ -637,7 +639,7 @@ function bindAdminStudioDelegatedControls() {
                 window.refreshOpsAlertMonitorPanel?.();
                 break;
             case 'settings-batch-claim-ops-alert-monitor':
-                window.handleOpsAlertMonitorBatchCaseAction?.('claim');
+                window.handleOpsAlertMonitorBatchCaseAction?.('assign');
                 break;
             case 'settings-batch-note-ops-alert-monitor':
                 window.handleOpsAlertMonitorBatchCaseAction?.('add_note');
@@ -1284,6 +1286,15 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'payments-change-active-provider':
                 window.handlePaymentChannelActiveChange?.(actionEl.value);
+                break;
+            case 'settings-change-ops-alert-customer-chat-message-summary-schedule-mode':
+                window.handleOpsAlertCustomerChatMessageSummaryScheduleModeChange?.();
+                break;
+            case 'settings-change-ops-alert-shop-purchase-success-summary-schedule-mode':
+                window.handleOpsAlertShopPurchaseSuccessSummaryScheduleModeChange?.();
+                break;
+            case 'settings-change-ops-alert-wallet-recharge-success-summary-schedule-mode':
+                window.handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange?.();
                 break;
             case 'points-toggle-select-all-batches':
                 window.toggleSelectAllBatches?.();

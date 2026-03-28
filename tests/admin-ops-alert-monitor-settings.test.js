@@ -37,6 +37,45 @@ function createState(overrides = {}) {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
         jobs: [],
         cases: [],
+        events: [],
+        adminRoles: [
+            {
+                user_id: 'admin-user-1',
+                role_name: 'super_admin',
+                expires_at: null
+            },
+            {
+                user_id: 'admin-user-2',
+                role_name: 'admin',
+                expires_at: null
+            }
+        ],
+        profiles: [
+            {
+                id: 'admin-user-1',
+                email: 'admin@example.com',
+                username: 'admin',
+                display_name: '当前值班',
+                avatar_url: ''
+            },
+            {
+                id: 'admin-user-2',
+                email: 'ops@example.com',
+                username: 'ops',
+                display_name: '支付值班',
+                avatar_url: ''
+            }
+        ],
+        authUsers: [
+            {
+                id: 'admin-user-1',
+                email: 'admin@example.com'
+            },
+            {
+                id: 'admin-user-2',
+                email: 'ops@example.com'
+            }
+        ],
         runtimeConfig: {
             shop_order_risk: {
                 auto_response_enabled: true,
@@ -91,7 +130,7 @@ function applyRange(rows, range) {
 function createSupabaseStub(state) {
     return {
         from(table) {
-            if (!['ops_alert_jobs', 'ops_alert_cases', 'shop_risk_cases'].includes(table)) {
+            if (!['ops_alert_jobs', 'ops_alert_cases', 'shop_risk_cases', 'ops_alert_case_events', 'admin_roles', 'profiles'].includes(table)) {
                 throw new Error(`Unexpected table access: ${table}`);
             }
 
@@ -103,7 +142,15 @@ function createSupabaseStub(state) {
             };
 
             function execute(rangeOverride = queryState.range) {
-                const sourceRows = table === 'ops_alert_jobs' ? (state.jobs || []) : (state.cases || []);
+                const sourceRows = table === 'ops_alert_jobs'
+                    ? (state.jobs || [])
+                    : table === 'ops_alert_case_events'
+                        ? (state.events || [])
+                        : table === 'admin_roles'
+                            ? (state.adminRoles || [])
+                            : table === 'profiles'
+                                ? (state.profiles || [])
+                                : (state.cases || []);
                 let rows = sortRows(applyFilters(sourceRows, queryState.filters), queryState.order);
                 if (rangeOverride) {
                     rows = applyRange(rows, rangeOverride);
@@ -158,6 +205,20 @@ function createAdminModule(state) {
         async requireAdmin() {
             return {
                 supabase: createSupabaseStub(state),
+                adminSupabase: {
+                    auth: {
+                        admin: {
+                            async listUsers() {
+                                return {
+                                    data: {
+                                        users: state.authUsers || []
+                                    },
+                                    error: null
+                                };
+                            }
+                        }
+                    }
+                },
                 user: state.user
             };
         },
@@ -337,6 +398,9 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillme
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
+        assert.equal(payload.current_admin_id, 'admin-user-1');
+        assert.equal(payload.current_admin_label, '当前值班');
+        assert.equal(payload.assignable_admins.length, 2);
         assert.equal(payload.summary.total_active_count, 5);
         assert.equal(payload.summary.total_critical_count, 4);
         assert.equal(payload.summary.active_category_count, 4);
@@ -425,6 +489,26 @@ test('ops alert monitor handler merges shop risk case ownership and case summary
                 last_action_at: hoursAgo(0.6),
                 updated_at: hoursAgo(0.6)
             }
+        ],
+        events: [
+            {
+                id: 'event-1',
+                category_key: 'shop_risk',
+                target_id: 'shop_order_risk:coupon:FLASH0',
+                alert_type: 'shop_order_risk_anomaly',
+                action: 'assign',
+                status: 'claimed',
+                owner_admin_id: 'admin-user-2',
+                owner_label: 'ops@example.com',
+                actor_admin_id: 'admin-user-1',
+                actor_label: 'admin@example.com',
+                note: '已交接给支付值班。',
+                resolution: null,
+                metadata: {
+                    title: '优惠码高频使用（FLASH0）'
+                },
+                created_at: hoursAgo(0.4)
+            }
         ]
     }, async (handler) => {
         const req = { method: 'GET', headers: {} };
@@ -440,6 +524,10 @@ test('ops alert monitor handler merges shop risk case ownership and case summary
         assert.equal(shopRisk.items[0].case_status, 'claimed');
         assert.equal(shopRisk.items[0].case_owner_label, 'ops@example.com');
         assert.equal(shopRisk.items[0].case_note, '已认领，正在核对近 24 小时关联订单。');
+        assert.equal(shopRisk.items[0].case_latest_event_action, 'assign');
+        assert.equal(shopRisk.items[0].case_latest_event_label, '转交负责人');
+        assert.equal(shopRisk.items[0].case_latest_event_summary, '已交接给支付值班。');
+        assert.equal(shopRisk.items[0].case_recent_events.length, 1);
         assert.equal(shopRisk.case_summary.open, 0);
         assert.equal(shopRisk.case_summary.claimed, 1);
         assert.equal(shopRisk.case_summary.resolved, 0);

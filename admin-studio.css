@@ -21435,6 +21435,22 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     line-height: 1.55;
 }
 
+.ops-alert-monitor-item__history {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.028);
+    border: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.ops-alert-monitor-item__history-item {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    line-height: 1.55;
+}
+
 .admin-shop-risk-case-modal {
     display: none;
     align-items: center;
@@ -21529,9 +21545,20 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     font-weight: 600;
 }
 
+.admin-shop-risk-case-modal__field select,
+.admin-shop-risk-case-modal__field textarea {
+    width: 100%;
+}
+
 .admin-shop-risk-case-modal__field textarea {
     min-height: 148px;
     resize: vertical;
+}
+
+.admin-shop-risk-case-modal__hint {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    line-height: 1.55;
 }
 
 .admin-shop-risk-case-modal__actions {
