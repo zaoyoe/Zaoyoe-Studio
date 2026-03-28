@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260328_ADMIN_AUDIT_MONITOR_COMPACT_1">
+    <link rel="stylesheet" href="admin-studio.css?v=20260328_SECURITY_PANEL_COMPACT_1">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -4076,90 +4076,93 @@
                 <div id="settings-view-security" class="view-section">
                     <div class="module-content">
                         <!-- Login Security -->
-                        <div class="settings-section">
+                        <div class="settings-section settings-section--compact">
                             <h3><i class="fas fa-shield-alt"></i> 登录安全</h3>
-                            <div class="config-item-row">
-                                <div class="config-label">
-                                    <span>登录失败锁定</span>
-                                    <span class="config-hint">连续失败N次后锁定账户</span>
-                                </div>
-                                <div class="config-value">
-                                    <div class="config-input-wrapper">
-                                        <input type="number" class="config-input admin-studio-inline-style-attr-4" id="cfgLoginLockoutAttempts" min="3"
-                                            max="10" value="5">
-                                        <span class="config-unit">次</span>
+                            <p class="settings-section__intro">常用阈值收在一行里，方便快速核对失败上限、锁定时长和会话超时。</p>
+                            <div class="security-settings-grid">
+                                <div class="security-setting-card">
+                                    <div class="config-label">
+                                        <span>登录失败锁定</span>
+                                        <span class="config-hint">连续失败 N 次后锁定账户</span>
+                                    </div>
+                                    <div class="config-value">
+                                        <div class="config-input-wrapper">
+                                            <input type="number" class="config-input admin-studio-inline-style-attr-4" id="cfgLoginLockoutAttempts" min="3"
+                                                max="10" value="5">
+                                            <span class="config-unit">次</span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                            <div class="config-item-row">
-                                <div class="config-label">
-                                    <span>锁定时长</span>
-                                    <span class="config-hint">账户锁定后的解锁等待时间</span>
-                                </div>
-                                <div class="config-value">
-                                    <div class="config-input-wrapper">
-                                        <div class="custom-dropdown" id="lockoutDurationDropdown">
-                                            <button class="dropdown-trigger" type="button"
-                                                data-admin-action="settings-toggle-custom-dropdown"
-                                                data-dropdown-id="lockoutDurationDropdown">
-                                                <span class="dropdown-value" id="lockoutDurationValue">15</span>
-                                                <i class="fas fa-chevron-down"></i>
-                                            </button>
-                                            <div class="dropdown-menu">
-                                                <div class="dropdown-option" data-value="300000"
-                                                    data-admin-action="settings-select-dropdown-option"
-                                                    data-dropdown-id="lockoutDurationDropdown" data-option-value="300000"
-                                                    data-option-label="5">
-                                                    5</div>
-                                                <div class="dropdown-option selected" data-value="900000"
-                                                    data-admin-action="settings-select-dropdown-option"
-                                                    data-dropdown-id="lockoutDurationDropdown" data-option-value="900000"
-                                                    data-option-label="15">
-                                                    15</div>
-                                                <div class="dropdown-option" data-value="3600000"
-                                                    data-admin-action="settings-select-dropdown-option"
-                                                    data-dropdown-id="lockoutDurationDropdown" data-option-value="3600000"
-                                                    data-option-label="60">
-                                                    60</div>
+                                <div class="security-setting-card">
+                                    <div class="config-label">
+                                        <span>锁定时长</span>
+                                        <span class="config-hint">账户锁定后的解锁等待时间</span>
+                                    </div>
+                                    <div class="config-value">
+                                        <div class="config-input-wrapper">
+                                            <div class="custom-dropdown" id="lockoutDurationDropdown">
+                                                <button class="dropdown-trigger" type="button"
+                                                    data-admin-action="settings-toggle-custom-dropdown"
+                                                    data-dropdown-id="lockoutDurationDropdown">
+                                                    <span class="dropdown-value" id="lockoutDurationValue">15</span>
+                                                    <i class="fas fa-chevron-down"></i>
+                                                </button>
+                                                <div class="dropdown-menu">
+                                                    <div class="dropdown-option" data-value="300000"
+                                                        data-admin-action="settings-select-dropdown-option"
+                                                        data-dropdown-id="lockoutDurationDropdown" data-option-value="300000"
+                                                        data-option-label="5">
+                                                        5</div>
+                                                    <div class="dropdown-option selected" data-value="900000"
+                                                        data-admin-action="settings-select-dropdown-option"
+                                                        data-dropdown-id="lockoutDurationDropdown" data-option-value="900000"
+                                                        data-option-label="15">
+                                                        15</div>
+                                                    <div class="dropdown-option" data-value="3600000"
+                                                        data-admin-action="settings-select-dropdown-option"
+                                                        data-dropdown-id="lockoutDurationDropdown" data-option-value="3600000"
+                                                        data-option-label="60">
+                                                        60</div>
+                                                </div>
                                             </div>
+                                            <span class="config-unit">分</span>
                                         </div>
-                                        <span class="config-unit">分</span>
                                     </div>
                                 </div>
-                            </div>
-                            <div class="config-item-row">
-                                <div class="config-label">
-                                    <span>会话超时</span>
-                                    <span class="config-hint">用户无操作后自动登出时间</span>
-                                </div>
-                                <div class="config-value">
-                                    <div class="config-input-wrapper">
-                                        <div class="custom-dropdown" id="sessionTimeoutDropdown">
-                                            <button class="dropdown-trigger" type="button"
-                                                data-admin-action="settings-toggle-custom-dropdown"
-                                                data-dropdown-id="sessionTimeoutDropdown">
-                                                <span class="dropdown-value" id="sessionTimeoutValue">60</span>
-                                                <i class="fas fa-chevron-down"></i>
-                                            </button>
-                                            <div class="dropdown-menu">
-                                                <div class="dropdown-option" data-value="1800000"
-                                                    data-admin-action="settings-select-dropdown-option"
-                                                    data-dropdown-id="sessionTimeoutDropdown" data-option-value="1800000"
-                                                    data-option-label="30">
-                                                    30</div>
-                                                <div class="dropdown-option selected" data-value="3600000"
-                                                    data-admin-action="settings-select-dropdown-option"
-                                                    data-dropdown-id="sessionTimeoutDropdown" data-option-value="3600000"
-                                                    data-option-label="60">
-                                                    60</div>
-                                                <div class="dropdown-option" data-value="86400000"
-                                                    data-admin-action="settings-select-dropdown-option"
-                                                    data-dropdown-id="sessionTimeoutDropdown" data-option-value="86400000"
-                                                    data-option-label="1440">
-                                                    1440</div>
+                                <div class="security-setting-card">
+                                    <div class="config-label">
+                                        <span>会话超时</span>
+                                        <span class="config-hint">用户无操作后自动登出时间</span>
+                                    </div>
+                                    <div class="config-value">
+                                        <div class="config-input-wrapper">
+                                            <div class="custom-dropdown" id="sessionTimeoutDropdown">
+                                                <button class="dropdown-trigger" type="button"
+                                                    data-admin-action="settings-toggle-custom-dropdown"
+                                                    data-dropdown-id="sessionTimeoutDropdown">
+                                                    <span class="dropdown-value" id="sessionTimeoutValue">60</span>
+                                                    <i class="fas fa-chevron-down"></i>
+                                                </button>
+                                                <div class="dropdown-menu">
+                                                    <div class="dropdown-option" data-value="1800000"
+                                                        data-admin-action="settings-select-dropdown-option"
+                                                        data-dropdown-id="sessionTimeoutDropdown" data-option-value="1800000"
+                                                        data-option-label="30">
+                                                        30</div>
+                                                    <div class="dropdown-option selected" data-value="3600000"
+                                                        data-admin-action="settings-select-dropdown-option"
+                                                        data-dropdown-id="sessionTimeoutDropdown" data-option-value="3600000"
+                                                        data-option-label="60">
+                                                        60</div>
+                                                    <div class="dropdown-option" data-value="86400000"
+                                                        data-admin-action="settings-select-dropdown-option"
+                                                        data-dropdown-id="sessionTimeoutDropdown" data-option-value="86400000"
+                                                        data-option-label="1440">
+                                                        1440</div>
+                                                </div>
                                             </div>
+                                            <span class="config-unit">分</span>
                                         </div>
-                                        <span class="config-unit">分</span>
                                     </div>
                                 </div>
                             </div>
@@ -4231,7 +4234,7 @@
                                         <h4><i class="fas fa-sliders"></i> 支付配置审计</h4>
                                         <p>集中查看最近支付通道配置更新、mock 切换、密钥更新与删除，承接支付配置告警的处理入口。</p>
                                     </div>
-                                    <div class="admin-audit-monitor-panel__body" id="adminAuditMonitorConfigList">
+                                    <div class="admin-audit-monitor-panel__body admin-audit-monitor-panel__body--compact admin-audit-monitor-panel__body--wide-compact" id="adminAuditMonitorConfigList">
                                         <div class="admin-audit-monitor-empty">正在加载支付配置审计...</div>
                                     </div>
                                 </section>
@@ -4239,9 +4242,10 @@
                         </div>
 
                         <!-- Locked Accounts -->
-                        <div class="settings-section">
+                        <div class="settings-section settings-section--compact">
                             <h3><i class="fas fa-user-lock"></i> 锁定账户 <span class="locked-count-badge"
                                     id="lockedCountBadge" hidden>0</span></h3>
+                            <p class="settings-section__intro">只保留待处理账户，列表区固定高度，避免少数长邮箱把整块区域继续往下撑。</p>
                             <div class="locked-accounts-container">
                                 <div class="locked-accounts-list" id="lockedAccountsList">
                                     <div class="empty-state" id="noLockedAccountsMsg">
@@ -9060,7 +9064,7 @@
     <script src="admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1"></script>
     <script src="admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_2"></script>
-    <script src="admin-config.js?v=20260328_ADMIN_AUDIT_MONITOR_COMPACT_1"></script>
+    <script src="admin-config.js?v=20260328_SECURITY_PANEL_COMPACT_1"></script>
     <script src="admin-homepage.js?v=20260324_HOMEPAGE_RUNTIME_STYLE_2"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
