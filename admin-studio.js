@@ -419,6 +419,32 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-switch-ops-alert-strategy-tab':
                 window.switchOpsAlertStrategyMuteTab?.(actionEl.dataset.strategyTab);
                 break;
+            case 'settings-toggle-ops-alert-date-picker':
+                window.toggleOpsAlertDatePicker?.(actionEl.dataset.pickerInputId);
+                break;
+            case 'settings-change-ops-alert-date-picker-month':
+                window.changeOpsAlertDatePickerMonth?.(
+                    actionEl.dataset.pickerInputId,
+                    Number(actionEl.dataset.monthDelta || 0)
+                );
+                break;
+            case 'settings-select-ops-alert-date-picker-day':
+                window.selectOpsAlertDatePickerDay?.(
+                    actionEl.dataset.pickerInputId,
+                    Number(actionEl.dataset.pickerYear || 0),
+                    Number(actionEl.dataset.pickerMonth || 0),
+                    Number(actionEl.dataset.pickerDay || 0)
+                );
+                break;
+            case 'settings-set-ops-alert-date-picker-preset':
+                window.setOpsAlertDatePickerPreset?.(actionEl.dataset.pickerInputId, actionEl.dataset.pickerPreset);
+                break;
+            case 'settings-apply-ops-alert-date-picker':
+                window.applyOpsAlertDatePicker?.(actionEl.dataset.pickerInputId);
+                break;
+            case 'settings-clear-ops-alert-date-picker':
+                window.clearOpsAlertDatePicker?.(actionEl.dataset.pickerInputId);
+                break;
             case 'settings-toggle-custom-dropdown':
                 window.toggleCustomDropdown?.(actionEl.dataset.dropdownId);
                 break;
