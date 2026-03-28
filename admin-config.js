@@ -79,6 +79,13 @@ const OPS_ALERT_OVERVIEW_BANNER_TONE_CLASSES = [
 ];
 const OPS_ALERT_STRATEGY_PANEL_KEYS = Object.freeze(['mute', 'routing', 'work-hours']);
 const OPS_ALERT_STRATEGY_MUTE_TAB_KEYS = Object.freeze(['types', 'modules']);
+const OPS_ALERT_DATETIME_PART_LENGTHS = Object.freeze({
+    year: 4,
+    month: 2,
+    day: 2,
+    hour: 2,
+    minute: 2
+});
 const OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS = Object.freeze([
     Object.freeze({
         key: 'customer_chat_message',
@@ -4162,15 +4169,220 @@ function formatOpsAlertHourRange(startHour, endHour) {
     return `${formatOpsAlertTimeNumber(startHour, 0, 23)}:00 - ${formatOpsAlertTimeNumber(endHour, 0, 23)}:00`;
 }
 
+function buildOpsAlertInlineNumberInputHtml(id, placeholder, min = 0, max = 23) {
+    return `<input type="text" inputmode="numeric" class="config-input ops-alert-inline-number-input" id="${escapeConfigHtml(id)}" data-number-min="${escapeConfigHtml(String(min))}" data-number-max="${escapeConfigHtml(String(max))}" maxlength="2" placeholder="${escapeConfigHtml(String(placeholder))}" autocomplete="off">`;
+}
+
+function buildOpsAlertDateTimeFieldHtml(inputId) {
+    return `
+        <div class="ops-alert-datetime-field" data-datetime-shell="${escapeConfigHtml(inputId)}">
+            <input type="hidden" class="ops-alert-datetime-hidden" id="${escapeConfigHtml(inputId)}">
+            <div class="ops-alert-datetime-editor">
+                <div class="ops-alert-datetime-group">
+                    <input type="text" inputmode="numeric" maxlength="4" class="ops-alert-datetime-part ops-alert-datetime-part--year" data-datetime-input-id="${escapeConfigHtml(inputId)}" data-datetime-part="year" placeholder="YYYY" autocomplete="off">
+                    <span class="ops-alert-datetime-sep">/</span>
+                    <input type="text" inputmode="numeric" maxlength="2" class="ops-alert-datetime-part ops-alert-datetime-part--month" data-datetime-input-id="${escapeConfigHtml(inputId)}" data-datetime-part="month" placeholder="MM" autocomplete="off">
+                    <span class="ops-alert-datetime-sep">/</span>
+                    <input type="text" inputmode="numeric" maxlength="2" class="ops-alert-datetime-part ops-alert-datetime-part--day" data-datetime-input-id="${escapeConfigHtml(inputId)}" data-datetime-part="day" placeholder="DD" autocomplete="off">
+                </div>
+                <div class="ops-alert-datetime-group ops-alert-datetime-group--time">
+                    <input type="text" inputmode="numeric" maxlength="2" class="ops-alert-datetime-part ops-alert-datetime-part--hour" data-datetime-input-id="${escapeConfigHtml(inputId)}" data-datetime-part="hour" placeholder="HH" autocomplete="off">
+                    <span class="ops-alert-datetime-sep">:</span>
+                    <input type="text" inputmode="numeric" maxlength="2" class="ops-alert-datetime-part ops-alert-datetime-part--minute" data-datetime-input-id="${escapeConfigHtml(inputId)}" data-datetime-part="minute" placeholder="MM" autocomplete="off">
+                </div>
+                <span class="ops-alert-datetime-icon" aria-hidden="true"><i class="far fa-calendar"></i></span>
+            </div>
+        </div>
+    `;
+}
+
+function parseOpsAlertDateTimeLocalParts(value = '') {
+    const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+    if (!match) {
+        return {
+            year: '',
+            month: '',
+            day: '',
+            hour: '',
+            minute: ''
+        };
+    }
+
+    return {
+        year: match[1],
+        month: match[2],
+        day: match[3],
+        hour: match[4],
+        minute: match[5]
+    };
+}
+
+function getOpsAlertDateTimeFieldParts(inputId) {
+    const result = {};
+    Object.keys(OPS_ALERT_DATETIME_PART_LENGTHS).forEach((part) => {
+        result[part] = document.querySelector(`.ops-alert-datetime-part[data-datetime-input-id="${inputId}"][data-datetime-part="${part}"]`);
+    });
+    return result;
+}
+
+function readOpsAlertDateTimeFieldPartValues(inputId) {
+    const parts = getOpsAlertDateTimeFieldParts(inputId);
+    return Object.fromEntries(Object.keys(OPS_ALERT_DATETIME_PART_LENGTHS).map((part) => [part, parts[part]?.value || '']));
+}
+
+function updateOpsAlertDateTimeFieldState(inputId, options = {}) {
+    const shell = document.querySelector(`.ops-alert-datetime-field[data-datetime-shell="${inputId}"]`);
+    if (!shell) return;
+
+    shell.classList.toggle('is-filled', options.filled === true);
+    shell.classList.toggle('is-invalid', options.invalid === true);
+}
+
+function buildOpsAlertLocalDateTimeValueFromParts(parts = {}) {
+    const values = {
+        year: String(parts.year || '').trim(),
+        month: String(parts.month || '').trim(),
+        day: String(parts.day || '').trim(),
+        hour: String(parts.hour || '').trim(),
+        minute: String(parts.minute || '').trim()
+    };
+    const allBlank = Object.values(values).every((value) => !value);
+    if (allBlank) {
+        return {
+            value: '',
+            complete: true,
+            valid: true,
+            empty: true
+        };
+    }
+
+    const complete = Object.entries(OPS_ALERT_DATETIME_PART_LENGTHS).every(([part, length]) => values[part].length === length);
+    if (!complete) {
+        return {
+            value: '',
+            complete: false,
+            valid: false,
+            empty: false
+        };
+    }
+
+    const year = Number.parseInt(values.year, 10);
+    const month = Number.parseInt(values.month, 10);
+    const day = Number.parseInt(values.day, 10);
+    const hour = Number.parseInt(values.hour, 10);
+    const minute = Number.parseInt(values.minute, 10);
+    const candidate = new Date(year, month - 1, day, hour, minute, 0, 0);
+    const valid = (
+        Number.isFinite(year)
+        && Number.isFinite(month)
+        && Number.isFinite(day)
+        && Number.isFinite(hour)
+        && Number.isFinite(minute)
+        && month >= 1
+        && month <= 12
+        && day >= 1
+        && day <= 31
+        && hour >= 0
+        && hour <= 23
+        && minute >= 0
+        && minute <= 59
+        && candidate.getFullYear() === year
+        && candidate.getMonth() === month - 1
+        && candidate.getDate() === day
+        && candidate.getHours() === hour
+        && candidate.getMinutes() === minute
+    );
+
+    return {
+        value: valid ? formatDateTimeLocalInputValue(candidate) : '',
+        complete: true,
+        valid,
+        empty: false
+    };
+}
+
+function syncOpsAlertDateTimeFieldDisplay(inputId) {
+    const hiddenInput = document.getElementById(inputId);
+    if (!hiddenInput) return;
+
+    const values = parseOpsAlertDateTimeLocalParts(hiddenInput.value);
+    const parts = getOpsAlertDateTimeFieldParts(inputId);
+    Object.keys(values).forEach((part) => {
+        if (parts[part]) {
+            parts[part].value = values[part];
+        }
+    });
+    updateOpsAlertDateTimeFieldState(inputId, {
+        filled: Boolean(hiddenInput.value),
+        invalid: false
+    });
+}
+
+function syncAllOpsAlertDateTimeFields(root = document) {
+    root.querySelectorAll('.ops-alert-datetime-hidden').forEach((input) => {
+        if (input instanceof HTMLInputElement && input.id) {
+            syncOpsAlertDateTimeFieldDisplay(input.id);
+        }
+    });
+}
+
+function commitOpsAlertDateTimeFieldValue(inputId) {
+    const hiddenInput = document.getElementById(inputId);
+    if (!(hiddenInput instanceof HTMLInputElement)) {
+        return { changed: false, valid: false, empty: true };
+    }
+
+    const nextState = buildOpsAlertLocalDateTimeValueFromParts(readOpsAlertDateTimeFieldPartValues(inputId));
+    const nextValue = nextState.valid ? nextState.value : (nextState.empty ? '' : hiddenInput.value);
+    const changed = hiddenInput.value !== nextValue;
+    hiddenInput.value = nextValue;
+    updateOpsAlertDateTimeFieldState(inputId, {
+        filled: Boolean(nextValue),
+        invalid: !nextState.valid && !nextState.empty
+    });
+    return {
+        changed,
+        valid: nextState.valid,
+        empty: nextState.empty
+    };
+}
+
+function handleOpsAlertDateTimePartInput(inputEl) {
+    const inputId = inputEl.dataset.datetimeInputId;
+    const part = inputEl.dataset.datetimePart;
+    const expectedLength = OPS_ALERT_DATETIME_PART_LENGTHS[part] || 2;
+    inputEl.value = String(inputEl.value || '').replace(/\D+/g, '').slice(0, expectedLength);
+
+    if (inputId) {
+        const partValues = readOpsAlertDateTimeFieldPartValues(inputId);
+        const hasAnyValue = Object.values(partValues).some(Boolean);
+        updateOpsAlertDateTimeFieldState(inputId, {
+            filled: false,
+            invalid: hasAnyValue
+        });
+        if (inputEl.value.length === expectedLength) {
+            const partOrder = Object.keys(OPS_ALERT_DATETIME_PART_LENGTHS);
+            const nextPart = partOrder[partOrder.indexOf(part) + 1];
+            const nextEl = nextPart
+                ? document.querySelector(`.ops-alert-datetime-part[data-datetime-input-id="${inputId}"][data-datetime-part="${nextPart}"]`)
+                : null;
+            nextEl?.focus();
+        }
+    }
+}
+
+function normalizeOpsAlertInlineNumberInput(inputEl) {
+    inputEl.value = String(inputEl.value || '').replace(/\D+/g, '').slice(0, 2);
+    if (!inputEl.value) return;
+
+    const min = Number.parseInt(inputEl.dataset.numberMin || '0', 10);
+    const max = Number.parseInt(inputEl.dataset.numberMax || '59', 10);
+    const value = clamp(Number.parseInt(inputEl.value, 10), min, max);
+    inputEl.value = String(value);
+}
+
 function buildOpsAlertMuteTableHtml(scope) {
     return `
-        <div class="ops-alert-mute-table__head" aria-hidden="true">
-            <span>静默对象</span>
-            <span>当前状态</span>
-            <span>静默至</span>
-            <span>critical</span>
-            <span>操作</span>
-        </div>
         <div class="ops-alert-mute-table__body">
             ${getOpsAlertMuteRuleDefinitions(scope).map((definition) => {
                 const statusId = getOpsAlertMuteRuleElementId(scope, definition.key, 'Status');
@@ -4178,23 +4390,27 @@ function buildOpsAlertMuteTableHtml(scope) {
                 const toggleId = getOpsAlertMuteRuleElementId(scope, definition.key, 'AllowCriticalToggle');
                 return `
                     <div class="ops-alert-mute-table__row">
-                        <div class="ops-alert-mute-table__subject">
-                            <strong>${escapeConfigHtml(definition.label)}</strong>
-                            <span>${escapeConfigHtml(definition.description)}</span>
-                        </div>
-                        <div class="ops-alert-mute-status ops-alert-mute-status--compact" id="${escapeConfigHtml(statusId)}">当前未设置单独静默。</div>
-                        <label class="ops-alert-mute-field">
-                            <span>静默至</span>
-                            <input type="datetime-local" class="config-input" id="${escapeConfigHtml(untilId)}">
-                        </label>
-                        <div class="ops-alert-mute-toggle-field">
-                            <div class="ops-alert-mute-toggle-field__copy">
-                                <span>critical 继续通知</span>
-                                <small>高危仍继续外发</small>
+                        <div class="ops-alert-mute-table__top">
+                            <div class="ops-alert-mute-table__subject">
+                                <strong>${escapeConfigHtml(definition.label)}</strong>
+                                <span>${escapeConfigHtml(definition.description)}</span>
                             </div>
-                            <div class="status-toggle" id="${escapeConfigHtml(toggleId)}" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="${escapeConfigHtml(scope)}" data-rule-key="${escapeConfigHtml(definition.key)}"></div>
+                            <div class="ops-alert-mute-status ops-alert-mute-status--compact" id="${escapeConfigHtml(statusId)}">当前未设置单独静默。</div>
                         </div>
-                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="${escapeConfigHtml(scope)}" data-rule-key="${escapeConfigHtml(definition.key)}">清除</button>
+                        <div class="ops-alert-mute-table__controls">
+                            <label class="ops-alert-mute-field">
+                                <span>静默至</span>
+                                ${buildOpsAlertDateTimeFieldHtml(untilId)}
+                            </label>
+                            <div class="ops-alert-mute-toggle-field">
+                                <div class="ops-alert-mute-toggle-field__copy">
+                                    <span>critical 继续通知</span>
+                                    <small>高危仍继续外发</small>
+                                </div>
+                                <div class="status-toggle" id="${escapeConfigHtml(toggleId)}" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="${escapeConfigHtml(scope)}" data-rule-key="${escapeConfigHtml(definition.key)}"></div>
+                            </div>
+                            <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-mute-rule" data-rule-scope="${escapeConfigHtml(scope)}" data-rule-key="${escapeConfigHtml(definition.key)}">清除</button>
+                        </div>
                     </div>
                 `;
             }).join('')}
@@ -4224,7 +4440,7 @@ function buildOpsAlertRoutingMatrixHtml() {
                     </div>
                     ${channelOrder.map((channelKey) => `
                         <label class="ops-alert-routing-matrix__cell" data-channel-label="${escapeConfigHtml(channelLabels[channelKey])}">
-                            <input type="checkbox" id="${escapeConfigHtml(getOpsAlertRoutingCheckboxId(definition.key, channelKey))}">
+                            <input type="checkbox" class="ops-alert-selection-checkbox" id="${escapeConfigHtml(getOpsAlertRoutingCheckboxId(definition.key, channelKey))}">
                             <span class="ops-alert-routing-matrix__cell-label">${escapeConfigHtml(channelLabels[channelKey])}</span>
                         </label>
                     `).join('')}
@@ -4340,10 +4556,10 @@ function buildOpsAlertStrategyLayoutHtml() {
                                     </div>
                                 </div>
                                 <div class="ops-alert-mute-status" id="opsAlertTemporaryMuteStatus">当前未设置临时静默。</div>
-                                <div class="ops-alert-strategy-inline-grid">
+                                <div class="ops-alert-strategy-stack">
                                     <label class="ops-alert-strategy-field">
                                         <span>静默至</span>
-                                        <input type="datetime-local" class="config-input" id="opsAlertTemporaryMuteUntil">
+                                        ${buildOpsAlertDateTimeFieldHtml('opsAlertTemporaryMuteUntil')}
                                     </label>
                                     <div class="ops-alert-mute-toggle-field">
                                         <div class="ops-alert-mute-toggle-field__copy">
@@ -4376,15 +4592,15 @@ function buildOpsAlertStrategyLayoutHtml() {
                                 <div class="ops-alert-strategy-inline-grid ops-alert-strategy-inline-grid--triple">
                                     <label class="ops-alert-strategy-field">
                                         <span>开始小时</span>
-                                        <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertQuietHoursStartHour" placeholder="23">
+                                        ${buildOpsAlertInlineNumberInputHtml('opsAlertQuietHoursStartHour', 23)}
                                     </label>
                                     <label class="ops-alert-strategy-field">
                                         <span>结束小时</span>
-                                        <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertQuietHoursEndHour" placeholder="8">
+                                        ${buildOpsAlertInlineNumberInputHtml('opsAlertQuietHoursEndHour', 8)}
                                     </label>
                                     <label class="ops-alert-strategy-field">
                                         <span>时区</span>
-                                        <input type="text" class="config-input" id="opsAlertQuietHoursTimezone" placeholder="Asia/Shanghai">
+                                        <input type="text" class="config-input ops-alert-inline-text-input" id="opsAlertQuietHoursTimezone" placeholder="Asia/Shanghai" autocomplete="off" spellcheck="false">
                                     </label>
                                 </div>
                                 <div class="ops-alert-mute-toggle-field ops-alert-mute-toggle-field--inline">
@@ -4490,15 +4706,15 @@ function buildOpsAlertStrategyLayoutHtml() {
                             <div class="ops-alert-strategy-inline-grid ops-alert-strategy-inline-grid--triple">
                                 <label class="ops-alert-strategy-field">
                                     <span>开始小时</span>
-                                    <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertWorkHoursStartHour" placeholder="9">
+                                    ${buildOpsAlertInlineNumberInputHtml('opsAlertWorkHoursStartHour', 9)}
                                 </label>
                                 <label class="ops-alert-strategy-field">
                                     <span>结束小时</span>
-                                    <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertWorkHoursEndHour" placeholder="18">
+                                    ${buildOpsAlertInlineNumberInputHtml('opsAlertWorkHoursEndHour', 18)}
                                 </label>
                                 <label class="ops-alert-strategy-field">
                                     <span>时区</span>
-                                    <input type="text" class="config-input" id="opsAlertWorkHoursTimezone" placeholder="Asia/Shanghai">
+                                    <input type="text" class="config-input ops-alert-inline-text-input" id="opsAlertWorkHoursTimezone" placeholder="Asia/Shanghai" autocomplete="off" spellcheck="false">
                                 </label>
                             </div>
                             <div class="config-inline-note">
@@ -4528,6 +4744,38 @@ function ensureOpsAlertStrategyLayout() {
         }
         refreshOpsAlertStrategyDraftViews();
     });
+    root.addEventListener('input', (event) => {
+        const target = event.target instanceof HTMLInputElement ? event.target : null;
+        if (!target || !target.closest('.ops-alert-strategy-layout')) {
+            return;
+        }
+        if (target.classList.contains('ops-alert-datetime-part')) {
+            handleOpsAlertDateTimePartInput(target);
+            return;
+        }
+        if (target.classList.contains('ops-alert-inline-number-input')) {
+            normalizeOpsAlertInlineNumberInput(target);
+        }
+    });
+    root.addEventListener('blur', (event) => {
+        const target = event.target instanceof HTMLInputElement ? event.target : null;
+        if (!target || !target.closest('.ops-alert-strategy-layout')) {
+            return;
+        }
+        if (target.classList.contains('ops-alert-datetime-part')) {
+            const inputId = target.dataset.datetimeInputId;
+            if (!inputId) return;
+            const result = commitOpsAlertDateTimeFieldValue(inputId);
+            if (result.changed) {
+                document.getElementById(inputId)?.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            return;
+        }
+        if (target.classList.contains('ops-alert-inline-number-input')) {
+            normalizeOpsAlertInlineNumberInput(target);
+        }
+    }, true);
+    syncAllOpsAlertDateTimeFields(root);
     switchOpsAlertStrategyMuteTab('types');
 }
 
@@ -4908,6 +5156,7 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
         });
     });
 
+    syncAllOpsAlertDateTimeFields();
     renderOpsAlertStrategySummary(normalizedConfig);
 }
 
