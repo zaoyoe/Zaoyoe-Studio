@@ -79,13 +79,29 @@ const OPS_ALERT_OVERVIEW_BANNER_TONE_CLASSES = [
 ];
 const OPS_ALERT_STRATEGY_PANEL_KEYS = Object.freeze(['mute', 'routing', 'work-hours']);
 const OPS_ALERT_STRATEGY_MUTE_TAB_KEYS = Object.freeze(['types', 'modules']);
-const OPS_ALERT_DATETIME_PART_LENGTHS = Object.freeze({
-    year: 4,
-    month: 2,
-    day: 2,
-    hour: 2,
-    minute: 2
-});
+const OPS_ALERT_DATE_PICKER_MONTH_NAMES = Object.freeze([
+    '一月',
+    '二月',
+    '三月',
+    '四月',
+    '五月',
+    '六月',
+    '七月',
+    '八月',
+    '九月',
+    '十月',
+    '十一月',
+    '十二月'
+]);
+const OPS_ALERT_DATE_PICKER_WEEKDAY_NAMES = Object.freeze(['日', '一', '二', '三', '四', '五', '六']);
+const OPS_ALERT_DATE_PICKER_PRESETS = Object.freeze([
+    Object.freeze({ key: '1h', label: '1 小时', hours: 1 }),
+    Object.freeze({ key: '6h', label: '6 小时', hours: 6 }),
+    Object.freeze({ key: '24h', label: '24 小时', hours: 24 }),
+    Object.freeze({ key: 'tonight', label: '今天结束', mode: 'end_of_day' })
+]);
+const opsAlertDatePickerState = Object.create(null);
+let opsAlertDatePickerEventsReady = false;
 const OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS = Object.freeze([
     Object.freeze({
         key: 'customer_chat_message',
@@ -4174,23 +4190,58 @@ function buildOpsAlertInlineNumberInputHtml(id, placeholder, min = 0, max = 23) 
 }
 
 function buildOpsAlertDateTimeFieldHtml(inputId) {
+    const weekdaysHtml = OPS_ALERT_DATE_PICKER_WEEKDAY_NAMES.map((label) => `<span>${escapeConfigHtml(label)}</span>`).join('');
     return `
-        <div class="ops-alert-datetime-field" data-datetime-shell="${escapeConfigHtml(inputId)}">
+        <div class="ops-alert-date-picker" data-picker-shell="${escapeConfigHtml(inputId)}">
             <input type="hidden" class="ops-alert-datetime-hidden" id="${escapeConfigHtml(inputId)}">
-            <div class="ops-alert-datetime-editor">
-                <div class="ops-alert-datetime-group">
-                    <input type="text" inputmode="numeric" maxlength="4" class="ops-alert-datetime-part ops-alert-datetime-part--year" data-datetime-input-id="${escapeConfigHtml(inputId)}" data-datetime-part="year" placeholder="YYYY" autocomplete="off">
-                    <span class="ops-alert-datetime-sep">/</span>
-                    <input type="text" inputmode="numeric" maxlength="2" class="ops-alert-datetime-part ops-alert-datetime-part--month" data-datetime-input-id="${escapeConfigHtml(inputId)}" data-datetime-part="month" placeholder="MM" autocomplete="off">
-                    <span class="ops-alert-datetime-sep">/</span>
-                    <input type="text" inputmode="numeric" maxlength="2" class="ops-alert-datetime-part ops-alert-datetime-part--day" data-datetime-input-id="${escapeConfigHtml(inputId)}" data-datetime-part="day" placeholder="DD" autocomplete="off">
+            <button type="button" class="ops-alert-date-picker__trigger" data-admin-action="settings-toggle-ops-alert-date-picker" data-picker-input-id="${escapeConfigHtml(inputId)}" aria-expanded="false">
+                <span class="ops-alert-date-picker__trigger-copy">
+                    <span class="ops-alert-date-picker__trigger-value" data-picker-display-for="${escapeConfigHtml(inputId)}">选择日期和时间</span>
+                    <span class="ops-alert-date-picker__trigger-hint" data-picker-hint-for="${escapeConfigHtml(inputId)}">点击展开日历和时间</span>
+                </span>
+                <i class="far fa-calendar-alt" aria-hidden="true"></i>
+            </button>
+            <div class="ops-alert-date-picker__menu" data-picker-menu-for="${escapeConfigHtml(inputId)}" hidden>
+                <div class="ops-alert-date-picker__presets">
+                    ${OPS_ALERT_DATE_PICKER_PRESETS.map((preset) => `
+                        <button type="button" class="ops-alert-date-picker__preset" data-admin-action="settings-set-ops-alert-date-picker-preset" data-picker-input-id="${escapeConfigHtml(inputId)}" data-picker-preset="${escapeConfigHtml(preset.key)}">${escapeConfigHtml(preset.label)}</button>
+                    `).join('')}
                 </div>
-                <div class="ops-alert-datetime-group ops-alert-datetime-group--time">
-                    <input type="text" inputmode="numeric" maxlength="2" class="ops-alert-datetime-part ops-alert-datetime-part--hour" data-datetime-input-id="${escapeConfigHtml(inputId)}" data-datetime-part="hour" placeholder="HH" autocomplete="off">
-                    <span class="ops-alert-datetime-sep">:</span>
-                    <input type="text" inputmode="numeric" maxlength="2" class="ops-alert-datetime-part ops-alert-datetime-part--minute" data-datetime-input-id="${escapeConfigHtml(inputId)}" data-datetime-part="minute" placeholder="MM" autocomplete="off">
+                <div class="ops-alert-date-picker__panel">
+                    <div class="ops-alert-date-picker__calendar">
+                        <div class="ops-alert-date-picker__calendar-head">
+                            <button type="button" class="ops-alert-date-picker__nav" data-admin-action="settings-change-ops-alert-date-picker-month" data-picker-input-id="${escapeConfigHtml(inputId)}" data-month-delta="-1">
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <span class="ops-alert-date-picker__title" data-picker-title-for="${escapeConfigHtml(inputId)}"></span>
+                            <button type="button" class="ops-alert-date-picker__nav" data-admin-action="settings-change-ops-alert-date-picker-month" data-picker-input-id="${escapeConfigHtml(inputId)}" data-month-delta="1">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                        <div class="ops-alert-date-picker__weekdays">${weekdaysHtml}</div>
+                        <div class="ops-alert-date-picker__days" data-picker-days-for="${escapeConfigHtml(inputId)}"></div>
+                    </div>
+                    <div class="ops-alert-date-picker__sidebar">
+                        <div class="ops-alert-date-picker__selection">
+                            <span>静默到</span>
+                            <strong data-picker-selection-for="${escapeConfigHtml(inputId)}">未设置</strong>
+                        </div>
+                        <div class="ops-alert-date-picker__time-grid">
+                            <label class="ops-alert-date-picker__time-field">
+                                <span>小时</span>
+                                <input type="text" inputmode="numeric" maxlength="2" class="config-input ops-alert-inline-number-input ops-alert-date-picker__time-input" data-picker-input-id="${escapeConfigHtml(inputId)}" data-picker-time-part="hour" data-number-min="0" data-number-max="23" placeholder="09" autocomplete="off">
+                            </label>
+                            <label class="ops-alert-date-picker__time-field">
+                                <span>分钟</span>
+                                <input type="text" inputmode="numeric" maxlength="2" class="config-input ops-alert-inline-number-input ops-alert-date-picker__time-input" data-picker-input-id="${escapeConfigHtml(inputId)}" data-picker-time-part="minute" data-number-min="0" data-number-max="59" placeholder="30" autocomplete="off">
+                            </label>
+                        </div>
+                        <div class="ops-alert-date-picker__footer">
+                            <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-clear-ops-alert-date-picker" data-picker-input-id="${escapeConfigHtml(inputId)}">清除</button>
+                            <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-apply-ops-alert-date-picker" data-picker-input-id="${escapeConfigHtml(inputId)}">确定</button>
+                        </div>
+                    </div>
                 </div>
-                <span class="ops-alert-datetime-icon" aria-hidden="true"><i class="far fa-calendar"></i></span>
             </div>
         </div>
     `;
@@ -4200,6 +4251,8 @@ function parseOpsAlertDateTimeLocalParts(value = '') {
     const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
     if (!match) {
         return {
+            valid: false,
+            date: null,
             year: '',
             month: '',
             day: '',
@@ -4208,7 +4261,23 @@ function parseOpsAlertDateTimeLocalParts(value = '') {
         };
     }
 
+    const year = Number.parseInt(match[1], 10);
+    const month = Number.parseInt(match[2], 10);
+    const day = Number.parseInt(match[3], 10);
+    const hour = Number.parseInt(match[4], 10);
+    const minute = Number.parseInt(match[5], 10);
+    const candidate = new Date(year, month - 1, day, hour, minute, 0, 0);
+    const valid = (
+        candidate.getFullYear() === year
+        && candidate.getMonth() === month - 1
+        && candidate.getDate() === day
+        && candidate.getHours() === hour
+        && candidate.getMinutes() === minute
+    );
+
     return {
+        valid,
+        date: valid ? candidate : null,
         year: match[1],
         month: match[2],
         day: match[3],
@@ -4217,105 +4286,313 @@ function parseOpsAlertDateTimeLocalParts(value = '') {
     };
 }
 
-function getOpsAlertDateTimeFieldParts(inputId) {
-    const result = {};
-    Object.keys(OPS_ALERT_DATETIME_PART_LENGTHS).forEach((part) => {
-        result[part] = document.querySelector(`.ops-alert-datetime-part[data-datetime-input-id="${inputId}"][data-datetime-part="${part}"]`);
-    });
-    return result;
+function getOpsAlertDatePickerShell(inputId) {
+    return document.querySelector(`.ops-alert-date-picker[data-picker-shell="${inputId}"]`);
 }
 
-function readOpsAlertDateTimeFieldPartValues(inputId) {
-    const parts = getOpsAlertDateTimeFieldParts(inputId);
-    return Object.fromEntries(Object.keys(OPS_ALERT_DATETIME_PART_LENGTHS).map((part) => [part, parts[part]?.value || '']));
+function getOpsAlertDatePickerMenu(inputId) {
+    return document.querySelector(`.ops-alert-date-picker__menu[data-picker-menu-for="${inputId}"]`);
+}
+
+function getOpsAlertDatePickerDefaultDate() {
+    const nextDate = new Date();
+    nextDate.setSeconds(0, 0);
+    nextDate.setMinutes(0);
+    nextDate.setHours(nextDate.getHours() + 1);
+    return nextDate;
+}
+
+function getOpsAlertDatePickerState(inputId) {
+    if (!opsAlertDatePickerState[inputId]) {
+        const initialDate = getOpsAlertDatePickerDefaultDate();
+        opsAlertDatePickerState[inputId] = {
+            year: initialDate.getFullYear(),
+            month: initialDate.getMonth(),
+            day: null,
+            hour: String(initialDate.getHours()).padStart(2, '0'),
+            minute: String(initialDate.getMinutes()).padStart(2, '0')
+        };
+    }
+    return opsAlertDatePickerState[inputId];
 }
 
 function updateOpsAlertDateTimeFieldState(inputId, options = {}) {
-    const shell = document.querySelector(`.ops-alert-datetime-field[data-datetime-shell="${inputId}"]`);
+    const shell = getOpsAlertDatePickerShell(inputId);
     if (!shell) return;
 
     shell.classList.toggle('is-filled', options.filled === true);
-    shell.classList.toggle('is-invalid', options.invalid === true);
+    shell.classList.toggle('is-open', options.open === true);
 }
 
-function buildOpsAlertLocalDateTimeValueFromParts(parts = {}) {
-    const values = {
-        year: String(parts.year || '').trim(),
-        month: String(parts.month || '').trim(),
-        day: String(parts.day || '').trim(),
-        hour: String(parts.hour || '').trim(),
-        minute: String(parts.minute || '').trim()
-    };
-    const allBlank = Object.values(values).every((value) => !value);
-    if (allBlank) {
-        return {
-            value: '',
-            complete: true,
-            valid: true,
-            empty: true
-        };
+function syncOpsAlertDatePickerStateFromInput(inputId, options = {}) {
+    const state = getOpsAlertDatePickerState(inputId);
+    const hiddenInput = document.getElementById(inputId);
+    const parsed = parseOpsAlertDateTimeLocalParts(hiddenInput?.value || '');
+
+    if (parsed.valid && parsed.date) {
+        state.year = parsed.date.getFullYear();
+        state.month = parsed.date.getMonth();
+        state.day = parsed.date.getDate();
+        state.hour = parsed.hour;
+        state.minute = parsed.minute;
+        return state;
     }
 
-    const complete = Object.entries(OPS_ALERT_DATETIME_PART_LENGTHS).every(([part, length]) => values[part].length === length);
-    if (!complete) {
-        return {
-            value: '',
-            complete: false,
-            valid: false,
-            empty: false
-        };
+    if (options.keepSelection) {
+        return state;
     }
 
-    const year = Number.parseInt(values.year, 10);
-    const month = Number.parseInt(values.month, 10);
-    const day = Number.parseInt(values.day, 10);
-    const hour = Number.parseInt(values.hour, 10);
-    const minute = Number.parseInt(values.minute, 10);
-    const candidate = new Date(year, month - 1, day, hour, minute, 0, 0);
+    const fallbackDate = getOpsAlertDatePickerDefaultDate();
+    state.year = fallbackDate.getFullYear();
+    state.month = fallbackDate.getMonth();
+    state.day = null;
+    state.hour = String(fallbackDate.getHours()).padStart(2, '0');
+    state.minute = String(fallbackDate.getMinutes()).padStart(2, '0');
+    return state;
+}
+
+function getOpsAlertDatePickerDraftDate(inputId) {
+    const state = getOpsAlertDatePickerState(inputId);
+    if (!Number.isInteger(state.day)) return null;
+
+    const hour = clamp(Number.parseInt(state.hour || '0', 10), 0, 23);
+    const minute = clamp(Number.parseInt(state.minute || '0', 10), 0, 59);
+    const candidate = new Date(state.year, state.month, state.day, hour, minute, 0, 0);
     const valid = (
-        Number.isFinite(year)
-        && Number.isFinite(month)
-        && Number.isFinite(day)
-        && Number.isFinite(hour)
-        && Number.isFinite(minute)
-        && month >= 1
-        && month <= 12
-        && day >= 1
-        && day <= 31
-        && hour >= 0
-        && hour <= 23
-        && minute >= 0
-        && minute <= 59
-        && candidate.getFullYear() === year
-        && candidate.getMonth() === month - 1
-        && candidate.getDate() === day
+        candidate.getFullYear() === state.year
+        && candidate.getMonth() === state.month
+        && candidate.getDate() === state.day
         && candidate.getHours() === hour
         && candidate.getMinutes() === minute
     );
+    return valid ? candidate : null;
+}
 
-    return {
-        value: valid ? formatDateTimeLocalInputValue(candidate) : '',
-        complete: true,
-        valid,
-        empty: false
+function formatOpsAlertDatePickerDisplayLabel(value = '') {
+    const parsed = parseOpsAlertDateTimeLocalParts(value);
+    return parsed.valid && parsed.date
+        ? formatVerifyMonitorDateTime(parsed.date.getTime())
+        : '选择日期和时间';
+}
+
+function renderOpsAlertDatePickerSelection(inputId) {
+    const shell = getOpsAlertDatePickerShell(inputId);
+    if (!shell) return;
+
+    const state = getOpsAlertDatePickerState(inputId);
+    const selectionEl = shell.querySelector(`[data-picker-selection-for="${inputId}"]`);
+    const hourInput = shell.querySelector(`.ops-alert-date-picker__time-input[data-picker-input-id="${inputId}"][data-picker-time-part="hour"]`);
+    const minuteInput = shell.querySelector(`.ops-alert-date-picker__time-input[data-picker-input-id="${inputId}"][data-picker-time-part="minute"]`);
+    if (hourInput instanceof HTMLInputElement) {
+        hourInput.value = state.hour || '';
+    }
+    if (minuteInput instanceof HTMLInputElement) {
+        minuteInput.value = state.minute || '';
+    }
+
+    const draftDate = getOpsAlertDatePickerDraftDate(inputId);
+    if (selectionEl) {
+        selectionEl.textContent = draftDate
+            ? formatVerifyMonitorDateTime(draftDate.getTime())
+            : '未设置';
+    }
+}
+
+function renderOpsAlertDatePicker(inputId) {
+    const shell = getOpsAlertDatePickerShell(inputId);
+    if (!shell) return;
+
+    const state = getOpsAlertDatePickerState(inputId);
+    const titleEl = shell.querySelector(`[data-picker-title-for="${inputId}"]`);
+    const daysEl = shell.querySelector(`[data-picker-days-for="${inputId}"]`);
+    if (titleEl) {
+        titleEl.textContent = `${OPS_ALERT_DATE_PICKER_MONTH_NAMES[state.month]} ${state.year}`;
+    }
+    if (!(daysEl instanceof HTMLElement)) {
+        renderOpsAlertDatePickerSelection(inputId);
+        return;
+    }
+
+    const selectedDate = Number.isInteger(state.day)
+        ? new Date(state.year, state.month, state.day, 0, 0, 0, 0)
+        : null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const buildDayButton = (date, options = {}) => {
+        const classes = ['ops-alert-date-picker__day'];
+        if (options.otherMonth) classes.push('is-other-month');
+        if (date.getTime() === today.getTime()) classes.push('is-today');
+        if (selectedDate && date.getTime() === selectedDate.getTime()) classes.push('is-selected');
+        return `
+            <button
+                type="button"
+                class="${classes.join(' ')}"
+                data-admin-action="settings-select-ops-alert-date-picker-day"
+                data-picker-input-id="${escapeConfigHtml(inputId)}"
+                data-picker-year="${escapeConfigHtml(String(date.getFullYear()))}"
+                data-picker-month="${escapeConfigHtml(String(date.getMonth()))}"
+                data-picker-day="${escapeConfigHtml(String(date.getDate()))}"
+            >${escapeConfigHtml(String(date.getDate()))}</button>
+        `;
     };
+
+    const firstDay = new Date(state.year, state.month, 1);
+    const daysInMonth = new Date(state.year, state.month + 1, 0).getDate();
+    let daysHtml = '';
+    for (let offset = firstDay.getDay() - 1; offset >= 0; offset -= 1) {
+        daysHtml += buildDayButton(new Date(state.year, state.month, -offset), { otherMonth: true });
+    }
+    for (let day = 1; day <= daysInMonth; day += 1) {
+        daysHtml += buildDayButton(new Date(state.year, state.month, day));
+    }
+    const totalCells = firstDay.getDay() + daysInMonth;
+    const remainingCells = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+    for (let day = 1; day <= remainingCells; day += 1) {
+        daysHtml += buildDayButton(new Date(state.year, state.month + 1, day), { otherMonth: true });
+    }
+    daysEl.innerHTML = daysHtml;
+    renderOpsAlertDatePickerSelection(inputId);
+}
+
+function closeAllOpsAlertDatePickers(exceptInputId = '') {
+    document.querySelectorAll('.ops-alert-date-picker.is-open').forEach((shell) => {
+        if (!(shell instanceof HTMLElement)) return;
+        if (exceptInputId && shell.dataset.pickerShell === exceptInputId) return;
+
+        shell.classList.remove('is-open');
+        const menu = shell.querySelector('.ops-alert-date-picker__menu');
+        const trigger = shell.querySelector('.ops-alert-date-picker__trigger');
+        if (menu instanceof HTMLElement) menu.hidden = true;
+        if (trigger instanceof HTMLElement) trigger.setAttribute('aria-expanded', 'false');
+    });
+}
+
+function ensureOpsAlertDatePickerEvents() {
+    if (opsAlertDatePickerEventsReady) return;
+
+    document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest('.ops-alert-date-picker')) {
+            return;
+        }
+        closeAllOpsAlertDatePickers();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeAllOpsAlertDatePickers();
+        }
+    });
+    opsAlertDatePickerEventsReady = true;
+}
+
+function toggleOpsAlertDatePicker(inputId) {
+    const shell = getOpsAlertDatePickerShell(inputId);
+    const menu = getOpsAlertDatePickerMenu(inputId);
+    if (!shell || !menu) return;
+
+    const shouldOpen = !shell.classList.contains('is-open');
+    closeAllOpsAlertDatePickers(shouldOpen ? inputId : '');
+
+    if (!shouldOpen) {
+        shell.classList.remove('is-open');
+        menu.hidden = true;
+        shell.querySelector('.ops-alert-date-picker__trigger')?.setAttribute('aria-expanded', 'false');
+        return;
+    }
+
+    syncOpsAlertDatePickerStateFromInput(inputId);
+    renderOpsAlertDatePicker(inputId);
+    shell.classList.add('is-open');
+    menu.hidden = false;
+    shell.querySelector('.ops-alert-date-picker__trigger')?.setAttribute('aria-expanded', 'true');
+}
+
+function changeOpsAlertDatePickerMonth(inputId, delta) {
+    const state = getOpsAlertDatePickerState(inputId);
+    state.month += delta;
+    if (state.month > 11) {
+        state.month = 0;
+        state.year += 1;
+    } else if (state.month < 0) {
+        state.month = 11;
+        state.year -= 1;
+    }
+    renderOpsAlertDatePicker(inputId);
+}
+
+function selectOpsAlertDatePickerDay(inputId, year, month, day) {
+    const state = getOpsAlertDatePickerState(inputId);
+    state.year = year;
+    state.month = month;
+    state.day = day;
+    renderOpsAlertDatePicker(inputId);
+}
+
+function applyOpsAlertDatePickerValue(inputId, value, options = {}) {
+    const input = document.getElementById(inputId);
+    if (!(input instanceof HTMLInputElement)) return;
+
+    input.value = value;
+    syncOpsAlertDateTimeFieldDisplay(inputId);
+    closeAllOpsAlertDatePickers();
+    refreshOpsAlertStrategyDraftViews();
+    if (options.toast) {
+        showToast(options.toast, options.tone || 'info');
+    }
+}
+
+function applyOpsAlertDatePicker(inputId) {
+    const draftDate = getOpsAlertDatePickerDraftDate(inputId);
+    if (!draftDate) {
+        showToast('请先选择有效的日期和时间', 'warning');
+        return;
+    }
+    applyOpsAlertDatePickerValue(inputId, formatDateTimeLocalInputValue(draftDate));
+}
+
+function clearOpsAlertDatePicker(inputId) {
+    syncOpsAlertDatePickerStateFromInput(inputId);
+    applyOpsAlertDatePickerValue(inputId, '');
+}
+
+function setOpsAlertDatePickerPreset(inputId, presetKey) {
+    const preset = OPS_ALERT_DATE_PICKER_PRESETS.find((item) => item.key === presetKey);
+    if (!preset) return;
+
+    const baseDate = new Date();
+    baseDate.setSeconds(0, 0);
+    if (preset.mode === 'end_of_day') {
+        baseDate.setHours(23, 59, 0, 0);
+    } else {
+        baseDate.setMinutes(0, 0, 0);
+        baseDate.setHours(baseDate.getHours() + Math.max(1, Number(preset.hours) || 0));
+    }
+    applyOpsAlertDatePickerValue(inputId, formatDateTimeLocalInputValue(baseDate));
 }
 
 function syncOpsAlertDateTimeFieldDisplay(inputId) {
     const hiddenInput = document.getElementById(inputId);
-    if (!hiddenInput) return;
+    const shell = getOpsAlertDatePickerShell(inputId);
+    if (!(hiddenInput instanceof HTMLInputElement) || !shell) return;
 
-    const values = parseOpsAlertDateTimeLocalParts(hiddenInput.value);
-    const parts = getOpsAlertDateTimeFieldParts(inputId);
-    Object.keys(values).forEach((part) => {
-        if (parts[part]) {
-            parts[part].value = values[part];
-        }
-    });
+    const parsed = parseOpsAlertDateTimeLocalParts(hiddenInput.value);
+    const displayEl = shell.querySelector(`[data-picker-display-for="${inputId}"]`);
+    const hintEl = shell.querySelector(`[data-picker-hint-for="${inputId}"]`);
+    if (displayEl) {
+        displayEl.textContent = formatOpsAlertDatePickerDisplayLabel(hiddenInput.value);
+    }
+    if (hintEl) {
+        hintEl.textContent = parsed.valid ? '点击可重新调整时间' : '点击展开日历和时间';
+    }
     updateOpsAlertDateTimeFieldState(inputId, {
-        filled: Boolean(hiddenInput.value),
-        invalid: false
+        filled: parsed.valid,
+        open: shell.classList.contains('is-open')
     });
+    if (!shell.classList.contains('is-open')) {
+        syncOpsAlertDatePickerStateFromInput(inputId, { keepSelection: false });
+    }
+    renderOpsAlertDatePickerSelection(inputId);
 }
 
 function syncAllOpsAlertDateTimeFields(root = document) {
@@ -4326,51 +4603,6 @@ function syncAllOpsAlertDateTimeFields(root = document) {
     });
 }
 
-function commitOpsAlertDateTimeFieldValue(inputId) {
-    const hiddenInput = document.getElementById(inputId);
-    if (!(hiddenInput instanceof HTMLInputElement)) {
-        return { changed: false, valid: false, empty: true };
-    }
-
-    const nextState = buildOpsAlertLocalDateTimeValueFromParts(readOpsAlertDateTimeFieldPartValues(inputId));
-    const nextValue = nextState.valid ? nextState.value : (nextState.empty ? '' : hiddenInput.value);
-    const changed = hiddenInput.value !== nextValue;
-    hiddenInput.value = nextValue;
-    updateOpsAlertDateTimeFieldState(inputId, {
-        filled: Boolean(nextValue),
-        invalid: !nextState.valid && !nextState.empty
-    });
-    return {
-        changed,
-        valid: nextState.valid,
-        empty: nextState.empty
-    };
-}
-
-function handleOpsAlertDateTimePartInput(inputEl) {
-    const inputId = inputEl.dataset.datetimeInputId;
-    const part = inputEl.dataset.datetimePart;
-    const expectedLength = OPS_ALERT_DATETIME_PART_LENGTHS[part] || 2;
-    inputEl.value = String(inputEl.value || '').replace(/\D+/g, '').slice(0, expectedLength);
-
-    if (inputId) {
-        const partValues = readOpsAlertDateTimeFieldPartValues(inputId);
-        const hasAnyValue = Object.values(partValues).some(Boolean);
-        updateOpsAlertDateTimeFieldState(inputId, {
-            filled: false,
-            invalid: hasAnyValue
-        });
-        if (inputEl.value.length === expectedLength) {
-            const partOrder = Object.keys(OPS_ALERT_DATETIME_PART_LENGTHS);
-            const nextPart = partOrder[partOrder.indexOf(part) + 1];
-            const nextEl = nextPart
-                ? document.querySelector(`.ops-alert-datetime-part[data-datetime-input-id="${inputId}"][data-datetime-part="${nextPart}"]`)
-                : null;
-            nextEl?.focus();
-        }
-    }
-}
-
 function normalizeOpsAlertInlineNumberInput(inputEl) {
     inputEl.value = String(inputEl.value || '').replace(/\D+/g, '').slice(0, 2);
     if (!inputEl.value) return;
@@ -4378,7 +4610,18 @@ function normalizeOpsAlertInlineNumberInput(inputEl) {
     const min = Number.parseInt(inputEl.dataset.numberMin || '0', 10);
     const max = Number.parseInt(inputEl.dataset.numberMax || '59', 10);
     const value = clamp(Number.parseInt(inputEl.value, 10), min, max);
-    inputEl.value = String(value);
+    inputEl.value = String(value).padStart(2, '0');
+}
+
+function syncOpsAlertDatePickerTimeInput(inputEl) {
+    normalizeOpsAlertInlineNumberInput(inputEl);
+    const inputId = inputEl.dataset.pickerInputId;
+    const part = inputEl.dataset.pickerTimePart;
+    if (!inputId || !part) return;
+
+    const state = getOpsAlertDatePickerState(inputId);
+    state[part] = inputEl.value || '00';
+    renderOpsAlertDatePickerSelection(inputId);
 }
 
 function buildOpsAlertMuteTableHtml(scope) {
@@ -4389,23 +4632,23 @@ function buildOpsAlertMuteTableHtml(scope) {
                 const untilId = getOpsAlertMuteRuleElementId(scope, definition.key, 'Until');
                 const toggleId = getOpsAlertMuteRuleElementId(scope, definition.key, 'AllowCriticalToggle');
                 return `
-                    <div class="ops-alert-mute-table__row">
-                        <div class="ops-alert-mute-table__top">
+                    <div class="ops-alert-mute-table__row" data-mute-rule-row="${escapeConfigHtml(scope)}:${escapeConfigHtml(definition.key)}">
+                        <div class="ops-alert-mute-table__main">
                             <div class="ops-alert-mute-table__subject">
                                 <strong>${escapeConfigHtml(definition.label)}</strong>
                                 <span>${escapeConfigHtml(definition.description)}</span>
                             </div>
-                            <div class="ops-alert-mute-status ops-alert-mute-status--compact" id="${escapeConfigHtml(statusId)}">当前未设置单独静默。</div>
-                        </div>
-                        <div class="ops-alert-mute-table__controls">
                             <label class="ops-alert-mute-field">
                                 <span>静默至</span>
                                 ${buildOpsAlertDateTimeFieldHtml(untilId)}
                             </label>
+                        </div>
+                        <div class="ops-alert-mute-table__aside">
+                            <div class="ops-alert-mute-status ops-alert-mute-status--compact" id="${escapeConfigHtml(statusId)}">当前未设置单独静默。</div>
                             <div class="ops-alert-mute-toggle-field">
                                 <div class="ops-alert-mute-toggle-field__copy">
                                     <span>critical 继续通知</span>
-                                    <small>高危仍继续外发</small>
+                                    <small>只压住普通噪音，保留真正高危的异常继续外发。</small>
                                 </div>
                                 <div class="status-toggle" id="${escapeConfigHtml(toggleId)}" data-admin-action="settings-toggle-ops-alert-mute-rule-allow-critical" data-rule-scope="${escapeConfigHtml(scope)}" data-rule-key="${escapeConfigHtml(definition.key)}"></div>
                             </div>
@@ -4737,6 +4980,7 @@ function ensureOpsAlertStrategyLayout() {
 
     root.innerHTML = buildOpsAlertStrategyLayoutHtml();
     root.dataset.opsAlertStrategyLayoutReady = 'true';
+    ensureOpsAlertDatePickerEvents();
     root.addEventListener('change', (event) => {
         const target = event.target instanceof HTMLElement ? event.target : null;
         if (!target || !target.closest('.ops-alert-strategy-layout')) {
@@ -4749,8 +4993,8 @@ function ensureOpsAlertStrategyLayout() {
         if (!target || !target.closest('.ops-alert-strategy-layout')) {
             return;
         }
-        if (target.classList.contains('ops-alert-datetime-part')) {
-            handleOpsAlertDateTimePartInput(target);
+        if (target.classList.contains('ops-alert-date-picker__time-input')) {
+            syncOpsAlertDatePickerTimeInput(target);
             return;
         }
         if (target.classList.contains('ops-alert-inline-number-input')) {
@@ -4762,13 +5006,8 @@ function ensureOpsAlertStrategyLayout() {
         if (!target || !target.closest('.ops-alert-strategy-layout')) {
             return;
         }
-        if (target.classList.contains('ops-alert-datetime-part')) {
-            const inputId = target.dataset.datetimeInputId;
-            if (!inputId) return;
-            const result = commitOpsAlertDateTimeFieldValue(inputId);
-            if (result.changed) {
-                document.getElementById(inputId)?.dispatchEvent(new Event('change', { bubbles: true }));
-            }
+        if (target.classList.contains('ops-alert-date-picker__time-input')) {
+            syncOpsAlertDatePickerTimeInput(target);
             return;
         }
         if (target.classList.contains('ops-alert-inline-number-input')) {
@@ -5142,6 +5381,11 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
                 } else {
                     statusEl.textContent = '未设置单独静默。';
                 }
+            }
+
+            const row = document.querySelector(`[data-mute-rule-row="${scope}:${definition.key}"]`);
+            if (row instanceof HTMLElement) {
+                row.dataset.ruleState = state.active ? 'active' : (state.expired ? 'expired' : 'inactive');
             }
         });
     });
@@ -14499,6 +14743,12 @@ window.toggleOpsAlertWorkHoursEnabled = toggleOpsAlertWorkHoursEnabled;
 window.toggleOpsAlertStrategyPanel = toggleOpsAlertStrategyPanel;
 window.openOpsAlertStrategyPanel = openOpsAlertStrategyPanel;
 window.switchOpsAlertStrategyMuteTab = switchOpsAlertStrategyMuteTab;
+window.toggleOpsAlertDatePicker = toggleOpsAlertDatePicker;
+window.changeOpsAlertDatePickerMonth = changeOpsAlertDatePickerMonth;
+window.selectOpsAlertDatePickerDay = selectOpsAlertDatePickerDay;
+window.setOpsAlertDatePickerPreset = setOpsAlertDatePickerPreset;
+window.applyOpsAlertDatePicker = applyOpsAlertDatePicker;
+window.clearOpsAlertDatePicker = clearOpsAlertDatePicker;
 window.toggleOpsAlertShopRiskAutoResponseEnabled = toggleOpsAlertShopRiskAutoResponseEnabled;
 window.toggleOpsAlertShopInventoryEnabled = toggleOpsAlertShopInventoryEnabled;
 window.toggleOpsAlertShopInventoryRecoveryNotificationEnabled = toggleOpsAlertShopInventoryRecoveryNotificationEnabled;
