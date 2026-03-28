@@ -4235,11 +4235,7 @@ function buildOpsAlertDateTimeFieldHtml(inputId) {
     return `
         <div class="ops-alert-date-picker" data-picker-shell="${escapeConfigHtml(inputId)}">
             <input type="hidden" class="ops-alert-datetime-hidden" id="${escapeConfigHtml(inputId)}">
-            <button type="button" class="ops-alert-date-picker__trigger" data-admin-action="settings-toggle-ops-alert-date-picker" data-picker-input-id="${escapeConfigHtml(inputId)}" aria-expanded="false">
-                <span class="ops-alert-date-picker__trigger-copy">
-                    <span class="ops-alert-date-picker__trigger-value" data-picker-display-for="${escapeConfigHtml(inputId)}">选择日期和时间</span>
-                    <span class="ops-alert-date-picker__trigger-hint" data-picker-hint-for="${escapeConfigHtml(inputId)}">点击展开日历和时间</span>
-                </span>
+            <button type="button" class="ops-alert-date-picker__trigger" data-admin-action="settings-toggle-ops-alert-date-picker" data-picker-input-id="${escapeConfigHtml(inputId)}" aria-expanded="false" aria-label="选择日期和时间" title="选择日期和时间">
                 <i class="far fa-calendar-alt" aria-hidden="true"></i>
             </button>
             <div class="ops-alert-date-picker__menu" data-picker-menu-for="${escapeConfigHtml(inputId)}" hidden>
@@ -4528,7 +4524,13 @@ function ensureOpsAlertDatePickerEvents() {
 
     document.addEventListener('click', (event) => {
         const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest('.ops-alert-date-picker')) {
+        const eventPath = typeof event.composedPath === 'function' ? event.composedPath() : [];
+        const clickedInsideDatePicker = target?.closest('.ops-alert-date-picker')
+            || eventPath.some((node) => (
+                node instanceof Element
+                && (node.classList.contains('ops-alert-date-picker') || node.classList.contains('ops-alert-date-picker__menu'))
+            ));
+        if (clickedInsideDatePicker) {
             return;
         }
         closeAllOpsAlertDatePickers();
@@ -4632,13 +4634,13 @@ function syncOpsAlertDateTimeFieldDisplay(inputId) {
     if (!(hiddenInput instanceof HTMLInputElement) || !shell) return;
 
     const parsed = parseOpsAlertDateTimeLocalParts(hiddenInput.value);
-    const displayEl = shell.querySelector(`[data-picker-display-for="${inputId}"]`);
-    const hintEl = shell.querySelector(`[data-picker-hint-for="${inputId}"]`);
-    if (displayEl) {
-        displayEl.textContent = formatOpsAlertDatePickerDisplayLabel(hiddenInput.value);
-    }
-    if (hintEl) {
-        hintEl.textContent = parsed.valid ? '点击可重新调整时间' : '点击展开日历和时间';
+    const trigger = shell.querySelector('.ops-alert-date-picker__trigger');
+    if (trigger instanceof HTMLElement) {
+        const triggerLabel = parsed.valid
+            ? `当前静默到 ${formatOpsAlertDatePickerDisplayLabel(hiddenInput.value)}，点击重新调整`
+            : '选择日期和时间';
+        trigger.setAttribute('aria-label', triggerLabel);
+        trigger.setAttribute('title', triggerLabel);
     }
     updateOpsAlertDateTimeFieldState(inputId, {
         filled: parsed.valid,
@@ -4703,10 +4705,10 @@ function buildOpsAlertMuteTableHtml(scope) {
                                 <strong>${escapeConfigHtml(definition.label)}</strong>
                                 <span>${escapeConfigHtml(definition.description)}</span>
                             </div>
-                            <label class="ops-alert-mute-field">
+                            <div class="ops-alert-mute-field ops-alert-mute-field--picker">
                                 <span>静默至</span>
                                 ${buildOpsAlertDateTimeFieldHtml(untilId)}
-                            </label>
+                            </div>
                         </div>
                         <div class="ops-alert-mute-table__aside">
                             <div class="ops-alert-mute-status ops-alert-mute-status--compact" id="${escapeConfigHtml(statusId)}">当前未设置单独静默。</div>
@@ -4865,10 +4867,10 @@ function buildOpsAlertStrategyLayoutHtml() {
                                 </div>
                                 <div class="ops-alert-mute-status" id="opsAlertTemporaryMuteStatus">当前未设置临时静默。</div>
                                 <div class="ops-alert-strategy-stack">
-                                    <label class="ops-alert-strategy-field">
+                                    <div class="ops-alert-strategy-field ops-alert-strategy-field--picker">
                                         <span>静默至</span>
                                         ${buildOpsAlertDateTimeFieldHtml('opsAlertTemporaryMuteUntil')}
-                                    </label>
+                                    </div>
                                     <div class="ops-alert-mute-toggle-field">
                                         <div class="ops-alert-mute-toggle-field__copy">
                                             <span>critical 继续通知</span>

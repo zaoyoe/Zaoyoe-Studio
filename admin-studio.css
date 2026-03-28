@@ -21004,6 +21004,14 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 8px;
 }
 
+.ops-alert-mute-field--picker,
+.ops-alert-strategy-field--picker {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
 .ops-alert-mute-table__aside .btn-add-config {
     width: 100%;
     min-height: 52px;
@@ -21032,22 +21040,22 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .ops-alert-date-picker {
     position: relative;
-    width: 100%;
+    width: auto;
+    flex: 0 0 auto;
 }
 
 .ops-alert-date-picker__trigger {
-    width: 100%;
-    min-height: 62px;
-    padding: 14px 16px;
-    border-radius: 16px;
+    width: 48px;
+    min-width: 48px;
+    min-height: 48px;
+    padding: 0;
+    border-radius: 14px;
     border: 1px solid rgba(107, 158, 206, 0.16);
     background: linear-gradient(180deg, rgba(17, 29, 51, 0.96), rgba(13, 23, 42, 0.98));
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 14px;
+    justify-content: center;
     color: var(--text-main);
-    text-align: left;
     cursor: pointer;
     transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
@@ -21085,7 +21093,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .ops-alert-date-picker__trigger i {
     flex: 0 0 auto;
     color: rgba(125, 168, 214, 0.86);
-    font-size: 0.95rem;
+    font-size: 1rem;
 }
 
 .ops-alert-date-picker__menu {
