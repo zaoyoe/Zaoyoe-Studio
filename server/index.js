@@ -3453,7 +3453,13 @@ async function sweepShopOrderDeliveryHealth() {
 async function queueNextShopOrderDeliverySweep(delayMs = null) {
     if (shopOrderDeliverySweepTimer) return;
 
-    const monitorConfig = normalizeShopOrderDeliveryMonitorConfig({}, process.env);
+    let monitorConfig = normalizeShopOrderDeliveryMonitorConfig({}, process.env);
+    try {
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env);
+        monitorConfig = normalizeShopOrderDeliveryMonitorConfig(runtime?.config?.shop_order_delivery || {}, process.env);
+    } catch (error) {
+        console.warn('[ShopOrderDeliveryMonitor] Failed to load runtime config for scheduling, falling back to env defaults:', error.message || error);
+    }
     const nextDelay = Math.max(10000, Number(delayMs ?? monitorConfig.sweep_interval_ms ?? 10 * 60 * 1000));
 
     shopOrderDeliverySweepTimer = setTimeout(() => {

@@ -2132,14 +2132,14 @@
                                 <div class="config-card-body">
                                     <div class="config-inline-note" id="opsAlertSummaryOrchestrationMeta">
                                         <i class="fas fa-layer-group"></i>
-                                        <span>正在整理成功类与低优先级告警的统一汇总状态...</span>
+                                        <span>正在整理成功类、低优先级与运行监控告警的统一汇总状态...</span>
                                     </div>
 
                                     <div class="ops-alert-summary-orchestration-grid">
                                         <section class="ops-alert-summary-orchestration-panel">
                                             <div class="ops-alert-summary-orchestration-panel__head">
                                                 <h4>当前统一视图</h4>
-                                                <p>集中查看客服消息、购买成功、充值成功、库存与补货、工单与售后的主监控、工作时段顺延和当前汇总策略。</p>
+                                                <p>集中查看客服消息、购买成功、充值成功、库存与补货、工单与售后、履约失败 / 死信、验证告警和支付通道异常的主监控、工作时段顺延和当前汇总策略。</p>
                                             </div>
                                             <div class="ops-alert-summary-orchestration-table">
                                                 <div class="ops-alert-summary-orchestration-row ops-alert-summary-orchestration-row--head">
@@ -2219,6 +2219,76 @@
                                                     <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusTicketsWorkHours">等待加载</div>
                                                     <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusTicketsSummary">等待加载</div>
                                                 </label>
+                                                <label class="ops-alert-summary-orchestration-row" for="opsAlertSummaryTargetShopOrderDelivery">
+                                                    <div class="ops-alert-summary-orchestration-cell ops-alert-summary-orchestration-cell--select">
+                                                        <input type="checkbox" id="opsAlertSummaryTargetShopOrderDelivery" class="ops-alert-summary-orchestration-checkbox" data-admin-change-action="settings-change-ops-alert-unified-summary-target" data-ops-alert-summary-target-key="shop_order_delivery" checked>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell">
+                                                        <div class="ops-alert-summary-orchestration-type">
+                                                            <strong>履约失败 / 死信</strong>
+                                                            <span>运行监控 / 履约</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusShopOrderDeliveryMonitor">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusShopOrderDeliveryWorkHours">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusShopOrderDeliverySummary">等待加载</div>
+                                                </label>
+                                                <label class="ops-alert-summary-orchestration-row" for="opsAlertSummaryTargetPaymentGateway">
+                                                    <div class="ops-alert-summary-orchestration-cell ops-alert-summary-orchestration-cell--select">
+                                                        <input type="checkbox" id="opsAlertSummaryTargetPaymentGateway" class="ops-alert-summary-orchestration-checkbox" data-admin-change-action="settings-change-ops-alert-unified-summary-target" data-ops-alert-summary-target-key="payment_gateway" checked>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell">
+                                                        <div class="ops-alert-summary-orchestration-type">
+                                                            <strong>支付通道异常</strong>
+                                                            <span>运行监控 / 支付</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusPaymentGatewayMonitor">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusPaymentGatewayWorkHours">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusPaymentGatewaySummary">等待加载</div>
+                                                </label>
+                                                <label class="ops-alert-summary-orchestration-row" for="opsAlertSummaryTargetVerifyQuota">
+                                                    <div class="ops-alert-summary-orchestration-cell ops-alert-summary-orchestration-cell--select">
+                                                        <input type="checkbox" id="opsAlertSummaryTargetVerifyQuota" class="ops-alert-summary-orchestration-checkbox" data-admin-change-action="settings-change-ops-alert-unified-summary-target" data-ops-alert-summary-target-key="verify_quota" checked>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell">
+                                                        <div class="ops-alert-summary-orchestration-type">
+                                                            <strong>验证额度</strong>
+                                                            <span>运行监控 / 验证</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusVerifyQuotaMonitor">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusVerifyQuotaWorkHours">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusVerifyQuotaSummary">等待加载</div>
+                                                </label>
+                                                <label class="ops-alert-summary-orchestration-row" for="opsAlertSummaryTargetVerifyQueue">
+                                                    <div class="ops-alert-summary-orchestration-cell ops-alert-summary-orchestration-cell--select">
+                                                        <input type="checkbox" id="opsAlertSummaryTargetVerifyQueue" class="ops-alert-summary-orchestration-checkbox" data-admin-change-action="settings-change-ops-alert-unified-summary-target" data-ops-alert-summary-target-key="verify_queue" checked>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell">
+                                                        <div class="ops-alert-summary-orchestration-type">
+                                                            <strong>验证堆积</strong>
+                                                            <span>运行监控 / 验证</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusVerifyQueueMonitor">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusVerifyQueueWorkHours">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusVerifyQueueSummary">等待加载</div>
+                                                </label>
+                                                <label class="ops-alert-summary-orchestration-row" for="opsAlertSummaryTargetVerifyFailure">
+                                                    <div class="ops-alert-summary-orchestration-cell ops-alert-summary-orchestration-cell--select">
+                                                        <input type="checkbox" id="opsAlertSummaryTargetVerifyFailure" class="ops-alert-summary-orchestration-checkbox" data-admin-change-action="settings-change-ops-alert-unified-summary-target" data-ops-alert-summary-target-key="verify_failure" checked>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell">
+                                                        <div class="ops-alert-summary-orchestration-type">
+                                                            <strong>验证失败率</strong>
+                                                            <span>运行监控 / 验证</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusVerifyFailureMonitor">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusVerifyFailureWorkHours">等待加载</div>
+                                                    <div class="ops-alert-summary-orchestration-cell" id="opsAlertSummaryStatusVerifyFailureSummary">等待加载</div>
+                                                </label>
                                             </div>
                                             <div class="ops-alert-summary-orchestration-presets">
                                                 <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-select-ops-alert-unified-summary-targets" data-ops-alert-summary-target-preset="all">
@@ -2229,6 +2299,9 @@
                                                 </button>
                                                 <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-select-ops-alert-unified-summary-targets" data-ops-alert-summary-target-preset="low_priority">
                                                     <i class="fas fa-bell"></i> 低优先级
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-select-ops-alert-unified-summary-targets" data-ops-alert-summary-target-preset="operations">
+                                                    <i class="fas fa-wave-square"></i> 运行监控
                                                 </button>
                                                 <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-select-ops-alert-unified-summary-targets" data-ops-alert-summary-target-preset="none">
                                                     <i class="fas fa-eraser"></i> 清空
@@ -2253,7 +2326,7 @@
                                             <div class="config-row">
                                                 <div class="config-info">
                                                     <div class="config-label">非工作时段顺延到上班时间</div>
-                                                    <div class="config-desc">对客服消息、购买成功、充值成功、工单与售后生效；库存与补货会自动忽略这个选项。</div>
+                                                    <div class="config-desc">对客服消息、购买成功、充值成功、工单与售后、履约失败 / 死信、验证告警和支付通道异常生效；库存与补货会自动忽略这个选项。</div>
                                                 </div>
                                                 <div class="config-input-wrapper">
                                                     <input type="checkbox" id="opsAlertUnifiedSummaryDraftWorkHoursOnlyEnabled" data-admin-change-action="settings-change-ops-alert-unified-summary-draft">
@@ -2827,6 +2900,151 @@
                                 </div>
                             </div>
 
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-shop-order-delivery">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-truck-ramp-box"></i>
+                                        <span>履约失败 / 死信告警</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用履约失败监控</div>
+                                            <div class="config-desc">对死信订单和持续重试失败订单发出告警，并把单笔履约异常接入统一汇总编排。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertShopOrderDeliveryEnabledToggle" data-admin-action="settings-toggle-ops-alert-shop-order-delivery-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>订单回看窗口（天）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="90" step="1" class="config-input" id="opsAlertShopOrderDeliveryLookbackDays" placeholder="14">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>状态回看窗口（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="30" max="10080" step="30" class="config-input" id="opsAlertShopOrderDeliveryStateLookbackMinutes" placeholder="1440">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>重试失败阈值（次）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="50" step="1" class="config-input" id="opsAlertShopOrderDeliveryRetryWaitingMinAttempts" placeholder="2">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>巡检频率（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="60" step="1" class="config-input" id="opsAlertShopOrderDeliverySweepIntervalMinutes" placeholder="10">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>单笔异常去重冷却（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="1440" step="1" class="config-input" id="opsAlertShopOrderDeliveryDedupeWindowMinutes" placeholder="30">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用履约事故升级</div>
+                                            <div class="config-desc">当多笔订单同时异常时升级为事故告警；事故升级和恢复仍保持即时发送，不参与定时汇总。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertShopOrderDeliveryIncidentEnabledToggle" data-admin-action="settings-toggle-ops-alert-shop-order-delivery-incident-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>事故订单阈值（笔）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="2" max="50" step="1" class="config-input" id="opsAlertShopOrderDeliveryIncidentMinOrderCount" placeholder="3">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>事故死信阈值（笔）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="50" step="1" class="config-input" id="opsAlertShopOrderDeliveryIncidentMinDeadLetterCount" placeholder="1">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>事故受影响用户阈值（人）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="50" step="1" class="config-input" id="opsAlertShopOrderDeliveryIncidentMinDistinctUsers" placeholder="2">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>事故去重冷却（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="1440" step="1" class="config-input" id="opsAlertShopOrderDeliveryIncidentDedupeWindowMinutes" placeholder="20">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">仅工作时间通知</div>
+                                            <div class="config-desc">非工作时段先不直接外发单笔履约失败，统一汇总到下一个工作开始时间再发；事故升级和恢复仍即时发送。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle" data-admin-action="settings-toggle-ops-alert-shop-order-delivery-work-hours-only"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用定时汇总通知</div>
+                                            <div class="config-desc">将窗口内多条单笔履约失败合并成一条站外通知，在窗口结束后统一外发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertShopOrderDeliverySummaryEnabledToggle" data-admin-action="settings-toggle-ops-alert-shop-order-delivery-summary-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总方式</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertShopOrderDeliverySummaryScheduleMode" data-admin-change-action="settings-change-ops-alert-shop-order-delivery-summary-schedule-mode">
+                                                <option value="rolling_window">滚动窗口</option>
+                                                <option value="hourly">每小时固定时点</option>
+                                                <option value="daily">每天固定时点</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总窗口（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="5" max="1440" step="5" class="config-input" id="opsAlertShopOrderDeliverySummaryWindowMinutes" placeholder="60">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每小时发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertShopOrderDeliverySummaryHourlyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送小时</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertShopOrderDeliverySummaryDailyHour" placeholder="9">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertShopOrderDeliverySummaryDailyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每条通知最多展示条目</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="50" step="1" class="config-input" id="opsAlertShopOrderDeliverySummaryMaxItems" placeholder="10">
+                                        </div>
+                                    </div>
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-circle-info"></i>
+                                        <span>这张卡片同时收口履约死信阈值、事故升级阈值和单笔异常外发节奏。事故升级 / 恢复继续即时发送，定时汇总只覆盖单笔履约失败。</span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="config-card ops-alert-config-card" data-config="ops-alerts-payment-gateway">
                                 <div class="config-card-header">
                                     <div class="config-card-title">
@@ -2898,9 +3116,67 @@
                                             <input type="number" min="1" max="1440" step="1" class="config-input" id="opsAlertPaymentGatewayDedupeWindowMinutes" placeholder="60">
                                         </div>
                                     </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">仅工作时间通知</div>
+                                            <div class="config-desc">非工作时段先不直接外发，统一汇总到下一个工作开始时间再发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle" data-admin-action="settings-toggle-ops-alert-payment-gateway-work-hours-only"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用定时汇总通知</div>
+                                            <div class="config-desc">将窗口内多条支付通道异常合并成一条站外通知，在窗口结束后统一外发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertPaymentGatewaySummaryEnabledToggle" data-admin-action="settings-toggle-ops-alert-payment-gateway-summary-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总方式</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertPaymentGatewaySummaryScheduleMode" data-admin-change-action="settings-change-ops-alert-payment-gateway-summary-schedule-mode">
+                                                <option value="rolling_window">滚动窗口</option>
+                                                <option value="hourly">每小时固定时点</option>
+                                                <option value="daily">每天固定时点</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总窗口（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="5" max="1440" step="5" class="config-input" id="opsAlertPaymentGatewaySummaryWindowMinutes" placeholder="60">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每小时发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertPaymentGatewaySummaryHourlyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送小时</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertPaymentGatewaySummaryDailyHour" placeholder="9">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertPaymentGatewaySummaryDailyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每条通知最多展示条目</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="50" step="1" class="config-input" id="opsAlertPaymentGatewaySummaryMaxItems" placeholder="10">
+                                        </div>
+                                    </div>
                                     <div class="config-inline-note">
                                         <i class="fas fa-circle-info"></i>
-                                        <span>这张卡片先收口支付通道异常的判定窗口和关键阈值。恢复通知仍保持即时发送，详细排障入口继续回到支付对账总览。</span>
+                                        <span>这张卡片现在同时收口支付通道异常阈值和外发节奏。恢复通知仍保持即时发送，详细排障入口继续回到支付对账总览。</span>
                                     </div>
                                 </div>
                             </div>
@@ -2964,9 +3240,67 @@
                                             <input type="number" min="1" max="1440" step="1" class="config-input" id="opsAlertVerifyQuotaDedupeWindowMinutes" placeholder="360">
                                         </div>
                                     </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">仅工作时间通知</div>
+                                            <div class="config-desc">非工作时段先不直接外发，统一汇总到下一个工作开始时间再发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle" data-admin-action="settings-toggle-ops-alert-verify-quota-work-hours-only"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用定时汇总通知</div>
+                                            <div class="config-desc">将窗口内多条额度不足提醒合并成一条站外通知，在窗口结束后统一外发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertVerifyQuotaSummaryEnabledToggle" data-admin-action="settings-toggle-ops-alert-verify-quota-summary-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总方式</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertVerifyQuotaSummaryScheduleMode" data-admin-change-action="settings-change-ops-alert-verify-quota-summary-schedule-mode">
+                                                <option value="rolling_window">滚动窗口</option>
+                                                <option value="hourly">每小时固定时点</option>
+                                                <option value="daily">每天固定时点</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总窗口（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="5" max="1440" step="5" class="config-input" id="opsAlertVerifyQuotaSummaryWindowMinutes" placeholder="60">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每小时发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertVerifyQuotaSummaryHourlyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送小时</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertVerifyQuotaSummaryDailyHour" placeholder="9">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertVerifyQuotaSummaryDailyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每条通知最多展示条目</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="50" step="1" class="config-input" id="opsAlertVerifyQuotaSummaryMaxItems" placeholder="10">
+                                        </div>
+                                    </div>
                                     <div class="config-inline-note">
                                         <i class="fas fa-circle-info"></i>
-                                        <span>这组配置只负责“何时触发验证额度告警”。接口状态和排障明细仍回到验证服务运维面板查看。</span>
+                                        <span>这组配置现在同时负责“何时触发验证额度告警”和“如何统一外发”。接口状态和排障明细仍回到验证服务运维面板查看。</span>
                                     </div>
                                 </div>
                             </div>
@@ -3036,9 +3370,67 @@
                                             <input type="number" min="1" max="1440" step="1" class="config-input" id="opsAlertVerifyQueueDedupeWindowMinutes" placeholder="30">
                                         </div>
                                     </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">仅工作时间通知</div>
+                                            <div class="config-desc">非工作时段先不直接外发，统一汇总到下一个工作开始时间再发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertVerifyQueueWorkHoursOnlyEnabledToggle" data-admin-action="settings-toggle-ops-alert-verify-queue-work-hours-only"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用定时汇总通知</div>
+                                            <div class="config-desc">将窗口内多条堆积异常合并成一条站外通知，在窗口结束后统一外发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertVerifyQueueSummaryEnabledToggle" data-admin-action="settings-toggle-ops-alert-verify-queue-summary-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总方式</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertVerifyQueueSummaryScheduleMode" data-admin-change-action="settings-change-ops-alert-verify-queue-summary-schedule-mode">
+                                                <option value="rolling_window">滚动窗口</option>
+                                                <option value="hourly">每小时固定时点</option>
+                                                <option value="daily">每天固定时点</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总窗口（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="5" max="1440" step="5" class="config-input" id="opsAlertVerifyQueueSummaryWindowMinutes" placeholder="60">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每小时发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertVerifyQueueSummaryHourlyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送小时</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertVerifyQueueSummaryDailyHour" placeholder="9">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertVerifyQueueSummaryDailyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每条通知最多展示条目</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="50" step="1" class="config-input" id="opsAlertVerifyQueueSummaryMaxItems" placeholder="10">
+                                        </div>
+                                    </div>
                                     <div class="config-inline-note">
                                         <i class="fas fa-circle-info"></i>
-                                        <span>适合值班时快速调节“堆积要多严重才报”。真正的任务详情、热点目标和最近错误仍在验证服务运维面板里看。</span>
+                                        <span>适合值班时同时调节“堆积要多严重才报”和“怎么统一发”。真正的任务详情、热点目标和最近错误仍在验证服务运维面板里看。</span>
                                     </div>
                                 </div>
                             </div>
@@ -3096,9 +3488,67 @@
                                             <input type="number" min="1" max="1440" step="1" class="config-input" id="opsAlertVerifyFailureDedupeWindowMinutes" placeholder="15">
                                         </div>
                                     </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">仅工作时间通知</div>
+                                            <div class="config-desc">非工作时段先不直接外发，统一汇总到下一个工作开始时间再发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertVerifyFailureWorkHoursOnlyEnabledToggle" data-admin-action="settings-toggle-ops-alert-verify-failure-work-hours-only"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">启用定时汇总通知</div>
+                                            <div class="config-desc">将窗口内多条失败率异常合并成一条站外通知，在窗口结束后统一外发。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <div class="status-toggle" id="opsAlertVerifyFailureSummaryEnabledToggle" data-admin-action="settings-toggle-ops-alert-verify-failure-summary-enabled"></div>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总方式</label>
+                                        <div class="config-input-wrapper">
+                                            <select class="config-input" id="opsAlertVerifyFailureSummaryScheduleMode" data-admin-change-action="settings-change-ops-alert-verify-failure-summary-schedule-mode">
+                                                <option value="rolling_window">滚动窗口</option>
+                                                <option value="hourly">每小时固定时点</option>
+                                                <option value="daily">每天固定时点</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>汇总窗口（分钟）</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="5" max="1440" step="5" class="config-input" id="opsAlertVerifyFailureSummaryWindowMinutes" placeholder="60">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每小时发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertVerifyFailureSummaryHourlyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送小时</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="23" step="1" class="config-input" id="opsAlertVerifyFailureSummaryDailyHour" placeholder="9">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每天发送分钟</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="0" max="59" step="1" class="config-input" id="opsAlertVerifyFailureSummaryDailyMinute" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>每条通知最多展示条目</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" min="1" max="50" step="1" class="config-input" id="opsAlertVerifyFailureSummaryMaxItems" placeholder="10">
+                                        </div>
+                                    </div>
                                     <div class="config-inline-note">
                                         <i class="fas fa-circle-info"></i>
-                                        <span>失败率告警默认会更激进一些。建议样本量阈值和失败率阈值一起调，避免在小样本时过早放大。</span>
+                                        <span>失败率告警默认会更激进一些。建议样本量阈值、失败率阈值和汇总节奏一起调，避免在小样本时过早放大。</span>
                                     </div>
                                 </div>
                             </div>

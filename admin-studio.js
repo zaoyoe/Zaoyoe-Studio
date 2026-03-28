@@ -517,17 +517,53 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-tickets-summary-enabled':
                 window.toggleOpsAlertTicketsSummaryEnabled?.();
                 break;
+            case 'settings-toggle-ops-alert-shop-order-delivery-enabled':
+                window.toggleOpsAlertShopOrderDeliveryEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-shop-order-delivery-incident-enabled':
+                window.toggleOpsAlertShopOrderDeliveryIncidentEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-shop-order-delivery-work-hours-only':
+                window.toggleOpsAlertShopOrderDeliveryWorkHoursOnlyEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-shop-order-delivery-summary-enabled':
+                window.toggleOpsAlertShopOrderDeliverySummaryEnabled?.();
+                break;
             case 'settings-toggle-ops-alert-verify-quota-enabled':
                 window.toggleOpsAlertVerifyQuotaEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-verify-quota-work-hours-only':
+                window.toggleOpsAlertVerifyQuotaWorkHoursOnlyEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-verify-quota-summary-enabled':
+                window.toggleOpsAlertVerifyQuotaSummaryEnabled?.();
                 break;
             case 'settings-toggle-ops-alert-verify-queue-enabled':
                 window.toggleOpsAlertVerifyQueueEnabled?.();
                 break;
+            case 'settings-toggle-ops-alert-verify-queue-work-hours-only':
+                window.toggleOpsAlertVerifyQueueWorkHoursOnlyEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-verify-queue-summary-enabled':
+                window.toggleOpsAlertVerifyQueueSummaryEnabled?.();
+                break;
             case 'settings-toggle-ops-alert-verify-failure-enabled':
                 window.toggleOpsAlertVerifyFailureEnabled?.();
                 break;
+            case 'settings-toggle-ops-alert-verify-failure-work-hours-only':
+                window.toggleOpsAlertVerifyFailureWorkHoursOnlyEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-verify-failure-summary-enabled':
+                window.toggleOpsAlertVerifyFailureSummaryEnabled?.();
+                break;
             case 'settings-toggle-ops-alert-payment-gateway-enabled':
                 window.toggleOpsAlertPaymentGatewayEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-payment-gateway-work-hours-only':
+                window.toggleOpsAlertPaymentGatewayWorkHoursOnlyEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-payment-gateway-summary-enabled':
+                window.toggleOpsAlertPaymentGatewaySummaryEnabled?.();
                 break;
             case 'settings-select-ops-alert-unified-summary-targets':
                 window.selectOpsAlertUnifiedSummaryTargets?.(actionEl.dataset.opsAlertSummaryTargetPreset);
@@ -1343,6 +1379,21 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'settings-change-ops-alert-tickets-summary-schedule-mode':
                 window.handleOpsAlertTicketsSummaryScheduleModeChange?.();
+                break;
+            case 'settings-change-ops-alert-shop-order-delivery-summary-schedule-mode':
+                window.handleOpsAlertShopOrderDeliverySummaryScheduleModeChange?.();
+                break;
+            case 'settings-change-ops-alert-verify-quota-summary-schedule-mode':
+                window.handleOpsAlertVerifyQuotaSummaryScheduleModeChange?.();
+                break;
+            case 'settings-change-ops-alert-verify-queue-summary-schedule-mode':
+                window.handleOpsAlertVerifyQueueSummaryScheduleModeChange?.();
+                break;
+            case 'settings-change-ops-alert-verify-failure-summary-schedule-mode':
+                window.handleOpsAlertVerifyFailureSummaryScheduleModeChange?.();
+                break;
+            case 'settings-change-ops-alert-payment-gateway-summary-schedule-mode':
+                window.handleOpsAlertPaymentGatewaySummaryScheduleModeChange?.();
                 break;
             case 'settings-change-ops-alert-unified-summary-target':
                 window.handleOpsAlertUnifiedSummaryTargetChange?.();

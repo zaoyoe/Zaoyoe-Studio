@@ -60,6 +60,7 @@ const ALERT_TYPE_MODULE_MAP = Object.freeze({
     shop_inventory_low: 'inventory',
     shop_inventory_empty: 'inventory',
     shop_inventory_recovered: 'inventory',
+    payment_gateway_summary: 'payments',
     payment_gateway_degraded: 'payments',
     payment_gateway_recovered: 'payments',
     payment_refund_ops: 'payments',
@@ -70,15 +71,19 @@ const ALERT_TYPE_MODULE_MAP = Object.freeze({
     payment_config_incident_recovered: 'payments',
     shop_order_risk_anomaly: 'shop_risk',
     shop_order_risk_recovered: 'shop_risk',
+    verify_quota_summary: 'verify',
     verify_quota_low: 'verify',
     verify_service_disabled: 'verify',
+    verify_failure_summary: 'verify',
     verify_failure_rate_spike: 'verify',
+    verify_queue_summary: 'verify',
     verify_queue_backlog: 'verify',
     verify_incident_escalated: 'verify',
     verify_incident_recovered: 'verify',
     ticket_sla_summary: 'tickets',
     ticket_sla_overdue: 'tickets',
     ticket_sla_recovered: 'tickets',
+    shop_order_delivery_summary: 'fulfillment',
     shop_order_delivery_failed: 'fulfillment',
     shop_order_delivery_recovered: 'fulfillment',
     shop_order_delivery_incident: 'fulfillment',
@@ -126,6 +131,36 @@ const SUMMARY_ALERT_DEFINITIONS = Object.freeze({
         summary_alert_type: 'ticket_sla_summary',
         default_title: '工单超时汇总',
         unit: '条超时工单'
+    }),
+    shop_order_delivery_failed: Object.freeze({
+        config_key: 'shop_order_delivery',
+        summary_alert_type: 'shop_order_delivery_summary',
+        default_title: '履约失败汇总',
+        unit: '条履约异常'
+    }),
+    payment_gateway_degraded: Object.freeze({
+        config_key: 'payment_gateway',
+        summary_alert_type: 'payment_gateway_summary',
+        default_title: '支付通道异常汇总',
+        unit: '条通道异常'
+    }),
+    verify_quota_low: Object.freeze({
+        config_key: 'verify_quota',
+        summary_alert_type: 'verify_quota_summary',
+        default_title: '验证额度告警汇总',
+        unit: '条额度告警'
+    }),
+    verify_queue_backlog: Object.freeze({
+        config_key: 'verify_queue',
+        summary_alert_type: 'verify_queue_summary',
+        default_title: '验证堆积告警汇总',
+        unit: '条堆积告警'
+    }),
+    verify_failure_rate_spike: Object.freeze({
+        config_key: 'verify_failure',
+        summary_alert_type: 'verify_failure_summary',
+        default_title: '验证失败率告警汇总',
+        unit: '条失败率告警'
     })
 });
 const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
@@ -335,6 +370,29 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         summary_daily_hour: 9,
         summary_daily_minute: 0
     }),
+    shop_order_delivery: Object.freeze({
+        enabled: true,
+        sweep_interval_ms: 10 * 60 * 1000,
+        lookback_days: 14,
+        state_lookback_minutes: 24 * 60,
+        retry_waiting_min_attempts: 2,
+        dedupe_window_minutes: 30,
+        incident_enabled: true,
+        incident_min_order_count: 3,
+        incident_min_dead_letter_count: 1,
+        incident_min_distinct_users: 2,
+        incident_dedupe_window_minutes: 20,
+        page_size: 500,
+        max_pages: 10,
+        work_hours_only_enabled: false,
+        summary_enabled: false,
+        summary_window_minutes: 60,
+        summary_max_items: 10,
+        summary_schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
+        summary_hourly_minute: 0,
+        summary_daily_hour: 9,
+        summary_daily_minute: 0
+    }),
     verify_quota: Object.freeze({
         enabled: true,
         sweep_interval_ms: 15 * 60 * 1000,
@@ -344,7 +402,15 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         critical_balance_threshold: 5,
         critical_remaining_jobs_threshold: 5,
         min_queue_buffer_jobs: 5,
-        dedupe_window_minutes: 6 * 60
+        dedupe_window_minutes: 6 * 60,
+        work_hours_only_enabled: false,
+        summary_enabled: false,
+        summary_window_minutes: 60,
+        summary_max_items: 10,
+        summary_schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
+        summary_hourly_minute: 0,
+        summary_daily_hour: 9,
+        summary_daily_minute: 0
     }),
     verify_queue: Object.freeze({
         enabled: true,
@@ -358,7 +424,15 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         recent_failure_threshold: 4,
         dedupe_window_minutes: 30,
         page_size: 500,
-        max_pages: 10
+        max_pages: 10,
+        work_hours_only_enabled: false,
+        summary_enabled: false,
+        summary_window_minutes: 60,
+        summary_max_items: 10,
+        summary_schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
+        summary_hourly_minute: 0,
+        summary_daily_hour: 9,
+        summary_daily_minute: 0
     }),
     verify_failure: Object.freeze({
         enabled: true,
@@ -369,7 +443,15 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         affected_user_threshold: 3,
         dedupe_window_minutes: 15,
         page_size: 500,
-        max_pages: 10
+        max_pages: 10,
+        work_hours_only_enabled: false,
+        summary_enabled: false,
+        summary_window_minutes: 60,
+        summary_max_items: 10,
+        summary_schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
+        summary_hourly_minute: 0,
+        summary_daily_hour: 9,
+        summary_daily_minute: 0
     }),
     payment_gateway: Object.freeze({
         enabled: true,
@@ -390,7 +472,15 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         min_webhook_5xx_count: 3,
         min_query_5xx_count: 3,
         page_size: 500,
-        max_pages: 20
+        max_pages: 20,
+        work_hours_only_enabled: false,
+        summary_enabled: false,
+        summary_window_minutes: 60,
+        summary_max_items: 10,
+        summary_schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
+        summary_hourly_minute: 0,
+        summary_daily_hour: 9,
+        summary_daily_minute: 0
     })
 });
 
@@ -951,6 +1041,29 @@ function cloneDefaultConfig() {
             summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_daily_hour,
             summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_daily_minute
         },
+        shop_order_delivery: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.enabled,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.sweep_interval_ms,
+            lookback_days: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.lookback_days,
+            state_lookback_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.state_lookback_minutes,
+            retry_waiting_min_attempts: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.retry_waiting_min_attempts,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.dedupe_window_minutes,
+            incident_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.incident_enabled,
+            incident_min_order_count: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.incident_min_order_count,
+            incident_min_dead_letter_count: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.incident_min_dead_letter_count,
+            incident_min_distinct_users: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.incident_min_distinct_users,
+            incident_dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.incident_dedupe_window_minutes,
+            page_size: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.page_size,
+            max_pages: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.max_pages,
+            work_hours_only_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.work_hours_only_enabled,
+            summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.summary_enabled,
+            summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.summary_window_minutes,
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.summary_max_items,
+            summary_schedule_mode: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.summary_schedule_mode,
+            summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.summary_hourly_minute,
+            summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.summary_daily_hour,
+            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.shop_order_delivery.summary_daily_minute
+        },
         verify_quota: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.enabled,
             sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.sweep_interval_ms,
@@ -960,7 +1073,15 @@ function cloneDefaultConfig() {
             critical_balance_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.critical_balance_threshold,
             critical_remaining_jobs_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.critical_remaining_jobs_threshold,
             min_queue_buffer_jobs: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.min_queue_buffer_jobs,
-            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.dedupe_window_minutes
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.dedupe_window_minutes,
+            work_hours_only_enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.work_hours_only_enabled,
+            summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.summary_enabled,
+            summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.summary_window_minutes,
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.summary_max_items,
+            summary_schedule_mode: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.summary_schedule_mode,
+            summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.summary_hourly_minute,
+            summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.summary_daily_hour,
+            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.summary_daily_minute
         },
         verify_queue: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.enabled,
@@ -974,7 +1095,15 @@ function cloneDefaultConfig() {
             recent_failure_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.recent_failure_threshold,
             dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.dedupe_window_minutes,
             page_size: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.page_size,
-            max_pages: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.max_pages
+            max_pages: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.max_pages,
+            work_hours_only_enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.work_hours_only_enabled,
+            summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.summary_enabled,
+            summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.summary_window_minutes,
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.summary_max_items,
+            summary_schedule_mode: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.summary_schedule_mode,
+            summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.summary_hourly_minute,
+            summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.summary_daily_hour,
+            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.summary_daily_minute
         },
         verify_failure: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.enabled,
@@ -985,7 +1114,15 @@ function cloneDefaultConfig() {
             affected_user_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.affected_user_threshold,
             dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.dedupe_window_minutes,
             page_size: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.page_size,
-            max_pages: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.max_pages
+            max_pages: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.max_pages,
+            work_hours_only_enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.work_hours_only_enabled,
+            summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.summary_enabled,
+            summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.summary_window_minutes,
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.summary_max_items,
+            summary_schedule_mode: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.summary_schedule_mode,
+            summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.summary_hourly_minute,
+            summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.summary_daily_hour,
+            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.summary_daily_minute
         },
         payment_gateway: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.enabled,
@@ -1006,7 +1143,15 @@ function cloneDefaultConfig() {
             min_webhook_5xx_count: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_webhook_5xx_count,
             min_query_5xx_count: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_query_5xx_count,
             page_size: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.page_size,
-            max_pages: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.max_pages
+            max_pages: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.max_pages,
+            work_hours_only_enabled: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.work_hours_only_enabled,
+            summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.summary_enabled,
+            summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.summary_window_minutes,
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.summary_max_items,
+            summary_schedule_mode: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.summary_schedule_mode,
+            summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.summary_hourly_minute,
+            summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.summary_daily_hour,
+            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.summary_daily_minute
         }
     };
 }
@@ -1062,6 +1207,9 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         : {};
     const ticketsConfig = source.tickets && typeof source.tickets === 'object'
         ? source.tickets
+        : {};
+    const shopOrderDeliveryConfig = source.shop_order_delivery && typeof source.shop_order_delivery === 'object'
+        ? source.shop_order_delivery
         : {};
     const verifyQuotaConfig = source.verify_quota && typeof source.verify_quota === 'object'
         ? source.verify_quota
@@ -1663,6 +1811,123 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         59
     );
 
+    config.shop_order_delivery.enabled = normalizeBoolean(
+        shopOrderDeliveryConfig.enabled,
+        normalizeBoolean(env?.SHOP_ORDER_DELIVERY_MONITOR_ENABLED, config.shop_order_delivery.enabled)
+    );
+    config.shop_order_delivery.sweep_interval_ms = normalizeNumber(
+        shopOrderDeliveryConfig.sweep_interval_ms,
+        normalizeNumber(env?.SHOP_ORDER_DELIVERY_MONITOR_SWEEP_INTERVAL_MS, config.shop_order_delivery.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.shop_order_delivery.lookback_days = normalizeNumber(
+        shopOrderDeliveryConfig.lookback_days,
+        normalizeNumber(env?.SHOP_ORDER_DELIVERY_MONITOR_LOOKBACK_DAYS, config.shop_order_delivery.lookback_days, 1, 90),
+        1,
+        90
+    );
+    config.shop_order_delivery.state_lookback_minutes = normalizeNumber(
+        shopOrderDeliveryConfig.state_lookback_minutes,
+        normalizeNumber(env?.SHOP_ORDER_DELIVERY_MONITOR_STATE_LOOKBACK_MINUTES, config.shop_order_delivery.state_lookback_minutes, 30, 7 * 24 * 60),
+        30,
+        7 * 24 * 60
+    );
+    config.shop_order_delivery.retry_waiting_min_attempts = normalizeNumber(
+        shopOrderDeliveryConfig.retry_waiting_min_attempts,
+        normalizeNumber(env?.SHOP_ORDER_DELIVERY_MONITOR_RETRY_WAITING_MIN_ATTEMPTS, config.shop_order_delivery.retry_waiting_min_attempts, 1, 50),
+        1,
+        50
+    );
+    config.shop_order_delivery.dedupe_window_minutes = normalizeNumber(
+        shopOrderDeliveryConfig.dedupe_window_minutes,
+        normalizeNumber(env?.SHOP_ORDER_DELIVERY_MONITOR_DEDUPE_WINDOW_MINUTES, config.shop_order_delivery.dedupe_window_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.shop_order_delivery.incident_enabled = normalizeBoolean(
+        shopOrderDeliveryConfig.incident_enabled,
+        normalizeBoolean(env?.SHOP_ORDER_DELIVERY_INCIDENT_ENABLED, config.shop_order_delivery.incident_enabled)
+    );
+    config.shop_order_delivery.incident_min_order_count = normalizeNumber(
+        shopOrderDeliveryConfig.incident_min_order_count,
+        normalizeNumber(env?.SHOP_ORDER_DELIVERY_INCIDENT_MIN_ORDER_COUNT, config.shop_order_delivery.incident_min_order_count, 2, 50),
+        2,
+        50
+    );
+    config.shop_order_delivery.incident_min_dead_letter_count = normalizeNumber(
+        shopOrderDeliveryConfig.incident_min_dead_letter_count,
+        normalizeNumber(env?.SHOP_ORDER_DELIVERY_INCIDENT_MIN_DEAD_LETTER_COUNT, config.shop_order_delivery.incident_min_dead_letter_count, 0, 50),
+        0,
+        50
+    );
+    config.shop_order_delivery.incident_min_distinct_users = normalizeNumber(
+        shopOrderDeliveryConfig.incident_min_distinct_users,
+        normalizeNumber(env?.SHOP_ORDER_DELIVERY_INCIDENT_MIN_DISTINCT_USERS, config.shop_order_delivery.incident_min_distinct_users, 1, 50),
+        1,
+        50
+    );
+    config.shop_order_delivery.incident_dedupe_window_minutes = normalizeNumber(
+        shopOrderDeliveryConfig.incident_dedupe_window_minutes,
+        normalizeNumber(env?.SHOP_ORDER_DELIVERY_INCIDENT_DEDUPE_WINDOW_MINUTES, config.shop_order_delivery.incident_dedupe_window_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.shop_order_delivery.page_size = normalizeNumber(
+        shopOrderDeliveryConfig.page_size,
+        normalizeNumber(env?.SHOP_ORDER_DELIVERY_MONITOR_PAGE_SIZE, config.shop_order_delivery.page_size, 50, 5000),
+        50,
+        5000
+    );
+    config.shop_order_delivery.max_pages = normalizeNumber(
+        shopOrderDeliveryConfig.max_pages,
+        normalizeNumber(env?.SHOP_ORDER_DELIVERY_MONITOR_MAX_PAGES, config.shop_order_delivery.max_pages, 1, 100),
+        1,
+        100
+    );
+    config.shop_order_delivery.work_hours_only_enabled = normalizeBoolean(
+        shopOrderDeliveryConfig.work_hours_only_enabled,
+        config.shop_order_delivery.work_hours_only_enabled
+    );
+    config.shop_order_delivery.summary_enabled = normalizeBoolean(
+        shopOrderDeliveryConfig.summary_enabled,
+        config.shop_order_delivery.summary_enabled
+    );
+    config.shop_order_delivery.summary_window_minutes = normalizeNumber(
+        shopOrderDeliveryConfig.summary_window_minutes,
+        config.shop_order_delivery.summary_window_minutes,
+        5,
+        24 * 60
+    );
+    config.shop_order_delivery.summary_max_items = normalizeNumber(
+        shopOrderDeliveryConfig.summary_max_items,
+        config.shop_order_delivery.summary_max_items,
+        1,
+        50
+    );
+    config.shop_order_delivery.summary_schedule_mode = normalizeSummaryScheduleMode(
+        shopOrderDeliveryConfig.summary_schedule_mode,
+        config.shop_order_delivery.summary_schedule_mode
+    );
+    config.shop_order_delivery.summary_hourly_minute = normalizeNumber(
+        shopOrderDeliveryConfig.summary_hourly_minute,
+        config.shop_order_delivery.summary_hourly_minute,
+        0,
+        59
+    );
+    config.shop_order_delivery.summary_daily_hour = normalizeNumber(
+        shopOrderDeliveryConfig.summary_daily_hour,
+        config.shop_order_delivery.summary_daily_hour,
+        0,
+        23
+    );
+    config.shop_order_delivery.summary_daily_minute = normalizeNumber(
+        shopOrderDeliveryConfig.summary_daily_minute,
+        config.shop_order_delivery.summary_daily_minute,
+        0,
+        59
+    );
+
     config.verify_quota.enabled = normalizeBoolean(
         verifyQuotaConfig.enabled,
         normalizeBoolean(env?.VERIFY_QUOTA_MONITOR_ENABLED, config.verify_quota.enabled)
@@ -1714,6 +1979,48 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         normalizeNumber(env?.VERIFY_QUOTA_MONITOR_DEDUPE_WINDOW_MINUTES, config.verify_quota.dedupe_window_minutes, 1, 24 * 60),
         1,
         24 * 60
+    );
+    config.verify_quota.work_hours_only_enabled = normalizeBoolean(
+        verifyQuotaConfig.work_hours_only_enabled,
+        config.verify_quota.work_hours_only_enabled
+    );
+    config.verify_quota.summary_enabled = normalizeBoolean(
+        verifyQuotaConfig.summary_enabled,
+        config.verify_quota.summary_enabled
+    );
+    config.verify_quota.summary_window_minutes = normalizeNumber(
+        verifyQuotaConfig.summary_window_minutes,
+        config.verify_quota.summary_window_minutes,
+        5,
+        24 * 60
+    );
+    config.verify_quota.summary_max_items = normalizeNumber(
+        verifyQuotaConfig.summary_max_items,
+        config.verify_quota.summary_max_items,
+        1,
+        50
+    );
+    config.verify_quota.summary_schedule_mode = normalizeSummaryScheduleMode(
+        verifyQuotaConfig.summary_schedule_mode,
+        config.verify_quota.summary_schedule_mode
+    );
+    config.verify_quota.summary_hourly_minute = normalizeNumber(
+        verifyQuotaConfig.summary_hourly_minute,
+        config.verify_quota.summary_hourly_minute,
+        0,
+        59
+    );
+    config.verify_quota.summary_daily_hour = normalizeNumber(
+        verifyQuotaConfig.summary_daily_hour,
+        config.verify_quota.summary_daily_hour,
+        0,
+        23
+    );
+    config.verify_quota.summary_daily_minute = normalizeNumber(
+        verifyQuotaConfig.summary_daily_minute,
+        config.verify_quota.summary_daily_minute,
+        0,
+        59
     );
 
     config.verify_queue.enabled = normalizeBoolean(
@@ -1786,6 +2093,48 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         1,
         100
     );
+    config.verify_queue.work_hours_only_enabled = normalizeBoolean(
+        verifyQueueConfig.work_hours_only_enabled,
+        config.verify_queue.work_hours_only_enabled
+    );
+    config.verify_queue.summary_enabled = normalizeBoolean(
+        verifyQueueConfig.summary_enabled,
+        config.verify_queue.summary_enabled
+    );
+    config.verify_queue.summary_window_minutes = normalizeNumber(
+        verifyQueueConfig.summary_window_minutes,
+        config.verify_queue.summary_window_minutes,
+        5,
+        24 * 60
+    );
+    config.verify_queue.summary_max_items = normalizeNumber(
+        verifyQueueConfig.summary_max_items,
+        config.verify_queue.summary_max_items,
+        1,
+        50
+    );
+    config.verify_queue.summary_schedule_mode = normalizeSummaryScheduleMode(
+        verifyQueueConfig.summary_schedule_mode,
+        config.verify_queue.summary_schedule_mode
+    );
+    config.verify_queue.summary_hourly_minute = normalizeNumber(
+        verifyQueueConfig.summary_hourly_minute,
+        config.verify_queue.summary_hourly_minute,
+        0,
+        59
+    );
+    config.verify_queue.summary_daily_hour = normalizeNumber(
+        verifyQueueConfig.summary_daily_hour,
+        config.verify_queue.summary_daily_hour,
+        0,
+        23
+    );
+    config.verify_queue.summary_daily_minute = normalizeNumber(
+        verifyQueueConfig.summary_daily_minute,
+        config.verify_queue.summary_daily_minute,
+        0,
+        59
+    );
 
     config.verify_failure.enabled = normalizeBoolean(
         verifyFailureConfig.enabled,
@@ -1838,6 +2187,48 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         normalizeNumber(env?.VERIFY_FAILURE_MONITOR_MAX_PAGES, config.verify_failure.max_pages, 1, 100),
         1,
         100
+    );
+    config.verify_failure.work_hours_only_enabled = normalizeBoolean(
+        verifyFailureConfig.work_hours_only_enabled,
+        config.verify_failure.work_hours_only_enabled
+    );
+    config.verify_failure.summary_enabled = normalizeBoolean(
+        verifyFailureConfig.summary_enabled,
+        config.verify_failure.summary_enabled
+    );
+    config.verify_failure.summary_window_minutes = normalizeNumber(
+        verifyFailureConfig.summary_window_minutes,
+        config.verify_failure.summary_window_minutes,
+        5,
+        24 * 60
+    );
+    config.verify_failure.summary_max_items = normalizeNumber(
+        verifyFailureConfig.summary_max_items,
+        config.verify_failure.summary_max_items,
+        1,
+        50
+    );
+    config.verify_failure.summary_schedule_mode = normalizeSummaryScheduleMode(
+        verifyFailureConfig.summary_schedule_mode,
+        config.verify_failure.summary_schedule_mode
+    );
+    config.verify_failure.summary_hourly_minute = normalizeNumber(
+        verifyFailureConfig.summary_hourly_minute,
+        config.verify_failure.summary_hourly_minute,
+        0,
+        59
+    );
+    config.verify_failure.summary_daily_hour = normalizeNumber(
+        verifyFailureConfig.summary_daily_hour,
+        config.verify_failure.summary_daily_hour,
+        0,
+        23
+    );
+    config.verify_failure.summary_daily_minute = normalizeNumber(
+        verifyFailureConfig.summary_daily_minute,
+        config.verify_failure.summary_daily_minute,
+        0,
+        59
     );
 
     config.payment_gateway.enabled = normalizeBoolean(
@@ -1951,6 +2342,48 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MAX_PAGES, config.payment_gateway.max_pages, 1, 100),
         1,
         100
+    );
+    config.payment_gateway.work_hours_only_enabled = normalizeBoolean(
+        paymentGatewayConfig.work_hours_only_enabled,
+        config.payment_gateway.work_hours_only_enabled
+    );
+    config.payment_gateway.summary_enabled = normalizeBoolean(
+        paymentGatewayConfig.summary_enabled,
+        config.payment_gateway.summary_enabled
+    );
+    config.payment_gateway.summary_window_minutes = normalizeNumber(
+        paymentGatewayConfig.summary_window_minutes,
+        config.payment_gateway.summary_window_minutes,
+        5,
+        24 * 60
+    );
+    config.payment_gateway.summary_max_items = normalizeNumber(
+        paymentGatewayConfig.summary_max_items,
+        config.payment_gateway.summary_max_items,
+        1,
+        50
+    );
+    config.payment_gateway.summary_schedule_mode = normalizeSummaryScheduleMode(
+        paymentGatewayConfig.summary_schedule_mode,
+        config.payment_gateway.summary_schedule_mode
+    );
+    config.payment_gateway.summary_hourly_minute = normalizeNumber(
+        paymentGatewayConfig.summary_hourly_minute,
+        config.payment_gateway.summary_hourly_minute,
+        0,
+        59
+    );
+    config.payment_gateway.summary_daily_hour = normalizeNumber(
+        paymentGatewayConfig.summary_daily_hour,
+        config.payment_gateway.summary_daily_hour,
+        0,
+        23
+    );
+    config.payment_gateway.summary_daily_minute = normalizeNumber(
+        paymentGatewayConfig.summary_daily_minute,
+        config.payment_gateway.summary_daily_minute,
+        0,
+        59
     );
 
     return config;
@@ -2794,6 +3227,26 @@ function buildExternalAlertText(job = {}) {
     if (shopInventorySummaryText) {
         return shopInventorySummaryText;
     }
+    const paymentGatewaySummaryText = buildPaymentGatewaySummaryAlertText(job);
+    if (paymentGatewaySummaryText) {
+        return paymentGatewaySummaryText;
+    }
+    const verifyQuotaSummaryText = buildVerifyQuotaSummaryAlertText(job);
+    if (verifyQuotaSummaryText) {
+        return verifyQuotaSummaryText;
+    }
+    const verifyQueueSummaryText = buildVerifyQueueSummaryAlertText(job);
+    if (verifyQueueSummaryText) {
+        return verifyQueueSummaryText;
+    }
+    const verifyFailureSummaryText = buildVerifyFailureSummaryAlertText(job);
+    if (verifyFailureSummaryText) {
+        return verifyFailureSummaryText;
+    }
+    const shopOrderDeliverySummaryText = buildShopOrderDeliverySummaryAlertText(job);
+    if (shopOrderDeliverySummaryText) {
+        return shopOrderDeliverySummaryText;
+    }
     const walletRechargeText = buildWalletRechargeSucceededAlertText(job);
     if (walletRechargeText) {
         return walletRechargeText;
@@ -3172,6 +3625,224 @@ function buildShopInventorySummaryAlertText(job = {}) {
             lines.push(`   近 ${salesWindow} 天销量：${Math.max(0, Math.round(Number(itemPayload.recent_sales_count || 0)))} 件`);
         }
         const updatedAt = formatTimestamp(itemPayload.updated_at || item?.created_at);
+        if (updatedAt) lines.push(`   时间：${updatedAt}`);
+    });
+    if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
+        lines.push(`其余 ${Number(payload.item_count) - items.length} 条请前往后台查看。`);
+    }
+    if (normalizeText(payload.entry_path)) {
+        lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+    }
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildPaymentGatewaySummaryAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'payment_gateway_summary') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const items = getSummaryItems(payload).slice(0, Math.max(1, normalizeNumber(payload.summary_max_items, 10, 1, 50)));
+    const lines = [buildSummaryHeader(job, '支付通道异常汇总')];
+
+    if (normalizeText(payload.window_start_at) || normalizeText(payload.window_end_at)) {
+        lines.push(`时间窗口：${formatTimestamp(payload.window_start_at)} - ${formatTimestamp(payload.window_end_at)}`);
+    }
+    if (Number.isFinite(Number(payload.item_count))) {
+        lines.push(`累计通道异常：${Math.max(0, Math.round(Number(payload.item_count || 0)))} 条`);
+    }
+    items.forEach((item, index) => {
+        const itemPayload = normalizeJsonObject(item?.payload);
+        const providerLabel = getProviderLabel(itemPayload.provider) || normalizeText(itemPayload.provider) || '未知通道';
+        const siteLabel = normalizeText(itemPayload.site).toUpperCase();
+        const reasons = Array.isArray(itemPayload.degraded_reasons)
+            ? itemPayload.degraded_reasons.map((entry) => normalizeText(entry)).filter(Boolean)
+            : [];
+        lines.push(`${index + 1}. ${providerLabel}${siteLabel ? `（${siteLabel}）` : ''}`);
+        if (reasons.length) lines.push(`   判定信号：${reasons.join('；')}`);
+        if (Number(itemPayload.total_orders || 0) > 0) {
+            lines.push(`   订单概览：总 ${Number(itemPayload.total_orders || 0)} 笔 / 成功 ${Number(itemPayload.paid_orders || 0)} 笔 / 待审核 ${Number(itemPayload.review_orders || 0)} 笔 / 失败 ${Number(itemPayload.failed_orders || 0)} 笔`);
+        }
+        if (Number(itemPayload.webhook_total || 0) > 0 || Number(itemPayload.query_total || 0) > 0) {
+            lines.push(`   回调/查码：回调 5xx ${Number(itemPayload.webhook_5xx || 0)} 次 / 查码 5xx ${Number(itemPayload.query_5xx || 0)} 次`);
+        }
+        const checkedAt = formatTimestamp(itemPayload.checked_at || itemPayload.created_at || item?.created_at);
+        if (checkedAt) lines.push(`   时间：${checkedAt}`);
+    });
+    if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
+        lines.push(`其余 ${Number(payload.item_count) - items.length} 条请前往后台查看。`);
+    }
+    if (normalizeText(payload.entry_path)) {
+        lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+    }
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildVerifyQuotaSummaryAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'verify_quota_summary') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const items = getSummaryItems(payload).slice(0, Math.max(1, normalizeNumber(payload.summary_max_items, 10, 1, 50)));
+    const lines = [buildSummaryHeader(job, '验证额度告警汇总')];
+
+    if (normalizeText(payload.window_start_at) || normalizeText(payload.window_end_at)) {
+        lines.push(`时间窗口：${formatTimestamp(payload.window_start_at)} - ${formatTimestamp(payload.window_end_at)}`);
+    }
+    if (Number.isFinite(Number(payload.item_count))) {
+        lines.push(`累计额度告警：${Math.max(0, Math.round(Number(payload.item_count || 0)))} 条`);
+    }
+    items.forEach((item, index) => {
+        const itemPayload = normalizeJsonObject(item?.payload);
+        const keyLabel = normalizeText(itemPayload.key_name) || 'default';
+        const balanceText = Number.isFinite(Number(itemPayload.balance))
+            ? `${Number(itemPayload.balance).toFixed(2)} 点`
+            : '';
+        const remainingJobs = Number.isFinite(Number(itemPayload.remaining_jobs))
+            ? `${Math.max(0, Math.round(Number(itemPayload.remaining_jobs || 0)))} 次`
+            : '';
+        const reasons = Array.isArray(itemPayload.degraded_reasons)
+            ? itemPayload.degraded_reasons.map((entry) => normalizeText(entry)).filter(Boolean)
+            : [];
+        lines.push(`${index + 1}. ${keyLabel}`);
+        if (balanceText || remainingJobs) {
+            lines.push(`   剩余能力：${[balanceText, remainingJobs ? `预计 ${remainingJobs}` : ''].filter(Boolean).join(' / ')}`);
+        }
+        if (reasons.length) lines.push(`   判定信号：${reasons.join('；')}`);
+        if (Number.isFinite(Number(itemPayload.queue_size)) || Number.isFinite(Number(itemPayload.running_jobs))) {
+            lines.push(`   队列概览：排队 ${Math.max(0, Math.round(Number(itemPayload.queue_size || 0)))} 个 / 运行中 ${Math.max(0, Math.round(Number(itemPayload.running_jobs || 0)))} 个`);
+        }
+        const checkedAt = formatTimestamp(itemPayload.checked_at || itemPayload.created_at || item?.created_at);
+        if (checkedAt) lines.push(`   时间：${checkedAt}`);
+    });
+    if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
+        lines.push(`其余 ${Number(payload.item_count) - items.length} 条请前往后台查看。`);
+    }
+    if (normalizeText(payload.entry_path)) {
+        lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+    }
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildVerifyQueueSummaryAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'verify_queue_summary') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const items = getSummaryItems(payload).slice(0, Math.max(1, normalizeNumber(payload.summary_max_items, 10, 1, 50)));
+    const lines = [buildSummaryHeader(job, '验证堆积告警汇总')];
+
+    if (normalizeText(payload.window_start_at) || normalizeText(payload.window_end_at)) {
+        lines.push(`时间窗口：${formatTimestamp(payload.window_start_at)} - ${formatTimestamp(payload.window_end_at)}`);
+    }
+    if (Number.isFinite(Number(payload.item_count))) {
+        lines.push(`累计堆积告警：${Math.max(0, Math.round(Number(payload.item_count || 0)))} 条`);
+    }
+    items.forEach((item, index) => {
+        const itemPayload = normalizeJsonObject(item?.payload);
+        const keyLabel = normalizeText(itemPayload.key_name) || 'default';
+        const reasons = Array.isArray(itemPayload.degraded_reasons)
+            ? itemPayload.degraded_reasons.map((entry) => normalizeText(entry)).filter(Boolean)
+            : [];
+        const hotErrors = Array.isArray(itemPayload.hot_errors)
+            ? itemPayload.hot_errors.map((entry) => normalizeText(entry)).filter(Boolean)
+            : [];
+        lines.push(`${index + 1}. ${keyLabel}`);
+        lines.push(`   队列概览：上游排队 ${Math.max(0, Math.round(Number(itemPayload.queue_size || 0)))} 个 / 运行中 ${Math.max(0, Math.round(Number(itemPayload.running_jobs || 0)))} 个 / 本地活跃 ${Math.max(0, Math.round(Number(itemPayload.active_job_count || 0)))} 个`);
+        if (normalizeText(itemPayload.oldest_pending_label)) lines.push(`   最老活跃任务：${normalizeText(itemPayload.oldest_pending_label)}`);
+        if (reasons.length) lines.push(`   判定信号：${reasons.join('；')}`);
+        if (hotErrors.length) lines.push(`   最近错误：${hotErrors.join('；')}`);
+        const checkedAt = formatTimestamp(itemPayload.checked_at || itemPayload.created_at || item?.created_at);
+        if (checkedAt) lines.push(`   时间：${checkedAt}`);
+    });
+    if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
+        lines.push(`其余 ${Number(payload.item_count) - items.length} 条请前往后台查看。`);
+    }
+    if (normalizeText(payload.entry_path)) {
+        lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+    }
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildVerifyFailureSummaryAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'verify_failure_summary') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const items = getSummaryItems(payload).slice(0, Math.max(1, normalizeNumber(payload.summary_max_items, 10, 1, 50)));
+    const lines = [buildSummaryHeader(job, '验证失败率告警汇总')];
+
+    if (normalizeText(payload.window_start_at) || normalizeText(payload.window_end_at)) {
+        lines.push(`时间窗口：${formatTimestamp(payload.window_start_at)} - ${formatTimestamp(payload.window_end_at)}`);
+    }
+    if (Number.isFinite(Number(payload.item_count))) {
+        lines.push(`累计失败率告警：${Math.max(0, Math.round(Number(payload.item_count || 0)))} 条`);
+    }
+    items.forEach((item, index) => {
+        const itemPayload = normalizeJsonObject(item?.payload);
+        const keyLabel = normalizeText(itemPayload.key_name) || 'default';
+        const reasons = Array.isArray(itemPayload.degraded_reasons)
+            ? itemPayload.degraded_reasons.map((entry) => normalizeText(entry)).filter(Boolean)
+            : [];
+        const hotErrors = Array.isArray(itemPayload.hot_errors)
+            ? itemPayload.hot_errors.map((entry) => normalizeText(entry)).filter(Boolean)
+            : [];
+        lines.push(`${index + 1}. ${keyLabel}`);
+        lines.push(`   任务概览：总 ${Math.max(0, Math.round(Number(itemPayload.total_jobs || 0)))} 次 / 失败 ${Math.max(0, Math.round(Number(itemPayload.failed_jobs || 0)))} 次 / 成功 ${Math.max(0, Math.round(Number(itemPayload.success_jobs || 0)))} 次 / 失败率 ${formatPercent(itemPayload.failure_rate)}`);
+        if (Number.isFinite(Number(itemPayload.affected_user_count))) {
+            lines.push(`   受影响用户：${Math.max(0, Math.round(Number(itemPayload.affected_user_count || 0)))} 人`);
+        }
+        if (reasons.length) lines.push(`   判定信号：${reasons.join('；')}`);
+        if (hotErrors.length) lines.push(`   最近错误：${hotErrors.join('；')}`);
+        const checkedAt = formatTimestamp(itemPayload.checked_at || itemPayload.created_at || item?.created_at);
+        if (checkedAt) lines.push(`   时间：${checkedAt}`);
+    });
+    if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
+        lines.push(`其余 ${Number(payload.item_count) - items.length} 条请前往后台查看。`);
+    }
+    if (normalizeText(payload.entry_path)) {
+        lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+    }
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildShopOrderDeliverySummaryAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'shop_order_delivery_summary') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const items = getSummaryItems(payload).slice(0, Math.max(1, normalizeNumber(payload.summary_max_items, 10, 1, 50)));
+    const lines = [buildSummaryHeader(job, '履约失败汇总')];
+
+    if (normalizeText(payload.window_start_at) || normalizeText(payload.window_end_at)) {
+        lines.push(`时间窗口：${formatTimestamp(payload.window_start_at)} - ${formatTimestamp(payload.window_end_at)}`);
+    }
+    if (Number.isFinite(Number(payload.item_count))) {
+        lines.push(`累计履约异常：${Math.max(0, Math.round(Number(payload.item_count || 0)))} 条`);
+    }
+    items.forEach((item, index) => {
+        const itemPayload = normalizeJsonObject(item?.payload);
+        const orderId = normalizeText(itemPayload.order_id) || normalizeText(itemPayload.target_id) || `shop-order-${index + 1}`;
+        const productName = normalizeText(itemPayload.product_name) || '商城商品';
+        const deliveryStatus = normalizeText(itemPayload.delivery_status_label) || normalizeText(itemPayload.delivery_status) || '异常';
+        const deliveryError = normalizeText(itemPayload.delivery_last_error);
+        const updatedAt = formatTimestamp(itemPayload.delivery_updated_at || itemPayload.created_at || item?.created_at);
+        lines.push(`${index + 1}. ${orderId} · ${productName}`);
+        lines.push(`   当前状态：${deliveryStatus}`);
+        if (Number.isFinite(Number(itemPayload.delivery_attempt_count))) {
+            lines.push(`   失败次数：${Math.max(0, Math.round(Number(itemPayload.delivery_attempt_count || 0)))}`);
+        }
+        if (normalizeText(itemPayload.user_id)) lines.push(`   用户ID：${normalizeText(itemPayload.user_id)}`);
+        if (deliveryError) lines.push(`   最近错误：${deliveryError}`);
         if (updatedAt) lines.push(`   时间：${updatedAt}`);
     });
     if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {

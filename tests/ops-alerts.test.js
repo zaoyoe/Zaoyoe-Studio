@@ -573,6 +573,148 @@ test('enqueueOpsAlertJob aggregates overdue tickets into a single summary job wh
     assert.equal(state.jobs[0].title, '工单超时汇总（2 条超时工单）');
 });
 
+test('enqueueOpsAlertJob aggregates payment gateway alerts into a single summary job when summary mode is enabled', async () => {
+    const state = { jobs: [] };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            payment_gateway: {
+                enabled: true,
+                summary_enabled: true,
+                summary_window_minutes: 90,
+                summary_max_items: 6
+            }
+        }
+    });
+
+    await enqueueOpsAlertJob(supabase, {
+        alertType: 'payment_gateway_degraded',
+        severity: 'warning',
+        title: '爱发电 支付通道异常波动（CN）',
+        content: '爱发电支付成功率异常',
+        payload: {
+            provider: 'afdian',
+            site: 'cn',
+            monitor_window_minutes: 30,
+            degraded_reasons: ['支付成功率仅 16.67%（1/6）'],
+            total_orders: 6,
+            paid_orders: 1,
+            review_orders: 4,
+            failed_orders: 2,
+            webhook_5xx: 3,
+            query_5xx: 1,
+            checked_at: '2026-03-27T06:15:00.000Z',
+            entry_path: '支付对账 -> 支付总览 -> 通道表现 / 最近24小时异常趋势'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T06:15:00.000Z')
+    });
+    const second = await enqueueOpsAlertJob(supabase, {
+        alertType: 'payment_gateway_degraded',
+        severity: 'critical',
+        title: '虎皮椒 支付通道异常波动（US）',
+        content: '虎皮椒回调异常',
+        payload: {
+            provider: 'hupijiao',
+            site: 'us',
+            monitor_window_minutes: 30,
+            degraded_reasons: ['回调 5xx 已累计 4 次'],
+            total_orders: 8,
+            paid_orders: 3,
+            review_orders: 2,
+            failed_orders: 3,
+            webhook_5xx: 4,
+            query_5xx: 0,
+            checked_at: '2026-03-27T06:40:00.000Z',
+            entry_path: '支付对账 -> 支付总览 -> 通道表现 / 最近24小时异常趋势'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T06:40:00.000Z')
+    });
+
+    assert.equal(second.queued, true);
+    assert.equal(second.summary, true);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].alert_type, 'payment_gateway_summary');
+    assert.equal(state.jobs[0].severity, 'critical');
+    assert.equal(state.jobs[0].payload.item_count, 2);
+    assert.equal(state.jobs[0].payload.items.length, 2);
+    assert.equal(state.jobs[0].payload.summary_window_minutes, 90);
+    assert.equal(state.jobs[0].payload.summary_max_items, 6);
+    assert.equal(state.jobs[0].title, '支付通道异常汇总（2 条通道异常）');
+});
+
+test('enqueueOpsAlertJob aggregates shop order delivery failures into a single summary job when summary mode is enabled', async () => {
+    const state = { jobs: [] };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            shop_order_delivery: {
+                enabled: true,
+                summary_enabled: true,
+                summary_window_minutes: 75,
+                summary_max_items: 4
+            }
+        }
+    });
+
+    await enqueueOpsAlertJob(supabase, {
+        alertType: 'shop_order_delivery_failed',
+        severity: 'warning',
+        title: '商城履约失败（shop-ord-a1）',
+        content: '订单已连续重试失败 2 次',
+        payload: {
+            order_id: 'shop-ord-a1',
+            target_id: 'shop-ord-a1',
+            product_name: 'Prompt Pro 年卡',
+            user_id: 'buyer-a1',
+            delivery_status: 'retry_waiting',
+            delivery_status_label: '重试中',
+            delivery_attempt_count: 2,
+            delivery_last_error: '库存锁定冲突，已等待下一轮重试',
+            delivery_updated_at: '2026-03-27T06:15:00.000Z',
+            entry_path: '商城管理 -> 履约任务 / 异常订单'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T06:15:00.000Z')
+    });
+    const second = await enqueueOpsAlertJob(supabase, {
+        alertType: 'shop_order_delivery_failed',
+        severity: 'critical',
+        title: '商城履约失败（shop-ord-b2）',
+        content: '订单已进入履约死信队列',
+        payload: {
+            order_id: 'shop-ord-b2',
+            target_id: 'shop-ord-b2',
+            product_name: '卡密周卡',
+            user_id: 'buyer-b2',
+            delivery_status: 'dead_letter',
+            delivery_status_label: '死信待处理',
+            delivery_attempt_count: 4,
+            delivery_last_error: '目标履约地址连续超时',
+            delivery_updated_at: '2026-03-27T06:20:00.000Z',
+            entry_path: '商城管理 -> 履约任务 / 异常订单'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T06:20:00.000Z')
+    });
+
+    assert.equal(second.queued, true);
+    assert.equal(second.summary, true);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].alert_type, 'shop_order_delivery_summary');
+    assert.equal(state.jobs[0].severity, 'critical');
+    assert.equal(state.jobs[0].payload.item_count, 2);
+    assert.equal(state.jobs[0].payload.items.length, 2);
+    assert.equal(state.jobs[0].payload.summary_window_minutes, 75);
+    assert.equal(state.jobs[0].payload.summary_max_items, 4);
+    assert.equal(state.jobs[0].title, '履约失败汇总（2 条履约异常）');
+});
+
 test('enqueueOpsAlertJob schedules customer chat summaries on the hourly fixed minute when configured', async () => {
     const state = { jobs: [] };
     const supabase = createSupabaseStub(state);
@@ -753,6 +895,87 @@ test('enqueueOpsAlertJob aggregates off-hours customer chat alerts into the next
     assert.equal(second.summary, true);
     assert.equal(state.jobs.length, 1);
     assert.equal(state.jobs[0].alert_type, 'customer_chat_message_summary');
+    assert.equal(state.jobs[0].payload.summary_schedule_mode, 'work_hours');
+    assert.equal(state.jobs[0].payload.work_hours_start_hour, 9);
+    assert.equal(state.jobs[0].payload.work_hours_end_hour, 18);
+    assert.equal(state.jobs[0].payload.work_hours_timezone, 'UTC');
+    assert.equal(state.jobs[0].payload.window_start_at, '2026-03-27T18:00:00.000Z');
+    assert.equal(state.jobs[0].payload.window_end_at, '2026-03-28T09:00:00.000Z');
+    assert.equal(state.jobs[0].payload.item_count, 2);
+    assert.equal(state.jobs[0].next_retry_at, '2026-03-28T09:00:00.000Z');
+    assert.match(state.jobs[0].content, /工作时段 09:00-18:00（UTC）/);
+});
+
+test('enqueueOpsAlertJob aggregates off-hours verify queue alerts into the next work-hours summary', async () => {
+    const state = { jobs: [] };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            quiet_hours: {
+                enabled: true,
+                start_hour: 23,
+                end_hour: 8,
+                timezone: 'UTC',
+                allow_critical: true
+            },
+            work_hours: {
+                enabled: true,
+                start_hour: 9,
+                end_hour: 18,
+                timezone: 'UTC'
+            },
+            verify_queue: {
+                enabled: true,
+                work_hours_only_enabled: true,
+                summary_enabled: false,
+                summary_max_items: 4
+            }
+        }
+    });
+
+    await enqueueOpsAlertJob(supabase, {
+        alertType: 'verify_queue_backlog',
+        severity: 'warning',
+        title: '验证任务堆积预警（primary-key）',
+        content: '夜里出现任务堆积',
+        payload: {
+            key_name: 'primary-key',
+            queue_size: 18,
+            running_jobs: 4,
+            active_job_count: 11,
+            oldest_pending_label: '42 分钟',
+            degraded_reasons: ['上游队列已堆积 18 个任务（阈值 10 个）'],
+            checked_at: '2026-03-27T23:30:00.000Z',
+            entry_path: '后台设置 -> 验证服务配置 -> 队列状态 / 最近任务'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T23:30:00.000Z')
+    });
+    const second = await enqueueOpsAlertJob(supabase, {
+        alertType: 'verify_queue_backlog',
+        severity: 'warning',
+        title: '验证任务堆积预警（backup-key）',
+        content: '清晨仍有堆积',
+        payload: {
+            key_name: 'backup-key',
+            queue_size: 12,
+            running_jobs: 3,
+            active_job_count: 7,
+            oldest_pending_label: '19 分钟',
+            degraded_reasons: ['最近 30 分钟失败 6 次（阈值 4 次）'],
+            checked_at: '2026-03-28T07:10:00.000Z',
+            entry_path: '后台设置 -> 验证服务配置 -> 队列状态 / 最近任务'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-28T07:10:00.000Z')
+    });
+
+    assert.equal(second.queued, true);
+    assert.equal(second.summary, true);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].alert_type, 'verify_queue_summary');
     assert.equal(state.jobs[0].payload.summary_schedule_mode, 'work_hours');
     assert.equal(state.jobs[0].payload.work_hours_start_hour, 9);
     assert.equal(state.jobs[0].payload.work_hours_end_hour, 18);
@@ -1615,6 +1838,265 @@ test('buildExternalAlertText renders ticket SLA summary details', () => {
     assert.match(text, /2\. ticket-b2 · 已等待 5 小时 20 分钟/);
     assert.match(text, /当前负责人：夜班值守/);
     assert.match(text, /处理入口：售后工单 -> 待处理 -> 工单详情/);
+});
+
+test('buildExternalAlertText renders payment gateway summary details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'payment_gateway_summary',
+        severity: 'critical',
+        title: '支付通道异常汇总（2 条通道异常）',
+        payload: {
+            window_start_at: '2026-03-27T06:00:00.000Z',
+            window_end_at: '2026-03-27T07:30:00.000Z',
+            item_count: 2,
+            summary_max_items: 6,
+            entry_path: '支付对账 -> 支付总览 -> 通道表现 / 最近24小时异常趋势',
+            items: [
+                {
+                    alert_type: 'payment_gateway_degraded',
+                    payload: {
+                        provider: 'afdian',
+                        site: 'cn',
+                        degraded_reasons: ['支付成功率仅 16.67%（1/6）'],
+                        total_orders: 6,
+                        paid_orders: 1,
+                        review_orders: 4,
+                        failed_orders: 2,
+                        webhook_total: 5,
+                        query_total: 4,
+                        webhook_5xx: 3,
+                        query_5xx: 1,
+                        checked_at: '2026-03-27T06:10:00.000Z'
+                    }
+                },
+                {
+                    alert_type: 'payment_gateway_degraded',
+                    payload: {
+                        provider: 'hupijiao',
+                        site: 'us',
+                        degraded_reasons: ['回调 5xx 已累计 4 次'],
+                        total_orders: 8,
+                        paid_orders: 3,
+                        review_orders: 2,
+                        failed_orders: 3,
+                        webhook_total: 6,
+                        query_total: 5,
+                        webhook_5xx: 4,
+                        query_5xx: 0,
+                        checked_at: '2026-03-27T06:45:00.000Z'
+                    }
+                }
+            ]
+        }
+    });
+
+    assert.match(text, /支付通道异常汇总/);
+    assert.match(text, /累计通道异常：2 条/);
+    assert.match(text, /1\. 爱发电（CN）/);
+    assert.match(text, /2\. 虎皮椒（US）/);
+    assert.match(text, /回调\/查码：回调 5xx 3 次 \/ 查码 5xx 1 次/);
+    assert.match(text, /处理入口：支付对账 -> 支付总览 -> 通道表现 \/ 最近24小时异常趋势/);
+});
+
+test('buildExternalAlertText renders verify quota summary details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'verify_quota_summary',
+        severity: 'warning',
+        title: '验证额度告警汇总（2 条额度告警）',
+        payload: {
+            window_start_at: '2026-03-27T06:00:00.000Z',
+            window_end_at: '2026-03-27T07:30:00.000Z',
+            item_count: 2,
+            summary_max_items: 5,
+            entry_path: '后台设置 -> 验证服务配置 -> 当前额度 / 队列状态',
+            items: [
+                {
+                    alert_type: 'verify_quota_low',
+                    payload: {
+                        key_name: 'primary-key',
+                        balance: 11,
+                        remaining_jobs: 11,
+                        queue_size: 7,
+                        running_jobs: 2,
+                        degraded_reasons: ['剩余额度 11.00 点（阈值 20.00 点）'],
+                        checked_at: '2026-03-27T06:10:00.000Z'
+                    }
+                },
+                {
+                    alert_type: 'verify_quota_low',
+                    payload: {
+                        key_name: 'backup-key',
+                        balance: 8,
+                        remaining_jobs: 6,
+                        queue_size: 3,
+                        running_jobs: 1,
+                        degraded_reasons: ['预计仅可继续 6 次验证（阈值 20 次）'],
+                        checked_at: '2026-03-27T06:45:00.000Z'
+                    }
+                }
+            ]
+        }
+    });
+
+    assert.match(text, /验证额度告警汇总/);
+    assert.match(text, /累计额度告警：2 条/);
+    assert.match(text, /1\. primary-key/);
+    assert.match(text, /剩余能力：11\.00 点 \/ 预计 11 次/);
+    assert.match(text, /队列概览：排队 7 个 \/ 运行中 2 个/);
+    assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 当前额度 \/ 队列状态/);
+});
+
+test('buildExternalAlertText renders verify queue summary details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'verify_queue_summary',
+        severity: 'warning',
+        title: '验证堆积告警汇总（2 条堆积告警）',
+        payload: {
+            window_start_at: '2026-03-27T06:00:00.000Z',
+            window_end_at: '2026-03-27T07:30:00.000Z',
+            item_count: 2,
+            summary_max_items: 5,
+            entry_path: '后台设置 -> 验证服务配置 -> 队列状态 / 最近任务',
+            items: [
+                {
+                    alert_type: 'verify_queue_backlog',
+                    payload: {
+                        key_name: 'primary-key',
+                        queue_size: 18,
+                        running_jobs: 4,
+                        active_job_count: 11,
+                        oldest_pending_label: '42 分钟',
+                        degraded_reasons: ['上游队列已堆积 18 个任务（阈值 10 个）'],
+                        hot_errors: ['lock_conflict × 4'],
+                        checked_at: '2026-03-27T06:10:00.000Z'
+                    }
+                },
+                {
+                    alert_type: 'verify_queue_backlog',
+                    payload: {
+                        key_name: 'backup-key',
+                        queue_size: 12,
+                        running_jobs: 3,
+                        active_job_count: 7,
+                        oldest_pending_label: '19 分钟',
+                        degraded_reasons: ['最近 30 分钟失败 6 次（阈值 4 次）'],
+                        hot_errors: ['otp_invalid × 2'],
+                        checked_at: '2026-03-27T06:45:00.000Z'
+                    }
+                }
+            ]
+        }
+    });
+
+    assert.match(text, /验证堆积告警汇总/);
+    assert.match(text, /累计堆积告警：2 条/);
+    assert.match(text, /1\. primary-key/);
+    assert.match(text, /队列概览：上游排队 18 个 \/ 运行中 4 个 \/ 本地活跃 11 个/);
+    assert.match(text, /最近错误：lock_conflict × 4/);
+    assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 队列状态 \/ 最近任务/);
+});
+
+test('buildExternalAlertText renders verify failure summary details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'verify_failure_summary',
+        severity: 'critical',
+        title: '验证失败率告警汇总（2 条失败率告警）',
+        payload: {
+            window_start_at: '2026-03-27T06:00:00.000Z',
+            window_end_at: '2026-03-27T07:30:00.000Z',
+            item_count: 2,
+            summary_max_items: 5,
+            entry_path: '后台设置 -> 验证服务配置 -> 最近任务 / 最近失败',
+            items: [
+                {
+                    alert_type: 'verify_failure_rate_spike',
+                    payload: {
+                        key_name: 'primary-key',
+                        total_jobs: 9,
+                        failed_jobs: 7,
+                        success_jobs: 2,
+                        failure_rate: 77.78,
+                        affected_user_count: 5,
+                        degraded_reasons: ['最近 30 分钟失败率 77.78%（7/9，阈值 60.00%）'],
+                        hot_errors: ['otp_invalid × 4'],
+                        checked_at: '2026-03-27T06:10:00.000Z'
+                    }
+                },
+                {
+                    alert_type: 'verify_failure_rate_spike',
+                    payload: {
+                        key_name: 'backup-key',
+                        total_jobs: 8,
+                        failed_jobs: 6,
+                        success_jobs: 2,
+                        failure_rate: 75,
+                        affected_user_count: 4,
+                        degraded_reasons: ['受影响用户 4 人（阈值 3 人）'],
+                        hot_errors: ['lock_conflict × 3'],
+                        checked_at: '2026-03-27T06:45:00.000Z'
+                    }
+                }
+            ]
+        }
+    });
+
+    assert.match(text, /验证失败率告警汇总/);
+    assert.match(text, /累计失败率告警：2 条/);
+    assert.match(text, /1\. primary-key/);
+    assert.match(text, /任务概览：总 9 次 \/ 失败 7 次 \/ 成功 2 次 \/ 失败率 77\.78%/);
+    assert.match(text, /受影响用户：5 人/);
+    assert.match(text, /最近错误：otp_invalid × 4/);
+    assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 最近任务 \/ 最近失败/);
+});
+
+test('buildExternalAlertText renders shop order delivery summary details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'shop_order_delivery_summary',
+        severity: 'critical',
+        title: '履约失败汇总（2 条履约异常）',
+        payload: {
+            window_start_at: '2026-03-27T06:00:00.000Z',
+            window_end_at: '2026-03-27T07:15:00.000Z',
+            item_count: 2,
+            summary_max_items: 4,
+            entry_path: '商城管理 -> 履约任务 / 异常订单',
+            items: [
+                {
+                    alert_type: 'shop_order_delivery_failed',
+                    payload: {
+                        order_id: 'shop-ord-a1',
+                        product_name: 'Prompt Pro 年卡',
+                        user_id: 'buyer-a1',
+                        delivery_status_label: '重试中',
+                        delivery_attempt_count: 2,
+                        delivery_last_error: '库存锁定冲突，已等待下一轮重试',
+                        delivery_updated_at: '2026-03-27T06:10:00.000Z'
+                    }
+                },
+                {
+                    alert_type: 'shop_order_delivery_failed',
+                    payload: {
+                        order_id: 'shop-ord-b2',
+                        product_name: '卡密周卡',
+                        user_id: 'buyer-b2',
+                        delivery_status_label: '死信待处理',
+                        delivery_attempt_count: 4,
+                        delivery_last_error: '目标履约地址连续超时',
+                        delivery_updated_at: '2026-03-27T06:45:00.000Z'
+                    }
+                }
+            ]
+        }
+    });
+
+    assert.match(text, /履约失败汇总/);
+    assert.match(text, /累计履约异常：2 条/);
+    assert.match(text, /1\. shop-ord-a1 · Prompt Pro 年卡/);
+    assert.match(text, /当前状态：重试中/);
+    assert.match(text, /失败次数：2/);
+    assert.match(text, /最近错误：库存锁定冲突，已等待下一轮重试/);
+    assert.match(text, /2\. shop-ord-b2 · 卡密周卡/);
+    assert.match(text, /处理入口：商城管理 -> 履约任务 \/ 异常订单/);
 });
 
 test('buildExternalAlertText renders shop inventory low details', () => {

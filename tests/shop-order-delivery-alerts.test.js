@@ -187,7 +187,7 @@ function createSupabaseStub(state = {}) {
     };
 }
 
-function createOpsRuntime() {
+function createOpsRuntime(overrides = {}) {
     return {
         config: normalizeOpsAlertsConfig({
             enabled: true,
@@ -201,11 +201,13 @@ function createOpsRuntime() {
                     enabled: true,
                     minimum_severity: 'warning'
                 }
-            }
+            },
+            ...(overrides.config && typeof overrides.config === 'object' ? overrides.config : {})
         }),
         secrets: {
             telegram_bot_token: 'telegram-token',
-            feishu_webhook_url: 'https://open.feishu.cn/open-apis/bot/v2/hook/demo'
+            feishu_webhook_url: 'https://open.feishu.cn/open-apis/bot/v2/hook/demo',
+            ...(overrides.secrets && typeof overrides.secrets === 'object' ? overrides.secrets : {})
         }
     };
 }
@@ -337,6 +339,47 @@ test('runShopOrderDeliveryFailedSweep enqueues delivery failure alerts with stab
     assert.equal(second.queued, 0);
     assert.equal(second.deduped, 2);
     assert.equal(state.jobs.length, 2);
+});
+
+test('runShopOrderDeliveryFailedSweep prefers runtime shop order delivery config when explicit config is absent', async () => {
+    const state = {
+        jobs: [],
+        orders: [
+            {
+                id: 'shop-order-retry-001',
+                user_id: 'buyer-002',
+                snapshot_product_name: '卡密周卡',
+                price_paid: 9.9,
+                total_price: 9.9,
+                item_count: 1,
+                delivery_status: 'retry_waiting',
+                delivery_attempt_count: 2,
+                delivery_last_error: '库存锁定冲突，已等待下一轮重试',
+                delivery_updated_at: '2026-03-25T09:48:00.000Z',
+                created_at: '2026-03-25T09:00:00.000Z',
+                refund_status: 'none'
+            }
+        ]
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime({
+        config: {
+            shop_order_delivery: {
+                enabled: true,
+                retry_waiting_min_attempts: 3,
+                dedupe_window_minutes: 45
+            }
+        }
+    });
+
+    const result = await runShopOrderDeliveryFailedSweep(supabase, {
+        runtime,
+        now: '2026-03-25T10:00:00.000Z'
+    });
+
+    assert.equal(result.failure_count, 0);
+    assert.equal(result.queued, 0);
+    assert.equal(state.jobs.length, 0);
 });
 
 test('buildShopOrderDeliveryRecoveredAlerts emits a recovery notice after a dead-letter order is delivered', () => {
