@@ -165,6 +165,7 @@ function createDefaultState() {
             email_api_key: ''
         },
         systemConfigUpserts: [],
+        caseEvents: [],
         upsertedSecrets: [],
         deletedSecrets: [],
         auditLogs: [],
@@ -400,6 +401,27 @@ function createMockSupabase(state) {
                             state.config = createNormalizedConfig(payload.config_value);
                         }
                         return { error: null };
+                    }
+                };
+            }
+
+            if (table === 'ops_alert_case_events') {
+                return {
+                    insert(payload) {
+                        const rows = (Array.isArray(payload) ? payload : [payload]).map((item, index) => ({
+                            id: item.id || `event-${state.caseEvents.length + index + 1}`,
+                            created_at: item.created_at || '2026-03-28T09:00:00.000Z',
+                            ...cloneValue(item)
+                        }));
+                        state.caseEvents.push(...rows);
+                        return {
+                            select() {
+                                return Promise.resolve({
+                                    data: rows,
+                                    error: null
+                                });
+                            }
+                        };
                     }
                 };
             }
@@ -968,6 +990,61 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.deepEqual(state.auditLogs[0].details.updated_secrets, ['telegram_bot_token', 'feishu_webhook_url']);
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.feishu_webhook_url.configured, true);
+    });
+});
+
+test('ops alert settings POST records batch mute case events when provided', async () => {
+    await withOpsAlertsSettingsHandler({}, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                config: createNormalizedConfig({
+                    mute_rules: {
+                        modules: {
+                            payments: {
+                                until: '2026-03-28T12:00:00.000Z',
+                                allow_critical: false
+                            }
+                        }
+                    }
+                }),
+                secrets: {},
+                case_events: [
+                    {
+                        action: 'batch_mute',
+                        items: [
+                            {
+                                category_key: 'payments',
+                                target_id: 'payment_gateway:hupijiao:cn',
+                                alert_type: 'payment_gateway_degraded',
+                                title: '虎皮椒支付通道异常',
+                                reference_label: '目标',
+                                reference_value: 'payment_gateway:hupijiao:cn'
+                            }
+                        ],
+                        metadata: {
+                            mute_until: '2026-03-28T12:00:00.000Z',
+                            allow_critical: false,
+                            module_keys: ['payments'],
+                            filter_summary: '全部待关注'
+                        }
+                    }
+                ]
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.caseEvents.length, 1);
+        assert.equal(state.caseEvents[0].action, 'batch_mute');
+        assert.equal(state.caseEvents[0].category_key, 'payments');
+        assert.equal(state.caseEvents[0].target_id, 'payment_gateway:hupijiao:cn');
+        assert.equal(state.caseEvents[0].metadata.mute_until, '2026-03-28T12:00:00.000Z');
+        assert.equal(state.auditLogs[0].details.case_event_count, 1);
     });
 });
 

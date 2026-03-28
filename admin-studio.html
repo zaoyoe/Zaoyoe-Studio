@@ -1893,7 +1893,7 @@
                                         </div>
                                         <div class="ops-alert-monitor-batch-actions" id="opsAlertMonitorBatchActions">
                                             <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-batch-claim-ops-alert-monitor">
-                                                <i class="fas fa-user-check"></i> 当前筛选指派给我
+                                                <i class="fas fa-user-check"></i> 当前筛选指派负责人
                                             </button>
                                             <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-batch-note-ops-alert-monitor">
                                                 <i class="fas fa-note-sticky"></i> 当前筛选批量备注
@@ -2434,6 +2434,11 @@
                         <form id="shopRiskCaseComposerForm" class="admin-shop-risk-case-modal__form">
                             <div class="admin-shop-risk-case-modal__note" id="shopRiskCaseComposerDescription">
                                 记录处理备注、交接说明或关闭结论。
+                            </div>
+                            <div class="admin-shop-risk-case-modal__field" id="shopRiskCaseComposerOwnerField" hidden>
+                                <label for="shopRiskCaseComposerOwnerSelect">负责人</label>
+                                <select id="shopRiskCaseComposerOwnerSelect" class="config-input"></select>
+                                <div class="admin-shop-risk-case-modal__hint" id="shopRiskCaseComposerOwnerHint"></div>
                             </div>
                             <div class="admin-shop-risk-case-modal__field">
                                 <label for="shopRiskCaseComposerTextarea" id="shopRiskCaseComposerLabel">备注内容</label>

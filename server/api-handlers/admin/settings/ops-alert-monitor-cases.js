@@ -4,6 +4,9 @@ const {
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
+const {
+    insertOpsAlertCaseEvents
+} = require('./_ops-alert-case-events');
 
 const VALID_ACTIONS = new Set(['claim', 'assign', 'add_note', 'resolve', 'reopen']);
 const NOTE_REQUIRED_ACTIONS = new Set(['add_note', 'resolve']);
@@ -324,8 +327,13 @@ module.exports = async (req, res) => {
         }
 
         const results = [];
+        const eventEntries = [];
         const skipped = [];
         const nowIso = new Date().toISOString();
+        const ownerInput = {
+            owner_label: body.owner_label || body.ownerLabel,
+            owner_admin_id: body.owner_admin_id || body.ownerAdminId
+        };
 
         for (const item of items) {
             const existingCase = await fetchExistingCase(supabase, item.category_key, item.target_id);
@@ -344,12 +352,20 @@ module.exports = async (req, res) => {
                 metadata,
                 user,
                 nowIso,
-                owner: {
-                    owner_label: body.owner_label || body.ownerLabel,
-                    owner_admin_id: body.owner_admin_id || body.ownerAdminId
-                }
+                owner: ownerInput
             });
             const persisted = await persistCase(supabase, nextRecord);
+            eventEntries.push({
+                action,
+                item,
+                record: persisted,
+                user,
+                note,
+                resolution: action === 'resolve' ? resolution : '',
+                metadata,
+                owner: ownerInput,
+                nowIso
+            });
             results.push(buildCaseResponse(persisted));
         }
 
@@ -361,6 +377,8 @@ module.exports = async (req, res) => {
                     : '没有可更新的集中告警记录'
             });
         }
+
+        await insertOpsAlertCaseEvents(supabase, eventEntries);
 
         const primaryCategoryKey = results.length === 1
             ? sanitizeText(results[0].category_key, 80).toLowerCase()

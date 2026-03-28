@@ -5,10 +5,18 @@ const {
 const {
     loadOpsAlertsRuntimeConfig
 } = require('../../../../api/_lib/ops-alerts');
+const {
+    buildOwnerLabel,
+    fetchAssignableOpsAlertAdmins,
+    fetchOpsAlertCaseEventsByTargets,
+    getOpsAlertCaseEventActionLabel,
+    mapCaseLastActionToEventAction
+} = require('./_ops-alert-case-events');
 
 const OPS_ALERT_MONITOR_LOOKBACK_HOURS = 7 * 24;
 const OPS_ALERT_MONITOR_PAGE_SIZE = 200;
 const OPS_ALERT_MONITOR_MAX_PAGES = 5;
+const OPS_ALERT_CASE_EVENT_LIMIT = 3;
 const OPS_ALERT_CASES_SELECT_FIELDS = 'category_key, target_id, alert_type, status, owner_admin_id, owner_label, note, resolution, metadata, last_action, last_action_at, updated_at';
 
 const ALERT_MONITOR_CATEGORIES = Object.freeze([
@@ -235,6 +243,120 @@ async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
     return caseMap;
 }
 
+function buildFallbackOpsAlertCaseEvent(caseRecord = {}) {
+    const fallbackCreatedAt = normalizeText(caseRecord?.last_action_at, 80) || normalizeText(caseRecord?.updated_at, 80);
+    const mappedAction = mapCaseLastActionToEventAction(caseRecord?.last_action);
+    if (!mappedAction && !fallbackCreatedAt) {
+        return null;
+    }
+
+    const resolution = normalizeText(caseRecord?.resolution, 2000) || null;
+    const note = normalizeText(caseRecord?.note, 2000) || null;
+    const ownerLabel = normalizeText(caseRecord?.owner_label, 255) || null;
+    let summary = '';
+
+    if (mappedAction === 'resolve' && resolution) {
+        summary = resolution;
+    } else if (note) {
+        summary = note;
+    } else if (ownerLabel && ['claim', 'assign'].includes(mappedAction)) {
+        summary = `负责人 ${ownerLabel}`;
+    }
+
+    return {
+        id: null,
+        category_key: normalizeText(caseRecord?.category_key, 80).toLowerCase() || null,
+        target_id: normalizeText(caseRecord?.target_id, 200) || null,
+        alert_type: normalizeText(caseRecord?.alert_type, 120).toLowerCase() || null,
+        action: mappedAction || null,
+        action_label: getOpsAlertCaseEventActionLabel(mappedAction),
+        summary: summary || null,
+        status: normalizeText(caseRecord?.status, 40).toLowerCase() || null,
+        owner_admin_id: normalizeText(caseRecord?.owner_admin_id, 160) || null,
+        owner_label: ownerLabel,
+        actor_admin_id: normalizeText(caseRecord?.last_action_by, 160) || null,
+        actor_label: null,
+        note,
+        resolution,
+        metadata: normalizePayload(caseRecord?.metadata),
+        created_at: fallbackCreatedAt || null
+    };
+}
+
+function buildOpsAlertCaseEventView(event = {}) {
+    return {
+        id: normalizeText(event.id, 160) || null,
+        action: normalizeText(event.action, 80).toLowerCase() || null,
+        action_label: normalizeText(event.action_label, 120) || null,
+        summary: normalizeText(event.summary, 2000) || null,
+        status: normalizeText(event.status, 40).toLowerCase() || null,
+        owner_admin_id: normalizeText(event.owner_admin_id, 160) || null,
+        owner_label: normalizeText(event.owner_label, 255) || null,
+        actor_admin_id: normalizeText(event.actor_admin_id, 160) || null,
+        actor_label: normalizeText(event.actor_label, 255) || null,
+        note: normalizeText(event.note, 2000) || null,
+        resolution: normalizeText(event.resolution, 2000) || null,
+        metadata: normalizePayload(event.metadata),
+        created_at: normalizeText(event.created_at, 80) || null
+    };
+}
+
+function buildOpsAlertItemCaseState(categoryKey = '', targetId = '', caseRecord = null, caseEventsByKey = new Map()) {
+    const normalizedCategoryKey = normalizeText(categoryKey, 80).toLowerCase();
+    const normalizedTargetId = normalizeText(targetId, 200);
+    const caseKey = buildOpsAlertCaseKey(normalizedCategoryKey, normalizedTargetId);
+    const rawEvents = caseEventsByKey instanceof Map ? caseEventsByKey.get(caseKey) : null;
+    const timeline = Array.isArray(rawEvents) && rawEvents.length
+        ? rawEvents.map((event) => buildOpsAlertCaseEventView(event)).slice(0, OPS_ALERT_CASE_EVENT_LIMIT)
+        : [];
+    const fallbackEvent = timeline.length ? null : buildFallbackOpsAlertCaseEvent({
+        ...caseRecord,
+        category_key: normalizedCategoryKey || caseRecord?.category_key,
+        target_id: normalizedTargetId || caseRecord?.target_id
+    });
+    const recentEvents = timeline.length
+        ? timeline
+        : (fallbackEvent ? [buildOpsAlertCaseEventView(fallbackEvent)] : []);
+    const latestEvent = recentEvents[0] || null;
+    const latestNoteEvent = recentEvents.find((event) => normalizeText(event?.note, 2000));
+
+    return {
+        case_status: normalizeText(caseRecord?.status || latestEvent?.status, 40).toLowerCase() || 'open',
+        case_owner_admin_id: normalizeText(caseRecord?.owner_admin_id || latestEvent?.owner_admin_id, 160) || null,
+        case_owner_label: normalizeText(caseRecord?.owner_label || latestEvent?.owner_label, 255) || null,
+        case_note: normalizeText(caseRecord?.note, 2000) || null,
+        case_resolution: normalizeText(caseRecord?.resolution, 2000) || null,
+        case_last_action: normalizeText(caseRecord?.last_action, 80).toLowerCase()
+            || normalizeText(latestEvent?.action, 80).toLowerCase()
+            || null,
+        case_last_action_at: normalizeText(caseRecord?.last_action_at, 80)
+            || normalizeText(latestEvent?.created_at, 80)
+            || null,
+        case_updated_at: normalizeText(caseRecord?.updated_at, 80) || null,
+        case_recent_note: normalizeText(latestNoteEvent?.note, 2000) || null,
+        case_recent_note_at: normalizeText(latestNoteEvent?.created_at, 80) || null,
+        case_latest_event_action: normalizeText(latestEvent?.action, 80).toLowerCase() || null,
+        case_latest_event_label: normalizeText(latestEvent?.action_label, 120) || null,
+        case_latest_event_summary: normalizeText(latestEvent?.summary, 2000) || null,
+        case_latest_event_at: normalizeText(latestEvent?.created_at, 80) || null,
+        case_latest_event_by_label: normalizeText(latestEvent?.actor_label, 255) || null,
+        case_latest_event_owner_label: normalizeText(latestEvent?.owner_label, 255) || null,
+        case_recent_events: recentEvents.map((event) => ({
+            id: normalizeText(event.id, 160) || null,
+            action: normalizeText(event.action, 80).toLowerCase() || null,
+            action_label: normalizeText(event.action_label, 120) || null,
+            summary: normalizeText(event.summary, 2000) || null,
+            status: normalizeText(event.status, 40).toLowerCase() || null,
+            owner_label: normalizeText(event.owner_label, 255) || null,
+            actor_label: normalizeText(event.actor_label, 255) || null,
+            note: normalizeText(event.note, 2000) || null,
+            resolution: normalizeText(event.resolution, 2000) || null,
+            created_at: normalizeText(event.created_at, 80) || null,
+            metadata: normalizePayload(event.metadata)
+        }))
+    };
+}
+
 function getCreatedAtTime(row = {}) {
     const timestamp = Date.parse(normalizeText(row.created_at, 80));
     return Number.isFinite(timestamp) ? timestamp : 0;
@@ -389,11 +511,19 @@ function getAlertReference(job = {}) {
     };
 }
 
-function buildAlertItem(job = {}, categoryKey = '', opsAlertCasesByKey = new Map()) {
+function buildAlertItem(job = {}, categoryKey = '', options = {}) {
     const payload = normalizePayload(job.payload);
     const reference = getAlertReference(job);
     const targetId = getAlertTargetId(job);
+    const opsAlertCasesByKey = options.opsAlertCasesByKey instanceof Map
+        ? options.opsAlertCasesByKey
+        : new Map();
+    const caseEventsByKey = options.caseEventsByKey instanceof Map
+        ? options.caseEventsByKey
+        : new Map();
     const caseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey(categoryKey, targetId)) || null;
+    const caseState = buildOpsAlertItemCaseState(categoryKey, targetId, caseRecord, caseEventsByKey);
+
     return {
         id: normalizeText(job.id, 160),
         alert_type: normalizeText(job.alert_type, 120).toLowerCase(),
@@ -421,14 +551,7 @@ function buildAlertItem(job = {}, categoryKey = '', opsAlertCasesByKey = new Map
         auto_response_target_type: normalizeText(payload.auto_response_target_type, 80) || null,
         login_signature_label: normalizeText(payload.login_signature_label, 160) || null,
         user_agent_summary: normalizeText(payload.user_agent_summary, 160) || null,
-        case_status: normalizeText(caseRecord?.status, 40).toLowerCase() || 'open',
-        case_owner_admin_id: normalizeText(caseRecord?.owner_admin_id, 160) || null,
-        case_owner_label: normalizeText(caseRecord?.owner_label, 255) || null,
-        case_note: normalizeText(caseRecord?.note, 2000) || null,
-        case_resolution: normalizeText(caseRecord?.resolution, 2000) || null,
-        case_last_action: normalizeText(caseRecord?.last_action, 80).toLowerCase() || null,
-        case_last_action_at: normalizeText(caseRecord?.last_action_at, 80) || null,
-        case_updated_at: normalizeText(caseRecord?.updated_at, 80) || null
+        ...caseState
     };
 }
 
@@ -451,8 +574,14 @@ function buildShopRiskThresholdConfig(config = {}) {
     };
 }
 
-function buildShopRiskThresholdHitEntries(jobs = [], config = {}, opsAlertCasesByKey = new Map()) {
+function buildShopRiskThresholdHitEntries(jobs = [], config = {}, options = {}) {
     const thresholdConfig = buildShopRiskThresholdConfig(config);
+    const opsAlertCasesByKey = options.opsAlertCasesByKey instanceof Map
+        ? options.opsAlertCasesByKey
+        : new Map();
+    const caseEventsByKey = options.caseEventsByKey instanceof Map
+        ? options.caseEventsByKey
+        : new Map();
     const entries = [];
 
     for (const job of sortByCreatedAtDesc(jobs)) {
@@ -471,7 +600,9 @@ function buildShopRiskThresholdHitEntries(jobs = [], config = {}, opsAlertCasesB
         const autoResponseStatus = normalizeText(payload.auto_response_status, 80).toLowerCase()
             || (thresholdConfig.auto_response_enabled ? 'pending_review' : 'auto_response_disabled');
         const reference = getAlertReference(job);
-        const caseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey('shop_risk', getAlertTargetId(job))) || null;
+        const targetId = getAlertTargetId(job);
+        const caseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey('shop_risk', targetId)) || null;
+        const caseState = buildOpsAlertItemCaseState('shop_risk', targetId, caseRecord, caseEventsByKey);
 
         if (
             primaryAction === 'disable-coupon'
@@ -493,8 +624,8 @@ function buildShopRiskThresholdHitEntries(jobs = [], config = {}, opsAlertCasesB
                 summary: normalizeText(payload.auto_response_summary, 240)
                     || normalizeText(payload.response_summary, 240)
                     || '已命中停用优惠码阈值。',
-                case_status: normalizeText(caseRecord?.status, 40).toLowerCase() || 'open',
-                case_owner_label: normalizeText(caseRecord?.owner_label, 255) || null
+                case_status: caseState.case_status,
+                case_owner_label: caseState.case_owner_label
             });
         }
 
@@ -519,8 +650,8 @@ function buildShopRiskThresholdHitEntries(jobs = [], config = {}, opsAlertCasesB
                 summary: normalizeText(payload.auto_response_summary, 240)
                     || normalizeText(payload.response_summary, 240)
                     || '已命中自动封禁账号阈值。',
-                case_status: normalizeText(caseRecord?.status, 40).toLowerCase() || 'open',
-                case_owner_label: normalizeText(caseRecord?.owner_label, 255) || null
+                case_status: caseState.case_status,
+                case_owner_label: caseState.case_owner_label
             });
         }
 
@@ -545,8 +676,8 @@ function buildShopRiskThresholdHitEntries(jobs = [], config = {}, opsAlertCasesB
                 status_label: getShopOrderRiskAutoStatusLabel(autoResponseStatus, thresholdConfig.auto_response_enabled),
                 summary: normalizeText(payload.auto_response_summary, 240)
                     || '已命中自动下架商品阈值。',
-                case_status: normalizeText(caseRecord?.status, 40).toLowerCase() || 'open',
-                case_owner_label: normalizeText(caseRecord?.owner_label, 255) || null
+                case_status: caseState.case_status,
+                case_owner_label: caseState.case_owner_label
             });
         }
     }
@@ -554,8 +685,14 @@ function buildShopRiskThresholdHitEntries(jobs = [], config = {}, opsAlertCasesB
     return entries.slice(0, 5);
 }
 
-function buildShopRiskAutoResponseHistoryEntries(jobs = [], config = {}, opsAlertCasesByKey = new Map()) {
+function buildShopRiskAutoResponseHistoryEntries(jobs = [], config = {}, options = {}) {
     const thresholdConfig = buildShopRiskThresholdConfig(config);
+    const opsAlertCasesByKey = options.opsAlertCasesByKey instanceof Map
+        ? options.opsAlertCasesByKey
+        : new Map();
+    const caseEventsByKey = options.caseEventsByKey instanceof Map
+        ? options.caseEventsByKey
+        : new Map();
 
     return sortByCreatedAtDesc(jobs)
         .filter((job) => normalizeText(job.alert_type, 120).toLowerCase() === 'shop_order_risk_anomaly')
@@ -570,7 +707,9 @@ function buildShopRiskAutoResponseHistoryEntries(jobs = [], config = {}, opsAler
             const reference = getAlertReference(job);
             const status = normalizeText(payload.auto_response_status, 80).toLowerCase()
                 || (thresholdConfig.auto_response_enabled ? 'pending_review' : 'auto_response_disabled');
-            const caseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey('shop_risk', getAlertTargetId(job))) || null;
+            const targetId = getAlertTargetId(job);
+            const caseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey('shop_risk', targetId)) || null;
+            const caseState = buildOpsAlertItemCaseState('shop_risk', targetId, caseRecord, caseEventsByKey);
 
             return {
                 id: normalizeText(job.id, 160) || normalizeText(payload.target_id, 160),
@@ -585,8 +724,8 @@ function buildShopRiskAutoResponseHistoryEntries(jobs = [], config = {}, opsAler
                 reference_label: reference.label,
                 reference_value: reference.value,
                 title: normalizeText(job.title, 240) || '商城风控自动处置',
-                case_status: normalizeText(caseRecord?.status, 40).toLowerCase() || 'open',
-                case_owner_label: normalizeText(caseRecord?.owner_label, 255) || null
+                case_status: caseState.case_status,
+                case_owner_label: caseState.case_owner_label
             };
         })
         .filter(Boolean)
@@ -616,6 +755,9 @@ function buildCategorySnapshot(category, jobs = [], options = {}) {
     const opsAlertCasesByKey = options.opsAlertCasesByKey instanceof Map
         ? options.opsAlertCasesByKey
         : new Map();
+    const caseEventsByKey = options.caseEventsByKey instanceof Map
+        ? options.caseEventsByKey
+        : new Map();
     const filteredJobs = sortByCreatedAtDesc(
         jobs.filter((job) => {
             const alertType = normalizeText(job.alert_type, 120).toLowerCase();
@@ -639,7 +781,10 @@ function buildCategorySnapshot(category, jobs = [], options = {}) {
     const latestState = latestJob
         ? (category.problem_types.includes(normalizeText(latestJob.alert_type, 120).toLowerCase()) ? 'problem' : 'recovered')
         : 'idle';
-    const builtItems = activeJobs.map((job) => buildAlertItem(job, category.key, opsAlertCasesByKey));
+    const builtItems = activeJobs.map((job) => buildAlertItem(job, category.key, {
+        opsAlertCasesByKey,
+        caseEventsByKey
+    }));
 
     return {
         key: category.key,
@@ -656,15 +801,21 @@ function buildCategorySnapshot(category, jobs = [], options = {}) {
         case_summary: buildOpsAlertCaseSummary(builtItems),
         ...(String(category.key || '').trim().toLowerCase() === 'shop_risk' ? {
             thresholds: shopRiskThresholdConfig,
-            recent_threshold_hits: buildShopRiskThresholdHitEntries(filteredJobs, shopRiskThresholdConfig, opsAlertCasesByKey),
-            recent_auto_responses: buildShopRiskAutoResponseHistoryEntries(filteredJobs, shopRiskThresholdConfig, opsAlertCasesByKey)
+            recent_threshold_hits: buildShopRiskThresholdHitEntries(filteredJobs, shopRiskThresholdConfig, {
+                opsAlertCasesByKey,
+                caseEventsByKey
+            }),
+            recent_auto_responses: buildShopRiskAutoResponseHistoryEntries(filteredJobs, shopRiskThresholdConfig, {
+                opsAlertCasesByKey,
+                caseEventsByKey
+            })
         } : {})
     };
 }
 
 module.exports = async (req, res) => {
     try {
-        const { supabase } = await requireAdmin(req);
+        const { supabase, adminSupabase, user } = await requireAdmin(req);
 
         if (req.method !== 'GET') {
             res.setHeader('Allow', 'GET');
@@ -678,17 +829,26 @@ module.exports = async (req, res) => {
         const sinceIso = new Date(now.getTime() - OPS_ALERT_MONITOR_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
         const runtime = await loadOpsAlertsRuntimeConfig(supabase);
         const jobs = await fetchRecentOpsAlertJobs(supabase, sinceIso);
+        const targets = jobs
+            .map((job) => ({
+                category_key: getAlertCategoryKey(job.alert_type),
+                target_id: getAlertTargetId(job)
+            }));
         const opsAlertCasesByKey = await fetchOpsAlertCasesByTargets(
             supabase,
-            jobs
-                .map((job) => ({
-                    category_key: getAlertCategoryKey(job.alert_type),
-                    target_id: getAlertTargetId(job)
-                }))
+            targets
         );
+        const caseEventsByKey = await fetchOpsAlertCaseEventsByTargets(supabase, targets);
+        const assignableAdmins = await fetchAssignableOpsAlertAdmins({
+            supabase,
+            adminSupabase,
+            currentUserId: user.id
+        });
+        const currentAdmin = assignableAdmins.find((item) => item.is_current) || null;
         const categories = ALERT_MONITOR_CATEGORIES.map((category) => buildCategorySnapshot(category, jobs, {
             shopRiskConfig: runtime?.config?.shop_order_risk || {},
-            opsAlertCasesByKey
+            opsAlertCasesByKey,
+            caseEventsByKey
         }));
         const totalActiveCount = categories.reduce((sum, category) => sum + Number(category.active_count || 0), 0);
         const totalCriticalCount = categories.reduce((sum, category) => sum + Number(category.critical_count || 0), 0);
@@ -704,6 +864,9 @@ module.exports = async (req, res) => {
                 total_critical_count: totalCriticalCount,
                 active_category_count: activeCategoryCount
             },
+            assignable_admins: assignableAdmins,
+            current_admin_id: normalizeText(currentAdmin?.id || user.id, 160) || null,
+            current_admin_label: normalizeText(currentAdmin?.label, 255) || buildOwnerLabel(user),
             categories
         });
     } catch (error) {

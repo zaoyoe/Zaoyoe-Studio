@@ -820,6 +820,9 @@ function getDefaultOpsAlertMonitorState() {
             total_critical_count: 0,
             active_category_count: 0
         },
+        assignable_admins: [],
+        current_admin_id: '',
+        current_admin_label: '',
         categories: [],
         message: '等待加载'
     };
@@ -840,6 +843,8 @@ function getDefaultShopRiskCaseComposerState() {
         mode: 'single',
         context: {},
         items: [],
+        selectedOwnerAdminId: '',
+        selectedOwnerLabel: '',
         submitting: false
     };
 }
@@ -3596,13 +3601,90 @@ function getOpsAlertCaseStatusLabel(status) {
     return labelMap[normalizedStatus] || '待处理';
 }
 
+function getOpsAlertMonitorAssignableAdmins() {
+    const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
+    const admins = Array.isArray(state.assignable_admins) ? state.assignable_admins : [];
+    if (admins.length) {
+        return admins.map((admin) => ({
+            id: String(admin.id || '').trim(),
+            label: String(admin.label || admin.display_name || admin.email || admin.username || admin.id || '').trim(),
+            email: String(admin.email || '').trim(),
+            roleName: String(admin.role_name || '').trim().toLowerCase(),
+            isCurrent: admin.is_current === true
+        })).filter((admin) => admin.id && admin.label);
+    }
+
+    const fallbackAdminId = String(state.current_admin_id || '').trim();
+    const fallbackAdminLabel = String(state.current_admin_label || '').trim();
+    if (!fallbackAdminId || !fallbackAdminLabel) {
+        return [];
+    }
+
+    return [{
+        id: fallbackAdminId,
+        label: fallbackAdminLabel,
+        email: '',
+        roleName: 'admin',
+        isCurrent: true
+    }];
+}
+
+function getOpsAlertCaseRecentEvents(item = {}) {
+    return (Array.isArray(item.case_recent_events) ? item.case_recent_events : [])
+        .map((event) => ({
+            action: String(event.action || '').trim().toLowerCase(),
+            actionLabel: String(event.action_label || '').trim(),
+            summary: String(event.summary || '').trim(),
+            ownerLabel: String(event.owner_label || '').trim(),
+            actorLabel: String(event.actor_label || '').trim(),
+            createdAt: String(event.created_at || '').trim(),
+            metadata: event && typeof event.metadata === 'object' && !Array.isArray(event.metadata)
+                ? event.metadata
+                : {}
+        }))
+        .filter((event) => event.action || event.actionLabel || event.summary || event.createdAt);
+}
+
+function getOpsAlertCaseRecentEventText(event = {}) {
+    const actionLabel = String(event.actionLabel || '').trim() || String(event.action || '').trim();
+    const muteUntil = String(event.metadata?.mute_until || '').trim();
+    const summary = String(event.action || '').trim().toLowerCase() === 'batch_mute' && muteUntil
+        ? `已静默至 ${formatVerifyMonitorDateTime(muteUntil)}`
+        : String(event.summary || '').trim();
+    const actorLabel = String(event.actorLabel || '').trim();
+    const ownerLabel = String(event.ownerLabel || '').trim();
+    const parts = [];
+
+    if (actionLabel) {
+        parts.push(actionLabel);
+    }
+    if (summary) {
+        parts.push(summary);
+    } else if (ownerLabel && ['assign', 'claim'].includes(String(event.action || '').trim().toLowerCase())) {
+        parts.push(`负责人 ${ownerLabel}`);
+    }
+    if (actorLabel) {
+        parts.push(`操作人 ${actorLabel}`);
+    }
+    if (event.createdAt) {
+        parts.push(formatVerifyMonitorDateTime(event.createdAt));
+    }
+
+    return parts.join(' · ');
+}
+
 function getOpsAlertCaseSummaryText(item = {}) {
     const status = String(item.case_status || '').trim().toLowerCase() || 'open';
     const statusLabel = getOpsAlertCaseStatusLabel(status);
     const ownerLabel = String(item.case_owner_label || '').trim();
     const resolution = String(item.case_resolution || '').trim();
-    const note = String(item.case_note || '').trim();
-    const lastActionAt = String(item.case_last_action_at || '').trim();
+    const note = String(item.case_recent_note || item.case_note || '').trim();
+    const latestEvent = getOpsAlertCaseRecentEvents(item)[0] || null;
+    const latestEventLabel = String(item.case_latest_event_label || '').trim();
+    const latestEventSummary = String(item.case_latest_event_action || '').trim().toLowerCase() === 'batch_mute' && latestEvent?.metadata?.mute_until
+        ? `已静默至 ${formatVerifyMonitorDateTime(latestEvent.metadata.mute_until)}`
+        : String(item.case_latest_event_summary || '').trim();
+    const latestEventAt = String(item.case_latest_event_at || item.case_last_action_at || '').trim();
     const summaryParts = [statusLabel];
 
     if (ownerLabel) {
@@ -3615,8 +3697,12 @@ function getOpsAlertCaseSummaryText(item = {}) {
         summaryParts.push(`备注：${note}`);
     }
 
-    if (lastActionAt) {
-        summaryParts.push(formatVerifyMonitorDateTime(lastActionAt));
+    if (latestEventLabel && !['resolve', 'add_note'].includes(String(item.case_latest_event_action || '').trim().toLowerCase())) {
+        summaryParts.push(`最近 ${latestEventLabel}${latestEventSummary ? `：${latestEventSummary}` : ''}`);
+    }
+
+    if (latestEventAt) {
+        summaryParts.push(formatVerifyMonitorDateTime(latestEventAt));
     }
 
     return summaryParts.join(' · ');
@@ -3727,13 +3813,11 @@ function getOpsAlertMonitorItemCaseActions(category = {}, item = {}) {
     const actions = [];
 
     if (status !== 'resolved') {
-        if (status !== 'claimed') {
-            actions.push({
-                action: 'claim',
-                label: '指派给我',
-                icon: 'fas fa-user-check'
-            });
-        }
+        actions.push({
+            action: 'assign',
+            label: status === 'claimed' ? '转交负责人' : '指派负责人',
+            icon: 'fas fa-user-check'
+        });
 
         actions.push({
             action: 'add_note',
@@ -3774,6 +3858,7 @@ function buildOpsAlertMonitorContextAttrs(category = {}, item = {}) {
         'data-workspace-discount-code': item.discount_code || '',
         'data-workspace-signal-type': item.signal_type || '',
         'data-workspace-case-status': item.case_status || '',
+        'data-workspace-case-owner-admin-id': item.case_owner_admin_id || '',
         'data-workspace-case-owner-label': item.case_owner_label || ''
     };
 }
@@ -3828,6 +3913,7 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
     const caseActions = getOpsAlertMonitorItemCaseActions(category, item);
     const caseStatus = String(item.case_status || '').trim().toLowerCase() || 'open';
     const caseTone = getOpsAlertCaseStatusTone(caseStatus);
+    const recentEvents = getOpsAlertCaseRecentEvents(item);
     const metaParts = [
         item.reference_label && item.reference_value
             ? `${escapeConfigHtml(item.reference_label)}：${escapeConfigHtml(item.reference_value)}`
@@ -3840,15 +3926,22 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
             <div class="ops-alert-monitor-item__top">
                 ${buildOpsAlertMonitorBadge(severity === 'critical' ? 'critical' : 'warning', severityTone)}
                 ${riskLevel ? buildOpsAlertMonitorBadge(`风险 ${getOpsAlertMonitorRiskLevelLabel(riskLevel)}${Number.isFinite(Number(item.risk_score)) ? ` · ${formatVerifyMonitorInteger(item.risk_score)}` : ''}`, riskTone) : ''}
-                ${caseActions.length || item.case_owner_label || item.case_note || item.case_resolution
+                ${caseActions.length || item.case_owner_label || item.case_note || item.case_resolution || recentEvents.length
         ? buildOpsAlertMonitorBadge(`处置 ${getOpsAlertCaseStatusLabel(caseStatus)}`, caseTone)
         : ''}
                 <strong class="ops-alert-monitor-item__title">${escapeConfigHtml(item.title || '系统告警')}</strong>
             </div>
             ${item.message ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(item.message)}</div>` : ''}
-            ${caseActions.length || item.case_owner_label || item.case_note || item.case_resolution
+            ${caseActions.length || item.case_owner_label || item.case_note || item.case_resolution || recentEvents.length
         ? `<div class="ops-alert-monitor-item__summary"><strong>${categoryKey === 'shop_risk' ? '值班处理' : '处理进度'}：</strong> ${escapeConfigHtml(getOpsAlertCaseSummaryText(item))}</div>`
         : ''}
+            ${recentEvents.length ? `
+                <div class="ops-alert-monitor-item__history">
+                    ${recentEvents.map((event) => `
+                        <div class="ops-alert-monitor-item__history-item">${escapeConfigHtml(getOpsAlertCaseRecentEventText(event))}</div>
+                    `).join('')}
+                </div>
+            ` : ''}
             ${item.auto_response_summary ? `<div class="ops-alert-monitor-item__summary"><strong>自动处置：</strong> ${escapeConfigHtml(item.auto_response_summary)}</div>` : ''}
             ${item.response_summary ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(item.response_summary)}</div>` : ''}
             <div class="ops-alert-monitor-item__meta">${metaParts.length ? metaParts.join(' · ') : '等待更多上下文'}</div>
@@ -4501,8 +4594,8 @@ function getOpsAlertMonitorBatchItems(filters = getOpsAlertMonitorViewFilters(),
             : null;
         const status = String(sourceItem?.case_status || '').trim().toLowerCase() || 'open';
 
-        if (normalizedAction === 'claim') {
-            return status !== 'claimed' && status !== 'resolved';
+        if (normalizedAction === 'claim' || normalizedAction === 'assign') {
+            return status !== 'resolved';
         }
         if (normalizedAction === 'resolve') {
             return status !== 'resolved';
@@ -4524,7 +4617,7 @@ function renderOpsAlertMonitorBatchActions(filters = getOpsAlertMonitorViewFilte
 
     setButtonState(
         'settings-batch-claim-ops-alert-monitor',
-        getOpsAlertMonitorBatchItems(filters, 'claim').length,
+        getOpsAlertMonitorBatchItems(filters, 'assign').length,
         '当前筛选条件下没有可指派的告警',
         '当前筛选将指派 {count} 条告警'
     );
@@ -4988,6 +5081,9 @@ async function loadOpsAlertMonitor(force = false) {
                 status: 'ready',
                 fetched_at: payload.fetched_at || '',
                 summary: payload.summary || getDefaultOpsAlertMonitorState().summary,
+                assignable_admins: Array.isArray(payload.assignable_admins) ? payload.assignable_admins : [],
+                current_admin_id: payload.current_admin_id || '',
+                current_admin_label: payload.current_admin_label || '',
                 categories: Array.isArray(payload.categories) ? payload.categories : [],
                 message: ''
             };
@@ -5983,8 +6079,8 @@ function clearOpsAlertSecretInputs() {
     });
 }
 
-function buildOpsAlertSettingsRequestBody(config) {
-    return {
+function buildOpsAlertSettingsRequestBody(config, options = {}) {
+    const body = {
         config,
         secrets: {
             telegram_bot_token: document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '',
@@ -5992,12 +6088,18 @@ function buildOpsAlertSettingsRequestBody(config) {
             email_api_key: document.getElementById('opsAlertEmailApiKey')?.value?.trim() || ''
         }
     };
+
+    if (Array.isArray(options.caseEvents) && options.caseEvents.length) {
+        body.case_events = options.caseEvents;
+    }
+
+    return body;
 }
 
 async function saveOpsAlertConfigOverride(config, options = {}) {
     try {
         const headers = await getAdminConfigApiHeaders();
-        const body = buildOpsAlertSettingsRequestBody(normalizeOpsAlertConfig(config));
+        const body = buildOpsAlertSettingsRequestBody(normalizeOpsAlertConfig(config), options);
 
         const response = await fetch('/api/admin/settings/ops-alerts', {
             method: 'POST',
@@ -6419,6 +6521,7 @@ function normalizeOpsAlertWorkspaceContext(context = {}) {
         discountCode: String(context.discountCode || context.discount_code || context.workspaceDiscountCode || '').trim(),
         signalType: String(context.signalType || context.signal_type || context.workspaceSignalType || '').trim().toLowerCase(),
         caseStatus: String(context.caseStatus || context.case_status || context.workspaceCaseStatus || '').trim().toLowerCase(),
+        caseOwnerAdminId: String(context.caseOwnerAdminId || context.case_owner_admin_id || context.workspaceCaseOwnerAdminId || '').trim(),
         caseOwnerLabel: String(context.caseOwnerLabel || context.case_owner_label || context.workspaceCaseOwnerLabel || '').trim()
     };
 }
@@ -6704,6 +6807,33 @@ function getOpsAlertCaseComposerBatchPreview(items = []) {
     return `${previewLabels.join(' / ')}${overflowCount > 0 ? ` 等 ${formatVerifyMonitorInteger(overflowCount)} 条` : ''}`;
 }
 
+function getDefaultOpsAlertCaseComposerOwner(state = {}) {
+    const admins = getOpsAlertMonitorAssignableAdmins();
+    const normalizedContext = normalizeOpsAlertWorkspaceContext(state.context || {});
+    const preferredOwnerId = String(
+        state.selectedOwnerAdminId
+        || normalizedContext.caseOwnerAdminId
+        || opsAlertMonitorState?.current_admin_id
+        || ''
+    ).trim();
+
+    if (preferredOwnerId) {
+        const matchedAdmin = admins.find((admin) => admin.id === preferredOwnerId);
+        if (matchedAdmin) {
+            return {
+                id: matchedAdmin.id,
+                label: matchedAdmin.label
+            };
+        }
+    }
+
+    const fallbackAdmin = admins.find((admin) => admin.isCurrent) || admins[0] || null;
+    return {
+        id: fallbackAdmin?.id || '',
+        label: fallbackAdmin?.label || ''
+    };
+}
+
 function getOpsAlertCaseComposerMeta(state = {}) {
     const normalizedAction = String(state.action || '').trim().toLowerCase();
     const normalizedContext = normalizeOpsAlertWorkspaceContext(state.context || {});
@@ -6713,6 +6843,19 @@ function getOpsAlertCaseComposerMeta(state = {}) {
         ? `当前筛选命中 ${formatVerifyMonitorInteger(items.length)} 条告警${items.length ? ` · ${getOpsAlertCaseComposerBatchPreview(items)}` : ''}`
         : getOpsAlertCaseComposerTargetLabel(normalizedContext);
     const ownerLabel = normalizedContext.caseOwnerLabel || '';
+
+    if (normalizedAction === 'assign') {
+        return {
+            title: isBatch ? '批量指派集中告警负责人' : '指派集中告警负责人',
+            summary: isBatch ? targetLabel : `${targetLabel}${ownerLabel ? ` · 当前负责人 ${ownerLabel}` : ''}`,
+            description: isBatch
+                ? '为当前筛选结果选择统一负责人；可选填写交接备注，便于值班交班和后续跟踪。'
+                : '选择新的负责人；可选填写交接备注，说明背景、排查进展或下一步动作。',
+            fieldLabel: '交接备注（可选）',
+            placeholder: '例如：已完成首轮排查，后续由新的值班同学继续跟进。',
+            submitLabel: isBatch ? '批量指派' : '保存指派'
+        };
+    }
 
     if (normalizedAction === 'resolve') {
         return {
@@ -6751,28 +6894,57 @@ function renderOpsAlertCaseComposer() {
     const titleEl = document.getElementById('shopRiskCaseComposerTitle');
     const summaryEl = document.getElementById('shopRiskCaseComposerSummary');
     const descEl = document.getElementById('shopRiskCaseComposerDescription');
+    const ownerFieldEl = document.getElementById('shopRiskCaseComposerOwnerField');
+    const ownerSelectEl = document.getElementById('shopRiskCaseComposerOwnerSelect');
+    const ownerHintEl = document.getElementById('shopRiskCaseComposerOwnerHint');
     const labelEl = document.getElementById('shopRiskCaseComposerLabel');
     const textareaEl = document.getElementById('shopRiskCaseComposerTextarea');
     const submitBtn = document.getElementById('shopRiskCaseComposerSubmit');
 
-    if (!modal || !titleEl || !summaryEl || !descEl || !labelEl || !textareaEl || !submitBtn) {
+    if (!modal || !titleEl || !summaryEl || !descEl || !ownerFieldEl || !ownerSelectEl || !ownerHintEl || !labelEl || !textareaEl || !submitBtn) {
         return;
     }
 
     const state = shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState();
     const meta = getOpsAlertCaseComposerMeta(state);
+    const isAssignAction = String(state.action || '').trim().toLowerCase() === 'assign';
+    const ownerOptions = getOpsAlertMonitorAssignableAdmins();
+    const selectedOwner = getDefaultOpsAlertCaseComposerOwner(state);
 
     titleEl.textContent = meta.title;
     summaryEl.textContent = meta.summary;
     descEl.textContent = meta.description;
+    ownerFieldEl.hidden = !isAssignAction;
+    if (isAssignAction) {
+        ownerSelectEl.innerHTML = ownerOptions.length
+            ? ownerOptions.map((admin) => `
+                <option value="${escapeConfigHtml(admin.id)}">${escapeConfigHtml(admin.label)}${admin.email ? ` · ${escapeConfigHtml(admin.email)}` : ''}${admin.isCurrent ? '（我）' : ''}</option>
+            `).join('')
+            : '<option value="">暂无可选管理员</option>';
+        ownerSelectEl.value = selectedOwner.id || ownerSelectEl.value || '';
+        ownerSelectEl.disabled = state.submitting || ownerOptions.length === 0;
+        ownerHintEl.textContent = ownerOptions.length
+            ? '指派会写入统一处置事件，monitor 卡片会同步回显新的负责人。'
+            : '当前未加载到管理员列表，请先刷新集中告警处理面板。';
+    } else {
+        ownerSelectEl.innerHTML = '';
+        ownerSelectEl.disabled = false;
+        ownerHintEl.textContent = '';
+    }
     labelEl.textContent = meta.fieldLabel;
     textareaEl.placeholder = meta.placeholder;
     submitBtn.textContent = state.submitting ? '提交中...' : meta.submitLabel;
-    submitBtn.disabled = state.submitting;
+    submitBtn.disabled = state.submitting || (isAssignAction && ownerOptions.length === 0);
 
     setOpsAlertCaseComposerVisible(Boolean(state.open));
     if (state.open && !state.submitting) {
-        window.setTimeout(() => textareaEl.focus(), 40);
+        window.setTimeout(() => {
+            if (isAssignAction) {
+                ownerSelectEl.focus();
+                return;
+            }
+            textareaEl.focus();
+        }, 40);
     }
 }
 
@@ -6786,13 +6958,22 @@ function closeOpsAlertCaseComposer() {
 }
 
 function openOpsAlertCaseComposer(action, context = {}, options = {}) {
-    shopRiskCaseComposerState = {
+    const nextState = {
         open: true,
         action: String(action || '').trim().toLowerCase(),
         mode: String(options.mode || 'single').trim().toLowerCase() || 'single',
         context: normalizeOpsAlertWorkspaceContext(context),
         items: buildOpsAlertCaseMutationItems(options.items || [], String(options.categoryKey || context.category || '').trim().toLowerCase()),
+        selectedOwnerAdminId: String(options.ownerAdminId || '').trim(),
+        selectedOwnerLabel: String(options.ownerLabel || '').trim(),
         submitting: false
+    };
+    const defaultOwner = getDefaultOpsAlertCaseComposerOwner(nextState);
+
+    shopRiskCaseComposerState = {
+        ...nextState,
+        selectedOwnerAdminId: defaultOwner.id,
+        selectedOwnerLabel: defaultOwner.label
     };
 
     const textareaEl = document.getElementById('shopRiskCaseComposerTextarea');
@@ -6821,6 +7002,8 @@ async function submitOpsAlertCaseMutation(action, context = {}, options = {}) {
             title: normalizedContext.title || ''
         }
     };
+    const ownerAdminId = String(options.ownerAdminId || options.owner_admin_id || '').trim();
+    const ownerLabel = String(options.ownerLabel || options.owner_label || '').trim();
 
     if (items.length) {
         requestBody.items = items;
@@ -6829,6 +7012,13 @@ async function submitOpsAlertCaseMutation(action, context = {}, options = {}) {
         requestBody.target_id = normalizedContext.targetId;
         requestBody.alert_type = normalizedContext.alertType || '';
         requestBody.title = normalizedContext.title || '';
+    }
+
+    if (ownerAdminId) {
+        requestBody.owner_admin_id = ownerAdminId;
+    }
+    if (ownerLabel) {
+        requestBody.owner_label = ownerLabel;
     }
 
     const response = await fetch('/api/admin/settings/ops-alert-monitor-cases', {
@@ -6862,7 +7052,7 @@ async function handleOpsAlertCaseAction(action, context = {}) {
             return true;
         }
 
-        if (normalizedAction === 'add_note' || normalizedAction === 'resolve') {
+        if (normalizedAction === 'assign' || normalizedAction === 'add_note' || normalizedAction === 'resolve') {
             openOpsAlertCaseComposer(normalizedAction, normalizedContext);
             return true;
         }
@@ -6882,6 +7072,7 @@ async function handleOpsAlertMonitorBatchCaseAction(action, categoryKey = '') {
     if (!items.length) {
         const emptyMessageMap = {
             claim: '当前筛选条件下没有可指派的告警',
+            assign: '当前筛选条件下没有可指派的告警',
             add_note: '当前筛选条件下没有可备注的告警',
             resolve: '当前筛选条件下没有可关闭的告警'
         };
@@ -6890,12 +7081,14 @@ async function handleOpsAlertMonitorBatchCaseAction(action, categoryKey = '') {
     }
 
     try {
-        if (normalizedAction === 'claim') {
-            const payload = await submitOpsAlertCaseMutation('claim', {}, {
-                items
+        if (normalizedAction === 'claim' || normalizedAction === 'assign') {
+            openOpsAlertCaseComposer('assign', {
+                category: categoryKey || getOpsAlertMonitorViewFilters().category || ''
+            }, {
+                mode: 'batch',
+                items,
+                categoryKey
             });
-            await refreshOpsAlertMonitorPanel?.();
-            showToast(payload.message || '集中告警已批量指派', 'success');
             return true;
         }
 
@@ -7036,6 +7229,19 @@ async function submitOpsAlertBatchMuteModal() {
 
         const nextConfig = collectOpsAlertConfigFromForm();
         const allowCritical = allowCriticalToggle?.classList.contains('active') !== false;
+        const caseEvents = state.items.length ? [{
+            action: 'batch_mute',
+            items: state.items,
+            metadata: {
+                mute_until: normalizedUntil,
+                allow_critical: allowCritical,
+                module_keys: state.moduleKeys,
+                filter_scope: String(state.filters?.scope || 'all').trim().toLowerCase(),
+                filter_severity: String(state.filters?.severity || 'all').trim().toLowerCase(),
+                filter_category: String(state.filters?.category || 'all').trim().toLowerCase(),
+                filter_summary: getOpsAlertMonitorFilterSummaryLabel(state.filters)
+            }
+        }] : [];
         state.moduleKeys.forEach((moduleKey) => {
             const currentRule = nextConfig.mute_rules?.modules?.[moduleKey] || {
                 until: '',
@@ -7049,7 +7255,8 @@ async function submitOpsAlertBatchMuteModal() {
         });
 
         const success = await saveOpsAlertConfigOverride(nextConfig, {
-            successMessage: `已将 ${moduleLabels.join('、')} 静默至 ${formatVerifyMonitorDateTime(normalizedUntil)}`
+            successMessage: `已将 ${moduleLabels.join('、')} 静默至 ${formatVerifyMonitorDateTime(normalizedUntil)}`,
+            caseEvents
         });
         if (!success) {
             opsAlertBatchMuteState = {
@@ -7062,7 +7269,7 @@ async function submitOpsAlertBatchMuteModal() {
         }
 
         closeOpsAlertBatchMuteModal();
-        renderOpsAlertMonitorPanel();
+        await refreshOpsAlertMonitorPanel?.();
         return true;
     } catch (error) {
         console.error('[Config] Submit ops alert batch mute failed:', error);
@@ -7080,13 +7287,23 @@ async function submitOpsAlertBatchMuteModal() {
 async function submitOpsAlertCaseComposer() {
     const state = shopRiskCaseComposerState || getDefaultShopRiskCaseComposerState();
     const textareaEl = document.getElementById('shopRiskCaseComposerTextarea');
+    const ownerSelectEl = document.getElementById('shopRiskCaseComposerOwnerSelect');
     const textValue = String(textareaEl?.value || '').trim();
+    const selectedOwnerAdminId = String(ownerSelectEl?.value || state.selectedOwnerAdminId || '').trim();
+    const selectedOwner = getOpsAlertMonitorAssignableAdmins().find((admin) => admin.id === selectedOwnerAdminId) || null;
+    const selectedOwnerLabel = selectedOwner?.label || String(state.selectedOwnerLabel || '').trim();
 
     if (!state.open || !state.action) {
         return false;
     }
 
-    if (!textValue) {
+    if (state.action === 'assign' && !selectedOwnerAdminId) {
+        showToast('请先选择负责人', 'warning');
+        ownerSelectEl?.focus?.();
+        return false;
+    }
+
+    if (['add_note', 'resolve'].includes(String(state.action || '').trim().toLowerCase()) && !textValue) {
         showToast(state.action === 'resolve' ? '请先填写关闭结论' : '请先填写备注内容', 'warning');
         textareaEl?.focus?.();
         return false;
@@ -7095,6 +7312,8 @@ async function submitOpsAlertCaseComposer() {
     try {
         shopRiskCaseComposerState = {
             ...state,
+            selectedOwnerAdminId,
+            selectedOwnerLabel,
             submitting: true
         };
         renderOpsAlertCaseComposer();
@@ -7102,7 +7321,9 @@ async function submitOpsAlertCaseComposer() {
         const payload = await submitOpsAlertCaseMutation(state.action, state.context, {
             items: state.mode === 'batch' ? state.items : [],
             note: textValue,
-            resolution: state.action === 'resolve' ? textValue : ''
+            resolution: state.action === 'resolve' ? textValue : '',
+            ownerAdminId: state.action === 'assign' ? selectedOwnerAdminId : '',
+            ownerLabel: state.action === 'assign' ? selectedOwnerLabel : ''
         });
 
         closeOpsAlertCaseComposer();
@@ -7113,6 +7334,8 @@ async function submitOpsAlertCaseComposer() {
         console.error('[Config] Submit ops alert case composer failed:', error);
         shopRiskCaseComposerState = {
             ...state,
+            selectedOwnerAdminId,
+            selectedOwnerLabel,
             submitting: false
         };
         renderOpsAlertCaseComposer();

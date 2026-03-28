@@ -18,6 +18,12 @@ const {
     sendFeishuAlert,
     sendTelegramAlert
 } = require('../../../../api/_lib/ops-alerts');
+const {
+    insertOpsAlertCaseEvents,
+    normalizeJsonObject,
+    normalizeOpsAlertCaseTargetItems,
+    VALID_OPS_ALERT_CASE_EVENT_ACTIONS
+} = require('./_ops-alert-case-events');
 
 const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
     telegram_bot_token: 'ops_alert_telegram_bot_token',
@@ -27,6 +33,42 @@ const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
 
 function sanitizeText(value, maxLength = 4000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
+}
+
+function buildOpsAlertCaseEventEntries(user = {}, caseEvents = []) {
+    return (Array.isArray(caseEvents) ? caseEvents : []).flatMap((entry) => {
+        const action = sanitizeText(entry?.action, 80).toLowerCase();
+        if (!VALID_OPS_ALERT_CASE_EVENT_ACTIONS.includes(action)) {
+            return [];
+        }
+
+        const metadata = normalizeJsonObject(entry?.metadata);
+        const note = sanitizeText(entry?.note, 4000);
+        const resolution = sanitizeText(entry?.resolution, 4000);
+        const owner = {
+            owner_label: sanitizeText(entry?.owner_label || entry?.ownerLabel, 255),
+            owner_admin_id: sanitizeText(entry?.owner_admin_id || entry?.ownerAdminId, 160)
+        };
+        const items = normalizeOpsAlertCaseTargetItems(entry?.items, {
+            category_key: entry?.category_key || entry?.categoryKey,
+            alert_type: entry?.alert_type || entry?.alertType,
+            title: entry?.title,
+            reference_label: entry?.reference_label || entry?.referenceLabel,
+            reference_value: entry?.reference_value || entry?.referenceValue,
+            metadata
+        });
+
+        return items.map((item) => ({
+            action,
+            item,
+            user,
+            note,
+            resolution,
+            metadata,
+            owner,
+            nowIso: sanitizeText(entry?.created_at || entry?.createdAt, 80) || new Date().toISOString()
+        }));
+    });
 }
 
 function getOpsAlertSecretKeys() {
@@ -1195,6 +1237,7 @@ module.exports = async (req, res) => {
 
             const nextConfig = normalizeOpsAlertsConfig(body.config);
             const incomingSecrets = body.secrets && typeof body.secrets === 'object' ? body.secrets : {};
+            const caseEventEntries = buildOpsAlertCaseEventEntries(user, body.case_events);
             const updatedSecrets = [];
             const secretKeys = getOpsAlertSecretKeys();
 
@@ -1225,6 +1268,8 @@ module.exports = async (req, res) => {
 
                 updatedSecrets.push(secretName);
             }
+
+            await insertOpsAlertCaseEvents(supabase, caseEventEntries);
 
             const muteTypeRules = Object.fromEntries(
                 Object.entries(nextConfig.mute_rules?.types || {})
@@ -1324,7 +1369,8 @@ module.exports = async (req, res) => {
                     wallet_recharge_success_sweep_interval_ms: Number(nextConfig.wallet_recharge_success?.sweep_interval_ms || 0) || null,
                     wallet_recharge_success_lookback_minutes: Number(nextConfig.wallet_recharge_success?.lookback_minutes || 0) || null,
                     wallet_recharge_success_dedupe_window_minutes: Number(nextConfig.wallet_recharge_success?.dedupe_window_minutes || 0) || null,
-                    updated_secrets: updatedSecrets
+                    updated_secrets: updatedSecrets,
+                    case_event_count: caseEventEntries.length
                 }
             });
 
