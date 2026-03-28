@@ -269,10 +269,15 @@ function buildVerifyFailureRateSpikeAlerts(snapshot = {}, recentLogs = [], rawCo
 async function runVerifyFailureRateSpikeSweep(supabase, options = {}) {
     const env = options.env || process.env;
     const verifyConfig = options.verifyConfig || {};
-    const config = normalizeVerifyFailureMonitorConfig(
-        options.config || verifyConfig.failureMonitorConfig,
-        env
-    );
+    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
+    const runtimeMonitorConfig = runtime?.config?.verify_failure && typeof runtime.config.verify_failure === 'object'
+        ? runtime.config.verify_failure
+        : {};
+    const config = normalizeVerifyFailureMonitorConfig({
+        ...(verifyConfig.failureMonitorConfig && typeof verifyConfig.failureMonitorConfig === 'object' ? verifyConfig.failureMonitorConfig : {}),
+        ...(options.config && typeof options.config === 'object' ? options.config : {}),
+        ...runtimeMonitorConfig
+    }, env);
 
     if (!config.enabled) {
         return {
@@ -283,7 +288,6 @@ async function runVerifyFailureRateSpikeSweep(supabase, options = {}) {
         };
     }
 
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
     if (!runtime?.config?.enabled) {
         return {
             skipped: 'ops_alerts_disabled',

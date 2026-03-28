@@ -143,7 +143,7 @@ function createSupabaseStub(state = {}) {
     };
 }
 
-function createOpsRuntime() {
+function createOpsRuntime(configOverrides = {}) {
     return {
         config: normalizeOpsAlertsConfig({
             enabled: true,
@@ -157,7 +157,8 @@ function createOpsRuntime() {
                     enabled: true,
                     minimum_severity: 'warning'
                 }
-            }
+            },
+            ...configOverrides
         }),
         secrets: {
             telegram_bot_token: 'telegram-token',
@@ -470,4 +471,90 @@ test('runVerifyQueueBacklogSweep enqueues queue backlog alerts with stable dedup
     assert.equal(second.queued, 0);
     assert.equal(second.deduped, 1);
     assert.equal(state.jobs.length, 1);
+});
+
+test('runVerifyQueueBacklogSweep prefers ops alert runtime queue config over legacy verify settings config', async () => {
+    const state = {
+        jobs: [],
+        verificationLogs: [
+            {
+                id: 'active-1',
+                status: 'queued',
+                user_id: 'user-1',
+                verification_id: 'job-1',
+                created_at: '2026-03-25T09:18:00.000Z',
+                site: 'cn',
+                message: buildLogMessage({ email: 'member1@example.com' })
+            },
+            {
+                id: 'failed-1',
+                status: 'failed',
+                user_id: 'user-11',
+                verification_id: 'job-11',
+                created_at: '2026-03-25T09:45:00.000Z',
+                site: 'cn',
+                message: buildLogMessage({ error_message: 'lock_conflict' })
+            }
+        ]
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime({
+        verify_queue: {
+            queue_size_threshold: 10,
+            active_job_threshold: 1,
+            oldest_pending_minutes_threshold: 30,
+            recent_failure_threshold: 1
+        }
+    });
+
+    const fetchImpl = async (input) => {
+        const url = String(input || '');
+        if (url === 'https://verify.test/api/balance') {
+            return new Response(JSON.stringify({
+                balance: 50,
+                total_used: 324,
+                cost_per_job: 1,
+                name: 'primary-key'
+            }), {
+                status: 200,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        }
+
+        if (url === 'https://verify.test/api/queue') {
+            return new Response(JSON.stringify({
+                queue_size: 18,
+                running_jobs: 0
+            }), {
+                status: 200,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+    };
+
+    const result = await runVerifyQueueBacklogSweep(supabase, {
+        runtime,
+        now: '2026-03-25T10:00:00.000Z',
+        fetchImpl,
+        verifyConfig: {
+            apiKey: 'verify-api-key',
+            apiBaseUrl: 'https://verify.test',
+            queueMonitorConfig: {
+                queue_size_threshold: 50,
+                active_job_threshold: 50,
+                oldest_pending_minutes_threshold: 120,
+                recent_failure_threshold: 10
+            }
+        }
+    });
+
+    assert.equal(result.backlog_count, 1);
+    assert.equal(state.jobs.length, 1);
+    assert.match(state.jobs[0].content, /阈值 10 个/);
 });

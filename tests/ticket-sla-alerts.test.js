@@ -55,6 +55,11 @@ function createQueryBuilder(executor) {
             state.payload = payload;
             return builder;
         },
+        update(payload) {
+            state.mode = 'update';
+            state.payload = payload;
+            return builder;
+        },
         single() {
             state.single = true;
             return builder;
@@ -123,8 +128,9 @@ function createSupabaseStub(state = {}) {
                 }
 
                 if (table === 'ops_alert_jobs' && query.mode === 'select') {
+                    const rows = applyRange(sortRows(applyFilters(jobs, query.filters), query.order), query.range);
                     return {
-                        data: applyRange(sortRows(applyFilters(jobs, query.filters), query.order), query.range),
+                        data: query.single ? (rows[0] || null) : rows,
                         error: null
                     };
                 }
@@ -145,6 +151,15 @@ function createSupabaseStub(state = {}) {
 
                     return {
                         data: query.single ? inserted[0] : inserted,
+                        error: null
+                    };
+                }
+
+                if (table === 'ops_alert_jobs' && query.mode === 'update') {
+                    const matched = applyFilters(jobs, query.filters);
+                    matched.forEach((row) => Object.assign(row, query.payload || {}));
+                    return {
+                        data: query.single ? (matched[0] || null) : matched,
                         error: null
                     };
                 }
@@ -189,7 +204,7 @@ function createSupabaseStub(state = {}) {
     };
 }
 
-function createOpsRuntime() {
+function createOpsRuntime(overrides = {}) {
     return {
         config: normalizeOpsAlertsConfig({
             enabled: true,
@@ -203,11 +218,13 @@ function createOpsRuntime() {
                     enabled: true,
                     minimum_severity: 'warning'
                 }
-            }
+            },
+            ...(overrides.config && typeof overrides.config === 'object' ? overrides.config : {})
         }),
         secrets: {
             telegram_bot_token: 'telegram-token',
-            feishu_webhook_url: 'https://open.feishu.cn/open-apis/bot/v2/hook/demo'
+            feishu_webhook_url: 'https://open.feishu.cn/open-apis/bot/v2/hook/demo',
+            ...(overrides.secrets && typeof overrides.secrets === 'object' ? overrides.secrets : {})
         }
     };
 }
@@ -283,6 +300,57 @@ test('runTicketSlaOverdueSweep enqueues overdue ticket alerts with stable dedupe
     assert.equal(second.queued, 0);
     assert.equal(second.deduped, 1);
     assert.equal(state.jobs.length, 1);
+});
+
+test('runTicketSlaOverdueSweep reuses ops alerts tickets config and queues ticket summaries when enabled', async () => {
+    const now = new Date('2026-03-25T12:00:00.000Z');
+    const state = {
+        tickets: [
+            {
+                id: 'ticket-1',
+                order_id: 'order-1',
+                user_id: 'user-1',
+                status: 'OPEN',
+                description: '卡密未到账',
+                created_at: '2026-03-25T08:45:00.000Z',
+                updated_at: '2026-03-25T08:45:00.000Z'
+            },
+            {
+                id: 'ticket-2',
+                order_id: 'order-2',
+                user_id: 'user-2',
+                status: 'OPEN',
+                description: '用户催办',
+                created_at: '2026-03-25T07:30:00.000Z',
+                updated_at: '2026-03-25T09:00:00.000Z'
+            }
+        ],
+        jobs: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime({
+        config: {
+            tickets: {
+                enabled: true,
+                summary_enabled: true,
+                summary_window_minutes: 90,
+                summary_max_items: 3
+            }
+        }
+    });
+
+    const result = await runTicketSlaOverdueSweep(supabase, {
+        now,
+        runtime
+    });
+
+    assert.equal(result.overdue_count, 2);
+    assert.equal(result.queued, 2);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].alert_type, 'ticket_sla_summary');
+    assert.equal(state.jobs[0].payload.item_count, 2);
+    assert.equal(state.jobs[0].payload.summary_window_minutes, 90);
+    assert.equal(state.jobs[0].payload.summary_max_items, 3);
 });
 
 test('buildTicketSlaRecoveryAlerts emits a recovery notice after an overdue ticket is resolved', () => {

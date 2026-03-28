@@ -147,6 +147,25 @@ const OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS = Object.freeze([
         summary_daily_hour_id: 'opsAlertShopInventorySummaryDailyHour',
         summary_daily_minute_id: 'opsAlertShopInventorySummaryDailyMinute',
         summary_max_items_id: 'opsAlertShopInventorySummaryMaxItems'
+    }),
+    Object.freeze({
+        key: 'tickets',
+        label: '工单与售后',
+        preset_group: 'low_priority',
+        supports_work_hours_only: true,
+        target_checkbox_id: 'opsAlertSummaryTargetTickets',
+        monitor_status_id: 'opsAlertSummaryStatusTicketsMonitor',
+        work_hours_status_id: 'opsAlertSummaryStatusTicketsWorkHours',
+        summary_status_id: 'opsAlertSummaryStatusTicketsSummary',
+        enabled_toggle_id: 'opsAlertTicketsEnabledToggle',
+        work_hours_toggle_id: 'opsAlertTicketsWorkHoursOnlyEnabledToggle',
+        summary_toggle_id: 'opsAlertTicketsSummaryEnabledToggle',
+        summary_schedule_mode_id: 'opsAlertTicketsSummaryScheduleMode',
+        summary_window_minutes_id: 'opsAlertTicketsSummaryWindowMinutes',
+        summary_hourly_minute_id: 'opsAlertTicketsSummaryHourlyMinute',
+        summary_daily_hour_id: 'opsAlertTicketsSummaryDailyHour',
+        summary_daily_minute_id: 'opsAlertTicketsSummaryDailyMinute',
+        summary_max_items_id: 'opsAlertTicketsSummaryMaxItems'
     })
 ]);
 const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 8000;
@@ -1187,6 +1206,81 @@ function getDefaultOpsAlertConfig() {
             summary_hourly_minute: 0,
             summary_daily_hour: 9,
             summary_daily_minute: 0
+        },
+        tickets: {
+            enabled: true,
+            sweep_interval_ms: 10 * 60 * 1000,
+            pending_overdue_minutes: 120,
+            critical_overdue_minutes: 12 * 60,
+            state_lookback_minutes: 24 * 60,
+            dedupe_window_minutes: 60,
+            page_size: 500,
+            max_pages: 10,
+            work_hours_only_enabled: false,
+            summary_enabled: false,
+            summary_window_minutes: 60,
+            summary_max_items: 10,
+            summary_schedule_mode: 'rolling_window',
+            summary_hourly_minute: 0,
+            summary_daily_hour: 9,
+            summary_daily_minute: 0
+        },
+        verify_quota: {
+            enabled: true,
+            sweep_interval_ms: 15 * 60 * 1000,
+            request_timeout_ms: 10000,
+            low_balance_threshold: 20,
+            low_remaining_jobs_threshold: 20,
+            critical_balance_threshold: 5,
+            critical_remaining_jobs_threshold: 5,
+            min_queue_buffer_jobs: 5,
+            dedupe_window_minutes: 6 * 60
+        },
+        verify_queue: {
+            enabled: true,
+            sweep_interval_ms: 10 * 60 * 1000,
+            request_timeout_ms: 10000,
+            recent_activity_lookback_hours: 12,
+            recent_failure_window_minutes: 30,
+            queue_size_threshold: 10,
+            active_job_threshold: 8,
+            oldest_pending_minutes_threshold: 20,
+            recent_failure_threshold: 4,
+            dedupe_window_minutes: 30,
+            page_size: 500,
+            max_pages: 10
+        },
+        verify_failure: {
+            enabled: true,
+            sweep_interval_ms: 10 * 60 * 1000,
+            recent_window_minutes: 30,
+            min_total_jobs_threshold: 6,
+            failure_rate_threshold: 60,
+            affected_user_threshold: 3,
+            dedupe_window_minutes: 15,
+            page_size: 500,
+            max_pages: 10
+        },
+        payment_gateway: {
+            enabled: true,
+            window_minutes: 30,
+            state_lookback_minutes: 24 * 60,
+            sweep_interval_ms: 5 * 60 * 1000,
+            dedupe_window_minutes: 60,
+            min_order_volume: 6,
+            min_review_orders: 4,
+            min_failed_orders: 3,
+            min_webhook_volume: 5,
+            min_query_volume: 5,
+            max_paid_rate_percent: 65,
+            min_review_ratio_percent: 45,
+            min_failed_ratio_percent: 25,
+            max_webhook_success_rate_percent: 70,
+            max_query_success_rate_percent: 60,
+            min_webhook_5xx_count: 3,
+            min_query_5xx_count: 3,
+            page_size: 500,
+            max_pages: 20
         }
     };
 }
@@ -1373,6 +1467,15 @@ function renderOpsAlertSummaryOrchestration(config = normalizeOpsAlertConfig(sys
                 section.enabled
                     ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，低库存阈值 ${formatVerifyMonitorInteger(section.low_stock_threshold || 0)}。`
                     : `库存巡检参数仍保留，阈值 ${formatVerifyMonitorInteger(section.low_stock_threshold || 0)}。`
+            );
+        } else if (definition.key === 'tickets') {
+            setOpsAlertSummaryOrchestrationCell(
+                definition.monitor_status_id,
+                section.enabled ? 'success' : 'neutral',
+                section.enabled ? '已启用' : '已关闭',
+                section.enabled
+                    ? `巡检 ${formatVerifyMonitorInteger(sweepIntervalMinutes)} 分钟，超时阈值 ${formatVerifyMonitorInteger(section.pending_overdue_minutes || 0)} 分钟。`
+                    : `工单 SLA 阈值仍保留为 ${formatVerifyMonitorInteger(section.pending_overdue_minutes || 0)} 分钟。`
             );
         } else {
             setOpsAlertSummaryOrchestrationCell(
@@ -1929,6 +2032,21 @@ function normalizeOpsAlertConfig(raw) {
     const walletRechargeSuccessSource = source.wallet_recharge_success && typeof source.wallet_recharge_success === 'object' && !Array.isArray(source.wallet_recharge_success)
         ? source.wallet_recharge_success
         : {};
+    const ticketsSource = source.tickets && typeof source.tickets === 'object' && !Array.isArray(source.tickets)
+        ? source.tickets
+        : {};
+    const verifyQuotaSource = source.verify_quota && typeof source.verify_quota === 'object' && !Array.isArray(source.verify_quota)
+        ? source.verify_quota
+        : {};
+    const verifyQueueSource = source.verify_queue && typeof source.verify_queue === 'object' && !Array.isArray(source.verify_queue)
+        ? source.verify_queue
+        : {};
+    const verifyFailureSource = source.verify_failure && typeof source.verify_failure === 'object' && !Array.isArray(source.verify_failure)
+        ? source.verify_failure
+        : {};
+    const paymentGatewaySource = source.payment_gateway && typeof source.payment_gateway === 'object' && !Array.isArray(source.payment_gateway)
+        ? source.payment_gateway
+        : {};
     const routingSource = source.routing && typeof source.routing === 'object' && !Array.isArray(source.routing)
         ? source.routing
         : {};
@@ -2311,6 +2429,315 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(walletRechargeSuccessSource.summary_daily_minute, defaults.wallet_recharge_success.summary_daily_minute),
                 0,
                 59
+            )
+        },
+        tickets: {
+            enabled: normalizeConfigBoolean(ticketsSource.enabled, defaults.tickets.enabled),
+            sweep_interval_ms: clamp(
+                toWholeNumber(ticketsSource.sweep_interval_ms, defaults.tickets.sweep_interval_ms),
+                10000,
+                60 * 60 * 1000
+            ),
+            pending_overdue_minutes: clamp(
+                toWholeNumber(ticketsSource.pending_overdue_minutes, defaults.tickets.pending_overdue_minutes),
+                5,
+                14 * 24 * 60
+            ),
+            critical_overdue_minutes: clamp(
+                toWholeNumber(ticketsSource.critical_overdue_minutes, defaults.tickets.critical_overdue_minutes),
+                30,
+                30 * 24 * 60
+            ),
+            state_lookback_minutes: clamp(
+                toWholeNumber(ticketsSource.state_lookback_minutes, defaults.tickets.state_lookback_minutes),
+                30,
+                7 * 24 * 60
+            ),
+            dedupe_window_minutes: clamp(
+                toWholeNumber(ticketsSource.dedupe_window_minutes, defaults.tickets.dedupe_window_minutes),
+                1,
+                24 * 60
+            ),
+            page_size: clamp(
+                toWholeNumber(ticketsSource.page_size, defaults.tickets.page_size),
+                50,
+                5000
+            ),
+            max_pages: clamp(
+                toWholeNumber(ticketsSource.max_pages, defaults.tickets.max_pages),
+                1,
+                100
+            ),
+            work_hours_only_enabled: normalizeConfigBoolean(
+                ticketsSource.work_hours_only_enabled,
+                defaults.tickets.work_hours_only_enabled
+            ),
+            summary_enabled: normalizeConfigBoolean(ticketsSource.summary_enabled, defaults.tickets.summary_enabled),
+            summary_window_minutes: clamp(
+                toWholeNumber(ticketsSource.summary_window_minutes, defaults.tickets.summary_window_minutes),
+                5,
+                24 * 60
+            ),
+            summary_max_items: clamp(
+                toWholeNumber(ticketsSource.summary_max_items, defaults.tickets.summary_max_items),
+                1,
+                50
+            ),
+            summary_schedule_mode: normalizeOpsAlertSummaryScheduleMode(
+                ticketsSource.summary_schedule_mode,
+                defaults.tickets.summary_schedule_mode
+            ),
+            summary_hourly_minute: clamp(
+                toWholeNumber(ticketsSource.summary_hourly_minute, defaults.tickets.summary_hourly_minute),
+                0,
+                59
+            ),
+            summary_daily_hour: clamp(
+                toWholeNumber(ticketsSource.summary_daily_hour, defaults.tickets.summary_daily_hour),
+                0,
+                23
+            ),
+            summary_daily_minute: clamp(
+                toWholeNumber(ticketsSource.summary_daily_minute, defaults.tickets.summary_daily_minute),
+                0,
+                59
+            )
+        },
+        verify_quota: {
+            enabled: normalizeConfigBoolean(verifyQuotaSource.enabled, defaults.verify_quota.enabled),
+            sweep_interval_ms: clamp(
+                toWholeNumber(verifyQuotaSource.sweep_interval_ms, defaults.verify_quota.sweep_interval_ms),
+                10000,
+                60 * 60 * 1000
+            ),
+            request_timeout_ms: clamp(
+                toWholeNumber(verifyQuotaSource.request_timeout_ms, defaults.verify_quota.request_timeout_ms),
+                1000,
+                60 * 1000
+            ),
+            low_balance_threshold: clamp(
+                toWholeNumber(verifyQuotaSource.low_balance_threshold, defaults.verify_quota.low_balance_threshold),
+                0,
+                1000000
+            ),
+            low_remaining_jobs_threshold: clamp(
+                toWholeNumber(verifyQuotaSource.low_remaining_jobs_threshold, defaults.verify_quota.low_remaining_jobs_threshold),
+                0,
+                1000000
+            ),
+            critical_balance_threshold: clamp(
+                toWholeNumber(verifyQuotaSource.critical_balance_threshold, defaults.verify_quota.critical_balance_threshold),
+                0,
+                1000000
+            ),
+            critical_remaining_jobs_threshold: clamp(
+                toWholeNumber(verifyQuotaSource.critical_remaining_jobs_threshold, defaults.verify_quota.critical_remaining_jobs_threshold),
+                0,
+                1000000
+            ),
+            min_queue_buffer_jobs: clamp(
+                toWholeNumber(verifyQuotaSource.min_queue_buffer_jobs, defaults.verify_quota.min_queue_buffer_jobs),
+                0,
+                1000000
+            ),
+            dedupe_window_minutes: clamp(
+                toWholeNumber(verifyQuotaSource.dedupe_window_minutes, defaults.verify_quota.dedupe_window_minutes),
+                1,
+                24 * 60
+            )
+        },
+        verify_queue: {
+            enabled: normalizeConfigBoolean(verifyQueueSource.enabled, defaults.verify_queue.enabled),
+            sweep_interval_ms: clamp(
+                toWholeNumber(verifyQueueSource.sweep_interval_ms, defaults.verify_queue.sweep_interval_ms),
+                10000,
+                60 * 60 * 1000
+            ),
+            request_timeout_ms: clamp(
+                toWholeNumber(verifyQueueSource.request_timeout_ms, defaults.verify_queue.request_timeout_ms),
+                1000,
+                60 * 1000
+            ),
+            recent_activity_lookback_hours: clamp(
+                toWholeNumber(verifyQueueSource.recent_activity_lookback_hours, defaults.verify_queue.recent_activity_lookback_hours),
+                1,
+                72
+            ),
+            recent_failure_window_minutes: clamp(
+                toWholeNumber(verifyQueueSource.recent_failure_window_minutes, defaults.verify_queue.recent_failure_window_minutes),
+                5,
+                24 * 60
+            ),
+            queue_size_threshold: clamp(
+                toWholeNumber(verifyQueueSource.queue_size_threshold, defaults.verify_queue.queue_size_threshold),
+                1,
+                100000
+            ),
+            active_job_threshold: clamp(
+                toWholeNumber(verifyQueueSource.active_job_threshold, defaults.verify_queue.active_job_threshold),
+                1,
+                100000
+            ),
+            oldest_pending_minutes_threshold: clamp(
+                toWholeNumber(verifyQueueSource.oldest_pending_minutes_threshold, defaults.verify_queue.oldest_pending_minutes_threshold),
+                1,
+                24 * 60
+            ),
+            recent_failure_threshold: clamp(
+                toWholeNumber(verifyQueueSource.recent_failure_threshold, defaults.verify_queue.recent_failure_threshold),
+                1,
+                100000
+            ),
+            dedupe_window_minutes: clamp(
+                toWholeNumber(verifyQueueSource.dedupe_window_minutes, defaults.verify_queue.dedupe_window_minutes),
+                1,
+                24 * 60
+            ),
+            page_size: clamp(
+                toWholeNumber(verifyQueueSource.page_size, defaults.verify_queue.page_size),
+                50,
+                5000
+            ),
+            max_pages: clamp(
+                toWholeNumber(verifyQueueSource.max_pages, defaults.verify_queue.max_pages),
+                1,
+                100
+            )
+        },
+        verify_failure: {
+            enabled: normalizeConfigBoolean(verifyFailureSource.enabled, defaults.verify_failure.enabled),
+            sweep_interval_ms: clamp(
+                toWholeNumber(verifyFailureSource.sweep_interval_ms, defaults.verify_failure.sweep_interval_ms),
+                10000,
+                60 * 60 * 1000
+            ),
+            recent_window_minutes: clamp(
+                toWholeNumber(verifyFailureSource.recent_window_minutes, defaults.verify_failure.recent_window_minutes),
+                5,
+                24 * 60
+            ),
+            min_total_jobs_threshold: clamp(
+                toWholeNumber(verifyFailureSource.min_total_jobs_threshold, defaults.verify_failure.min_total_jobs_threshold),
+                1,
+                100000
+            ),
+            failure_rate_threshold: clamp(
+                toWholeNumber(verifyFailureSource.failure_rate_threshold, defaults.verify_failure.failure_rate_threshold),
+                1,
+                100
+            ),
+            affected_user_threshold: clamp(
+                toWholeNumber(verifyFailureSource.affected_user_threshold, defaults.verify_failure.affected_user_threshold),
+                1,
+                100000
+            ),
+            dedupe_window_minutes: clamp(
+                toWholeNumber(verifyFailureSource.dedupe_window_minutes, defaults.verify_failure.dedupe_window_minutes),
+                1,
+                24 * 60
+            ),
+            page_size: clamp(
+                toWholeNumber(verifyFailureSource.page_size, defaults.verify_failure.page_size),
+                50,
+                5000
+            ),
+            max_pages: clamp(
+                toWholeNumber(verifyFailureSource.max_pages, defaults.verify_failure.max_pages),
+                1,
+                100
+            )
+        },
+        payment_gateway: {
+            enabled: normalizeConfigBoolean(paymentGatewaySource.enabled, defaults.payment_gateway.enabled),
+            window_minutes: clamp(
+                toWholeNumber(paymentGatewaySource.window_minutes, defaults.payment_gateway.window_minutes),
+                5,
+                24 * 60
+            ),
+            state_lookback_minutes: clamp(
+                toWholeNumber(paymentGatewaySource.state_lookback_minutes, defaults.payment_gateway.state_lookback_minutes),
+                30,
+                7 * 24 * 60
+            ),
+            sweep_interval_ms: clamp(
+                toWholeNumber(paymentGatewaySource.sweep_interval_ms, defaults.payment_gateway.sweep_interval_ms),
+                10000,
+                60 * 60 * 1000
+            ),
+            dedupe_window_minutes: clamp(
+                toWholeNumber(paymentGatewaySource.dedupe_window_minutes, defaults.payment_gateway.dedupe_window_minutes),
+                1,
+                24 * 60
+            ),
+            min_order_volume: clamp(
+                toWholeNumber(paymentGatewaySource.min_order_volume, defaults.payment_gateway.min_order_volume),
+                1,
+                200
+            ),
+            min_review_orders: clamp(
+                toWholeNumber(paymentGatewaySource.min_review_orders, defaults.payment_gateway.min_review_orders),
+                1,
+                100
+            ),
+            min_failed_orders: clamp(
+                toWholeNumber(paymentGatewaySource.min_failed_orders, defaults.payment_gateway.min_failed_orders),
+                1,
+                100
+            ),
+            min_webhook_volume: clamp(
+                toWholeNumber(paymentGatewaySource.min_webhook_volume, defaults.payment_gateway.min_webhook_volume),
+                1,
+                500
+            ),
+            min_query_volume: clamp(
+                toWholeNumber(paymentGatewaySource.min_query_volume, defaults.payment_gateway.min_query_volume),
+                1,
+                500
+            ),
+            max_paid_rate_percent: clamp(
+                toWholeNumber(paymentGatewaySource.max_paid_rate_percent, defaults.payment_gateway.max_paid_rate_percent),
+                1,
+                100
+            ),
+            min_review_ratio_percent: clamp(
+                toWholeNumber(paymentGatewaySource.min_review_ratio_percent, defaults.payment_gateway.min_review_ratio_percent),
+                1,
+                100
+            ),
+            min_failed_ratio_percent: clamp(
+                toWholeNumber(paymentGatewaySource.min_failed_ratio_percent, defaults.payment_gateway.min_failed_ratio_percent),
+                1,
+                100
+            ),
+            max_webhook_success_rate_percent: clamp(
+                toWholeNumber(paymentGatewaySource.max_webhook_success_rate_percent, defaults.payment_gateway.max_webhook_success_rate_percent),
+                1,
+                100
+            ),
+            max_query_success_rate_percent: clamp(
+                toWholeNumber(paymentGatewaySource.max_query_success_rate_percent, defaults.payment_gateway.max_query_success_rate_percent),
+                1,
+                100
+            ),
+            min_webhook_5xx_count: clamp(
+                toWholeNumber(paymentGatewaySource.min_webhook_5xx_count, defaults.payment_gateway.min_webhook_5xx_count),
+                1,
+                100
+            ),
+            min_query_5xx_count: clamp(
+                toWholeNumber(paymentGatewaySource.min_query_5xx_count, defaults.payment_gateway.min_query_5xx_count),
+                1,
+                100
+            ),
+            page_size: clamp(
+                toWholeNumber(paymentGatewaySource.page_size, defaults.payment_gateway.page_size),
+                50,
+                5000
+            ),
+            max_pages: clamp(
+                toWholeNumber(paymentGatewaySource.max_pages, defaults.payment_gateway.max_pages),
+                1,
+                100
             )
         }
     };
@@ -2831,6 +3258,11 @@ function applyOpsAlertOverview(config) {
     applyOpsAlertCustomerChatControls(normalizedConfig);
     applyOpsAlertShopPurchaseSuccessControls(normalizedConfig);
     applyOpsAlertWalletRechargeSuccessControls(normalizedConfig);
+    applyOpsAlertTicketsControls(normalizedConfig);
+    applyOpsAlertVerifyQuotaControls(normalizedConfig);
+    applyOpsAlertVerifyQueueControls(normalizedConfig);
+    applyOpsAlertVerifyFailureControls(normalizedConfig);
+    applyOpsAlertPaymentGatewayControls(normalizedConfig);
     renderOpsAlertSummaryOrchestration(normalizedConfig);
     renderOpsAlertOverviewCards(normalizedConfig);
 }
@@ -3282,6 +3714,133 @@ function applyOpsAlertWalletRechargeSuccessControls(config = normalizeOpsAlertCo
     });
 }
 
+function applyOpsAlertTicketsControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const monitorConfig = normalizedConfig.tickets || getDefaultOpsAlertConfig().tickets;
+    const toggleEl = document.getElementById('opsAlertTicketsEnabledToggle');
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+    const summaryToggleEl = document.getElementById('opsAlertTicketsSummaryEnabledToggle');
+    if (summaryToggleEl) {
+        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
+    }
+    const workHoursOnlyToggleEl = document.getElementById('opsAlertTicketsWorkHoursOnlyEnabledToggle');
+    if (workHoursOnlyToggleEl) {
+        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
+        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
+    }
+
+    [
+        'opsAlertTicketsSweepIntervalMinutes',
+        'opsAlertTicketsPendingOverdueMinutes',
+        'opsAlertTicketsCriticalOverdueMinutes',
+        'opsAlertTicketsStateLookbackMinutes',
+        'opsAlertTicketsDedupeWindowMinutes'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !monitorConfig.enabled;
+    });
+    applyOpsAlertSummaryModeControls(monitorConfig, {
+        summaryScheduleMode: 'opsAlertTicketsSummaryScheduleMode',
+        summaryWindowMinutes: 'opsAlertTicketsSummaryWindowMinutes',
+        summaryHourlyMinute: 'opsAlertTicketsSummaryHourlyMinute',
+        summaryDailyHour: 'opsAlertTicketsSummaryDailyHour',
+        summaryDailyMinute: 'opsAlertTicketsSummaryDailyMinute',
+        summaryMaxItems: 'opsAlertTicketsSummaryMaxItems'
+    });
+}
+
+function applyOpsAlertVerifyQuotaControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const monitorConfig = normalizedConfig.verify_quota || getDefaultOpsAlertConfig().verify_quota;
+    const toggleEl = document.getElementById('opsAlertVerifyQuotaEnabledToggle');
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+
+    [
+        'opsAlertVerifyQuotaLowBalanceThreshold',
+        'opsAlertVerifyQuotaLowRemainingJobsThreshold',
+        'opsAlertVerifyQuotaCriticalBalanceThreshold',
+        'opsAlertVerifyQuotaCriticalRemainingJobsThreshold',
+        'opsAlertVerifyQuotaMinQueueBufferJobs',
+        'opsAlertVerifyQuotaSweepIntervalMinutes',
+        'opsAlertVerifyQuotaDedupeWindowMinutes'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !monitorConfig.enabled;
+    });
+}
+
+function applyOpsAlertVerifyQueueControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const monitorConfig = normalizedConfig.verify_queue || getDefaultOpsAlertConfig().verify_queue;
+    const toggleEl = document.getElementById('opsAlertVerifyQueueEnabledToggle');
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+
+    [
+        'opsAlertVerifyQueueRecentActivityLookbackHours',
+        'opsAlertVerifyQueueRecentFailureWindowMinutes',
+        'opsAlertVerifyQueueSizeThreshold',
+        'opsAlertVerifyQueueActiveJobThreshold',
+        'opsAlertVerifyQueueOldestPendingMinutesThreshold',
+        'opsAlertVerifyQueueRecentFailureThreshold',
+        'opsAlertVerifyQueueSweepIntervalMinutes',
+        'opsAlertVerifyQueueDedupeWindowMinutes'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !monitorConfig.enabled;
+    });
+}
+
+function applyOpsAlertVerifyFailureControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const monitorConfig = normalizedConfig.verify_failure || getDefaultOpsAlertConfig().verify_failure;
+    const toggleEl = document.getElementById('opsAlertVerifyFailureEnabledToggle');
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+
+    [
+        'opsAlertVerifyFailureRecentWindowMinutes',
+        'opsAlertVerifyFailureMinTotalJobsThreshold',
+        'opsAlertVerifyFailureRateThreshold',
+        'opsAlertVerifyFailureAffectedUserThreshold',
+        'opsAlertVerifyFailureSweepIntervalMinutes',
+        'opsAlertVerifyFailureDedupeWindowMinutes'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !monitorConfig.enabled;
+    });
+}
+
+function applyOpsAlertPaymentGatewayControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const monitorConfig = normalizedConfig.payment_gateway || getDefaultOpsAlertConfig().payment_gateway;
+    const toggleEl = document.getElementById('opsAlertPaymentGatewayEnabledToggle');
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', monitorConfig.enabled);
+    }
+
+    [
+        'opsAlertPaymentGatewayWindowMinutes',
+        'opsAlertPaymentGatewayFailedOrdersThreshold',
+        'opsAlertPaymentGatewayFailedRatioThreshold',
+        'opsAlertPaymentGatewayWebhookSuccessRateThreshold',
+        'opsAlertPaymentGatewayQuerySuccessRateThreshold',
+        'opsAlertPaymentGatewayWebhook5xxThreshold',
+        'opsAlertPaymentGatewayQuery5xxThreshold',
+        'opsAlertPaymentGatewaySweepIntervalMinutes',
+        'opsAlertPaymentGatewayDedupeWindowMinutes'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.disabled = !monitorConfig.enabled;
+    });
+}
+
 function renderOpsAlertSettings() {
     const config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
 
@@ -3534,6 +4093,175 @@ function renderOpsAlertSettings() {
     const walletRechargeSuccessSummaryMaxItems = document.getElementById('opsAlertWalletRechargeSuccessSummaryMaxItems');
     if (walletRechargeSuccessSummaryMaxItems) {
         walletRechargeSuccessSummaryMaxItems.value = String(config.wallet_recharge_success.summary_max_items);
+    }
+
+    const ticketsSweepIntervalMinutes = document.getElementById('opsAlertTicketsSweepIntervalMinutes');
+    if (ticketsSweepIntervalMinutes) {
+        ticketsSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.tickets.sweep_interval_ms || 0) / 60000)));
+    }
+    const ticketsPendingOverdueMinutes = document.getElementById('opsAlertTicketsPendingOverdueMinutes');
+    if (ticketsPendingOverdueMinutes) {
+        ticketsPendingOverdueMinutes.value = String(config.tickets.pending_overdue_minutes);
+    }
+    const ticketsCriticalOverdueMinutes = document.getElementById('opsAlertTicketsCriticalOverdueMinutes');
+    if (ticketsCriticalOverdueMinutes) {
+        ticketsCriticalOverdueMinutes.value = String(config.tickets.critical_overdue_minutes);
+    }
+    const ticketsStateLookbackMinutes = document.getElementById('opsAlertTicketsStateLookbackMinutes');
+    if (ticketsStateLookbackMinutes) {
+        ticketsStateLookbackMinutes.value = String(config.tickets.state_lookback_minutes);
+    }
+
+    const ticketsDedupeWindowMinutes = document.getElementById('opsAlertTicketsDedupeWindowMinutes');
+    if (ticketsDedupeWindowMinutes) {
+        ticketsDedupeWindowMinutes.value = String(config.tickets.dedupe_window_minutes);
+    }
+    const ticketsSummaryWindowMinutes = document.getElementById('opsAlertTicketsSummaryWindowMinutes');
+    if (ticketsSummaryWindowMinutes) {
+        ticketsSummaryWindowMinutes.value = String(config.tickets.summary_window_minutes);
+    }
+    const ticketsSummaryScheduleMode = document.getElementById('opsAlertTicketsSummaryScheduleMode');
+    if (ticketsSummaryScheduleMode) {
+        ticketsSummaryScheduleMode.value = config.tickets.summary_schedule_mode;
+    }
+    const ticketsSummaryHourlyMinute = document.getElementById('opsAlertTicketsSummaryHourlyMinute');
+    if (ticketsSummaryHourlyMinute) {
+        ticketsSummaryHourlyMinute.value = String(config.tickets.summary_hourly_minute);
+    }
+    const ticketsSummaryDailyHour = document.getElementById('opsAlertTicketsSummaryDailyHour');
+    if (ticketsSummaryDailyHour) {
+        ticketsSummaryDailyHour.value = String(config.tickets.summary_daily_hour);
+    }
+    const ticketsSummaryDailyMinute = document.getElementById('opsAlertTicketsSummaryDailyMinute');
+    if (ticketsSummaryDailyMinute) {
+        ticketsSummaryDailyMinute.value = String(config.tickets.summary_daily_minute);
+    }
+    const ticketsSummaryMaxItems = document.getElementById('opsAlertTicketsSummaryMaxItems');
+    if (ticketsSummaryMaxItems) {
+        ticketsSummaryMaxItems.value = String(config.tickets.summary_max_items);
+    }
+
+    const verifyQuotaLowBalanceThreshold = document.getElementById('opsAlertVerifyQuotaLowBalanceThreshold');
+    if (verifyQuotaLowBalanceThreshold) {
+        verifyQuotaLowBalanceThreshold.value = String(config.verify_quota.low_balance_threshold);
+    }
+    const verifyQuotaLowRemainingJobsThreshold = document.getElementById('opsAlertVerifyQuotaLowRemainingJobsThreshold');
+    if (verifyQuotaLowRemainingJobsThreshold) {
+        verifyQuotaLowRemainingJobsThreshold.value = String(config.verify_quota.low_remaining_jobs_threshold);
+    }
+    const verifyQuotaCriticalBalanceThreshold = document.getElementById('opsAlertVerifyQuotaCriticalBalanceThreshold');
+    if (verifyQuotaCriticalBalanceThreshold) {
+        verifyQuotaCriticalBalanceThreshold.value = String(config.verify_quota.critical_balance_threshold);
+    }
+    const verifyQuotaCriticalRemainingJobsThreshold = document.getElementById('opsAlertVerifyQuotaCriticalRemainingJobsThreshold');
+    if (verifyQuotaCriticalRemainingJobsThreshold) {
+        verifyQuotaCriticalRemainingJobsThreshold.value = String(config.verify_quota.critical_remaining_jobs_threshold);
+    }
+    const verifyQuotaMinQueueBufferJobs = document.getElementById('opsAlertVerifyQuotaMinQueueBufferJobs');
+    if (verifyQuotaMinQueueBufferJobs) {
+        verifyQuotaMinQueueBufferJobs.value = String(config.verify_quota.min_queue_buffer_jobs);
+    }
+    const verifyQuotaSweepIntervalMinutes = document.getElementById('opsAlertVerifyQuotaSweepIntervalMinutes');
+    if (verifyQuotaSweepIntervalMinutes) {
+        verifyQuotaSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.verify_quota.sweep_interval_ms || 0) / 60000)));
+    }
+    const verifyQuotaDedupeWindowMinutes = document.getElementById('opsAlertVerifyQuotaDedupeWindowMinutes');
+    if (verifyQuotaDedupeWindowMinutes) {
+        verifyQuotaDedupeWindowMinutes.value = String(config.verify_quota.dedupe_window_minutes);
+    }
+
+    const verifyQueueRecentActivityLookbackHours = document.getElementById('opsAlertVerifyQueueRecentActivityLookbackHours');
+    if (verifyQueueRecentActivityLookbackHours) {
+        verifyQueueRecentActivityLookbackHours.value = String(config.verify_queue.recent_activity_lookback_hours);
+    }
+    const verifyQueueRecentFailureWindowMinutes = document.getElementById('opsAlertVerifyQueueRecentFailureWindowMinutes');
+    if (verifyQueueRecentFailureWindowMinutes) {
+        verifyQueueRecentFailureWindowMinutes.value = String(config.verify_queue.recent_failure_window_minutes);
+    }
+    const verifyQueueSizeThreshold = document.getElementById('opsAlertVerifyQueueSizeThreshold');
+    if (verifyQueueSizeThreshold) {
+        verifyQueueSizeThreshold.value = String(config.verify_queue.queue_size_threshold);
+    }
+    const verifyQueueActiveJobThreshold = document.getElementById('opsAlertVerifyQueueActiveJobThreshold');
+    if (verifyQueueActiveJobThreshold) {
+        verifyQueueActiveJobThreshold.value = String(config.verify_queue.active_job_threshold);
+    }
+    const verifyQueueOldestPendingMinutesThreshold = document.getElementById('opsAlertVerifyQueueOldestPendingMinutesThreshold');
+    if (verifyQueueOldestPendingMinutesThreshold) {
+        verifyQueueOldestPendingMinutesThreshold.value = String(config.verify_queue.oldest_pending_minutes_threshold);
+    }
+    const verifyQueueRecentFailureThreshold = document.getElementById('opsAlertVerifyQueueRecentFailureThreshold');
+    if (verifyQueueRecentFailureThreshold) {
+        verifyQueueRecentFailureThreshold.value = String(config.verify_queue.recent_failure_threshold);
+    }
+    const verifyQueueSweepIntervalMinutes = document.getElementById('opsAlertVerifyQueueSweepIntervalMinutes');
+    if (verifyQueueSweepIntervalMinutes) {
+        verifyQueueSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.verify_queue.sweep_interval_ms || 0) / 60000)));
+    }
+    const verifyQueueDedupeWindowMinutes = document.getElementById('opsAlertVerifyQueueDedupeWindowMinutes');
+    if (verifyQueueDedupeWindowMinutes) {
+        verifyQueueDedupeWindowMinutes.value = String(config.verify_queue.dedupe_window_minutes);
+    }
+
+    const verifyFailureRecentWindowMinutes = document.getElementById('opsAlertVerifyFailureRecentWindowMinutes');
+    if (verifyFailureRecentWindowMinutes) {
+        verifyFailureRecentWindowMinutes.value = String(config.verify_failure.recent_window_minutes);
+    }
+    const verifyFailureMinTotalJobsThreshold = document.getElementById('opsAlertVerifyFailureMinTotalJobsThreshold');
+    if (verifyFailureMinTotalJobsThreshold) {
+        verifyFailureMinTotalJobsThreshold.value = String(config.verify_failure.min_total_jobs_threshold);
+    }
+    const verifyFailureRateThreshold = document.getElementById('opsAlertVerifyFailureRateThreshold');
+    if (verifyFailureRateThreshold) {
+        verifyFailureRateThreshold.value = String(config.verify_failure.failure_rate_threshold);
+    }
+    const verifyFailureAffectedUserThreshold = document.getElementById('opsAlertVerifyFailureAffectedUserThreshold');
+    if (verifyFailureAffectedUserThreshold) {
+        verifyFailureAffectedUserThreshold.value = String(config.verify_failure.affected_user_threshold);
+    }
+    const verifyFailureSweepIntervalMinutes = document.getElementById('opsAlertVerifyFailureSweepIntervalMinutes');
+    if (verifyFailureSweepIntervalMinutes) {
+        verifyFailureSweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.verify_failure.sweep_interval_ms || 0) / 60000)));
+    }
+    const verifyFailureDedupeWindowMinutes = document.getElementById('opsAlertVerifyFailureDedupeWindowMinutes');
+    if (verifyFailureDedupeWindowMinutes) {
+        verifyFailureDedupeWindowMinutes.value = String(config.verify_failure.dedupe_window_minutes);
+    }
+    const paymentGatewayWindowMinutes = document.getElementById('opsAlertPaymentGatewayWindowMinutes');
+    if (paymentGatewayWindowMinutes) {
+        paymentGatewayWindowMinutes.value = String(config.payment_gateway.window_minutes);
+    }
+    const paymentGatewayFailedOrdersThreshold = document.getElementById('opsAlertPaymentGatewayFailedOrdersThreshold');
+    if (paymentGatewayFailedOrdersThreshold) {
+        paymentGatewayFailedOrdersThreshold.value = String(config.payment_gateway.min_failed_orders);
+    }
+    const paymentGatewayFailedRatioThreshold = document.getElementById('opsAlertPaymentGatewayFailedRatioThreshold');
+    if (paymentGatewayFailedRatioThreshold) {
+        paymentGatewayFailedRatioThreshold.value = String(config.payment_gateway.min_failed_ratio_percent);
+    }
+    const paymentGatewayWebhookSuccessRateThreshold = document.getElementById('opsAlertPaymentGatewayWebhookSuccessRateThreshold');
+    if (paymentGatewayWebhookSuccessRateThreshold) {
+        paymentGatewayWebhookSuccessRateThreshold.value = String(config.payment_gateway.max_webhook_success_rate_percent);
+    }
+    const paymentGatewayQuerySuccessRateThreshold = document.getElementById('opsAlertPaymentGatewayQuerySuccessRateThreshold');
+    if (paymentGatewayQuerySuccessRateThreshold) {
+        paymentGatewayQuerySuccessRateThreshold.value = String(config.payment_gateway.max_query_success_rate_percent);
+    }
+    const paymentGatewayWebhook5xxThreshold = document.getElementById('opsAlertPaymentGatewayWebhook5xxThreshold');
+    if (paymentGatewayWebhook5xxThreshold) {
+        paymentGatewayWebhook5xxThreshold.value = String(config.payment_gateway.min_webhook_5xx_count);
+    }
+    const paymentGatewayQuery5xxThreshold = document.getElementById('opsAlertPaymentGatewayQuery5xxThreshold');
+    if (paymentGatewayQuery5xxThreshold) {
+        paymentGatewayQuery5xxThreshold.value = String(config.payment_gateway.min_query_5xx_count);
+    }
+    const paymentGatewaySweepIntervalMinutes = document.getElementById('opsAlertPaymentGatewaySweepIntervalMinutes');
+    if (paymentGatewaySweepIntervalMinutes) {
+        paymentGatewaySweepIntervalMinutes.value = String(Math.max(1, Math.round(Number(config.payment_gateway.sweep_interval_ms || 0) / 60000)));
+    }
+    const paymentGatewayDedupeWindowMinutes = document.getElementById('opsAlertPaymentGatewayDedupeWindowMinutes');
+    if (paymentGatewayDedupeWindowMinutes) {
+        paymentGatewayDedupeWindowMinutes.value = String(config.payment_gateway.dedupe_window_minutes);
     }
 
     applyOpsAlertOverview(config);
@@ -4465,6 +5193,7 @@ function getOpsAlertMonitorItemAction(category = {}, item = {}) {
         payment_config_changed: { target: 'admin-audit-monitor', label: '查看审计', icon: 'fas fa-user-shield' },
         payment_config_incident: { target: 'admin-audit-monitor', label: '排查配置风险', icon: 'fas fa-user-shield' },
         ticket_sla_overdue: { target: 'tickets-pending', label: '处理工单', icon: 'fas fa-ticket-alt' },
+        ticket_sla_summary: { target: 'tickets-pending', label: '处理工单', icon: 'fas fa-ticket-alt' },
         shop_inventory_low: { target: 'shop-inventory', label: '去补货', icon: 'fas fa-box-open' },
         shop_inventory_empty: { target: 'shop-inventory', label: '去补货', icon: 'fas fa-box-open' },
         shop_order_delivery_failed: { target: 'shop-fulfillment', label: '处理履约', icon: 'fas fa-truck-ramp-box' },
@@ -6584,6 +7313,18 @@ function collectOpsAlertConfigFromForm() {
         },
         wallet_recharge_success: {
             ...currentConfig.wallet_recharge_success
+        },
+        tickets: {
+            ...currentConfig.tickets
+        },
+        verify_quota: {
+            ...currentConfig.verify_quota
+        },
+        verify_queue: {
+            ...currentConfig.verify_queue
+        },
+        verify_failure: {
+            ...currentConfig.verify_failure
         }
     };
 
@@ -6899,6 +7640,199 @@ function collectOpsAlertConfigFromForm() {
     nextConfig.wallet_recharge_success.summary_max_items = toWholeNumber(
         document.getElementById('opsAlertWalletRechargeSuccessSummaryMaxItems')?.value,
         currentConfig.wallet_recharge_success.summary_max_items
+    );
+    nextConfig.tickets.enabled = document.getElementById('opsAlertTicketsEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.tickets.enabled;
+    nextConfig.tickets.sweep_interval_ms = Math.max(
+        10000,
+        toWholeNumber(
+            document.getElementById('opsAlertTicketsSweepIntervalMinutes')?.value,
+            Math.max(1, Math.round(Number(currentConfig.tickets.sweep_interval_ms || 0) / 60000))
+        ) * 60 * 1000
+    );
+    nextConfig.tickets.pending_overdue_minutes = toWholeNumber(
+        document.getElementById('opsAlertTicketsPendingOverdueMinutes')?.value,
+        currentConfig.tickets.pending_overdue_minutes
+    );
+    nextConfig.tickets.critical_overdue_minutes = toWholeNumber(
+        document.getElementById('opsAlertTicketsCriticalOverdueMinutes')?.value,
+        currentConfig.tickets.critical_overdue_minutes
+    );
+    nextConfig.tickets.state_lookback_minutes = toWholeNumber(
+        document.getElementById('opsAlertTicketsStateLookbackMinutes')?.value,
+        currentConfig.tickets.state_lookback_minutes
+    );
+    nextConfig.tickets.dedupe_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertTicketsDedupeWindowMinutes')?.value,
+        currentConfig.tickets.dedupe_window_minutes
+    );
+    nextConfig.tickets.work_hours_only_enabled = document.getElementById('opsAlertTicketsWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.tickets.work_hours_only_enabled;
+    nextConfig.tickets.summary_enabled = document.getElementById('opsAlertTicketsSummaryEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.tickets.summary_enabled;
+    nextConfig.tickets.summary_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertTicketsSummaryWindowMinutes')?.value,
+        currentConfig.tickets.summary_window_minutes
+    );
+    nextConfig.tickets.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+        document.getElementById('opsAlertTicketsSummaryScheduleMode')?.value,
+        currentConfig.tickets.summary_schedule_mode
+    );
+    nextConfig.tickets.summary_hourly_minute = toWholeNumber(
+        document.getElementById('opsAlertTicketsSummaryHourlyMinute')?.value,
+        currentConfig.tickets.summary_hourly_minute
+    );
+    nextConfig.tickets.summary_daily_hour = toWholeNumber(
+        document.getElementById('opsAlertTicketsSummaryDailyHour')?.value,
+        currentConfig.tickets.summary_daily_hour
+    );
+    nextConfig.tickets.summary_daily_minute = toWholeNumber(
+        document.getElementById('opsAlertTicketsSummaryDailyMinute')?.value,
+        currentConfig.tickets.summary_daily_minute
+    );
+    nextConfig.tickets.summary_max_items = toWholeNumber(
+        document.getElementById('opsAlertTicketsSummaryMaxItems')?.value,
+        currentConfig.tickets.summary_max_items
+    );
+    nextConfig.verify_quota.enabled = document.getElementById('opsAlertVerifyQuotaEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.verify_quota.enabled;
+    nextConfig.verify_quota.low_balance_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaLowBalanceThreshold')?.value,
+        currentConfig.verify_quota.low_balance_threshold
+    );
+    nextConfig.verify_quota.low_remaining_jobs_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaLowRemainingJobsThreshold')?.value,
+        currentConfig.verify_quota.low_remaining_jobs_threshold
+    );
+    nextConfig.verify_quota.critical_balance_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaCriticalBalanceThreshold')?.value,
+        currentConfig.verify_quota.critical_balance_threshold
+    );
+    nextConfig.verify_quota.critical_remaining_jobs_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaCriticalRemainingJobsThreshold')?.value,
+        currentConfig.verify_quota.critical_remaining_jobs_threshold
+    );
+    nextConfig.verify_quota.min_queue_buffer_jobs = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaMinQueueBufferJobs')?.value,
+        currentConfig.verify_quota.min_queue_buffer_jobs
+    );
+    nextConfig.verify_quota.sweep_interval_ms = Math.max(
+        10000,
+        toWholeNumber(
+            document.getElementById('opsAlertVerifyQuotaSweepIntervalMinutes')?.value,
+            Math.max(1, Math.round(Number(currentConfig.verify_quota.sweep_interval_ms || 0) / 60000))
+        ) * 60 * 1000
+    );
+    nextConfig.verify_quota.dedupe_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertVerifyQuotaDedupeWindowMinutes')?.value,
+        currentConfig.verify_quota.dedupe_window_minutes
+    );
+    nextConfig.verify_queue.enabled = document.getElementById('opsAlertVerifyQueueEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.verify_queue.enabled;
+    nextConfig.verify_queue.recent_activity_lookback_hours = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueRecentActivityLookbackHours')?.value,
+        currentConfig.verify_queue.recent_activity_lookback_hours
+    );
+    nextConfig.verify_queue.recent_failure_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueRecentFailureWindowMinutes')?.value,
+        currentConfig.verify_queue.recent_failure_window_minutes
+    );
+    nextConfig.verify_queue.queue_size_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueSizeThreshold')?.value,
+        currentConfig.verify_queue.queue_size_threshold
+    );
+    nextConfig.verify_queue.active_job_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueActiveJobThreshold')?.value,
+        currentConfig.verify_queue.active_job_threshold
+    );
+    nextConfig.verify_queue.oldest_pending_minutes_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueOldestPendingMinutesThreshold')?.value,
+        currentConfig.verify_queue.oldest_pending_minutes_threshold
+    );
+    nextConfig.verify_queue.recent_failure_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueRecentFailureThreshold')?.value,
+        currentConfig.verify_queue.recent_failure_threshold
+    );
+    nextConfig.verify_queue.sweep_interval_ms = Math.max(
+        10000,
+        toWholeNumber(
+            document.getElementById('opsAlertVerifyQueueSweepIntervalMinutes')?.value,
+            Math.max(1, Math.round(Number(currentConfig.verify_queue.sweep_interval_ms || 0) / 60000))
+        ) * 60 * 1000
+    );
+    nextConfig.verify_queue.dedupe_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertVerifyQueueDedupeWindowMinutes')?.value,
+        currentConfig.verify_queue.dedupe_window_minutes
+    );
+    nextConfig.verify_failure.enabled = document.getElementById('opsAlertVerifyFailureEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.verify_failure.enabled;
+    nextConfig.verify_failure.recent_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureRecentWindowMinutes')?.value,
+        currentConfig.verify_failure.recent_window_minutes
+    );
+    nextConfig.verify_failure.min_total_jobs_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureMinTotalJobsThreshold')?.value,
+        currentConfig.verify_failure.min_total_jobs_threshold
+    );
+    nextConfig.verify_failure.failure_rate_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureRateThreshold')?.value,
+        currentConfig.verify_failure.failure_rate_threshold
+    );
+    nextConfig.verify_failure.affected_user_threshold = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureAffectedUserThreshold')?.value,
+        currentConfig.verify_failure.affected_user_threshold
+    );
+    nextConfig.verify_failure.sweep_interval_ms = Math.max(
+        10000,
+        toWholeNumber(
+            document.getElementById('opsAlertVerifyFailureSweepIntervalMinutes')?.value,
+            Math.max(1, Math.round(Number(currentConfig.verify_failure.sweep_interval_ms || 0) / 60000))
+        ) * 60 * 1000
+    );
+    nextConfig.verify_failure.dedupe_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertVerifyFailureDedupeWindowMinutes')?.value,
+        currentConfig.verify_failure.dedupe_window_minutes
+    );
+    nextConfig.payment_gateway.enabled = document.getElementById('opsAlertPaymentGatewayEnabledToggle')?.classList.contains('active')
+        ?? currentConfig.payment_gateway.enabled;
+    nextConfig.payment_gateway.window_minutes = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayWindowMinutes')?.value,
+        currentConfig.payment_gateway.window_minutes
+    );
+    nextConfig.payment_gateway.min_failed_orders = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayFailedOrdersThreshold')?.value,
+        currentConfig.payment_gateway.min_failed_orders
+    );
+    nextConfig.payment_gateway.min_failed_ratio_percent = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayFailedRatioThreshold')?.value,
+        currentConfig.payment_gateway.min_failed_ratio_percent
+    );
+    nextConfig.payment_gateway.max_webhook_success_rate_percent = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayWebhookSuccessRateThreshold')?.value,
+        currentConfig.payment_gateway.max_webhook_success_rate_percent
+    );
+    nextConfig.payment_gateway.max_query_success_rate_percent = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayQuerySuccessRateThreshold')?.value,
+        currentConfig.payment_gateway.max_query_success_rate_percent
+    );
+    nextConfig.payment_gateway.min_webhook_5xx_count = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayWebhook5xxThreshold')?.value,
+        currentConfig.payment_gateway.min_webhook_5xx_count
+    );
+    nextConfig.payment_gateway.min_query_5xx_count = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayQuery5xxThreshold')?.value,
+        currentConfig.payment_gateway.min_query_5xx_count
+    );
+    nextConfig.payment_gateway.sweep_interval_ms = Math.max(
+        10000,
+        toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewaySweepIntervalMinutes')?.value,
+            Math.max(1, Math.round(Number(currentConfig.payment_gateway.sweep_interval_ms || 0) / 60000))
+        ) * 60 * 1000
+    );
+    nextConfig.payment_gateway.dedupe_window_minutes = toWholeNumber(
+        document.getElementById('opsAlertPaymentGatewayDedupeWindowMinutes')?.value,
+        currentConfig.payment_gateway.dedupe_window_minutes
     );
 
     return normalizeOpsAlertConfig(nextConfig);
@@ -8586,6 +9520,83 @@ function toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled() {
 
 function handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange() {
     applyOpsAlertWalletRechargeSuccessControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertTicketsEnabled() {
+    const toggleEl = document.getElementById('opsAlertTicketsEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertTicketsControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertTicketsSummaryEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertTicketsEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertTicketsSummaryEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertTicketsControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertTicketsWorkHoursOnlyEnabled() {
+    const monitorToggleEl = document.getElementById('opsAlertTicketsEnabledToggle');
+    const toggleEl = document.getElementById('opsAlertTicketsWorkHoursOnlyEnabledToggle');
+    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertTicketsControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function handleOpsAlertTicketsSummaryScheduleModeChange() {
+    applyOpsAlertTicketsControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertVerifyQuotaEnabled() {
+    const toggleEl = document.getElementById('opsAlertVerifyQuotaEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertVerifyQuotaControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertVerifyQueueEnabled() {
+    const toggleEl = document.getElementById('opsAlertVerifyQueueEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertVerifyQueueControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertVerifyFailureEnabled() {
+    const toggleEl = document.getElementById('opsAlertVerifyFailureEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertVerifyFailureControls(collectOpsAlertConfigFromForm());
+    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+}
+
+function toggleOpsAlertPaymentGatewayEnabled() {
+    const toggleEl = document.getElementById('opsAlertPaymentGatewayEnabledToggle');
+    if (!toggleEl) return;
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertPaymentGatewayControls(collectOpsAlertConfigFromForm());
     applyOpsAlertOverview(collectOpsAlertConfigFromForm());
 }
 
@@ -10833,6 +11844,14 @@ window.toggleOpsAlertWalletRechargeSuccessEnabled = toggleOpsAlertWalletRecharge
 window.toggleOpsAlertWalletRechargeSuccessSummaryEnabled = toggleOpsAlertWalletRechargeSuccessSummaryEnabled;
 window.toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled = toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled;
 window.handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange = handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange;
+window.toggleOpsAlertTicketsEnabled = toggleOpsAlertTicketsEnabled;
+window.toggleOpsAlertTicketsSummaryEnabled = toggleOpsAlertTicketsSummaryEnabled;
+window.toggleOpsAlertTicketsWorkHoursOnlyEnabled = toggleOpsAlertTicketsWorkHoursOnlyEnabled;
+window.handleOpsAlertTicketsSummaryScheduleModeChange = handleOpsAlertTicketsSummaryScheduleModeChange;
+window.toggleOpsAlertVerifyQuotaEnabled = toggleOpsAlertVerifyQuotaEnabled;
+window.toggleOpsAlertVerifyQueueEnabled = toggleOpsAlertVerifyQueueEnabled;
+window.toggleOpsAlertVerifyFailureEnabled = toggleOpsAlertVerifyFailureEnabled;
+window.toggleOpsAlertPaymentGatewayEnabled = toggleOpsAlertPaymentGatewayEnabled;
 window.selectOpsAlertUnifiedSummaryTargets = selectOpsAlertUnifiedSummaryTargets;
 window.handleOpsAlertUnifiedSummaryTargetChange = handleOpsAlertUnifiedSummaryTargetChange;
 window.handleOpsAlertUnifiedSummaryDraftChange = handleOpsAlertUnifiedSummaryDraftChange;

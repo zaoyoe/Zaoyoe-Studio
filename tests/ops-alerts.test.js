@@ -504,6 +504,75 @@ test('enqueueOpsAlertJob aggregates inventory low and empty alerts into a single
     assert.equal(state.jobs[0].title, '库存与补货汇总（2 条库存告警）');
 });
 
+test('enqueueOpsAlertJob aggregates overdue tickets into a single summary job when summary mode is enabled', async () => {
+    const state = { jobs: [] };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            tickets: {
+                enabled: true,
+                summary_enabled: true,
+                summary_window_minutes: 120,
+                summary_max_items: 5
+            }
+        }
+    });
+
+    await enqueueOpsAlertJob(supabase, {
+        alertType: 'ticket_sla_overdue',
+        severity: 'warning',
+        title: '工单超时未处理（ticket-a1）',
+        content: '工单 ticket-a1 已超过 120 分钟仍未处理。',
+        payload: {
+            ticket_id: 'ticket-a1',
+            target_id: 'ticket-a1',
+            order_id: 'order-a1',
+            user_id: 'user-a1',
+            wait_minutes: 150,
+            wait_label: '2 小时 30 分钟',
+            ticket_status: 'PENDING',
+            reason: '卡密未到账',
+            updated_at: '2026-03-27T06:10:00.000Z',
+            entry_path: '售后工单 -> 待处理 -> 工单详情'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T06:10:00.000Z')
+    });
+    const second = await enqueueOpsAlertJob(supabase, {
+        alertType: 'ticket_sla_overdue',
+        severity: 'critical',
+        title: '工单超时未处理（ticket-b2）',
+        content: '工单 ticket-b2 已超过 120 分钟仍未处理。',
+        payload: {
+            ticket_id: 'ticket-b2',
+            target_id: 'ticket-b2',
+            order_id: 'order-b2',
+            user_id: 'user-b2',
+            wait_minutes: 320,
+            wait_label: '5 小时 20 分钟',
+            ticket_status: 'PENDING',
+            reason: '用户重复催单',
+            updated_at: '2026-03-27T06:45:00.000Z',
+            entry_path: '售后工单 -> 待处理 -> 工单详情'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-27T06:45:00.000Z')
+    });
+
+    assert.equal(second.queued, true);
+    assert.equal(second.summary, true);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].alert_type, 'ticket_sla_summary');
+    assert.equal(state.jobs[0].severity, 'critical');
+    assert.equal(state.jobs[0].payload.item_count, 2);
+    assert.equal(state.jobs[0].payload.items.length, 2);
+    assert.equal(state.jobs[0].payload.summary_window_minutes, 120);
+    assert.equal(state.jobs[0].payload.summary_max_items, 5);
+    assert.equal(state.jobs[0].title, '工单超时汇总（2 条超时工单）');
+});
+
 test('enqueueOpsAlertJob schedules customer chat summaries on the hourly fixed minute when configured', async () => {
     const state = { jobs: [] };
     const supabase = createSupabaseStub(state);
@@ -1495,6 +1564,57 @@ test('buildExternalAlertText renders ticket SLA recovery details', () => {
     assert.match(text, /当前状态：已解决/);
     assert.match(text, /持续时长：42 分钟/);
     assert.match(text, /处理入口：售后工单 -> 已处理 -> 工单详情/);
+});
+
+test('buildExternalAlertText renders ticket SLA summary details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'ticket_sla_summary',
+        severity: 'critical',
+        title: '工单超时汇总（2 条超时工单）',
+        payload: {
+            window_start_at: '2026-03-27T06:00:00.000Z',
+            window_end_at: '2026-03-27T08:00:00.000Z',
+            item_count: 2,
+            summary_max_items: 5,
+            entry_path: '售后工单 -> 待处理 -> 工单详情',
+            items: [
+                {
+                    alert_type: 'ticket_sla_overdue',
+                    payload: {
+                        ticket_id: 'ticket-a1',
+                        order_id: 'order-a1',
+                        user_id: 'user-a1',
+                        wait_label: '2 小时 30 分钟',
+                        ticket_status: 'PENDING',
+                        reason: '卡密未到账',
+                        responsible_label: '未分配',
+                        updated_at: '2026-03-27T06:10:00.000Z'
+                    }
+                },
+                {
+                    alert_type: 'ticket_sla_overdue',
+                    payload: {
+                        ticket_id: 'ticket-b2',
+                        order_id: 'order-b2',
+                        user_id: 'user-b2',
+                        wait_label: '5 小时 20 分钟',
+                        ticket_status: 'PENDING',
+                        reason: '用户重复催单',
+                        responsible_label: '夜班值守',
+                        updated_at: '2026-03-27T06:45:00.000Z'
+                    }
+                }
+            ]
+        }
+    });
+
+    assert.match(text, /站外告警汇总/);
+    assert.match(text, /工单超时汇总/);
+    assert.match(text, /累计超时工单：2 条/);
+    assert.match(text, /1\. ticket-a1 · 已等待 2 小时 30 分钟/);
+    assert.match(text, /2\. ticket-b2 · 已等待 5 小时 20 分钟/);
+    assert.match(text, /当前负责人：夜班值守/);
+    assert.match(text, /处理入口：售后工单 -> 待处理 -> 工单详情/);
 });
 
 test('buildExternalAlertText renders shop inventory low details', () => {

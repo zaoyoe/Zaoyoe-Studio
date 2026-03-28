@@ -508,6 +508,27 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-ops-alert-wallet-recharge-success-work-hours-only':
                 window.toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled?.();
                 break;
+            case 'settings-toggle-ops-alert-tickets-enabled':
+                window.toggleOpsAlertTicketsEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-tickets-work-hours-only':
+                window.toggleOpsAlertTicketsWorkHoursOnlyEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-tickets-summary-enabled':
+                window.toggleOpsAlertTicketsSummaryEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-verify-quota-enabled':
+                window.toggleOpsAlertVerifyQuotaEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-verify-queue-enabled':
+                window.toggleOpsAlertVerifyQueueEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-verify-failure-enabled':
+                window.toggleOpsAlertVerifyFailureEnabled?.();
+                break;
+            case 'settings-toggle-ops-alert-payment-gateway-enabled':
+                window.toggleOpsAlertPaymentGatewayEnabled?.();
+                break;
             case 'settings-select-ops-alert-unified-summary-targets':
                 window.selectOpsAlertUnifiedSummaryTargets?.(actionEl.dataset.opsAlertSummaryTargetPreset);
                 break;
@@ -1319,6 +1340,9 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'settings-change-ops-alert-wallet-recharge-success-summary-schedule-mode':
                 window.handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange?.();
+                break;
+            case 'settings-change-ops-alert-tickets-summary-schedule-mode':
+                window.handleOpsAlertTicketsSummaryScheduleModeChange?.();
                 break;
             case 'settings-change-ops-alert-unified-summary-target':
                 window.handleOpsAlertUnifiedSummaryTargetChange?.();

@@ -139,7 +139,7 @@ function createSupabaseStub(state = {}) {
     };
 }
 
-function createOpsRuntime() {
+function createOpsRuntime(configOverrides = {}) {
     return {
         config: normalizeOpsAlertsConfig({
             enabled: true,
@@ -153,7 +153,8 @@ function createOpsRuntime() {
                     enabled: true,
                     minimum_severity: 'warning'
                 }
-            }
+            },
+            ...configOverrides
         }),
         secrets: {
             telegram_bot_token: 'telegram-token',
@@ -253,4 +254,72 @@ test('runVerifyQuotaLowSweep enqueues low quota alerts with stable dedupe per se
     assert.equal(second.queued, 0);
     assert.equal(second.deduped, 1);
     assert.equal(state.jobs.length, 1);
+});
+
+test('runVerifyQuotaLowSweep prefers ops alert runtime quota config over legacy verify settings config', async () => {
+    const state = {
+        jobs: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime({
+        verify_quota: {
+            low_balance_threshold: 30,
+            low_remaining_jobs_threshold: 30,
+            critical_balance_threshold: 10,
+            critical_remaining_jobs_threshold: 10,
+            min_queue_buffer_jobs: 0,
+            dedupe_window_minutes: 120
+        }
+    });
+
+    const fetchImpl = async (input) => {
+        const url = String(input || '');
+        if (url === 'https://verify.test/api/balance') {
+            return new Response(JSON.stringify({
+                balance: 28,
+                total_used: 324,
+                cost_per_job: 1,
+                name: 'primary-key'
+            }), {
+                status: 200,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        }
+
+        if (url === 'https://verify.test/api/queue') {
+            return new Response(JSON.stringify({
+                queue_size: 0,
+                running_jobs: 0
+            }), {
+                status: 200,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+    };
+
+    const result = await runVerifyQuotaLowSweep(supabase, {
+        runtime,
+        fetchImpl,
+        verifyConfig: {
+            apiKey: 'verify-api-key',
+            apiBaseUrl: 'https://verify.test',
+            monitorConfig: {
+                low_balance_threshold: 5,
+                low_remaining_jobs_threshold: 5,
+                critical_balance_threshold: 2,
+                critical_remaining_jobs_threshold: 2
+            }
+        }
+    });
+
+    assert.equal(result.low_quota_count, 1);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].payload.low_balance_threshold, 30);
+    assert.equal(state.jobs[0].payload.low_remaining_jobs_threshold, 30);
 });

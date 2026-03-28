@@ -180,6 +180,81 @@ function createDefaultState() {
                 summary_hourly_minute: 0,
                 summary_daily_hour: 9,
                 summary_daily_minute: 0
+            },
+            tickets: {
+                enabled: true,
+                sweep_interval_ms: 10 * 60 * 1000,
+                pending_overdue_minutes: 120,
+                critical_overdue_minutes: 12 * 60,
+                state_lookback_minutes: 24 * 60,
+                dedupe_window_minutes: 60,
+                page_size: 500,
+                max_pages: 10,
+                work_hours_only_enabled: false,
+                summary_enabled: false,
+                summary_window_minutes: 60,
+                summary_max_items: 10,
+                summary_schedule_mode: 'rolling_window',
+                summary_hourly_minute: 0,
+                summary_daily_hour: 9,
+                summary_daily_minute: 0
+            },
+            verify_quota: {
+                enabled: true,
+                sweep_interval_ms: 15 * 60 * 1000,
+                request_timeout_ms: 10000,
+                low_balance_threshold: 20,
+                low_remaining_jobs_threshold: 20,
+                critical_balance_threshold: 5,
+                critical_remaining_jobs_threshold: 5,
+                min_queue_buffer_jobs: 5,
+                dedupe_window_minutes: 6 * 60
+            },
+            verify_queue: {
+                enabled: true,
+                sweep_interval_ms: 10 * 60 * 1000,
+                request_timeout_ms: 10000,
+                recent_activity_lookback_hours: 12,
+                recent_failure_window_minutes: 30,
+                queue_size_threshold: 10,
+                active_job_threshold: 8,
+                oldest_pending_minutes_threshold: 20,
+                recent_failure_threshold: 4,
+                dedupe_window_minutes: 30,
+                page_size: 500,
+                max_pages: 10
+            },
+            verify_failure: {
+                enabled: true,
+                sweep_interval_ms: 10 * 60 * 1000,
+                recent_window_minutes: 30,
+                min_total_jobs_threshold: 6,
+                failure_rate_threshold: 60,
+                affected_user_threshold: 3,
+                dedupe_window_minutes: 15,
+                page_size: 500,
+                max_pages: 10
+            },
+            payment_gateway: {
+                enabled: true,
+                window_minutes: 30,
+                state_lookback_minutes: 24 * 60,
+                sweep_interval_ms: 5 * 60 * 1000,
+                dedupe_window_minutes: 60,
+                min_order_volume: 6,
+                min_review_orders: 4,
+                min_failed_orders: 3,
+                min_webhook_volume: 5,
+                min_query_volume: 5,
+                max_paid_rate_percent: 65,
+                min_review_ratio_percent: 45,
+                min_failed_ratio_percent: 25,
+                max_webhook_success_rate_percent: 70,
+                max_query_success_rate_percent: 60,
+                min_webhook_5xx_count: 3,
+                min_query_5xx_count: 3,
+                page_size: 500,
+                max_pages: 20
             }
         },
         secretStatus: {
@@ -254,6 +329,11 @@ function createNormalizedConfig(raw) {
     const customerChatMessage = source.customer_chat_message && typeof source.customer_chat_message === 'object' ? source.customer_chat_message : {};
     const shopPurchaseSuccess = source.shop_purchase_success && typeof source.shop_purchase_success === 'object' ? source.shop_purchase_success : {};
     const walletRechargeSuccess = source.wallet_recharge_success && typeof source.wallet_recharge_success === 'object' ? source.wallet_recharge_success : {};
+    const tickets = source.tickets && typeof source.tickets === 'object' ? source.tickets : {};
+    const verifyQuota = source.verify_quota && typeof source.verify_quota === 'object' ? source.verify_quota : {};
+    const verifyQueue = source.verify_queue && typeof source.verify_queue === 'object' ? source.verify_queue : {};
+    const verifyFailure = source.verify_failure && typeof source.verify_failure === 'object' ? source.verify_failure : {};
+    const paymentGateway = source.payment_gateway && typeof source.payment_gateway === 'object' ? source.payment_gateway : {};
     const routing = source.routing && typeof source.routing === 'object' ? source.routing : {};
     const routingCustomerChatMessage = routing.customer_chat_message && typeof routing.customer_chat_message === 'object' ? routing.customer_chat_message : {};
     const routingShopPurchaseSuccess = routing.shop_purchase_success && typeof routing.shop_purchase_success === 'object' ? routing.shop_purchase_success : {};
@@ -447,6 +527,81 @@ function createNormalizedConfig(raw) {
             summary_hourly_minute: Math.min(59, Math.max(0, Number(walletRechargeSuccess.summary_hourly_minute || 0) || 0)),
             summary_daily_hour: Math.min(23, Math.max(0, Number(walletRechargeSuccess.summary_daily_hour ?? 9) || 9)),
             summary_daily_minute: Math.min(59, Math.max(0, Number(walletRechargeSuccess.summary_daily_minute || 0) || 0))
+        },
+        tickets: {
+            enabled: normalizeBoolean(tickets.enabled, true),
+            sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(tickets.sweep_interval_ms || 10 * 60 * 1000) || (10 * 60 * 1000))),
+            pending_overdue_minutes: Math.min(14 * 24 * 60, Math.max(5, Number(tickets.pending_overdue_minutes || 120) || 120)),
+            critical_overdue_minutes: Math.min(30 * 24 * 60, Math.max(30, Number(tickets.critical_overdue_minutes || 12 * 60) || (12 * 60))),
+            state_lookback_minutes: Math.min(7 * 24 * 60, Math.max(30, Number(tickets.state_lookback_minutes || 24 * 60) || (24 * 60))),
+            dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(tickets.dedupe_window_minutes || 60) || 60)),
+            page_size: Math.min(5000, Math.max(50, Number(tickets.page_size || 500) || 500)),
+            max_pages: Math.min(100, Math.max(1, Number(tickets.max_pages || 10) || 10)),
+            work_hours_only_enabled: normalizeBoolean(tickets.work_hours_only_enabled, false),
+            summary_enabled: normalizeBoolean(tickets.summary_enabled, false),
+            summary_window_minutes: Math.min(24 * 60, Math.max(5, Number(tickets.summary_window_minutes || 60) || 60)),
+            summary_max_items: Math.min(50, Math.max(1, Number(tickets.summary_max_items || 10) || 10)),
+            summary_schedule_mode: normalizeSummaryScheduleMode(tickets.summary_schedule_mode, 'rolling_window'),
+            summary_hourly_minute: Math.min(59, Math.max(0, Number(tickets.summary_hourly_minute || 0) || 0)),
+            summary_daily_hour: Math.min(23, Math.max(0, Number(tickets.summary_daily_hour ?? 9) || 9)),
+            summary_daily_minute: Math.min(59, Math.max(0, Number(tickets.summary_daily_minute || 0) || 0))
+        },
+        verify_quota: {
+            enabled: normalizeBoolean(verifyQuota.enabled, true),
+            sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(verifyQuota.sweep_interval_ms || 15 * 60 * 1000) || (15 * 60 * 1000))),
+            request_timeout_ms: Math.min(60 * 1000, Math.max(1000, Number(verifyQuota.request_timeout_ms || 10000) || 10000)),
+            low_balance_threshold: Math.min(1000000, Math.max(0, Number(verifyQuota.low_balance_threshold || 20) || 20)),
+            low_remaining_jobs_threshold: Math.min(1000000, Math.max(0, Number(verifyQuota.low_remaining_jobs_threshold || 20) || 20)),
+            critical_balance_threshold: Math.min(1000000, Math.max(0, Number(verifyQuota.critical_balance_threshold || 5) || 5)),
+            critical_remaining_jobs_threshold: Math.min(1000000, Math.max(0, Number(verifyQuota.critical_remaining_jobs_threshold || 5) || 5)),
+            min_queue_buffer_jobs: Math.min(1000000, Math.max(0, Number(verifyQuota.min_queue_buffer_jobs || 5) || 5)),
+            dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(verifyQuota.dedupe_window_minutes || 6 * 60) || (6 * 60)))
+        },
+        verify_queue: {
+            enabled: normalizeBoolean(verifyQueue.enabled, true),
+            sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(verifyQueue.sweep_interval_ms || 10 * 60 * 1000) || (10 * 60 * 1000))),
+            request_timeout_ms: Math.min(60 * 1000, Math.max(1000, Number(verifyQueue.request_timeout_ms || 10000) || 10000)),
+            recent_activity_lookback_hours: Math.min(72, Math.max(1, Number(verifyQueue.recent_activity_lookback_hours || 12) || 12)),
+            recent_failure_window_minutes: Math.min(24 * 60, Math.max(5, Number(verifyQueue.recent_failure_window_minutes || 30) || 30)),
+            queue_size_threshold: Math.min(100000, Math.max(1, Number(verifyQueue.queue_size_threshold || 10) || 10)),
+            active_job_threshold: Math.min(100000, Math.max(1, Number(verifyQueue.active_job_threshold || 8) || 8)),
+            oldest_pending_minutes_threshold: Math.min(24 * 60, Math.max(1, Number(verifyQueue.oldest_pending_minutes_threshold || 20) || 20)),
+            recent_failure_threshold: Math.min(100000, Math.max(1, Number(verifyQueue.recent_failure_threshold || 4) || 4)),
+            dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(verifyQueue.dedupe_window_minutes || 30) || 30)),
+            page_size: Math.min(5000, Math.max(50, Number(verifyQueue.page_size || 500) || 500)),
+            max_pages: Math.min(100, Math.max(1, Number(verifyQueue.max_pages || 10) || 10))
+        },
+        verify_failure: {
+            enabled: normalizeBoolean(verifyFailure.enabled, true),
+            sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(verifyFailure.sweep_interval_ms || 10 * 60 * 1000) || (10 * 60 * 1000))),
+            recent_window_minutes: Math.min(24 * 60, Math.max(5, Number(verifyFailure.recent_window_minutes || 30) || 30)),
+            min_total_jobs_threshold: Math.min(100000, Math.max(1, Number(verifyFailure.min_total_jobs_threshold || 6) || 6)),
+            failure_rate_threshold: Math.min(100, Math.max(1, Number(verifyFailure.failure_rate_threshold || 60) || 60)),
+            affected_user_threshold: Math.min(100000, Math.max(1, Number(verifyFailure.affected_user_threshold || 3) || 3)),
+            dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(verifyFailure.dedupe_window_minutes || 15) || 15)),
+            page_size: Math.min(5000, Math.max(50, Number(verifyFailure.page_size || 500) || 500)),
+            max_pages: Math.min(100, Math.max(1, Number(verifyFailure.max_pages || 10) || 10))
+        },
+        payment_gateway: {
+            enabled: normalizeBoolean(paymentGateway.enabled, true),
+            window_minutes: Math.min(24 * 60, Math.max(5, Number(paymentGateway.window_minutes || 30) || 30)),
+            state_lookback_minutes: Math.min(7 * 24 * 60, Math.max(30, Number(paymentGateway.state_lookback_minutes || 24 * 60) || (24 * 60))),
+            sweep_interval_ms: Math.min(60 * 60 * 1000, Math.max(10000, Number(paymentGateway.sweep_interval_ms || 5 * 60 * 1000) || (5 * 60 * 1000))),
+            dedupe_window_minutes: Math.min(24 * 60, Math.max(1, Number(paymentGateway.dedupe_window_minutes || 60) || 60)),
+            min_order_volume: Math.min(200, Math.max(1, Number(paymentGateway.min_order_volume || 6) || 6)),
+            min_review_orders: Math.min(100, Math.max(1, Number(paymentGateway.min_review_orders || 4) || 4)),
+            min_failed_orders: Math.min(100, Math.max(1, Number(paymentGateway.min_failed_orders || 3) || 3)),
+            min_webhook_volume: Math.min(500, Math.max(1, Number(paymentGateway.min_webhook_volume || 5) || 5)),
+            min_query_volume: Math.min(500, Math.max(1, Number(paymentGateway.min_query_volume || 5) || 5)),
+            max_paid_rate_percent: Math.min(100, Math.max(1, Number(paymentGateway.max_paid_rate_percent || 65) || 65)),
+            min_review_ratio_percent: Math.min(100, Math.max(1, Number(paymentGateway.min_review_ratio_percent || 45) || 45)),
+            min_failed_ratio_percent: Math.min(100, Math.max(1, Number(paymentGateway.min_failed_ratio_percent || 25) || 25)),
+            max_webhook_success_rate_percent: Math.min(100, Math.max(1, Number(paymentGateway.max_webhook_success_rate_percent || 70) || 70)),
+            max_query_success_rate_percent: Math.min(100, Math.max(1, Number(paymentGateway.max_query_success_rate_percent || 60) || 60)),
+            min_webhook_5xx_count: Math.min(100, Math.max(1, Number(paymentGateway.min_webhook_5xx_count || 3) || 3)),
+            min_query_5xx_count: Math.min(100, Math.max(1, Number(paymentGateway.min_query_5xx_count || 3) || 3)),
+            page_size: Math.min(5000, Math.max(50, Number(paymentGateway.page_size || 500) || 500)),
+            max_pages: Math.min(100, Math.max(1, Number(paymentGateway.max_pages || 20) || 20))
         }
     };
 }
@@ -789,6 +944,54 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.wallet_recharge_success.summary_hourly_minute, 0);
         assert.equal(payload.config.wallet_recharge_success.summary_daily_hour, 9);
         assert.equal(payload.config.wallet_recharge_success.summary_daily_minute, 0);
+        assert.equal(payload.config.tickets.enabled, true);
+        assert.equal(payload.config.tickets.sweep_interval_ms, 10 * 60 * 1000);
+        assert.equal(payload.config.tickets.pending_overdue_minutes, 120);
+        assert.equal(payload.config.tickets.critical_overdue_minutes, 12 * 60);
+        assert.equal(payload.config.tickets.state_lookback_minutes, 24 * 60);
+        assert.equal(payload.config.tickets.dedupe_window_minutes, 60);
+        assert.equal(payload.config.tickets.work_hours_only_enabled, false);
+        assert.equal(payload.config.tickets.summary_enabled, false);
+        assert.equal(payload.config.tickets.summary_window_minutes, 60);
+        assert.equal(payload.config.tickets.summary_max_items, 10);
+        assert.equal(payload.config.tickets.summary_schedule_mode, 'rolling_window');
+        assert.equal(payload.config.tickets.summary_hourly_minute, 0);
+        assert.equal(payload.config.tickets.summary_daily_hour, 9);
+        assert.equal(payload.config.tickets.summary_daily_minute, 0);
+        assert.equal(payload.config.verify_quota.enabled, true);
+        assert.equal(payload.config.verify_quota.sweep_interval_ms, 15 * 60 * 1000);
+        assert.equal(payload.config.verify_quota.low_balance_threshold, 20);
+        assert.equal(payload.config.verify_quota.low_remaining_jobs_threshold, 20);
+        assert.equal(payload.config.verify_quota.critical_balance_threshold, 5);
+        assert.equal(payload.config.verify_quota.critical_remaining_jobs_threshold, 5);
+        assert.equal(payload.config.verify_quota.min_queue_buffer_jobs, 5);
+        assert.equal(payload.config.verify_quota.dedupe_window_minutes, 6 * 60);
+        assert.equal(payload.config.verify_queue.enabled, true);
+        assert.equal(payload.config.verify_queue.sweep_interval_ms, 10 * 60 * 1000);
+        assert.equal(payload.config.verify_queue.recent_activity_lookback_hours, 12);
+        assert.equal(payload.config.verify_queue.recent_failure_window_minutes, 30);
+        assert.equal(payload.config.verify_queue.queue_size_threshold, 10);
+        assert.equal(payload.config.verify_queue.active_job_threshold, 8);
+        assert.equal(payload.config.verify_queue.oldest_pending_minutes_threshold, 20);
+        assert.equal(payload.config.verify_queue.recent_failure_threshold, 4);
+        assert.equal(payload.config.verify_queue.dedupe_window_minutes, 30);
+        assert.equal(payload.config.verify_failure.enabled, true);
+        assert.equal(payload.config.verify_failure.sweep_interval_ms, 10 * 60 * 1000);
+        assert.equal(payload.config.verify_failure.recent_window_minutes, 30);
+        assert.equal(payload.config.verify_failure.min_total_jobs_threshold, 6);
+        assert.equal(payload.config.verify_failure.failure_rate_threshold, 60);
+        assert.equal(payload.config.verify_failure.affected_user_threshold, 3);
+        assert.equal(payload.config.verify_failure.dedupe_window_minutes, 15);
+        assert.equal(payload.config.payment_gateway.enabled, true);
+        assert.equal(payload.config.payment_gateway.window_minutes, 30);
+        assert.equal(payload.config.payment_gateway.sweep_interval_ms, 5 * 60 * 1000);
+        assert.equal(payload.config.payment_gateway.min_failed_orders, 3);
+        assert.equal(payload.config.payment_gateway.min_failed_ratio_percent, 25);
+        assert.equal(payload.config.payment_gateway.max_webhook_success_rate_percent, 70);
+        assert.equal(payload.config.payment_gateway.max_query_success_rate_percent, 60);
+        assert.equal(payload.config.payment_gateway.min_webhook_5xx_count, 3);
+        assert.equal(payload.config.payment_gateway.min_query_5xx_count, 3);
+        assert.equal(payload.config.payment_gateway.dedupe_window_minutes, 60);
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.telegram_bot_token.source, 'stored');
         assert.equal(payload.secrets.feishu_webhook_url.configured, false);
@@ -942,6 +1145,66 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         summary_hourly_minute: 30,
                         summary_daily_hour: 9,
                         summary_daily_minute: 30
+                    },
+                    tickets: {
+                        enabled: true,
+                        sweep_interval_ms: 15 * 60 * 1000,
+                        pending_overdue_minutes: 135,
+                        critical_overdue_minutes: 10 * 60,
+                        state_lookback_minutes: 12 * 60,
+                        dedupe_window_minutes: 90,
+                        page_size: 500,
+                        max_pages: 10,
+                        work_hours_only_enabled: true,
+                        summary_enabled: true,
+                        summary_window_minutes: 75,
+                        summary_max_items: 9,
+                        summary_schedule_mode: 'hourly',
+                        summary_hourly_minute: 20,
+                        summary_daily_hour: 8,
+                        summary_daily_minute: 15
+                    },
+                    verify_quota: {
+                        enabled: true,
+                        sweep_interval_ms: 12 * 60 * 1000,
+                        low_balance_threshold: 24,
+                        low_remaining_jobs_threshold: 28,
+                        critical_balance_threshold: 6,
+                        critical_remaining_jobs_threshold: 7,
+                        min_queue_buffer_jobs: 9,
+                        dedupe_window_minutes: 240
+                    },
+                    verify_queue: {
+                        enabled: false,
+                        sweep_interval_ms: 9 * 60 * 1000,
+                        recent_activity_lookback_hours: 18,
+                        recent_failure_window_minutes: 45,
+                        queue_size_threshold: 16,
+                        active_job_threshold: 12,
+                        oldest_pending_minutes_threshold: 35,
+                        recent_failure_threshold: 5,
+                        dedupe_window_minutes: 40
+                    },
+                    verify_failure: {
+                        enabled: true,
+                        sweep_interval_ms: 8 * 60 * 1000,
+                        recent_window_minutes: 40,
+                        min_total_jobs_threshold: 10,
+                        failure_rate_threshold: 72,
+                        affected_user_threshold: 6,
+                        dedupe_window_minutes: 25
+                    },
+                    payment_gateway: {
+                        enabled: true,
+                        window_minutes: 40,
+                        sweep_interval_ms: 6 * 60 * 1000,
+                        min_failed_orders: 4,
+                        min_failed_ratio_percent: 30,
+                        max_webhook_success_rate_percent: 68,
+                        max_query_success_rate_percent: 58,
+                        min_webhook_5xx_count: 4,
+                        min_query_5xx_count: 5,
+                        dedupe_window_minutes: 75
                     }
                 },
                 secrets: {
@@ -1054,6 +1317,54 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.wallet_recharge_success.summary_hourly_minute, 30);
         assert.equal(payload.config.wallet_recharge_success.summary_daily_hour, 9);
         assert.equal(payload.config.wallet_recharge_success.summary_daily_minute, 30);
+        assert.equal(payload.config.tickets.enabled, true);
+        assert.equal(payload.config.tickets.sweep_interval_ms, 15 * 60 * 1000);
+        assert.equal(payload.config.tickets.pending_overdue_minutes, 135);
+        assert.equal(payload.config.tickets.critical_overdue_minutes, 10 * 60);
+        assert.equal(payload.config.tickets.state_lookback_minutes, 12 * 60);
+        assert.equal(payload.config.tickets.dedupe_window_minutes, 90);
+        assert.equal(payload.config.tickets.work_hours_only_enabled, true);
+        assert.equal(payload.config.tickets.summary_enabled, true);
+        assert.equal(payload.config.tickets.summary_window_minutes, 75);
+        assert.equal(payload.config.tickets.summary_max_items, 9);
+        assert.equal(payload.config.tickets.summary_schedule_mode, 'hourly');
+        assert.equal(payload.config.tickets.summary_hourly_minute, 20);
+        assert.equal(payload.config.tickets.summary_daily_hour, 8);
+        assert.equal(payload.config.tickets.summary_daily_minute, 15);
+        assert.equal(payload.config.verify_quota.enabled, true);
+        assert.equal(payload.config.verify_quota.sweep_interval_ms, 12 * 60 * 1000);
+        assert.equal(payload.config.verify_quota.low_balance_threshold, 24);
+        assert.equal(payload.config.verify_quota.low_remaining_jobs_threshold, 28);
+        assert.equal(payload.config.verify_quota.critical_balance_threshold, 6);
+        assert.equal(payload.config.verify_quota.critical_remaining_jobs_threshold, 7);
+        assert.equal(payload.config.verify_quota.min_queue_buffer_jobs, 9);
+        assert.equal(payload.config.verify_quota.dedupe_window_minutes, 240);
+        assert.equal(payload.config.verify_queue.enabled, false);
+        assert.equal(payload.config.verify_queue.sweep_interval_ms, 9 * 60 * 1000);
+        assert.equal(payload.config.verify_queue.recent_activity_lookback_hours, 18);
+        assert.equal(payload.config.verify_queue.recent_failure_window_minutes, 45);
+        assert.equal(payload.config.verify_queue.queue_size_threshold, 16);
+        assert.equal(payload.config.verify_queue.active_job_threshold, 12);
+        assert.equal(payload.config.verify_queue.oldest_pending_minutes_threshold, 35);
+        assert.equal(payload.config.verify_queue.recent_failure_threshold, 5);
+        assert.equal(payload.config.verify_queue.dedupe_window_minutes, 40);
+        assert.equal(payload.config.verify_failure.enabled, true);
+        assert.equal(payload.config.verify_failure.sweep_interval_ms, 8 * 60 * 1000);
+        assert.equal(payload.config.verify_failure.recent_window_minutes, 40);
+        assert.equal(payload.config.verify_failure.min_total_jobs_threshold, 10);
+        assert.equal(payload.config.verify_failure.failure_rate_threshold, 72);
+        assert.equal(payload.config.verify_failure.affected_user_threshold, 6);
+        assert.equal(payload.config.verify_failure.dedupe_window_minutes, 25);
+        assert.equal(payload.config.payment_gateway.enabled, true);
+        assert.equal(payload.config.payment_gateway.window_minutes, 40);
+        assert.equal(payload.config.payment_gateway.sweep_interval_ms, 6 * 60 * 1000);
+        assert.equal(payload.config.payment_gateway.min_failed_orders, 4);
+        assert.equal(payload.config.payment_gateway.min_failed_ratio_percent, 30);
+        assert.equal(payload.config.payment_gateway.max_webhook_success_rate_percent, 68);
+        assert.equal(payload.config.payment_gateway.max_query_success_rate_percent, 58);
+        assert.equal(payload.config.payment_gateway.min_webhook_5xx_count, 4);
+        assert.equal(payload.config.payment_gateway.min_query_5xx_count, 5);
+        assert.equal(payload.config.payment_gateway.dedupe_window_minutes, 75);
         assert.equal(state.systemConfigUpserts.length, 1);
         assert.equal(state.systemConfigUpserts[0].config_key, 'ops_alerts');
         assert.equal(state.upsertedSecrets.length, 2);
@@ -1154,6 +1465,54 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.wallet_recharge_success_summary_hourly_minute, 30);
         assert.equal(state.auditLogs[0].details.wallet_recharge_success_summary_daily_hour, 9);
         assert.equal(state.auditLogs[0].details.wallet_recharge_success_summary_daily_minute, 30);
+        assert.equal(state.auditLogs[0].details.tickets_enabled, true);
+        assert.equal(state.auditLogs[0].details.tickets_sweep_interval_ms, 15 * 60 * 1000);
+        assert.equal(state.auditLogs[0].details.tickets_pending_overdue_minutes, 135);
+        assert.equal(state.auditLogs[0].details.tickets_critical_overdue_minutes, 10 * 60);
+        assert.equal(state.auditLogs[0].details.tickets_state_lookback_minutes, 12 * 60);
+        assert.equal(state.auditLogs[0].details.tickets_dedupe_window_minutes, 90);
+        assert.equal(state.auditLogs[0].details.tickets_work_hours_only_enabled, true);
+        assert.equal(state.auditLogs[0].details.tickets_summary_enabled, true);
+        assert.equal(state.auditLogs[0].details.tickets_summary_window_minutes, 75);
+        assert.equal(state.auditLogs[0].details.tickets_summary_max_items, 9);
+        assert.equal(state.auditLogs[0].details.tickets_summary_schedule_mode, 'hourly');
+        assert.equal(state.auditLogs[0].details.tickets_summary_hourly_minute, 20);
+        assert.equal(state.auditLogs[0].details.tickets_summary_daily_hour, 8);
+        assert.equal(state.auditLogs[0].details.tickets_summary_daily_minute, 15);
+        assert.equal(state.auditLogs[0].details.verify_quota_enabled, true);
+        assert.equal(state.auditLogs[0].details.verify_quota_sweep_interval_ms, 12 * 60 * 1000);
+        assert.equal(state.auditLogs[0].details.verify_quota_low_balance_threshold, 24);
+        assert.equal(state.auditLogs[0].details.verify_quota_low_remaining_jobs_threshold, 28);
+        assert.equal(state.auditLogs[0].details.verify_quota_critical_balance_threshold, 6);
+        assert.equal(state.auditLogs[0].details.verify_quota_critical_remaining_jobs_threshold, 7);
+        assert.equal(state.auditLogs[0].details.verify_quota_min_queue_buffer_jobs, 9);
+        assert.equal(state.auditLogs[0].details.verify_quota_dedupe_window_minutes, 240);
+        assert.equal(state.auditLogs[0].details.verify_queue_enabled, false);
+        assert.equal(state.auditLogs[0].details.verify_queue_sweep_interval_ms, 9 * 60 * 1000);
+        assert.equal(state.auditLogs[0].details.verify_queue_recent_activity_lookback_hours, 18);
+        assert.equal(state.auditLogs[0].details.verify_queue_recent_failure_window_minutes, 45);
+        assert.equal(state.auditLogs[0].details.verify_queue_size_threshold, 16);
+        assert.equal(state.auditLogs[0].details.verify_queue_active_job_threshold, 12);
+        assert.equal(state.auditLogs[0].details.verify_queue_oldest_pending_minutes_threshold, 35);
+        assert.equal(state.auditLogs[0].details.verify_queue_recent_failure_threshold, 5);
+        assert.equal(state.auditLogs[0].details.verify_queue_dedupe_window_minutes, 40);
+        assert.equal(state.auditLogs[0].details.verify_failure_enabled, true);
+        assert.equal(state.auditLogs[0].details.verify_failure_sweep_interval_ms, 8 * 60 * 1000);
+        assert.equal(state.auditLogs[0].details.verify_failure_recent_window_minutes, 40);
+        assert.equal(state.auditLogs[0].details.verify_failure_min_total_jobs_threshold, 10);
+        assert.equal(state.auditLogs[0].details.verify_failure_rate_threshold, 72);
+        assert.equal(state.auditLogs[0].details.verify_failure_affected_user_threshold, 6);
+        assert.equal(state.auditLogs[0].details.verify_failure_dedupe_window_minutes, 25);
+        assert.equal(state.auditLogs[0].details.payment_gateway_enabled, true);
+        assert.equal(state.auditLogs[0].details.payment_gateway_window_minutes, 40);
+        assert.equal(state.auditLogs[0].details.payment_gateway_sweep_interval_ms, 6 * 60 * 1000);
+        assert.equal(state.auditLogs[0].details.payment_gateway_min_failed_orders, 4);
+        assert.equal(state.auditLogs[0].details.payment_gateway_min_failed_ratio_percent, 30);
+        assert.equal(state.auditLogs[0].details.payment_gateway_max_webhook_success_rate_percent, 68);
+        assert.equal(state.auditLogs[0].details.payment_gateway_max_query_success_rate_percent, 58);
+        assert.equal(state.auditLogs[0].details.payment_gateway_min_webhook_5xx_count, 4);
+        assert.equal(state.auditLogs[0].details.payment_gateway_min_query_5xx_count, 5);
+        assert.equal(state.auditLogs[0].details.payment_gateway_dedupe_window_minutes, 75);
         assert.deepEqual(state.auditLogs[0].details.updated_secrets, ['telegram_bot_token', 'feishu_webhook_url']);
         assert.equal(payload.secrets.telegram_bot_token.configured, true);
         assert.equal(payload.secrets.feishu_webhook_url.configured, true);

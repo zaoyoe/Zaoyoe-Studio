@@ -76,6 +76,7 @@ const ALERT_TYPE_MODULE_MAP = Object.freeze({
     verify_queue_backlog: 'verify',
     verify_incident_escalated: 'verify',
     verify_incident_recovered: 'verify',
+    ticket_sla_summary: 'tickets',
     ticket_sla_overdue: 'tickets',
     ticket_sla_recovered: 'tickets',
     shop_order_delivery_failed: 'fulfillment',
@@ -119,6 +120,12 @@ const SUMMARY_ALERT_DEFINITIONS = Object.freeze({
         summary_alert_type: 'shop_inventory_summary',
         default_title: '库存与补货汇总',
         unit: '条库存告警'
+    }),
+    ticket_sla_overdue: Object.freeze({
+        config_key: 'tickets',
+        summary_alert_type: 'ticket_sla_summary',
+        default_title: '工单超时汇总',
+        unit: '条超时工单'
     })
 });
 const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
@@ -309,6 +316,81 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         summary_hourly_minute: 0,
         summary_daily_hour: 9,
         summary_daily_minute: 0
+    }),
+    tickets: Object.freeze({
+        enabled: true,
+        sweep_interval_ms: 10 * 60 * 1000,
+        pending_overdue_minutes: 120,
+        critical_overdue_minutes: 12 * 60,
+        state_lookback_minutes: 24 * 60,
+        dedupe_window_minutes: 60,
+        page_size: 500,
+        max_pages: 10,
+        work_hours_only_enabled: false,
+        summary_enabled: false,
+        summary_window_minutes: 60,
+        summary_max_items: 10,
+        summary_schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
+        summary_hourly_minute: 0,
+        summary_daily_hour: 9,
+        summary_daily_minute: 0
+    }),
+    verify_quota: Object.freeze({
+        enabled: true,
+        sweep_interval_ms: 15 * 60 * 1000,
+        request_timeout_ms: 10000,
+        low_balance_threshold: 20,
+        low_remaining_jobs_threshold: 20,
+        critical_balance_threshold: 5,
+        critical_remaining_jobs_threshold: 5,
+        min_queue_buffer_jobs: 5,
+        dedupe_window_minutes: 6 * 60
+    }),
+    verify_queue: Object.freeze({
+        enabled: true,
+        sweep_interval_ms: 10 * 60 * 1000,
+        request_timeout_ms: 10000,
+        recent_activity_lookback_hours: 12,
+        recent_failure_window_minutes: 30,
+        queue_size_threshold: 10,
+        active_job_threshold: 8,
+        oldest_pending_minutes_threshold: 20,
+        recent_failure_threshold: 4,
+        dedupe_window_minutes: 30,
+        page_size: 500,
+        max_pages: 10
+    }),
+    verify_failure: Object.freeze({
+        enabled: true,
+        sweep_interval_ms: 10 * 60 * 1000,
+        recent_window_minutes: 30,
+        min_total_jobs_threshold: 6,
+        failure_rate_threshold: 60,
+        affected_user_threshold: 3,
+        dedupe_window_minutes: 15,
+        page_size: 500,
+        max_pages: 10
+    }),
+    payment_gateway: Object.freeze({
+        enabled: true,
+        window_minutes: 30,
+        state_lookback_minutes: 24 * 60,
+        sweep_interval_ms: 5 * 60 * 1000,
+        dedupe_window_minutes: 60,
+        min_order_volume: 6,
+        min_review_orders: 4,
+        min_failed_orders: 3,
+        min_webhook_volume: 5,
+        min_query_volume: 5,
+        max_paid_rate_percent: 65,
+        min_review_ratio_percent: 45,
+        min_failed_ratio_percent: 25,
+        max_webhook_success_rate_percent: 70,
+        max_query_success_rate_percent: 60,
+        min_webhook_5xx_count: 3,
+        min_query_5xx_count: 3,
+        page_size: 500,
+        max_pages: 20
     })
 });
 
@@ -850,6 +932,81 @@ function cloneDefaultConfig() {
             summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_hourly_minute,
             summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_daily_hour,
             summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.shop_inventory.summary_daily_minute
+        },
+        tickets: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.tickets.enabled,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.tickets.sweep_interval_ms,
+            pending_overdue_minutes: DEFAULT_OPS_ALERTS_CONFIG.tickets.pending_overdue_minutes,
+            critical_overdue_minutes: DEFAULT_OPS_ALERTS_CONFIG.tickets.critical_overdue_minutes,
+            state_lookback_minutes: DEFAULT_OPS_ALERTS_CONFIG.tickets.state_lookback_minutes,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.tickets.dedupe_window_minutes,
+            page_size: DEFAULT_OPS_ALERTS_CONFIG.tickets.page_size,
+            max_pages: DEFAULT_OPS_ALERTS_CONFIG.tickets.max_pages,
+            work_hours_only_enabled: DEFAULT_OPS_ALERTS_CONFIG.tickets.work_hours_only_enabled,
+            summary_enabled: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_enabled,
+            summary_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_window_minutes,
+            summary_max_items: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_max_items,
+            summary_schedule_mode: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_schedule_mode,
+            summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_hourly_minute,
+            summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_daily_hour,
+            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.tickets.summary_daily_minute
+        },
+        verify_quota: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.enabled,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.sweep_interval_ms,
+            request_timeout_ms: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.request_timeout_ms,
+            low_balance_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.low_balance_threshold,
+            low_remaining_jobs_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.low_remaining_jobs_threshold,
+            critical_balance_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.critical_balance_threshold,
+            critical_remaining_jobs_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.critical_remaining_jobs_threshold,
+            min_queue_buffer_jobs: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.min_queue_buffer_jobs,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_quota.dedupe_window_minutes
+        },
+        verify_queue: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.enabled,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.sweep_interval_ms,
+            request_timeout_ms: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.request_timeout_ms,
+            recent_activity_lookback_hours: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.recent_activity_lookback_hours,
+            recent_failure_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.recent_failure_window_minutes,
+            queue_size_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.queue_size_threshold,
+            active_job_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.active_job_threshold,
+            oldest_pending_minutes_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.oldest_pending_minutes_threshold,
+            recent_failure_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.recent_failure_threshold,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.dedupe_window_minutes,
+            page_size: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.page_size,
+            max_pages: DEFAULT_OPS_ALERTS_CONFIG.verify_queue.max_pages
+        },
+        verify_failure: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.enabled,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.sweep_interval_ms,
+            recent_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.recent_window_minutes,
+            min_total_jobs_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.min_total_jobs_threshold,
+            failure_rate_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.failure_rate_threshold,
+            affected_user_threshold: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.affected_user_threshold,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.dedupe_window_minutes,
+            page_size: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.page_size,
+            max_pages: DEFAULT_OPS_ALERTS_CONFIG.verify_failure.max_pages
+        },
+        payment_gateway: {
+            enabled: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.enabled,
+            window_minutes: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.window_minutes,
+            state_lookback_minutes: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.state_lookback_minutes,
+            sweep_interval_ms: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.sweep_interval_ms,
+            dedupe_window_minutes: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.dedupe_window_minutes,
+            min_order_volume: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_order_volume,
+            min_review_orders: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_review_orders,
+            min_failed_orders: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_failed_orders,
+            min_webhook_volume: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_webhook_volume,
+            min_query_volume: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_query_volume,
+            max_paid_rate_percent: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.max_paid_rate_percent,
+            min_review_ratio_percent: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_review_ratio_percent,
+            min_failed_ratio_percent: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_failed_ratio_percent,
+            max_webhook_success_rate_percent: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.max_webhook_success_rate_percent,
+            max_query_success_rate_percent: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.max_query_success_rate_percent,
+            min_webhook_5xx_count: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_webhook_5xx_count,
+            min_query_5xx_count: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.min_query_5xx_count,
+            page_size: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.page_size,
+            max_pages: DEFAULT_OPS_ALERTS_CONFIG.payment_gateway.max_pages
         }
     };
 }
@@ -902,6 +1059,21 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         : {};
     const shopInventoryConfig = source.shop_inventory && typeof source.shop_inventory === 'object'
         ? source.shop_inventory
+        : {};
+    const ticketsConfig = source.tickets && typeof source.tickets === 'object'
+        ? source.tickets
+        : {};
+    const verifyQuotaConfig = source.verify_quota && typeof source.verify_quota === 'object'
+        ? source.verify_quota
+        : {};
+    const verifyQueueConfig = source.verify_queue && typeof source.verify_queue === 'object'
+        ? source.verify_queue
+        : {};
+    const verifyFailureConfig = source.verify_failure && typeof source.verify_failure === 'object'
+        ? source.verify_failure
+        : {};
+    const paymentGatewayConfig = source.payment_gateway && typeof source.payment_gateway === 'object'
+        ? source.payment_gateway
         : {};
 
     config.enabled = normalizeBoolean(source.enabled, normalizeBoolean(env?.OPS_ALERTS_ENABLED, config.enabled));
@@ -1400,6 +1572,385 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         config.shop_inventory.summary_daily_minute,
         0,
         59
+    );
+
+    config.tickets.enabled = normalizeBoolean(
+        ticketsConfig.enabled,
+        normalizeBoolean(env?.TICKET_SLA_MONITOR_ENABLED, config.tickets.enabled)
+    );
+    config.tickets.sweep_interval_ms = normalizeNumber(
+        ticketsConfig.sweep_interval_ms,
+        normalizeNumber(env?.TICKET_SLA_MONITOR_SWEEP_INTERVAL_MS, config.tickets.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.tickets.pending_overdue_minutes = normalizeNumber(
+        ticketsConfig.pending_overdue_minutes,
+        normalizeNumber(env?.TICKET_SLA_MONITOR_PENDING_OVERDUE_MINUTES, config.tickets.pending_overdue_minutes, 5, 14 * 24 * 60),
+        5,
+        14 * 24 * 60
+    );
+    config.tickets.critical_overdue_minutes = normalizeNumber(
+        ticketsConfig.critical_overdue_minutes,
+        normalizeNumber(env?.TICKET_SLA_MONITOR_CRITICAL_OVERDUE_MINUTES, config.tickets.critical_overdue_minutes, 30, 30 * 24 * 60),
+        30,
+        30 * 24 * 60
+    );
+    config.tickets.state_lookback_minutes = normalizeNumber(
+        ticketsConfig.state_lookback_minutes,
+        normalizeNumber(env?.TICKET_SLA_MONITOR_STATE_LOOKBACK_MINUTES, config.tickets.state_lookback_minutes, 30, 7 * 24 * 60),
+        30,
+        7 * 24 * 60
+    );
+    config.tickets.dedupe_window_minutes = normalizeNumber(
+        ticketsConfig.dedupe_window_minutes,
+        normalizeNumber(env?.TICKET_SLA_MONITOR_DEDUPE_WINDOW_MINUTES, config.tickets.dedupe_window_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.tickets.page_size = normalizeNumber(
+        ticketsConfig.page_size,
+        normalizeNumber(env?.TICKET_SLA_MONITOR_PAGE_SIZE, config.tickets.page_size, 50, 5000),
+        50,
+        5000
+    );
+    config.tickets.max_pages = normalizeNumber(
+        ticketsConfig.max_pages,
+        normalizeNumber(env?.TICKET_SLA_MONITOR_MAX_PAGES, config.tickets.max_pages, 1, 100),
+        1,
+        100
+    );
+    config.tickets.work_hours_only_enabled = normalizeBoolean(
+        ticketsConfig.work_hours_only_enabled,
+        config.tickets.work_hours_only_enabled
+    );
+    config.tickets.summary_enabled = normalizeBoolean(
+        ticketsConfig.summary_enabled,
+        config.tickets.summary_enabled
+    );
+    config.tickets.summary_window_minutes = normalizeNumber(
+        ticketsConfig.summary_window_minutes,
+        config.tickets.summary_window_minutes,
+        5,
+        24 * 60
+    );
+    config.tickets.summary_max_items = normalizeNumber(
+        ticketsConfig.summary_max_items,
+        config.tickets.summary_max_items,
+        1,
+        50
+    );
+    config.tickets.summary_schedule_mode = normalizeSummaryScheduleMode(
+        ticketsConfig.summary_schedule_mode,
+        config.tickets.summary_schedule_mode
+    );
+    config.tickets.summary_hourly_minute = normalizeNumber(
+        ticketsConfig.summary_hourly_minute,
+        config.tickets.summary_hourly_minute,
+        0,
+        59
+    );
+    config.tickets.summary_daily_hour = normalizeNumber(
+        ticketsConfig.summary_daily_hour,
+        config.tickets.summary_daily_hour,
+        0,
+        23
+    );
+    config.tickets.summary_daily_minute = normalizeNumber(
+        ticketsConfig.summary_daily_minute,
+        config.tickets.summary_daily_minute,
+        0,
+        59
+    );
+
+    config.verify_quota.enabled = normalizeBoolean(
+        verifyQuotaConfig.enabled,
+        normalizeBoolean(env?.VERIFY_QUOTA_MONITOR_ENABLED, config.verify_quota.enabled)
+    );
+    config.verify_quota.sweep_interval_ms = normalizeNumber(
+        verifyQuotaConfig.sweep_interval_ms,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_SWEEP_INTERVAL_MS, config.verify_quota.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.verify_quota.request_timeout_ms = normalizeNumber(
+        verifyQuotaConfig.request_timeout_ms,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_REQUEST_TIMEOUT_MS, config.verify_quota.request_timeout_ms, 1000, 60 * 1000),
+        1000,
+        60 * 1000
+    );
+    config.verify_quota.low_balance_threshold = normalizeNumber(
+        verifyQuotaConfig.low_balance_threshold,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_LOW_BALANCE_THRESHOLD, config.verify_quota.low_balance_threshold, 0, 1000000),
+        0,
+        1000000
+    );
+    config.verify_quota.low_remaining_jobs_threshold = normalizeNumber(
+        verifyQuotaConfig.low_remaining_jobs_threshold,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_LOW_REMAINING_JOBS_THRESHOLD, config.verify_quota.low_remaining_jobs_threshold, 0, 1000000),
+        0,
+        1000000
+    );
+    config.verify_quota.critical_balance_threshold = normalizeNumber(
+        verifyQuotaConfig.critical_balance_threshold,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_CRITICAL_BALANCE_THRESHOLD, config.verify_quota.critical_balance_threshold, 0, 1000000),
+        0,
+        1000000
+    );
+    config.verify_quota.critical_remaining_jobs_threshold = normalizeNumber(
+        verifyQuotaConfig.critical_remaining_jobs_threshold,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_CRITICAL_REMAINING_JOBS_THRESHOLD, config.verify_quota.critical_remaining_jobs_threshold, 0, 1000000),
+        0,
+        1000000
+    );
+    config.verify_quota.min_queue_buffer_jobs = normalizeNumber(
+        verifyQuotaConfig.min_queue_buffer_jobs,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_MIN_QUEUE_BUFFER_JOBS, config.verify_quota.min_queue_buffer_jobs, 0, 1000000),
+        0,
+        1000000
+    );
+    config.verify_quota.dedupe_window_minutes = normalizeNumber(
+        verifyQuotaConfig.dedupe_window_minutes,
+        normalizeNumber(env?.VERIFY_QUOTA_MONITOR_DEDUPE_WINDOW_MINUTES, config.verify_quota.dedupe_window_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+
+    config.verify_queue.enabled = normalizeBoolean(
+        verifyQueueConfig.enabled,
+        normalizeBoolean(env?.VERIFY_QUEUE_MONITOR_ENABLED, config.verify_queue.enabled)
+    );
+    config.verify_queue.sweep_interval_ms = normalizeNumber(
+        verifyQueueConfig.sweep_interval_ms,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_SWEEP_INTERVAL_MS, config.verify_queue.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.verify_queue.request_timeout_ms = normalizeNumber(
+        verifyQueueConfig.request_timeout_ms,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_REQUEST_TIMEOUT_MS, config.verify_queue.request_timeout_ms, 1000, 60 * 1000),
+        1000,
+        60 * 1000
+    );
+    config.verify_queue.recent_activity_lookback_hours = normalizeNumber(
+        verifyQueueConfig.recent_activity_lookback_hours,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_RECENT_ACTIVITY_LOOKBACK_HOURS, config.verify_queue.recent_activity_lookback_hours, 1, 72),
+        1,
+        72
+    );
+    config.verify_queue.recent_failure_window_minutes = normalizeNumber(
+        verifyQueueConfig.recent_failure_window_minutes,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_RECENT_FAILURE_WINDOW_MINUTES, config.verify_queue.recent_failure_window_minutes, 5, 24 * 60),
+        5,
+        24 * 60
+    );
+    config.verify_queue.queue_size_threshold = normalizeNumber(
+        verifyQueueConfig.queue_size_threshold,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_QUEUE_SIZE_THRESHOLD, config.verify_queue.queue_size_threshold, 1, 100000),
+        1,
+        100000
+    );
+    config.verify_queue.active_job_threshold = normalizeNumber(
+        verifyQueueConfig.active_job_threshold,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_ACTIVE_JOB_THRESHOLD, config.verify_queue.active_job_threshold, 1, 100000),
+        1,
+        100000
+    );
+    config.verify_queue.oldest_pending_minutes_threshold = normalizeNumber(
+        verifyQueueConfig.oldest_pending_minutes_threshold,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_OLDEST_PENDING_MINUTES_THRESHOLD, config.verify_queue.oldest_pending_minutes_threshold, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.verify_queue.recent_failure_threshold = normalizeNumber(
+        verifyQueueConfig.recent_failure_threshold,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_RECENT_FAILURE_THRESHOLD, config.verify_queue.recent_failure_threshold, 1, 100000),
+        1,
+        100000
+    );
+    config.verify_queue.dedupe_window_minutes = normalizeNumber(
+        verifyQueueConfig.dedupe_window_minutes,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_DEDUPE_WINDOW_MINUTES, config.verify_queue.dedupe_window_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.verify_queue.page_size = normalizeNumber(
+        verifyQueueConfig.page_size,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_PAGE_SIZE, config.verify_queue.page_size, 50, 5000),
+        50,
+        5000
+    );
+    config.verify_queue.max_pages = normalizeNumber(
+        verifyQueueConfig.max_pages,
+        normalizeNumber(env?.VERIFY_QUEUE_MONITOR_MAX_PAGES, config.verify_queue.max_pages, 1, 100),
+        1,
+        100
+    );
+
+    config.verify_failure.enabled = normalizeBoolean(
+        verifyFailureConfig.enabled,
+        normalizeBoolean(env?.VERIFY_FAILURE_MONITOR_ENABLED, config.verify_failure.enabled)
+    );
+    config.verify_failure.sweep_interval_ms = normalizeNumber(
+        verifyFailureConfig.sweep_interval_ms,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_SWEEP_INTERVAL_MS, config.verify_failure.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.verify_failure.recent_window_minutes = normalizeNumber(
+        verifyFailureConfig.recent_window_minutes,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_RECENT_WINDOW_MINUTES, config.verify_failure.recent_window_minutes, 5, 24 * 60),
+        5,
+        24 * 60
+    );
+    config.verify_failure.min_total_jobs_threshold = normalizeNumber(
+        verifyFailureConfig.min_total_jobs_threshold,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_MIN_TOTAL_JOBS_THRESHOLD, config.verify_failure.min_total_jobs_threshold, 1, 100000),
+        1,
+        100000
+    );
+    config.verify_failure.failure_rate_threshold = normalizeNumber(
+        verifyFailureConfig.failure_rate_threshold,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_FAILURE_RATE_THRESHOLD, config.verify_failure.failure_rate_threshold, 1, 100),
+        1,
+        100
+    );
+    config.verify_failure.affected_user_threshold = normalizeNumber(
+        verifyFailureConfig.affected_user_threshold,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_AFFECTED_USER_THRESHOLD, config.verify_failure.affected_user_threshold, 1, 100000),
+        1,
+        100000
+    );
+    config.verify_failure.dedupe_window_minutes = normalizeNumber(
+        verifyFailureConfig.dedupe_window_minutes,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_DEDUPE_WINDOW_MINUTES, config.verify_failure.dedupe_window_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.verify_failure.page_size = normalizeNumber(
+        verifyFailureConfig.page_size,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_PAGE_SIZE, config.verify_failure.page_size, 50, 5000),
+        50,
+        5000
+    );
+    config.verify_failure.max_pages = normalizeNumber(
+        verifyFailureConfig.max_pages,
+        normalizeNumber(env?.VERIFY_FAILURE_MONITOR_MAX_PAGES, config.verify_failure.max_pages, 1, 100),
+        1,
+        100
+    );
+
+    config.payment_gateway.enabled = normalizeBoolean(
+        paymentGatewayConfig.enabled,
+        normalizeBoolean(env?.PAYMENT_GATEWAY_MONITOR_ENABLED, config.payment_gateway.enabled)
+    );
+    config.payment_gateway.window_minutes = normalizeNumber(
+        paymentGatewayConfig.window_minutes,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_WINDOW_MINUTES, config.payment_gateway.window_minutes, 5, 24 * 60),
+        5,
+        24 * 60
+    );
+    config.payment_gateway.state_lookback_minutes = normalizeNumber(
+        paymentGatewayConfig.state_lookback_minutes,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_STATE_LOOKBACK_MINUTES, config.payment_gateway.state_lookback_minutes, 30, 7 * 24 * 60),
+        30,
+        7 * 24 * 60
+    );
+    config.payment_gateway.sweep_interval_ms = normalizeNumber(
+        paymentGatewayConfig.sweep_interval_ms,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_SWEEP_INTERVAL_MS, config.payment_gateway.sweep_interval_ms, 10000, 60 * 60 * 1000),
+        10000,
+        60 * 60 * 1000
+    );
+    config.payment_gateway.dedupe_window_minutes = normalizeNumber(
+        paymentGatewayConfig.dedupe_window_minutes,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_DEDUPE_WINDOW_MINUTES, config.payment_gateway.dedupe_window_minutes, 1, 24 * 60),
+        1,
+        24 * 60
+    );
+    config.payment_gateway.min_order_volume = normalizeNumber(
+        paymentGatewayConfig.min_order_volume,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_ORDER_VOLUME, config.payment_gateway.min_order_volume, 1, 200),
+        1,
+        200
+    );
+    config.payment_gateway.min_review_orders = normalizeNumber(
+        paymentGatewayConfig.min_review_orders,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_REVIEW_ORDERS, config.payment_gateway.min_review_orders, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.min_failed_orders = normalizeNumber(
+        paymentGatewayConfig.min_failed_orders,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_FAILED_ORDERS, config.payment_gateway.min_failed_orders, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.min_webhook_volume = normalizeNumber(
+        paymentGatewayConfig.min_webhook_volume,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_WEBHOOK_VOLUME, config.payment_gateway.min_webhook_volume, 1, 500),
+        1,
+        500
+    );
+    config.payment_gateway.min_query_volume = normalizeNumber(
+        paymentGatewayConfig.min_query_volume,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_QUERY_VOLUME, config.payment_gateway.min_query_volume, 1, 500),
+        1,
+        500
+    );
+    config.payment_gateway.max_paid_rate_percent = normalizeNumber(
+        paymentGatewayConfig.max_paid_rate_percent,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MAX_PAID_RATE_PERCENT, config.payment_gateway.max_paid_rate_percent, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.min_review_ratio_percent = normalizeNumber(
+        paymentGatewayConfig.min_review_ratio_percent,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_REVIEW_RATIO_PERCENT, config.payment_gateway.min_review_ratio_percent, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.min_failed_ratio_percent = normalizeNumber(
+        paymentGatewayConfig.min_failed_ratio_percent,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_FAILED_RATIO_PERCENT, config.payment_gateway.min_failed_ratio_percent, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.max_webhook_success_rate_percent = normalizeNumber(
+        paymentGatewayConfig.max_webhook_success_rate_percent,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MAX_WEBHOOK_SUCCESS_RATE_PERCENT, config.payment_gateway.max_webhook_success_rate_percent, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.max_query_success_rate_percent = normalizeNumber(
+        paymentGatewayConfig.max_query_success_rate_percent,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MAX_QUERY_SUCCESS_RATE_PERCENT, config.payment_gateway.max_query_success_rate_percent, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.min_webhook_5xx_count = normalizeNumber(
+        paymentGatewayConfig.min_webhook_5xx_count,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_WEBHOOK_5XX_COUNT, config.payment_gateway.min_webhook_5xx_count, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.min_query_5xx_count = normalizeNumber(
+        paymentGatewayConfig.min_query_5xx_count,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MIN_QUERY_5XX_COUNT, config.payment_gateway.min_query_5xx_count, 1, 100),
+        1,
+        100
+    );
+    config.payment_gateway.page_size = normalizeNumber(
+        paymentGatewayConfig.page_size,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_PAGE_SIZE, config.payment_gateway.page_size, 50, 5000),
+        50,
+        5000
+    );
+    config.payment_gateway.max_pages = normalizeNumber(
+        paymentGatewayConfig.max_pages,
+        normalizeNumber(env?.PAYMENT_GATEWAY_MONITOR_MAX_PAGES, config.payment_gateway.max_pages, 1, 100),
+        1,
+        100
     );
 
     return config;
@@ -2235,6 +2786,10 @@ function buildExternalAlertText(job = {}) {
     if (walletRechargeSummaryText) {
         return walletRechargeSummaryText;
     }
+    const ticketSlaSummaryText = buildTicketSlaSummaryAlertText(job);
+    if (ticketSlaSummaryText) {
+        return ticketSlaSummaryText;
+    }
     const shopInventorySummaryText = buildShopInventorySummaryAlertText(job);
     if (shopInventorySummaryText) {
         return shopInventorySummaryText;
@@ -2522,6 +3077,46 @@ function buildWalletRechargeSummaryAlertText(job = {}) {
     });
     if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
         lines.push(`其余 ${Number(payload.item_count) - items.length} 笔请前往后台查看。`);
+    }
+    if (normalizeText(payload.entry_path)) {
+        lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+    }
+
+    return lines.filter(Boolean).join('\n');
+}
+
+function buildTicketSlaSummaryAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'ticket_sla_summary') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const items = getSummaryItems(payload).slice(0, Math.max(1, normalizeNumber(payload.summary_max_items, 10, 1, 50)));
+    const lines = [buildSummaryHeader(job, '工单超时汇总')];
+
+    if (normalizeText(payload.window_start_at) || normalizeText(payload.window_end_at)) {
+        lines.push(`时间窗口：${formatTimestamp(payload.window_start_at)} - ${formatTimestamp(payload.window_end_at)}`);
+    }
+    if (Number.isFinite(Number(payload.item_count))) {
+        lines.push(`累计超时工单：${Math.max(0, Math.round(Number(payload.item_count || 0)))} 条`);
+    }
+    items.forEach((item, index) => {
+        const itemPayload = normalizeJsonObject(item?.payload);
+        const ticketId = normalizeText(itemPayload.ticket_id) || normalizeText(itemPayload.target_id) || `ticket-${index + 1}`;
+        const waitLabel = normalizeText(itemPayload.wait_label)
+            || (Number.isFinite(Number(itemPayload.wait_minutes)) ? `${Math.max(0, Math.round(Number(itemPayload.wait_minutes || 0)))} 分钟` : '');
+        const statusLabel = normalizeText(itemPayload.ticket_status_label) || getTicketStatusLabel(itemPayload.ticket_status);
+        const updatedAt = formatTimestamp(itemPayload.updated_at || itemPayload.created_at || item?.created_at);
+        lines.push(`${index + 1}. ${ticketId}${waitLabel ? ` · 已等待 ${waitLabel}` : ''}`);
+        if (normalizeText(itemPayload.order_id)) lines.push(`   订单号：${normalizeText(itemPayload.order_id)}`);
+        if (normalizeText(itemPayload.user_id)) lines.push(`   用户ID：${normalizeText(itemPayload.user_id)}`);
+        if (statusLabel) lines.push(`   当前状态：${statusLabel}`);
+        if (normalizeText(itemPayload.reason)) lines.push(`   原因：${normalizeText(itemPayload.reason)}`);
+        if (normalizeText(itemPayload.responsible_label)) lines.push(`   当前负责人：${normalizeText(itemPayload.responsible_label)}`);
+        if (updatedAt) lines.push(`   时间：${updatedAt}`);
+    });
+    if (Number.isFinite(Number(payload.item_count)) && Number(payload.item_count) > items.length) {
+        lines.push(`其余 ${Number(payload.item_count) - items.length} 条请前往后台查看。`);
     }
     if (normalizeText(payload.entry_path)) {
         lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
