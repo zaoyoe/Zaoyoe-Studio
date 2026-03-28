@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260328_SECURITY_PANEL_LAYOUT_POLISH_3">
+    <link rel="stylesheet" href="admin-studio.css?v=20260328_SECURITY_PANEL_LAYOUT_POLISH_4">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1">
 
@@ -4079,100 +4079,107 @@
                         <div class="settings-section settings-section--compact">
                             <h3><i class="fas fa-shield-alt"></i> 登录安全</h3>
                             <p class="settings-section__intro">常用阈值收在一行里，方便快速核对失败上限、锁定时长和会话超时。</p>
-                            <div class="security-settings-grid">
-                                <div class="security-setting-card">
-                                    <div class="config-label">
-                                        <span>登录失败锁定</span>
-                                        <span class="config-hint">连续失败 N 次后锁定账户</span>
+                            <div class="security-group security-group--rules">
+                                <div class="security-group__head">
+                                    <div class="security-group__copy">
+                                        <h4>登录规则</h4>
+                                        <p>统一保存失败上限、锁定时长和会话超时，避免和黑名单配置混在一起。</p>
                                     </div>
-                                    <div class="config-value">
-                                        <div class="config-input-wrapper">
-                                            <input type="number" class="config-input admin-studio-inline-style-attr-4" id="cfgLoginLockoutAttempts" min="3"
-                                                max="10" value="5">
-                                            <span class="config-unit">次</span>
-                                        </div>
+                                    <div class="security-group__actions">
+                                        <span class="config-save-indicator admin-studio-inline-style-attr-6" id="loginSecuritySaveIndicator"
+                                           >✓ 已保存</span>
+                                        <button class="btn-sm btn-primary" type="button" data-admin-action="settings-save-login-security">
+                                            <i class="fas fa-save"></i> 保存登录规则
+                                        </button>
                                     </div>
                                 </div>
-                                <div class="security-setting-card">
-                                    <div class="config-label">
-                                        <span>锁定时长</span>
-                                        <span class="config-hint">账户锁定后的解锁等待时间</span>
-                                    </div>
-                                    <div class="config-value">
-                                        <div class="config-input-wrapper">
-                                            <div class="custom-dropdown" id="lockoutDurationDropdown">
-                                                <button class="dropdown-trigger" type="button"
-                                                    data-admin-action="settings-toggle-custom-dropdown"
-                                                    data-dropdown-id="lockoutDurationDropdown">
-                                                    <span class="dropdown-value" id="lockoutDurationValue">15</span>
-                                                    <i class="fas fa-chevron-down"></i>
-                                                </button>
-                                                <div class="dropdown-menu">
-                                                    <div class="dropdown-option" data-value="300000"
-                                                        data-admin-action="settings-select-dropdown-option"
-                                                        data-dropdown-id="lockoutDurationDropdown" data-option-value="300000"
-                                                        data-option-label="5">
-                                                        5</div>
-                                                    <div class="dropdown-option selected" data-value="900000"
-                                                        data-admin-action="settings-select-dropdown-option"
-                                                        data-dropdown-id="lockoutDurationDropdown" data-option-value="900000"
-                                                        data-option-label="15">
-                                                        15</div>
-                                                    <div class="dropdown-option" data-value="3600000"
-                                                        data-admin-action="settings-select-dropdown-option"
-                                                        data-dropdown-id="lockoutDurationDropdown" data-option-value="3600000"
-                                                        data-option-label="60">
-                                                        60</div>
-                                                </div>
+                                <div class="security-settings-grid">
+                                    <div class="security-setting-card">
+                                        <div class="config-label">
+                                            <span>登录失败锁定</span>
+                                            <span class="config-hint">连续失败 N 次后锁定账户</span>
+                                        </div>
+                                        <div class="config-value">
+                                            <div class="config-input-wrapper">
+                                                <input type="number" class="config-input admin-studio-inline-style-attr-4" id="cfgLoginLockoutAttempts" min="3"
+                                                    max="10" value="5">
+                                                <span class="config-unit">次</span>
                                             </div>
-                                            <span class="config-unit">分</span>
                                         </div>
                                     </div>
-                                </div>
-                                <div class="security-setting-card">
-                                    <div class="config-label">
-                                        <span>会话超时</span>
-                                        <span class="config-hint">用户无操作后自动登出时间</span>
-                                    </div>
-                                    <div class="config-value">
-                                        <div class="config-input-wrapper">
-                                            <div class="custom-dropdown" id="sessionTimeoutDropdown">
-                                                <button class="dropdown-trigger" type="button"
-                                                    data-admin-action="settings-toggle-custom-dropdown"
-                                                    data-dropdown-id="sessionTimeoutDropdown">
-                                                    <span class="dropdown-value" id="sessionTimeoutValue">60</span>
-                                                    <i class="fas fa-chevron-down"></i>
-                                                </button>
-                                                <div class="dropdown-menu">
-                                                    <div class="dropdown-option" data-value="1800000"
-                                                        data-admin-action="settings-select-dropdown-option"
-                                                        data-dropdown-id="sessionTimeoutDropdown" data-option-value="1800000"
-                                                        data-option-label="30">
-                                                        30</div>
-                                                    <div class="dropdown-option selected" data-value="3600000"
-                                                        data-admin-action="settings-select-dropdown-option"
-                                                        data-dropdown-id="sessionTimeoutDropdown" data-option-value="3600000"
-                                                        data-option-label="60">
-                                                        60</div>
-                                                    <div class="dropdown-option" data-value="86400000"
-                                                        data-admin-action="settings-select-dropdown-option"
-                                                        data-dropdown-id="sessionTimeoutDropdown" data-option-value="86400000"
-                                                        data-option-label="1440">
-                                                        1440</div>
+                                    <div class="security-setting-card">
+                                        <div class="config-label">
+                                            <span>锁定时长</span>
+                                            <span class="config-hint">账户锁定后的解锁等待时间</span>
+                                        </div>
+                                        <div class="config-value">
+                                            <div class="config-input-wrapper">
+                                                <div class="custom-dropdown" id="lockoutDurationDropdown">
+                                                    <button class="dropdown-trigger" type="button"
+                                                        data-admin-action="settings-toggle-custom-dropdown"
+                                                        data-dropdown-id="lockoutDurationDropdown">
+                                                        <span class="dropdown-value" id="lockoutDurationValue">15</span>
+                                                        <i class="fas fa-chevron-down"></i>
+                                                    </button>
+                                                    <div class="dropdown-menu">
+                                                        <div class="dropdown-option" data-value="300000"
+                                                            data-admin-action="settings-select-dropdown-option"
+                                                            data-dropdown-id="lockoutDurationDropdown" data-option-value="300000"
+                                                            data-option-label="5">
+                                                            5</div>
+                                                        <div class="dropdown-option selected" data-value="900000"
+                                                            data-admin-action="settings-select-dropdown-option"
+                                                            data-dropdown-id="lockoutDurationDropdown" data-option-value="900000"
+                                                            data-option-label="15">
+                                                            15</div>
+                                                        <div class="dropdown-option" data-value="3600000"
+                                                            data-admin-action="settings-select-dropdown-option"
+                                                            data-dropdown-id="lockoutDurationDropdown" data-option-value="3600000"
+                                                            data-option-label="60">
+                                                            60</div>
+                                                    </div>
                                                 </div>
+                                                <span class="config-unit">分</span>
                                             </div>
-                                            <span class="config-unit">分</span>
+                                        </div>
+                                    </div>
+                                    <div class="security-setting-card">
+                                        <div class="config-label">
+                                            <span>会话超时</span>
+                                            <span class="config-hint">用户无操作后自动登出时间</span>
+                                        </div>
+                                        <div class="config-value">
+                                            <div class="config-input-wrapper">
+                                                <div class="custom-dropdown" id="sessionTimeoutDropdown">
+                                                    <button class="dropdown-trigger" type="button"
+                                                        data-admin-action="settings-toggle-custom-dropdown"
+                                                        data-dropdown-id="sessionTimeoutDropdown">
+                                                        <span class="dropdown-value" id="sessionTimeoutValue">60</span>
+                                                        <i class="fas fa-chevron-down"></i>
+                                                    </button>
+                                                    <div class="dropdown-menu">
+                                                        <div class="dropdown-option" data-value="1800000"
+                                                            data-admin-action="settings-select-dropdown-option"
+                                                            data-dropdown-id="sessionTimeoutDropdown" data-option-value="1800000"
+                                                            data-option-label="30">
+                                                            30</div>
+                                                        <div class="dropdown-option selected" data-value="3600000"
+                                                            data-admin-action="settings-select-dropdown-option"
+                                                            data-dropdown-id="sessionTimeoutDropdown" data-option-value="3600000"
+                                                            data-option-label="60">
+                                                            60</div>
+                                                        <div class="dropdown-option" data-value="86400000"
+                                                            data-admin-action="settings-select-dropdown-option"
+                                                            data-dropdown-id="sessionTimeoutDropdown" data-option-value="86400000"
+                                                            data-option-label="1440">
+                                                            1440</div>
+                                                    </div>
+                                                </div>
+                                                <span class="config-unit">分</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                            <!-- Save Button -->
-                            <div class="config-actions admin-studio-inline-style-attr-5">
-                                <span class="config-save-indicator admin-studio-inline-style-attr-6" id="loginSecuritySaveIndicator"
-                                   >✓ 已保存</span>
-                                <button class="btn-sm btn-primary" type="button" data-admin-action="settings-save-login-security">
-                                    <i class="fas fa-save"></i> 保存
-                                </button>
                             </div>
 
                             <div class="security-subcards-grid">
@@ -4215,7 +4222,7 @@
                                             <span class="config-save-indicator admin-studio-inline-style-attr-6" id="ipBlacklistSaveIndicator"
                                                >✓ 已保存</span>
                                             <button class="btn-sm btn-primary" type="button" data-admin-action="settings-save-ip-blacklist">
-                                                <i class="fas fa-save"></i> 保存
+                                                <i class="fas fa-save"></i> 保存黑名单
                                             </button>
                                         </div>
                                     </div>

@@ -19433,6 +19433,48 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     color: var(--text-secondary);
 }
 
+.security-group {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.security-group__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.security-group__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.security-group__copy h4 {
+    margin: 0;
+    color: var(--text-main);
+    font-size: 0.98rem;
+}
+
+.security-group__copy p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+    line-height: 1.6;
+}
+
+.security-group__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
 .security-settings-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -19447,7 +19489,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     background: rgba(10, 19, 36, 0.38);
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
+    height: 100%;
 }
 
 .security-setting-card .config-label {
@@ -19470,6 +19513,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .security-setting-card .config-value,
 .security-setting-card .config-input-wrapper {
     min-width: 0;
+}
+
+.security-setting-card .config-value {
+    margin-top: auto;
 }
 
 .security-setting-card .config-input-wrapper {
@@ -24011,6 +24058,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 @media (max-width: 860px) {
     .security-settings-grid {
         grid-template-columns: 1fr;
+    }
+
+    .security-group__head,
+    .security-group__actions {
+        align-items: stretch;
     }
 
     .security-subcards-grid {
