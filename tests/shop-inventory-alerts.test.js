@@ -16,7 +16,8 @@ function createQueryBuilder(executor) {
         order: null,
         payload: null,
         range: null,
-        single: false
+        single: false,
+        maybeSingle: false
     };
 
     const builder = {
@@ -55,8 +56,18 @@ function createQueryBuilder(executor) {
             state.payload = payload;
             return builder;
         },
+        update(payload) {
+            state.mode = 'update';
+            state.payload = payload;
+            return builder;
+        },
         single() {
             state.single = true;
+            return builder;
+        },
+        maybeSingle() {
+            state.single = true;
+            state.maybeSingle = true;
             return builder;
         },
         then(resolve, reject) {
@@ -131,8 +142,9 @@ function createSupabaseStub(state = {}) {
                 }
 
                 if (table === 'ops_alert_jobs' && query.mode === 'select') {
+                    const rows = applyRange(sortRows(applyFilters(jobs, query.filters), query.order), query.range);
                     return {
-                        data: applyRange(sortRows(applyFilters(jobs, query.filters), query.order), query.range),
+                        data: query.single ? (rows[0] || null) : rows,
                         error: null
                     };
                 }
@@ -152,6 +164,18 @@ function createSupabaseStub(state = {}) {
                     return {
                         data: query.single ? inserted[0] : inserted,
                         error: null
+                    };
+                }
+
+                if (table === 'ops_alert_jobs' && query.mode === 'update') {
+                    const rows = applyRange(sortRows(applyFilters(jobs, query.filters), query.order), query.range);
+                    rows.forEach((row) => {
+                        Object.assign(row, query.payload || {});
+                    });
+
+                    return {
+                        data: query.single ? (rows[0] || null) : rows,
+                        error: rows.length ? null : { message: 'Job not found' }
                     };
                 }
 
@@ -339,6 +363,91 @@ test('runShopInventoryLowSweep enqueues key-product low stock alerts with stable
     assert.equal(second.queued, 0);
     assert.equal(second.deduped, 1);
     assert.equal(state.jobs.length, 1);
+});
+
+test('runShopInventoryLowSweep sends the first inventory alert immediately and keeps hourly summaries for follow-up', async () => {
+    const state = {
+        jobs: [],
+        products: [
+            {
+                id: 'product-empty',
+                name: 'gemini',
+                category: '账号',
+                stock_count: 0,
+                is_active: true,
+                delivery_type: 'KEY',
+                updated_at: '2026-03-29T01:10:00.000Z'
+            }
+        ],
+        orders: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = {
+        ...createOpsRuntime(),
+        config: normalizeOpsAlertsConfig({
+            enabled: true,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['10001']
+                },
+                feishu: {
+                    enabled: true,
+                    minimum_severity: 'warning'
+                }
+            },
+            shop_inventory: {
+                enabled: true,
+                low_stock_threshold: 5,
+                sweep_interval_ms: 15 * 60 * 1000,
+                sales_window_days: 7,
+                dedupe_window_minutes: 60,
+                recovery_notification_enabled: true,
+                summary_enabled: true,
+                summary_schedule_mode: 'hourly',
+                summary_window_minutes: 60,
+                summary_hourly_minute: 0,
+                summary_max_items: 10
+            }
+        })
+    };
+
+    const first = await runShopInventoryLowSweep(supabase, {
+        runtime,
+        now: '2026-03-29T01:15:00.000Z'
+    });
+
+    assert.equal(first.empty_stock_count, 1);
+    assert.equal(first.queued, 1);
+    assert.equal(first.summary_queued, 1);
+    assert.equal(state.jobs.length, 2);
+    assert.equal(state.jobs[0].alert_type, 'shop_inventory_empty');
+    assert.equal(state.jobs[1].alert_type, 'shop_inventory_summary');
+    assert.equal(state.jobs[1].payload.item_count, 1);
+
+    const second = await runShopInventoryLowSweep(supabase, {
+        runtime,
+        now: '2026-03-29T01:35:00.000Z'
+    });
+
+    assert.equal(second.empty_stock_count, 1);
+    assert.equal(second.queued, 0);
+    assert.equal(second.summary_queued, 0);
+    assert.equal(second.summary_deduped, 1);
+    assert.equal(state.jobs.length, 2);
+
+    const third = await runShopInventoryLowSweep(supabase, {
+        runtime,
+        now: '2026-03-29T02:10:00.000Z'
+    });
+
+    assert.equal(third.empty_stock_count, 1);
+    assert.equal(third.queued, 0);
+    assert.equal(third.summary_queued, 1);
+    assert.equal(state.jobs.length, 3);
+    assert.equal(state.jobs[2].alert_type, 'shop_inventory_summary');
+    assert.equal(state.jobs[2].payload.item_count, 1);
 });
 
 test('buildShopInventoryRecoveredAlerts emits a recovery notice after a product is replenished', () => {
