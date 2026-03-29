@@ -18,7 +18,8 @@ function createQueryBuilder(executor) {
         order: null,
         limit: null,
         payload: null,
-        single: false
+        single: false,
+        maybeSingle: false
     };
 
     const builder = {
@@ -64,6 +65,11 @@ function createQueryBuilder(executor) {
         },
         single() {
             state.single = true;
+            return builder;
+        },
+        maybeSingle() {
+            state.single = true;
+            state.maybeSingle = true;
             return builder;
         },
         then(resolve, reject) {
@@ -128,9 +134,13 @@ function createSupabaseStub(state = {}) {
                     if (Number.isFinite(query.limit) && query.limit >= 0) {
                         rows = rows.slice(0, query.limit);
                     }
+                    const singleRow = rows[0] || null;
+                    const singleError = query.single && !query.maybeSingle && !singleRow && state.strictSingleNoRows
+                        ? { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' }
+                        : null;
                     return {
-                        data: query.single ? (rows[0] || null) : rows,
-                        error: null
+                        data: query.single ? singleRow : rows,
+                        error: singleError
                     };
                 }
 
@@ -140,9 +150,13 @@ function createSupabaseStub(state = {}) {
                     if (Number.isFinite(query.limit) && query.limit >= 0) {
                         rows = rows.slice(0, query.limit);
                     }
+                    const singleRow = rows[0] || null;
+                    const singleError = query.single && !query.maybeSingle && !singleRow && state.strictSingleNoRows
+                        ? { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' }
+                        : null;
                     return {
-                        data: query.single ? (rows[0] || null) : rows,
-                        error: null
+                        data: query.single ? singleRow : rows,
+                        error: singleError
                     };
                 }
 
@@ -502,6 +516,52 @@ test('enqueueOpsAlertJob aggregates inventory low and empty alerts into a single
     assert.equal(state.jobs[0].payload.summary_window_minutes, 120);
     assert.equal(state.jobs[0].payload.summary_max_items, 4);
     assert.equal(state.jobs[0].title, '库存与补货汇总（2 条库存告警）');
+});
+
+test('enqueueOpsAlertJob creates the first inventory summary job when no existing summary row is found', async () => {
+    const state = {
+        jobs: [],
+        strictSingleNoRows: true
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            shop_inventory: {
+                enabled: true,
+                summary_enabled: true,
+                summary_schedule_mode: 'hourly',
+                summary_hourly_minute: 0,
+                summary_window_minutes: 60,
+                summary_max_items: 10
+            }
+        }
+    });
+
+    const result = await enqueueOpsAlertJob(supabase, {
+        alertType: 'shop_inventory_empty',
+        severity: 'critical',
+        title: 'gemini 已售罄',
+        content: 'gemini 当前已无可售库存，请尽快补货。',
+        payload: {
+            product_id: 'product-gemini',
+            product_name: 'gemini',
+            stock_count: 0,
+            low_stock_threshold: 5,
+            recent_sales_days: 7,
+            recent_sales_count: 0,
+            entry_path: '商城管理 -> 商品列表 -> 库存 / 补货'
+        }
+    }, {
+        runtime,
+        now: new Date('2026-03-29T01:15:00.000Z')
+    });
+
+    assert.equal(result.queued, true);
+    assert.equal(result.summary, true);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].alert_type, 'shop_inventory_summary');
+    assert.equal(state.jobs[0].payload.item_count, 1);
+    assert.equal(state.jobs[0].payload.items[0].alert_type, 'shop_inventory_empty');
 });
 
 test('enqueueOpsAlertJob aggregates overdue tickets into a single summary job when summary mode is enabled', async () => {
