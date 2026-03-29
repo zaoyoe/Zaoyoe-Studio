@@ -72,7 +72,8 @@ const REFUND_EXCEPTION_TOPIC_META = Object.freeze([
         description: '退款失败后自动补回积分也失败了，需要立刻人工对账修复。'
     }
 ]);
-const OPS_ALERT_JOB_ACTIONABLE_STATUSES = new Set(['pending', 'retry', 'processing', 'dead_letter', 'handled', 'ignored']);
+const OPS_ALERT_JOB_OPEN_STATUSES = new Set(['pending', 'retry', 'processing', 'dead_letter']);
+const OPS_ALERT_JOB_QUEUE_VISIBLE_STATUSES = new Set(['pending', 'retry', 'processing', 'dead_letter', 'handled', 'ignored']);
 const OPS_ALERT_JOB_STATUS_PRIORITY = Object.freeze({
     dead_letter: 0,
     retry: 1,
@@ -485,7 +486,7 @@ function buildOpsAlertSummary(jobs) {
         dead_letter: items.filter((item) => item.queue_status === 'dead_letter').length,
         handled: items.filter((item) => item.queue_status === 'handled').length,
         ignored: items.filter((item) => item.queue_status === 'ignored').length,
-        actionable_count: items.filter((item) => OPS_ALERT_JOB_ACTIONABLE_STATUSES.has(item.queue_status)).length,
+        actionable_count: items.filter((item) => OPS_ALERT_JOB_OPEN_STATUSES.has(item.queue_status)).length,
         latest_dead_letter_at: items
             .filter((item) => item.queue_status === 'dead_letter' && item.created_at)
             .map((item) => item.created_at)
@@ -500,7 +501,7 @@ function buildOpsAlertSummary(jobs) {
 function buildOpsAlertQueueItems(jobs) {
     return (jobs || [])
         .map(buildOpsAlertJobItem)
-        .filter((item) => OPS_ALERT_JOB_ACTIONABLE_STATUSES.has(item.queue_status))
+        .filter((item) => OPS_ALERT_JOB_QUEUE_VISIBLE_STATUSES.has(item.queue_status))
         .sort((left, right) => {
             const leftPriority = OPS_ALERT_JOB_STATUS_PRIORITY[left.queue_status] ?? 99;
             const rightPriority = OPS_ALERT_JOB_STATUS_PRIORITY[right.queue_status] ?? 99;
@@ -508,8 +509,7 @@ function buildOpsAlertQueueItems(jobs) {
                 return leftPriority - rightPriority;
             }
             return new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime();
-        })
-        .slice(0, 12);
+        });
 }
 
 function getAnomalyAvailableActions(item, caseStatus) {

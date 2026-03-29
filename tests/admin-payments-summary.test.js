@@ -518,6 +518,28 @@ test('payments summary exposes outbound ops alert queue health and actionable de
                 last_error: 'feishu 502',
                 created_at: '2026-03-24T11:30:00.000Z',
                 updated_at: '2026-03-24T11:40:00.000Z'
+            },
+            {
+                id: 'ops-job-3',
+                alert_type: 'payment_refund_ops',
+                severity: 'info',
+                title: '支付回调异常已人工处理',
+                content: '站点：CN\n订单号：HJ_ALERT_3',
+                payload: {
+                    provider: 'hupijiao',
+                    provider_order_no: 'HJ_ALERT_3',
+                    site: 'cn'
+                },
+                channels: ['telegram'],
+                remaining_channels: [],
+                status: 'handled',
+                attempt_count: 1,
+                max_attempts: 6,
+                next_retry_at: null,
+                delivered_at: null,
+                last_error: '',
+                created_at: '2026-03-24T11:20:00.000Z',
+                updated_at: '2026-03-24T11:50:00.000Z'
             }
         ]
     };
@@ -539,9 +561,84 @@ test('payments summary exposes outbound ops alert queue health and actionable de
         assert.equal(payload.success, true);
         assert.equal(payload.ops_alert_summary.dead_letter, 1);
         assert.equal(payload.ops_alert_summary.retry, 1);
+        assert.equal(payload.ops_alert_summary.handled, 1);
         assert.equal(payload.ops_alert_summary.actionable_count, 2);
         assert.equal(payload.ops_alert_items.some((item) => item.type === 'ops_alert_job' && item.queue_status === 'dead_letter'), true);
+        assert.equal(payload.ops_alert_items.some((item) => item.type === 'ops_alert_job' && item.queue_status === 'handled'), true);
         assert.equal(payload.ops_alert_items.some((item) => item.type === 'ops_alert_job' && Array.isArray(item.ops_available_actions) && item.ops_available_actions.includes('request_retry')), true);
+    });
+});
+
+test('payments summary keeps ignored ops alert items visible even when queue has more than twelve records', async () => {
+    const opsAlertJobs = [];
+
+    for (let index = 0; index < 12; index += 1) {
+        opsAlertJobs.push({
+            id: `ops-job-open-${index}`,
+            alert_type: 'payment_refund_ops',
+            severity: 'warning',
+            title: `待处理告警 ${index + 1}`,
+            content: `站点：CN\n订单号：OPEN_${index + 1}`,
+            payload: {
+                provider: 'hupijiao',
+                provider_order_no: `OPEN_${index + 1}`,
+                site: 'cn'
+            },
+            channels: ['telegram'],
+            remaining_channels: ['telegram'],
+            status: index % 2 === 0 ? 'retry' : 'pending',
+            attempt_count: 1,
+            max_attempts: 6,
+            next_retry_at: '2026-03-24T12:00:00.000Z',
+            delivered_at: null,
+            last_error: '',
+            created_at: `2026-03-24T11:${String(index).padStart(2, '0')}:00.000Z`,
+            updated_at: `2026-03-24T11:${String(index).padStart(2, '0')}:30.000Z`
+        });
+    }
+
+    opsAlertJobs.push({
+        id: 'ops-job-ignored-1',
+        alert_type: 'payment_refund_ops',
+        severity: 'info',
+        title: '已忽略告警 1',
+        content: '站点：CN\n订单号：IGNORED_1',
+        payload: {
+            provider: 'hupijiao',
+            provider_order_no: 'IGNORED_1',
+            site: 'cn'
+        },
+        channels: ['telegram'],
+        remaining_channels: [],
+        status: 'ignored',
+        attempt_count: 1,
+        max_attempts: 6,
+        next_retry_at: null,
+        delivered_at: null,
+        last_error: '',
+        created_at: '2026-03-24T10:00:00.000Z',
+        updated_at: '2026-03-24T10:10:00.000Z'
+    });
+
+    const state = { opsAlertJobs };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'overview',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.ops_alert_summary.ignored, 1);
+        assert.equal(payload.ops_alert_items.some((item) => item.queue_status === 'ignored' && item.provider_order_no === 'IGNORED_1'), true);
     });
 });
 

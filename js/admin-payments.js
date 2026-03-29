@@ -42,6 +42,8 @@
     const CLEANUP_SCOPE_TEXT = '将删除 AUTO_CDX_* / SMOKE_* 测试订单，以及 codex.*@example.com / smoke-payment-*@zaoyoe.invalid 测试账号。此操作不可撤销，是否继续？';
     const REFUND_TOPIC_ORDER = ['refund_compensation_failures', 'refund_reclaim_failures', 'refund_failures'];
     const REFUND_TOPIC_KEY_SET = new Set(REFUND_TOPIC_ORDER);
+    const RESOLVED_ANOMALY_STATUSES = new Set(['handled', 'ignored', 'approved', 'rejected']);
+    const ACTIVE_OPS_ALERT_STATUSES = new Set(['pending', 'retry', 'processing', 'dead_letter']);
 
     function escapeHtml(value) {
         return String(value ?? '')
@@ -258,6 +260,41 @@
         if (severity === 'critical') return 'danger';
         if (severity === 'warning') return 'warning';
         return 'info';
+    }
+
+    function normalizeStatusValue(status) {
+        return String(status || '').trim().toLowerCase();
+    }
+
+    function isResolvedAnomalyStatus(status) {
+        return RESOLVED_ANOMALY_STATUSES.has(normalizeStatusValue(status));
+    }
+
+    function isActiveOpsAlertStatus(status) {
+        return ACTIVE_OPS_ALERT_STATUSES.has(normalizeStatusValue(status));
+    }
+
+    function splitItemsByResolution(items, getStatus) {
+        const activeItems = [];
+        const resolvedItems = [];
+
+        (items || []).forEach((item) => {
+            if (isResolvedAnomalyStatus(getStatus(item))) {
+                resolvedItems.push(item);
+                return;
+            }
+            activeItems.push(item);
+        });
+
+        return {
+            activeItems,
+            resolvedItems
+        };
+    }
+
+    function filterItemsByStatuses(items, statuses) {
+        const set = statuses instanceof Set ? statuses : new Set(statuses || []);
+        return (items || []).filter((item) => set.has(normalizeStatusValue(item?.ops_status ?? item?.queue_status)));
     }
 
     function getSeverityLabel(severity) {
@@ -497,6 +534,98 @@
                 `).join('')}
             </div>
         `;
+    }
+
+    function renderMiniCountBadge(label, count, tone = 'muted') {
+        if (!Number(count || 0)) return '';
+        return `<span class="payments-mini-badge ${escapeHtml(tone)}">${escapeHtml(label)} ${escapeHtml(formatNumber(count))}</span>`;
+    }
+
+    function renderCollapsedHandledSection(config) {
+        const title = String(config?.title || '已处理').trim() || '已处理';
+        const description = String(config?.description || '').trim();
+        const body = String(config?.body || '').trim();
+        const badges = Array.isArray(config?.badges) ? config.badges.filter(Boolean).join('') : '';
+
+        if (!body) return '';
+
+        return `
+            <details class="payments-handled-group">
+                <summary class="payments-handled-group-summary">
+                    <div class="payments-handled-group-summary-copy">
+                        <div class="payments-handled-group-summary-title">
+                            <i class="fas fa-box-archive"></i>
+                            <span>${escapeHtml(title)}</span>
+                        </div>
+                        ${description ? `<div class="payments-handled-group-summary-desc">${escapeHtml(description)}</div>` : ''}
+                    </div>
+                    <div class="payments-handled-group-summary-meta">
+                        ${badges}
+                        <span class="payments-handled-group-summary-action">
+                            <span>展开查看</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </span>
+                    </div>
+                </summary>
+                <div class="payments-handled-group-body">
+                    ${body}
+                </div>
+            </details>
+        `;
+    }
+
+    function renderOpsAlertQueueItemsHtml(items) {
+        return (items || []).map((item) => `
+            <div class="payments-anomaly-item severity-${escapeHtml(item.severity || 'warning')}">
+                <div class="payments-anomaly-top">
+                    <div class="payments-anomaly-copy">
+                        <div class="payments-anomaly-title">${escapeHtml(item.title || '站外告警')}</div>
+                        <div class="payments-anomaly-message">${escapeHtml(item.message || '')}</div>
+                    </div>
+                    <span class="payments-anomaly-severity">${escapeHtml(getAnomalyOpsStatusLabel(item.queue_status))}</span>
+                </div>
+                ${renderAnomalyOpsState(item)}
+                <div class="payments-anomaly-suggestion">
+                    <i class="fas fa-lightbulb"></i>
+                    <span>${escapeHtml(getHandlingSuggestion(item))}</span>
+                </div>
+                <div class="payments-anomaly-meta">
+                    <span><small>渠道</small><strong>${escapeHtml((Array.isArray(item.channels) ? item.channels : []).map(getOpsAlertChannelLabel).join(' / ') || '未配置')}</strong></span>
+                    <span><small>剩余</small><strong>${escapeHtml((Array.isArray(item.remaining_channels) ? item.remaining_channels : []).map(getOpsAlertChannelLabel).join(' / ') || '无')}</strong></span>
+                    <span><small>尝试</small><strong>${escapeHtml(`${formatNumber(item.attempt_count || 0)} / ${formatNumber(item.max_attempts || 0)}`)}</strong></span>
+                    <span><small>${escapeHtml(getAnomalyReferenceLabel(item))}</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
+                    <span><small>下次重试</small><strong>${escapeHtml(formatDateTime(item.next_retry_at))}</strong></span>
+                    <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
+                </div>
+                ${renderAnomalyActions(item)}
+            </div>
+        `).join('');
+    }
+
+    function renderExceptionTopicItemsHtml(items) {
+        return (items || []).map((item) => `
+            <div class="payments-anomaly-item severity-${escapeHtml(item.severity || 'info')}">
+                <div class="payments-anomaly-top">
+                    <div class="payments-anomaly-copy">
+                        <div class="payments-anomaly-title">${escapeHtml(item.title || '专题项')}</div>
+                        <div class="payments-anomaly-message">${escapeHtml(item.message || '')}</div>
+                    </div>
+                    <span class="payments-anomaly-severity">${escapeHtml(getSeverityLabel(item.severity))}</span>
+                </div>
+                ${item.type === 'query' ? '' : renderAnomalyOpsState(item)}
+                <div class="payments-anomaly-suggestion">
+                    <i class="fas fa-lightbulb"></i>
+                    <span>${escapeHtml(getHandlingSuggestion(item))}</span>
+                </div>
+                <div class="payments-anomaly-meta">
+                    <span><small>专题</small><strong>${escapeHtml(item.topic_label || '支付异常')}</strong></span>
+                    <span><small>通道</small><strong>${escapeHtml(getProviderLabel(item.provider))}</strong></span>
+                    <span><small>${escapeHtml(getAnomalyReferenceLabel(item))}</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
+                    <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
+                </div>
+                ${renderAnomalyActions(item)}
+            </div>
+        `).join('');
     }
 
     function renderOrderActions(order) {
@@ -1167,9 +1296,14 @@
         panel.hidden = false;
         meta.textContent = deadLetter > 0
             ? `当前有 ${formatNumber(deadLetter)} 条站外告警进入死信队列，需要人工决定是否重试。`
-            : `当前范围内共有 ${formatNumber(total)} 条站外告警投递记录。`;
+            : actionable > 0
+                ? `当前还有 ${formatNumber(actionable)} 条站外告警需要继续跟进，已处理记录已收起。`
+                : `当前范围内共有 ${formatNumber(total)} 条站外告警投递记录，已处理记录已收起。`;
 
-        const highlights = items.slice(0, 3);
+        const highlights = items
+            .filter((item) => isActiveOpsAlertStatus(item.queue_status))
+            .slice(0, 3);
+        const settledCount = Number(summary.handled || 0) + Number(summary.ignored || 0);
         target.innerHTML = `
             <div class="payments-provider-row">
                 <div class="payments-provider-copy">
@@ -1218,7 +1352,11 @@
                         </div>
                     `).join('')}
                 </div>
-            ` : ''}
+            ` : `
+                <div class="payments-empty-state compact">
+                    当前没有需要人工跟进的站外告警任务${settledCount > 0 ? `，${escapeHtml(formatNumber(settledCount))} 条已处理记录已收起，可在异常运维里按需展开。` : '。'}
+                </div>
+            `}
         `;
     }
 
@@ -1234,7 +1372,7 @@
 
         panel.hidden = false;
         meta.textContent = total
-            ? `当前范围内共 ${formatNumber(total)} 条站外告警任务，其中 ${formatNumber(summary.dead_letter || 0)} 条死信、${formatNumber(summary.retry || 0)} 条等待重试。`
+            ? `当前范围内共 ${formatNumber(total)} 条站外告警任务，其中 ${formatNumber(summary.dead_letter || 0)} 条死信、${formatNumber(summary.retry || 0)} 条等待重试；已处理和已忽略记录都收在下方折叠区。`
             : '当前时间范围内还没有站外告警任务。';
 
         if (!items.length) {
@@ -1242,34 +1380,40 @@
             return;
         }
 
+        const split = splitItemsByResolution(items, (item) => item.queue_status);
+        const activeItems = split.activeItems;
+        const resolvedItems = split.resolvedItems;
+        const handledItems = filterItemsByStatuses(resolvedItems, ['handled']);
+        const ignoredItems = filterItemsByStatuses(resolvedItems, ['ignored']);
+
         target.innerHTML = `
-            <div class="payments-anomaly-items">
-                ${items.map((item) => `
-                    <div class="payments-anomaly-item severity-${escapeHtml(item.severity || 'warning')}">
-                        <div class="payments-anomaly-top">
-                            <div class="payments-anomaly-copy">
-                                <div class="payments-anomaly-title">${escapeHtml(item.title || '站外告警')}</div>
-                                <div class="payments-anomaly-message">${escapeHtml(item.message || '')}</div>
-                            </div>
-                            <span class="payments-anomaly-severity">${escapeHtml(getAnomalyOpsStatusLabel(item.queue_status))}</span>
-                        </div>
-                        ${renderAnomalyOpsState(item)}
-                        <div class="payments-anomaly-suggestion">
-                            <i class="fas fa-lightbulb"></i>
-                            <span>${escapeHtml(getHandlingSuggestion(item))}</span>
-                        </div>
-                        <div class="payments-anomaly-meta">
-                            <span><small>渠道</small><strong>${escapeHtml((Array.isArray(item.channels) ? item.channels : []).map(getOpsAlertChannelLabel).join(' / ') || '未配置')}</strong></span>
-                            <span><small>剩余</small><strong>${escapeHtml((Array.isArray(item.remaining_channels) ? item.remaining_channels : []).map(getOpsAlertChannelLabel).join(' / ') || '无')}</strong></span>
-                            <span><small>尝试</small><strong>${escapeHtml(`${formatNumber(item.attempt_count || 0)} / ${formatNumber(item.max_attempts || 0)}`)}</strong></span>
-                            <span><small>${escapeHtml(getAnomalyReferenceLabel(item))}</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
-                            <span><small>下次重试</small><strong>${escapeHtml(formatDateTime(item.next_retry_at))}</strong></span>
-                            <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
-                        </div>
-                        ${renderAnomalyActions(item)}
-                    </div>
-                `).join('')}
-            </div>
+            ${activeItems.length ? `
+                <div class="payments-anomaly-items">
+                    ${renderOpsAlertQueueItemsHtml(activeItems)}
+                </div>
+            ` : `
+                <div class="payments-empty-state">
+                    当前没有待处理的站外告警任务，已处理和已忽略记录都收在下方折叠区。
+                </div>
+            `}
+            ${renderCollapsedHandledSection({
+                title: '已处理',
+                description: '已人工确认并结束的站外告警默认收起，避免队列持续向下堆叠。',
+                badges: [
+                    renderMiniCountBadge('已处理', summary.handled, 'success')
+                ],
+                body: handledItems.length ? `<div class="payments-anomaly-items">${renderOpsAlertQueueItemsHtml(handledItems)}</div>` : ''
+            })}
+            ${renderCollapsedHandledSection({
+                title: '已忽略',
+                description: '被人工判定为暂不继续跟进的站外告警会收在这里，仍可展开复查或重新打开。',
+                badges: [
+                    renderMiniCountBadge('已忽略', summary.ignored, 'muted')
+                ],
+                body: ignoredItems.length
+                    ? `<div class="payments-anomaly-items">${renderOpsAlertQueueItemsHtml(ignoredItems)}</div>`
+                    : '<div class="payments-empty-state compact">当前没有已忽略的站外告警。</div>'
+            })}
         `;
     }
 
@@ -1539,6 +1683,11 @@
             ? items
             : items.filter((item) => String(item?.topic_key || '').trim().toLowerCase() === activeFilter);
         const totalTopicCount = topics.reduce((sum, topic) => sum + Number(topic?.count || 0), 0);
+        const split = splitItemsByResolution(filteredItems, (item) => item?.ops_status);
+        const activeItems = split.activeItems;
+        const resolvedItems = split.resolvedItems;
+        const handledItems = filterItemsByStatuses(resolvedItems, ['handled', 'approved']);
+        const ignoredItems = filterItemsByStatuses(resolvedItems, ['ignored', 'rejected']);
 
         if (!topics.length) {
             topicsTarget.innerHTML = '<div class="payments-empty-state">当前时间范围内没有需要专题跟进的支付异常。</div>';
@@ -1550,7 +1699,7 @@
             <div class="payments-provider-row">
                 <div class="payments-provider-copy">
                     <div class="payments-provider-name"><i class="fas fa-layer-group"></i>全部专题</div>
-                    <div class="payments-provider-meta">当前范围内共 ${escapeHtml(formatNumber(totalTopicCount))} 项专题异常，点击下方专题查看聚合详情。</div>
+                    <div class="payments-provider-meta">当前范围内共 ${escapeHtml(formatNumber(totalTopicCount))} 项专题异常，默认只展开待处理明细，已处理记录会收进下方“已处理”。</div>
                 </div>
                 <div class="payments-provider-badges">
                     <button type="button" class="payments-anomaly-action-btn ${activeFilter === 'all' ? 'mark_handled' : ''}" data-admin-action="payments-set-exception-topic-filter" data-payments-topic-key="all">查看全部</button>
@@ -1576,31 +1725,35 @@
         }
 
         listTarget.innerHTML = `
-            <div class="payments-anomaly-items">
-                ${filteredItems.map((item) => `
-                    <div class="payments-anomaly-item severity-${escapeHtml(item.severity || 'info')}">
-                        <div class="payments-anomaly-top">
-                            <div class="payments-anomaly-copy">
-                                <div class="payments-anomaly-title">${escapeHtml(item.title || '专题项')}</div>
-                                <div class="payments-anomaly-message">${escapeHtml(item.message || '')}</div>
-                            </div>
-                            <span class="payments-anomaly-severity">${escapeHtml(getSeverityLabel(item.severity))}</span>
-                        </div>
-                        ${item.type === 'query' ? '' : renderAnomalyOpsState(item)}
-                        <div class="payments-anomaly-suggestion">
-                            <i class="fas fa-lightbulb"></i>
-                            <span>${escapeHtml(getHandlingSuggestion(item))}</span>
-                        </div>
-                        <div class="payments-anomaly-meta">
-                            <span><small>专题</small><strong>${escapeHtml(item.topic_label || '支付异常')}</strong></span>
-                            <span><small>通道</small><strong>${escapeHtml(getProviderLabel(item.provider))}</strong></span>
-                            <span><small>${escapeHtml(getAnomalyReferenceLabel(item))}</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
-                            <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
-                        </div>
-                        ${renderAnomalyActions(item)}
-                    </div>
-                `).join('')}
-            </div>
+            ${activeItems.length ? `
+                <div class="payments-anomaly-items">
+                    ${renderExceptionTopicItemsHtml(activeItems)}
+                </div>
+            ` : `
+                <div class="payments-empty-state compact">
+                    当前专题下待处理项已清空，已处理记录已收进下方“已处理”。
+                </div>
+            `}
+            ${renderCollapsedHandledSection({
+                title: '已处理',
+                description: '已处理和已审核通过的专题卡片默认收起，避免列表持续向下堆叠。',
+                badges: [
+                    renderMiniCountBadge('已处理', resolvedItems.filter((item) => normalizeStatusValue(item?.ops_status) === 'handled').length, 'success'),
+                    renderMiniCountBadge('已通过', resolvedItems.filter((item) => normalizeStatusValue(item?.ops_status) === 'approved').length, 'success')
+                ],
+                body: handledItems.length ? `<div class="payments-anomaly-items">${renderExceptionTopicItemsHtml(handledItems)}</div>` : ''
+            })}
+            ${renderCollapsedHandledSection({
+                title: '已忽略',
+                description: '已忽略和已驳回的专题项也会保留在这里，方便后续复查，不会直接消失。',
+                badges: [
+                    renderMiniCountBadge('已忽略', resolvedItems.filter((item) => normalizeStatusValue(item?.ops_status) === 'ignored').length, 'muted'),
+                    renderMiniCountBadge('已驳回', resolvedItems.filter((item) => normalizeStatusValue(item?.ops_status) === 'rejected').length, 'danger')
+                ],
+                body: ignoredItems.length
+                    ? `<div class="payments-anomaly-items">${renderExceptionTopicItemsHtml(ignoredItems)}</div>`
+                    : '<div class="payments-empty-state compact">当前没有已忽略或已驳回的专题项。</div>'
+            })}
         `;
     }
 
