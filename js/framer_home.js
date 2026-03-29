@@ -30,6 +30,13 @@ window.toggleMobileThemeColor = function (isActive) {
 };
 
 const MOBILE_MENU_LOCK_CLASS = 'mobile-menu-open';
+const HOME_SHOP_CAROUSEL_CARD_WIDTH = 200;
+const HOME_SHOP_CAROUSEL_GAP = 24;
+const HOME_SHOP_CAROUSEL_EXTRA_BUFFER = HOME_SHOP_CAROUSEL_CARD_WIDTH + (HOME_SHOP_CAROUSEL_GAP * 2);
+const HOME_LOOP_MIN_PIXELS_PER_SECOND = 10;
+const HOME_LOOP_MAX_PIXELS_PER_SECOND = 140;
+const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
+const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 
 function resetMobileSubmenus(mobileMenu) {
   if (!mobileMenu) return;
@@ -198,6 +205,125 @@ function setHomeRuntimeStyle(target, styles = {}, priority = '') {
       return;
     }
     setProperty(cssName, String(value), priority);
+  });
+}
+
+function getHomeViewportWidth() {
+  return Math.max(
+    window.innerWidth || 0,
+    document.documentElement?.clientWidth || 0,
+    document.body?.clientWidth || 0
+  );
+}
+
+function getHomepageConfigLastUpdatedAt() {
+  try {
+    const raw = localStorage.getItem(HOMEPAGE_CONFIG_LAST_UPDATED_KEY);
+    const parsed = Number.parseInt(raw || '0', 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function getHomeTrackGap(track) {
+  if (!track) return 0;
+  const computedStyle = window.getComputedStyle(track);
+  return Number.parseFloat(computedStyle.columnGap || computedStyle.gap || '0') || 0;
+}
+
+function clampHomeSpeedValue(speedValue) {
+  const normalized = Number.parseFloat(speedValue);
+  if (!Number.isFinite(normalized)) return 30;
+  return Math.min(100, Math.max(1, normalized));
+}
+
+function getHomeLoopPixelsPerSecond(speedValue) {
+  const clampedSpeed = clampHomeSpeedValue(speedValue);
+  const progress = Math.pow((clampedSpeed - 1) / 99, 1.35);
+  return HOME_LOOP_MIN_PIXELS_PER_SECOND
+    + ((HOME_LOOP_MAX_PIXELS_PER_SECOND - HOME_LOOP_MIN_PIXELS_PER_SECOND) * progress);
+}
+
+function getHomeLoopDurationSeconds(cycleWidth, speedValue) {
+  const normalizedWidth = Math.max(1, Number.parseFloat(cycleWidth) || 0);
+  const pixelsPerSecond = getHomeLoopPixelsPerSecond(speedValue);
+  return Math.max(12, Math.round((normalizedWidth / pixelsPerSecond) * 10) / 10);
+}
+
+function buildHomeLoopGroupMarkup(items, renderItem, {
+  repeatCount = 1,
+  groupClassName = ''
+} = {}) {
+  const repeatedItems = Array.from({ length: Math.max(1, repeatCount) }, () => items).flat();
+  const groupClassAttr = groupClassName ? ` class="${groupClassName}"` : '';
+  const groupMarkup = repeatedItems.map(renderItem).join('');
+
+  return `
+    <div${groupClassAttr} data-home-loop-cycle="1">${groupMarkup}</div>
+    <div${groupClassAttr} aria-hidden="true">${groupMarkup}</div>
+  `;
+}
+
+function configureHomeMeasuredLoopTrack(track, items, renderItem, {
+  groupClassName = '',
+  cycleWidthVar = '--home-loop-cycle-width',
+  minimumCycleWidth = 0,
+  animationDuration = '',
+  speedValue = null
+} = {}) {
+  if (!track) return;
+
+  const normalizedItems = Array.isArray(items)
+    ? items.filter((item) => String(item || '').trim())
+    : [];
+
+  if (normalizedItems.length === 0) {
+    track.innerHTML = '';
+  setHomeRuntimeStyle(track, {
+    '--home-animation-duration': track.dataset.homeAnimationDuration || '',
+    animationDuration: animationDuration || track.dataset.homeAnimationDuration || '',
+    [cycleWidthVar]: ''
+  });
+  return;
+  }
+
+  const targetCycleWidth = Math.max(
+    minimumCycleWidth,
+    Math.ceil(track.parentElement?.getBoundingClientRect().width || 0),
+    getHomeViewportWidth()
+  );
+
+  const renderLoop = (repeatCount) => {
+    track.innerHTML = buildHomeLoopGroupMarkup(normalizedItems, renderItem, {
+      repeatCount,
+      groupClassName
+    });
+    return track.querySelector('[data-home-loop-cycle="1"]');
+  };
+
+  const trackGap = getHomeTrackGap(track);
+  let primaryCycle = renderLoop(1);
+  let cycleWidth = primaryCycle
+    ? Math.ceil(primaryCycle.getBoundingClientRect().width + trackGap)
+    : 0;
+
+  if (cycleWidth > 0 && cycleWidth < targetCycleWidth) {
+    const repeatCount = Math.max(1, Math.ceil(targetCycleWidth / cycleWidth));
+    primaryCycle = renderLoop(repeatCount);
+    cycleWidth = primaryCycle
+      ? Math.ceil(primaryCycle.getBoundingClientRect().width + trackGap)
+      : cycleWidth;
+  }
+
+  const resolvedAnimationDuration = cycleWidth > 0 && speedValue !== null && speedValue !== undefined
+    ? `${getHomeLoopDurationSeconds(cycleWidth, speedValue)}s`
+    : (animationDuration || track.dataset.homeAnimationDuration || '');
+
+  setHomeRuntimeStyle(track, {
+    '--home-animation-duration': resolvedAnimationDuration,
+    animationDuration: resolvedAnimationDuration,
+    [cycleWidthVar]: cycleWidth ? `${cycleWidth}px` : ''
   });
 }
 
@@ -389,7 +515,7 @@ const FramerHome = {
 
       let heroData = null;
       try {
-        const prefetchRaw = sessionStorage.getItem('homepage_prefetch');
+        const prefetchRaw = sessionStorage.getItem(HOMEPAGE_PREFETCH_CACHE_KEY);
         if (prefetchRaw) {
           const prefetch = JSON.parse(prefetchRaw);
           const age = Date.now() - prefetch.timestamp;
@@ -428,30 +554,33 @@ const FramerHome = {
   async loadAll() {
     // === Check sessionStorage for prefetched data ===
     try {
-      const prefetchRaw = sessionStorage.getItem('homepage_prefetch');
-      if (prefetchRaw) {
-        const prefetch = JSON.parse(prefetchRaw);
-        const age = Date.now() - prefetch.timestamp;
+        const prefetchRaw = sessionStorage.getItem(HOMEPAGE_PREFETCH_CACHE_KEY);
+        if (prefetchRaw) {
+          const prefetch = JSON.parse(prefetchRaw);
+          const age = Date.now() - prefetch.timestamp;
+          const configUpdatedAt = getHomepageConfigLastUpdatedAt();
 
-        // ONLY use cache if it was saved AFTER i18n was ready (a rudimentary check: title shouldn't equal its own key)
-        const isTranslated = prefetch.cachedData?.hero?.title && !prefetch.cachedData.hero.title.includes('home.hero');
+          // ONLY use cache if it was saved AFTER i18n was ready (a rudimentary check: title shouldn't equal its own key)
+          const isTranslated = prefetch.cachedData?.hero?.title && !prefetch.cachedData.hero.title.includes('home.hero');
+          const isFreshConfig = !configUpdatedAt || (prefetch.timestamp || 0) >= configUpdatedAt;
 
-        // Use if < 5 minutes old and contains actual translated text
-        if (age < 300000 && prefetch.cachedData && prefetch.config && isTranslated) {
-          this.cachedData = prefetch.cachedData;
-          this.config = prefetch.config;
-          this.writeHeroTextCache(this.cachedData.hero);
-          console.log(`⚡ Using prefetched homepage data (${Math.round(age / 1000)}s old)`);
-          return;
-        } else {
-          // Clear poisoned cache containing raw translation keys
-          sessionStorage.removeItem('homepage_prefetch');
+          // Use if < 5 minutes old and contains actual translated text
+          if (age < 300000 && prefetch.cachedData && prefetch.config && isTranslated && isFreshConfig) {
+            this.cachedData = prefetch.cachedData;
+            this.config = prefetch.config;
+            this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
+            this.writeHeroTextCache(this.cachedData.hero);
+            console.log(`⚡ Using prefetched homepage data (${Math.round(age / 1000)}s old)`);
+            return;
+          } else {
+            // Clear poisoned cache containing raw translation keys
+            sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
+          }
         }
+      } catch (e) {
+        // Ignore parse errors
+        sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
       }
-    } catch (e) {
-      // Ignore parse errors
-      sessionStorage.removeItem('homepage_prefetch');
-    }
 
     try {
       // Fetch homepage config from Supabase
@@ -482,7 +611,7 @@ const FramerHome = {
 
       // Save to sessionStorage so sub-page prefetch can serve it on next visit
       try {
-        sessionStorage.setItem('homepage_prefetch', JSON.stringify({
+        sessionStorage.setItem(HOMEPAGE_PREFETCH_CACHE_KEY, JSON.stringify({
           cachedData: this.cachedData,
           config: this.config,
           timestamp: Date.now()
@@ -745,15 +874,17 @@ const FramerHome = {
 
     const tags = Array.from(tagSet).slice(0, 20);
 
-    // Get product names using localized fields
-    const productNames = this.cachedData?.shop?.map(p =>
-      this.getLocalizedField(p, 'name')
-    ) || [];
+    const productCategories = Array.from(new Set(
+      (this.cachedData?.shop || [])
+        .map((product) => String(product?.category || '').trim())
+        .filter(Boolean)
+    ));
 
     return {
       top: tags,
-      bottom: productNames,
-      speed: config.speed || 30
+      bottom: productCategories,
+      speed: config.speed || 30,
+      shopScrollSpeed: config.shop_scroll_speed || config.speed || 30
     };
   },
 
@@ -1365,18 +1496,42 @@ const FramerHome = {
     const config = this.config.shop;
     const section = document.getElementById('shop-section');
 
+    if (!section) {
+      return;
+    }
+
     if (!products || products.length === 0) {
       setHomeSectionVisibility(section, false);
       return;
     }
     setHomeSectionVisibility(section, true);
 
-    // Duplicate products for seamless infinite scroll
-    const duplicatedProducts = [...products, ...products];
+    const baseSequenceWidth = (products.length * HOME_SHOP_CAROUSEL_CARD_WIDTH)
+      + (Math.max(0, products.length - 1) * HOME_SHOP_CAROUSEL_GAP);
+    const minimumCycleWidth = Math.max(
+      getHomeViewportWidth(),
+      HOME_SHOP_CAROUSEL_CARD_WIDTH * 3
+    ) + HOME_SHOP_CAROUSEL_EXTRA_BUFFER;
+    const repeatCount = baseSequenceWidth > 0
+      ? Math.max(1, Math.ceil((minimumCycleWidth + HOME_SHOP_CAROUSEL_GAP) / (baseSequenceWidth + HOME_SHOP_CAROUSEL_GAP)))
+      : 1;
+    const cycleProducts = Array.from({ length: repeatCount }, () => products).flat();
+    const renderShopCard = (product) => `
+      <a href="/shop.html" class="shop-carousel-card">
+        <div class="shop-card-image">
+          ${product.icon_url && (product.icon_url.startsWith('http') || product.icon_url.startsWith('/') || product.icon_url.startsWith('data:'))
+      ? `<img src="${product.icon_url}" alt="${this.getLocalizedField(product, 'name')}" loading="lazy" data-home-replace-parent-icon="1">`
+      : (product.icon_url && product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url} shop-card-icon"></i>` : `<i class="fas fa-box-open shop-card-icon shop-card-icon--fallback"></i>`)}
+        </div>
+        <div class="shop-card-info">
+          <h3>${this.getLocalizedField(product, 'name')}</h3>
+          <p>${this.getLocalizedField(product, 'description')}</p>
+        </div>
+      </a>
+    `;
 
-    // Read shop_scroll_speed from ticker config, convert to animation duration
+    // Read shop_scroll_speed from ticker config and convert it into pixels-per-second motion
     const shopSpeed = this.config.ticker?.shop_scroll_speed || 30;
-    const shopDuration = Math.max(5, 65 - (shopSpeed * 0.6));
 
     section.innerHTML = `
       <div class="section-header fade-in-up">
@@ -1385,20 +1540,13 @@ const FramerHome = {
       </div>
       
       <div class="shop-carousel-wrapper">
-        <div class="shop-carousel-track" data-home-animation-duration="${shopDuration}s">
-          ${duplicatedProducts.map(product => `
-            <a href="/shop.html" class="shop-carousel-card">
-              <div class="shop-card-image">
-                ${product.icon_url && (product.icon_url.startsWith('http') || product.icon_url.startsWith('/') || product.icon_url.startsWith('data:'))
-        ? `<img src="${product.icon_url}" alt="${this.getLocalizedField(product, 'name')}" loading="lazy" data-home-replace-parent-icon="1">`
-        : (product.icon_url && product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url} shop-card-icon"></i>` : `<i class="fas fa-box-open shop-card-icon shop-card-icon--fallback"></i>`)}
-              </div>
-              <div class="shop-card-info">
-                <h3>${this.getLocalizedField(product, 'name')}</h3>
-                <p>${this.getLocalizedField(product, 'description')}</p>
-              </div>
-            </a>
-          `).join('')}
+        <div class="shop-carousel-track" data-home-animation-duration="" data-home-speed-value="${shopSpeed}">
+          <div class="shop-carousel-group" data-home-shop-cycle="1">
+            ${cycleProducts.map(renderShopCard).join('')}
+          </div>
+          <div class="shop-carousel-group" aria-hidden="true">
+            ${cycleProducts.map(renderShopCard).join('')}
+          </div>
         </div>
       </div>
     `;
@@ -1414,8 +1562,18 @@ const FramerHome = {
       }
     });
     section.querySelectorAll('[data-home-animation-duration]').forEach((track) => {
+      const primaryCycle = track.querySelector('[data-home-shop-cycle="1"]');
+      const cycleWidth = primaryCycle
+        ? Math.ceil(primaryCycle.getBoundingClientRect().width + HOME_SHOP_CAROUSEL_GAP)
+        : 0;
+      const speedValue = track.dataset.homeSpeedValue || shopSpeed;
+      const animationDuration = cycleWidth > 0
+        ? `${getHomeLoopDurationSeconds(cycleWidth, speedValue)}s`
+        : '';
       setHomeRuntimeStyle(track, {
-        '--home-animation-duration': track.dataset.homeAnimationDuration || ''
+        '--home-animation-duration': animationDuration,
+        animationDuration,
+        '--home-shop-cycle-width': cycleWidth ? `${cycleWidth}px` : ''
       });
     });
   },
@@ -1583,10 +1741,16 @@ const FramerHome = {
   renderTicker() {
     const data = this.cachedData.ticker;
     const section = document.getElementById('ticker-section');
+    if (!section || !data) {
+      return;
+    }
+
+    const topItems = Array.isArray(data.top) ? data.top.filter(Boolean) : [];
+    const bottomItems = Array.isArray(data.bottom) ? data.bottom.filter(Boolean) : [];
 
     const sv = window.SectionVisibility;
-    const showTopRow = !sv || sv.isVisible('gallery');   // top row = prompt tags
-    const showBottomRow = !sv || sv.isVisible('shop');   // bottom row = product names
+    const showTopRow = (!sv || sv.isVisible('gallery')) && topItems.length > 0;   // top row = prompt tags
+    const showBottomRow = (!sv || sv.isVisible('shop')) && bottomItems.length > 0;   // bottom row = product categories
 
     // If both rows hidden, hide entire ticker
     if (!showTopRow && !showBottomRow) {
@@ -1595,22 +1759,13 @@ const FramerHome = {
     }
     setHomeSectionVisibility(section, true);
 
-    // Duplicate data for seamless loop
-    const topItems = [...data.top, ...data.top];
-    const bottomItems = [...data.bottom, ...data.bottom];
-
-    // Convert speed (1-100) to animation duration: higher speed = shorter duration
-    // speed=1 → 60s (slowest), speed=50 → 30s (default), speed=100 → 5s (fastest)
-    const speed = data.speed || 30;
-    const duration = Math.max(5, 65 - (speed * 0.6));
+    const tickerSpeed = data.speed || 30;
 
     section.innerHTML = `
       ${showTopRow ? `
       <div class="ticker-row">
         <div class="ticker ticker-left">
-          <div class="ticker-track" data-home-animation-duration="${duration}s">
-            ${topItems.map(tag => `<div class="ticker-item">${tag}</div>`).join('')}
-          </div>
+          <div class="ticker-track" data-home-animation-duration="" data-home-ticker-role="top" data-home-speed-value="${tickerSpeed}"></div>
         </div>
       </div>
       ` : ''}
@@ -1618,18 +1773,33 @@ const FramerHome = {
       ${showBottomRow ? `
       <div class="ticker-row">
         <div class="ticker ticker-right">
-          <div class="ticker-track" data-home-animation-duration="${duration}s">
-            ${bottomItems.map(name => `<div class="ticker-item">${name}</div>`).join('')}
-          </div>
+          <div class="ticker-track" data-home-animation-duration="" data-home-ticker-role="bottom" data-home-speed-value="${tickerSpeed}"></div>
         </div>
       </div>
       ` : ''}
     `;
-    section.querySelectorAll('[data-home-animation-duration]').forEach((track) => {
-      setHomeRuntimeStyle(track, {
-        '--home-animation-duration': track.dataset.homeAnimationDuration || ''
-      });
-    });
+
+    const renderTickerItem = (label) => `<div class="ticker-item">${label}</div>`;
+    configureHomeMeasuredLoopTrack(
+      section.querySelector('[data-home-ticker-role="top"]'),
+      topItems,
+      renderTickerItem,
+      {
+        groupClassName: 'ticker-track-group',
+        cycleWidthVar: '--home-ticker-cycle-width',
+        speedValue: tickerSpeed
+      }
+    );
+    configureHomeMeasuredLoopTrack(
+      section.querySelector('[data-home-ticker-role="bottom"]'),
+      bottomItems,
+      renderTickerItem,
+      {
+        groupClassName: 'ticker-track-group',
+        cycleWidthVar: '--home-ticker-cycle-width',
+        speedValue: tickerSpeed
+      }
+    );
   },
 
   /**

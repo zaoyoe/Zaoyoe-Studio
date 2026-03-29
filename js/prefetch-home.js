@@ -8,6 +8,9 @@
 (function () {
     'use strict';
 
+    const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
+    const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
+
     // Only run on sub-pages (not homepage)
     if (window.location.pathname === '/' || window.location.pathname === '/index.html') return;
 
@@ -16,6 +19,16 @@
 
     function getCurrentSite() {
         return window.SiteConfig?.site || 'cn';
+    }
+
+    function getHomepageConfigLastUpdatedAt() {
+        try {
+            const raw = localStorage.getItem(HOMEPAGE_CONFIG_LAST_UPDATED_KEY);
+            const parsed = Number.parseInt(raw || '0', 10);
+            return Number.isFinite(parsed) ? parsed : 0;
+        } catch (e) {
+            return 0;
+        }
     }
 
     function hasFreshPrefetch(storageKey, maxAgeMs = 300000) {
@@ -35,14 +48,17 @@
 
         // Check if fresh data already exists
         try {
-            const raw = sessionStorage.getItem('homepage_prefetch');
+            const raw = sessionStorage.getItem(HOMEPAGE_PREFETCH_CACHE_KEY);
             if (raw) {
                 const data = JSON.parse(raw);
                 const age = Date.now() - data.timestamp;
-                if (age < 300000) {
+                const configUpdatedAt = getHomepageConfigLastUpdatedAt();
+                const isFreshConfig = !configUpdatedAt || (data.timestamp || 0) >= configUpdatedAt;
+                if (age < 300000 && isFreshConfig) {
                     // Data is fresh (< 5 min), no need to prefetch
                     return;
                 }
+                sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
             }
         } catch (e) { /* ignore */ }
 
@@ -160,15 +176,34 @@
             // Load prompts from local data if available
             const prompts = window.promptsData ? window.promptsData.slice(0, 20) : [];
 
-            // Build ticker data
+            // Build ticker data aligned with homepage runtime
+            const promptPool = Array.isArray(window.PROMPTS)
+                ? window.PROMPTS
+                : (Array.isArray(window.promptsData) ? window.promptsData : []);
+            const tickerLang = window.i18n?.getCurrentLanguage?.() || 'zh';
+            const tagSet = new Set();
+            promptPool.forEach((prompt) => {
+                if (prompt?.aiTags && typeof prompt.aiTags === 'object') {
+                    ['styles', 'objects', 'scenes', 'mood'].forEach((category) => {
+                        const tags = prompt.aiTags[category]?.[tickerLang] || prompt.aiTags[category]?.zh || [];
+                        tags.forEach((tag) => tagSet.add(tag));
+                    });
+                }
+            });
+            const productCategories = Array.from(new Set(
+                filteredShopResult
+                    .map((product) => String(product?.category || '').trim())
+                    .filter(Boolean)
+            ));
             const ticker = {
-                top: prompts.flatMap(p => p.ai_tags || []).slice(0, 20),
-                bottom: filteredShopResult.map(p => p.name).slice(0, 10),
-                speed: config.ticker?.scroll_speed || 30
+                top: Array.from(tagSet).slice(0, 20),
+                bottom: productCategories,
+                speed: config.ticker?.speed || 30,
+                shopScrollSpeed: config.ticker?.shop_scroll_speed || config.ticker?.speed || 30
             };
 
             // Save to sessionStorage
-            sessionStorage.setItem('homepage_prefetch', JSON.stringify({
+            sessionStorage.setItem(HOMEPAGE_PREFETCH_CACHE_KEY, JSON.stringify({
                 cachedData: {
                     hero,
                     prompts,

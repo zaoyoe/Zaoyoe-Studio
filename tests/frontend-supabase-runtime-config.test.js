@@ -1170,11 +1170,13 @@ test('framer home runtime renderers externalize homepage section visibility, tem
     const runtimeMarkers = [
         'function setHomeRuntimeStyle(target, styles = {}, priority = \'\')',
         'function setHomeSectionVisibility(section, visible)',
+        'function getHomeLoopPixelsPerSecond(speedValue)',
+        'function getHomeLoopDurationSeconds(cycleWidth, speedValue)',
         "element.classList.toggle('home-hover-lift-active', isHovered)",
         "setHomeSectionVisibility(document.getElementById('hero-section'), true);",
         'data-home-entry-color="${entry.color}"',
         "setHomeRuntimeStyle(icon, {",
-        'data-home-animation-duration="${shopDuration}s"',
+        'data-home-speed-value="${shopSpeed}"',
         'class="verify-features"',
         'class="guestbook-list"',
         'guestbook-action-btn',
@@ -1213,14 +1215,31 @@ test('framer home runtime renderers externalize homepage section visibility, tem
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes('css/framer_home.css?v=20260324_HOME_RUNTIME_STYLE_HELPERS_1'),
+            source.includes('css/framer_home.css?v=20260329_HOME_SPEED_CURVE_5'),
             true,
             'home-nav entry pages should load the latest framer_home stylesheet version'
         );
         assert.equal(
-            source.includes('js/framer_home.js?v=20260324_HOME_RUNTIME_STYLE_HELPERS_1'),
+            source.includes('js/framer_home.js?v=20260329_HOME_SPEED_CURVE_5'),
             true,
             'home-nav entry pages should load the latest framer_home script version'
+        );
+    }
+});
+
+test('homepage subpages load the latest prefetch-home runtime script version', () => {
+    const subpageSources = [
+        readRepoFile('prompts.html'),
+        readRepoFile('shop.html'),
+        readRepoFile('verify.html'),
+        readRepoFile('guestbook.html')
+    ];
+
+    for (const source of subpageSources) {
+        assert.equal(
+            source.includes('./js/prefetch-home.js?v=20260329_HOME_PREFETCH_TICKER_SYNC_1'),
+            true,
+            'subpages should load the latest prefetch-home script version'
         );
     }
 });
@@ -3593,7 +3612,12 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
         "input.addEventListener('change', () => {",
         "loading.querySelector('[data-homepage-retry=\"1\"]')?.addEventListener('click'",
         'class="btn-sm btn-primary js-homepage-retry-btn hp-loading-retry-btn"',
-        "placeholder.hidden = !!hasPreview;"
+        "placeholder.hidden = !!hasPreview;",
+        "const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';",
+        "const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';",
+        'function invalidateHomepageRuntimeCaches() {',
+        'localStorage.setItem(HOMEPAGE_CONFIG_LAST_UPDATED_KEY, String(Date.now()));',
+        'sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);'
     ];
 
     for (const marker of delegatedMarkers) {
@@ -3609,6 +3633,12 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
     for (const marker of styleMarkers) {
         assert.equal(adminStudioPageStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
     }
+
+    assert.equal(
+        adminStudioSource.includes('admin-homepage.js?v=20260329_HOMEPAGE_CACHE_SYNC_3'),
+        true,
+        'admin-studio.html should load the latest homepage admin script version'
+    );
 
     assert.match(
         adminStudioSource,
