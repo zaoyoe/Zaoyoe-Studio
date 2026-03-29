@@ -14389,9 +14389,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 #payments-tab-ops {
-    display: flex;
     flex-direction: column;
     gap: 28px;
+}
+
+#payments-tab-ops.payments-tab-content.active {
+    display: flex;
 }
 
 #payments-tab-ops .payments-page-intro,
