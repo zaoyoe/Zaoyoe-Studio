@@ -4039,6 +4039,14 @@ test('admin studio security, verify, affiliate, and experiment controls route th
     assert.equal(adminStudioStyles.includes('.security-group__head'), true, 'admin-studio.css should define an explicit login security group header layout');
     assert.equal(adminStudioStyles.includes('.security-setting-card:hover'), true, 'admin-studio.css should highlight login rule cards on hover');
     assert.equal(adminStudioStyles.includes('.security-subcard:focus-within'), true, 'admin-studio.css should highlight nested security cards while interacting with their contents');
+    assert.match(adminStudioStyles, /\.security-subcards-grid\s*\{[\s\S]*margin-top:\s*10px;/, 'admin-studio.css should add breathing room between login rule cards and the lower security subcards');
+    assert.equal(adminStudioStyles.includes('.admin-audit-monitor-card:focus-within'), true, 'admin-studio.css should highlight admin access summary cards while interacting with them');
+    assert.equal(adminStudioStyles.includes('.admin-audit-monitor-panel:focus-within'), true, 'admin-studio.css should highlight admin access panels while interacting with them');
+    assert.equal(adminStudioStyles.includes('.admin-audit-monitor-item:hover'), true, 'admin-studio.css should highlight admin access list items on hover');
+    assert.equal(adminStudioSource.includes('verify-monitor-list verify-monitor-list--compact'), true, 'admin-studio.html should render verify monitor task and failure lists with compact scroll containers');
+    assert.equal(adminStudioStyles.includes('.verify-monitor-list--compact'), true, 'admin-studio.css should keep recent verify tasks and failures inside compact scroll regions');
+    assert.equal(adminStudioStyles.includes('.verify-monitor-item__chips'), true, 'admin-studio.css should support compact verify monitor detail chips');
+    assert.equal(adminConfigSource.includes('class="verify-monitor-item__chips"'), true, 'admin-config.js should render verify monitor detail rows as compact chip groups');
     assert.match(adminStudioStyles, /\.config-textarea\s*\{[\s\S]*box-sizing: border-box;/, 'admin-studio.css should keep config textareas inside their cards');
     assert.equal(adminConfigSource.includes('setLockedAccountsRefreshButtonState'), true, 'admin-config.js should manage locked account refresh button state');
     assert.equal(adminConfigSource.includes('showLockedAccountsRefreshIndicator'), true, 'admin-config.js should surface locked account refresh feedback');
@@ -5481,8 +5489,13 @@ test('admin studio modal scrollers auto-hide after scroll activity settles', () 
         'const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [',
         'function markAdminScrollbarActive(target) {',
         'target.classList.add(ADMIN_SCROLLBAR_AUTO_HIDE_CLASS);',
+        "target.addEventListener('mouseenter', () => markAdminScrollbarActive(target), { passive: true });",
         "target.addEventListener('scroll', () => markAdminScrollbarActive(target), { passive: true });",
         'function observeAdminScrollbarAutoHide() {',
+        '.verify-monitor-list--compact',
+        '.admin-audit-monitor-panel__body--compact',
+        '.config-textarea',
+        '.select-options',
         '#discountGenerateModal > div',
         '#ticketReplyModal > div'
     ];
@@ -5495,7 +5508,7 @@ test('admin studio modal scrollers auto-hide after scroll activity settles', () 
         '.admin-scrollbar-auto-hide {',
         'scrollbar-color: transparent transparent !important;',
         '.admin-scrollbar-auto-hide.admin-scrollbar-auto-hide--visible::-webkit-scrollbar-thumb',
-        '.admin-scrollbar-auto-hide:hover::-webkit-scrollbar-thumb:hover'
+        '.admin-scrollbar-auto-hide:focus-within::-webkit-scrollbar-thumb:hover'
     ];
 
     for (const marker of styleMarkers) {
@@ -5568,4 +5581,30 @@ test('announcement runtime renderers externalize decoration particles and physic
             'announcement entry pages should load the latest announcement runtime version'
         );
     }
+});
+
+test('announcement settings panels keep the preview vertically centered and match editor height', () => {
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+
+    assert.match(
+        adminStudioHtml,
+        /admin-studio\.css\?v=20\d{6}_[A-Z0-9_]+/,
+        'admin-studio.html should keep the announcement settings stylesheet cache-busted'
+    );
+    assert.match(
+        adminStudioStyles,
+        /#settings-view-notifications \.announcement-full-layout\s*\{[\s\S]*align-items:\s*stretch;/,
+        'admin-studio.css should stretch the announcement preview and editor columns to the same height'
+    );
+    assert.match(
+        adminStudioStyles,
+        /#settings-view-notifications \.announcement-preview-stage\s*\{[\s\S]*align-items:\s*center;[\s\S]*height:\s*100%;/,
+        'admin-studio.css should vertically center the station announcement preview card inside its stage'
+    );
+    assert.match(
+        adminStudioStyles,
+        /#settings-view-notifications \.announcement-editor-side\s*\{[\s\S]*height:\s*100%;/,
+        'admin-studio.css should let the announcement editor card stretch to match the preview column height'
+    );
 });

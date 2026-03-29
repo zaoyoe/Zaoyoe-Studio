@@ -10,6 +10,7 @@
     "check:prod-env": "node scripts/check-prod-env.js",
     "inspect:proxy-chain": "node scripts/inspect-proxy-chain.js",
     "optimize-images": "node scripts/optimize-images.js",
+    "preview:local": "node scripts/local-preview-server.js",
     "preflight:payment-rollout": "node scripts/payment-rollout-preflight.js",
     "rollout:payment": "node scripts/payment-rollout-apply.js",
     "scan:payment-sites": "node scripts/scan-payment-site-values.js",

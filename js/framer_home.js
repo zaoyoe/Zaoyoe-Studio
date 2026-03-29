@@ -2072,25 +2072,43 @@ const FramerHome = {
   }
 };
 
+function scheduleHomepageInit() {
+  if (document.documentElement.dataset.homepageInitScheduled === '1') {
+    return;
+  }
+
+  document.documentElement.dataset.homepageInitScheduled = '1';
+
+  const startTime = Date.now();
+  const maxWaitMs = 2500;
+  const waitForDeps = setInterval(() => {
+    const promptsReady = Boolean(window.PROMPTS);
+    const clientReady = Boolean(window.supabaseClient);
+    const timedOut = Date.now() - startTime >= maxWaitMs;
+
+    if (!promptsReady) {
+      return;
+    }
+
+    if (!clientReady && !timedOut) {
+      return;
+    }
+
+    clearInterval(waitForDeps);
+
+    if (!clientReady) {
+      console.warn('⚠️ Supabase client not ready after 2500ms, initializing homepage with fallback-capable mode');
+    }
+
+    FramerHome.init();
+  }, 100);
+}
+
 // Auto-initialize when DOM is ready and dependencies are loaded
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    // Wait for PROMPTS and supabaseClient to be available
-    const waitForDeps = setInterval(() => {
-      if (window.PROMPTS && window.supabaseClient) {
-        clearInterval(waitForDeps);
-        FramerHome.init(); // Now async, but we don't need to await it here
-      }
-    }, 100);
-  });
+  document.addEventListener('DOMContentLoaded', scheduleHomepageInit);
 } else {
-  // DOM already loaded, check for deps
-  const waitForDeps = setInterval(() => {
-    if (window.PROMPTS && window.supabaseClient) {
-      clearInterval(waitForDeps);
-      FramerHome.init(); // Now async, but we don't need to await it here
-    }
-  }, 100);
+  scheduleHomepageInit();
 }
 
 // Export to window for global access
