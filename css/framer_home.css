@@ -1235,33 +1235,45 @@ body.mobile-menu-open .chat-widget-fab {
     gap: var(--spacing-md);
     white-space: nowrap;
     animation-duration: var(--home-animation-duration, 30s);
+    width: max-content;
+    will-change: transform;
+}
+
+.ticker-track-group {
+    display: flex;
+    gap: var(--spacing-md);
+    flex-shrink: 0;
 }
 
 .ticker-left .ticker-track {
-    animation: scroll-left 30s linear infinite;
+    animation-name: scroll-left;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
 }
 
 .ticker-right .ticker-track {
-    animation: scroll-right 30s linear infinite;
+    animation-name: scroll-right;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
 }
 
 @keyframes scroll-left {
     0% {
-        transform: translateX(0);
+        transform: translate3d(0, 0, 0);
     }
 
     100% {
-        transform: translateX(-50%);
+        transform: translate3d(calc(-1 * var(--home-ticker-cycle-width, 50%)), 0, 0);
     }
 }
 
 @keyframes scroll-right {
     0% {
-        transform: translateX(-50%);
+        transform: translate3d(calc(-1 * var(--home-ticker-cycle-width, 50%)), 0, 0);
     }
 
     100% {
-        transform: translateX(0);
+        transform: translate3d(0, 0, 0);
     }
 }
 
@@ -1848,28 +1860,35 @@ body.mobile-menu-open .chat-widget-fab {
     margin-left: calc(-50vw + 50%);
     overflow: hidden;
     margin-top: 40px;
-    padding: 0 24px;
+    padding: 0;
 }
 
 .shop-carousel-track {
     display: flex;
     gap: 24px;
     animation: shopScroll 30s linear infinite;
-    width: fit-content;
+    width: max-content;
     animation-duration: var(--home-animation-duration, 30s);
+    will-change: transform;
 }
 
 .shop-carousel-track:hover {
     animation-play-state: paused;
 }
 
+.shop-carousel-group {
+    display: flex;
+    gap: 24px;
+    flex-shrink: 0;
+}
+
 @keyframes shopScroll {
     0% {
-        transform: translateX(0);
+        transform: translate3d(0, 0, 0);
     }
 
     100% {
-        transform: translateX(-50%);
+        transform: translate3d(calc(-1 * var(--home-shop-cycle-width, 50%)), 0, 0);
     }
 }
 

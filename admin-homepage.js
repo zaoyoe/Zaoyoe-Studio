@@ -26,6 +26,8 @@ const HomepageAdmin = (() => {
     const SECTION_TO_VIS = { prompts: 'gallery' };
     const HOMEPAGE_ADMIN_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';
     const HOMEPAGE_ADMIN_PREVIEW_HIDDEN_CLASS = 'admin-studio-inline-style-attr-149';
+    const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
+    const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 
     function setHomepageAdminHiddenState(target, hidden, hiddenClass = HOMEPAGE_ADMIN_HIDDEN_CLASS) {
         if (!target) return;
@@ -57,6 +59,25 @@ const HomepageAdmin = (() => {
         }
         if (placeholder) {
             placeholder.hidden = !!hasPreview;
+        }
+    }
+
+    function invalidateHomepageRuntimeCaches() {
+        try {
+            ['cn', 'global'].forEach(site => {
+                localStorage.removeItem(`zaoyoe_${site}_cache_v1_homepage_config`);
+            });
+            localStorage.removeItem('zaoyoe_cache_v1_homepage_config');
+            localStorage.setItem(HOMEPAGE_CONFIG_LAST_UPDATED_KEY, String(Date.now()));
+            console.log('[Homepage] Invalidated homepage_config cache');
+        } catch (e) {
+            console.warn('[Homepage] Failed to invalidate local cache:', e);
+        }
+
+        try {
+            sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
+        } catch (e) {
+            console.warn('[Homepage] Failed to invalidate homepage prefetch cache:', e);
         }
     }
 
@@ -333,19 +354,7 @@ const HomepageAdmin = (() => {
                 showHomepageSaveIndicator(indicator, 2000);
             }
 
-            // Invalidate homepage_config cache so homepage reflects changes immediately
-            // cache.js key format: zaoyoe_{siteId}_cache_{version}_{key}
-            try {
-                // Remove for all possible site IDs
-                ['cn', 'global'].forEach(site => {
-                    localStorage.removeItem(`zaoyoe_${site}_cache_v1_homepage_config`);
-                });
-                // Also remove legacy key format (without site ID)
-                localStorage.removeItem('zaoyoe_cache_v1_homepage_config');
-                console.log('[Homepage] Invalidated homepage_config cache');
-            } catch (e) {
-                console.warn('[Homepage] Failed to invalidate cache:', e);
-            }
+            invalidateHomepageRuntimeCaches();
 
             if (typeof showToast === 'function') {
                 showToast('保存成功', 'success');

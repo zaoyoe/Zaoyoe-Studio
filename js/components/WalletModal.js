@@ -896,6 +896,7 @@
     const WalletModal = {
         isOpen: false,
         modalEl: null,
+        pendingRechargeAction: null,
         promptCache: {}, // Local simple cache for titles
         verifyLogCache: {},
         affiliateStats: null,
@@ -1749,6 +1750,10 @@
                 <div class="wallet-backdrop" aria-hidden="true"></div>
                 <div class="wallet-viewport">
                     <div class="wallet-modal">
+                        <div class="wallet-processing-banner" id="wallet-recharge-progress" aria-live="polite" aria-hidden="true">
+                            <span class="wallet-processing-spinner" aria-hidden="true"></span>
+                            <span id="wallet-recharge-progress-text">正在处理支付请求...</span>
+                        </div>
                         <div class="wallet-header">
                             <h2>💰 ${window.i18n?.t('wallet.title') || '我的钱包'}</h2>
                         </div>
@@ -3592,15 +3597,15 @@
                         pkgContainer.innerHTML = packages.map(pkg => {
                             const displayName = isEnglish && pkg.name_en ? pkg.name_en : pkg.name;
                             return `
-                            <div class="package-item"${this.buildDataAttributes({
+                            <button type="button" class="package-item"${this.buildDataAttributes({
                                 'wallet-action': 'buy-package',
                                 'wallet-package-id': this.encodeActionValue(pkg.id),
                                 'wallet-package-name': this.encodeActionValue(pkg.name)
                             })}>
                                 <div class="pkg-name">${displayName}</div>
                                 <div class="pkg-points">${this.formatPoints(pkg.points_amount)} ${pointsUnit}${pkg.bonus_points > 0 ? ` <span class="pkg-bonus">+${this.formatPoints(pkg.bonus_points)}</span>` : ''}</div>
-                                <div class="pkg-price">¥${pkg.price_cny}</div>
-                            </div>
+                                <div class="pkg-price" data-wallet-package-price>¥${pkg.price_cny}</div>
+                            </button>
                         `}).join('');
                     }
                     requestWalletRechargeScrollCueUpdate();
@@ -3665,6 +3670,10 @@
          * Handle package purchase
          */
         async buyPackage(packageId, packageName) {
+            if (this.pendingRechargeAction) {
+                return;
+            }
+
             const overlay = document.getElementById('wallet-modal-overlay');
             const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
             const paymentChannels = this.normalizePaymentChannelsConfig(this.paymentChannelsConfig);
@@ -3680,13 +3689,22 @@
             const packageData = Array.isArray(this._packagesCache)
                 ? this._packagesCache.find(pkg => String(pkg.id) === String(packageId))
                 : null;
+            const displayName = packageData?.name || packageName || '充值套餐';
+            const isMockFlow = providerKey === 'mock';
 
             try {
                 if (providerKey === 'mock' && !mockPayment.allowed) {
                     throw new Error(mockPayment.message || '当前环境已禁用模拟支付，请切换到真实支付通道。');
                 }
 
-                if (overlay) overlay.classList.add('loading');
+                this.setRechargeActionPendingState({
+                    kind: 'package',
+                    packageId,
+                    controlLabel: isMockFlow ? '模拟支付中' : '处理中',
+                    message: isMockFlow
+                        ? `正在处理「${displayName}」的模拟支付...`
+                        : `正在为「${displayName}」创建支付请求...`
+                });
 
                 const paymentResult = await PointsService.createPaymentRequest({
                     provider_key: providerKey,
@@ -3695,8 +3713,7 @@
                 });
 
                 if (paymentResult.mode === 'completed') {
-                    if (overlay) overlay.classList.remove('loading');
-                    this.showToast(paymentResult.message || `✅ 已为你完成「${packageName}」`, 'success');
+                    this.showToast(paymentResult.message || `✅ 已为你完成「${displayName}」`, 'success');
 
                     this.invalidateOrderRecordsCache();
                     this.loadOrders({
@@ -3708,7 +3725,6 @@
                     return;
                 }
 
-                if (overlay) overlay.classList.remove('loading');
                 if (paymentResult.mode === 'redirect') {
                     if (!paymentResult.checkout_url) {
                         throw new Error(`${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}尚未配置支付链接`);
@@ -3728,15 +3744,20 @@
 
             } catch (err) {
                 console.error('[WalletModal] Purchase failed:', err);
+                this.showToast('❌ 充值失败: ' + (err.message || '未知错误'), 'error');
+            } finally {
                 if (overlay) overlay.classList.remove('loading');
-                alert('❌ 无法打开支付链接: ' + (err.message || '未知错误'));
+                this.setRechargeActionPendingState(null);
             }
         },
 
         async customRecharge() {
+            if (this.pendingRechargeAction) {
+                return;
+            }
+
             const overlay = document.getElementById('wallet-modal-overlay');
             const input = document.getElementById('wallet-custom-recharge-input');
-            const button = document.getElementById('wallet-custom-recharge-btn');
             const rawValue = input?.value ?? '';
             const numericAmount = Number(rawValue);
             const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
@@ -3776,8 +3797,13 @@
                     throw new Error(mockPayment.message || '当前环境已禁用模拟支付，请切换到真实支付通道。');
                 }
 
-                if (button) button.disabled = true;
-                if (overlay) overlay.classList.add('loading');
+                this.setRechargeActionPendingState({
+                    kind: 'custom',
+                    controlLabel: providerKey === 'mock' ? '模拟充值中' : '充值中',
+                    message: providerKey === 'mock'
+                        ? `正在处理 ${this.formatPoints(normalizedAmount)} 积分的模拟充值...`
+                        : `正在为 ${this.formatPoints(normalizedAmount)} 积分创建支付请求...`
+                });
 
                 const paymentResult = await PointsService.createPaymentRequest({
                     provider_key: providerKey,
@@ -3785,8 +3811,6 @@
                 });
 
                 if (paymentResult.mode === 'redirect') {
-                    if (overlay) overlay.classList.remove('loading');
-
                     if (!paymentResult.checkout_url) {
                         throw new Error(`${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}尚未配置支付链接`);
                     }
@@ -3815,7 +3839,6 @@
                     input.value = '';
                 }
 
-                if (overlay) overlay.classList.remove('loading');
                 this.showToast(paymentResult.message || `✅ 自定义充值成功！ +${this.formatPoints(normalizedAmount)} 积分`, 'success');
 
                 this.invalidateOrderRecordsCache();
@@ -3827,10 +3850,10 @@
                 this.loadData().catch(e => console.error('Wallet reload after custom recharge failed:', e));
             } catch (err) {
                 console.error('[WalletModal] Custom recharge failed:', err);
-                if (overlay) overlay.classList.remove('loading');
                 this.showToast('❌ 自定义充值失败: ' + (err.message || '未知错误'), 'error');
             } finally {
-                if (button) button.disabled = false;
+                if (overlay) overlay.classList.remove('loading');
+                this.setRechargeActionPendingState(null);
             }
         },
 
@@ -4509,6 +4532,93 @@
                 toast.classList.add('wallet-toast--leaving');
                 setTimeout(() => toast.remove(), 300);
             }, 2000);
+        },
+
+        buildRechargePendingMarkup(label = '处理中') {
+            return `
+                <span class="wallet-pending-badge">
+                    <span class="wallet-pending-spinner" aria-hidden="true"></span>
+                    <span>${this.escapeHtml(label)}</span>
+                </span>
+            `;
+        },
+
+        setRechargeActionPendingState(state = null) {
+            const overlay = document.getElementById('wallet-modal-overlay');
+            const progressBanner = document.getElementById('wallet-recharge-progress');
+            const progressText = document.getElementById('wallet-recharge-progress-text');
+            const packageItems = Array.from(document.querySelectorAll('#wallet-packages .package-item[data-wallet-action="buy-package"]'));
+            const customInput = document.getElementById('wallet-custom-recharge-input');
+            const customButton = document.getElementById('wallet-custom-recharge-btn');
+            const isPending = !!state;
+
+            this.pendingRechargeAction = isPending ? { ...state } : null;
+
+            overlay?.classList.toggle('loading', isPending);
+            if (progressBanner) {
+                progressBanner.setAttribute('aria-hidden', isPending ? 'false' : 'true');
+            }
+            if (progressText) {
+                progressText.textContent = isPending
+                    ? (state.message || '正在处理支付请求...')
+                    : '正在处理支付请求...';
+            }
+
+            packageItems.forEach((item) => {
+                const priceEl = item.querySelector('[data-wallet-package-price]');
+                const decodedPackageId = this.decodeActionValue(item.dataset.walletPackageId);
+                const isTarget = isPending
+                    && state.kind === 'package'
+                    && String(decodedPackageId) === String(state.packageId);
+
+                item.disabled = isPending;
+                item.classList.toggle('is-processing', isTarget);
+                item.classList.toggle('is-dimmed', isPending && !isTarget);
+                item.setAttribute('aria-busy', isTarget ? 'true' : 'false');
+
+                if (!priceEl) return;
+                if (!priceEl.dataset.defaultLabel) {
+                    priceEl.dataset.defaultLabel = priceEl.textContent;
+                }
+
+                if (isTarget) {
+                    priceEl.innerHTML = this.buildRechargePendingMarkup(state.controlLabel || '处理中');
+                } else {
+                    priceEl.textContent = priceEl.dataset.defaultLabel;
+                }
+            });
+
+            if (!isPending) {
+                if (customButton) {
+                    customButton.classList.remove('is-processing');
+                    customButton.removeAttribute('aria-busy');
+                }
+
+                this.renderCustomRechargeSection(
+                    this.rechargeOptionsConfig,
+                    this.paymentChannelsConfig,
+                    this.paymentRuntimeConfig
+                );
+                return;
+            }
+
+            if (customInput) {
+                customInput.disabled = true;
+            }
+
+            if (customButton) {
+                customButton.disabled = true;
+                customButton.classList.toggle('is-processing', state.kind === 'custom');
+                customButton.setAttribute('aria-busy', state.kind === 'custom' ? 'true' : 'false');
+
+                if (!customButton.dataset.defaultLabel) {
+                    customButton.dataset.defaultLabel = customButton.textContent.trim();
+                }
+
+                if (state.kind === 'custom') {
+                    customButton.innerHTML = this.buildRechargePendingMarkup(state.controlLabel || '充值中');
+                }
+            }
         },
 
         /**
