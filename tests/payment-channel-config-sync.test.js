@@ -91,10 +91,11 @@ test('buildSyncPlan can switch the stored config back to mock for a temporary te
 });
 
 test('getMockRuntimeForEnv recognizes a valid temporary override', () => {
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const runtime = getMockRuntimeForEnv({
         DEPLOYMENT_TIER: 'production',
         APP_BASE_URL: 'https://www.zaoyoe.com',
-        ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL: '2026-03-28T23:59:59+08:00'
+        ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL: tomorrow
     });
 
     assert.equal(runtime.allowed, true);
