@@ -4039,6 +4039,10 @@ test('admin studio security, verify, affiliate, and experiment controls route th
     assert.equal(adminStudioStyles.includes('.security-group__head'), true, 'admin-studio.css should define an explicit login security group header layout');
     assert.equal(adminStudioStyles.includes('.security-setting-card:hover'), true, 'admin-studio.css should highlight login rule cards on hover');
     assert.equal(adminStudioStyles.includes('.security-subcard:focus-within'), true, 'admin-studio.css should highlight nested security cards while interacting with their contents');
+    assert.match(adminStudioStyles, /\.security-subcards-grid\s*\{[\s\S]*margin-top:\s*10px;/, 'admin-studio.css should add breathing room between login rule cards and the lower security subcards');
+    assert.equal(adminStudioStyles.includes('.admin-audit-monitor-card:focus-within'), true, 'admin-studio.css should highlight admin access summary cards while interacting with them');
+    assert.equal(adminStudioStyles.includes('.admin-audit-monitor-panel:focus-within'), true, 'admin-studio.css should highlight admin access panels while interacting with them');
+    assert.equal(adminStudioStyles.includes('.admin-audit-monitor-item:hover'), true, 'admin-studio.css should highlight admin access list items on hover');
     assert.match(adminStudioStyles, /\.config-textarea\s*\{[\s\S]*box-sizing: border-box;/, 'admin-studio.css should keep config textareas inside their cards');
     assert.equal(adminConfigSource.includes('setLockedAccountsRefreshButtonState'), true, 'admin-config.js should manage locked account refresh button state');
     assert.equal(adminConfigSource.includes('showLockedAccountsRefreshIndicator'), true, 'admin-config.js should surface locked account refresh feedback');
