@@ -638,29 +638,67 @@ function renderVerifyMonitorOverview() {
 
 function buildVerifyMonitorRowMarkup(row) {
     const statusMeta = getVerifyMonitorStatusMeta(row.status);
-    const jobLabel = escapeConfigHtml(row.verification_id || row.id || 'unknown');
+    const rawJobLabel = String(row.verification_id || row.id || 'unknown').trim() || 'unknown';
+    const jobLabel = escapeConfigHtml(summarizeAdminAuditMonitorText(rawJobLabel, 40));
     const identityParts = [
-        row.email,
-        row.user_id,
+        row.email ? summarizeAdminAuditMonitorText(row.email, 32) : '',
+        row.user_id ? summarizeAdminAuditMonitorText(row.user_id, 18) : '',
         row.site ? String(row.site).toUpperCase() : ''
     ].filter(Boolean).map((item) => escapeConfigHtml(item));
-    const detailParts = [];
+    const detailChips = [];
+    const summaryText = String(row.summary || row.error_message || '暂无更多细节').trim() || '暂无更多细节';
+    const identitySummary = identityParts.length ? identityParts.join(' · ') : '未记录身份信息';
 
-    if (row.stage_label) detailParts.push(`阶段：${escapeConfigHtml(row.stage_label)}`);
-    if (row.raw_status && row.raw_status !== row.stage_label) detailParts.push(`原始状态：${escapeConfigHtml(row.raw_status)}`);
-    if (Number(row.points_deducted) > 0) detailParts.push(`积分：${escapeConfigHtml(formatVerifyMonitorInteger(row.points_deducted))}`);
-    if (row.error_code) detailParts.push(`错误码：${escapeConfigHtml(row.error_code)}`);
+    if (row.stage_label) {
+        detailChips.push(buildAdminAuditMonitorInfoChip(
+            '阶段',
+            row.stage_label,
+            { displayValue: summarizeAdminAuditMonitorText(row.stage_label, 20) }
+        ));
+    }
+
+    if (row.raw_status && row.raw_status !== row.stage_label) {
+        detailChips.push(buildAdminAuditMonitorInfoChip(
+            '状态',
+            row.raw_status,
+            { displayValue: summarizeAdminAuditMonitorText(row.raw_status, 18) }
+        ));
+    }
+
+    if (row.site) {
+        detailChips.push(buildAdminAuditMonitorInfoChip('站点', row.site, { displayValue: String(row.site).toUpperCase() }));
+    }
+
+    if (Number(row.points_deducted) > 0) {
+        detailChips.push(buildAdminAuditMonitorInfoChip('积分', formatVerifyMonitorInteger(row.points_deducted)));
+    }
+
+    if (row.error_code) {
+        detailChips.push(buildAdminAuditMonitorInfoChip(
+            '错误码',
+            row.error_code,
+            { displayValue: summarizeAdminAuditMonitorText(row.error_code, 18), tone: 'warning' }
+        ));
+    }
+
+    if (row.url) {
+        detailChips.push(buildAdminAuditMonitorInfoChip(
+            '链接',
+            row.url,
+            { displayValue: formatAdminAuditMonitorUrlLabel(row.url) }
+        ));
+    }
 
     return `
         <article class="verify-monitor-item">
             <div class="verify-monitor-item__top">
                 <span class="verify-monitor-status-badge verify-monitor-status-badge--${escapeConfigHtml(statusMeta.tone)}">${escapeConfigHtml(statusMeta.label)}</span>
-                <strong class="verify-monitor-item__job">${jobLabel}</strong>
+                <strong class="verify-monitor-item__job" title="${escapeConfigHtml(rawJobLabel)}">${jobLabel}</strong>
                 <span class="verify-monitor-item__time">${escapeConfigHtml(formatVerifyMonitorDateTime(row.created_at))}</span>
             </div>
-            <div class="verify-monitor-item__meta">${identityParts.length ? identityParts.join(' · ') : '未记录身份信息'}</div>
-            <div class="verify-monitor-item__summary">${escapeConfigHtml(row.summary || '暂无更多细节')}</div>
-            ${detailParts.length ? `<div class="verify-monitor-item__detail">${detailParts.join(' · ')}</div>` : ''}
+            <div class="verify-monitor-item__summary" title="${escapeConfigHtml(summaryText)}">${escapeConfigHtml(summaryText)}</div>
+            <div class="verify-monitor-item__meta" title="${escapeConfigHtml(identitySummary)}">${identitySummary}</div>
+            ${detailChips.length ? `<div class="verify-monitor-item__chips">${detailChips.join('')}</div>` : ''}
         </article>
     `;
 }

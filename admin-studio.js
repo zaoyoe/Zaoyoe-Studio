@@ -20,6 +20,7 @@ const ADMIN_SCROLLBAR_AUTO_HIDE_CLASS = 'admin-scrollbar-auto-hide';
 const ADMIN_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS = 'admin-scrollbar-auto-hide--visible';
 const ADMIN_SCROLLBAR_AUTO_HIDE_BOUND_ATTR = 'data-admin-scrollbar-auto-hide-bound';
 const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [
+    '.select-options',
     '.modal-content',
     '.user-modal-left',
     '.user-tab-content',
@@ -30,6 +31,9 @@ const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [
     '.admin-ledger-modal-body',
     '.ban-user-modal .modal-body',
     '.locked-accounts-list',
+    '.verify-monitor-list--compact',
+    '.admin-audit-monitor-panel__body--compact',
+    '.config-textarea',
     '.premium-modal-layout',
     '.product-list-container',
     '.inventory-textarea',
@@ -63,6 +67,7 @@ function bindAdminScrollbarAutoHide(target) {
 
     target.setAttribute(ADMIN_SCROLLBAR_AUTO_HIDE_BOUND_ATTR, '1');
     target.classList.add(ADMIN_SCROLLBAR_AUTO_HIDE_CLASS);
+    target.addEventListener('mouseenter', () => markAdminScrollbarActive(target), { passive: true });
     target.addEventListener('scroll', () => markAdminScrollbarActive(target), { passive: true });
 }
 
