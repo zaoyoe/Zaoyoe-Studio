@@ -3051,14 +3051,27 @@ function buildOpsAlertSummaryContent(summaryConfig, itemCount, bucket) {
 }
 
 async function loadExistingOpsAlertSummaryJob(supabase, alertType, dedupeKey) {
-    const { data, error } = await supabase
+    const query = supabase
         .from('ops_alert_jobs')
         .select('*')
         .eq('alert_type', alertType)
-        .eq('dedupe_key', dedupeKey)
-        .single();
+        .eq('dedupe_key', dedupeKey);
+    const { data, error } = await (typeof query.maybeSingle === 'function'
+        ? query.maybeSingle()
+        : query.single());
 
     if (error) {
+        const errorCode = normalizeText(error.code, 40).toUpperCase();
+        const errorMessage = normalizeText(error.message, 240).toLowerCase();
+        const errorDetails = normalizeText(error.details, 240).toLowerCase();
+        const isNoRows = errorCode === 'PGRST116'
+            || errorMessage.includes('0 rows')
+            || errorMessage.includes('no rows')
+            || errorDetails.includes('0 rows')
+            || errorDetails.includes('no rows');
+        if (isNoRows) {
+            return null;
+        }
         throw error;
     }
 
