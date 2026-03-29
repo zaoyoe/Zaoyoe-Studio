@@ -4,7 +4,11 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { resolveLocalPreviewRuntimeScript } = require('../scripts/local-preview-server');
+const {
+    applyPreviewEnvToProcess,
+    buildLocalPreviewAdminHandlerUrl,
+    resolveLocalPreviewRuntimeScript
+} = require('../scripts/local-preview-server');
 
 test('local preview server serves Supabase runtime config from local env files', async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-server-'));
@@ -37,4 +41,50 @@ test('local preview server returns executable fallback script when public config
 
     assert.match(body, /Local preview runtime config error/);
     assert.match(body, /__ZAOYOE_SUPABASE_CONFIG__ = null/);
+});
+
+test('local preview server rewrites nested admin routes into the shared admin handler format', () => {
+    const rewrittenUrl = buildLocalPreviewAdminHandlerUrl('/api/admin/access/session?foo=bar');
+
+    assert.equal(rewrittenUrl, '/api/admin?route=access%2Fsession&foo=bar');
+});
+
+test('local preview server seeds process env from loaded preview values without clobbering existing vars', () => {
+    const originalUrl = process.env.SUPABASE_URL;
+    const originalKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+    const originalMarker = process.env.LOCAL_PREVIEW_TEST_MARKER;
+
+    process.env.LOCAL_PREVIEW_TEST_MARKER = 'keep-me';
+    delete process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_PUBLISHABLE_KEY;
+
+    try {
+        applyPreviewEnvToProcess({
+            SUPABASE_URL: 'https://preview.supabase.co',
+            SUPABASE_PUBLISHABLE_KEY: 'preview-key',
+            LOCAL_PREVIEW_TEST_MARKER: 'replace-me'
+        });
+
+        assert.equal(process.env.SUPABASE_URL, 'https://preview.supabase.co');
+        assert.equal(process.env.SUPABASE_PUBLISHABLE_KEY, 'preview-key');
+        assert.equal(process.env.LOCAL_PREVIEW_TEST_MARKER, 'keep-me');
+    } finally {
+        if (originalUrl === undefined) {
+            delete process.env.SUPABASE_URL;
+        } else {
+            process.env.SUPABASE_URL = originalUrl;
+        }
+
+        if (originalKey === undefined) {
+            delete process.env.SUPABASE_PUBLISHABLE_KEY;
+        } else {
+            process.env.SUPABASE_PUBLISHABLE_KEY = originalKey;
+        }
+
+        if (originalMarker === undefined) {
+            delete process.env.LOCAL_PREVIEW_TEST_MARKER;
+        } else {
+            process.env.LOCAL_PREVIEW_TEST_MARKER = originalMarker;
+        }
+    }
 });
