@@ -131,17 +131,10 @@
 
     async function openAdminStudio(target = 'admin-studio.html') {
         const safeTarget = sanitizeAdminStudioTarget(target);
-        const result = await createAdminStudioSession();
-
-        if (result?.ok) {
-            globalScope.location.href = safeTarget;
-            return true;
-        }
-
         const entryUrl = new URL('admin-entry.html', globalScope.location?.href || 'https://www.zaoyoe.com/');
         entryUrl.searchParams.set('next', safeTarget);
         globalScope.location.href = `${entryUrl.pathname}${entryUrl.search}${entryUrl.hash}`;
-        return false;
+        return true;
     }
 
     async function getCurrentAdminAccess(options = {}) {

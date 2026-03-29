@@ -47,47 +47,65 @@
 
         setEntryState('pending', {
             title: '正在验证后台访问',
-            message: '请稍候，我们正在为管理员账号签发短时访问凭证。'
+            message: '请稍候，我们正在检查管理员权限并签发短时访问凭证。'
         });
 
-        if (!globalScope.AdminAccess?.getCurrentAdminAccess || !globalScope.AdminAccess?.createAdminStudioSession) {
+        try {
+            if (!globalScope.AdminAccess?.getCurrentAdminAccess || !globalScope.AdminAccess?.createAdminStudioSession) {
+                setEntryState('error', {
+                    title: '后台入口初始化失败',
+                    message: '当前页面缺少后台访问校验模块，请返回首页刷新后重试。'
+                });
+                return;
+            }
+
+            const access = await globalScope.AdminAccess.getCurrentAdminAccess({ forceRefresh: true });
+            if (!access?.user) {
+                setEntryState('denied', {
+                    title: '请先登录管理员账号',
+                    message: '当前浏览器里没有有效登录态。请先返回首页登录，再从管理员入口进入后台。'
+                });
+                return;
+            }
+
+            if (!access.isAdmin) {
+                setEntryState('denied', {
+                    title: '当前账号没有后台权限',
+                    message: '你已经登录，但当前账号并未被授予 Admin Studio 权限，因此无法继续进入后台。'
+                });
+                return;
+            }
+
+            const session = await globalScope.AdminAccess.createAdminStudioSession();
+            if (!session?.ok) {
+                setEntryState('error', {
+                    title: '后台凭证签发失败',
+                    message: '管理员身份已确认，但短时访问凭证下发失败。请稍后刷新重试，或重新回到首页进入后台。'
+                });
+                return;
+            }
+
+            if (typeof globalScope.location?.replace === 'function') {
+                globalScope.location.replace(safeTarget);
+                return;
+            }
+
+            globalScope.location.href = safeTarget;
+        } catch (error) {
+            console.error('[AdminEntry] Failed to continue into Admin Studio:', error);
             setEntryState('error', {
-                title: '后台入口初始化失败',
-                message: '当前页面缺少后台访问校验模块，请返回首页刷新后重试。'
+                title: '后台入口暂时不可用',
+                message: '验证管理员权限时发生异常。请稍后刷新重试，或重新回到首页再进入后台。'
             });
-            return;
         }
-
-        const access = await globalScope.AdminAccess.getCurrentAdminAccess({ forceRefresh: true });
-        if (!access?.user) {
-            setEntryState('denied', {
-                title: '请先登录管理员账号',
-                message: '当前浏览器里没有有效登录态。请先返回首页登录，再从管理员入口进入后台。'
-            });
-            return;
-        }
-
-        if (!access.isAdmin) {
-            setEntryState('denied', {
-                title: '当前账号没有后台权限',
-                message: '你已经登录，但当前账号并未被授予 Admin Studio 权限，因此无法继续进入后台。'
-            });
-            return;
-        }
-
-        const session = await globalScope.AdminAccess.createAdminStudioSession();
-        if (!session?.ok) {
-            setEntryState('error', {
-                title: '后台凭证签发失败',
-                message: '管理员身份已确认，但短时访问凭证下发失败。请稍后刷新重试，或重新回到首页进入后台。'
-            });
-            return;
-        }
-
-        globalScope.location.replace(safeTarget);
     }
 
-    globalScope.document?.addEventListener('DOMContentLoaded', () => {
-        void bootAdminEntry();
-    }, { once: true });
+    if (globalScope.document?.readyState === 'loading') {
+        globalScope.document.addEventListener('DOMContentLoaded', () => {
+            void bootAdminEntry();
+        }, { once: true });
+        return;
+    }
+
+    void bootAdminEntry();
 })(typeof window !== 'undefined' ? window : globalThis);
