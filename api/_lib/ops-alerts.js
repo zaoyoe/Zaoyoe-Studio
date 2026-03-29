@@ -3315,12 +3315,14 @@ async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
         return { queued: false, reason: 'missing_fields' };
     }
 
-    const summaryResult = await queueOpsAlertSummaryJob(supabase, input, {
-        ...options,
-        runtime
-    });
-    if (summaryResult) {
-        return summaryResult;
+    if (options.skipSummary !== true) {
+        const summaryResult = await queueOpsAlertSummaryJob(supabase, input, {
+            ...options,
+            runtime
+        });
+        if (summaryResult) {
+            return summaryResult;
+        }
     }
 
     const explicitCreatedAt = normalizeText(input.createdAt || input.created_at);

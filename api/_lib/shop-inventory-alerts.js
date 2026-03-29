@@ -146,6 +146,32 @@ function getLatestInventoryStateJob(stateJobs = [], alertType, targetId = '') {
         .sort(compareCreatedAtDescending)[0] || null;
 }
 
+function hasInventoryStateSinceLastRecovery(stateJobs = [], alertType, targetId = '') {
+    const latestState = getLatestInventoryStateJob(stateJobs, alertType, targetId);
+    if (!latestState) {
+        return false;
+    }
+
+    const latestRecovered = getLatestInventoryStateJob(stateJobs, 'shop_inventory_recovered', targetId);
+    const latestStateAt = Date.parse(normalizeText(latestState.created_at));
+    const latestRecoveredAt = Date.parse(normalizeText(latestRecovered?.created_at));
+
+    return !(Number.isFinite(latestStateAt) && Number.isFinite(latestRecoveredAt) && latestRecoveredAt >= latestStateAt);
+}
+
+function shouldSendImmediateInventoryAlert(alert = {}, stateJobs = [], options = {}) {
+    if (options.summaryEnabled !== true) {
+        return true;
+    }
+
+    const targetId = getInventoryTargetId(alert.payload);
+    if (!targetId) {
+        return true;
+    }
+
+    return !hasInventoryStateSinceLastRecovery(stateJobs, alert.alertType, targetId);
+}
+
 async function fetchPagedRows(buildQuery, pageSize = 500, maxPages = 10) {
     const rows = [];
 
@@ -444,6 +470,7 @@ async function runShopInventoryLowSweep(supabase, options = {}) {
         ...runtimeConfig,
         ...(options.config && typeof options.config === 'object' ? options.config : {})
     }, env);
+    const summaryEnabled = runtime?.config?.shop_inventory?.summary_enabled === true;
 
     if (!config.enabled) {
         return {
@@ -492,6 +519,9 @@ async function runShopInventoryLowSweep(supabase, options = {}) {
     let queued = 0;
     let deduped = 0;
     let skippedNoChannels = 0;
+    let summaryQueued = 0;
+    let summaryDeduped = 0;
+    let summarySkippedNoChannels = 0;
     let recoveredQueued = 0;
     let recoveredDeduped = 0;
     let recoveredSkippedNoChannels = 0;
@@ -500,28 +530,70 @@ async function runShopInventoryLowSweep(supabase, options = {}) {
     const results = [];
 
     for (const alert of alerts) {
-        const result = await enqueueOpsAlertJob(supabase, {
-            ...alert,
-            source: 'shop_inventory_monitor'
-        }, {
-            runtime,
-            env
+        const shouldSendImmediate = shouldSendImmediateInventoryAlert(alert, stateJobs, {
+            summaryEnabled
         });
+        let directResult = {
+            queued: false,
+            reason: summaryEnabled ? 'summary_only' : 'skipped'
+        };
 
-        if (result?.queued === true) {
-            queued += 1;
-        } else if (result?.reason === 'deduped') {
-            deduped += 1;
-        } else if (result?.reason === 'no_active_channels') {
-            skippedNoChannels += 1;
+        if (shouldSendImmediate) {
+            directResult = await enqueueOpsAlertJob(supabase, {
+                ...alert,
+                createdAt: nowDate.toISOString(),
+                source: 'shop_inventory_monitor'
+            }, {
+                runtime,
+                env,
+                skipSummary: true
+            });
+
+            if (directResult?.queued === true) {
+                queued += 1;
+                stateJobs.unshift({
+                    id: directResult?.job?.id || null,
+                    alert_type: alert.alertType,
+                    severity: alert.severity,
+                    title: alert.title,
+                    created_at: directResult?.job?.created_at || nowDate.toISOString(),
+                    payload: alert.payload
+                });
+            } else if (directResult?.reason === 'deduped') {
+                deduped += 1;
+            } else if (directResult?.reason === 'no_active_channels') {
+                skippedNoChannels += 1;
+            }
+        }
+
+        let summaryResult = null;
+        if (summaryEnabled) {
+            summaryResult = await enqueueOpsAlertJob(supabase, {
+                ...alert,
+                createdAt: nowDate.toISOString(),
+                source: 'shop_inventory_monitor'
+            }, {
+                runtime,
+                env
+            });
+
+            if (summaryResult?.queued === true) {
+                summaryQueued += 1;
+            } else if (summaryResult?.reason === 'deduped') {
+                summaryDeduped += 1;
+            } else if (summaryResult?.reason === 'no_active_channels') {
+                summarySkippedNoChannels += 1;
+            }
         }
 
         results.push({
             product_id: alert.payload?.product_id || null,
             alert_type: alert.alertType,
             severity: alert.severity,
-            queued: result?.queued === true,
-            reason: result?.reason || null
+            queued: directResult?.queued === true,
+            reason: directResult?.reason || null,
+            summary_queued: summaryResult?.queued === true,
+            summary_reason: summaryResult?.reason || null
         });
     }
 
@@ -572,9 +644,12 @@ async function runShopInventoryLowSweep(supabase, options = {}) {
         recovered_count: recoveryAlerts.length,
         queued,
         deduped,
+        summary_queued: summaryQueued,
+        summary_deduped: summaryDeduped,
         recovered_queued: recoveredQueued,
         recovered_deduped: recoveredDeduped,
         skipped_no_channels: skippedNoChannels,
+        summary_skipped_no_channels: summarySkippedNoChannels,
         recovered_skipped_no_channels: recoveredSkippedNoChannels,
         admin_notifications_created: adminNotificationsCreated,
         admin_notifications_skipped: adminNotificationsSkipped,
@@ -596,7 +671,9 @@ module.exports = {
         fetchActiveInventoryProducts,
         fetchRecentShopOrders,
         getInventoryTargetId,
+        hasInventoryStateSinceLastRecovery,
         getLatestInventoryStateJob,
+        shouldSendImmediateInventoryAlert,
         shouldCountOrderTowardsSales
     }
 };
