@@ -7693,6 +7693,7 @@
                                     <p>聚焦充值支付通道、认领效率、成功率与回调稳定性，适合快速判断当前支付链路是否健康。</p>
                                 </div>
                             </div>
+                            <div class="kpi-cards-row payments-kpi-grid" id="paymentsOverviewGrid"></div>
                             <div class="chart-card glass-panel payments-card payments-refund-alert-panel" id="paymentsRefundAlertsPanel" hidden>
                                 <div class="chart-header">
                                     <h3><i class="fas fa-bell"></i> 退款售后告警</h3>
@@ -7700,15 +7701,6 @@
                                 </div>
                                 <div class="chart-body payments-card-body">
                                     <div class="payments-refund-alerts" id="paymentsRefundAlerts"></div>
-                                </div>
-                            </div>
-                            <div class="chart-card glass-panel payments-card" id="paymentsOpsAlertHealthPanel" hidden>
-                                <div class="chart-header">
-                                    <h3><i class="fas fa-paper-plane"></i> 站外告警投递</h3>
-                                    <span id="paymentsOpsAlertHealthMeta">当前暂无站外告警投递数据。</span>
-                                </div>
-                                <div class="chart-body payments-card-body">
-                                    <div class="payments-provider-stats" id="paymentsOpsAlertHealth"></div>
                                 </div>
                             </div>
                             <div class="charts-grid payments-charts-grid">
@@ -7733,7 +7725,15 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="kpi-cards-row payments-kpi-grid" id="paymentsOverviewGrid"></div>
+                            <div class="chart-card glass-panel payments-card" id="paymentsOpsAlertHealthPanel" hidden>
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-paper-plane"></i> 站外告警投递</h3>
+                                    <span id="paymentsOpsAlertHealthMeta">当前暂无站外告警投递数据。</span>
+                                </div>
+                                <div class="chart-body payments-card-body">
+                                    <div class="payments-provider-stats" id="paymentsOpsAlertHealth"></div>
+                                </div>
+                            </div>
                         </div>
 
                         <div id="payments-tab-finance" class="payments-tab-content">
