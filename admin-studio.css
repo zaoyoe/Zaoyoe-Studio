@@ -2753,12 +2753,12 @@ body {
 
 .admin-ticket-copyable {
     cursor: pointer;
-    color: #60a5fa;
+    color: #6b9ece;
     transition: color 0.2s ease, transform 0.2s ease;
 }
 
 .admin-ticket-copyable:hover {
-    color: #93c5fd;
+    color: #89b8e0;
     transform: translateY(-1px);
 }
 
