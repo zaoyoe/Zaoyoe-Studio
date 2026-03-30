@@ -130,6 +130,7 @@ async function withSupportHandler({
 test('support create_ticket enqueues an external ops alert for the new ticket', async () => {
     const insertedRows = [];
     const enqueuedAlerts = [];
+    const selectClauses = [];
 
     await withSupportHandler({
         adminModule: {
@@ -145,7 +146,8 @@ test('support create_ticket enqueues an external ops alert for the new ticket', 
                                 insert(payload) {
                                     insertedRows.push(payload);
                                     return {
-                                        select() {
+                                        select(columns) {
+                                            selectClauses.push(String(columns || ''));
                                             return {
                                                 async single() {
                                                     return {
@@ -207,6 +209,8 @@ test('support create_ticket enqueues an external ops alert for the new ticket', 
             status: 'PENDING',
             description: '卡密没有到账，请帮忙处理'
         });
+        assert.equal(selectClauses.length, 1);
+        assert.equal(selectClauses[0].includes('reason'), false);
         assert.equal(enqueuedAlerts.length, 1);
         assert.equal(enqueuedAlerts[0].alertType, 'ticket_new');
         assert.equal(enqueuedAlerts[0].source, 'support_ticket');
