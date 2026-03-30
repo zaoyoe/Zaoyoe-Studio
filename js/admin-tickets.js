@@ -6,6 +6,42 @@ const AdminTickets = {
     currentStatus: 'all',
     searchQuery: '',
 
+    fetchProfilesByIds: async function (userIds = []) {
+        const uniqueIds = Array.from(new Set(
+            (userIds || [])
+                .map((userId) => this.safeText(userId))
+                .filter(Boolean)
+        ));
+        if (!uniqueIds.length) {
+            return {};
+        }
+
+        const profilesById = {};
+        const chunkSize = 200;
+
+        for (let index = 0; index < uniqueIds.length; index += chunkSize) {
+            const batch = uniqueIds.slice(index, index + chunkSize);
+            const { data, error } = await window.supabaseClient
+                .from('profiles')
+                .select('id, email')
+                .in('id', batch);
+
+            if (error) throw error;
+
+            (data || []).forEach((profile) => {
+                const id = this.safeText(profile?.id);
+                if (id) {
+                    profilesById[id] = {
+                        id,
+                        email: this.safeText(profile?.email)
+                    };
+                }
+            });
+        }
+
+        return profilesById;
+    },
+
     init: async function () {
         if (this._initialized) return;
         this._initialized = true;
@@ -54,7 +90,18 @@ const AdminTickets = {
 
             if (error) throw error;
 
-            this.tickets = data || [];
+            const rawTickets = data || [];
+            let profilesById = {};
+            try {
+                profilesById = await this.fetchProfilesByIds(rawTickets.map((ticket) => ticket?.user_id));
+            } catch (profileError) {
+                console.warn('[AdminTickets] profiles load error:', profileError);
+            }
+
+            this.tickets = rawTickets.map((ticket) => ({
+                ...ticket,
+                user_email: this.safeText(profilesById[this.safeText(ticket?.user_id)]?.email)
+            }));
             this.applyFilters();
         } catch (err) {
             console.error('[AdminTickets] load error:', err);
@@ -87,6 +134,7 @@ const AdminTickets = {
                 (t.id && t.id.toLowerCase().includes(q)) ||
                 (t.order_id && t.order_id.toLowerCase().includes(q)) ||
                 (t.user_id && t.user_id.toLowerCase().includes(q)) ||
+                (t.user_email && t.user_email.toLowerCase().includes(q)) ||
                 (t.reason && t.reason.toLowerCase().includes(q)) ||
                 (t.description && t.description.toLowerCase().includes(q))
             );
@@ -226,6 +274,17 @@ const AdminTickets = {
             userDiv.textContent = userId ? `${userId.substring(0, 8)}...` : '-';
             userDiv.addEventListener('click', () => this.copyText(userId));
             userCell.appendChild(userDiv);
+
+            const userEmail = this.safeText(ticket.user_email);
+            const emailDiv = document.createElement('div');
+            emailDiv.className = 'admin-ticket-meta-date admin-ticket-user-email';
+            emailDiv.textContent = userEmail || '无邮箱';
+            if (userEmail) {
+                emailDiv.classList.add('admin-ticket-copyable');
+                emailDiv.title = '点击复制邮箱';
+                emailDiv.addEventListener('click', () => this.copyText(userEmail));
+            }
+            userCell.appendChild(emailDiv);
 
             const reasonCell = document.createElement('td');
             const reasonDiv = document.createElement('div');

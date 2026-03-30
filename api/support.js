@@ -202,7 +202,10 @@ async function handleCreateTicket({ requestSupabase, adminSupabase, user, input 
         throw createError(error.message || '工单提交失败', 500, 'ticket_create_failed');
     }
 
-    const ticketAlert = buildTicketCreatedAlert(data || insertPayload);
+    const ticketAlert = buildTicketCreatedAlert({
+        ...(data || insertPayload),
+        user_email: normalizeText(user?.email, 255) || null
+    });
     if (adminSupabase?.from && ticketAlert) {
         try {
             await enqueueOpsAlertJob(adminSupabase, {

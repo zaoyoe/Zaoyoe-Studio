@@ -1826,6 +1826,7 @@ test('buildExternalAlertText renders new support ticket details', () => {
             ticket_id: 'ticket-demo-001',
             order_id: 'shop-order-demo-001',
             user_id: 'demo_ticket_user_001',
+            user_email: 'demo.ticket@example.com',
             ticket_status: 'PENDING',
             reason: '卡密未到账，用户需要人工补发。',
             created_at: '2026-03-30T12:00:00.000Z',
@@ -1836,6 +1837,7 @@ test('buildExternalAlertText renders new support ticket details', () => {
     assert.match(text, /新售后工单/);
     assert.match(text, /工单号：ticket-demo-001/);
     assert.match(text, /订单号：shop-order-demo-001/);
+    assert.match(text, /用户邮箱：demo\.ticket@example\.com/);
     assert.match(text, /用户ID：demo_ticket_user_001/);
     assert.match(text, /当前状态：待处理/);
     assert.match(text, /问题描述：卡密未到账，用户需要人工补发。/);

@@ -131,13 +131,15 @@ test('support create_ticket enqueues an external ops alert for the new ticket', 
     const insertedRows = [];
     const enqueuedAlerts = [];
     const selectClauses = [];
+    const builtTickets = [];
 
     await withSupportHandler({
         adminModule: {
             async requireAuthenticatedUser() {
                 return {
                     user: {
-                        id: 'user-support-1'
+                        id: 'user-support-1',
+                        email: 'member@example.com'
                     },
                     requestSupabase: {
                         from(table) {
@@ -179,6 +181,24 @@ test('support create_ticket enqueues an external ops alert for the new ticket', 
                 };
             }
         },
+        ticketAlertsModule: {
+            buildTicketCreatedAlert(ticket = {}) {
+                builtTickets.push(ticket);
+                return {
+                    alertType: 'ticket_new',
+                    severity: 'warning',
+                    title: `新售后工单（${String(ticket.id || '').slice(0, 8) || 'unknown'}）`,
+                    content: '收到新的售后工单，请尽快跟进。',
+                    payload: {
+                        ticket_id: ticket.id || null,
+                        user_id: ticket.user_id || null,
+                        user_email: ticket.user_email || null
+                    },
+                    dedupeKey: 'ticket-new-dedupe',
+                    dedupeWindowMinutes: 24 * 60
+                };
+            }
+        },
         opsAlertsModule: {
             async enqueueOpsAlertJob(_supabase, input) {
                 enqueuedAlerts.push(input);
@@ -211,11 +231,14 @@ test('support create_ticket enqueues an external ops alert for the new ticket', 
         });
         assert.equal(selectClauses.length, 1);
         assert.equal(selectClauses[0].includes('reason'), false);
+        assert.equal(builtTickets.length, 1);
+        assert.equal(builtTickets[0].user_email, 'member@example.com');
         assert.equal(enqueuedAlerts.length, 1);
         assert.equal(enqueuedAlerts[0].alertType, 'ticket_new');
         assert.equal(enqueuedAlerts[0].source, 'support_ticket');
         assert.equal(enqueuedAlerts[0].payload.ticket_id, 'ticket-demo-001');
         assert.equal(enqueuedAlerts[0].payload.user_id, 'user-support-1');
+        assert.equal(enqueuedAlerts[0].payload.user_email, 'member@example.com');
         assert.equal(enqueuedAlerts[0].createdAt, '2026-03-30T12:00:00.000Z');
     });
 });
