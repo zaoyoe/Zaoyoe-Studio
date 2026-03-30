@@ -12,6 +12,19 @@ const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
 });
 const SUPPORTED_CHANNELS = Object.freeze(['telegram', 'feishu', 'email']);
 const DEFAULT_QUIET_HOURS_TIMEZONE = 'Asia/Shanghai';
+const EXTERNAL_ALERT_TIMEZONE = 'Asia/Shanghai';
+const EXTERNAL_ALERT_TIMEZONE_LABEL = '北京时间';
+const EXTERNAL_ALERT_TIMESTAMP_IN_TEXT_PATTERN = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})\b/g;
+const EXTERNAL_ALERT_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+    timeZone: EXTERNAL_ALERT_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+});
 const DEFAULT_SUMMARY_SCHEDULE_MODE = 'rolling_window';
 const WORK_HOURS_SUMMARY_SCHEDULE_MODE = 'work_hours';
 const SUPPORTED_SUMMARY_SCHEDULE_MODES = Object.freeze([
@@ -3653,7 +3666,28 @@ function formatTimestamp(value) {
     const normalized = normalizeText(value);
     if (!normalized) return '';
     const parsed = Date.parse(normalized);
-    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : normalized;
+    if (!Number.isFinite(parsed)) {
+        return normalized;
+    }
+
+    const parts = Object.create(null);
+    for (const part of EXTERNAL_ALERT_TIMESTAMP_FORMATTER.formatToParts(new Date(parsed))) {
+        if (part.type !== 'literal') {
+            parts[part.type] = part.value;
+        }
+    }
+
+    if (!parts.year || !parts.month || !parts.day || !parts.hour || !parts.minute || !parts.second) {
+        return normalized;
+    }
+
+    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} ${EXTERNAL_ALERT_TIMEZONE_LABEL}`;
+}
+
+function formatTimestampsInsideText(value) {
+    const normalized = normalizeText(value);
+    if (!normalized) return '';
+    return normalized.replace(EXTERNAL_ALERT_TIMESTAMP_IN_TEXT_PATTERN, (matched) => formatTimestamp(matched) || matched);
 }
 
 function getChatMessageTypeLabel(value) {
@@ -4607,7 +4641,7 @@ function buildVerifyIncidentEscalatedAlertText(job = {}) {
         ? payload.signal_summaries.map((item) => normalizeText(item)).filter(Boolean)
         : [];
     const signalTimeline = Array.isArray(payload.signal_timeline)
-        ? payload.signal_timeline.map((item) => normalizeText(item)).filter(Boolean)
+        ? payload.signal_timeline.map((item) => formatTimestampsInsideText(item)).filter(Boolean)
         : [];
     const lines = [
         `[验证综合告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '验证异常升级'}`

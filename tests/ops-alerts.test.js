@@ -11,6 +11,27 @@ const {
     sweepOpsAlertJobs
 } = require('../api/_lib/ops-alerts');
 
+const SHANGHAI_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+});
+
+function formatShanghaiTimestamp(value) {
+    const parts = Object.create(null);
+    for (const part of SHANGHAI_TIMESTAMP_FORMATTER.formatToParts(new Date(value))) {
+        if (part.type !== 'literal') {
+            parts[part.type] = part.value;
+        }
+    }
+    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} 北京时间`;
+}
+
 function createQueryBuilder(executor) {
     const state = {
         mode: 'select',
@@ -1424,8 +1445,8 @@ test('buildExternalAlertText renders payment config incident recovery details', 
 
     assert.match(text, /支付配置事故恢复/);
     assert.match(text, /恢复结论：支付配置集中事故阈值已解除，当前仍保留 1 次单次高风险改动/);
-    assert.match(text, /上次升级：2026-03-25T10:00:00\.000Z/);
-    assert.match(text, /恢复时间：2026-03-25T10:32:00\.000Z/);
+    assert.match(text, new RegExp(`上次升级：${formatShanghaiTimestamp('2026-03-25T10:00:00.000Z')}`));
+    assert.match(text, new RegExp(`恢复时间：${formatShanghaiTimestamp('2026-03-25T10:32:00.000Z')}`));
     assert.match(text, /持续时长：32 分钟/);
     assert.match(text, /上次事故规模：3 次高风险改动/);
     assert.match(text, /当前剩余高风险改动：1 次/);
@@ -1589,8 +1610,8 @@ test('buildExternalAlertText renders payment gateway recovery details', () => {
     assert.match(text, /支付通道：爱发电/);
     assert.match(text, /站点：CN/);
     assert.match(text, /恢复结论：支付通道异常阈值已解除/);
-    assert.match(text, /上次异常：2026-03-25T09:30:00.000Z/);
-    assert.match(text, /恢复时间：2026-03-25T09:54:00.000Z/);
+    assert.match(text, new RegExp(`上次异常：${formatShanghaiTimestamp('2026-03-25T09:30:00.000Z')}`));
+    assert.match(text, new RegExp(`恢复时间：${formatShanghaiTimestamp('2026-03-25T09:54:00.000Z')}`));
     assert.match(text, /持续时长：24 分钟/);
     assert.match(text, /上次异常信号：支付成功率仅 16.67%（1\/6）；回调 5xx 已累计 3 次/);
     assert.match(text, /当前订单概览：总 8 笔 \/ 成功 7 笔 \/ 待审核 1 笔 \/ 失败 0 笔 \/ 成功率 87\.50%/);
@@ -1720,8 +1741,8 @@ test('buildExternalAlertText renders verify incident escalation details', () => 
     assert.match(text, /升级信号：验证服务停摆、验证失败率飙升、验证任务堆积/);
     assert.match(text, /命中数量：3 类/);
     assert.match(text, /关键摘要：服务不可用 \/ balance_http_503；失败率 77\.78%（7\/9）；排队 18 个 \/ 本地活跃 11 个/);
-    assert.match(text, /最近触发：验证服务停摆：2026-03-25T10:00:00.000Z；验证失败率飙升：2026-03-25T10:02:00.000Z；验证任务堆积：2026-03-25T10:04:00.000Z/);
-    assert.match(text, /最新时间：2026-03-25T10:04:00.000Z/);
+    assert.match(text, new RegExp(`最近触发：验证服务停摆：${formatShanghaiTimestamp('2026-03-25T10:00:00.000Z')}；验证失败率飙升：${formatShanghaiTimestamp('2026-03-25T10:02:00.000Z')}；验证任务堆积：${formatShanghaiTimestamp('2026-03-25T10:04:00.000Z')}`));
+    assert.match(text, new RegExp(`最新时间：${formatShanghaiTimestamp('2026-03-25T10:04:00.000Z')}`));
     assert.match(text, /处理入口：后台设置 -> 验证服务配置 -> 当前额度 \/ 接口状态 \/ 队列状态 \/ 最近失败/);
 });
 
@@ -1747,8 +1768,8 @@ test('buildExternalAlertText renders verify incident recovery details', () => {
     assert.match(text, /API Key：primary-key/);
     assert.match(text, /API Base：https:\/\/iqless\.icu/);
     assert.match(text, /恢复结论：验证综合高危组合已解除，当前仍保留 1 类低优先级信号/);
-    assert.match(text, /上次升级：2026-03-25T10:00:00.000Z/);
-    assert.match(text, /恢复时间：2026-03-25T10:18:00.000Z/);
+    assert.match(text, new RegExp(`上次升级：${formatShanghaiTimestamp('2026-03-25T10:00:00.000Z')}`));
+    assert.match(text, new RegExp(`恢复时间：${formatShanghaiTimestamp('2026-03-25T10:18:00.000Z')}`));
     assert.match(text, /持续时长：18 分钟/);
     assert.match(text, /当前仍有信号：验证额度不足/);
     assert.match(text, /当前摘要：剩余额度 18.00 点 \/ 预计 9 次/);
@@ -1843,6 +1864,7 @@ test('buildExternalAlertText renders new support ticket details', () => {
     assert.match(text, /用户ID：demo_ticket_user_001/);
     assert.match(text, /当前状态：待处理/);
     assert.match(text, /问题描述：卡密未到账，用户需要人工补发。/);
+    assert.match(text, new RegExp(`创建时间：${formatShanghaiTimestamp('2026-03-30T12:00:00.000Z')}`));
     assert.match(text, /处理入口：售后工单 -> 待处理 -> 工单详情/);
 });
 
@@ -1943,12 +1965,14 @@ test('buildExternalAlertText renders ticket SLA summary details', () => {
 
     assert.match(text, /站外告警汇总/);
     assert.match(text, /工单超时汇总/);
+    assert.match(text, new RegExp(`时间窗口：${formatShanghaiTimestamp('2026-03-27T06:00:00.000Z')} - ${formatShanghaiTimestamp('2026-03-27T08:00:00.000Z')}`));
     assert.match(text, /累计超时工单：2 条/);
     assert.match(text, /1\. ticket-a1 · 已等待 2 小时 30 分钟/);
     assert.match(text, /用户邮箱：user-a1@example\.com/);
     assert.match(text, /2\. ticket-b2 · 已等待 5 小时 20 分钟/);
     assert.match(text, /用户邮箱：user-b2@example\.com/);
     assert.match(text, /当前负责人：夜班值守/);
+    assert.match(text, new RegExp(`时间：${formatShanghaiTimestamp('2026-03-27T06:45:00.000Z')}`));
     assert.match(text, /处理入口：售后工单 -> 待处理 -> 工单详情/);
 });
 
@@ -2313,6 +2337,7 @@ test('buildExternalAlertText renders shop inventory summary details', () => {
     });
 
     assert.match(text, /站外告警汇总/);
+    assert.match(text, new RegExp(`时间窗口：${formatShanghaiTimestamp('2026-03-27T06:00:00.000Z')} - ${formatShanghaiTimestamp('2026-03-27T08:00:00.000Z')}`));
     assert.match(text, /库存与补货汇总/);
     assert.match(text, /累计库存告警：2 条/);
     assert.match(text, /Prompt Pro 月卡 · 低库存/);
