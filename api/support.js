@@ -175,6 +175,36 @@ function normalizeTicketCreateInput(input) {
     };
 }
 
+async function fetchProfileEmailByUserId(supabase, userId) {
+    const normalizedUserId = normalizeText(userId, 120);
+    if (!supabase?.from || !normalizedUserId) {
+        return '';
+    }
+
+    try {
+        const query = supabase
+            .from('profiles')
+            .select('id, email')
+            .eq('id', normalizedUserId);
+        const { data, error } = await (typeof query.maybeSingle === 'function'
+            ? query.maybeSingle()
+            : query.single());
+
+        if (error) {
+            const message = normalizeText(error.message, 240).toLowerCase();
+            if (error.code === 'PGRST116' || message.includes('0 rows') || message.includes('no rows')) {
+                return '';
+            }
+            throw error;
+        }
+
+        return normalizeText(data?.email, 255);
+    } catch (error) {
+        console.warn('[SupportAPI] Failed to load profile email:', error.message || error);
+        return '';
+    }
+}
+
 async function handleCreateTicket({ requestSupabase, adminSupabase, user, input }) {
     const normalizedInput = normalizeTicketCreateInput(input);
     const description = normalizedInput.description;
@@ -202,9 +232,10 @@ async function handleCreateTicket({ requestSupabase, adminSupabase, user, input 
         throw createError(error.message || '工单提交失败', 500, 'ticket_create_failed');
     }
 
+    const profileEmail = await fetchProfileEmailByUserId(adminSupabase || requestSupabase, user.id);
     const ticketAlert = buildTicketCreatedAlert({
         ...(data || insertPayload),
-        user_email: normalizeText(user?.email, 255) || null
+        user_email: profileEmail || normalizeText(user?.email, 255) || null
     });
     if (adminSupabase?.from && ticketAlert) {
         try {

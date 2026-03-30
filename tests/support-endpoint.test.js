@@ -139,7 +139,7 @@ test('support create_ticket enqueues an external ops alert for the new ticket', 
                 return {
                     user: {
                         id: 'user-support-1',
-                        email: 'member@example.com'
+                        email: ''
                     },
                     requestSupabase: {
                         from(table) {
@@ -174,7 +174,28 @@ test('support create_ticket enqueues an external ops alert for the new ticket', 
                         }
                     },
                     adminSupabase: {
-                        from() {
+                        from(table) {
+                            if (table === 'profiles') {
+                                return {
+                                    select() {
+                                        return {
+                                            eq() {
+                                                return {
+                                                    async single() {
+                                                        return {
+                                                            data: {
+                                                                id: 'user-support-1',
+                                                                email: 'profile-member@example.com'
+                                                            },
+                                                            error: null
+                                                        };
+                                                    }
+                                                };
+                                            }
+                                        };
+                                    }
+                                };
+                            }
                             throw new Error('enqueueOpsAlertJob should be stubbed');
                         }
                     }
@@ -232,13 +253,13 @@ test('support create_ticket enqueues an external ops alert for the new ticket', 
         assert.equal(selectClauses.length, 1);
         assert.equal(selectClauses[0].includes('reason'), false);
         assert.equal(builtTickets.length, 1);
-        assert.equal(builtTickets[0].user_email, 'member@example.com');
+        assert.equal(builtTickets[0].user_email, 'profile-member@example.com');
         assert.equal(enqueuedAlerts.length, 1);
         assert.equal(enqueuedAlerts[0].alertType, 'ticket_new');
         assert.equal(enqueuedAlerts[0].source, 'support_ticket');
         assert.equal(enqueuedAlerts[0].payload.ticket_id, 'ticket-demo-001');
         assert.equal(enqueuedAlerts[0].payload.user_id, 'user-support-1');
-        assert.equal(enqueuedAlerts[0].payload.user_email, 'member@example.com');
+        assert.equal(enqueuedAlerts[0].payload.user_email, 'profile-member@example.com');
         assert.equal(enqueuedAlerts[0].createdAt, '2026-03-30T12:00:00.000Z');
     });
 });
@@ -280,7 +301,28 @@ test('support create_ticket still succeeds when external alert enqueue fails', a
                         }
                     },
                     adminSupabase: {
-                        from() {
+                        from(table) {
+                            if (table === 'profiles') {
+                                return {
+                                    select() {
+                                        return {
+                                            eq() {
+                                                return {
+                                                    async single() {
+                                                        return {
+                                                            data: null,
+                                                            error: {
+                                                                code: 'PGRST116',
+                                                                message: '0 rows'
+                                                            }
+                                                        };
+                                                    }
+                                                };
+                                            }
+                                        };
+                                    }
+                                };
+                            }
                             throw new Error('enqueueOpsAlertJob should be stubbed');
                         }
                     }

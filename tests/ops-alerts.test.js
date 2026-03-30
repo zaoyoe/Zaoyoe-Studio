@@ -1795,6 +1795,7 @@ test('buildExternalAlertText renders ticket SLA overdue details', () => {
             ticket_id: 'ticket-demo-sla-001',
             order_id: 'shop-order-demo-001',
             user_id: 'demo_ticket_user_001',
+            user_email: 'demo.ticket@example.com',
             ticket_status: 'PENDING',
             wait_minutes: 195,
             wait_label: '3 小时 15 分钟',
@@ -1809,6 +1810,7 @@ test('buildExternalAlertText renders ticket SLA overdue details', () => {
     assert.match(text, /工单 SLA 告警/);
     assert.match(text, /工单号：ticket-demo-sla-001/);
     assert.match(text, /订单号：shop-order-demo-001/);
+    assert.match(text, /用户邮箱：demo\.ticket@example\.com/);
     assert.match(text, /用户ID：demo_ticket_user_001/);
     assert.match(text, /等待时长：3 小时 15 分钟/);
     assert.match(text, /责任人：未分配/);
@@ -1853,6 +1855,7 @@ test('buildExternalAlertText renders ticket SLA recovery details', () => {
             ticket_id: 'ticket-demo-sla-001',
             order_id: 'shop-order-demo-001',
             user_id: 'demo_ticket_user_001',
+            user_email: 'demo.ticket@example.com',
             recovery_summary: '工单已解决，已退出超时未处理状态',
             previous_wait_label: '3 小时 15 分钟',
             ticket_status: 'RESOLVED',
@@ -1868,6 +1871,7 @@ test('buildExternalAlertText renders ticket SLA recovery details', () => {
     assert.match(text, /工单 SLA 恢复/);
     assert.match(text, /工单号：ticket-demo-sla-001/);
     assert.match(text, /订单号：shop-order-demo-001/);
+    assert.match(text, /用户邮箱：demo\.ticket@example\.com/);
     assert.match(text, /用户ID：demo_ticket_user_001/);
     assert.match(text, /恢复结论：工单已解决，已退出超时未处理状态/);
     assert.match(text, /上次超时等待：3 小时 15 分钟/);
@@ -1911,6 +1915,7 @@ test('buildExternalAlertText renders ticket SLA summary details', () => {
                         ticket_id: 'ticket-a1',
                         order_id: 'order-a1',
                         user_id: 'user-a1',
+                        user_email: 'user-a1@example.com',
                         wait_label: '2 小时 30 分钟',
                         ticket_status: 'PENDING',
                         reason: '卡密未到账',
@@ -1924,6 +1929,7 @@ test('buildExternalAlertText renders ticket SLA summary details', () => {
                         ticket_id: 'ticket-b2',
                         order_id: 'order-b2',
                         user_id: 'user-b2',
+                        user_email: 'user-b2@example.com',
                         wait_label: '5 小时 20 分钟',
                         ticket_status: 'PENDING',
                         reason: '用户重复催单',
@@ -1939,7 +1945,9 @@ test('buildExternalAlertText renders ticket SLA summary details', () => {
     assert.match(text, /工单超时汇总/);
     assert.match(text, /累计超时工单：2 条/);
     assert.match(text, /1\. ticket-a1 · 已等待 2 小时 30 分钟/);
+    assert.match(text, /用户邮箱：user-a1@example\.com/);
     assert.match(text, /2\. ticket-b2 · 已等待 5 小时 20 分钟/);
+    assert.match(text, /用户邮箱：user-b2@example\.com/);
     assert.match(text, /当前负责人：夜班值守/);
     assert.match(text, /处理入口：售后工单 -> 待处理 -> 工单详情/);
 });

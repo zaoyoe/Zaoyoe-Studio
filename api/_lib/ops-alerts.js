@@ -3802,6 +3802,7 @@ function buildTicketSlaSummaryAlertText(job = {}) {
         const updatedAt = formatTimestamp(itemPayload.updated_at || itemPayload.created_at || item?.created_at);
         lines.push(`${index + 1}. ${ticketId}${waitLabel ? ` · 已等待 ${waitLabel}` : ''}`);
         if (normalizeText(itemPayload.order_id)) lines.push(`   订单号：${normalizeText(itemPayload.order_id)}`);
+        if (normalizeText(itemPayload.user_email)) lines.push(`   用户邮箱：${normalizeText(itemPayload.user_email)}`);
         if (normalizeText(itemPayload.user_id)) lines.push(`   用户ID：${normalizeText(itemPayload.user_id)}`);
         if (statusLabel) lines.push(`   当前状态：${statusLabel}`);
         if (normalizeText(itemPayload.reason)) lines.push(`   原因：${normalizeText(itemPayload.reason)}`);
@@ -4768,6 +4769,7 @@ function buildTicketSlaOverdueAlertText(job = {}) {
 
     if (normalizeText(payload.ticket_id)) lines.push(`工单号：${normalizeText(payload.ticket_id)}`);
     if (normalizeText(payload.order_id)) lines.push(`订单号：${normalizeText(payload.order_id)}`);
+    if (normalizeText(payload.user_email)) lines.push(`用户邮箱：${normalizeText(payload.user_email)}`);
     if (normalizeText(payload.user_id)) lines.push(`用户ID：${normalizeText(payload.user_id)}`);
     if (Number.isFinite(Number(payload.wait_minutes))) lines.push(`等待时长：${normalizeText(payload.wait_label) || `${Math.max(0, Math.round(Number(payload.wait_minutes || 0)))} 分钟`}`);
     if (normalizeText(payload.responsible_label)) lines.push(`责任人：${normalizeText(payload.responsible_label)}`);
@@ -4792,6 +4794,7 @@ function buildTicketSlaRecoveredAlertText(job = {}) {
 
     if (normalizeText(payload.ticket_id)) lines.push(`工单号：${normalizeText(payload.ticket_id)}`);
     if (normalizeText(payload.order_id)) lines.push(`订单号：${normalizeText(payload.order_id)}`);
+    if (normalizeText(payload.user_email)) lines.push(`用户邮箱：${normalizeText(payload.user_email)}`);
     if (normalizeText(payload.user_id)) lines.push(`用户ID：${normalizeText(payload.user_id)}`);
     if (normalizeText(payload.recovery_summary)) lines.push(`恢复结论：${normalizeText(payload.recovery_summary)}`);
     if (normalizeText(payload.previous_wait_label)) lines.push(`上次超时等待：${normalizeText(payload.previous_wait_label)}`);
