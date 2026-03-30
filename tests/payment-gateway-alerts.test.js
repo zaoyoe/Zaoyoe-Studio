@@ -425,7 +425,7 @@ test('runPaymentGatewayDegradationSweep enqueues degraded alerts with stable pro
     assert.equal(state.jobs.length, 1);
 });
 
-test('runPaymentGatewayDegradationSweep enqueues recovery notices and writes admin notifications once', async () => {
+test('runPaymentGatewayDegradationSweep enqueues recovery notices without duplicating admin personal notifications', async () => {
     const now = new Date('2026-03-25T10:00:00.000Z');
     const state = {
         orders: [
@@ -484,11 +484,11 @@ test('runPaymentGatewayDegradationSweep enqueues recovery notices and writes adm
     assert.equal(first.degraded_count, 0);
     assert.equal(first.recovered_count, 1);
     assert.equal(first.recovered_queued, 1);
-    assert.equal(first.admin_notifications_created, 2);
+    assert.equal(first.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 2);
     assert.equal(state.jobs[1].alert_type, 'payment_gateway_recovered');
     assert.deepEqual(state.jobs[1].channels, ['feishu']);
-    assert.equal(state.systemNotifications.length, 2);
+    assert.equal(state.systemNotifications.length, 0);
 
     const second = await runPaymentGatewayDegradationSweep(supabase, {
         now: new Date('2026-03-25T10:01:00.000Z'),
@@ -499,5 +499,5 @@ test('runPaymentGatewayDegradationSweep enqueues recovery notices and writes adm
     assert.equal(second.recovered_queued, 0);
     assert.equal(second.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 2);
-    assert.equal(state.systemNotifications.length, 2);
+    assert.equal(state.systemNotifications.length, 0);
 });

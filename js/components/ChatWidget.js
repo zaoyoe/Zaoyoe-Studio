@@ -1,3 +1,29 @@
+function isMissingNotificationScopeColumnError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    return error?.code === '42703'
+        || error?.code === '42P01'
+        || (message.includes('column') && message.includes('does not exist'))
+        || (message.includes('schema cache') && message.includes('scope'))
+        || (message.includes('schema cache') && message.includes('category'));
+}
+
+async function insertScopedSystemNotification(client, payload = {}) {
+    const response = await client
+        .from('system_notifications')
+        .insert(payload);
+
+    if (!response?.error || !isMissingNotificationScopeColumnError(response.error)) {
+        return response;
+    }
+
+    const legacyPayload = { ...payload };
+    delete legacyPayload.scope;
+    delete legacyPayload.category;
+
+    return client
+        .from('system_notifications')
+        .insert(legacyPayload);
+}
 
 class ChatWidget {
     constructor() {
@@ -4441,15 +4467,19 @@ class ChatWidget {
             }
 
             // Create system notification
-            await this.supabase
-                .from('system_notifications')
-                .insert({
-                    user_id: targetUserId,
-                    title: '客服回复',
-                    content: messageContent.substring(0, 100) + (messageContent.length > 100 ? '...' : ''),
-                    type: 'info',
-                    is_read: false
-                });
+            const { error } = await insertScopedSystemNotification(this.supabase, {
+                user_id: targetUserId,
+                title: '客服回复',
+                content: messageContent.substring(0, 100) + (messageContent.length > 100 ? '...' : ''),
+                type: 'info',
+                is_read: false,
+                scope: 'user_personal',
+                category: 'chat_reply'
+            });
+
+            if (error) {
+                throw error;
+            }
 
             console.log('🔔 Notification created for user:', targetUserId);
         } catch (err) {

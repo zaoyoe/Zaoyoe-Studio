@@ -3,9 +3,6 @@ const {
     enqueueOpsAlertJob,
     loadOpsAlertsRuntimeConfig
 } = require('./ops-alerts');
-const {
-    notifyActiveAdmins
-} = require('./admin-notifications');
 
 const DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG = Object.freeze({
     enabled: true,
@@ -707,29 +704,14 @@ async function runPaymentGatewayDegradationSweep(supabase, options = {}) {
             recoveredSkippedNoChannels += 1;
         }
 
-        const adminNotificationResult = await notifyActiveAdmins(supabase, {
-            title: alert.title,
-            content: alert.content,
-            type: 'success',
-            dedupeWindowMinutes: Math.max(
-                1,
-                Number(alert.dedupeWindowMinutes || DEFAULT_PAYMENT_GATEWAY_MONITOR_CONFIG.dedupe_window_minutes || 0)
-            )
-        }).catch((error) => ({
-            error: error.message || 'notify_failed'
-        }));
-
-        adminNotificationsCreated += Number(adminNotificationResult?.created || 0);
-        adminNotificationsSkipped += Number(adminNotificationResult?.skipped || 0);
-
         results.push({
             provider: alert.payload?.provider || null,
             site: alert.payload?.site || null,
             title: alert.title,
             queued: result?.queued === true,
             reason: result?.reason || null,
-            admin_notification_created: Number(adminNotificationResult?.created || 0),
-            admin_notification_error: normalizeText(adminNotificationResult?.error) || null
+            admin_notification_created: 0,
+            admin_notification_error: null
         });
     }
 

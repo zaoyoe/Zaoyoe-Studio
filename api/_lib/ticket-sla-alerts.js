@@ -4,9 +4,6 @@ const {
     loadOpsAlertsRuntimeConfig
 } = require('./ops-alerts');
 const {
-    notifyActiveAdmins
-} = require('./admin-notifications');
-const {
     formatAlertTimestamp
 } = require('./alert-time');
 
@@ -600,28 +597,13 @@ async function runTicketSlaOverdueSweep(supabase, options = {}) {
             recoveredSkippedNoChannels += 1;
         }
 
-        const adminNotificationResult = await notifyActiveAdmins(supabase, {
-            title: alert.title,
-            content: alert.content,
-            type: 'success',
-            dedupeWindowMinutes: Math.max(
-                Number(alert.dedupeWindowMinutes || 0),
-                60
-            )
-        }).catch((error) => ({
-            error: error.message || 'notify_failed'
-        }));
-
-        adminNotificationsCreated += Number(adminNotificationResult?.created || 0);
-        adminNotificationsSkipped += Number(adminNotificationResult?.skipped || 0);
-
         results.push({
             ticket_id: alert.payload?.ticket_id || null,
             severity: alert.severity,
             queued: result?.queued === true,
             reason: result?.reason || null,
-            admin_notification_created: Number(adminNotificationResult?.created || 0),
-            admin_notification_error: normalizeText(adminNotificationResult?.error) || null
+            admin_notification_created: 0,
+            admin_notification_error: null
         });
     }
 

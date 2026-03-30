@@ -533,7 +533,7 @@ test('buildShopInventoryRecoveredAlerts respects recovery notification switch', 
     assert.equal(alerts.length, 0);
 });
 
-test('runShopInventoryLowSweep enqueues recovery notices and writes admin notifications once', async () => {
+test('runShopInventoryLowSweep enqueues recovery notices without duplicating admin personal notifications', async () => {
     const state = {
         jobs: [
             {
@@ -589,12 +589,11 @@ test('runShopInventoryLowSweep enqueues recovery notices and writes admin notifi
     assert.equal(first.empty_stock_count, 0);
     assert.equal(first.recovered_count, 1);
     assert.equal(first.recovered_queued, 1);
-    assert.equal(first.admin_notifications_created, 2);
+    assert.equal(first.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 2);
     assert.equal(state.jobs[1].alert_type, 'shop_inventory_recovered');
     assert.deepEqual(state.jobs[1].channels, ['feishu']);
-    assert.equal(state.systemNotifications.length, 2);
-    assert.match(state.systemNotifications[0].title, /库存已恢复/);
+    assert.equal(state.systemNotifications.length, 0);
 
     const second = await runShopInventoryLowSweep(supabase, {
         runtime,
@@ -605,7 +604,7 @@ test('runShopInventoryLowSweep enqueues recovery notices and writes admin notifi
     assert.equal(second.recovered_queued, 0);
     assert.equal(second.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 2);
-    assert.equal(state.systemNotifications.length, 2);
+    assert.equal(state.systemNotifications.length, 0);
 });
 
 test('runShopInventoryLowSweep prefers runtime inventory config and can disable recovery notifications', async () => {

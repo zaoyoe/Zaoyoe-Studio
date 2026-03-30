@@ -4,9 +4,6 @@ const {
     loadOpsAlertsRuntimeConfig
 } = require('./ops-alerts');
 const {
-    notifyActiveAdmins
-} = require('./admin-notifications');
-const {
     buildPaymentSecretStatus,
     loadStoredPaymentConfigs
 } = require('./payments/providers');
@@ -957,15 +954,6 @@ async function runPaymentConfigChangedSweep(supabase, options = {}) {
 
         if (result?.queued === true) {
             incidentRecoveredQueued += 1;
-
-            const notificationResult = await notifyActiveAdmins(supabase, {
-                title: alert.title,
-                content: alert.content,
-                type: 'success',
-                dedupeWindowMinutes: Math.max(Number(alert.dedupeWindowMinutes || 60), 60)
-            });
-            adminNotificationsCreated += Number(notificationResult?.created || 0);
-            adminNotificationsSkipped += Number(notificationResult?.skipped || 0);
         } else if (result?.reason === 'deduped') {
             incidentRecoveredDeduped += 1;
         } else if (result?.reason === 'no_active_channels') {
@@ -991,15 +979,6 @@ async function runPaymentConfigChangedSweep(supabase, options = {}) {
 
         if (result?.queued === true) {
             recoveredQueued += 1;
-
-            const notificationResult = await notifyActiveAdmins(supabase, {
-                title: alert.title,
-                content: alert.content,
-                type: 'success',
-                dedupeWindowMinutes: Math.max(Number(alert.dedupeWindowMinutes || 60), 60)
-            });
-            adminNotificationsCreated += Number(notificationResult?.created || 0);
-            adminNotificationsSkipped += Number(notificationResult?.skipped || 0);
         } else if (result?.reason === 'deduped') {
             recoveredDeduped += 1;
         } else if (result?.reason === 'no_active_channels') {

@@ -536,7 +536,7 @@ test('buildPaymentConfigIncidentRecoveryAlerts emits a recovery notice after clu
     assert.equal(alerts[0].payload.previous_incident_change_count, 3);
 });
 
-test('runPaymentConfigChangedSweep enqueues recovery notices and writes admin notifications once', async () => {
+test('runPaymentConfigChangedSweep enqueues recovery notices without duplicating admin personal notifications', async () => {
     const state = {
         jobs: [
             {
@@ -605,13 +605,12 @@ test('runPaymentConfigChangedSweep enqueues recovery notices and writes admin no
     assert.equal(first.queued, 2);
     assert.equal(first.recovery_count, 1);
     assert.equal(first.recovered_queued, 1);
-    assert.equal(first.admin_notifications_created, 1);
+    assert.equal(first.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 4);
     assert.equal(state.jobs[1].alert_type, 'payment_config_changed');
     assert.equal(state.jobs[2].alert_type, 'payment_config_changed');
     assert.equal(state.jobs[3].alert_type, 'payment_config_recovered');
-    assert.equal(state.systemNotifications.length, 1);
-    assert.match(state.systemNotifications[0].title, /支付配置风险已恢复/);
+    assert.equal(state.systemNotifications.length, 0);
 
     const second = await runPaymentConfigChangedSweep(supabase, {
         runtime,
@@ -633,10 +632,10 @@ test('runPaymentConfigChangedSweep enqueues recovery notices and writes admin no
     assert.equal(second.recovered_queued, 0);
     assert.equal(second.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 4);
-    assert.equal(state.systemNotifications.length, 1);
+    assert.equal(state.systemNotifications.length, 0);
 });
 
-test('runPaymentConfigChangedSweep enqueues incident recovery notices and writes admin notifications once', async () => {
+test('runPaymentConfigChangedSweep enqueues incident recovery notices without duplicating admin personal notifications', async () => {
     const state = {
         jobs: [
             {
@@ -696,11 +695,10 @@ test('runPaymentConfigChangedSweep enqueues incident recovery notices and writes
     assert.equal(first.incident_count, 0);
     assert.equal(first.incident_recovered_count, 1);
     assert.equal(first.incident_recovered_queued, 1);
-    assert.equal(first.admin_notifications_created, 1);
+    assert.equal(first.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 3);
     assert.equal(state.jobs[2].alert_type, 'payment_config_incident_recovered');
-    assert.equal(state.systemNotifications.length, 1);
-    assert.match(state.systemNotifications[0].title, /支付配置事故已恢复/);
+    assert.equal(state.systemNotifications.length, 0);
 
     const second = await runPaymentConfigChangedSweep(supabase, {
         runtime,
@@ -724,5 +722,5 @@ test('runPaymentConfigChangedSweep enqueues incident recovery notices and writes
     assert.equal(second.incident_recovered_queued, 0);
     assert.equal(second.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 3);
-    assert.equal(state.systemNotifications.length, 1);
+    assert.equal(state.systemNotifications.length, 0);
 });

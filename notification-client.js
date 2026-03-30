@@ -1,4 +1,40 @@
 (function () {
+    const PERSONAL_MESSAGE_TITLE = '个人消息';
+    const EMPTY_PERSONAL_MESSAGE_TEXT = '暂无个人消息';
+    const EMPTY_ADMIN_PERSONAL_MESSAGE_TEXT = '暂无个人提醒';
+    const ADMIN_PERSONAL_NOTIFICATION_ALLOW_TITLE_PATTERNS = [
+        /客服回复/,
+        /系统公告/,
+        /账号/,
+        /权限/,
+        /安全/,
+        /指派/,
+        /提醒/,
+        /审核/,
+        /处理结果/,
+        /个人消息/
+    ];
+    const ADMIN_OPS_NOTIFICATION_BLOCK_TITLE_PATTERNS = [
+        /库存/,
+        /补货/,
+        /履约/,
+        /支付/,
+        /验证/,
+        /工单超时/,
+        /风险/,
+        /异常登录/,
+        /客服消息汇总/,
+        /购买成功汇总/,
+        /充值成功汇总/,
+        /库存与补货汇总/,
+        /工单超时汇总/,
+        /履约失败汇总/,
+        /支付通道异常汇总/,
+        /验证额度告警汇总/,
+        /验证堆积告警汇总/,
+        /验证失败率告警汇总/
+    ];
+
     // State
     let notifications = [];
     let unreadCount = 0;
@@ -7,6 +43,85 @@
     let notifSavedScrollY = 0;
     let notifTouchStartY = 0;
     const MAX_COLLAPSED = 3;
+    let currentNotificationViewer = {
+        isAdmin: false
+    };
+
+    function normalizeText(value) {
+        return String(value || '').trim();
+    }
+
+    function getNotificationEmptyText() {
+        return currentNotificationViewer.isAdmin
+            ? EMPTY_ADMIN_PERSONAL_MESSAGE_TEXT
+            : EMPTY_PERSONAL_MESSAGE_TEXT;
+    }
+
+    function matchesAnyPattern(value, patterns = []) {
+        return patterns.some((pattern) => pattern.test(value));
+    }
+
+    function normalizeNotificationScope(value) {
+        const normalized = normalizeText(value).toLowerCase();
+        if (['unspecified', 'user_personal', 'admin_personal'].includes(normalized)) {
+            return normalized;
+        }
+        return '';
+    }
+
+    function shouldShowAdminPersonalNotification(notification) {
+        const scope = normalizeNotificationScope(notification?.scope);
+        if (scope === 'admin_personal') {
+            return true;
+        }
+        if (scope === 'user_personal') {
+            return false;
+        }
+
+        const title = normalizeText(notification?.title);
+        const content = normalizeText(notification?.content);
+        const combinedText = `${title}\n${content}`;
+
+        if (!title && !content) {
+            return false;
+        }
+
+        if (matchesAnyPattern(combinedText, ADMIN_OPS_NOTIFICATION_BLOCK_TITLE_PATTERNS)) {
+            return false;
+        }
+
+        if (matchesAnyPattern(combinedText, ADMIN_PERSONAL_NOTIFICATION_ALLOW_TITLE_PATTERNS)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    function shouldIncludeNotification(notification) {
+        if (!notification || typeof notification !== 'object') {
+            return false;
+        }
+
+        if (!currentNotificationViewer.isAdmin) {
+            return true;
+        }
+
+        return shouldShowAdminPersonalNotification(notification);
+    }
+
+    async function resolveNotificationViewer() {
+        try {
+            const access = await window.AdminAccess?.getCurrentAdminAccess?.({ forceRefresh: true });
+            currentNotificationViewer = {
+                isAdmin: Boolean(access?.isAdmin)
+            };
+        } catch (error) {
+            console.warn('Failed to resolve notification viewer access:', error?.message || error);
+            currentNotificationViewer = {
+                isAdmin: false
+            };
+        }
+    }
 
     function getDrawerListFromTarget(target) {
         if (!target || typeof target.closest !== 'function') return null;
@@ -101,14 +216,14 @@
         drawer.className = 'notif-drawer';
         drawer.innerHTML = `
             <div class="notif-drawer-header">
-                <span class="notif-drawer-title" data-i18n="nav.notification">通知中心</span>
+                <span class="notif-drawer-title" data-i18n="nav.notification">${PERSONAL_MESSAGE_TITLE}</span>
                 <div class="notif-clear-all" data-notif-action="clear-all" role="button" tabindex="0">
                     <i class="fas fa-times icon-x"></i>
                     <span class="text-clear" data-i18n="nav.clearAll">全部清除</span>
                 </div>
             </div>
             <div class="notif-drawer-list" id="notifDrawerList">
-                <div class="notif-empty" data-i18n="nav.noNotifications">暂无通知</div>
+                <div class="notif-empty" data-i18n="nav.noNotifications">${getNotificationEmptyText()}</div>
             </div>
         `;
         document.body.appendChild(drawer);
@@ -206,9 +321,11 @@
         const wrapper = document.getElementById('navNotifWrapper');
 
         if (!user) {
-            if (wrapper) wrapper.hidden = true;
+        if (wrapper) wrapper.hidden = true;
             return;
         }
+
+        await resolveNotificationViewer();
 
         if (wrapper) wrapper.hidden = false;
         fetchNotifications(user.id);
@@ -221,6 +338,9 @@
                 table: 'system_notifications',
                 filter: `user_id=eq.${user.id}`
             }, payload => {
+                if (!shouldIncludeNotification(payload.new)) {
+                    return;
+                }
                 notifications.unshift(payload.new);
                 unreadCount++;
                 updateBadge();
@@ -244,7 +364,7 @@
                 .limit(50);
 
             if (error) throw error;
-            notifications = data || [];
+            notifications = (data || []).filter((row) => shouldIncludeNotification(row));
             unreadCount = notifications.filter(n => !n.is_read).length;
 
             updateBadge();
@@ -270,7 +390,7 @@
         if (!list) return;
 
         if (!notifications.length) {
-            list.innerHTML = `<div class="notif-empty" data-i18n="nav.noNotifications">${window.i18n?.t('nav.noNotifications') || '暂无通知'}</div>`;
+            list.innerHTML = `<div class="notif-empty" data-i18n="nav.noNotifications">${getNotificationEmptyText()}</div>`;
             return;
         }
 
@@ -395,7 +515,7 @@
         const list = document.getElementById('notifDrawerList');
         // Scenario 0: List Empty
         if (notifications.length === 0) {
-            if (list) list.innerHTML = `<div class="notif-empty" data-i18n="nav.noNotifications">${window.i18n?.t('nav.noNotifications') || '暂无通知'}</div>`;
+            if (list) list.innerHTML = `<div class="notif-empty" data-i18n="nav.noNotifications">${getNotificationEmptyText()}</div>`;
             localStorage.removeItem('notifications_v1');
         }
         // Scenario 1: Collapsed Mode - Need to pull in a stored notification

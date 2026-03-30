@@ -958,6 +958,35 @@ function showNotificationModalBatch(count) {
     openNotificationModal('__BATCH__', count);
 }
 
+function isMissingNotificationScopeColumnError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    return error?.code === '42703'
+        || error?.code === '42P01'
+        || (message.includes('column') && message.includes('does not exist'))
+        || (message.includes('schema cache') && message.includes('scope'))
+        || (message.includes('schema cache') && message.includes('category'));
+}
+
+async function insertSystemNotificationWithScope(payload = {}) {
+    let response = await window.supabaseClient
+        .from('system_notifications')
+        .insert(payload);
+
+    if (!response?.error || !isMissingNotificationScopeColumnError(response.error)) {
+        return response;
+    }
+
+    const legacyPayload = { ...payload };
+    delete legacyPayload.scope;
+    delete legacyPayload.category;
+
+    response = await window.supabaseClient
+        .from('system_notifications')
+        .insert(legacyPayload);
+
+    return response;
+}
+
 // Execute batch notification send
 async function executeBatchNotification() {
     const title = document.getElementById('notifTitle')?.value.trim();
@@ -981,14 +1010,18 @@ async function executeBatchNotification() {
 
     try {
         for (const userId of batchNotificationUserIds) {
-            await window.supabaseClient
-                .from('system_notifications')
-                .insert({
-                    user_id: userId,
-                    title,
-                    content,
-                    type
-                });
+            const { error } = await insertSystemNotificationWithScope({
+                user_id: userId,
+                title,
+                content,
+                type,
+                scope: 'user_personal',
+                category: 'admin_notice'
+            });
+
+            if (error) {
+                throw error;
+            }
         }
 
         showToast(`成功发送通知给 ${batchNotificationUserIds.length} 位用户`, 'success');
@@ -5931,14 +5964,14 @@ async function sendSystemNotification(userId, titleArg = null, contentArg = null
     }
 
     try {
-        const { error } = await window.supabaseClient
-            .from('system_notifications')
-            .insert({
-                user_id: userId,
-                title,
-                content,
-                type: type || 'info'
-            });
+        const { error } = await insertSystemNotificationWithScope({
+            user_id: userId,
+            title,
+            content,
+            type: type || 'info',
+            scope: 'user_personal',
+            category: 'admin_notice'
+        });
 
         if (error) throw error;
 

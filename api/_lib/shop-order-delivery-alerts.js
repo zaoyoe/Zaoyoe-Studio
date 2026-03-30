@@ -3,9 +3,6 @@ const {
     enqueueOpsAlertJob,
     loadOpsAlertsRuntimeConfig
 } = require('./ops-alerts');
-const {
-    notifyActiveAdmins
-} = require('./admin-notifications');
 
 const DEFAULT_SHOP_ORDER_DELIVERY_MONITOR_CONFIG = Object.freeze({
     enabled: true,
@@ -946,25 +943,13 @@ async function runShopOrderDeliveryFailedSweep(supabase, options = {}) {
             incidentRecoveredSkippedNoChannels += 1;
         }
 
-        const adminNotificationResult = await notifyActiveAdmins(supabase, {
-            title: alert.title,
-            content: alert.content,
-            type: 'success',
-            dedupeWindowMinutes: Math.max(Number(alert.dedupeWindowMinutes || 0), 60)
-        }).catch((error) => ({
-            error: error.message || 'notify_failed'
-        }));
-
-        adminNotificationsCreated += Number(adminNotificationResult?.created || 0);
-        adminNotificationsSkipped += Number(adminNotificationResult?.skipped || 0);
-
         results.push({
             alert_type: alert.alertType,
             severity: alert.severity,
             queued: result?.queued === true,
             reason: result?.reason || null,
-            admin_notification_created: Number(adminNotificationResult?.created || 0),
-            admin_notification_error: normalizeText(adminNotificationResult?.error) || null
+            admin_notification_created: 0,
+            admin_notification_error: null
         });
     }
 
@@ -986,25 +971,13 @@ async function runShopOrderDeliveryFailedSweep(supabase, options = {}) {
             recoveredSkippedNoChannels += 1;
         }
 
-        const adminNotificationResult = await notifyActiveAdmins(supabase, {
-            title: alert.title,
-            content: alert.content,
-            type: 'success',
-            dedupeWindowMinutes: Math.max(Number(alert.dedupeWindowMinutes || 0), 60)
-        }).catch((error) => ({
-            error: error.message || 'notify_failed'
-        }));
-
-        adminNotificationsCreated += Number(adminNotificationResult?.created || 0);
-        adminNotificationsSkipped += Number(adminNotificationResult?.skipped || 0);
-
         results.push({
             order_id: alert.payload?.order_id || null,
             severity: alert.severity,
             queued: result?.queued === true,
             reason: result?.reason || null,
-            admin_notification_created: Number(adminNotificationResult?.created || 0),
-            admin_notification_error: normalizeText(adminNotificationResult?.error) || null
+            admin_notification_created: 0,
+            admin_notification_error: null
         });
     }
 
