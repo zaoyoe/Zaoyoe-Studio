@@ -122,6 +122,10 @@
     gap: 15px;
 }
 
+.session-item--ops {
+    background: rgba(59, 130, 246, 0.08);
+}
+
 .session-item:hover {
     background: rgba(255, 255, 255, 0.04);
 }
@@ -149,6 +153,15 @@
     background: transparent;
 }
 
+.session-avatar--ops {
+    background: linear-gradient(135deg, #5ea7ff 0%, #377df4 100%);
+    box-shadow: 0 10px 24px rgba(59, 130, 246, 0.28);
+}
+
+.session-icon {
+    font-size: 15px;
+}
+
 .session-avatar-image {
     width: 100%;
     height: 100%;
@@ -165,12 +178,38 @@
     justify-content: space-between;
     margin-bottom: 4px;
     align-items: center;
+    gap: 10px;
+}
+
+.session-header-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
 }
 
 .session-name {
     font-weight: 500;
     color: #f1f5f9;
     font-size: 14px;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.session-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 38px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(96, 165, 250, 0.16);
+    color: #93c5fd;
+    font-size: 11px;
+    line-height: 1.2;
+    letter-spacing: 0.02em;
 }
 
 .session-time {
@@ -276,6 +315,15 @@
     backface-visibility: hidden;
 }
 
+.chat-readonly-notice {
+    padding: 12px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(56, 189, 248, 0.08);
+    color: #cfe7ff;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
 .chat-messages-area::-webkit-scrollbar {
     width: 6px;
 }
@@ -300,6 +348,14 @@
     position: relative;
     /* PERFORMANCE: Simple GPU layer (contain removed - causes blank on fast scroll) */
     backface-visibility: hidden;
+}
+
+.admin-message--ops-alert {
+    max-width: min(88%, 760px);
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
 }
 
 /* Only animate NEW messages */
@@ -348,6 +404,10 @@
     color: #64748b;
 }
 
+.chat-loading-state--error {
+    color: #fca5a5;
+}
+
 /* Input */
 .chat-input-wrapper {
     padding: 15px 20px;
@@ -356,6 +416,11 @@
     display: flex;
     align-items: flex-end;
     gap: 10px;
+}
+
+.chat-input-wrapper[hidden],
+.chat-readonly-notice[hidden] {
+    display: none !important;
 }
 
 .admin-chat-input {
@@ -393,6 +458,128 @@
     align-items: center;
     font-size: 18px;
     box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.admin-alert-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px 18px;
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(19, 30, 54, 0.95) 0%, rgba(18, 26, 44, 0.92) 100%);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.18);
+}
+
+.admin-alert-header {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.admin-alert-header-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.admin-alert-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.admin-alert-badge--info {
+    background: rgba(59, 130, 246, 0.16);
+    color: #93c5fd;
+}
+
+.admin-alert-badge--warning {
+    background: rgba(245, 158, 11, 0.18);
+    color: #fcd34d;
+}
+
+.admin-alert-badge--critical {
+    background: rgba(239, 68, 68, 0.18);
+    color: #fca5a5;
+}
+
+.admin-alert-title {
+    color: #f8fafc;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.5;
+}
+
+.admin-alert-meta {
+    color: #94a3b8;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.admin-alert-content {
+    color: #e2e8f0;
+    font-size: 14px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.admin-alert-error {
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(127, 29, 29, 0.4);
+    border: 1px solid rgba(248, 113, 113, 0.24);
+    color: #fecaca;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+.admin-alert-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.admin-alert-entry {
+    flex: 1;
+    min-width: 220px;
+    color: #93c5fd;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.admin-alert-action-btn {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, #6aa6ea 0%, #4f81c8 100%);
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    box-shadow: 0 10px 24px rgba(79, 129, 200, 0.25);
+}
+
+.admin-alert-action-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 28px rgba(79, 129, 200, 0.32);
+}
+
+.admin-alert-action-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+    box-shadow: none;
 }
 
 /* =========================================
@@ -473,6 +660,19 @@
     .admin-message {
         max-width: 85%;
     }
+
+    .admin-message--ops-alert {
+        max-width: 100%;
+    }
+
+    .admin-alert-footer {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .admin-alert-entry {
+        min-width: 0;
+    }
 }
 
 /* =========================================
@@ -531,10 +731,25 @@
     border-left-color: #3b82f6;
 }
 
+:root:not([data-theme="dark"]) .session-item--ops {
+    background: rgba(59, 130, 246, 0.06);
+}
+
+:root:not([data-theme="dark"]) .session-badge {
+    background: rgba(79, 129, 200, 0.14);
+    color: #4f81c8;
+}
+
 :root:not([data-theme="dark"]) .admin-message.received {
     background: #f1f5f9;
     color: #334155;
     border-color: #e2e8f0;
+}
+
+:root:not([data-theme="dark"]) .chat-readonly-notice {
+    background: rgba(79, 129, 200, 0.08);
+    border-top-color: rgba(79, 129, 200, 0.14);
+    color: #365f96;
 }
 
 :root:not([data-theme="dark"]) .chat-input-wrapper {
@@ -555,6 +770,47 @@
 
 :root:not([data-theme="dark"]) .chat-empty-state {
     color: #94a3b8;
+}
+
+:root:not([data-theme="dark"]) .admin-alert-card {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(244, 248, 255, 0.96) 100%);
+    border-color: rgba(79, 129, 200, 0.16);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
+:root:not([data-theme="dark"]) .admin-alert-title {
+    color: #1e293b;
+}
+
+:root:not([data-theme="dark"]) .admin-alert-meta {
+    color: #64748b;
+}
+
+:root:not([data-theme="dark"]) .admin-alert-content {
+    color: #334155;
+}
+
+:root:not([data-theme="dark"]) .admin-alert-entry {
+    color: #4f81c8;
+}
+
+:root:not([data-theme="dark"]) .admin-alert-action-btn {
+    color: #ffffff;
+}
+
+:root:not([data-theme="dark"]) .admin-alert-badge--info {
+    background: rgba(79, 129, 200, 0.12);
+    color: #4f81c8;
+}
+
+:root:not([data-theme="dark"]) .admin-alert-badge--warning {
+    background: rgba(245, 158, 11, 0.14);
+    color: #b45309;
+}
+
+:root:not([data-theme="dark"]) .admin-alert-badge--critical {
+    background: rgba(239, 68, 68, 0.12);
+    color: #b91c1c;
 }
 
 /* Mobile Light Mode */

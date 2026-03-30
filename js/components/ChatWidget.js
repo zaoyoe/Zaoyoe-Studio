@@ -138,6 +138,21 @@ class ChatWidget {
         return this.supportInlineState;
     }
 
+    setSupportInlineState(actionId = '', nextState = {}) {
+        const normalizedActionId = String(actionId || '').trim();
+        const baseState = normalizedActionId
+            ? this.getSupportInlineState(normalizedActionId)
+            : { actionId: '', value: '', result: '', error: '', loading: false };
+
+        this.supportInlineState = {
+            ...baseState,
+            ...nextState,
+            actionId: normalizedActionId
+        };
+
+        return this.supportInlineState;
+    }
+
     setSupportDisplayMode(mode = 'support') {
         this.supportDisplayMode = mode === 'chat' ? 'chat' : 'support';
         this.supportPendingActionId = '';
@@ -212,6 +227,491 @@ class ChatWidget {
         this.supportPendingActionId = '';
         if (!this.input) return;
         this.input.placeholder = this.t('chat.inputMessagePlaceholder', '输入消息...');
+    }
+
+    getSupportRefTypeLabel(refType) {
+        const normalized = String(refType || '').trim().toLowerCase();
+        const labels = {
+            order_id: this.getCurrentLanguage() === 'zh' ? '商城订单号' : 'Shop Order ID',
+            task_id: this.getCurrentLanguage() === 'zh' ? '验证任务号' : 'Verify Task ID',
+            redeem_code: this.getCurrentLanguage() === 'zh' ? '兑换码' : 'Redeem Code',
+            afdian_order_no: this.getCurrentLanguage() === 'zh' ? '爱发电订单号' : 'Afdian Order ID',
+            email: this.getCurrentLanguage() === 'zh' ? '邮箱' : 'Email'
+        };
+        return labels[normalized] || (this.getCurrentLanguage() === 'zh' ? '问题标识' : 'Reference');
+    }
+
+    getSupportActionLabel(actionId) {
+        const action = this.getSupportAction(actionId);
+        return action ? this.resolveSupportText(action.label, actionId) : actionId;
+    }
+
+    getSupportCategoryLabel(category) {
+        const normalized = String(category || '').trim().toLowerCase();
+        const labels = {
+            redeem_code_available: this.getCurrentLanguage() === 'zh' ? '兑换码可用' : 'Code Available',
+            redeem_code_used: this.getCurrentLanguage() === 'zh' ? '兑换码已使用' : 'Code Used',
+            redeem_code_unavailable: this.getCurrentLanguage() === 'zh' ? '兑换码不可用' : 'Code Unavailable',
+            redeem_code_invalid: this.getCurrentLanguage() === 'zh' ? '兑换码无效' : 'Code Invalid',
+            shop_delivered: this.getCurrentLanguage() === 'zh' ? '订单已发放' : 'Delivered',
+            shop_delivery_in_progress: this.getCurrentLanguage() === 'zh' ? '订单处理中' : 'In Progress',
+            shop_delivery_retrying: this.getCurrentLanguage() === 'zh' ? '订单自动重试中' : 'Retrying',
+            shop_delivery_dead_letter: this.getCurrentLanguage() === 'zh' ? '订单需人工处理' : 'Manual Review',
+            verify_success: this.getCurrentLanguage() === 'zh' ? '任务已完成' : 'Task Completed',
+            verify_in_progress: this.getCurrentLanguage() === 'zh' ? '任务处理中' : 'Task In Progress',
+            verify_region_unsupported: this.getCurrentLanguage() === 'zh' ? '地区限制' : 'Region Restricted',
+            verify_sso_unsupported: this.getCurrentLanguage() === 'zh' ? '邮箱类型限制' : 'Email Restricted',
+            verify_upstream_temporary: this.getCurrentLanguage() === 'zh' ? '上游临时异常' : 'Upstream Issue',
+            verify_conflict_existing_state: this.getCurrentLanguage() === 'zh' ? '账号状态冲突' : 'Account Conflict',
+            verify_failed_unknown: this.getCurrentLanguage() === 'zh' ? '未知失败' : 'Unknown Failure',
+            afdian_lookup_required: this.getCurrentLanguage() === 'zh' ? '爱发电订单查询' : 'Afdian Lookup',
+            verify_email_precheck: this.getCurrentLanguage() === 'zh' ? '邮箱前置检查' : 'Email Precheck'
+        };
+        return labels[normalized] || '';
+    }
+
+    getSuggestedActionLabels(actionIds = []) {
+        return (Array.isArray(actionIds) ? actionIds : [])
+            .map((actionId) => this.getSupportActionLabel(actionId))
+            .filter(Boolean);
+    }
+
+    getAutoSupportAssistActionLabel(actionId, detected, explanation = null, options = {}) {
+        const normalizedActionId = String(actionId || '').trim();
+        const category = String(explanation?.category || '').trim().toLowerCase();
+        const status = String(explanation?.status || '').trim().toLowerCase();
+        const refType = String(detected?.ref_type || '').trim().toLowerCase();
+        const isPrimary = options?.primary === true;
+        const zh = this.getCurrentLanguage() === 'zh';
+
+        switch (normalizedActionId) {
+            case 'code_status':
+                return zh ? '查看兑换码状态' : 'View Code Status';
+            case 'redeem_code':
+                return zh ? '立即兑换' : 'Redeem Now';
+            case 'afdian_lookup':
+                return zh ? '查爱发电订单' : 'Check Afdian Order';
+            case 'shop_order_status':
+                if (category === 'shop_delivery_in_progress' || category === 'shop_delivery_retrying') {
+                    return zh ? '继续查订单状态' : 'Check Order Status Again';
+                }
+                if (category === 'shop_delivery_dead_letter') {
+                    return zh ? '查看订单异常' : 'View Order Issue';
+                }
+                return zh ? '查看订单状态' : 'View Order Status';
+            case 'shop_order_content':
+                return zh ? '查看已发放内容' : 'View Delivered Content';
+            case 'verify_task_status':
+                if (status === 'success') {
+                    return zh ? '查看任务详情' : 'View Task Details';
+                }
+                if (category === 'verify_in_progress') {
+                    return zh ? '继续查任务进度' : 'Check Task Progress';
+                }
+                return zh ? '查看任务状态' : 'View Task Status';
+            case 'verify_failure_help':
+                return zh ? '查看失败原因' : 'View Failure Reason';
+            case 'verify_precheck':
+                return zh ? '做提交前检查' : 'Run Precheck';
+            case 'create_ticket':
+                if (refType === 'redeem_code') return zh ? '提交兑换码工单' : 'Submit Code Ticket';
+                if (refType === 'task_id') return zh ? '提交任务工单' : 'Submit Task Ticket';
+                if (refType === 'order_id') return zh ? '提交订单工单' : 'Submit Order Ticket';
+                return zh ? '提交问题工单' : 'Submit Ticket';
+            case 'tg_support':
+                return zh ? '转 TG 人工客服' : 'Open Telegram Support';
+            case 'live_chat':
+                return zh ? '切到在线客服' : 'Open Live Chat';
+            default:
+                return isPrimary ? this.getSupportActionLabel(normalizedActionId) : this.getSupportActionLabel(normalizedActionId);
+        }
+    }
+
+    getAutoSupportRootActionLabel() {
+        return this.getCurrentLanguage() === 'zh' ? '更多自助入口' : 'More Help';
+    }
+
+    getAutoSupportPrimaryActionId(detected, explanation = null) {
+        const candidateIds = [];
+        const pushActionId = (actionId) => {
+            const normalizedActionId = String(actionId || '').trim();
+            if (!normalizedActionId || candidateIds.includes(normalizedActionId)) return;
+            if (!this.getSupportAction(normalizedActionId)) return;
+            candidateIds.push(normalizedActionId);
+        };
+
+        (Array.isArray(explanation?.suggested_actions) ? explanation.suggested_actions : []).forEach(pushActionId);
+        pushActionId(explanation?.next_action);
+        pushActionId(detected?.next_action);
+
+        const refType = String(detected?.ref_type || '').trim().toLowerCase();
+        if (!candidateIds.length) {
+            if (refType === 'order_id') pushActionId('shop_order_status');
+            if (refType === 'task_id') pushActionId('verify_task_status');
+            if (refType === 'redeem_code') pushActionId('code_status');
+            if (refType === 'afdian_order_no') pushActionId('afdian_lookup');
+            if (refType === 'email') pushActionId('verify_precheck');
+        }
+
+        return candidateIds[0] || '';
+    }
+
+    buildAutoSupportPrefillValue(actionId, detected, explanation = null) {
+        const normalizedActionId = String(actionId || '').trim();
+        const refValue = String(detected?.normalized_value || '').trim();
+        if (!normalizedActionId || !refValue) return '';
+
+        if (normalizedActionId === 'create_ticket') {
+            const refKeyMap = {
+                order_id: 'order',
+                task_id: 'task',
+                redeem_code: 'code',
+                afdian_order_no: 'afdian',
+                email: 'email'
+            };
+            const refKey = refKeyMap[String(detected?.ref_type || '').trim().toLowerCase()] || 'ref';
+            const lines = [`${refKey}:${refValue}`];
+            if (String(explanation?.title || '').trim()) {
+                lines.push(`${this.getCurrentLanguage() === 'zh' ? '自动判断' : 'Auto Check'}：${String(explanation.title).trim()}`);
+            }
+            if (String(explanation?.message || '').trim()) {
+                lines.push(`${this.getCurrentLanguage() === 'zh' ? '说明' : 'Note'}：${String(explanation.message).trim()}`);
+            }
+            return lines.join('\n');
+        }
+
+        if ([
+            'code_status',
+            'redeem_code',
+            'afdian_lookup',
+            'shop_order_status',
+            'shop_order_content',
+            'verify_task_status',
+            'verify_failure_help'
+        ].includes(normalizedActionId)) {
+            return refValue;
+        }
+
+        return '';
+    }
+
+    formatAutoSupportPanelResult(detected, explanation = null, fallbackError = '') {
+        if (!explanation && !fallbackError) return '';
+
+        const lines = [];
+        const title = String(explanation?.title || '').trim();
+        const message = String(explanation?.message || '').trim();
+        const category = this.getSupportCategoryLabel(explanation?.category);
+
+        if (title) {
+            lines.push(`${this.getCurrentLanguage() === 'zh' ? '自动判断' : 'Automatic Check'}：${title}`);
+        }
+
+        if (message) {
+            lines.push(`${this.getCurrentLanguage() === 'zh' ? '说明' : 'Note'}：${message}`);
+        } else if (fallbackError) {
+            lines.push(`${this.getCurrentLanguage() === 'zh' ? '说明' : 'Note'}：${fallbackError}`);
+        }
+
+        if (category) {
+            lines.push(`${this.getCurrentLanguage() === 'zh' ? '问题分类' : 'Category'}：${category}`);
+        }
+
+        if (explanation && typeof explanation.retryable === 'boolean') {
+            lines.push(`${this.getCurrentLanguage() === 'zh' ? '是否建议重试' : 'Retry Recommended'}：${explanation.retryable
+                ? (this.getCurrentLanguage() === 'zh' ? '可以稍后重试' : 'You can retry later')
+                : (this.getCurrentLanguage() === 'zh' ? '不建议直接重试' : 'Retry is not recommended')}`);
+        }
+
+        return lines.filter(Boolean).join('\n');
+    }
+
+    getAutoSupportScenarioActionIds(detected, explanation = null, openedActionId = '') {
+        const category = String(explanation?.category || '').trim().toLowerCase();
+        const status = String(explanation?.status || '').trim().toLowerCase();
+        const refType = String(detected?.ref_type || '').trim().toLowerCase();
+        const actionIds = [];
+        const pushActionId = (actionId) => {
+            const normalizedActionId = String(actionId || '').trim();
+            if (!normalizedActionId || actionIds.includes(normalizedActionId)) return;
+            if (!this.getSupportAction(normalizedActionId)) return;
+            actionIds.push(normalizedActionId);
+        };
+
+        switch (category) {
+            case 'redeem_code_available':
+                pushActionId('redeem_code');
+                pushActionId('code_status');
+                break;
+            case 'redeem_code_used':
+            case 'redeem_code_unavailable':
+            case 'redeem_code_invalid':
+                pushActionId('create_ticket');
+                pushActionId('code_status');
+                break;
+            case 'shop_delivered':
+                pushActionId('shop_order_content');
+                pushActionId('shop_order_status');
+                break;
+            case 'shop_delivery_in_progress':
+            case 'shop_delivery_retrying':
+                pushActionId('shop_order_status');
+                pushActionId('create_ticket');
+                break;
+            case 'shop_delivery_dead_letter':
+                pushActionId('create_ticket');
+                pushActionId('shop_order_status');
+                break;
+            case 'verify_success':
+                pushActionId('verify_task_status');
+                break;
+            case 'verify_in_progress':
+                pushActionId('verify_task_status');
+                pushActionId('verify_failure_help');
+                break;
+            case 'verify_upstream_temporary':
+                pushActionId('verify_task_status');
+                pushActionId('create_ticket');
+                break;
+            case 'verify_region_unsupported':
+            case 'verify_sso_unsupported':
+            case 'verify_conflict_existing_state':
+                pushActionId('verify_failure_help');
+                pushActionId('create_ticket');
+                break;
+            case 'verify_failed_unknown':
+            case 'verify_unknown':
+                pushActionId('verify_failure_help');
+                pushActionId('create_ticket');
+                break;
+            case 'afdian_lookup_required':
+                pushActionId('afdian_lookup');
+                pushActionId('create_ticket');
+                break;
+            case 'verify_email_precheck':
+                pushActionId('verify_precheck');
+                pushActionId('create_ticket');
+                break;
+            default:
+                break;
+        }
+
+        if (!actionIds.length) {
+            if (status === 'success') {
+                if (refType === 'task_id') pushActionId('verify_task_status');
+                if (refType === 'order_id') pushActionId('shop_order_content');
+            } else if (['queued', 'pending', 'processing', 'requeued', 'retry_waiting'].includes(status)) {
+                if (refType === 'task_id') pushActionId('verify_task_status');
+                if (refType === 'order_id') pushActionId('shop_order_status');
+            } else if (status === 'failed') {
+                if (refType === 'task_id') {
+                    pushActionId('verify_failure_help');
+                    pushActionId('create_ticket');
+                }
+            }
+        }
+
+        pushActionId(openedActionId);
+        (Array.isArray(explanation?.suggested_actions) ? explanation.suggested_actions : []).forEach(pushActionId);
+        pushActionId(detected?.next_action);
+
+        if (!actionIds.length) {
+            pushActionId(this.getAutoSupportPrimaryActionId(detected, explanation));
+        }
+
+        return actionIds;
+    }
+
+    getAutoSupportAssistActions(detected, explanation = null, openedActionId = '') {
+        const actions = this.getAutoSupportScenarioActionIds(detected, explanation, openedActionId)
+            .slice(0, 2)
+            .map((actionId, index) => ({
+            kind: 'action',
+            actionId,
+            label: this.getAutoSupportAssistActionLabel(actionId, detected, explanation, {
+                primary: index === 0,
+                openedActionId
+            }),
+            primary: index === 0
+        }));
+
+        actions.push({
+            kind: 'root',
+            label: this.getAutoSupportRootActionLabel(),
+            primary: false
+        });
+
+        return actions;
+    }
+
+    extractAutoSupportReference(text) {
+        const rawText = String(text || '').trim();
+        if (!rawText) return null;
+
+        const emailMatch = rawText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+        if (emailMatch) {
+            return {
+                value: emailMatch[0],
+                ref_type: 'email'
+            };
+        }
+
+        const uuidMatch = rawText.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i);
+        if (uuidMatch) {
+            return {
+                value: uuidMatch[0]
+            };
+        }
+
+        const codeMatch = rawText.match(/\b[A-Z0-9]+(?:-[A-Z0-9]+)+\b/i);
+        if (codeMatch) {
+            return {
+                value: codeMatch[0],
+                ref_type: 'redeem_code'
+            };
+        }
+
+        const afdianMatch = rawText.match(/(?:爱发电|afdian|订单号|order)[:：#\s-]*([A-Za-z0-9_-]{10,40})/i);
+        if (afdianMatch?.[1]) {
+            return {
+                value: afdianMatch[1]
+            };
+        }
+
+        if (rawText.length <= 40 && /^[A-Za-z0-9_-]{10,40}$/.test(rawText) && /\d/.test(rawText)) {
+            return {
+                value: rawText
+            };
+        }
+
+        return null;
+    }
+
+    formatAutoSupportAssistMessage(detected, explanation = null, openedActionId = '', fallbackError = '') {
+        const lines = [];
+        const refTypeLabel = this.getSupportRefTypeLabel(detected?.ref_type);
+        const refValue = String(detected?.normalized_value || '').trim();
+        const title = String(explanation?.title || '').trim();
+        const message = String(explanation?.message || '').trim();
+        const category = this.getSupportCategoryLabel(explanation?.category);
+        const openedActionLabel = openedActionId ? this.getSupportActionLabel(openedActionId) : '';
+
+        if (openedActionLabel) {
+            lines.push(this.getCurrentLanguage() === 'zh'
+                ? `我已经识别到这是“${refTypeLabel}”，并帮你打开了“${openedActionLabel}”。`
+                : `I detected this as “${refTypeLabel}” and opened “${openedActionLabel}” for you.`);
+        } else {
+            lines.push(this.getCurrentLanguage() === 'zh'
+                ? `我已经识别到这是“${refTypeLabel}”。`
+                : `I detected this as “${refTypeLabel}”.`);
+        }
+
+        if (refValue) {
+            lines.push(`${this.getCurrentLanguage() === 'zh' ? '识别内容' : 'Reference'}：${refValue}`);
+        }
+
+        if (title) {
+            lines.push(`${this.getCurrentLanguage() === 'zh' ? '判断结果' : 'Result'}：${title}`);
+        }
+
+        if (message) {
+            lines.push(`${this.getCurrentLanguage() === 'zh' ? '说明' : 'Note'}：${message}`);
+        } else if (fallbackError) {
+            lines.push(`${this.getCurrentLanguage() === 'zh' ? '说明' : 'Note'}：${fallbackError}`);
+        }
+
+        if (category) {
+            lines.push(`${this.getCurrentLanguage() === 'zh' ? '问题分类' : 'Category'}：${category}`);
+        }
+
+        if (openedActionLabel || explanation || fallbackError) {
+            lines.push(this.getCurrentLanguage() === 'zh'
+                ? '你也可以直接点下方按钮切换到其他入口。'
+                : 'You can also use the buttons below to continue.');
+        }
+
+        return lines.filter(Boolean).join('\n');
+    }
+
+    buildAutoSupportAssistPayload(detected, explanation = null, openedActionId = '', fallbackError = '') {
+        return {
+            text: this.formatAutoSupportAssistMessage(detected, explanation, openedActionId, fallbackError),
+            actions: this.getAutoSupportAssistActions(detected, explanation, openedActionId),
+            detected,
+            explanation,
+            fallbackError
+        };
+    }
+
+    async openAutoSupportAssistPanel(detected, explanation = null, fallbackError = '') {
+        const actionId = this.getAutoSupportPrimaryActionId(detected, explanation);
+        if (!actionId) return '';
+
+        const action = this.getSupportAction(actionId);
+        if (!action) return '';
+
+        const panelState = {
+            value: this.buildAutoSupportPrefillValue(actionId, detected, explanation),
+            result: this.formatAutoSupportPanelResult(detected, explanation, fallbackError),
+            error: '',
+            loading: false
+        };
+
+        await this.openSupportAction(actionId, panelState);
+        return actionId;
+    }
+
+    async maybeRunAutoSupportAssist(text) {
+        const candidate = this.extractAutoSupportReference(text);
+        if (!candidate) return false;
+
+        let sessionContext = null;
+        try {
+            sessionContext = await this.refreshUserSessionContext();
+        } catch (error) {
+            console.error('[ChatWidget] Failed to refresh auth before auto support assist:', error);
+            return false;
+        }
+
+        if (!sessionContext?.user) return false;
+
+        try {
+            const detected = await this.callSupportApi('detect_reference', candidate);
+            const confidence = Number(detected?.confidence || 0);
+            if (!detected || detected.ref_type === 'unknown' || confidence < 0.6) {
+                return false;
+            }
+
+            try {
+                const explanation = await this.callSupportApi('explain_failure', {
+                    ref_type: detected.ref_type,
+                    ref_id: detected.normalized_value,
+                    site: detected.site || window.SiteConfig?.site || 'cn'
+                });
+                const openedActionId = await this.openAutoSupportAssistPanel(detected, explanation);
+                this.appendMessage(
+                    this.buildAutoSupportAssistPayload(detected, explanation, openedActionId),
+                    this.getMessageRenderType(true),
+                    'support-assist',
+                    null,
+                    true
+                );
+                return true;
+            } catch (explainError) {
+                const openedActionId = await this.openAutoSupportAssistPanel(detected, null, explainError?.message || '');
+                this.appendMessage(
+                    this.buildAutoSupportAssistPayload(detected, null, openedActionId, explainError?.message || ''),
+                    this.getMessageRenderType(true),
+                    'support-assist',
+                    null,
+                    true
+                );
+                return true;
+            }
+        } catch (error) {
+            console.warn('[ChatWidget] Auto support detection skipped:', error?.message || error);
+            return false;
+        }
     }
 
     getSupportSubmitLabel(actionId, action) {
@@ -453,7 +953,7 @@ class ChatWidget {
         `;
     }
 
-    async openSupportAction(actionId) {
+    async openSupportAction(actionId, nextPanelState = null) {
         const action = this.getSupportAction(actionId);
         if (!action) return;
 
@@ -481,6 +981,17 @@ class ChatWidget {
         if (action.mode === 'static' || action.mode === 'link') {
             this.renderSupportStaticPanel(actionId);
             return;
+        }
+
+        if (nextPanelState && typeof nextPanelState === 'object') {
+            this.setSupportInlineState(actionId, {
+                value: typeof nextPanelState.value === 'string' ? nextPanelState.value : '',
+                result: typeof nextPanelState.result === 'string' ? nextPanelState.result : '',
+                error: typeof nextPanelState.error === 'string' ? nextPanelState.error : '',
+                loading: nextPanelState.loading === true
+            });
+        } else {
+            this.getSupportInlineState(actionId);
         }
 
         this.renderSupportActionPanel(actionId);
@@ -777,6 +1288,35 @@ class ChatWidget {
         if (url) {
             window.open(url, '_blank', 'noopener');
         }
+    }
+
+    handleSupportAssistMessageClick(event) {
+        const button = event.target instanceof Element
+            ? event.target.closest('[data-support-chat-action-id], [data-support-chat-root]')
+            : null;
+        if (!button) return;
+
+        event.preventDefault();
+
+        if (button.hasAttribute('data-support-chat-root')) {
+            this.renderSupportRootPanel();
+            return;
+        }
+
+        const actionId = String(button.getAttribute('data-support-chat-action-id') || '').trim();
+        if (!actionId) return;
+
+        const assistState = button._supportAssistState || null;
+        const panelState = assistState
+            ? {
+                value: this.buildAutoSupportPrefillValue(actionId, assistState.detected, assistState.explanation),
+                result: this.formatAutoSupportPanelResult(assistState.detected, assistState.explanation, assistState.fallbackError),
+                error: '',
+                loading: false
+            }
+            : null;
+
+        this.openSupportAction(actionId, panelState);
     }
 
     _detectRefreshRate() {
@@ -3316,6 +3856,7 @@ class ChatWidget {
         this._bindInputFocusStabilizer(this.input);
         this.supportPanel?.addEventListener('click', (event) => this.handleSupportPanelClick(event));
         this.supportPanel?.addEventListener('submit', (event) => this.handleSupportPanelSubmit(event));
+        this.messagesContainer?.addEventListener('click', (event) => this.handleSupportAssistMessageClick(event));
         this.headerSupportToggle?.addEventListener('click', () => this.renderSupportRootPanel());
 
         // Emoji Picker
@@ -4171,6 +4712,11 @@ class ChatWidget {
         this.appendMessage(text, this.getMessageRenderType(false), 'text');
         this.input.value = '';
 
+        const autoSupportAssistPromise = this.maybeRunAutoSupportAssist(text).catch((error) => {
+            console.warn('[ChatWidget] Auto support assist failed:', error?.message || error);
+            return false;
+        });
+
         try {
             const { user, sessionId } = await this.refreshUserSessionContext();
             const userId = user ? user.id : null;
@@ -4190,6 +4736,8 @@ class ChatWidget {
             console.error('Error sending message:', err);
             // Could add retry logic or error indicator here
         }
+
+        await autoSupportAssistPromise;
     }
 
     // Client-side image compression
@@ -4312,7 +4860,46 @@ class ChatWidget {
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${type}${isNewMessage ? ' new-message' : ''}`;
 
-        if (messageType === 'image') {
+        if (messageType === 'support-assist' && content && typeof content === 'object') {
+            msgDiv.classList.add('message--support-assist');
+
+            const textEl = document.createElement('span');
+            textEl.className = 'message-text';
+            textEl.textContent = String(content.text || '').trim();
+            msgDiv.appendChild(textEl);
+
+            const actions = Array.isArray(content.actions) ? content.actions : [];
+            if (actions.length) {
+                const actionsEl = document.createElement('div');
+                actionsEl.className = 'chat-support-assist-actions';
+
+                actions.forEach((action) => {
+                    if (!action || typeof action !== 'object') return;
+
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = `chat-support-assist-btn${action.primary ? ' chat-support-assist-btn--primary' : ''}${action.kind === 'root' ? ' chat-support-assist-btn--secondary' : ''}`;
+                    button.textContent = String(action.label || '').trim();
+
+                    if (action.kind === 'root') {
+                        button.setAttribute('data-support-chat-root', '1');
+                    } else {
+                        button.setAttribute('data-support-chat-action-id', String(action.actionId || '').trim());
+                        button._supportAssistState = {
+                            detected: content.detected || null,
+                            explanation: content.explanation || null,
+                            fallbackError: content.fallbackError || ''
+                        };
+                    }
+
+                    actionsEl.appendChild(button);
+                });
+
+                if (actionsEl.childNodes.length) {
+                    msgDiv.appendChild(actionsEl);
+                }
+            }
+        } else if (messageType === 'image') {
             const safeUrl = this.sanitizeMediaUrl(content);
             if (safeUrl) {
                 const img = document.createElement('img');

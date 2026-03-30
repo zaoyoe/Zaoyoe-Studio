@@ -5300,6 +5300,9 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
         'setElementHidden(element, hidden)',
         "className: 'session-avatar-image'",
         "avatar.classList.add('session-avatar--media');",
+        "this.opsAlertSessionId = '__admin_ops_todo__';",
+        ".from('ops_alert_jobs')",
+        "'站内代办'",
         'id="chatInterface" class="chat-interface" hidden',
         'id="adminImageInput" class="admin-chat-file-input" accept="image/*" hidden',
         'id="adminEmojiPicker" hidden',
@@ -5316,8 +5319,12 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
 
     const styleMarkers = [
         '.session-avatar--media',
+        '.session-avatar--ops',
         '.session-avatar-image',
         '.session-preview-subtext',
+        '.chat-readonly-notice',
+        '.admin-alert-card',
+        '.admin-alert-action-btn',
         '.chat-interface[hidden]',
         '.admin-emoji-picker:not([hidden])',
         '.chat-loading-state'
@@ -5328,8 +5335,8 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
     }
 
     const htmlMarkers = [
-        'css/admin-chat.css?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1',
-        'js/admin-chat.js?v=20260324_ADMIN_CHAT_RUNTIME_STYLE_1'
+        'css/admin-chat.css?v=20260330_ADMIN_CHAT_OPS_TODO_1',
+        'js/admin-chat.js?v=20260330_ADMIN_CHAT_OPS_TODO_1'
     ];
 
     for (const marker of htmlMarkers) {
