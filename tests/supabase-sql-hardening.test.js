@@ -78,6 +78,8 @@ test('database migrations retire the legacy redemption overload and formalize th
     const paymentSiteSql = readRepoFile(path.join('supabase', 'migrations', '20260322_constrain_payment_sites.sql'));
     const rateLimitSql = readRepoFile(path.join('supabase', 'migrations', '20260324_add_persistent_rate_limits.sql'));
     const refundReclaimSql = readRepoFile(path.join('supabase', 'migrations', '20260324_add_admin_refund_reclaim_rpc.sql'));
+    const notificationScopeSql = readRepoFile(path.join('supabase', 'migrations', '20260330_add_system_notification_scopes.sql'));
+    const adminExtensionsSql = readRepoFile(path.join('supabase', 'admin_extensions.sql'));
 
     assert.match(
         migrationSql,
@@ -198,6 +200,36 @@ test('database migrations retire the legacy redemption overload and formalize th
         refundReclaimSql,
         /GRANT EXECUTE ON FUNCTION public\.fn_deduct_points_admin_site_with_breakdown\(UUID, INT, TEXT, TEXT, VARCHAR\) TO service_role;/,
         'refund reclaim migration should keep execution restricted to service_role'
+    );
+    assert.match(
+        notificationScopeSql,
+        /ADD COLUMN IF NOT EXISTS scope TEXT DEFAULT 'unspecified'/,
+        'system notification scope migration should add a compatible scope column'
+    );
+    assert.match(
+        notificationScopeSql,
+        /ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'general'/,
+        'system notification scope migration should add a category column for message routing'
+    );
+    assert.match(
+        notificationScopeSql,
+        /CHECK \(scope IN \('unspecified', 'user_personal', 'admin_personal'\)\)/,
+        'system notification scope migration should constrain scope values'
+    );
+    assert.match(
+        notificationScopeSql,
+        /CREATE INDEX IF NOT EXISTS idx_system_notifications_user_scope_created_at/s,
+        'system notification scope migration should add a scoped lookup index'
+    );
+    assert.match(
+        adminExtensionsSql,
+        /scope text default 'unspecified' not null check \(scope in \('unspecified', 'user_personal', 'admin_personal'\)\)/,
+        'bootstrap admin extensions SQL should keep the scoped notification schema'
+    );
+    assert.match(
+        adminExtensionsSql,
+        /category text default 'general' not null/,
+        'bootstrap admin extensions SQL should keep the notification category column'
     );
 });
 

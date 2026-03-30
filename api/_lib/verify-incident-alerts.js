@@ -3,9 +3,6 @@ const {
     enqueueOpsAlertJob,
     loadOpsAlertsRuntimeConfig
 } = require('./ops-alerts');
-const {
-    notifyActiveAdmins
-} = require('./admin-notifications');
 
 const VERIFY_INCIDENT_SIGNAL_TYPES = Object.freeze([
     'verify_service_disabled',
@@ -564,28 +561,13 @@ async function runVerifyIncidentEscalationSweep(supabase, options = {}) {
             recoverySkippedNoChannels += 1;
         }
 
-        const adminNotificationResult = await notifyActiveAdmins(supabase, {
-            title: alert.title,
-            content: alert.content,
-            type: 'success',
-            dedupeWindowMinutes: Math.max(
-                Number(alert.dedupeWindowMinutes || 0),
-                60
-            )
-        }).catch((error) => ({
-            error: error.message || 'notify_failed'
-        }));
-
-        adminNotificationsCreated += Number(adminNotificationResult?.created || 0);
-        adminNotificationsSkipped += Number(adminNotificationResult?.skipped || 0);
-
         results.push({
             title: alert.title,
             severity: alert.severity,
             queued: result?.queued === true,
             reason: result?.reason || null,
-            admin_notification_created: Number(adminNotificationResult?.created || 0),
-            admin_notification_error: normalizeText(adminNotificationResult?.error) || null
+            admin_notification_created: 0,
+            admin_notification_error: null
         });
     }
 

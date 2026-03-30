@@ -1171,7 +1171,7 @@ test('runShopOrderRiskSweep auto-suspends dominant zero-total products', async (
     assert.match(state.jobs[0].payload.auto_response_summary, /自动下架商品 高风险资格号/);
 });
 
-test('runShopOrderRiskSweep enqueues recovery notices and writes admin notifications once', async () => {
+test('runShopOrderRiskSweep enqueues recovery notices without duplicating admin personal notifications', async () => {
     const state = {
         jobs: [
             {
@@ -1219,7 +1219,7 @@ test('runShopOrderRiskSweep enqueues recovery notices and writes admin notificat
     assert.equal(first.anomaly_count, 0);
     assert.equal(first.recovered_count, 1);
     assert.equal(first.recovered_queued, 1);
-    assert.equal(first.admin_notifications_created, 2);
+    assert.equal(first.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 2);
     assert.equal(state.jobs[1].alert_type, 'shop_order_risk_recovered');
     assert.deepEqual(state.jobs[1].channels, ['feishu']);
@@ -1227,8 +1227,7 @@ test('runShopOrderRiskSweep enqueues recovery notices and writes admin notificat
     assert.equal(state.jobs[1].payload.previous_primary_action, 'disable-coupon');
     assert.equal(state.jobs[1].payload.previous_auto_response_status, 'applied');
     assert.match(state.jobs[1].payload.previous_auto_response_summary, /FLASH0/);
-    assert.equal(state.systemNotifications.length, 2);
-    assert.match(state.systemNotifications[0].title, /风险已恢复/);
+    assert.equal(state.systemNotifications.length, 0);
 
     const second = await runShopOrderRiskSweep(supabase, {
         runtime,
@@ -1239,5 +1238,5 @@ test('runShopOrderRiskSweep enqueues recovery notices and writes admin notificat
     assert.equal(second.recovered_queued, 0);
     assert.equal(second.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 2);
-    assert.equal(state.systemNotifications.length, 2);
+    assert.equal(state.systemNotifications.length, 0);
 });

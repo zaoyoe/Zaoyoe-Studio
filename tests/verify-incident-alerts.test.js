@@ -353,7 +353,7 @@ test('runVerifyIncidentEscalationSweep enqueues escalated verify incidents with 
     assert.equal(state.jobs.length, 4);
 });
 
-test('runVerifyIncidentEscalationSweep enqueues recovery notices and writes admin notifications once', async () => {
+test('runVerifyIncidentEscalationSweep enqueues recovery notices without duplicating admin personal notifications', async () => {
     const state = {
         jobs: [
             {
@@ -400,12 +400,11 @@ test('runVerifyIncidentEscalationSweep enqueues recovery notices and writes admi
     assert.equal(first.incident_count, 0);
     assert.equal(first.recovered_count, 1);
     assert.equal(first.recovered_queued, 1);
-    assert.equal(first.admin_notifications_created, 2);
+    assert.equal(first.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 3);
     assert.equal(state.jobs[2].alert_type, 'verify_incident_recovered');
     assert.deepEqual(state.jobs[2].channels, ['feishu']);
-    assert.equal(state.systemNotifications.length, 2);
-    assert.match(state.systemNotifications[0].title, /验证综合异常已恢复/);
+    assert.equal(state.systemNotifications.length, 0);
 
     const second = await runVerifyIncidentEscalationSweep(supabase, {
         runtime,
@@ -416,5 +415,5 @@ test('runVerifyIncidentEscalationSweep enqueues recovery notices and writes admi
     assert.equal(second.recovered_queued, 0);
     assert.equal(second.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 3);
-    assert.equal(state.systemNotifications.length, 2);
+    assert.equal(state.systemNotifications.length, 0);
 });

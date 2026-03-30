@@ -94,6 +94,8 @@ create table if not exists public.system_notifications (
   title text not null,
   content text,
   type text default 'info' check (type in ('info', 'warning', 'success', 'alert')),
+  scope text default 'unspecified' not null check (scope in ('unspecified', 'user_personal', 'admin_personal')),
+  category text default 'general' not null,
   is_read boolean default false,
   created_at timestamptz default now() not null
 );

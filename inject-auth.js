@@ -12,6 +12,8 @@
     ];
     const LEGACY_AUTH_STYLE_IDS = ['force-auth-styles', 'force-google-btn-slim-style'];
     const PRIMARY_VIEWS = new Set(['login', 'register']);
+    const PERSONAL_MESSAGE_BUTTON_LABEL = '打开个人消息';
+    const PERSONAL_MESSAGE_BUTTON_UNREAD_LABEL = '打开个人消息（有未读）';
     const VIEW_META = {
         login: {
             titleKey: 'auth.welcomeBack',
@@ -141,7 +143,7 @@
         return `
             <div id="userDropdown" class="avatar-dropdown auth-dropdown-layer" aria-hidden="true">
                 <div class="dropdown-header">
-                    <button type="button" class="dropdown-notif-btn" id="dropdownNotifBtn" data-auth-action="notifications">
+                    <button type="button" class="dropdown-notif-btn" id="dropdownNotifBtn" data-auth-action="notifications" aria-label="${PERSONAL_MESSAGE_BUTTON_LABEL}" title="${PERSONAL_MESSAGE_BUTTON_LABEL}">
                         <i class="far fa-bell"></i>
                         <span id="dropdownNotifBadge" class="dropdown-notif-badge"></span>
                     </button>
@@ -1493,8 +1495,14 @@
     window.updateNotificationBadges = function (hasUnread) {
         const avatarBadge = document.getElementById('avatarUnreadBadge');
         const dropdownBadge = document.getElementById('dropdownNotifBadge');
+        const dropdownButton = document.getElementById('dropdownNotifBtn');
+        const entryLabel = hasUnread ? PERSONAL_MESSAGE_BUTTON_UNREAD_LABEL : PERSONAL_MESSAGE_BUTTON_LABEL;
         if (avatarBadge) avatarBadge.classList.toggle('is-visible', !!hasUnread);
         if (dropdownBadge) dropdownBadge.classList.toggle('is-visible', !!hasUnread);
+        if (dropdownButton) {
+            dropdownButton.setAttribute('aria-label', entryLabel);
+            dropdownButton.setAttribute('title', entryLabel);
+        }
     };
 
     function initTheme() {

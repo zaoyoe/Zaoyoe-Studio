@@ -534,7 +534,11 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
         "setInjectedAuthStyleState(dropdown, {",
         "setInjectedAuthStyleProperty(sheet, 'transform', null);",
         "avatarBadge.classList.toggle('is-visible', !!hasUnread);",
-        "dropdownBadge.classList.toggle('is-visible', !!hasUnread);"
+        "dropdownBadge.classList.toggle('is-visible', !!hasUnread);",
+        "const PERSONAL_MESSAGE_BUTTON_LABEL = '打开个人消息';",
+        "const PERSONAL_MESSAGE_BUTTON_UNREAD_LABEL = '打开个人消息（有未读）';",
+        "dropdownButton.setAttribute('aria-label', entryLabel);",
+        "dropdownButton.setAttribute('title', entryLabel);"
     ];
 
     for (const marker of runtimeMarkers) {
@@ -560,7 +564,7 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
             'auth entry pages should load the latest injected auth stylesheet'
         );
         assert.equal(
-            source.includes('inject-auth.js?v=20260324_INJECT_AUTH_RUNTIME_STYLE_HELPERS_1'),
+            source.includes('inject-auth.js?v=20260330_AUTH_PERSONAL_MESSAGE_ENTRY_1'),
             true,
             'auth entry pages should load the latest injected auth runtime version'
         );
@@ -5482,6 +5486,16 @@ test('final frontend runtime remnants route through delegated or bound listeners
         'wrapper.hidden = false;',
         'badge.hidden = unreadCount <= 0;',
         'class="notif-expand-wrapper"',
+        "const PERSONAL_MESSAGE_TITLE = '个人消息';",
+        "const EMPTY_PERSONAL_MESSAGE_TEXT = '暂无个人消息';",
+        "const EMPTY_ADMIN_PERSONAL_MESSAGE_TEXT = '暂无个人提醒';",
+        'ADMIN_OPS_NOTIFICATION_BLOCK_TITLE_PATTERNS',
+        'ADMIN_PERSONAL_NOTIFICATION_ALLOW_TITLE_PATTERNS',
+        "if (scope === 'admin_personal') {",
+        "if (scope === 'user_personal') {",
+        "function normalizeNotificationScope(value) {",
+        'await resolveNotificationViewer();',
+        'notifications = (data || []).filter((row) => shouldIncludeNotification(row));',
         "document.documentElement.classList.add('notif-scroll-locked');",
         "document.body.classList.add('notif-scroll-locked');"
     ];
@@ -5515,8 +5529,8 @@ test('final frontend runtime remnants route through delegated or bound listeners
     }
 
     const notificationAssetMarkers = [
-        'css/notification-client.css?v=20260324_NOTIFICATION_RUNTIME_STYLE_1',
-        'notification-client.js?v=20260324_NOTIFICATION_RUNTIME_STYLE_1'
+        'css/notification-client.css?v=20260330_NOTIFICATION_PERSONAL_CENTER_1',
+        'notification-client.js?v=20260330_NOTIFICATION_PERSONAL_CENTER_1'
     ];
 
     for (const marker of notificationAssetMarkers) {

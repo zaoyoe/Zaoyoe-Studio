@@ -2,12 +2,34 @@ function normalizeText(value) {
     return String(value || '').trim();
 }
 
+function normalizeNotificationScope(scope = 'unspecified') {
+    const normalized = normalizeText(scope).toLowerCase();
+    if (['unspecified', 'user_personal', 'admin_personal'].includes(normalized)) {
+        return normalized;
+    }
+    return 'unspecified';
+}
+
+function normalizeNotificationCategory(category = 'general') {
+    const normalized = normalizeText(category).toLowerCase();
+    return normalized || 'general';
+}
+
 function normalizeNotificationType(type = 'info') {
     const normalized = normalizeText(type).toLowerCase();
     if (['info', 'warning', 'success', 'alert'].includes(normalized)) {
         return normalized;
     }
     return 'info';
+}
+
+function isMissingNotificationColumnError(error) {
+    const message = normalizeText(error?.message).toLowerCase();
+    return error?.code === '42703'
+        || error?.code === '42P01'
+        || (message.includes('column') && message.includes('does not exist'))
+        || (message.includes('schema cache') && message.includes('scope'))
+        || (message.includes('schema cache') && message.includes('category'));
 }
 
 function isRoleActive(role = {}, nowMs = Date.now()) {
@@ -51,23 +73,40 @@ async function hasRecentMatchingNotification(supabase, {
     userId,
     title,
     content,
+    scope = 'unspecified',
+    category = 'general',
     dedupeWindowMinutes = 30
 }) {
     const normalizedUserId = normalizeText(userId);
     const normalizedTitle = normalizeText(title);
     const normalizedContent = normalizeText(content);
+    const normalizedScope = normalizeNotificationScope(scope);
+    const normalizedCategory = normalizeNotificationCategory(category);
 
     if (!normalizedUserId || !normalizedTitle || !normalizedContent || !(dedupeWindowMinutes > 0)) {
         return false;
     }
 
     const sinceIso = new Date(Date.now() - dedupeWindowMinutes * 60 * 1000).toISOString();
-    const { data, error } = await supabase
+    let response = await supabase
         .from('system_notifications')
-        .select('id, title, content, created_at')
+        .select('id, title, content, created_at, scope, category')
         .eq('user_id', normalizedUserId)
         .eq('title', normalizedTitle)
+        .eq('scope', normalizedScope)
+        .eq('category', normalizedCategory)
         .gte('created_at', sinceIso);
+
+    if (response.error && isMissingNotificationColumnError(response.error)) {
+        response = await supabase
+            .from('system_notifications')
+            .select('id, title, content, created_at')
+            .eq('user_id', normalizedUserId)
+            .eq('title', normalizedTitle)
+            .gte('created_at', sinceIso);
+    }
+
+    const { data, error } = response;
 
     if (error) {
         throw error;
@@ -76,11 +115,31 @@ async function hasRecentMatchingNotification(supabase, {
     return (data || []).some((row) => normalizeText(row.content) === normalizedContent);
 }
 
+async function insertNotificationWithFallback(supabase, payload = {}) {
+    const response = await supabase
+        .from('system_notifications')
+        .insert(payload);
+
+    if (!response.error || !isMissingNotificationColumnError(response.error)) {
+        return response;
+    }
+
+    const legacyPayload = { ...payload };
+    delete legacyPayload.scope;
+    delete legacyPayload.category;
+
+    return supabase
+        .from('system_notifications')
+        .insert(legacyPayload);
+}
+
 async function notifyUsers(supabase, {
     userIds = [],
     title,
     content,
     type = 'info',
+    scope = 'user_personal',
+    category = 'general',
     dedupeWindowMinutes = 30
 }) {
     if (!supabase) {
@@ -107,6 +166,8 @@ async function notifyUsers(supabase, {
             .filter(Boolean)
     ));
     const notificationType = normalizeNotificationType(type);
+    const notificationScope = normalizeNotificationScope(scope);
+    const notificationCategory = normalizeNotificationCategory(category);
     let created = 0;
     let skipped = 0;
 
@@ -115,6 +176,8 @@ async function notifyUsers(supabase, {
             userId,
             title: normalizedTitle,
             content: normalizedContent,
+            scope: notificationScope,
+            category: notificationCategory,
             dedupeWindowMinutes
         });
         if (exists) {
@@ -122,15 +185,15 @@ async function notifyUsers(supabase, {
             continue;
         }
 
-        const { error } = await supabase
-            .from('system_notifications')
-            .insert({
-                user_id: userId,
-                title: normalizedTitle,
-                content: normalizedContent,
-                type: notificationType,
-                is_read: false
-            });
+        const { error } = await insertNotificationWithFallback(supabase, {
+            user_id: userId,
+            title: normalizedTitle,
+            content: normalizedContent,
+            type: notificationType,
+            is_read: false,
+            scope: notificationScope,
+            category: notificationCategory
+        });
 
         if (error) {
             throw error;
@@ -158,6 +221,8 @@ async function notifyActiveAdmins(supabase, payload = {}) {
 
     return notifyUsers(supabase, {
         ...payload,
+        scope: payload.scope || 'admin_personal',
+        category: payload.category || 'admin_notice',
         userIds: adminUserIds
     });
 }

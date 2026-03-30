@@ -427,7 +427,7 @@ test('buildTicketSlaRecoveryAlerts emits a recovery notice after an overdue tick
     assert.equal(alerts[0].payload.incident_duration_minutes, 42);
 });
 
-test('runTicketSlaOverdueSweep enqueues recovery notices and writes admin notifications once', async () => {
+test('runTicketSlaOverdueSweep enqueues recovery notices without duplicating admin personal notifications', async () => {
     const now = new Date('2026-03-25T10:42:00.000Z');
     const state = {
         tickets: [
@@ -479,13 +479,12 @@ test('runTicketSlaOverdueSweep enqueues recovery notices and writes admin notifi
     assert.equal(first.overdue_count, 0);
     assert.equal(first.recovered_count, 1);
     assert.equal(first.recovered_queued, 1);
-    assert.equal(first.admin_notifications_created, 2);
+    assert.equal(first.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 2);
     assert.equal(state.jobs[1].alert_type, 'ticket_sla_recovered');
     assert.deepEqual(state.jobs[1].channels, ['feishu']);
     assert.equal(state.jobs[1].payload.user_email, 'member1@example.com');
-    assert.equal(state.systemNotifications.length, 2);
-    assert.match(state.systemNotifications[0].title, /工单超时已恢复/);
+    assert.equal(state.systemNotifications.length, 0);
 
     const second = await runTicketSlaOverdueSweep(supabase, {
         now: '2026-03-25T10:43:00.000Z',
@@ -496,5 +495,5 @@ test('runTicketSlaOverdueSweep enqueues recovery notices and writes admin notifi
     assert.equal(second.recovered_queued, 0);
     assert.equal(second.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 2);
-    assert.equal(state.systemNotifications.length, 2);
+    assert.equal(state.systemNotifications.length, 0);
 });

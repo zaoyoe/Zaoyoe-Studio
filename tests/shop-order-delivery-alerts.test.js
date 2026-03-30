@@ -527,7 +527,7 @@ test('buildShopOrderDeliveryIncidentAlerts escalates when multiple delivery fail
     assert.deepEqual(alerts[0].payload.hot_products, ['Prompt Pro 年卡 × 2', '卡密周卡 × 1']);
 });
 
-test('runShopOrderDeliveryFailedSweep enqueues recovery notices and writes admin notifications once', async () => {
+test('runShopOrderDeliveryFailedSweep enqueues recovery notices without duplicating admin personal notifications', async () => {
     const state = {
         jobs: [
             {
@@ -583,12 +583,11 @@ test('runShopOrderDeliveryFailedSweep enqueues recovery notices and writes admin
     assert.equal(first.failure_count, 0);
     assert.equal(first.recovered_count, 1);
     assert.equal(first.recovered_queued, 1);
-    assert.equal(first.admin_notifications_created, 2);
+    assert.equal(first.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 2);
     assert.equal(state.jobs[1].alert_type, 'shop_order_delivery_recovered');
     assert.deepEqual(state.jobs[1].channels, ['feishu']);
-    assert.equal(state.systemNotifications.length, 2);
-    assert.match(state.systemNotifications[0].title, /履约已恢复/);
+    assert.equal(state.systemNotifications.length, 0);
 
     const second = await runShopOrderDeliveryFailedSweep(supabase, {
         runtime,
@@ -599,7 +598,7 @@ test('runShopOrderDeliveryFailedSweep enqueues recovery notices and writes admin
     assert.equal(second.recovered_queued, 0);
     assert.equal(second.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 2);
-    assert.equal(state.systemNotifications.length, 2);
+    assert.equal(state.systemNotifications.length, 0);
 });
 
 test('runShopOrderDeliveryFailedSweep enqueues a delivery incident escalation with stable dedupe', async () => {
@@ -678,7 +677,7 @@ test('runShopOrderDeliveryFailedSweep enqueues a delivery incident escalation wi
     assert.equal(state.jobs.length, 4);
 });
 
-test('runShopOrderDeliveryFailedSweep enqueues incident recovery notices and writes admin notifications once', async () => {
+test('runShopOrderDeliveryFailedSweep enqueues incident recovery notices without duplicating admin personal notifications', async () => {
     const state = {
         jobs: [
             {
@@ -728,14 +727,13 @@ test('runShopOrderDeliveryFailedSweep enqueues incident recovery notices and wri
     assert.equal(first.incident_count, 0);
     assert.equal(first.incident_recovered_count, 1);
     assert.equal(first.incident_recovered_queued, 1);
-    assert.equal(first.admin_notifications_created, 2);
+    assert.equal(first.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 3);
     assert.equal(state.jobs[0].alert_type, 'shop_order_delivery_incident');
     assert.equal(state.jobs[1].alert_type, 'shop_order_delivery_failed');
     assert.equal(state.jobs[2].alert_type, 'shop_order_delivery_incident_recovered');
     assert.deepEqual(state.jobs[2].channels, ['feishu']);
-    assert.equal(state.systemNotifications.length, 2);
-    assert.match(state.systemNotifications[0].title, /履约事故已恢复/);
+    assert.equal(state.systemNotifications.length, 0);
 
     const second = await runShopOrderDeliveryFailedSweep(supabase, {
         runtime,
@@ -746,5 +744,5 @@ test('runShopOrderDeliveryFailedSweep enqueues incident recovery notices and wri
     assert.equal(second.incident_recovered_queued, 0);
     assert.equal(second.admin_notifications_created, 0);
     assert.equal(state.jobs.length, 3);
-    assert.equal(state.systemNotifications.length, 2);
+    assert.equal(state.systemNotifications.length, 0);
 });
