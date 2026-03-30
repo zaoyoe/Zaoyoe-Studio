@@ -47,6 +47,11 @@ class ChatWidget {
         this._statusBarShield = null;
         this._themeColorMeta = null;
         this._themeColorRestoreContent = '';
+        this._fabHovering = false;
+        this._fabAmbientPeekTimer = null;
+        this._fabAmbientReturnTimer = null;
+        this._fabAmbientResumeTimer = null;
+        this._onFabAmbientViewportChange = null;
 
         this._detectRefreshRate();
         this.init();
@@ -380,6 +385,7 @@ class ChatWidget {
     async init() {
         this.renderFAB();
         this.bindFabEvents();
+        this._scheduleFabAmbientMotion();
 
         // Check if user is admin
         let isAdmin = false;
@@ -481,25 +487,49 @@ class ChatWidget {
     renderFAB() {
         // Create FAB with Custom Mascot (CSS Art)
         this.fab = document.createElement('div');
-        this.fab.className = 'chat-widget-fab';
+        this.fab.className = 'chat-widget-fab chat-widget-fab--peek';
         this.fab.innerHTML = `
-            <div class="mascot-wrapper">
-                <div class="mascot-head">
-                    <div class="mascot-ears"></div>
-                    <div class="mascot-face">
-                        <div class="mascot-eyes">
-                            <span class="eye left"></span>
-                            <span class="eye right"></span>
+            <div class="chat-widget-fab__robot" aria-hidden="true">
+                <span class="chat-widget-fab__glow"></span>
+                <div class="mascot-wrapper">
+                    <div class="mascot-head">
+                        <div class="mascot-face">
+                            <div class="mascot-eyes">
+                                <span class="eye left"></span>
+                                <span class="eye right"></span>
+                            </div>
+                            <div class="mascot-mouth"></div>
                         </div>
-                        <div class="mascot-mouth"></div>
                     </div>
                 </div>
             </div>
+            <span class="chat-widget-fab__shadow" aria-hidden="true"></span>
         `;
         document.body.appendChild(this.fab);
     }
 
     bindFabEvents() {
+        this.fab.addEventListener('mouseenter', () => {
+            this._fabHovering = true;
+            this._pauseFabAmbientMotion();
+        });
+
+        this.fab.addEventListener('mouseleave', () => {
+            this._fabHovering = false;
+            this._scheduleFabAmbientMotion();
+        });
+
+        if (!this._onFabAmbientViewportChange) {
+            this._onFabAmbientViewportChange = () => {
+                if (this._fabHovering) {
+                    this._pauseFabAmbientMotion();
+                } else {
+                    this._scheduleFabAmbientMotion(9000);
+                }
+            };
+            window.addEventListener('resize', this._onFabAmbientViewportChange);
+        }
+
         this.fab.addEventListener('click', () => {
             this.toggleChat();
             // Clear unread count when opening chat
@@ -507,6 +537,77 @@ class ChatWidget {
                 this.clearUnread();
             }
         });
+    }
+
+    _clearFabAmbientMotionTimers() {
+        if (this._fabAmbientPeekTimer) {
+            clearTimeout(this._fabAmbientPeekTimer);
+            this._fabAmbientPeekTimer = null;
+        }
+        if (this._fabAmbientReturnTimer) {
+            clearTimeout(this._fabAmbientReturnTimer);
+            this._fabAmbientReturnTimer = null;
+        }
+        if (this._fabAmbientResumeTimer) {
+            clearTimeout(this._fabAmbientResumeTimer);
+            this._fabAmbientResumeTimer = null;
+        }
+    }
+
+    _setFabAmbientRetracted(retracted) {
+        if (!this.fab) return;
+        this.fab.classList.toggle('chat-widget-fab--ambient-retracted', Boolean(retracted));
+    }
+
+    _shouldRunFabAmbientMotion() {
+        if (!this.fab || this.isOpen) return false;
+        if (this._fabHovering) return false;
+        if (this.fab.classList.contains('chat-widget-fab--hidden')) return false;
+        if (this.fab.classList.contains('chat-widget-fab--disabled')) return false;
+        if (this.fab.classList.contains('has-new-message')) return false;
+        if (this.fab.classList.contains('wiggle')) return false;
+        if (this.fab.querySelector('.message-preview')) return false;
+        if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+        if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return false;
+        if (this._isNarrowViewport()) return false;
+        return true;
+    }
+
+    _scheduleFabAmbientMotion(delayMs = null) {
+        this._clearFabAmbientMotionTimers();
+        this._setFabAmbientRetracted(true);
+
+        if (!this._shouldRunFabAmbientMotion()) return;
+
+        const delay = Number.isFinite(delayMs) ? delayMs : 4000 + Math.round(Math.random() * 4000);
+        this._fabAmbientPeekTimer = setTimeout(() => {
+            this._fabAmbientPeekTimer = null;
+
+            if (!this._shouldRunFabAmbientMotion()) {
+                this._setFabAmbientRetracted(true);
+                return;
+            }
+
+            this._setFabAmbientRetracted(false);
+            this._fabAmbientReturnTimer = setTimeout(() => {
+                this._fabAmbientReturnTimer = null;
+                this._setFabAmbientRetracted(true);
+                this._scheduleFabAmbientMotion();
+            }, 4200 + Math.round(Math.random() * 1600));
+        }, delay);
+    }
+
+    _pauseFabAmbientMotion(resumeDelayMs = null, keepExposed = false) {
+        this._clearFabAmbientMotionTimers();
+        this._setFabAmbientRetracted(!keepExposed);
+
+        if (!Number.isFinite(resumeDelayMs) || resumeDelayMs < 0) return;
+
+        this._fabAmbientResumeTimer = setTimeout(() => {
+            this._fabAmbientResumeTimer = null;
+            this._scheduleFabAmbientMotion();
+        }, resumeDelayMs);
     }
 
     // ===== Notification System =====
@@ -519,6 +620,7 @@ class ChatWidget {
         // Increment unread count
         this.unreadCount++;
         this.updateBadge();
+        this._pauseFabAmbientMotion(6200, true);
 
         // Add animation classes
         this.fab.classList.add('has-unread');
@@ -582,7 +684,10 @@ class ChatWidget {
         setTimeout(() => {
             if (preview.parentNode) {
                 preview.classList.add('hiding');
-                setTimeout(() => preview.remove(), 400);
+                setTimeout(() => {
+                    preview.remove();
+                    this._scheduleFabAmbientMotion();
+                }, 400);
             }
         }, 5000);
     }
@@ -2468,6 +2573,7 @@ class ChatWidget {
     toggleChat() {
         this.isOpen = !this.isOpen;
         if (this.isOpen) {
+            this._pauseFabAmbientMotion();
             document.documentElement.classList.add('chat-widget-open');
             document.body.classList.add('chat-widget-open');
             this._clearOpeningAnimationTimer();
@@ -2518,6 +2624,7 @@ class ChatWidget {
             });
 
         } else {
+            this._pauseFabAmbientMotion(1800);
             document.documentElement.classList.remove('chat-widget-open');
             document.body.classList.remove('chat-widget-open');
             if (this._startClosingAnimation()) return;
@@ -3032,6 +3139,7 @@ class ChatWidget {
                 this._setFabTransitionless(true);
                 this._setFabHidden(false);
                 this._setFabDisabled(false);
+                this._scheduleFabAmbientMotion();
                 requestAnimationFrame(() => {
                     if (!this.isOpen) {
                         this._setFabTransitionless(false);
