@@ -3806,6 +3806,18 @@ test('discount and ticket admin renderers no longer emit inline row or paginatio
     }
 });
 
+test('ticket admin surfaces user email in search and list rendering', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const ticketsSource = readRepoFile('js/admin-tickets.js');
+
+    assert.equal(adminStudioSource.includes('placeholder="搜索订单号、邮箱或描述..."'), true, 'admin-studio.html should mention email in the ticket search placeholder');
+    assert.equal(adminStudioSource.includes('<th>用户 / 邮箱</th>'), true, 'admin-studio.html should label the ticket user column with email support');
+    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260330_ADMIN_TICKETS_EMAIL_1'), true, 'admin-studio.html should load the cache-busted ticket admin script');
+    assert.equal(ticketsSource.includes("fetchProfilesByIds: async function"), true, 'js/admin-tickets.js should fetch profile emails for ticket users');
+    assert.equal(ticketsSource.includes("t.user_email && t.user_email.toLowerCase().includes(q)"), true, 'js/admin-tickets.js should allow searching tickets by user email');
+    assert.equal(ticketsSource.includes("ticket.user_email"), true, 'js/admin-tickets.js should render ticket user email');
+});
+
 test('discount admin runtime renderers externalize table states, copy toast, and modal visibility styling', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioCss = readRepoFile('admin-studio.css');

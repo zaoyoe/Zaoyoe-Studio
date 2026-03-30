@@ -4746,6 +4746,7 @@ function buildTicketCreatedAlertText(job = {}) {
 
     if (normalizeText(payload.ticket_id)) lines.push(`工单号：${normalizeText(payload.ticket_id)}`);
     if (normalizeText(payload.order_id)) lines.push(`订单号：${normalizeText(payload.order_id)}`);
+    if (normalizeText(payload.user_email)) lines.push(`用户邮箱：${normalizeText(payload.user_email)}`);
     if (normalizeText(payload.user_id)) lines.push(`用户ID：${normalizeText(payload.user_id)}`);
     if (normalizeText(payload.ticket_status)) lines.push(`当前状态：${getTicketStatusLabel(payload.ticket_status)}`);
     if (normalizeText(payload.reason)) lines.push(`问题描述：${normalizeText(payload.reason)}`);

@@ -27,6 +27,7 @@ function buildTicketCreatedAlert(ticket = {}) {
     const shortTicketId = ticketId ? ticketId.slice(0, 8) : 'unknown';
     const orderId = normalizeText(ticket.order_id, 120);
     const userId = normalizeText(ticket.user_id, 120);
+    const userEmail = normalizeText(ticket.user_email, 255);
     const issueType = normalizeText(ticket.issue_type, 60).toUpperCase() || 'OTHER';
     const status = normalizeTicketStatus(ticket.status);
     const description = normalizeText(ticket.reason || ticket.description, 1500);
@@ -39,6 +40,9 @@ function buildTicketCreatedAlert(ticket = {}) {
 
     if (orderId) {
         lines.push(`订单号：${orderId}`);
+    }
+    if (userEmail) {
+        lines.push(`用户邮箱：${userEmail}`);
     }
     if (userId) {
         lines.push(`用户ID：${userId}`);
@@ -61,6 +65,7 @@ function buildTicketCreatedAlert(ticket = {}) {
             ticket_id: ticketId || null,
             order_id: orderId || null,
             user_id: userId || null,
+            user_email: userEmail || null,
             issue_type: issueType,
             ticket_status: status,
             reason: description || null,
