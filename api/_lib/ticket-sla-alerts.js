@@ -216,9 +216,65 @@ async function fetchTicketsByIds(client, ticketIds = [], config = {}) {
     return rows;
 }
 
+async function fetchProfilesByIds(client, userIds = [], config = {}) {
+    const normalizedUserIds = Array.from(new Set((userIds || []).map((userId) => normalizeText(userId)).filter(Boolean)));
+    if (!normalizedUserIds.length) {
+        return [];
+    }
+
+    const chunkSize = Math.max(1, Math.min(Number(config.page_size || DEFAULT_TICKET_SLA_MONITOR_CONFIG.page_size), 200));
+    const rows = [];
+
+    for (let index = 0; index < normalizedUserIds.length; index += chunkSize) {
+        const batch = normalizedUserIds.slice(index, index + chunkSize);
+        const { data, error } = await client
+            .from('profiles')
+            .select('id, email')
+            .in('id', batch);
+
+        if (error) {
+            throw error;
+        }
+
+        rows.push(...(Array.isArray(data) ? data : []));
+    }
+
+    return rows;
+}
+
+function buildProfilesContext(profiles = []) {
+    const byId = new Map();
+
+    for (const profile of profiles || []) {
+        const id = normalizeText(profile?.id);
+        if (id) {
+            byId.set(id, profile);
+        }
+    }
+
+    return { byId };
+}
+
+function resolveTicketUserEmail(ticket = {}, profilesContext = {}) {
+    const payloadEmail = normalizeText(ticket.user_email, 255);
+    if (payloadEmail) {
+        return payloadEmail;
+    }
+
+    const userId = normalizeText(ticket.user_id, 120);
+    if (!userId || !(profilesContext.byId instanceof Map)) {
+        return '';
+    }
+
+    return normalizeText(profilesContext.byId.get(userId)?.email, 255);
+}
+
 function buildTicketSlaOverdueAlerts(tickets = [], rawConfig = {}, options = {}) {
     const config = normalizeTicketSlaMonitorConfig(rawConfig);
     const nowDate = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
+    const profilesContext = options.profilesContext && typeof options.profilesContext === 'object'
+        ? options.profilesContext
+        : { byId: new Map() };
 
     return (tickets || [])
         .map((ticket) => {
@@ -242,6 +298,7 @@ function buildTicketSlaOverdueAlerts(tickets = [], rawConfig = {}, options = {})
             const ticketId = normalizeText(ticket.id);
             const shortTicketId = ticketId ? ticketId.slice(0, 8) : 'unknown';
             const reason = getTicketReason(ticket);
+            const userEmail = resolveTicketUserEmail(ticket, profilesContext);
             const waitLabel = formatWaitLabel(waitMinutes);
             const title = `工单超时未处理（${shortTicketId}）`;
             const lines = [
@@ -252,6 +309,9 @@ function buildTicketSlaOverdueAlerts(tickets = [], rawConfig = {}, options = {})
 
             if (normalizeText(ticket.order_id)) {
                 lines.push(`订单号：${normalizeText(ticket.order_id)}`);
+            }
+            if (userEmail) {
+                lines.push(`用户邮箱：${userEmail}`);
             }
             if (normalizeText(ticket.user_id)) {
                 lines.push(`用户ID：${normalizeText(ticket.user_id)}`);
@@ -274,6 +334,7 @@ function buildTicketSlaOverdueAlerts(tickets = [], rawConfig = {}, options = {})
                     ticket_id: ticketId || null,
                     order_id: normalizeText(ticket.order_id) || null,
                     user_id: normalizeText(ticket.user_id) || null,
+                    user_email: userEmail || null,
                     ticket_status: status,
                     wait_minutes: waitMinutes,
                     wait_label: waitLabel,
@@ -295,7 +356,13 @@ function buildTicketSlaOverdueAlerts(tickets = [], rawConfig = {}, options = {})
 
 function buildTicketSlaRecoveryAlerts(tickets = [], stateJobs = [], rawConfig = {}, options = {}) {
     const config = normalizeTicketSlaMonitorConfig(rawConfig);
-    const activeOverdueAlerts = buildTicketSlaOverdueAlerts(tickets, config, options);
+    const profilesContext = options.profilesContext && typeof options.profilesContext === 'object'
+        ? options.profilesContext
+        : { byId: new Map() };
+    const activeOverdueAlerts = buildTicketSlaOverdueAlerts(tickets, config, {
+        ...options,
+        profilesContext
+    });
     const activeTargetIds = new Set(activeOverdueAlerts.map((alert) => getTicketTargetId(alert.payload)));
     const overdueTargetIds = Array.from(new Set(
         (stateJobs || [])
@@ -340,6 +407,7 @@ function buildTicketSlaRecoveryAlerts(tickets = [], stateJobs = [], rawConfig = 
             : 0;
         const orderId = normalizeText(currentTicket.order_id || overduePayload.order_id);
         const userId = normalizeText(currentTicket.user_id || overduePayload.user_id);
+        const userEmail = resolveTicketUserEmail(currentTicket, profilesContext) || normalizeText(overduePayload.user_email, 255);
         const currentReason = getTicketReason(currentTicket) || normalizeText(overduePayload.reason);
         const currentUpdatedAt = normalizeText(currentTicket.updated_at);
         const recoverySummary = currentStatus === 'RESOLVED'
@@ -354,6 +422,9 @@ function buildTicketSlaRecoveryAlerts(tickets = [], stateJobs = [], rawConfig = 
 
         if (orderId) {
             lines.push(`订单号：${orderId}`);
+        }
+        if (userEmail) {
+            lines.push(`用户邮箱：${userEmail}`);
         }
         if (userId) {
             lines.push(`用户ID：${userId}`);
@@ -385,6 +456,7 @@ function buildTicketSlaRecoveryAlerts(tickets = [], stateJobs = [], rawConfig = 
                 ticket_id: targetId,
                 order_id: orderId || null,
                 user_id: userId || null,
+                user_email: userEmail || null,
                 incident_alert_job_id: normalizeText(latestOverdue.id) || null,
                 incident_started_at: normalizeText(latestOverdue.created_at) || null,
                 incident_recovered_at: incidentRecoveredAt,
@@ -447,7 +519,6 @@ async function runTicketSlaOverdueSweep(supabase, options = {}) {
         fetchPendingTickets(supabase, thresholdIso, config),
         fetchRecentTicketSlaStateJobs(supabase, stateSinceIso, config)
     ]);
-    const alerts = buildTicketSlaOverdueAlerts(tickets, config, { now: nowDate });
     const trackedTicketIds = Array.from(new Set(
         (stateJobs || [])
             .filter((job) => normalizeText(job.alert_type).toLowerCase() === 'ticket_sla_overdue')
@@ -455,7 +526,19 @@ async function runTicketSlaOverdueSweep(supabase, options = {}) {
             .filter(Boolean)
     ));
     const trackedTickets = await fetchTicketsByIds(supabase, trackedTicketIds, config);
-    const recoveryAlerts = buildTicketSlaRecoveryAlerts(trackedTickets, stateJobs, config, { now: nowDate });
+    const profileUserIds = Array.from(new Set([
+        ...(tickets || []).map((ticket) => normalizeText(ticket.user_id)).filter(Boolean),
+        ...(trackedTickets || []).map((ticket) => normalizeText(ticket.user_id)).filter(Boolean)
+    ]));
+    const profilesContext = buildProfilesContext(await fetchProfilesByIds(supabase, profileUserIds, config));
+    const alerts = buildTicketSlaOverdueAlerts(tickets, config, {
+        now: nowDate,
+        profilesContext
+    });
+    const recoveryAlerts = buildTicketSlaRecoveryAlerts(trackedTickets, stateJobs, config, {
+        now: nowDate,
+        profilesContext
+    });
 
     let queued = 0;
     let deduped = 0;
