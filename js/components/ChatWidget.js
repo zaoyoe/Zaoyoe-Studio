@@ -52,6 +52,13 @@ class ChatWidget {
         this._fabAmbientReturnTimer = null;
         this._fabAmbientResumeTimer = null;
         this._onFabAmbientViewportChange = null;
+        this.supportConfig = window.ZaoyoeSupportBotConfig || null;
+        this.supportContextKey = this.getSupportContextKey();
+        this.supportDisplayMode = 'support';
+        this.supportView = { type: 'root', id: '' };
+        this.supportPendingActionId = '';
+        this.supportLastMenuId = '';
+        this.supportInlineState = { actionId: '', value: '', result: '', error: '', loading: false };
 
         this._detectRefreshRate();
         this.init();
@@ -73,6 +80,703 @@ class ChatWidget {
             return value;
         }
         return fallback || key;
+    }
+
+    getCurrentLanguage() {
+        return window.i18n?.getCurrentLanguage?.() || 'zh';
+    }
+
+    resolveSupportText(value, fallback = '') {
+        if (value === null || value === undefined) return fallback;
+        if (typeof value === 'string') return value;
+        if (typeof value === 'object') {
+            const lang = this.getCurrentLanguage();
+            return value[lang] || value.zh || value.en || fallback;
+        }
+        return fallback;
+    }
+
+    getSupportConfig() {
+        return window.ZaoyoeSupportBotConfig || this.supportConfig || null;
+    }
+
+    getSupportContextKey() {
+        const path = String(window.location.pathname || '').toLowerCase();
+        if (/(^|\/)shop(?:\.html)?\/?$/.test(path)) return 'shop';
+        if (/(^|\/)verify(?:\.html)?\/?$/.test(path)) return 'verify';
+        return 'default';
+    }
+
+    getSupportContextConfig() {
+        const config = this.getSupportConfig();
+        if (!config) return null;
+        return config.contexts?.[this.supportContextKey] || config.contexts?.default || null;
+    }
+
+    getSupportMenu(menuId) {
+        return this.getSupportConfig()?.menus?.[menuId] || null;
+    }
+
+    getSupportAction(actionId) {
+        return this.getSupportConfig()?.actions?.[actionId] || null;
+    }
+
+    getSupportEntryLabel() {
+        return this.getCurrentLanguage() === 'zh' ? '常用入口' : 'Quick Help';
+    }
+
+    getSupportInlineState(actionId = '') {
+        if (!actionId) {
+            this.supportInlineState = { actionId: '', value: '', result: '', error: '', loading: false };
+            return this.supportInlineState;
+        }
+
+        if (!this.supportInlineState || this.supportInlineState.actionId !== actionId) {
+            this.supportInlineState = { actionId, value: '', result: '', error: '', loading: false };
+        }
+
+        return this.supportInlineState;
+    }
+
+    setSupportDisplayMode(mode = 'support') {
+        this.supportDisplayMode = mode === 'chat' ? 'chat' : 'support';
+        this.supportPendingActionId = '';
+        this.syncSupportShellState();
+    }
+
+    syncSupportShellState() {
+        const hasSupport = Boolean(this.getSupportConfig() && this.getSupportContextConfig() && this.supportPanel);
+        const mode = hasSupport ? this.supportDisplayMode : 'chat';
+        const showChat = !hasSupport || mode === 'chat';
+        const showSupport = hasSupport && mode === 'support';
+        const showHeaderActions = hasSupport && mode === 'chat';
+
+        if (this.chatWindow) {
+            this.chatWindow.classList.toggle('chat-window--support-mode', showSupport);
+            this.chatWindow.classList.toggle('chat-window--chat-mode', showChat);
+        }
+
+        if (this.messagesContainer) {
+            this.messagesContainer.hidden = !showChat;
+            this.messagesContainer.style.display = showChat ? 'flex' : 'none';
+        }
+
+        if (this.inputArea) {
+            this.inputArea.hidden = !showChat;
+            this.inputArea.style.display = showChat ? 'flex' : 'none';
+        }
+
+        if (this.supportPanel) {
+            this.supportPanel.hidden = !showSupport;
+            this.supportPanel.style.display = showSupport ? 'flex' : 'none';
+        }
+
+        if (this.headerActions) {
+            this.headerActions.hidden = !showHeaderActions;
+            this.headerActions.style.display = showHeaderActions ? 'flex' : 'none';
+            if (this.headerSupportToggle) {
+                this.headerSupportToggle.textContent = this.getSupportEntryLabel();
+            }
+        }
+
+        if (mode === 'chat') {
+            this.updateSupportInputState('');
+        }
+    }
+
+    buildSupportMenuButtons(actionIds = []) {
+        return actionIds
+            .map((actionId) => {
+                const action = this.getSupportAction(actionId);
+                if (!action) return '';
+                return `
+                    <button type="button" class="chat-support-btn" data-support-action-id="${this.escapeHtml(actionId)}">
+                        ${this.escapeHtml(this.resolveSupportText(action.label, actionId))}
+                    </button>
+                `;
+            })
+            .join('');
+    }
+
+    buildSupportChecklist(items = []) {
+        const list = Array.isArray(items) ? items : [];
+        if (!list.length) return '';
+        return `
+            <ul class="chat-support-list">
+                ${list.map((item) => `<li>${this.escapeHtml(String(item || ''))}</li>`).join('')}
+            </ul>
+        `;
+    }
+
+    updateSupportInputState(actionId = '') {
+        this.supportPendingActionId = '';
+        if (!this.input) return;
+        this.input.placeholder = this.t('chat.inputMessagePlaceholder', '输入消息...');
+    }
+
+    getSupportSubmitLabel(actionId, action) {
+        if (actionId === 'redeem_code') {
+            return this.getCurrentLanguage() === 'zh' ? '立即兑换' : 'Redeem Now';
+        }
+
+        if (action?.mode === 'ticket') {
+            return this.getCurrentLanguage() === 'zh' ? '提交工单' : 'Submit Ticket';
+        }
+
+        return this.getCurrentLanguage() === 'zh' ? '立即查询' : 'Run Check';
+    }
+
+    getSupportSubmittingLabel(action) {
+        if (action?.mode === 'ticket') {
+            return this.getCurrentLanguage() === 'zh' ? '提交中...' : 'Submitting...';
+        }
+
+        if (action?.mode === 'rpc') {
+            return this.getCurrentLanguage() === 'zh' ? '兑换中...' : 'Redeeming...';
+        }
+
+        return this.getCurrentLanguage() === 'zh' ? '查询中...' : 'Checking...';
+    }
+
+    buildSupportResultBlock(state) {
+        if (!state?.result && !state?.error) return '';
+        const resultClass = state.error ? 'chat-support-result chat-support-result--error' : 'chat-support-result';
+        const text = state.error || state.result || '';
+        return `
+            <div class="${resultClass}">
+                <div class="chat-support-result-label">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '处理结果' : 'Result')}</div>
+                <div class="chat-support-result-body">${this.escapeHtml(text)}</div>
+            </div>
+        `;
+    }
+
+    buildSupportInlineField(actionId, action, state) {
+        const isTextarea = action?.mode === 'ticket';
+        const controlClass = isTextarea
+            ? 'chat-support-inline-input chat-support-inline-input--textarea'
+            : 'chat-support-inline-input';
+
+        return `
+            <form class="chat-support-form" data-support-inline-form="${this.escapeHtml(actionId)}">
+                ${isTextarea
+                    ? `<textarea class="${controlClass}" data-support-inline-input rows="3"></textarea>`
+                    : `<input type="text" class="${controlClass}" data-support-inline-input>`}
+                <div class="chat-support-form-actions">
+                    <button type="submit" class="chat-support-btn" ${state.loading ? 'disabled' : ''}>
+                        ${this.escapeHtml(state.loading ? this.getSupportSubmittingLabel(action) : this.getSupportSubmitLabel(actionId, action))}
+                    </button>
+                    <button type="button" class="chat-support-link-btn" data-support-root="1">
+                        ${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '返回主菜单' : 'Back')}
+                    </button>
+                </div>
+            </form>
+        `;
+    }
+
+    hydrateSupportInlineField(actionId, action) {
+        if (!this.supportPanel) return;
+        const state = this.getSupportInlineState(actionId);
+        const inputEl = this.supportPanel.querySelector('[data-support-inline-input]');
+        if (!inputEl) return;
+
+        inputEl.value = state.value || '';
+        inputEl.placeholder = this.resolveSupportText(
+            action?.placeholder,
+            this.t('chat.inputMessagePlaceholder', '输入消息...')
+        );
+
+        if (!state.loading) {
+            requestAnimationFrame(() => this._focusInputWithoutScroll?.(inputEl));
+        }
+    }
+
+    renderSupportRootPanel() {
+        if (!this.supportPanel) return;
+
+        const config = this.getSupportConfig();
+        const context = this.getSupportContextConfig();
+        if (!config || !context) {
+            this.setSupportDisplayMode('chat');
+            this.updateSupportInputState('');
+            return;
+        }
+
+        this.getSupportInlineState('');
+        this.supportView = { type: 'root', id: '' };
+        this.supportLastMenuId = '';
+        this.setSupportDisplayMode('support');
+        this.updateSupportInputState('');
+
+        const shortcutButtons = this.buildSupportMenuButtons(context.shortcuts || []);
+        const menuButtons = (config.rootMenus || [])
+            .map((menuId) => {
+                const menu = this.getSupportMenu(menuId);
+                if (!menu) return '';
+                return `
+                    <button type="button" class="chat-support-btn chat-support-btn--secondary" data-support-menu-id="${this.escapeHtml(menuId)}">
+                        ${this.escapeHtml(this.resolveSupportText(menu.title, menuId))}
+                    </button>
+                `;
+            })
+            .join('');
+
+        this.supportPanel.innerHTML = `
+            <div class="chat-support-card chat-support-card--fullscreen">
+                <div class="chat-support-eyebrow">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '自助排查' : 'Self-serve')}</div>
+                <div class="chat-support-title">${this.escapeHtml(this.getSupportEntryLabel())}</div>
+                <p class="chat-support-body">${this.escapeHtml(this.resolveSupportText(context.intro, '优先帮你处理兑换、发放和任务状态问题。'))}</p>
+                <div class="chat-support-section">
+                    <div class="chat-support-section-title">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '推荐快捷入口' : 'Recommended')}</div>
+                    <div class="chat-support-grid">${shortcutButtons}</div>
+                </div>
+                <div class="chat-support-section">
+                    <div class="chat-support-section-title">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '全部问题分类' : 'Categories')}</div>
+                    <div class="chat-support-grid">${menuButtons}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    renderSupportMenuPanel(menuId) {
+        if (!this.supportPanel) return;
+        const menu = this.getSupportMenu(menuId);
+        if (!menu) {
+            this.renderSupportRootPanel();
+            return;
+        }
+
+        this.supportView = { type: 'menu', id: menuId };
+        this.supportLastMenuId = menuId;
+        this.getSupportInlineState('');
+        this.setSupportDisplayMode('support');
+        this.updateSupportInputState('');
+
+        this.supportPanel.innerHTML = `
+            <div class="chat-support-card chat-support-card--fullscreen">
+                <div class="chat-support-eyebrow">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '问题分类' : 'Category')}</div>
+                <div class="chat-support-title">${this.escapeHtml(this.resolveSupportText(menu.title, menuId))}</div>
+                <p class="chat-support-body">${this.escapeHtml(this.resolveSupportText(menu.description, ''))}</p>
+                <div class="chat-support-grid">${this.buildSupportMenuButtons(menu.items || [])}</div>
+                <div class="chat-support-footer">
+                    <button type="button" class="chat-support-link-btn" data-support-root="1">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '返回主菜单' : 'Back')}</button>
+                </div>
+            </div>
+        `;
+    }
+
+    renderSupportStaticPanel(actionId) {
+        if (!this.supportPanel) return;
+        const action = this.getSupportAction(actionId);
+        if (!action) {
+            this.renderSupportRootPanel();
+            return;
+        }
+
+        this.supportView = { type: 'action', id: actionId };
+        this.supportLastMenuId = this.supportLastMenuId || 'human';
+        this.getSupportInlineState('');
+        this.setSupportDisplayMode('support');
+        this.updateSupportInputState('');
+
+        const checklist = this.buildSupportChecklist(this.resolveSupportText(action.checklist, []));
+        const bodyText = this.resolveSupportText(action.body, '');
+        const maybeLink = action.mode === 'link'
+            ? `
+                <div class="chat-support-footer">
+                    <button type="button" class="chat-support-btn" data-support-open-link="${this.escapeHtml(action.url || '')}">
+                        ${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '打开 Telegram' : 'Open Telegram')}
+                    </button>
+                </div>
+            `
+            : '';
+
+        this.supportPanel.innerHTML = `
+            <div class="chat-support-card chat-support-card--fullscreen">
+                <div class="chat-support-eyebrow">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '操作指引' : 'Guide')}</div>
+                <div class="chat-support-title">${this.escapeHtml(this.resolveSupportText(action.label, actionId))}</div>
+                ${bodyText ? `<p class="chat-support-body">${this.escapeHtml(bodyText)}</p>` : ''}
+                ${checklist}
+                ${maybeLink}
+                <div class="chat-support-footer">
+                    <button type="button" class="chat-support-link-btn" data-support-root="1">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '返回主菜单' : 'Back')}</button>
+                </div>
+            </div>
+        `;
+    }
+
+    renderSupportActionPanel(actionId) {
+        if (!this.supportPanel) return;
+        const action = this.getSupportAction(actionId);
+        if (!action) {
+            this.renderSupportRootPanel();
+            return;
+        }
+
+        const state = this.getSupportInlineState(actionId);
+        this.supportView = { type: 'action', id: actionId };
+        this.setSupportDisplayMode('support');
+        this.updateSupportInputState('');
+
+        this.supportPanel.innerHTML = `
+            <div class="chat-support-card chat-support-card--fullscreen">
+                <div class="chat-support-eyebrow">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '自助处理' : 'Self-serve')}</div>
+                <div class="chat-support-title">${this.escapeHtml(this.resolveSupportText(action.label, actionId))}</div>
+                <p class="chat-support-body">${this.escapeHtml(this.resolveSupportText(action.prompt, ''))}</p>
+                ${this.resolveSupportText(action.inputHint, '') ? `<div class="chat-support-hint">${this.escapeHtml(this.resolveSupportText(action.inputHint, ''))}</div>` : ''}
+                ${this.buildSupportInlineField(actionId, action, state)}
+                ${this.buildSupportResultBlock(state)}
+            </div>
+        `;
+
+        this.hydrateSupportInlineField(actionId, action);
+    }
+
+    renderSupportLoginRequiredPanel(actionId) {
+        if (!this.supportPanel) return;
+        const action = this.getSupportAction(actionId);
+        this.supportView = { type: 'action', id: actionId };
+        this.getSupportInlineState('');
+        this.setSupportDisplayMode('support');
+        this.updateSupportInputState('');
+
+        this.supportPanel.innerHTML = `
+            <div class="chat-support-card chat-support-card--fullscreen">
+                <div class="chat-support-eyebrow">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '需要登录' : 'Login Required')}</div>
+                <div class="chat-support-title">${this.escapeHtml(this.resolveSupportText(action?.label, actionId || ''))}</div>
+                <p class="chat-support-body">${this.escapeHtml(this.getCurrentLanguage() === 'zh'
+                    ? '这个操作会读取你的订单、兑换码或任务状态，所以需要先登录当前账号。'
+                    : 'This action reads your orders, codes, or tasks, so you need to sign in first.')}</p>
+                <div class="chat-support-footer">
+                    <button type="button" class="chat-support-link-btn" data-support-root="1">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '返回主菜单' : 'Back')}</button>
+                </div>
+            </div>
+        `;
+    }
+
+    async openSupportAction(actionId) {
+        const action = this.getSupportAction(actionId);
+        if (!action) return;
+
+        if (action.mode === 'live_chat') {
+            this.supportView = { type: 'chat', id: actionId };
+            this.setSupportDisplayMode('chat');
+            requestAnimationFrame(() => {
+                this.scrollToBottom();
+                this._focusInputWithoutScroll?.(this.input);
+            });
+            return;
+        }
+
+        try {
+            await this.refreshUserSessionContext();
+        } catch (error) {
+            console.error('[ChatWidget] Failed to refresh support auth state:', error);
+        }
+
+        if (action.requiresAuth && !this.currentUser) {
+            this.renderSupportLoginRequiredPanel(actionId);
+            return;
+        }
+
+        if (action.mode === 'static' || action.mode === 'link') {
+            this.renderSupportStaticPanel(actionId);
+            return;
+        }
+
+        this.renderSupportActionPanel(actionId);
+    }
+
+    async getSupportAuthHeaders() {
+        const { data: { session } } = await this.supabase.auth.getSession();
+        const accessToken = session?.access_token || '';
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+
+        if (accessToken) {
+            headers.Authorization = `Bearer ${accessToken}`;
+        }
+
+        return headers;
+    }
+
+    async callSupportApi(action, input) {
+        const headers = await this.getSupportAuthHeaders();
+        const response = await fetch('/api/support', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                action,
+                input
+            })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.success === false) {
+            throw new Error(payload.message || '支持请求失败');
+        }
+        return payload.payload || null;
+    }
+
+    async callVerifyStatus(taskId) {
+        const headers = await this.getSupportAuthHeaders();
+        const site = window.SiteConfig?.site || 'cn';
+        const response = await fetch(`/api/verify/status/${encodeURIComponent(taskId)}?site=${encodeURIComponent(site)}`, {
+            method: 'GET',
+            headers
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(payload.message || '任务状态查询失败');
+        }
+        return payload;
+    }
+
+    getSupportStatusLabel(status) {
+        const normalized = String(status || '').trim().toLowerCase();
+        const labels = {
+            pending: this.getCurrentLanguage() === 'zh' ? '待处理' : 'Pending',
+            used: this.getCurrentLanguage() === 'zh' ? '已使用' : 'Used',
+            revoked: this.getCurrentLanguage() === 'zh' ? '已撤销' : 'Revoked',
+            locked: this.getCurrentLanguage() === 'zh' ? '已锁定' : 'Locked',
+            disabled: this.getCurrentLanguage() === 'zh' ? '已禁用' : 'Disabled',
+            delivered: this.getCurrentLanguage() === 'zh' ? '已发放' : 'Delivered',
+            processing: this.getCurrentLanguage() === 'zh' ? '处理中' : 'Processing',
+            queued: this.getCurrentLanguage() === 'zh' ? '排队中' : 'Queued',
+            success: this.getCurrentLanguage() === 'zh' ? '已完成' : 'Completed',
+            failed: this.getCurrentLanguage() === 'zh' ? '失败' : 'Failed',
+            dead_letter: this.getCurrentLanguage() === 'zh' ? '死信' : 'Dead Letter',
+            retry_waiting: this.getCurrentLanguage() === 'zh' ? '重试等待中' : 'Retry Waiting',
+            requeued: this.getCurrentLanguage() === 'zh' ? '已重排队' : 'Requeued',
+            paid: this.getCurrentLanguage() === 'zh' ? '已支付' : 'Paid'
+        };
+        return labels[normalized] || (normalized || (this.getCurrentLanguage() === 'zh' ? '未知' : 'Unknown'));
+    }
+
+    formatSupportResult(actionId, payload) {
+        const newline = '\n';
+        if (!payload) {
+            return this.getCurrentLanguage() === 'zh' ? '没有查到可用结果。' : 'No result found.';
+        }
+
+        if (actionId === 'code_status') {
+            const valid = payload.valid === true;
+            const status = this.getSupportStatusLabel(payload.status);
+            const lines = [
+                this.getCurrentLanguage() === 'zh' ? '兑换码状态结果' : 'Code Status',
+                `${this.getCurrentLanguage() === 'zh' ? '状态' : 'Status'}：${valid ? status : (payload.message || status)}`,
+                payload.code ? `${this.getCurrentLanguage() === 'zh' ? '兑换码' : 'Code'}：${payload.code}` : '',
+                payload.package_name ? `${this.getCurrentLanguage() === 'zh' ? '套餐' : 'Package'}：${payload.package_name}` : '',
+                payload.points ? `${this.getCurrentLanguage() === 'zh' ? '积分' : 'Points'}：${payload.points}` : '',
+                payload.used_by ? `${this.getCurrentLanguage() === 'zh' ? '使用者' : 'Used By'}：${payload.used_by}` : '',
+                payload.used_at ? `${this.getCurrentLanguage() === 'zh' ? '使用时间' : 'Used At'}：${payload.used_at}` : '',
+                payload.expires_at ? `${this.getCurrentLanguage() === 'zh' ? '过期时间' : 'Expires At'}：${payload.expires_at}` : '',
+                payload.message && !valid ? `${this.getCurrentLanguage() === 'zh' ? '说明' : 'Note'}：${payload.message}` : ''
+            ].filter(Boolean);
+            return lines.join(newline);
+        }
+
+        if (actionId === 'redeem_code') {
+            const lines = [
+                payload.message || (this.getCurrentLanguage() === 'zh' ? '兑换已处理。' : 'Redeem request completed.'),
+                payload.package_name ? `${this.getCurrentLanguage() === 'zh' ? '套餐' : 'Package'}：${payload.package_name}` : '',
+                payload.points ? `${this.getCurrentLanguage() === 'zh' ? '到账积分' : 'Points Added'}：${payload.points}` : ''
+            ].filter(Boolean);
+            return lines.join(newline);
+        }
+
+        if (actionId === 'afdian_lookup') {
+            const lines = [
+                this.getCurrentLanguage() === 'zh' ? '爱发电订单结果' : 'Afdian Order',
+                `${this.getCurrentLanguage() === 'zh' ? '支付状态' : 'Payment'}：${this.getSupportStatusLabel(payload.payment_status)}`,
+                payload.code ? `${this.getCurrentLanguage() === 'zh' ? '兑换码' : 'Code'}：${payload.code}` : '',
+                payload.points ? `${this.getCurrentLanguage() === 'zh' ? '积分' : 'Points'}：${payload.points}` : '',
+                `${this.getCurrentLanguage() === 'zh' ? '领取状态' : 'Claim Status'}：${payload.is_redeemed ? (this.getCurrentLanguage() === 'zh' ? '已领取' : 'Claimed') : (this.getCurrentLanguage() === 'zh' ? '未领取' : 'Not Claimed')}`,
+                payload.sign_verified !== undefined ? `${this.getCurrentLanguage() === 'zh' ? '签名校验' : 'Signature'}：${payload.sign_verified ? (this.getCurrentLanguage() === 'zh' ? '通过' : 'Passed') : (this.getCurrentLanguage() === 'zh' ? '未通过' : 'Not Passed')}` : '',
+                payload.amount_verified !== undefined ? `${this.getCurrentLanguage() === 'zh' ? '金额校验' : 'Amount'}：${payload.amount_verified ? (this.getCurrentLanguage() === 'zh' ? '通过' : 'Passed') : (this.getCurrentLanguage() === 'zh' ? '未通过' : 'Not Passed')}` : '',
+                payload.last_error ? `${this.getCurrentLanguage() === 'zh' ? '最近错误' : 'Last Error'}：${payload.last_error}` : ''
+            ].filter(Boolean);
+            return lines.join(newline);
+        }
+
+        if (actionId === 'shop_order_status') {
+            const lines = [
+                this.getCurrentLanguage() === 'zh' ? '商城订单状态' : 'Shop Order Status',
+                `${this.getCurrentLanguage() === 'zh' ? '订单号' : 'Order ID'}：${payload.id}`,
+                payload.snapshot_product_name ? `${this.getCurrentLanguage() === 'zh' ? '商品' : 'Product'}：${payload.snapshot_product_name}` : '',
+                `${this.getCurrentLanguage() === 'zh' ? '发放状态' : 'Delivery'}：${this.getSupportStatusLabel(payload.delivery_status)}`,
+                payload.delivery_task_id ? `${this.getCurrentLanguage() === 'zh' ? '任务号' : 'Task ID'}：${payload.delivery_task_id}` : '',
+                payload.delivery_last_error ? `${this.getCurrentLanguage() === 'zh' ? '最近错误' : 'Last Error'}：${payload.delivery_last_error}` : '',
+                payload.delivery_completed_at ? `${this.getCurrentLanguage() === 'zh' ? '完成时间' : 'Completed At'}：${payload.delivery_completed_at}` : '',
+                payload.created_at ? `${this.getCurrentLanguage() === 'zh' ? '下单时间' : 'Created At'}：${payload.created_at}` : ''
+            ].filter(Boolean);
+            return lines.join(newline);
+        }
+
+        if (actionId === 'shop_order_content') {
+            const items = Array.isArray(payload.items) ? payload.items : [];
+            const lines = [
+                this.getCurrentLanguage() === 'zh' ? '订单内容摘要' : 'Order Content Summary',
+                payload.order_id ? `${this.getCurrentLanguage() === 'zh' ? '订单号' : 'Order ID'}：${payload.order_id}` : '',
+                payload.product_name ? `${this.getCurrentLanguage() === 'zh' ? '商品' : 'Product'}：${payload.product_name}` : ''
+            ];
+            items.slice(0, 3).forEach((item, index) => {
+                const content = String(item?.content || '').trim();
+                const summary = content.length > 90 ? `${content.slice(0, 90)}...` : content;
+                lines.push(`${this.getCurrentLanguage() === 'zh' ? '内容' : 'Item'} ${index + 1}：${summary || (this.getCurrentLanguage() === 'zh' ? '暂无内容' : 'No content')}`);
+            });
+            if (items.length > 3) {
+                lines.push(this.getCurrentLanguage() === 'zh' ? '内容较多，建议去钱包订单详情页复制完整结果。' : 'There are more items. Open the wallet order detail to copy the full result.');
+            }
+            return lines.filter(Boolean).join(newline);
+        }
+
+        if (actionId === 'verify_task_status' || actionId === 'verify_failure_help') {
+            const lines = [
+                this.getCurrentLanguage() === 'zh' ? '验证任务状态' : 'Verify Task Status',
+                payload.job_id ? `${this.getCurrentLanguage() === 'zh' ? '任务号' : 'Task ID'}：${payload.job_id}` : '',
+                `${this.getCurrentLanguage() === 'zh' ? '当前状态' : 'Status'}：${this.getSupportStatusLabel(payload.status)}`,
+                payload.stage_label ? `${this.getCurrentLanguage() === 'zh' ? '阶段' : 'Stage'}：${payload.stage_label}` : '',
+                payload.queue_position !== undefined && payload.queue_position !== null ? `${this.getCurrentLanguage() === 'zh' ? '队列位置' : 'Queue Position'}：${payload.queue_position}` : '',
+                payload.estimated_wait_seconds ? `${this.getCurrentLanguage() === 'zh' ? '预计等待秒数' : 'Estimated Wait (s)'}：${payload.estimated_wait_seconds}` : '',
+                payload.message ? `${this.getCurrentLanguage() === 'zh' ? '说明' : 'Message'}：${payload.message}` : '',
+                payload.url ? `${this.getCurrentLanguage() === 'zh' ? '结果链接' : 'Result URL'}：${payload.url}` : '',
+                payload.error ? `${this.getCurrentLanguage() === 'zh' ? '错误原因' : 'Error'}：${payload.error}` : ''
+            ].filter(Boolean);
+
+            if (actionId === 'verify_failure_help' && String(payload.status || '').toLowerCase() !== 'failed') {
+                lines.push(this.getCurrentLanguage() === 'zh'
+                    ? '这个任务当前不处于失败状态。如果你是要查进度，建议用“查询任务进度”。'
+                    : 'This task is not currently failed. If you only want progress, use “Check Task Status”.');
+            }
+
+            return lines.join(newline);
+        }
+
+        if (actionId === 'create_ticket') {
+            return [
+                this.getCurrentLanguage() === 'zh' ? '工单已提交。' : 'Ticket submitted.',
+                payload.ticket_id ? `${this.getCurrentLanguage() === 'zh' ? '工单号' : 'Ticket ID'}：${payload.ticket_id}` : '',
+                this.getCurrentLanguage() === 'zh' ? '客服会在后台看到你的描述并继续处理。' : 'Support will see your description and continue from there.'
+            ].filter(Boolean).join(newline);
+        }
+
+        return JSON.stringify(payload, null, 2);
+    }
+
+    async handleSupportActionSubmission(actionId, input) {
+        const action = this.getSupportAction(actionId);
+        if (!action) {
+            return {
+                success: false,
+                message: this.getCurrentLanguage() === 'zh' ? '没有找到对应操作。' : 'Action not found.'
+            };
+        }
+
+        try {
+            let payload = null;
+
+            if (action.mode === 'support_api') {
+                payload = await this.callSupportApi(action.apiAction, input);
+            } else if (action.mode === 'rpc') {
+                const site = window.SiteConfig?.site || 'cn';
+                const { data, error } = await this.supabase.rpc(action.rpcName, {
+                    p_code: String(input || '').trim(),
+                    p_site: site
+                });
+                if (error) throw error;
+                if (data?.success === false) {
+                    throw new Error(data.message || '操作失败');
+                }
+                payload = data;
+            } else if (action.mode === 'verify_status') {
+                payload = await this.callVerifyStatus(String(input || '').trim());
+            } else if (action.mode === 'ticket') {
+                payload = await this.callSupportApi('create_ticket', input);
+            }
+
+            return {
+                success: true,
+                message: this.formatSupportResult(actionId, payload)
+            };
+        } catch (error) {
+            return {
+                success: false,
+                message: error.message || (this.getCurrentLanguage() === 'zh' ? '处理失败，请稍后重试。' : 'Request failed. Please try again later.')
+            };
+        }
+    }
+
+    async handleSupportPanelSubmit(event) {
+        const form = event.target instanceof Element ? event.target.closest('[data-support-inline-form]') : null;
+        if (!form) return;
+
+        event.preventDefault();
+
+        const actionId = form.getAttribute('data-support-inline-form') || '';
+        const action = this.getSupportAction(actionId);
+        const inputEl = form.querySelector('[data-support-inline-input]');
+        const rawValue = typeof inputEl?.value === 'string' ? inputEl.value : '';
+        const trimmedValue = rawValue.trim();
+
+        if (!action) return;
+
+        if (!trimmedValue) {
+            this.supportInlineState = {
+                actionId,
+                value: rawValue,
+                result: '',
+                error: this.getCurrentLanguage() === 'zh' ? '先输入内容再提交。' : 'Enter something before submitting.',
+                loading: false
+            };
+            this.renderSupportActionPanel(actionId);
+            return;
+        }
+
+        this.supportInlineState = {
+            actionId,
+            value: rawValue,
+            result: '',
+            error: '',
+            loading: true
+        };
+        this.renderSupportActionPanel(actionId);
+
+        const outcome = await this.handleSupportActionSubmission(actionId, trimmedValue);
+        this.supportInlineState = {
+            actionId,
+            value: rawValue,
+            result: outcome?.success ? (outcome.message || '') : '',
+            error: outcome?.success ? '' : (outcome?.message || ''),
+            loading: false
+        };
+        this.renderSupportActionPanel(actionId);
+    }
+
+    handleSupportPanelClick(event) {
+        const button = event.target instanceof Element ? event.target.closest('[data-support-action-id], [data-support-menu-id], [data-support-root], [data-support-open-link]') : null;
+        if (!button) return;
+
+        if (button.hasAttribute('data-support-root')) {
+            this.renderSupportRootPanel();
+            return;
+        }
+
+        const menuId = button.getAttribute('data-support-menu-id');
+        if (menuId) {
+            this.renderSupportMenuPanel(menuId);
+            return;
+        }
+
+        const actionId = button.getAttribute('data-support-action-id');
+        if (actionId) {
+            this.openSupportAction(actionId);
+            return;
+        }
+
+        const url = button.getAttribute('data-support-open-link');
+        if (url) {
+            window.open(url, '_blank', 'noopener');
+        }
     }
 
     _detectRefreshRate() {
@@ -416,6 +1120,29 @@ class ChatWidget {
             } catch (e) { console.error('Failed to get user for session:', e); }
 
             this.renderUserMode();
+            window.addEventListener('languageChanged', () => {
+                if (!this.isAdmin && this.chatWindow) {
+                    const titleEl = this.chatWindow.querySelector('.chat-title h3');
+                    if (titleEl) {
+                        titleEl.textContent = this.t('chat.onlineSupport', '在线客服');
+                    }
+                    const currentView = this.supportView?.type || 'root';
+                    if (currentView === 'menu' && this.supportView?.id) {
+                        this.renderSupportMenuPanel(this.supportView.id);
+                    } else if (currentView === 'chat') {
+                        this.syncSupportShellState();
+                    } else if (currentView === 'action' && this.supportView?.id) {
+                        const action = this.getSupportAction(this.supportView.id);
+                        if (action?.mode === 'static' || action?.mode === 'link') {
+                            this.renderSupportStaticPanel(this.supportView.id);
+                        } else {
+                            this.renderSupportActionPanel(this.supportView.id);
+                        }
+                    } else {
+                        this.renderSupportRootPanel();
+                    }
+                }
+            });
             // User mode specific logic
             this.bindUserEvents(); // Split bindEvents
             this.subscribeToMessages();
@@ -1231,6 +1958,8 @@ class ChatWidget {
             }
             .message-text {
                 display: block;
+                white-space: pre-wrap;
+                word-break: break-word;
             }
             
             /* Back button - hidden on desktop, visible on mobile */
@@ -2386,8 +3115,28 @@ class ChatWidget {
                 transition: opacity 120ms linear 140ms;
             }
             
-            /* Mobile: Center the chat window */
-            @media (max-width: 700px) {
+            /* Narrow desktop: keep the natural desktop pop animation, only tighten size */
+            @media (max-width: 700px) and (hover: hover) and (pointer: fine) {
+                .chat-window:not(.admin-mode-layout) {
+                    width: min(380px, calc(100vw - 24px)) !important;
+                    max-width: calc(100vw - 24px) !important;
+                    height: min(600px, calc(100vh - 88px)) !important;
+                    max-height: calc(100vh - 88px) !important;
+                    top: 50% !important;
+                    left: 50% !important;
+                    right: auto !important;
+                    bottom: auto !important;
+                    transform: translate3d(-50%, calc(-50% + 20px), 0) scale(0.95) !important;
+                    transform-origin: center center !important;
+                }
+
+                .chat-window:not(.admin-mode-layout).active {
+                    transform: translate3d(-50%, -50%, 0) scale(1) !important;
+                }
+            }
+
+            /* Touch narrow screens: use the centered modal animation */
+            @media (max-width: 700px) and (hover: none), (max-width: 700px) and (pointer: coarse) {
                 .chat-window:not(.admin-mode-layout) .chat-header {
                     justify-content: flex-start !important;
                 }
@@ -2503,9 +3252,14 @@ class ChatWidget {
                     </div>
                     <div class="chat-title">
                         <h3>${this.t('chat.onlineSupport', '在线客服')}</h3>
-                        <div class="chat-status-indicator">
-                            <span class="status-dot online"></span>
-                            <span class="status-text target-admin-status">${this.t('chat.adminOnline', '管理员在线')}</span>
+                        <div class="chat-status-row">
+                            <div class="chat-status-indicator">
+                                <span class="status-dot online"></span>
+                                <span class="status-text target-admin-status">${this.t('chat.adminOnline', '管理员在线')}</span>
+                            </div>
+                            <div class="chat-header-actions" id="chatHeaderActions" hidden>
+                                <button type="button" class="chat-header-mode-switch" id="chatHeaderSupportBtn">${this.escapeHtml(this.getSupportEntryLabel())}</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2516,6 +3270,7 @@ class ChatWidget {
                     ${this.t('chat.welcomeMessage', '您好！有什么可以帮您的吗？')}
                 </div>
             </div>
+            <div class="chat-support-panel" id="chatSupportPanel" hidden></div>
             <div class="chat-input-area">
                 <input type="file" id="chatImageInput" class="chat-file-input" accept="image/*">
                 <button class="chat-action-btn" id="chatUploadBtn"><i class="fas fa-plus"></i></button>
@@ -2538,8 +3293,13 @@ class ChatWidget {
         this.injectUserLayoutStyles();
 
         this.messagesContainer = this.chatWindow.querySelector('#chatMessages');
+        this.supportPanel = this.chatWindow.querySelector('#chatSupportPanel');
+        this.inputArea = this.chatWindow.querySelector('.chat-input-area');
         this.input = this.chatWindow.querySelector('#chatInput');
         this.emojiPicker = this.chatWindow.querySelector('#emojiPicker');
+        this.headerActions = this.chatWindow.querySelector('#chatHeaderActions');
+        this.headerSupportToggle = this.chatWindow.querySelector('#chatHeaderSupportBtn');
+        this.renderSupportRootPanel();
     }
 
     bindUserEvents() {
@@ -2554,6 +3314,9 @@ class ChatWidget {
             if (e.key === 'Enter') this.sendMessage();
         });
         this._bindInputFocusStabilizer(this.input);
+        this.supportPanel?.addEventListener('click', (event) => this.handleSupportPanelClick(event));
+        this.supportPanel?.addEventListener('submit', (event) => this.handleSupportPanelSubmit(event));
+        this.headerSupportToggle?.addEventListener('click', () => this.renderSupportRootPanel());
 
         // Emoji Picker
         const emojiBtn = this.chatWindow.querySelector('#chatEmojiBtn');
@@ -2573,6 +3336,10 @@ class ChatWidget {
     toggleChat() {
         this.isOpen = !this.isOpen;
         if (this.isOpen) {
+            if (!this.isAdmin) {
+                if (this.input) this.input.value = '';
+                this.renderSupportRootPanel();
+            }
             this._pauseFabAmbientMotion();
             document.documentElement.classList.add('chat-widget-open');
             document.body.classList.add('chat-widget-open');
@@ -2602,7 +3369,9 @@ class ChatWidget {
                 window.iOSScrollLock.lockLight(this.chatWindow);
             }
             this._enableSessionVisualLock();
-            this._attachKeyboardListener();
+            if (this._shouldUseFocusDockFallback()) {
+                this._attachKeyboardListener();
+            }
 
             // 2. 等布局稳定后，再启动动画（double-rAF 确保浏览器已完成一次渲染）
             requestAnimationFrame(() => {
@@ -2639,7 +3408,7 @@ class ChatWidget {
     _attachKeyboardListener() {
         if (!window.visualViewport) {
             this._onChatFocusIn = () => {
-                if (this._isNarrowViewport()) {
+                if (this._shouldUseFocusDockFallback()) {
                     this._clearPendingUndockTimer();
                     this._applyKeyboardDock(window.innerHeight || 0, 0, true);
                     this._keyboardDocked = true;
@@ -2708,7 +3477,7 @@ class ChatWidget {
                         !this._keyboardBlurUndocking &&
                         (this._keyboardDocked ? bottomInset > 8 : bottomInset > 24)
                     )
-                    : (isFocusedInChat || bottomInset > 60)
+                    : (bottomInset > 60)
             );
 
             if (isIOS && !isFocusedInChat && bottomInset <= 8) {
@@ -2863,6 +3632,22 @@ class ChatWidget {
     _isIOSMobile() {
         return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
+    _isTouchPrimaryInput() {
+        if (navigator.maxTouchPoints > 0) return true;
+        if (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches) {
+            return true;
+        }
+        return 'ontouchstart' in window;
+    }
+
+    _usesTouchNarrowLayout() {
+        return this._isNarrowViewport() && (this._isIOSMobile() || this._isTouchPrimaryInput());
+    }
+
+    _shouldUseFocusDockFallback() {
+        return this._usesTouchNarrowLayout();
     }
 
     _isChatInputFocused() {
@@ -3064,7 +3849,7 @@ class ChatWidget {
 
     _getFabMotionMetrics() {
         if (!this.chatWindow || !this.fab || this.chatWindow.classList.contains('admin-mode-layout')) return;
-        if (!this._isNarrowViewport()) return;
+        if (!this._usesTouchNarrowLayout()) return;
 
         const chatRect = this.chatWindow.getBoundingClientRect();
         const fabRect = this.fab.getBoundingClientRect();
@@ -3153,7 +3938,7 @@ class ChatWidget {
     _startClosingAnimation() {
         if (!this.chatWindow) return false;
         if (this.chatWindow.classList.contains('admin-mode-layout')) return false;
-        if (!this._isNarrowViewport()) return false;
+        if (!this._usesTouchNarrowLayout()) return false;
 
         this._clearOpeningAnimationTimer();
         this._clearClosingAnimationTimer();
