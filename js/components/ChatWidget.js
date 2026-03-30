@@ -1626,24 +1626,40 @@ class ChatWidget {
         return { user: null, sessionId: guestSessionId, sessionIds: this.getActiveUserSessionIds() };
     }
 
+    async resolveAdminModeAccess() {
+        try {
+            const access = await window.AdminAccess?.getCurrentAdminAccess?.({ forceRefresh: true });
+            if (access?.user && typeof access.isAdmin === 'boolean') {
+                return Boolean(access.isAdmin);
+            }
+        } catch (error) {
+            console.warn('[ChatWidget] AdminAccess lookup failed:', error);
+        }
+
+        try {
+            const { data: { user } = {} } = await this.supabase.auth.getUser();
+            if (!user) return false;
+
+            const { data: adminFlag, error: adminError } = await this.supabase.rpc('is_admin');
+            if (adminError) {
+                console.warn('[ChatWidget] Failed to verify admin status:', adminError);
+                return false;
+            }
+
+            return Boolean(adminFlag);
+        } catch (error) {
+            console.error('[ChatWidget] Admin status fallback failed:', error);
+            return false;
+        }
+    }
+
     async init() {
         this.renderFAB();
         this.bindFabEvents();
         this._scheduleFabAmbientMotion();
 
-        // Check if user is admin
-        let isAdmin = false;
-        try {
-            const { data: { user } } = await this.supabase.auth.getUser();
-            if (user) {
-                const { data: adminFlag, error: adminError } = await this.supabase.rpc('is_admin');
-                if (adminError) {
-                    console.warn('[ChatWidget] Failed to verify admin status:', adminError);
-                } else {
-                    isAdmin = Boolean(adminFlag);
-                }
-            }
-        } catch (e) { console.error(e); }
+        const isAdmin = await this.resolveAdminModeAccess();
+        window.isAdmin = isAdmin;
 
         if (isAdmin) {
             this.renderAdminMode();
