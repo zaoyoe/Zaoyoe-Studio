@@ -67,6 +67,7 @@ const ALERT_TYPE_ROUTING_MAP = Object.freeze({
     shop_order_risk_anomaly: 'shop_order_risk',
     shop_order_risk_recovered: 'shop_order_risk',
     security_admin_login_anomaly: 'admin_login_anomaly',
+    ticket_new: 'tickets',
     ticket_sla_summary: 'tickets',
     ticket_sla_overdue: 'tickets',
     ticket_sla_recovered: 'tickets',
@@ -119,6 +120,7 @@ const ALERT_TYPE_MODULE_MAP = Object.freeze({
     verify_queue_backlog: 'verify',
     verify_incident_escalated: 'verify',
     verify_incident_recovered: 'verify',
+    ticket_new: 'tickets',
     ticket_sla_summary: 'tickets',
     ticket_sla_overdue: 'tickets',
     ticket_sla_recovered: 'tickets',
@@ -3457,6 +3459,10 @@ function buildExternalAlertText(job = {}) {
     if (ticketSlaSummaryText) {
         return ticketSlaSummaryText;
     }
+    const ticketCreatedText = buildTicketCreatedAlertText(job);
+    if (ticketCreatedText) {
+        return ticketCreatedText;
+    }
     const shopInventorySummaryText = buildShopInventorySummaryAlertText(job);
     if (shopInventorySummaryText) {
         return shopInventorySummaryText;
@@ -4726,6 +4732,27 @@ function getRefundStatusLabel(value) {
         refund_pending: '退款处理中'
     };
     return labelMap[normalized] || normalized;
+}
+
+function buildTicketCreatedAlertText(job = {}) {
+    if (normalizeText(job.alert_type).toLowerCase() !== 'ticket_new') {
+        return '';
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const lines = [
+        `[新售后工单][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '新售后工单'}`
+    ];
+
+    if (normalizeText(payload.ticket_id)) lines.push(`工单号：${normalizeText(payload.ticket_id)}`);
+    if (normalizeText(payload.order_id)) lines.push(`订单号：${normalizeText(payload.order_id)}`);
+    if (normalizeText(payload.user_id)) lines.push(`用户ID：${normalizeText(payload.user_id)}`);
+    if (normalizeText(payload.ticket_status)) lines.push(`当前状态：${getTicketStatusLabel(payload.ticket_status)}`);
+    if (normalizeText(payload.reason)) lines.push(`问题描述：${normalizeText(payload.reason)}`);
+    if (normalizeText(payload.created_at)) lines.push(`创建时间：${formatTimestamp(payload.created_at)}`);
+    if (normalizeText(payload.entry_path)) lines.push(`处理入口：${normalizeText(payload.entry_path)}`);
+
+    return lines.filter(Boolean).join('\n');
 }
 
 function buildTicketSlaOverdueAlertText(job = {}) {

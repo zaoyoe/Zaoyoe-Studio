@@ -1817,6 +1817,31 @@ test('buildExternalAlertText renders ticket SLA overdue details', () => {
     assert.match(text, /处理入口：售后工单 -> 待处理 -> 工单详情/);
 });
 
+test('buildExternalAlertText renders new support ticket details', () => {
+    const text = __testUtils.buildExternalAlertText({
+        alert_type: 'ticket_new',
+        severity: 'warning',
+        title: '新售后工单（ticket-de）',
+        payload: {
+            ticket_id: 'ticket-demo-001',
+            order_id: 'shop-order-demo-001',
+            user_id: 'demo_ticket_user_001',
+            ticket_status: 'PENDING',
+            reason: '卡密未到账，用户需要人工补发。',
+            created_at: '2026-03-30T12:00:00.000Z',
+            entry_path: '售后工单 -> 待处理 -> 工单详情'
+        }
+    });
+
+    assert.match(text, /新售后工单/);
+    assert.match(text, /工单号：ticket-demo-001/);
+    assert.match(text, /订单号：shop-order-demo-001/);
+    assert.match(text, /用户ID：demo_ticket_user_001/);
+    assert.match(text, /当前状态：待处理/);
+    assert.match(text, /问题描述：卡密未到账，用户需要人工补发。/);
+    assert.match(text, /处理入口：售后工单 -> 待处理 -> 工单详情/);
+});
+
 test('buildExternalAlertText renders ticket SLA recovery details', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'ticket_sla_recovered',
@@ -1847,6 +1872,23 @@ test('buildExternalAlertText renders ticket SLA recovery details', () => {
     assert.match(text, /当前状态：已解决/);
     assert.match(text, /持续时长：42 分钟/);
     assert.match(text, /处理入口：售后工单 -> 已处理 -> 工单详情/);
+});
+
+test('resolveEnabledChannels applies tickets routing rules to new support ticket alerts', () => {
+    const runtime = createRuntimeConfig({
+        config: {
+            routing: {
+                tickets: {
+                    telegram: false,
+                    feishu: true,
+                    email: false
+                }
+            }
+        }
+    });
+
+    const channels = __testUtils.resolveEnabledChannels(runtime, 'warning', 'ticket_new');
+    assert.deepEqual(channels, ['feishu']);
 });
 
 test('buildExternalAlertText renders ticket SLA summary details', () => {
