@@ -15608,6 +15608,84 @@ window.setOpsAlertMonitorFilter = setOpsAlertMonitorFilter;
 window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;
 window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;
 window.openOpsAlertWorkspace = openOpsAlertWorkspace;
+
+const PENDING_OPS_ALERT_WORKSPACE_STORAGE_KEY = 'zaoyoe_pending_ops_alert_workspace';
+
+function consumePendingOpsAlertWorkspace() {
+    if (typeof window.localStorage === 'undefined') {
+        return null;
+    }
+
+    const raw = window.localStorage.getItem(PENDING_OPS_ALERT_WORKSPACE_STORAGE_KEY);
+    if (!raw) {
+        return null;
+    }
+
+    window.localStorage.removeItem(PENDING_OPS_ALERT_WORKSPACE_STORAGE_KEY);
+
+    try {
+        const parsed = JSON.parse(raw);
+        const workspaceKey = String(parsed?.workspaceKey || '').trim();
+        if (!workspaceKey) {
+            return null;
+        }
+
+        const createdAt = parsed?.createdAt ? new Date(parsed.createdAt) : null;
+        const maxAgeMs = 10 * 60 * 1000;
+        if (createdAt && !Number.isNaN(createdAt.getTime()) && (Date.now() - createdAt.getTime()) > maxAgeMs) {
+            return null;
+        }
+
+        return {
+            workspaceKey,
+            context: parsed?.context && typeof parsed.context === 'object' ? parsed.context : {}
+        };
+    } catch (error) {
+        console.warn('[Config] Failed to parse pending ops alert workspace:', error);
+        return null;
+    }
+}
+
+async function restorePendingOpsAlertWorkspace() {
+    const pending = consumePendingOpsAlertWorkspace();
+    if (!pending) {
+        return false;
+    }
+
+    try {
+        await openOpsAlertWorkspace(pending.workspaceKey, pending.context || {});
+        return true;
+    } catch (error) {
+        console.error('[Config] Failed to restore pending ops alert workspace:', error);
+        return false;
+    }
+}
+
+function schedulePendingOpsAlertWorkspaceRestore() {
+    if (window.__pendingOpsAlertWorkspaceRestoreScheduled) {
+        return;
+    }
+    window.__pendingOpsAlertWorkspaceRestoreScheduled = true;
+
+    const runRestore = () => {
+        window.setTimeout(() => {
+            restorePendingOpsAlertWorkspace()
+                .finally(() => {
+                    window.__pendingOpsAlertWorkspaceRestoreScheduled = false;
+                });
+        }, 120);
+    };
+
+    if (document.readyState === 'complete') {
+        runRestore();
+    } else {
+        window.addEventListener('load', runRestore, { once: true });
+    }
+}
+
+window.restorePendingOpsAlertWorkspace = restorePendingOpsAlertWorkspace;
+schedulePendingOpsAlertWorkspaceRestore();
+
 window.handleOpsAlertCaseAction = handleOpsAlertCaseAction;
 window.handleOpsAlertMonitorBatchCaseAction = handleOpsAlertMonitorBatchCaseAction;
 window.openOpsAlertBatchMuteModal = openOpsAlertBatchMuteModal;

@@ -13,6 +13,11 @@ class ChatWidget {
         this.sessionMessagesCache = new Map(); // Cache admin conversation payloads for faster switching
         this._sessionLoadRequestId = 0;
         this._sessionLoadingOverlayTimer = null;
+        this.opsAlertSessionId = '__admin_ops_todo__';
+        this.opsAlertMessages = [];
+        this.opsAlertLoadError = '';
+        this.adminMessageChannel = null;
+        this.adminOpsAlertChannel = null;
 
         // Preload configuration - lock scroll until messages are loaded
         this.isPreloading = false;
@@ -2072,6 +2077,9 @@ class ChatWidget {
                         <p>${this.t('chat.emptyState', '请从左侧选择一个会话开始回复')}</p>
                     </div>
                 </div>
+                <div class="chat-admin-readonly-notice" id="adminReadonlyNotice" hidden>
+                    站内代办只接收系统告警，点击每条消息里的按钮即可跳转到对应处理页。
+                </div>
                 <div class="chat-input-area">
                     <input type="file" id="chatImageInput" class="chat-file-input" accept="image/*">
                     <button class="chat-action-btn" id="chatUploadBtn"><i class="fas fa-plus"></i></button>
@@ -2260,6 +2268,22 @@ class ChatWidget {
                 background: rgba(159, 202, 255, 0.16);
                 border-left: 3px solid #9fcaff;
             }
+            .session-item--ops {
+                background: linear-gradient(180deg, rgba(82, 120, 172, 0.16), rgba(82, 120, 172, 0.08));
+            }
+            .session-item--ops:hover {
+                background: linear-gradient(180deg, rgba(108, 150, 207, 0.2), rgba(82, 120, 172, 0.14));
+            }
+            .session-item--ops .session-name {
+                color: #d9ecff;
+                font-weight: 600;
+            }
+            .session-item--ops .session-email {
+                color: rgba(217, 236, 255, 0.72);
+            }
+            .session-item--ops .session-preview {
+                color: rgba(225, 239, 255, 0.82);
+            }
             
             /* Unread session - attention-grabbing style */
             .session-item.unread {
@@ -2325,6 +2349,13 @@ class ChatWidget {
                 height: 100%;
                 object-fit: cover;
                 display: block;
+            }
+            .session-avatar--ops {
+                background: linear-gradient(135deg, rgba(107, 158, 206, 0.98) 0%, rgba(63, 112, 164, 0.98) 100%);
+                box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 14px 24px rgba(39, 68, 109, 0.32);
+            }
+            .session-avatar--ops i {
+                font-size: 14px;
             }
             
             .session-info {
@@ -2430,6 +2461,16 @@ class ChatWidget {
                 font-size: 12px;
                 margin-left: 8px;
             }
+            .chat-admin-readonly-notice {
+                margin: 12px 20px 0;
+                padding: 10px 12px;
+                border-radius: 12px;
+                background: rgba(107, 158, 206, 0.12);
+                border: 1px solid rgba(107, 158, 206, 0.2);
+                color: rgba(224, 238, 255, 0.92);
+                font-size: 12px;
+                line-height: 1.5;
+            }
             
             .admin-mode-layout .chat-messages {
                 flex: 1;
@@ -2516,6 +2557,124 @@ class ChatWidget {
                 display: block;
                 white-space: pre-wrap;
                 word-break: break-word;
+            }
+            .message--ops-alert {
+                max-width: min(540px, 92%);
+                width: min(540px, 92%);
+                padding: 14px 16px;
+                border-radius: 18px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                background: rgba(255, 255, 255, 0.08);
+                box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+            }
+            .message--ops-alert-warning {
+                border-color: rgba(244, 195, 99, 0.28);
+                background: linear-gradient(180deg, rgba(244, 195, 99, 0.12), rgba(255, 255, 255, 0.06));
+            }
+            .message--ops-alert-critical {
+                border-color: rgba(255, 107, 107, 0.3);
+                background: linear-gradient(180deg, rgba(255, 107, 107, 0.12), rgba(255, 255, 255, 0.06));
+            }
+            .message--ops-alert-info {
+                border-color: rgba(107, 158, 206, 0.3);
+                background: linear-gradient(180deg, rgba(107, 158, 206, 0.14), rgba(255, 255, 255, 0.06));
+            }
+            .ops-alert-card-header {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .ops-alert-card-title-wrap {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 8px;
+            }
+            .ops-alert-card-badge {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 44px;
+                padding: 4px 8px;
+                border-radius: 999px;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.02em;
+            }
+            .ops-alert-card-badge--info {
+                color: #d6ebff;
+                background: rgba(107, 158, 206, 0.22);
+            }
+            .ops-alert-card-badge--warning {
+                color: #fff1cc;
+                background: rgba(244, 195, 99, 0.24);
+            }
+            .ops-alert-card-badge--critical {
+                color: #ffd9d9;
+                background: rgba(255, 107, 107, 0.22);
+            }
+            .ops-alert-card-title {
+                color: #fff;
+                font-size: 14px;
+                font-weight: 600;
+                line-height: 1.5;
+            }
+            .ops-alert-card-meta {
+                color: rgba(255, 255, 255, 0.56);
+                font-size: 11px;
+                line-height: 1.5;
+            }
+            .ops-alert-card-content {
+                margin-top: 12px;
+                color: rgba(255, 255, 255, 0.88);
+                font-size: 13px;
+                line-height: 1.65;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+            .ops-alert-card-error {
+                margin-top: 12px;
+                padding: 10px 12px;
+                border-radius: 12px;
+                background: rgba(255, 107, 107, 0.12);
+                color: #ffd6d6;
+                font-size: 12px;
+                line-height: 1.5;
+            }
+            .ops-alert-card-footer {
+                margin-top: 14px;
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+            }
+            .ops-alert-card-entry {
+                flex: 1;
+                min-width: 180px;
+                color: rgba(255, 255, 255, 0.62);
+                font-size: 12px;
+                line-height: 1.5;
+            }
+            .ops-alert-card-action {
+                border: 1px solid rgba(107, 158, 206, 0.32);
+                background: rgba(107, 158, 206, 0.18);
+                color: #e5f2ff;
+                font-size: 12px;
+                font-weight: 600;
+                border-radius: 999px;
+                padding: 8px 14px;
+                cursor: pointer;
+                transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+            }
+            .ops-alert-card-action:hover:not(:disabled) {
+                transform: translateY(-1px);
+                background: rgba(107, 158, 206, 0.24);
+                border-color: rgba(159, 202, 255, 0.4);
+            }
+            .ops-alert-card-action:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
             }
             
             /* Back button - hidden on desktop, visible on mobile */
@@ -2657,6 +2816,868 @@ class ChatWidget {
         document.head.appendChild(style);
     }
 
+    isOpsAlertSessionId(sessionId) {
+        return String(sessionId || '').trim() === this.opsAlertSessionId;
+    }
+
+    isOpsAlertSession(session) {
+        return Boolean(session) && (
+            session.kind === 'ops_alerts'
+            || this.isOpsAlertSessionId(session.id)
+            || this.isOpsAlertSessionId(session.sessionId)
+        );
+    }
+
+    parseChatOpsPayload(value) {
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+            return value;
+        }
+        if (typeof value !== 'string' || !value.trim()) {
+            return {};
+        }
+        try {
+            const parsed = JSON.parse(value);
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (error) {
+            return {};
+        }
+    }
+
+    extractOpsAlertEntryPath(content = '') {
+        return String(content || '')
+            .split('\n')
+            .map((line) => line.trim())
+            .find((line) => line.startsWith('处理入口：'))
+            ?.replace(/^处理入口：/, '')
+            .trim() || '';
+    }
+
+    stripOpsAlertEntryPath(content = '') {
+        return String(content || '')
+            .split('\n')
+            .filter((line) => !String(line || '').trim().startsWith('处理入口：'))
+            .join('\n')
+            .trim();
+    }
+
+    getOpsAlertSeverityLabel(severity = 'warning') {
+        const normalized = String(severity || 'warning').trim().toLowerCase();
+        const labelMap = {
+            info: '提示',
+            warning: '告警',
+            critical: '紧急'
+        };
+        return labelMap[normalized] || '告警';
+    }
+
+    getOpsAlertStatusLabel(alert = {}) {
+        const normalized = String(alert.status || 'pending').trim().toLowerCase();
+        if (normalized === 'delivered') return '站外已发送';
+        if (normalized === 'dead_letter') return '站外发送失败';
+        if (normalized === 'retry') return '站外重试中';
+        if (normalized === 'processing') return '站外发送中';
+        return '等待站外发送';
+    }
+
+    getOpsAlertActionLabel(alert = {}) {
+        const kind = String(alert.workspace?.kind || '').trim().toLowerCase();
+        if (kind === 'chat-session') {
+            return String(alert.workspace?.context?.sessionId || alert.workspace?.context?.session_id || '').trim()
+                ? '查看会话'
+                : '打开消息';
+        }
+        if (kind === 'shop-orders') {
+            return '查看订单';
+        }
+        if (kind === 'ops-workspace') {
+            const workspaceKey = String(alert.workspace?.workspaceKey || '').trim().toLowerCase();
+            const labelMap = {
+                'payments-overview': '查看最近订单',
+                'payments-ops': '处理异常',
+                'verify-monitor': '查看验证面板',
+                'admin-audit-monitor': '查看审计',
+                'tickets-pending': '处理工单',
+                'tickets-resolved': '查看工单',
+                'shop-inventory': '处理库存',
+                'shop-fulfillment': '处理履约',
+                'shop-risk-orders': '查看订单',
+                'shop-risk-discounts': '查看优惠码',
+                'shop-risk-users': '查看用户'
+            };
+            return labelMap[workspaceKey] || '前往处理';
+        }
+        return '暂无处理页';
+    }
+
+    buildOpsAlertPreview(alert = {}) {
+        const title = String(alert.title || '').trim();
+        if (title) {
+            return `${this.getOpsAlertSeverityLabel(alert.severity)} · ${title}`;
+        }
+
+        const firstLine = this.stripOpsAlertEntryPath(alert.content || '')
+            .split('\n')
+            .map((line) => line.trim())
+            .find(Boolean);
+        if (firstLine) {
+            return `${this.getOpsAlertSeverityLabel(alert.severity)} · ${firstLine}`;
+        }
+
+        return '站外告警同步';
+    }
+
+    getOpsAlertReferenceLabel(payload = {}) {
+        if (payload.ticket_id) return '工单号';
+        if (payload.order_id) return '订单号';
+        if (payload.payment_order_id) return '充值单号';
+        if (payload.provider_order_no) return '支付单号';
+        if (payload.message_id) return '消息ID';
+        if (payload.session_id) return '会话ID';
+        if (payload.user_id) return '用户ID';
+        if (payload.target_id) return '目标';
+        return '';
+    }
+
+    getOpsAlertReferenceValue(payload = {}) {
+        return String(
+            payload.ticket_id
+            || payload.order_id
+            || payload.payment_order_id
+            || payload.provider_order_no
+            || payload.message_id
+            || payload.session_id
+            || payload.user_id
+            || payload.target_id
+            || ''
+        ).trim();
+    }
+
+    buildOpsAlertContext(alertType = '', payload = {}, title = '') {
+        const targetId = String(
+            payload.target_id
+            || payload.order_id
+            || payload.payment_order_id
+            || payload.ticket_id
+            || payload.message_id
+            || ''
+        ).trim();
+
+        return {
+            title: String(title || '').trim(),
+            alertType,
+            alert_type: alertType,
+            category: alertType,
+            referenceLabel: this.getOpsAlertReferenceLabel(payload),
+            referenceValue: this.getOpsAlertReferenceValue(payload),
+            targetId,
+            target_id: targetId,
+            userId: String(payload.user_id || '').trim(),
+            user_id: String(payload.user_id || '').trim(),
+            clientIp: String(payload.client_ip || '').trim(),
+            client_ip: String(payload.client_ip || '').trim(),
+            discountCode: String(payload.discount_code || '').trim(),
+            discount_code: String(payload.discount_code || '').trim(),
+            sessionId: String(payload.session_id || '').trim(),
+            session_id: String(payload.session_id || '').trim(),
+            messageId: String(payload.message_id || '').trim(),
+            message_id: String(payload.message_id || '').trim()
+        };
+    }
+
+    resolveOpsAlertEntryWorkspace(entryPath = '', baseContext = {}) {
+        const normalized = String(entryPath || '').trim();
+        if (!normalized) {
+            return { kind: 'none' };
+        }
+
+        if (normalized.includes('客服消息')) {
+            return {
+                kind: 'chat-session',
+                context: baseContext
+            };
+        }
+        if (normalized.includes('订单列表 / 优惠券码')) {
+            return {
+                kind: 'ops-workspace',
+                workspaceKey: 'shop-risk-discounts',
+                context: baseContext
+            };
+        }
+        if (normalized.includes('订单列表 / 用户详情') || normalized.includes('用户详情')) {
+            return {
+                kind: 'ops-workspace',
+                workspaceKey: 'shop-risk-users',
+                context: baseContext
+            };
+        }
+        if (normalized.includes('履约任务') || normalized.includes('异常订单')) {
+            return {
+                kind: 'ops-workspace',
+                workspaceKey: 'shop-fulfillment',
+                context: baseContext
+            };
+        }
+        if (normalized.includes('库存 / 补货') || normalized.includes('库存')) {
+            return {
+                kind: 'ops-workspace',
+                workspaceKey: 'shop-inventory',
+                context: baseContext
+            };
+        }
+        if (normalized.includes('支付配置审计') || normalized.includes('异常登录信号')) {
+            return {
+                kind: 'ops-workspace',
+                workspaceKey: 'admin-audit-monitor',
+                context: baseContext
+            };
+        }
+        if (normalized.includes('验证服务配置')) {
+            return {
+                kind: 'ops-workspace',
+                workspaceKey: 'verify-monitor',
+                context: baseContext
+            };
+        }
+        if (normalized.includes('售后工单')) {
+            return {
+                kind: 'ops-workspace',
+                workspaceKey: normalized.includes('已处理') ? 'tickets-resolved' : 'tickets-pending',
+                context: baseContext
+            };
+        }
+        if (normalized.includes('支付总览') || normalized.includes('异常运维')) {
+            return {
+                kind: 'ops-workspace',
+                workspaceKey: 'payments-ops',
+                context: baseContext
+            };
+        }
+        if (normalized.includes('最近订单')) {
+            return {
+                kind: 'ops-workspace',
+                workspaceKey: 'payments-overview',
+                context: baseContext
+            };
+        }
+        if (normalized.includes('订单列表')) {
+            return {
+                kind: 'shop-orders',
+                context: baseContext
+            };
+        }
+
+        return { kind: 'none' };
+    }
+
+    resolveShopRiskWorkspaceForChat(baseContext = {}, payload = {}) {
+        const signalType = String(payload.signal_type || '').trim().toLowerCase();
+        if (String(payload.discount_code || '').trim()) {
+            return {
+                kind: 'ops-workspace',
+                workspaceKey: 'shop-risk-discounts',
+                context: baseContext
+            };
+        }
+        if (String(payload.user_id || '').trim() && signalType === 'user_velocity') {
+            return {
+                kind: 'ops-workspace',
+                workspaceKey: 'shop-risk-users',
+                context: baseContext
+            };
+        }
+        return {
+            kind: 'ops-workspace',
+            workspaceKey: 'shop-risk-orders',
+            context: baseContext
+        };
+    }
+
+    resolveOpsAlertWorkspace(alertType = '', payload = {}, title = '', entryPath = '') {
+        const baseContext = this.buildOpsAlertContext(alertType, payload, title);
+
+        switch (String(alertType || '').trim().toLowerCase()) {
+            case 'customer_chat_message_received':
+            case 'customer_chat_message_summary':
+                return {
+                    kind: 'chat-session',
+                    context: baseContext
+                };
+            case 'shop_purchase_succeeded':
+            case 'shop_purchase_summary':
+                return {
+                    kind: 'shop-orders',
+                    context: baseContext
+                };
+            case 'wallet_recharge_succeeded':
+            case 'wallet_recharge_summary':
+                return {
+                    kind: 'ops-workspace',
+                    workspaceKey: 'payments-overview',
+                    context: baseContext
+                };
+            case 'shop_inventory_summary':
+            case 'shop_inventory_low':
+            case 'shop_inventory_empty':
+            case 'shop_inventory_recovered':
+                return {
+                    kind: 'ops-workspace',
+                    workspaceKey: 'shop-inventory',
+                    context: baseContext
+                };
+            case 'ticket_new':
+            case 'ticket_sla_summary':
+            case 'ticket_sla_overdue':
+                return {
+                    kind: 'ops-workspace',
+                    workspaceKey: 'tickets-pending',
+                    context: baseContext
+                };
+            case 'ticket_sla_recovered':
+                return {
+                    kind: 'ops-workspace',
+                    workspaceKey: 'tickets-resolved',
+                    context: baseContext
+                };
+            case 'shop_order_delivery_summary':
+            case 'shop_order_delivery_failed':
+            case 'shop_order_delivery_recovered':
+            case 'shop_order_delivery_incident':
+            case 'shop_order_delivery_incident_recovered':
+                return {
+                    kind: 'ops-workspace',
+                    workspaceKey: 'shop-fulfillment',
+                    context: baseContext
+                };
+            case 'payment_gateway_summary':
+            case 'payment_gateway_degraded':
+            case 'payment_gateway_recovered':
+            case 'payment_refund_ops':
+            case 'payment_refund_alert':
+                return {
+                    kind: 'ops-workspace',
+                    workspaceKey: 'payments-ops',
+                    context: baseContext
+                };
+            case 'payment_config_changed':
+            case 'payment_config_recovered':
+            case 'payment_config_incident':
+            case 'payment_config_incident_recovered':
+            case 'security_admin_login_anomaly':
+                return {
+                    kind: 'ops-workspace',
+                    workspaceKey: 'admin-audit-monitor',
+                    context: baseContext
+                };
+            case 'verify_quota_summary':
+            case 'verify_quota_low':
+            case 'verify_service_disabled':
+            case 'verify_queue_summary':
+            case 'verify_queue_backlog':
+            case 'verify_failure_summary':
+            case 'verify_failure_rate_spike':
+            case 'verify_incident_escalated':
+            case 'verify_incident_recovered':
+                return {
+                    kind: 'ops-workspace',
+                    workspaceKey: 'verify-monitor',
+                    context: baseContext
+                };
+            case 'shop_order_risk_anomaly':
+            case 'shop_order_risk_recovered':
+                return this.resolveShopRiskWorkspaceForChat(baseContext, payload);
+            default:
+                return this.resolveOpsAlertEntryWorkspace(entryPath, baseContext);
+        }
+    }
+
+    normalizeOpsAlertJob(row = {}) {
+        const payload = this.parseChatOpsPayload(row.payload);
+        const alertType = String(row.alert_type || '').trim().toLowerCase();
+        const content = String(row.content || '').trim();
+        const entryPath = String(payload.entry_path || '').trim() || this.extractOpsAlertEntryPath(content);
+        const createdAt = row.created_at || row.updated_at || new Date().toISOString();
+        const updatedAt = row.updated_at || createdAt;
+        const alert = {
+            id: String(row.id || `ops-alert-${createdAt}`),
+            alertType,
+            severity: String(row.severity || 'warning').trim().toLowerCase() || 'warning',
+            title: String(row.title || '系统告警').trim() || '系统告警',
+            content,
+            displayContent: this.stripOpsAlertEntryPath(content),
+            entryPath,
+            status: String(row.status || 'pending').trim().toLowerCase() || 'pending',
+            lastError: String(row.last_error || '').trim(),
+            payload,
+            workspace: null,
+            created_at: createdAt,
+            updated_at: updatedAt,
+            delivered_at: row.delivered_at || '',
+            timestamp: new Date(createdAt),
+            sortTimestamp: new Date(updatedAt),
+            preview: ''
+        };
+
+        alert.workspace = this.resolveOpsAlertWorkspace(alertType, payload, alert.title, entryPath);
+        alert.preview = this.buildOpsAlertPreview(alert);
+        return alert;
+    }
+
+    buildOpsAlertSessionSearchText() {
+        return this.opsAlertMessages
+            .slice(0, 24)
+            .map((alert) => [alert.title, alert.displayContent, alert.entryPath, alert.preview].filter(Boolean).join('\n'))
+            .join('\n');
+    }
+
+    buildOpsAlertSession() {
+        const latest = this.opsAlertMessages[0] || null;
+        const preview = this.opsAlertLoadError
+            ? `同步失败：${this.opsAlertLoadError}`
+            : (latest?.preview || '站外告警会同步到这里');
+
+        const subtext = this.opsAlertLoadError
+            ? '站外告警同步异常'
+            : `固定系统联系人${this.opsAlertMessages.length ? ` · ${Math.min(this.opsAlertMessages.length, 99)}${this.opsAlertMessages.length > 99 ? '+' : ''} 条同步` : ''}`;
+
+        return {
+            id: this.opsAlertSessionId,
+            sessionIds: [this.opsAlertSessionId],
+            nickname: '站内代办',
+            email: subtext,
+            lastLogin: latest?.created_at || '',
+            lastMessage: preview,
+            lastTime: latest?.updated_at || latest?.created_at || '',
+            isAdmin: false,
+            userId: '',
+            avatarUrl: '',
+            kind: 'ops_alerts',
+            subtext,
+            searchText: this.buildOpsAlertSessionSearchText()
+        };
+    }
+
+    async fetchOpsAlertJobs() {
+        const { data, error } = await this.supabase
+            .from('ops_alert_jobs')
+            .select('id, alert_type, severity, title, content, payload, status, last_error, created_at, updated_at, delivered_at')
+            .order('created_at', { ascending: false })
+            .limit(160);
+
+        if (error) throw error;
+        return Array.isArray(data) ? data : [];
+    }
+
+    processOpsAlertData(rows) {
+        this.opsAlertLoadError = '';
+        this.opsAlertMessages = (Array.isArray(rows) ? rows : [])
+            .map((row) => this.normalizeOpsAlertJob(row))
+            .sort((left, right) => {
+                const leftTime = left.sortTimestamp instanceof Date ? left.sortTimestamp.getTime() : 0;
+                const rightTime = right.sortTimestamp instanceof Date ? right.sortTimestamp.getTime() : 0;
+                return rightTime - leftTime;
+            });
+    }
+
+    refreshOpsAlertSessionEntry() {
+        const nonOpsSessions = (Array.isArray(this.sessions) ? this.sessions : [])
+            .filter((session) => !this.isOpsAlertSession(session));
+        this.sessions = [this.buildOpsAlertSession(), ...nonOpsSessions];
+        this.renderAdminSessionList();
+    }
+
+    renderAdminSessionList() {
+        if (!this.sessionList) return;
+
+        this.sessionList.innerHTML = '';
+        if (!Array.isArray(this.sessions) || this.sessions.length === 0) {
+            this.sessionList.innerHTML = `<div class="session-loading">${this.t('chat.noSessions', '暂无会话')}</div>`;
+            return;
+        }
+
+        this.sessions.forEach((session) => {
+            const item = document.createElement('div');
+            const isOpsSession = this.isOpsAlertSession(session);
+            item.className = `session-item${isOpsSession ? ' session-item--ops' : ''}`;
+            item.dataset.sessionId = session.id;
+            item.classList.toggle('active', this.currentSessionKey === session.id);
+
+            const sessionIds = session.sessionIds || [session.id];
+            const hasUnread = sessionIds.some((sid) => this.unreadSessions.has(sid));
+            if (hasUnread) {
+                item.classList.add('unread');
+            }
+
+            const previewText = String(session.lastMessage || '').trim();
+            const preview = previewText.length > 20 ? `${previewText.slice(0, 20)}...` : previewText;
+            const time = this.formatTime(isOpsSession ? (session.lastTime || session.lastLogin) : session.lastTime);
+            const displayName = isOpsSession
+                ? '站内代办'
+                : (session.nickname.length > 12 ? `${session.nickname.slice(0, 12)}...` : session.nickname);
+            const detailLine = isOpsSession
+                ? (session.subtext || session.email || '固定系统联系人')
+                : (session.id.startsWith('guest_')
+                    ? ''
+                    : ((session.email || '').length > 20 ? `${session.email.slice(0, 20)}...` : (session.email || '')));
+
+            item.dataset.searchText = [
+                displayName,
+                detailLine,
+                previewText,
+                session.searchText || ''
+            ].filter(Boolean).join('\n').toLowerCase();
+
+            const avatarEl = this.createSessionAvatarElement(session);
+
+            const infoEl = document.createElement('div');
+            infoEl.className = 'session-info';
+
+            const nameEl = document.createElement('div');
+            nameEl.className = 'session-name';
+            nameEl.textContent = displayName;
+
+            const emailEl = document.createElement('div');
+            emailEl.className = 'session-email';
+            emailEl.textContent = detailLine;
+
+            const previewEl = document.createElement('div');
+            previewEl.className = 'session-preview';
+            previewEl.textContent = preview;
+
+            infoEl.appendChild(nameEl);
+            infoEl.appendChild(emailEl);
+            infoEl.appendChild(previewEl);
+
+            const timeEl = document.createElement('div');
+            timeEl.className = 'session-time';
+            timeEl.textContent = time;
+
+            item.appendChild(avatarEl);
+            item.appendChild(infoEl);
+            item.appendChild(timeEl);
+
+            if (hasUnread) {
+                const unreadDot = document.createElement('div');
+                unreadDot.className = 'unread-dot';
+                item.appendChild(unreadDot);
+            }
+
+            item.addEventListener('click', () => this.selectSession(session.id, session));
+            this.sessionList.appendChild(item);
+        });
+    }
+
+    formatOpsAlertDetailTime(value) {
+        if (!value) return '未知时间';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        return date.toLocaleString('zh-CN', {
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    }
+
+    createOpsAlertMessageElement(alert = {}) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message admin message--ops-alert message--ops-alert-${this.escapeHtml(alert.severity || 'warning')}`;
+        msgDiv.dataset.alertId = alert.id || '';
+
+        const header = document.createElement('div');
+        header.className = 'ops-alert-card-header';
+
+        const titleWrap = document.createElement('div');
+        titleWrap.className = 'ops-alert-card-title-wrap';
+
+        const badge = document.createElement('span');
+        badge.className = `ops-alert-card-badge ops-alert-card-badge--${this.escapeHtml(alert.severity || 'warning')}`;
+        badge.textContent = this.getOpsAlertSeverityLabel(alert.severity);
+
+        const title = document.createElement('div');
+        title.className = 'ops-alert-card-title';
+        title.textContent = alert.title || '系统告警';
+
+        titleWrap.appendChild(badge);
+        titleWrap.appendChild(title);
+
+        const meta = document.createElement('div');
+        meta.className = 'ops-alert-card-meta';
+        const metaParts = [
+            `创建于 ${this.formatOpsAlertDetailTime(alert.created_at)}`,
+            this.getOpsAlertStatusLabel(alert)
+        ];
+        if (alert.updated_at && alert.updated_at !== alert.created_at) {
+            metaParts.push(`更新于 ${this.formatOpsAlertDetailTime(alert.updated_at)}`);
+        }
+        meta.textContent = metaParts.join(' · ');
+
+        header.appendChild(titleWrap);
+        header.appendChild(meta);
+
+        const body = document.createElement('div');
+        body.className = 'ops-alert-card-content';
+        body.textContent = alert.displayContent || alert.content || alert.title || '系统告警';
+
+        msgDiv.appendChild(header);
+        msgDiv.appendChild(body);
+
+        if (alert.lastError) {
+            const errorEl = document.createElement('div');
+            errorEl.className = 'ops-alert-card-error';
+            errorEl.textContent = `最近错误：${alert.lastError}`;
+            msgDiv.appendChild(errorEl);
+        }
+
+        const footer = document.createElement('div');
+        footer.className = 'ops-alert-card-footer';
+
+        const entry = document.createElement('div');
+        entry.className = 'ops-alert-card-entry';
+        entry.textContent = alert.entryPath || '暂无处理入口';
+
+        const actionButton = document.createElement('button');
+        actionButton.type = 'button';
+        actionButton.className = 'ops-alert-card-action';
+        actionButton.textContent = this.getOpsAlertActionLabel(alert);
+        if (!alert.workspace || alert.workspace.kind === 'none') {
+            actionButton.disabled = true;
+        } else {
+            actionButton.addEventListener('click', async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                await this.handleOpsAlertNavigation(alert);
+            });
+        }
+
+        footer.appendChild(entry);
+        footer.appendChild(actionButton);
+        msgDiv.appendChild(footer);
+
+        return msgDiv;
+    }
+
+    renderOpsAlertMessages() {
+        if (!this.messagesContainer) return;
+
+        this.messagesContainer.innerHTML = '';
+        this.lastDisplayedTime = null;
+
+        if (this.opsAlertLoadError) {
+            this.messagesContainer.innerHTML = `<div class="message admin">${this.escapeHtml(`站外告警读取失败：${this.opsAlertLoadError}`)}</div>`;
+            return;
+        }
+
+        const alerts = [...this.opsAlertMessages].sort((left, right) => {
+            const leftTime = left.timestamp instanceof Date ? left.timestamp.getTime() : 0;
+            const rightTime = right.timestamp instanceof Date ? right.timestamp.getTime() : 0;
+            return leftTime - rightTime;
+        });
+
+        if (!alerts.length) {
+            this.messagesContainer.innerHTML = `<div class="message admin">${this.t('chat.noOpsAlerts', '当前还没有同步过来的站外告警')}</div>`;
+            return;
+        }
+
+        alerts.forEach((alert) => {
+            const currentTime = alert.timestamp instanceof Date ? alert.timestamp : new Date(alert.created_at || Date.now());
+            let showTime = false;
+
+            if (!this.lastDisplayedTime) {
+                showTime = true;
+            } else {
+                const timeDiff = Math.abs(currentTime.getTime() - this.lastDisplayedTime.getTime());
+                if (timeDiff >= this.timeDisplayThreshold) {
+                    showTime = true;
+                }
+            }
+
+            if (showTime) {
+                this.lastDisplayedTime = currentTime;
+                const timeSeparator = document.createElement('div');
+                timeSeparator.className = 'message-time-separator';
+                timeSeparator.textContent = currentTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                this.messagesContainer.appendChild(timeSeparator);
+            }
+
+            this.messagesContainer.appendChild(this.createOpsAlertMessageElement(alert));
+        });
+
+        this.scrollToBottom();
+    }
+
+    setAdminReplyReadonly(readonly) {
+        const inputArea = this.chatWindow?.querySelector('.chat-input-area');
+        const readonlyNotice = this.chatWindow?.querySelector('#adminReadonlyNotice');
+        const uploadBtn = this.chatWindow?.querySelector('#chatUploadBtn');
+        const emojiBtn = this.chatWindow?.querySelector('#chatEmojiBtn');
+        const sendBtn = this.chatWindow?.querySelector('#chatSendBtn');
+        const imageInput = this.chatWindow?.querySelector('#chatImageInput');
+
+        if (inputArea) {
+            inputArea.hidden = readonly;
+            inputArea.style.display = readonly ? 'none' : 'flex';
+        }
+        if (readonlyNotice) {
+            readonlyNotice.hidden = !readonly;
+            readonlyNotice.style.display = readonly ? 'block' : 'none';
+        }
+        if (this.input) {
+            this.input.disabled = readonly;
+            this.input.placeholder = readonly ? '站内代办为只读告警流' : this.t('chat.inputPlaceholder', '输入回复...');
+        }
+        if (uploadBtn) uploadBtn.disabled = readonly;
+        if (emojiBtn) emojiBtn.disabled = readonly;
+        if (sendBtn) sendBtn.disabled = readonly;
+        if (imageInput) imageInput.disabled = readonly;
+    }
+
+    normalizeOpsAlertWorkspaceForAdminStudio(workspace = {}) {
+        if (workspace.kind === 'ops-workspace') {
+            return {
+                workspaceKey: String(workspace.workspaceKey || '').trim(),
+                context: workspace.context || {},
+                module: this.getAdminStudioModuleForOpsWorkspaceKey(workspace.workspaceKey)
+            };
+        }
+        if (workspace.kind === 'shop-orders') {
+            return {
+                workspaceKey: 'shop-risk-orders',
+                context: workspace.context || {},
+                module: 'shop'
+            };
+        }
+        if (workspace.kind === 'chat-session') {
+            return {
+                workspaceKey: '',
+                context: workspace.context || {},
+                module: 'chat'
+            };
+        }
+        return {
+            workspaceKey: '',
+            context: workspace.context || {},
+            module: ''
+        };
+    }
+
+    getAdminStudioModuleForOpsWorkspaceKey(workspaceKey = '') {
+        const normalized = String(workspaceKey || '').trim().toLowerCase();
+        const moduleMap = {
+            'payments-overview': 'payments',
+            'payments-ops': 'payments',
+            'verify-monitor': 'settings',
+            'admin-audit-monitor': 'settings',
+            'tickets-pending': 'tickets',
+            'tickets-resolved': 'tickets',
+            'shop-inventory': 'shop',
+            'shop-fulfillment': 'shop',
+            'shop-risk-orders': 'shop',
+            'shop-risk-discounts': 'discounts',
+            'shop-risk-users': 'users'
+        };
+        return moduleMap[normalized] || '';
+    }
+
+    persistPendingOpsAlertWorkspace(workspaceKey = '', context = {}) {
+        if (!workspaceKey || typeof window.localStorage === 'undefined') return;
+        const payload = {
+            workspaceKey: String(workspaceKey || '').trim(),
+            context: context && typeof context === 'object' ? context : {},
+            createdAt: new Date().toISOString()
+        };
+        window.localStorage.setItem('zaoyoe_pending_ops_alert_workspace', JSON.stringify(payload));
+    }
+
+    openAdminStudioForOpsAlertWorkspace(workspace = {}) {
+        const normalized = this.normalizeOpsAlertWorkspaceForAdminStudio(workspace);
+        const moduleName = normalized.module || this.getAdminStudioModuleForOpsWorkspaceKey(normalized.workspaceKey);
+        if (!moduleName && !normalized.workspaceKey) {
+            this.showNotification('这条告警暂时没有可跳转的处理页', '📌 站内代办', true);
+            return false;
+        }
+
+        if (normalized.workspaceKey) {
+            this.persistPendingOpsAlertWorkspace(normalized.workspaceKey, normalized.context || {});
+        }
+
+        const targetUrl = new URL('admin-studio.html', window.location.origin);
+        if (moduleName) {
+            targetUrl.searchParams.set('module', moduleName);
+        }
+
+        const openedWindow = window.open(targetUrl.toString(), '_blank', 'noopener');
+        if (!openedWindow) {
+            window.location.assign(targetUrl.toString());
+        }
+        return true;
+    }
+
+    async handleOpsAlertNavigation(alert = {}) {
+        const workspace = alert.workspace || { kind: 'none' };
+
+        try {
+            if (workspace.kind === 'chat-session') {
+                const sessionId = String(
+                    workspace.context?.sessionId
+                    || workspace.context?.session_id
+                    || workspace.context?.referenceValue
+                    || ''
+                ).trim();
+                const matchingSession = this.sessions.find((session) => (
+                    !this.isOpsAlertSession(session)
+                    && (session.sessionIds || [session.id]).includes(sessionId)
+                ));
+
+                if (matchingSession) {
+                    this.selectSession(matchingSession.id, matchingSession);
+                    return true;
+                }
+            }
+
+            if (workspace.kind === 'ops-workspace' && typeof window.openOpsAlertWorkspace === 'function') {
+                return await window.openOpsAlertWorkspace(workspace.workspaceKey, workspace.context || {});
+            }
+
+            return this.openAdminStudioForOpsAlertWorkspace(workspace);
+        } catch (error) {
+            console.error('[ChatWidget] Failed to open ops alert workspace:', error);
+            this.showNotification(`打开处理页失败：${error.message || '未知错误'}`, '📌 站内代办', true);
+            return false;
+        }
+    }
+
+    async upsertOpsAlertMessage(row, options = {}) {
+        const normalized = this.normalizeOpsAlertJob(row);
+        const existingIndex = this.opsAlertMessages.findIndex((item) => item.id === normalized.id);
+
+        if (existingIndex > -1) {
+            this.opsAlertMessages.splice(existingIndex, 1, normalized);
+        } else {
+            this.opsAlertMessages.push(normalized);
+        }
+
+        this.opsAlertMessages.sort((left, right) => {
+            const leftTime = left.sortTimestamp instanceof Date ? left.sortTimestamp.getTime() : 0;
+            const rightTime = right.sortTimestamp instanceof Date ? right.sortTimestamp.getTime() : 0;
+            return rightTime - leftTime;
+        });
+
+        const isViewingOpsSession = this.isOpen && this.currentSessionKey === this.opsAlertSessionId;
+        if (!isViewingOpsSession && options.announce !== false) {
+            this.unreadSessions.add(this.opsAlertSessionId);
+            this.showNotification(normalized.title || normalized.preview || '收到新的站外告警', '📌 站内代办', true);
+        } else if (isViewingOpsSession) {
+            this.clearSessionUnreadState(this.opsAlertSessionId, [this.opsAlertSessionId]);
+        }
+
+        this.refreshOpsAlertSessionEntry();
+
+        if (isViewingOpsSession) {
+            this.renderOpsAlertMessages();
+        }
+    }
+
     async loadAdminSessions() {
         try {
             // Get current admin user to exclude from list
@@ -2759,72 +3780,20 @@ class ChatWidget {
                 };
             });
 
-            // Render session list
-            this.sessionList.innerHTML = '';
-            if (this.sessions.length === 0) {
-                this.sessionList.innerHTML = `<div class="session-loading">${this.t('chat.noSessions', '暂无会话')}</div>`;
-                return;
+            try {
+                const opsRows = await this.fetchOpsAlertJobs();
+                this.processOpsAlertData(opsRows);
+            } catch (opsError) {
+                console.error('Failed to load ops alert sessions:', opsError);
+                this.opsAlertMessages = [];
+                this.opsAlertLoadError = opsError?.message || '站外告警读取失败';
             }
 
-            this.sessions.forEach(s => {
-                const item = document.createElement('div');
-                item.className = 'session-item';
-                item.dataset.sessionId = s.id;
-                item.classList.toggle('active', this.currentSessionKey === s.id);
-
-                // Check if any of this user's session IDs are in unreadSessions
-                const sessionIds = s.sessionIds || [s.id];
-                const hasUnread = sessionIds.some(sid => this.unreadSessions.has(sid));
-                if (hasUnread) {
-                    item.classList.add('unread');
-                }
-
-                const previewText = s.lastMessage || '';
-                const preview = previewText.length > 20 ? previewText.slice(0, 20) + '...' : previewText;
-                const time = this.formatTime(s.lastTime);
-                const displayName = s.nickname.length > 12 ? s.nickname.slice(0, 12) + '...' : s.nickname;
-                const displayEmail = s.id.startsWith('guest_')
-                    ? ''
-                    : ((s.email || '').length > 20 ? s.email.slice(0, 20) + '...' : (s.email || ''));
-
-                const avatarEl = this.createSessionAvatarElement(s);
-
-                const infoEl = document.createElement('div');
-                infoEl.className = 'session-info';
-
-                const nameEl = document.createElement('div');
-                nameEl.className = 'session-name';
-                nameEl.textContent = displayName;
-
-                const emailEl = document.createElement('div');
-                emailEl.className = 'session-email';
-                emailEl.textContent = displayEmail;
-
-                const previewEl = document.createElement('div');
-                previewEl.className = 'session-preview';
-                previewEl.textContent = preview;
-
-                infoEl.appendChild(nameEl);
-                infoEl.appendChild(emailEl);
-                infoEl.appendChild(previewEl);
-
-                const timeEl = document.createElement('div');
-                timeEl.className = 'session-time';
-                timeEl.textContent = time;
-
-                item.appendChild(avatarEl);
-                item.appendChild(infoEl);
-                item.appendChild(timeEl);
-
-                if (hasUnread) {
-                    const unreadDot = document.createElement('div');
-                    unreadDot.className = 'unread-dot';
-                    item.appendChild(unreadDot);
-                }
-
-                item.addEventListener('click', () => this.selectSession(s.id, s));
-                this.sessionList.appendChild(item);
-            });
+            this.sessions = [
+                this.buildOpsAlertSession(),
+                ...this.sessions
+            ];
+            this.renderAdminSessionList();
 
         } catch (err) {
             console.error('Failed to load sessions:', err);
@@ -2833,7 +3802,9 @@ class ChatWidget {
     }
 
     formatTime(isoString) {
+        if (!isoString) return '';
         const date = new Date(isoString);
+        if (Number.isNaN(date.getTime())) return '';
         const now = new Date();
         const diffMs = now - date;
         const diffMins = Math.floor(diffMs / 60000);
@@ -2924,6 +3895,12 @@ class ChatWidget {
         const avatarEl = document.createElement('div');
         avatarEl.className = 'session-avatar';
 
+        if (this.isOpsAlertSession(session)) {
+            avatarEl.classList.add('session-avatar--ops');
+            avatarEl.innerHTML = '<i class="fas fa-thumbtack"></i>';
+            return avatarEl;
+        }
+
         const fallbackInitial = this.getSessionAvatarInitial(session);
         if (!session?.avatarUrl) {
             avatarEl.textContent = fallbackInitial;
@@ -2948,6 +3925,7 @@ class ChatWidget {
 
     selectSession(sessionId, sessionInfo = null) {
         this.currentSessionKey = sessionId;
+        this.currentSessionId = sessionId;
 
         // Update active state
         this.sessionList.querySelectorAll('.session-item').forEach(item => {
@@ -2962,6 +3940,27 @@ class ChatWidget {
                 lastLogin: null
             };
         }
+
+        if (this.isOpsAlertSession(sessionInfo)) {
+            this.chatHeader.querySelector('.chat-user-name').textContent = '站内代办';
+            this.chatHeader.querySelector('.chat-user-id').textContent = '站外告警同步 / 可直接跳转处理页';
+
+            let statusContainer = this.chatHeader.querySelector('.user-status-indicator');
+            if (!statusContainer) {
+                statusContainer = document.createElement('div');
+                statusContainer.className = 'user-status-indicator';
+                this.chatHeader.querySelector('.chat-user-info').appendChild(statusContainer);
+            }
+            statusContainer.innerHTML = '<span class="status-dot online"></span><span class="status-text">固定系统联系人</span>';
+
+            this.chatWindow.classList.add('chat-active');
+            this.setAdminReplyReadonly(true);
+            this.clearSessionUnreadState(this.opsAlertSessionId, [this.opsAlertSessionId]);
+            this.renderOpsAlertMessages();
+            return;
+        }
+
+        this.setAdminReplyReadonly(false);
 
         // Update header with user info
         this.chatHeader.querySelector('.chat-user-name').textContent = sessionInfo.nickname;
@@ -3204,12 +4203,13 @@ class ChatWidget {
                 const name = item.querySelector('.session-name')?.textContent.toLowerCase() || '';
                 const email = item.querySelector('.session-email')?.textContent.toLowerCase() || '';
                 const preview = item.querySelector('.session-preview')?.textContent.toLowerCase() || '';
+                const extra = item.dataset.searchText || '';
 
                 // Check if session info matches OR if there are message matches
                 const session = this.sessions?.find(s => s.id === sessionId);
                 const sessionIds = session?.sessionIds || [sessionId];
                 const hasMessageMatch = sessionIds.some(sid => matchedSessionIds.has(sid));
-                const hasInfoMatch = name.includes(query) || email.includes(query) || preview.includes(query);
+                const hasInfoMatch = name.includes(query) || email.includes(query) || preview.includes(query) || extra.includes(query);
 
                 if (hasInfoMatch || hasMessageMatch) {
                     this._setSessionItemHidden(item, false);
@@ -3232,7 +4232,8 @@ class ChatWidget {
             this.sessionList.querySelectorAll('.session-item').forEach(item => {
                 const name = item.querySelector('.session-name')?.textContent.toLowerCase() || '';
                 const preview = item.querySelector('.session-preview')?.textContent.toLowerCase() || '';
-                const matches = name.includes(query) || preview.includes(query);
+                const extra = item.dataset.searchText || '';
+                const matches = name.includes(query) || preview.includes(query) || extra.includes(query);
                 this._setSessionItemHidden(item, !matches);
             });
         }
@@ -3312,6 +4313,16 @@ class ChatWidget {
             setTimeout(() => {
                 this.input.classList.remove('shake-hint');
                 this.input.placeholder = '输入回复...';
+            }, 2000);
+            return;
+        }
+
+        if (this.isOpsAlertSessionId(this.currentSessionId)) {
+            this.input.classList.add('shake-hint');
+            this.input.placeholder = '⚠️ 站内代办为只读告警流';
+            setTimeout(() => {
+                this.input.classList.remove('shake-hint');
+                this.input.placeholder = '站内代办为只读告警流';
             }, 2000);
             return;
         }
@@ -3414,6 +4425,17 @@ class ChatWidget {
             return;
         }
 
+        if (this.isOpsAlertSessionId(this.currentSessionId)) {
+            this.input.classList.add('shake-hint');
+            this.input.placeholder = '⚠️ 站内代办为只读告警流';
+            setTimeout(() => {
+                this.input.classList.remove('shake-hint');
+                this.input.placeholder = '站内代办为只读告警流';
+            }, 2000);
+            event.target.value = '';
+            return;
+        }
+
         const file = event.target.files[0];
         if (!file) return;
 
@@ -3456,8 +4478,15 @@ class ChatWidget {
     }
 
     subscribeToAdminMessages() {
-        this.supabase
-            .channel('admin-chat-global')
+        if (this.adminMessageChannel) {
+            this.supabase.removeChannel(this.adminMessageChannel);
+        }
+        if (this.adminOpsAlertChannel) {
+            this.supabase.removeChannel(this.adminOpsAlertChannel);
+        }
+
+        this.adminMessageChannel = this.supabase
+            .channel(`admin-chat-global-${Date.now()}`)
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
                 const msg = payload.new;
 
@@ -3498,6 +4527,16 @@ class ChatWidget {
 
                 // Refresh session list to show new messages (will apply unread styling)
                 this.loadAdminSessions();
+            })
+            .subscribe();
+
+        this.adminOpsAlertChannel = this.supabase
+            .channel(`admin-ops-alerts-${Date.now()}`)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ops_alert_jobs' }, (payload) => {
+                this.upsertOpsAlertMessage(payload.new, { announce: true });
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ops_alert_jobs' }, (payload) => {
+                this.upsertOpsAlertMessage(payload.new, { announce: false });
             })
             .subscribe();
     }
