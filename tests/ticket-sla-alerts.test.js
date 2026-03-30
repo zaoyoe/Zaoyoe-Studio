@@ -268,6 +268,7 @@ test('buildTicketSlaOverdueAlerts flags pending tickets that exceed the SLA wind
     assert.equal(alerts[0].payload.wait_minutes, 195);
     assert.match(alerts[0].content, /用户邮箱：member1@example\.com/);
     assert.match(alerts[0].content, /等待时长：3 小时 15 分钟/);
+    assert.match(alerts[0].content, /创建时间：2026-03-25 16:45:00 北京时间/);
 });
 
 test('runTicketSlaOverdueSweep enqueues overdue ticket alerts with stable dedupe', async () => {
@@ -418,6 +419,9 @@ test('buildTicketSlaRecoveryAlerts emits a recovery notice after an overdue tick
     assert.match(alerts[0].content, /用户邮箱：member1@example\.com/);
     assert.match(alerts[0].content, /恢复结论：工单已解决，已退出超时未处理状态/);
     assert.match(alerts[0].content, /上次超时等待：3 小时 15 分钟/);
+    assert.match(alerts[0].content, /上次超时：2026-03-25 18:00:00 北京时间/);
+    assert.match(alerts[0].content, /最近更新时间：2026-03-25 18:42:00 北京时间/);
+    assert.match(alerts[0].content, /恢复时间：2026-03-25 18:42:00 北京时间/);
     assert.equal(alerts[0].payload.incident_alert_job_id, 'ticket-overdue-1');
     assert.equal(alerts[0].payload.ticket_status, 'RESOLVED');
     assert.equal(alerts[0].payload.incident_duration_minutes, 42);
