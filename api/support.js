@@ -5,10 +5,16 @@ const {
     sendJson
 } = require('./_lib/admin');
 const {
+    enqueueOpsAlertJob
+} = require('./_lib/ops-alerts');
+const {
     applyRateLimitHeaders,
     resolveClientIp,
     takeRateLimitToken
 } = require('./_lib/request-security');
+const {
+    buildTicketCreatedAlert
+} = require('./_lib/ticket-alerts');
 
 function normalizeText(value, maxLength = 256) {
     return String(value || '').trim().slice(0, maxLength);
@@ -147,24 +153,66 @@ async function handleShopOrderContent({ requestSupabase, input }) {
     };
 }
 
-async function handleCreateTicket({ requestSupabase, user, input }) {
-    const description = normalizeText(input, 1500);
+function normalizeTicketCreateInput(input) {
+    if (input && typeof input === 'object' && !Array.isArray(input)) {
+        const description = normalizeText(
+            input.description || input.reason || input.content || '',
+            1500
+        );
+        const issueType = normalizeText(input.issue_type || input.issueType, 60).toUpperCase() || 'OTHER';
+        const normalizedOrderId = normalizeText(input.order_id || input.orderId, 120);
+        return {
+            description,
+            issueType,
+            orderId: isUuid(normalizedOrderId) ? normalizedOrderId : ''
+        };
+    }
+
+    return {
+        description: normalizeText(input, 1500),
+        issueType: 'OTHER',
+        orderId: ''
+    };
+}
+
+async function handleCreateTicket({ requestSupabase, adminSupabase, user, input }) {
+    const normalizedInput = normalizeTicketCreateInput(input);
+    const description = normalizedInput.description;
     if (!description) {
         throw createError('请输入问题描述');
     }
 
+    const insertPayload = {
+        user_id: user.id,
+        issue_type: normalizedInput.issueType,
+        status: 'PENDING',
+        description
+    };
+    if (normalizedInput.orderId) {
+        insertPayload.order_id = normalizedInput.orderId;
+    }
+
     const { data, error } = await requestSupabase
         .from('shop_tickets')
-        .insert({
-            user_id: user.id,
-            issue_type: 'OTHER',
-            description
-        })
-        .select('id')
+        .insert(insertPayload)
+        .select('id, user_id, order_id, issue_type, status, reason, description, created_at, updated_at')
         .single();
 
     if (error) {
         throw createError(error.message || '工单提交失败', 500, 'ticket_create_failed');
+    }
+
+    const ticketAlert = buildTicketCreatedAlert(data || insertPayload);
+    if (adminSupabase?.from && ticketAlert) {
+        try {
+            await enqueueOpsAlertJob(adminSupabase, {
+                ...ticketAlert,
+                createdAt: data?.created_at || undefined,
+                source: 'support_ticket'
+            });
+        } catch (enqueueError) {
+            console.warn('[SupportAPI] Failed to enqueue ticket alert:', enqueueError.message || enqueueError);
+        }
     }
 
     return {
@@ -229,7 +277,7 @@ module.exports = async function handler(req, res) {
                 result = await handleShopOrderContent({ requestSupabase, input });
                 break;
             case 'create_ticket':
-                result = await handleCreateTicket({ requestSupabase, user, input });
+                result = await handleCreateTicket({ requestSupabase, adminSupabase, user, input });
                 break;
             default:
                 throw createError('Unsupported support action', 400, 'unsupported_action');
