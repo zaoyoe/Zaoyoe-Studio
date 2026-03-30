@@ -18,6 +18,7 @@ class ChatWidget {
         this.opsAlertLoadError = '';
         this.adminMessageChannel = null;
         this.adminOpsAlertChannel = null;
+        this.adminOpsAlertPollTimer = null;
 
         // Preload configuration - lock scroll until messages are loaded
         this.isPreloading = false;
@@ -2077,9 +2078,6 @@ class ChatWidget {
                         <p>${this.t('chat.emptyState', '请从左侧选择一个会话开始回复')}</p>
                     </div>
                 </div>
-                <div class="chat-admin-readonly-notice" id="adminReadonlyNotice" hidden>
-                    站内代办只接收系统告警，点击每条消息里的按钮即可跳转到对应处理页。
-                </div>
                 <div class="chat-input-area">
                     <input type="file" id="chatImageInput" class="chat-file-input" accept="image/*">
                     <button class="chat-action-btn" id="chatUploadBtn"><i class="fas fa-plus"></i></button>
@@ -2111,6 +2109,7 @@ class ChatWidget {
 
         // Subscribe to all messages for admin
         this.subscribeToAdminMessages();
+        this.startAdminOpsAlertPolling();
     }
 
     // Update admin mode text when language changes
@@ -3267,6 +3266,54 @@ class ChatWidget {
         return Array.isArray(data) ? data : [];
     }
 
+    async refreshOpsAlerts(options = {}) {
+        const announceNew = options.announceNew === true;
+        const isViewingOpsSession = this.isOpen && this.currentSessionKey === this.opsAlertSessionId;
+        const knownIds = new Set((Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : []).map((alert) => alert.id));
+
+        try {
+            const rows = await this.fetchOpsAlertJobs();
+            this.processOpsAlertData(rows);
+
+            const newAlerts = this.opsAlertMessages.filter((alert) => !knownIds.has(alert.id));
+            if (newAlerts.length && announceNew && !isViewingOpsSession) {
+                this.unreadSessions.add(this.opsAlertSessionId);
+                const newestAlert = newAlerts[0];
+                try {
+                    this.showNotification(newestAlert.title || newestAlert.preview || '收到新的站外告警', '📌 站内代办', true);
+                } catch (notificationError) {
+                    console.warn('[ChatWidget] Failed to show ops alert notification:', notificationError);
+                }
+            } else if (isViewingOpsSession) {
+                this.clearSessionUnreadState(this.opsAlertSessionId, [this.opsAlertSessionId]);
+            }
+
+            this.refreshOpsAlertSessionEntry();
+            if (isViewingOpsSession) {
+                this.renderOpsAlertMessages();
+            }
+            return this.opsAlertMessages;
+        } catch (error) {
+            this.opsAlertMessages = [];
+            this.opsAlertLoadError = error?.message || '站外告警读取失败';
+            this.refreshOpsAlertSessionEntry();
+            if (isViewingOpsSession) {
+                this.renderOpsAlertMessages();
+            }
+            throw error;
+        }
+    }
+
+    startAdminOpsAlertPolling() {
+        if (this.adminOpsAlertPollTimer) return;
+
+        this.adminOpsAlertPollTimer = setInterval(() => {
+            this.refreshOpsAlerts({ announceNew: true }).catch((error) => {
+                console.warn('[ChatWidget] Admin ops alert polling failed:', error?.message || error);
+            });
+        }, 15000);
+    }
+
     processOpsAlertData(rows) {
         this.opsAlertLoadError = '';
         this.opsAlertMessages = (Array.isArray(rows) ? rows : [])
@@ -3508,7 +3555,6 @@ class ChatWidget {
 
     setAdminReplyReadonly(readonly) {
         const inputArea = this.chatWindow?.querySelector('.chat-input-area');
-        const readonlyNotice = this.chatWindow?.querySelector('#adminReadonlyNotice');
         const uploadBtn = this.chatWindow?.querySelector('#chatUploadBtn');
         const emojiBtn = this.chatWindow?.querySelector('#chatEmojiBtn');
         const sendBtn = this.chatWindow?.querySelector('#chatSendBtn');
@@ -3517,10 +3563,6 @@ class ChatWidget {
         if (inputArea) {
             inputArea.hidden = readonly;
             inputArea.style.display = readonly ? 'none' : 'flex';
-        }
-        if (readonlyNotice) {
-            readonlyNotice.hidden = !readonly;
-            readonlyNotice.style.display = readonly ? 'block' : 'none';
         }
         if (this.input) {
             this.input.disabled = readonly;
@@ -3666,7 +3708,11 @@ class ChatWidget {
         const isViewingOpsSession = this.isOpen && this.currentSessionKey === this.opsAlertSessionId;
         if (!isViewingOpsSession && options.announce !== false) {
             this.unreadSessions.add(this.opsAlertSessionId);
-            this.showNotification(normalized.title || normalized.preview || '收到新的站外告警', '📌 站内代办', true);
+            try {
+                this.showNotification(normalized.title || normalized.preview || '收到新的站外告警', '📌 站内代办', true);
+            } catch (notificationError) {
+                console.warn('[ChatWidget] Failed to show realtime ops alert notification:', notificationError);
+            }
         } else if (isViewingOpsSession) {
             this.clearSessionUnreadState(this.opsAlertSessionId, [this.opsAlertSessionId]);
         }
@@ -3781,18 +3827,17 @@ class ChatWidget {
             });
 
             try {
-                const opsRows = await this.fetchOpsAlertJobs();
-                this.processOpsAlertData(opsRows);
+                await this.refreshOpsAlerts({ announceNew: false });
             } catch (opsError) {
                 console.error('Failed to load ops alert sessions:', opsError);
-                this.opsAlertMessages = [];
-                this.opsAlertLoadError = opsError?.message || '站外告警读取失败';
             }
 
-            this.sessions = [
-                this.buildOpsAlertSession(),
-                ...this.sessions
-            ];
+            if (!this.isOpsAlertSession(this.sessions[0])) {
+                this.sessions = [
+                    this.buildOpsAlertSession(),
+                    ...this.sessions
+                ];
+            }
             this.renderAdminSessionList();
 
         } catch (err) {
@@ -4935,6 +4980,10 @@ class ChatWidget {
             if (!this.isAdmin) {
                 if (this.input) this.input.value = '';
                 this.renderSupportRootPanel();
+            } else {
+                this.refreshOpsAlerts({ announceNew: false }).catch((error) => {
+                    console.warn('[ChatWidget] Failed to refresh ops alerts on open:', error?.message || error);
+                });
             }
             this._pauseFabAmbientMotion();
             document.documentElement.classList.add('chat-widget-open');

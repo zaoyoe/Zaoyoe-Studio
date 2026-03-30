@@ -5335,8 +5335,8 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
     }
 
     const htmlMarkers = [
-        'css/admin-chat.css?v=20260330_ADMIN_CHAT_OPS_TODO_1',
-        'js/admin-chat.js?v=20260330_ADMIN_CHAT_OPS_TODO_1'
+        'css/admin-chat.css?v=20260330_ADMIN_CHAT_OPS_TODO_2',
+        'js/admin-chat.js?v=20260330_ADMIN_CHAT_OPS_TODO_2'
     ];
 
     for (const marker of htmlMarkers) {

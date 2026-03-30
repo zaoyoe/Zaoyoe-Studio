@@ -683,9 +683,6 @@ class AdminChat {
                         <div class="chat-messages-area" id="adminMessagesArea">
                             <!-- Messages -->
                         </div>
-                        <div class="chat-readonly-notice" id="chatReadonlyNotice" hidden>
-                            站内代办只接收系统告警，点击每条消息里的按钮即可跳转到对应处理页。
-                        </div>
                         <div class="chat-input-wrapper" id="chatInputWrapper">
                             <input type="file" id="adminImageInput" class="admin-chat-file-input" accept="image/*" hidden>
                             <button class="chat-action-btn" id="adminUploadBtn"><i class="fas fa-plus"></i></button>
@@ -982,13 +979,11 @@ class AdminChat {
 
     setReadonlyMode(readonly) {
         const inputWrapper = document.getElementById('chatInputWrapper');
-        const readonlyNotice = document.getElementById('chatReadonlyNotice');
         const input = document.getElementById('adminChatInput');
         const uploadBtn = document.getElementById('adminUploadBtn');
         const emojiBtn = document.getElementById('adminEmojiBtn');
 
         this.setElementHidden(inputWrapper, readonly);
-        this.setElementHidden(readonlyNotice, !readonly);
 
         if (input) {
             input.disabled = readonly;
