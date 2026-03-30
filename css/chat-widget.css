@@ -885,11 +885,13 @@
 .chat-window.chat-window--support-mode .chat-support-panel {
     flex: 1 1 auto;
     max-height: none;
+    min-height: 0;
     padding: 18px;
     border-top: 0;
     display: flex;
     align-items: stretch;
     background: var(--chat-panel-bg);
+    overflow: hidden;
 }
 
 .chat-support-card {
@@ -905,9 +907,13 @@
 }
 
 .chat-support-card--fullscreen {
-    min-height: 100%;
+    min-height: 0;
+    height: 100%;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .chat-support-eyebrow {
