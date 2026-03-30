@@ -17,6 +17,7 @@ const settingsPaymentChannelsHandler = require('../server/api-handlers/admin/set
 const settingsVerifyMonitorHandler = require('../server/api-handlers/admin/settings/verify-monitor');
 const settingsVerifyMonitorQuotaHandler = require('../server/api-handlers/admin/settings/verify-monitor-quota');
 const settingsVerifyMonitorQueueHandler = require('../server/api-handlers/admin/settings/verify-monitor-queue');
+const ticketCreateHandler = require('../server/api-handlers/admin/tickets/create');
 const ticketProcessHandler = require('../server/api-handlers/admin/tickets/process');
 
 const ROUTE_HANDLERS = {
@@ -32,6 +33,7 @@ const ROUTE_HANDLERS = {
     'settings/verify-monitor': settingsVerifyMonitorHandler,
     'settings/verify-monitor/quota': settingsVerifyMonitorQuotaHandler,
     'settings/verify-monitor/queue': settingsVerifyMonitorQueueHandler,
+    'tickets/create': ticketCreateHandler,
     'tickets/process': ticketProcessHandler,
     'shop/mutate': shopMutateHandler,
     'shop/delivery-actions': shopDeliveryActionsHandler,

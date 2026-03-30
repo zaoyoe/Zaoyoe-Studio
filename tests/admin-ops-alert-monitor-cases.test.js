@@ -38,6 +38,7 @@ function createState(overrides = {}) {
         cases: [],
         legacyCases: [],
         events: [],
+        notifications: [],
         auditLogs: [],
         tableErrors: {},
         ...overrides
@@ -205,6 +206,29 @@ function createAdminModule(state) {
     };
 }
 
+function createAdminNotificationsModule(state) {
+    return {
+        async notifyUsers(_supabase, payload = {}) {
+            const rows = (Array.isArray(payload.userIds) ? payload.userIds : [])
+                .map((userId, index) => ({
+                    id: `notification-${state.notifications.length + index + 1}`,
+                    user_id: userId,
+                    title: payload.title,
+                    content: payload.content,
+                    type: payload.type,
+                    scope: payload.scope,
+                    category: payload.category
+                }));
+            state.notifications.push(...rows);
+            return {
+                recipients: rows.length,
+                created: rows.length,
+                skipped: 0
+            };
+        }
+    };
+}
+
 async function withHandler(stateOverrides, callback) {
     const handlerPath = path.resolve(__dirname, '../server/api-handlers/admin/settings/ops-alert-monitor-cases.js');
     const originalLoad = Module._load;
@@ -214,6 +238,9 @@ async function withHandler(stateOverrides, callback) {
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../../../../api/_lib/admin') {
             return createAdminModule(state);
+        }
+        if (request === '../../../../api/_lib/admin-notifications') {
+            return createAdminNotificationsModule(state);
         }
         return originalLoad(request, parent, isMain);
     };
@@ -431,5 +458,43 @@ test('ops alert case handler supports batch claim for generic monitor items', as
         assert.equal(state.events[0].action, 'claim');
         assert.equal(state.events[1].action, 'claim');
         assert.equal(state.auditLogs[0].actionType, 'admin.ops_alert_case.batch.claim');
+    });
+});
+
+test('ops alert case handler sends an admin personal reminder when assigning to another admin', async () => {
+    await withHandler({}, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'assign',
+                category_key: 'payments',
+                target_id: 'payment_gateway:hupijiao:cn',
+                alert_type: 'payment_gateway_degraded',
+                title: '支付通道异常',
+                reference_label: '通道',
+                reference_value: '虎皮椒',
+                owner_admin_id: 'admin-user-2',
+                owner_label: 'owner@example.com',
+                note: '辛苦接手继续排查'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.case.owner_admin_id, 'admin-user-2');
+        assert.equal(state.notifications.length, 1);
+        assert.equal(state.notifications[0].user_id, 'admin-user-2');
+        assert.equal(state.notifications[0].scope, 'admin_personal');
+        assert.equal(state.notifications[0].category, 'assignment');
+        assert.match(state.notifications[0].title, /站内代办已转交给你/);
+        assert.match(state.notifications[0].content, /admin@example.com 刚刚给你转交了 1 条站内代办/);
+        assert.match(state.notifications[0].content, /处理入口：客服消息 -> 站内代办/);
+        assert.equal(payload.summary.assignment_notification_created, 1);
+        assert.equal(state.auditLogs[0].details.assignment_notification_created, 1);
     });
 });

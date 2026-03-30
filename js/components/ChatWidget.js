@@ -37,6 +37,11 @@ class ChatWidget {
         this.lastMessageTime = null; // Track last seen message
         this.unreadSessions = new Set(); // Track sessions with unread messages (admin mode)
         this.sessionMessagesCache = new Map(); // Cache admin conversation payloads for faster switching
+        this.userContextCache = new Map();
+        this.userContextRecentActions = new Map();
+        this.currentUserContext = null;
+        this.currentSessionInfo = null;
+        this._userContextRequestId = 0;
         this._sessionLoadRequestId = 0;
         this._sessionLoadingOverlayTimer = null;
         this.opsAlertSessionId = '__admin_ops_todo__';
@@ -44,7 +49,22 @@ class ChatWidget {
         this.opsAlertLoadError = '';
         this.adminMessageChannel = null;
         this.adminOpsAlertChannel = null;
+        this.adminTicketChannel = null;
+        this.adminPaymentChannel = null;
+        this.adminVerificationChannel = null;
         this.adminOpsAlertPollTimer = null;
+        this.adminSessionSlaTimer = null;
+        this.adminSessionQueueView = 'all';
+        this.adminSessionQueueFilter = 'all';
+        this.adminSessionSearchQuery = '';
+        this.opsAlertCaseActionLocks = new Set();
+        this.opsAlertBatchAssignBusy = false;
+        this.opsAlertViewFilter = 'all';
+        this.opsAlertOwnerFilter = 'all';
+        this.opsAlertAssignableAdmins = [];
+        this.opsAlertCurrentAdminId = '';
+        this.opsAlertCurrentAdminLabel = '';
+        this.opsAlertModuleMuteRules = {};
 
         // Preload configuration - lock scroll until messages are loaded
         this.isPreloading = false;
@@ -112,6 +132,25 @@ class ChatWidget {
             return value;
         }
         return fallback || key;
+    }
+
+    looksLikeEmail(value) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+    }
+
+    truncateText(value, maxLength = 80) {
+        const text = String(value || '').trim();
+        if (!text) return '';
+        if (text.length <= maxLength) return text;
+        return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
+    }
+
+    isTicketSyncChatMessage(message = {}) {
+        const messageType = String(message?.message_type || '').trim().toLowerCase();
+        if (messageType === 'ticket_update') {
+            return true;
+        }
+        return String(message?.content || '').includes('[工单处理结果同步]');
     }
 
     getCurrentLanguage() {
@@ -2082,6 +2121,9 @@ class ChatWidget {
                 <div class="admin-search">
                     <input type="text" id="sessionSearch" placeholder="🔍 ${this.t('chat.searchPlaceholderFull', '搜索会话或聊天记录...')}">
                 </div>
+                <div class="session-queue-overview" id="sessionQueueOverview"></div>
+                <div class="session-queue-presets" id="sessionQueueViews"></div>
+                <div class="session-filter-bar" id="sessionFilterBar"></div>
                 <div class="session-list" id="sessionList">
                     <div class="session-loading">${this.t('chat.loading', '加载中...')}</div>
                 </div>
@@ -2096,14 +2138,17 @@ class ChatWidget {
                     <div class="chat-user-info">
                         <span class="chat-user-name">${this.t('chat.selectConversation', '选择一个会话')}</span>
                         <span class="chat-user-id"></span>
+                        <div class="chat-user-status-chips" id="chatUserStatusChips" hidden></div>
                     </div>
                 </div>
+                <div class="chat-context-panel" id="chatContextPanel" hidden></div>
                 <div class="chat-messages" id="chatMessages">
                     <div class="empty-state">
                         <i class="fas fa-comments"></i>
                         <p>${this.t('chat.emptyState', '请从左侧选择一个会话开始回复')}</p>
                     </div>
                 </div>
+                <div class="chat-reply-templates" id="chatReplyTemplateBar" hidden></div>
                 <div class="chat-input-area">
                     <input type="file" id="chatImageInput" class="chat-file-input" accept="image/*">
                     <button class="chat-action-btn" id="chatUploadBtn"><i class="fas fa-plus"></i></button>
@@ -2122,7 +2167,12 @@ class ChatWidget {
         this.input = this.chatWindow.querySelector('#chatInput');
         this.emojiPicker = this.chatWindow.querySelector('#emojiPicker');
         this.sessionList = this.chatWindow.querySelector('#sessionList');
+        this.sessionQueueOverview = this.chatWindow.querySelector('#sessionQueueOverview');
+        this.sessionQueueViews = this.chatWindow.querySelector('#sessionQueueViews');
+        this.sessionFilterBar = this.chatWindow.querySelector('#sessionFilterBar');
         this.chatHeader = this.chatWindow.querySelector('#adminChatHeader');
+        this.userContextPanel = this.chatWindow.querySelector('#chatContextPanel');
+        this.replyTemplateBar = this.chatWindow.querySelector('#chatReplyTemplateBar');
 
         // Inject admin layout styles
         this.injectAdminLayoutStyles();
@@ -2136,6 +2186,7 @@ class ChatWidget {
         // Subscribe to all messages for admin
         this.subscribeToAdminMessages();
         this.startAdminOpsAlertPolling();
+        this.startAdminSessionSlaTicker();
     }
 
     // Update admin mode text when language changes
@@ -2229,6 +2280,104 @@ class ChatWidget {
             .admin-search {
                 padding: 10px 12px;
             }
+            .session-queue-overview {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 8px;
+                padding: 0 12px 10px;
+            }
+            .session-queue-card {
+                appearance: none;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 14px;
+                padding: 10px 12px;
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 2px;
+                color: inherit;
+                cursor: pointer;
+                transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+            }
+            .session-queue-card:hover {
+                background: rgba(255, 255, 255, 0.08);
+                transform: translateY(-1px);
+            }
+            .session-queue-card.is-active {
+                background: rgba(107, 158, 206, 0.16);
+                border-color: rgba(107, 158, 206, 0.28);
+            }
+            .session-queue-card__value {
+                color: #f8fafc;
+                font-size: 18px;
+                font-weight: 700;
+                line-height: 1.1;
+            }
+            .session-queue-card__label {
+                color: rgba(255, 255, 255, 0.92);
+                font-size: 12px;
+                font-weight: 600;
+            }
+            .session-queue-card__hint {
+                color: rgba(255, 255, 255, 0.55);
+                font-size: 11px;
+            }
+            .session-queue-presets {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                padding: 0 12px 10px;
+            }
+            .session-queue-preset {
+                appearance: none;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                background: rgba(255, 255, 255, 0.05);
+                color: rgba(255, 255, 255, 0.78);
+                border-radius: 999px;
+                padding: 6px 10px;
+                font-size: 11px;
+                line-height: 1.2;
+                cursor: pointer;
+                transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+            }
+            .session-queue-preset:hover {
+                background: rgba(255, 255, 255, 0.08);
+                color: rgba(255, 255, 255, 0.95);
+            }
+            .session-queue-preset.is-active {
+                background: rgba(244, 195, 99, 0.16);
+                border-color: rgba(244, 195, 99, 0.28);
+                color: #fde68a;
+            }
+            .session-filter-bar {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                padding: 0 12px 10px;
+            }
+            .session-filter-btn {
+                appearance: none;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                background: rgba(255, 255, 255, 0.05);
+                color: rgba(255, 255, 255, 0.68);
+                border-radius: 999px;
+                padding: 6px 10px;
+                font-size: 11px;
+                line-height: 1.2;
+                cursor: pointer;
+                transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+            }
+            .session-filter-btn:hover {
+                background: rgba(255, 255, 255, 0.08);
+                color: rgba(255, 255, 255, 0.9);
+                transform: translateY(-1px);
+            }
+            .session-filter-btn.is-active {
+                background: rgba(107, 158, 206, 0.18);
+                border-color: rgba(107, 158, 206, 0.3);
+                color: #dbeafe;
+            }
             .chat-window.admin-mode-layout .admin-search:focus-within {
                 border-color: transparent !important;
                 box-shadow: none !important;
@@ -2302,6 +2451,10 @@ class ChatWidget {
             .session-item--ops .session-name {
                 color: #d9ecff;
                 font-weight: 600;
+            }
+            .session-item--ops .session-badge {
+                background: rgba(255, 255, 255, 0.14);
+                color: #eff6ff;
             }
             .session-item--ops .session-email {
                 color: rgba(217, 236, 255, 0.72);
@@ -2387,6 +2540,12 @@ class ChatWidget {
                 flex: 1;
                 min-width: 0;
             }
+            .session-name-row {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                min-width: 0;
+            }
             .session-name {
                 color: white;
                 font-weight: 500;
@@ -2394,6 +2553,32 @@ class ChatWidget {
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
+            }
+            .session-badge {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 38px;
+                padding: 2px 8px;
+                border-radius: 999px;
+                background: rgba(107, 158, 206, 0.18);
+                color: #d8e9fb;
+                font-size: 10px;
+                line-height: 1.2;
+                letter-spacing: 0.02em;
+                flex-shrink: 0;
+            }
+            .session-badge--ticket {
+                background: rgba(244, 195, 99, 0.18);
+                color: #fde68a;
+            }
+            .session-badge--warning {
+                background: rgba(244, 195, 99, 0.18);
+                color: #fde68a;
+            }
+            .session-badge--danger {
+                background: rgba(239, 68, 68, 0.22);
+                color: #fecaca;
             }
             .session-preview {
                 color: rgba(255, 255, 255, 0.5);
@@ -2455,6 +2640,451 @@ class ChatWidget {
             .user-status-indicator .status-text {
                 font-size: 11px;
                 color: rgba(255, 255, 255, 0.5);
+            }
+            .chat-user-status-chips {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 8px;
+            }
+            .chat-user-status-chips[hidden] {
+                display: none !important;
+            }
+            .chat-user-status-chip {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 5px 10px;
+                border-radius: 999px;
+                background: rgba(148, 163, 184, 0.12);
+                border: 1px solid rgba(148, 163, 184, 0.12);
+            }
+            .chat-user-status-chip__label {
+                color: rgba(255, 255, 255, 0.52);
+                font-size: 11px;
+            }
+            .chat-user-status-chip__value {
+                color: rgba(255, 255, 255, 0.92);
+                font-size: 11px;
+                font-weight: 600;
+            }
+            .chat-user-status-chip--success {
+                background: rgba(74, 222, 128, 0.12);
+                border-color: rgba(74, 222, 128, 0.18);
+            }
+            .chat-user-status-chip--success .chat-user-status-chip__value {
+                color: #dcfce7;
+            }
+            .chat-user-status-chip--warning {
+                background: rgba(244, 195, 99, 0.14);
+                border-color: rgba(244, 195, 99, 0.18);
+            }
+            .chat-user-status-chip--warning .chat-user-status-chip__value {
+                color: #fff1cc;
+            }
+            .chat-user-status-chip--danger {
+                background: rgba(255, 107, 107, 0.14);
+                border-color: rgba(255, 107, 107, 0.18);
+            }
+            .chat-user-status-chip--danger .chat-user-status-chip__value {
+                color: #ffd9d9;
+            }
+            .chat-context-panel {
+                padding: 12px 16px 0;
+            }
+            .chat-context-panel[hidden] {
+                display: none !important;
+            }
+            .chat-context-panel__state {
+                padding: 12px 14px;
+                border-radius: 14px;
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(148, 163, 184, 0.14);
+                color: rgba(255, 255, 255, 0.62);
+                font-size: 12px;
+                line-height: 1.6;
+            }
+            .chat-context-panel--error .chat-context-panel__state {
+                color: #fecaca;
+                background: rgba(127, 29, 29, 0.28);
+                border-color: rgba(248, 113, 113, 0.2);
+            }
+            .chat-reply-templates {
+                padding: 12px 16px 0;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .chat-reply-templates[hidden] {
+                display: none !important;
+            }
+            .chat-reply-templates__label {
+                color: rgba(255, 255, 255, 0.52);
+                font-size: 11px;
+                font-weight: 600;
+                letter-spacing: 0.02em;
+            }
+            .chat-reply-templates__list {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .chat-reply-template-btn {
+                appearance: none;
+                border: 1px solid rgba(107, 158, 206, 0.18);
+                background: rgba(107, 158, 206, 0.08);
+                color: rgba(255, 255, 255, 0.92);
+                border-radius: 14px;
+                padding: 10px 12px;
+                display: inline-flex;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 2px;
+                cursor: pointer;
+                transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+            }
+            .chat-reply-template-btn:hover {
+                transform: translateY(-1px);
+                border-color: rgba(107, 158, 206, 0.28);
+                background: rgba(107, 158, 206, 0.14);
+                box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+            }
+            .chat-reply-template-btn__label {
+                color: rgba(255, 255, 255, 0.92);
+                font-size: 12px;
+                font-weight: 600;
+                line-height: 1.4;
+            }
+            .chat-reply-template-btn__hint {
+                color: rgba(255, 255, 255, 0.56);
+                font-size: 11px;
+                line-height: 1.5;
+            }
+            .user-context-card {
+                padding: 14px;
+                border-radius: 18px;
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(148, 163, 184, 0.14);
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+            .user-context-summary {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 10px;
+            }
+            .user-context-pill {
+                padding: 10px 12px;
+                border-radius: 14px;
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(148, 163, 184, 0.12);
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            }
+            .user-context-pill__label {
+                color: rgba(255, 255, 255, 0.48);
+                font-size: 11px;
+            }
+            .user-context-pill__value {
+                color: rgba(255, 255, 255, 0.92);
+                font-size: 13px;
+                line-height: 1.5;
+                word-break: break-word;
+            }
+            .user-context-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+            }
+            .user-context-headline {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                padding: 12px;
+                border-radius: 16px;
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(148, 163, 184, 0.12);
+            }
+            .user-context-headline__label {
+                color: rgba(255, 255, 255, 0.82);
+                font-size: 12px;
+                font-weight: 600;
+            }
+            .user-context-headline__items {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .user-context-headline__item {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 6px 10px;
+                border-radius: 999px;
+                background: rgba(148, 163, 184, 0.12);
+                border: 1px solid rgba(148, 163, 184, 0.12);
+            }
+            .user-context-headline__item-label {
+                color: rgba(255, 255, 255, 0.52);
+                font-size: 11px;
+            }
+            .user-context-headline__item-value {
+                color: rgba(255, 255, 255, 0.92);
+                font-size: 12px;
+                font-weight: 600;
+            }
+            .user-context-headline__item--success {
+                background: rgba(74, 222, 128, 0.12);
+                border-color: rgba(74, 222, 128, 0.18);
+            }
+            .user-context-headline__item--success .user-context-headline__item-value {
+                color: #dcfce7;
+            }
+            .user-context-headline__item--warning {
+                background: rgba(244, 195, 99, 0.14);
+                border-color: rgba(244, 195, 99, 0.2);
+            }
+            .user-context-headline__item--warning .user-context-headline__item-value {
+                color: #fff1cc;
+            }
+            .user-context-headline__item--danger {
+                background: rgba(255, 107, 107, 0.14);
+                border-color: rgba(255, 107, 107, 0.2);
+            }
+            .user-context-headline__item--danger .user-context-headline__item-value {
+                color: #ffd9d9;
+            }
+            .user-context-recent-action {
+                appearance: none;
+                width: 100%;
+                border: 1px solid rgba(107, 158, 206, 0.22);
+                background: rgba(107, 158, 206, 0.1);
+                border-radius: 16px;
+                padding: 12px 14px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                text-align: left;
+                cursor: pointer;
+                transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+            }
+            .user-context-recent-action:hover {
+                transform: translateY(-1px);
+                border-color: rgba(107, 158, 206, 0.32);
+                background: rgba(107, 158, 206, 0.16);
+                box-shadow: 0 12px 24px rgba(15, 23, 42, 0.14);
+            }
+            .user-context-recent-action__label {
+                color: #dbeafe;
+                font-size: 11px;
+                font-weight: 700;
+                white-space: nowrap;
+            }
+            .user-context-recent-action__value {
+                color: rgba(255, 255, 255, 0.92);
+                font-size: 12px;
+                font-weight: 600;
+                line-height: 1.5;
+                min-width: 0;
+                flex: 1;
+                word-break: break-word;
+            }
+            .user-context-recent-action__time {
+                color: rgba(255, 255, 255, 0.5);
+                font-size: 11px;
+                white-space: nowrap;
+            }
+            .user-context-actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+            .user-context-action-btn {
+                appearance: none;
+                border: 1px solid rgba(107, 158, 206, 0.22);
+                background: rgba(107, 158, 206, 0.1);
+                color: rgba(255, 255, 255, 0.92);
+                border-radius: 14px;
+                padding: 10px 12px;
+                display: inline-flex;
+                align-items: center;
+                gap: 10px;
+                min-width: 0;
+                cursor: pointer;
+                transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+            }
+            .user-context-action-btn:hover {
+                transform: translateY(-1px);
+                border-color: rgba(107, 158, 206, 0.34);
+                background: rgba(107, 158, 206, 0.16);
+                box-shadow: 0 12px 24px rgba(15, 23, 42, 0.18);
+            }
+            .user-context-action-btn--recent {
+                border-color: rgba(74, 222, 128, 0.28);
+                background: rgba(74, 222, 128, 0.12);
+                box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.1);
+            }
+            .user-context-action-btn__icon {
+                width: 28px;
+                height: 28px;
+                border-radius: 10px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                background: rgba(255, 255, 255, 0.08);
+                color: #dbeafe;
+                flex-shrink: 0;
+            }
+            .user-context-action-btn__text {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+                min-width: 0;
+            }
+            .user-context-action-btn__title {
+                color: rgba(255, 255, 255, 0.92);
+                font-size: 12px;
+                font-weight: 600;
+                line-height: 1.4;
+            }
+            .user-context-action-btn__hint {
+                color: rgba(255, 255, 255, 0.56);
+                font-size: 11px;
+                line-height: 1.5;
+                word-break: break-word;
+            }
+            .user-context-section {
+                padding: 12px;
+                border-radius: 14px;
+                background: rgba(255, 255, 255, 0.03);
+                border: 1px solid rgba(148, 163, 184, 0.1);
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                min-width: 0;
+            }
+            .user-context-section__title {
+                color: rgba(255, 255, 255, 0.82);
+                font-size: 12px;
+                font-weight: 600;
+            }
+            .user-context-section__empty {
+                color: rgba(255, 255, 255, 0.42);
+                font-size: 12px;
+                line-height: 1.6;
+            }
+            .user-context-item {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                min-width: 0;
+            }
+            .user-context-item__main {
+                color: rgba(255, 255, 255, 0.92);
+                font-size: 13px;
+                line-height: 1.5;
+                word-break: break-word;
+            }
+            .user-context-item__sub {
+                color: rgba(255, 255, 255, 0.56);
+                font-size: 12px;
+                line-height: 1.6;
+                word-break: break-word;
+            }
+            .user-context-section--timeline {
+                grid-column: 1 / -1;
+            }
+            .user-context-timeline {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+            .user-context-timeline-item {
+                display: grid;
+                grid-template-columns: auto 1fr auto;
+                gap: 10px;
+                align-items: start;
+                min-width: 0;
+                padding: 10px 12px;
+                border-radius: 14px;
+                background: rgba(255, 255, 255, 0.03);
+                border: 1px solid rgba(148, 163, 184, 0.1);
+            }
+            .user-context-timeline-item--actionable {
+                appearance: none;
+                width: 100%;
+                text-align: left;
+                font: inherit;
+                cursor: pointer;
+                transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+            }
+            .user-context-timeline-item--actionable:hover {
+                transform: translateY(-1px);
+                border-color: rgba(107, 158, 206, 0.28);
+                background: rgba(107, 158, 206, 0.08);
+                box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+            }
+            .user-context-timeline-item--actionable:focus-visible {
+                outline: 2px solid rgba(107, 158, 206, 0.52);
+                outline-offset: 2px;
+            }
+            .user-context-timeline-item--recent {
+                border-color: rgba(74, 222, 128, 0.22);
+                background: rgba(74, 222, 128, 0.08);
+                box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.08);
+            }
+            .user-context-timeline-item__badge {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 42px;
+                padding: 4px 8px;
+                border-radius: 999px;
+                background: rgba(107, 158, 206, 0.16);
+                color: #dbeafe;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.02em;
+            }
+            .user-context-timeline-item--order .user-context-timeline-item__badge {
+                background: rgba(79, 129, 200, 0.18);
+            }
+            .user-context-timeline-item--payment .user-context-timeline-item__badge {
+                background: rgba(244, 195, 99, 0.18);
+                color: #fff1cc;
+            }
+            .user-context-timeline-item--verify .user-context-timeline-item__badge {
+                background: rgba(99, 102, 241, 0.18);
+                color: #e0e7ff;
+            }
+            .user-context-timeline-item--ticket .user-context-timeline-item__badge {
+                background: rgba(74, 222, 128, 0.16);
+                color: #dcfce7;
+            }
+            .user-context-timeline-item__body {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                min-width: 0;
+            }
+            .user-context-timeline-item__main {
+                color: rgba(255, 255, 255, 0.92);
+                font-size: 13px;
+                line-height: 1.5;
+                word-break: break-word;
+            }
+            .user-context-timeline-item__sub {
+                color: rgba(255, 255, 255, 0.56);
+                font-size: 12px;
+                line-height: 1.6;
+                word-break: break-word;
+            }
+            .user-context-timeline-item__jump {
+                color: rgba(255, 255, 255, 0.42);
+                align-self: center;
+                font-size: 12px;
             }
             
             .session-loading {
@@ -2638,6 +3268,38 @@ class ChatWidget {
                 color: #ffd9d9;
                 background: rgba(255, 107, 107, 0.22);
             }
+            .ops-alert-card-status {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 56px;
+                padding: 4px 8px;
+                border-radius: 999px;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.02em;
+                border: 1px solid transparent;
+            }
+            .ops-alert-card-status--open {
+                color: #ffe3a6;
+                background: rgba(244, 195, 99, 0.18);
+                border-color: rgba(244, 195, 99, 0.26);
+            }
+            .ops-alert-card-status--claimed {
+                color: #d4e7ff;
+                background: rgba(107, 158, 206, 0.18);
+                border-color: rgba(107, 158, 206, 0.28);
+            }
+            .ops-alert-card-status--resolved {
+                color: #c8f8dc;
+                background: rgba(54, 179, 126, 0.18);
+                border-color: rgba(54, 179, 126, 0.28);
+            }
+            .ops-alert-card-status--muted {
+                color: #e2e8f0;
+                background: rgba(148, 163, 184, 0.16);
+                border-color: rgba(148, 163, 184, 0.26);
+            }
             .ops-alert-card-title {
                 color: #fff;
                 font-size: 14px;
@@ -2657,6 +3319,43 @@ class ChatWidget {
                 white-space: pre-wrap;
                 word-break: break-word;
             }
+            .ops-alert-card-case-summary {
+                margin-top: 12px;
+                padding: 10px 12px;
+                border-radius: 12px;
+                background: rgba(255, 255, 255, 0.06);
+                color: rgba(255, 255, 255, 0.74);
+                font-size: 12px;
+                line-height: 1.6;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+            .ops-alert-card-history {
+                margin-top: 12px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .ops-alert-card-history-item {
+                position: relative;
+                padding-left: 14px;
+                color: rgba(255, 255, 255, 0.62);
+                font-size: 12px;
+                line-height: 1.6;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+            .ops-alert-card-history-item::before {
+                content: '';
+                position: absolute;
+                left: 0;
+                top: 0.65em;
+                width: 6px;
+                height: 6px;
+                border-radius: 999px;
+                background: rgba(107, 158, 206, 0.9);
+                box-shadow: 0 0 0 4px rgba(107, 158, 206, 0.12);
+            }
             .ops-alert-card-error {
                 margin-top: 12px;
                 padding: 10px 12px;
@@ -2674,6 +3373,64 @@ class ChatWidget {
                 justify-content: space-between;
                 gap: 10px;
             }
+            .ops-alert-toolbar {
+                width: min(540px, 92%);
+                margin: 0 auto 12px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                padding: 10px 14px;
+                border-radius: 16px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                background: rgba(255, 255, 255, 0.04);
+            }
+            .ops-alert-toolbar-copy {
+                color: rgba(255, 255, 255, 0.7);
+                font-size: 12px;
+                font-weight: 600;
+            }
+            .ops-alert-toolbar-actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .ops-alert-toolbar-filter {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .ops-alert-toolbar-btn {
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                background: rgba(255, 255, 255, 0.05);
+                color: rgba(255, 255, 255, 0.82);
+                font-size: 12px;
+                font-weight: 600;
+                border-radius: 999px;
+                padding: 6px 12px;
+                cursor: pointer;
+                transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+            }
+            .ops-alert-toolbar-btn.is-active {
+                border-color: rgba(107, 158, 206, 0.32);
+                background: rgba(107, 158, 206, 0.18);
+                color: #e5f2ff;
+            }
+            .ops-alert-toolbar-btn:hover {
+                transform: translateY(-1px);
+            }
+            .ops-alert-toolbar-select {
+                min-width: 132px;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                background: rgba(255, 255, 255, 0.05);
+                color: rgba(255, 255, 255, 0.82);
+                font-size: 12px;
+                font-weight: 600;
+                border-radius: 999px;
+                padding: 6px 28px 6px 12px;
+                outline: none;
+                cursor: pointer;
+            }
             .ops-alert-card-entry {
                 flex: 1;
                 min-width: 180px;
@@ -2681,10 +3438,16 @@ class ChatWidget {
                 font-size: 12px;
                 line-height: 1.5;
             }
+            .ops-alert-card-actions {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+                gap: 8px;
+            }
             .ops-alert-card-action {
-                border: 1px solid rgba(107, 158, 206, 0.32);
-                background: rgba(107, 158, 206, 0.18);
-                color: #e5f2ff;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                background: rgba(255, 255, 255, 0.08);
+                color: rgba(255, 255, 255, 0.88);
                 font-size: 12px;
                 font-weight: 600;
                 border-radius: 999px;
@@ -2692,9 +3455,23 @@ class ChatWidget {
                 cursor: pointer;
                 transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
             }
+            .ops-alert-card-action--primary {
+                border-color: rgba(107, 158, 206, 0.32);
+                background: rgba(107, 158, 206, 0.18);
+                color: #e5f2ff;
+            }
+            .ops-alert-card-action--danger {
+                border-color: rgba(255, 107, 107, 0.28);
+                background: rgba(255, 107, 107, 0.14);
+                color: #ffd6d6;
+            }
+            .ops-alert-card-action--ghost {
+                border-color: rgba(54, 179, 126, 0.28);
+                background: rgba(54, 179, 126, 0.12);
+                color: #d8ffe8;
+            }
             .ops-alert-card-action:hover:not(:disabled) {
                 transform: translateY(-1px);
-                background: rgba(107, 158, 206, 0.24);
                 border-color: rgba(159, 202, 255, 0.4);
             }
             .ops-alert-card-action:disabled {
@@ -2977,21 +3754,1411 @@ class ChatWidget {
         ).trim();
     }
 
-    buildOpsAlertContext(alertType = '', payload = {}, title = '') {
-        const targetId = String(
+    getOpsAlertTargetId(payload = {}) {
+        return String(
             payload.target_id
             || payload.order_id
             || payload.payment_order_id
             || payload.ticket_id
             || payload.message_id
+            || payload.id
             || ''
         ).trim();
+    }
+
+    getOpsAlertCaseCategoryKey(alertType = '', targetId = '') {
+        const normalizedAlertType = String(alertType || '').trim().toLowerCase();
+        const normalizedTargetId = String(targetId || '').trim().toLowerCase();
+        if (normalizedTargetId.startsWith('shop_order_risk:')) {
+            return 'shop_risk';
+        }
+
+        const categoryMap = {
+            customer_chat_message_received: 'customer_engagement',
+            customer_chat_message_summary: 'customer_engagement',
+            shop_purchase_succeeded: 'commerce',
+            shop_purchase_summary: 'commerce',
+            wallet_recharge_succeeded: 'commerce',
+            wallet_recharge_summary: 'commerce',
+            shop_inventory_summary: 'inventory',
+            shop_inventory_low: 'inventory',
+            shop_inventory_empty: 'inventory',
+            shop_inventory_recovered: 'inventory',
+            payment_gateway_summary: 'payments',
+            payment_gateway_degraded: 'payments',
+            payment_gateway_recovered: 'payments',
+            payment_refund_ops: 'payments',
+            payment_refund_alert: 'payments',
+            payment_config_changed: 'payments',
+            payment_config_recovered: 'payments',
+            payment_config_incident: 'payments',
+            payment_config_incident_recovered: 'payments',
+            shop_order_risk_anomaly: 'shop_risk',
+            shop_order_risk_recovered: 'shop_risk',
+            verify_quota_summary: 'verify',
+            verify_quota_low: 'verify',
+            verify_service_disabled: 'verify',
+            verify_failure_summary: 'verify',
+            verify_failure_rate_spike: 'verify',
+            verify_queue_summary: 'verify',
+            verify_queue_backlog: 'verify',
+            verify_incident_escalated: 'verify',
+            verify_incident_recovered: 'verify',
+            ticket_new: 'tickets',
+            ticket_sla_summary: 'tickets',
+            ticket_sla_overdue: 'tickets',
+            ticket_sla_recovered: 'tickets',
+            shop_order_delivery_summary: 'fulfillment',
+            shop_order_delivery_failed: 'fulfillment',
+            shop_order_delivery_recovered: 'fulfillment',
+            shop_order_delivery_incident: 'fulfillment',
+            shop_order_delivery_incident_recovered: 'fulfillment',
+            security_admin_login_anomaly: 'security'
+        };
+
+        return categoryMap[normalizedAlertType] || '';
+    }
+
+    buildOpsAlertCaseKey(categoryKey = '', targetId = '') {
+        return `${String(categoryKey || '').trim().toLowerCase()}::${String(targetId || '').trim()}`;
+    }
+
+    isMissingOpsAlertCasesTableError(error) {
+        const code = String(error?.code || '').trim().toUpperCase();
+        const message = [
+            error?.message,
+            error?.details,
+            error?.hint
+        ].filter(Boolean).join(' ').toLowerCase();
+        return (
+            code === '42P01'
+            || code === 'PGRST205'
+            || message.includes('ops_alert_cases')
+        );
+    }
+
+    isMissingOpsAlertCaseEventsTableError(error) {
+        const code = String(error?.code || '').trim().toUpperCase();
+        const message = [
+            error?.message,
+            error?.details,
+            error?.hint
+        ].filter(Boolean).join(' ').toLowerCase();
+        return (
+            code === '42P01'
+            || code === 'PGRST205'
+            || message.includes('ops_alert_case_events')
+        );
+    }
+
+    getOpsAlertCaseStatusTone(status = '') {
+        const normalized = String(status || '').trim().toLowerCase() || 'open';
+        if (normalized === 'resolved') return 'resolved';
+        if (normalized === 'claimed') return 'claimed';
+        return 'open';
+    }
+
+    getOpsAlertCaseStatusLabel(status = '') {
+        const normalized = String(status || '').trim().toLowerCase() || 'open';
+        const labelMap = {
+            open: '待处理',
+            claimed: '处理中',
+            resolved: '已关闭'
+        };
+        return labelMap[normalized] || '待处理';
+    }
+
+    getOpsAlertCaseEventActionLabel(action = '') {
+        const normalized = String(action || '').trim().toLowerCase();
+        const labelMap = {
+            claim: '认领处理',
+            assign: '转交负责人',
+            add_note: '记录备注',
+            resolve: '关闭告警',
+            reopen: '重新打开',
+            batch_mute: '批量静默'
+        };
+        return labelMap[normalized] || normalized || '处置更新';
+    }
+
+    mapOpsAlertCaseLastAction(lastAction = '') {
+        const normalized = String(lastAction || '').trim().toLowerCase();
+        const actionMap = {
+            claimed: 'claim',
+            assigned: 'assign',
+            noted: 'add_note',
+            resolved: 'resolve',
+            reopened: 'reopen'
+        };
+        return actionMap[normalized] || '';
+    }
+
+    normalizeOpsAlertCaseRecord(row = {}) {
+        const categoryKey = String(row.category_key || '').trim().toLowerCase();
+        const targetId = String(row.target_id || '').trim();
+        if (!categoryKey || !targetId) {
+            return null;
+        }
+
+        return {
+            id: String(row.id || '').trim(),
+            category_key: categoryKey,
+            target_id: targetId,
+            status: String(row.status || 'open').trim().toLowerCase() || 'open',
+            owner_admin_id: String(row.owner_admin_id || '').trim(),
+            owner_label: String(row.owner_label || '').trim(),
+            note: String(row.note || '').trim(),
+            resolution: String(row.resolution || '').trim(),
+            last_action: String(row.last_action || '').trim().toLowerCase(),
+            last_action_at: String(row.last_action_at || row.updated_at || row.created_at || '').trim(),
+            created_at: String(row.created_at || '').trim(),
+            updated_at: String(row.updated_at || row.last_action_at || row.created_at || '').trim()
+        };
+    }
+
+    normalizeOpsAlertCaseEventRecord(row = {}) {
+        const categoryKey = String(row.category_key || '').trim().toLowerCase();
+        const targetId = String(row.target_id || '').trim();
+        if (!categoryKey || !targetId) {
+            return null;
+        }
+
+        const action = String(row.action || '').trim().toLowerCase();
+        const metadata = row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+            ? row.metadata
+            : {};
+        const note = String(row.note || '').trim();
+        const resolution = String(row.resolution || '').trim();
+        const ownerLabel = String(row.owner_label || '').trim();
+        const muteUntil = String(metadata.mute_until || '').trim();
+        let summary = '';
+        if (action === 'batch_mute' && muteUntil) {
+            summary = `已静音至 ${muteUntil}`;
+        } else if (action === 'resolve' && resolution) {
+            summary = resolution;
+        } else if (note) {
+            summary = note;
+        } else if (['claim', 'assign'].includes(action) && ownerLabel) {
+            summary = `负责人 ${ownerLabel}`;
+        }
+
+        return {
+            id: String(row.id || '').trim(),
+            category_key: categoryKey,
+            target_id: targetId,
+            action,
+            action_label: String(row.action_label || '').trim() || this.getOpsAlertCaseEventActionLabel(action),
+            summary,
+            status: String(row.status || '').trim().toLowerCase(),
+            owner_admin_id: String(row.owner_admin_id || '').trim(),
+            owner_label: ownerLabel,
+            actor_admin_id: String(row.actor_admin_id || '').trim(),
+            actor_label: String(row.actor_label || '').trim(),
+            note,
+            resolution,
+            metadata,
+            created_at: String(row.created_at || '').trim()
+        };
+    }
+
+    buildOpsAlertFallbackCaseEvent(alert = {}) {
+        const caseRecord = alert.caseRecord || null;
+        const action = this.mapOpsAlertCaseLastAction(caseRecord?.last_action);
+        const createdAt = String(caseRecord?.last_action_at || caseRecord?.updated_at || caseRecord?.created_at || '').trim();
+        if (!action || !createdAt) {
+            return null;
+        }
+
+        const summary = action === 'resolve' && caseRecord?.resolution
+            ? String(caseRecord.resolution || '').trim()
+            : caseRecord?.note
+                ? String(caseRecord.note || '').trim()
+                : ['claim', 'assign'].includes(action) && caseRecord?.owner_label
+                    ? `负责人 ${String(caseRecord.owner_label || '').trim()}`
+                    : '';
+
+        return {
+            id: '',
+            category_key: String(alert.caseCategoryKey || '').trim().toLowerCase(),
+            target_id: String(alert.caseTargetId || '').trim(),
+            action,
+            action_label: this.getOpsAlertCaseEventActionLabel(action),
+            summary,
+            status: String(caseRecord?.status || '').trim().toLowerCase(),
+            owner_admin_id: String(caseRecord?.owner_admin_id || '').trim(),
+            owner_label: String(caseRecord?.owner_label || '').trim(),
+            actor_admin_id: '',
+            actor_label: '',
+            note: String(caseRecord?.note || '').trim(),
+            resolution: String(caseRecord?.resolution || '').trim(),
+            metadata: {},
+            created_at: createdAt
+        };
+    }
+
+    applyOpsAlertCaseRecord(alert = {}, row = null) {
+        const caseRecord = row ? this.normalizeOpsAlertCaseRecord(row) : null;
+        alert.caseRecord = caseRecord;
+        alert.case_status = caseRecord?.status || '';
+        alert.case_owner_admin_id = caseRecord?.owner_admin_id || '';
+        alert.case_owner_label = caseRecord?.owner_label || '';
+        alert.case_note = caseRecord?.note || '';
+        alert.case_resolution = caseRecord?.resolution || '';
+        alert.case_last_action = caseRecord?.last_action || '';
+        alert.case_last_action_at = caseRecord?.last_action_at || '';
+        alert.case_updated_at = caseRecord?.updated_at || '';
+        return this.applyOpsAlertMuteState(alert);
+    }
+
+    applyOpsAlertCaseEvents(alert = {}, rows = []) {
+        const normalizedEvents = (Array.isArray(rows) ? rows : [])
+            .map((row) => this.normalizeOpsAlertCaseEventRecord(row))
+            .filter(Boolean)
+            .slice(0, 3);
+        const fallbackEvent = normalizedEvents.length ? null : this.buildOpsAlertFallbackCaseEvent(alert);
+        const recentEvents = normalizedEvents.length ? normalizedEvents : (fallbackEvent ? [fallbackEvent] : []);
+        const latestEvent = recentEvents[0] || null;
+        const latestNoteEvent = recentEvents.find((event) => String(event?.note || '').trim()) || null;
+
+        alert.case_recent_events = recentEvents;
+        alert.case_recent_note = latestNoteEvent?.note || '';
+        alert.case_recent_note_at = latestNoteEvent?.created_at || '';
+        alert.case_latest_event_action = latestEvent?.action || '';
+        alert.case_latest_event_label = latestEvent?.action_label || '';
+        alert.case_latest_event_summary = latestEvent?.summary || '';
+        alert.case_latest_event_at = latestEvent?.created_at || '';
+        alert.case_latest_event_by_label = latestEvent?.actor_label || '';
+        alert.case_latest_event_owner_label = latestEvent?.owner_label || '';
+        return alert;
+    }
+
+    getOpsAlertCaseRecentEvents(alert = {}) {
+        return (Array.isArray(alert.case_recent_events) ? alert.case_recent_events : [])
+            .map((event) => this.normalizeOpsAlertCaseEventRecord(event))
+            .filter(Boolean);
+    }
+
+    getOpsAlertCaseRecentEventText(event = {}) {
+        const normalized = this.normalizeOpsAlertCaseEventRecord(event);
+        if (!normalized) {
+            return '';
+        }
+
+        const muteUntil = String(normalized.metadata?.mute_until || '').trim();
+        const action = String(normalized.action || '').trim().toLowerCase();
+        const summary = action === 'batch_mute' && muteUntil
+            ? `已静音至 ${this.formatOpsAlertDetailTime(muteUntil)}`
+            : String(normalized.summary || '').trim();
+        const parts = [];
+
+        if (normalized.action_label) {
+            parts.push(normalized.action_label);
+        }
+        if (summary) {
+            parts.push(summary);
+        } else if (normalized.owner_label && ['claim', 'assign'].includes(action)) {
+            parts.push(`负责人 ${normalized.owner_label}`);
+        }
+        if (normalized.actor_label) {
+            parts.push(`操作人 ${normalized.actor_label}`);
+        }
+        if (normalized.created_at) {
+            parts.push(this.formatOpsAlertDetailTime(normalized.created_at));
+        }
+
+        return parts.join(' · ');
+    }
+
+    normalizeOpsAlertModuleMuteRules(config = {}) {
+        const source = config?.mute_rules?.modules;
+        const rules = {};
+        if (!source || typeof source !== 'object' || Array.isArray(source)) {
+            return rules;
+        }
+
+        Object.entries(source).forEach(([moduleKey, rule]) => {
+            const normalizedKey = String(moduleKey || '').trim().toLowerCase();
+            if (!normalizedKey || !rule || typeof rule !== 'object' || Array.isArray(rule)) {
+                return;
+            }
+
+            const until = String(rule.until || '').trim();
+            const untilTime = until ? new Date(until).getTime() : Number.NaN;
+            if (!until || Number.isNaN(untilTime) || untilTime <= Date.now()) {
+                return;
+            }
+
+            rules[normalizedKey] = {
+                until,
+                allowCritical: rule.allow_critical !== false
+            };
+        });
+
+        return rules;
+    }
+
+    setOpsAlertModuleMuteRules(config = {}) {
+        this.opsAlertModuleMuteRules = this.normalizeOpsAlertModuleMuteRules(config);
+        this.opsAlertMessages = (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
+            .map((alert) => this.applyOpsAlertMuteState(alert));
+    }
+
+    applyOpsAlertMuteState(alert = {}) {
+        const moduleKey = String(alert.caseCategoryKey || '').trim().toLowerCase();
+        const rule = moduleKey ? this.opsAlertModuleMuteRules[moduleKey] : null;
+        const hasActiveMute = Boolean(rule?.until);
+        alert.moduleMuteUntil = hasActiveMute ? String(rule.until || '').trim() : '';
+        alert.moduleMuteAllowCritical = hasActiveMute ? rule.allowCritical !== false : true;
+        alert.moduleMuteActive = hasActiveMute;
+        alert.moduleMuteLabel = hasActiveMute ? this.getOpsAlertMuteModuleLabel(moduleKey) : '';
+        return alert;
+    }
+
+    buildOpsAlertCaseSummary(alert = {}) {
+        const caseRecord = alert.caseRecord || null;
+        const parts = [];
+        if (alert.moduleMuteActive && alert.moduleMuteUntil) {
+            const muteCopy = alert.moduleMuteAllowCritical
+                ? `已静音至 ${this.formatOpsAlertDetailTime(alert.moduleMuteUntil)}（紧急继续通知）`
+                : `已静音至 ${this.formatOpsAlertDetailTime(alert.moduleMuteUntil)}`;
+            parts.push(muteCopy);
+        }
+        if (caseRecord?.owner_label) {
+            parts.push(`负责人 ${caseRecord.owner_label}`);
+        }
+        if (caseRecord?.status === 'resolved' && caseRecord.resolution) {
+            parts.push(`结论：${caseRecord.resolution}`);
+        } else if (caseRecord?.note) {
+            parts.push(`备注：${caseRecord.note}`);
+        }
+        if (caseRecord?.last_action_at) {
+            parts.push(`更新于 ${this.formatOpsAlertDetailTime(caseRecord.last_action_at)}`);
+        }
+        return parts.join(' · ');
+    }
+
+    getOpsAlertLinkedTicketId(alert = {}) {
+        const candidates = [
+            alert.case_note,
+            alert.case_resolution,
+            alert.caseRecord?.note,
+            alert.caseRecord?.resolution
+        ];
+        for (const candidate of candidates) {
+            const match = String(candidate || '').match(/工单号[:：]\s*([A-Za-z0-9-]{6,120})/i);
+            if (match?.[1]) {
+                return String(match[1]).trim();
+            }
+        }
+        return '';
+    }
+
+    canCreateOpsAlertTicket(alert = {}) {
+        if (!alert.caseCategoryKey || !alert.caseTargetId) {
+            return false;
+        }
+        if (String(alert.case_status || '').trim().toLowerCase() === 'resolved') {
+            return false;
+        }
+        if (String(alert.alertType || '').trim().toLowerCase().startsWith('ticket_')) {
+            return false;
+        }
+        if (this.getOpsAlertLinkedTicketId(alert)) {
+            return false;
+        }
+        const payload = alert.payload || {};
+        return Boolean(
+            String(payload.user_id || '').trim()
+            || String(payload.order_id || '').trim()
+            || String(payload.payment_order_id || '').trim()
+        );
+    }
+
+    buildOpsAlertTicketNote(alert = {}, ticketId = '', note = '') {
+        const linkedTicketId = String(ticketId || '').trim();
+        if (!linkedTicketId) {
+            return String(alert.case_note || '').trim();
+        }
+        const existingNote = String(alert.case_note || '').trim();
+        if (existingNote.includes(`工单号：${linkedTicketId}`)) {
+            return existingNote;
+        }
+        const extraNote = String(note || '').trim();
+        return [existingNote, `已转工单，工单号：${linkedTicketId}`, extraNote ? `补充说明：${extraNote}` : '']
+            .filter(Boolean)
+            .join('\n');
+    }
+
+    async appendOpsAlertCaseNote(alert = {}, note = '') {
+        const normalizedNote = String(note || '').trim();
+        if (!normalizedNote || !alert.caseCategoryKey || !alert.caseTargetId) {
+            return null;
+        }
+
+        const headers = await this.getOpsAlertCaseApiHeaders();
+        const response = await fetch('/api/admin/settings/ops-alert-monitor-cases', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                action: 'add_note',
+                category_key: alert.caseCategoryKey,
+                target_id: alert.caseTargetId,
+                alert_type: alert.alertType || '',
+                title: alert.title || '',
+                note: normalizedNote,
+                metadata: {
+                    category: alert.caseCategoryKey,
+                    alert_type: alert.alertType || '',
+                    reference_label: alert.referenceLabel || '',
+                    reference_value: alert.referenceValue || '',
+                    title: alert.title || ''
+                }
+            })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.success === false) {
+            throw new Error(payload.message || '回写工单备注失败');
+        }
+        return payload.case || null;
+    }
+
+    async openLinkedOpsAlertTicket(alert = {}) {
+        const ticketId = this.getOpsAlertLinkedTicketId(alert);
+        if (!ticketId) {
+            this.showNotification('这条代办还没有关联工单', '📌 站内代办', true);
+            return false;
+        }
+
+        const context = {
+            ...this.buildOpsAlertContext(alert.alertType || '', alert.payload || {}, alert.title || ''),
+            referenceLabel: '工单号',
+            referenceValue: ticketId,
+            targetId: ticketId,
+            target_id: ticketId
+        };
+
+        if (typeof window.openOpsAlertWorkspace === 'function') {
+            return window.openOpsAlertWorkspace('tickets-pending', context);
+        }
+
+        return this.openAdminStudioForOpsAlertWorkspace({
+            kind: 'ops-workspace',
+            workspaceKey: 'tickets-pending',
+            context
+        });
+    }
+
+    async handleCreateOpsAlertTicket(alert = {}) {
+        if (!this.canCreateOpsAlertTicket(alert)) {
+            this.showNotification('当前告警暂不支持直接转工单', '📌 站内代办', true);
+            return false;
+        }
+
+        const note = String(window.prompt('可选：补充转工单说明', '') || '').trim();
+        const headers = await this.getOpsAlertCaseApiHeaders();
+        const response = await fetch('/api/admin/tickets/create', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                source: 'ops_alert',
+                alert_type: alert.alertType || '',
+                title: alert.title || '',
+                content: alert.displayContent || alert.content || '',
+                reference_label: alert.referenceLabel || '',
+                reference_value: alert.referenceValue || '',
+                target_id: alert.caseTargetId || '',
+                user_id: alert.payload?.user_id || '',
+                order_id: alert.payload?.order_id || '',
+                payment_order_id: alert.payload?.payment_order_id || '',
+                entry_path: alert.entryPath || '',
+                note
+            })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.success === false) {
+            throw new Error(payload.message || '转工单失败');
+        }
+
+        const ticketId = String(payload.ticket_id || payload.ticket?.id || '').trim();
+        if (ticketId) {
+            try {
+                const nextCase = await this.appendOpsAlertCaseNote(alert, this.buildOpsAlertTicketNote(alert, ticketId, note));
+                if (nextCase) {
+                    const targetAlert = this.opsAlertMessages.find((item) => item.id === alert.id) || alert;
+                    this.applyOpsAlertCaseRecord(targetAlert, nextCase);
+                    await this.refreshOpsAlertCaseStateForAlerts([targetAlert]);
+                }
+            } catch (noteError) {
+                console.warn('[ChatWidget] Failed to append linked ticket note:', noteError);
+            }
+        }
+
+        this.refreshOpsAlertUi();
+        this.showNotification(payload.message || `已转工单：${ticketId || '已创建'}`, '📌 站内代办', true);
+        return true;
+    }
+
+    getOpsAlertCaseActions(alert = {}) {
+        if (!alert.caseCategoryKey || !alert.caseTargetId) {
+            return [];
+        }
+
+        const status = String(alert.case_status || '').trim().toLowerCase() || 'open';
+        const linkedTicketId = this.getOpsAlertLinkedTicketId(alert);
+        if (status === 'resolved') {
+            const actions = [
+                ...(linkedTicketId ? [{ action: 'open_ticket', label: '查看工单', style: 'secondary' }] : []),
+                { action: 'reopen', label: '重新打开', style: 'ghost' },
+                { action: 'add_note', label: '补充备注', style: 'secondary' }
+            ];
+            return actions;
+        }
+
+        const actions = [];
+        if (status === 'open') {
+            actions.push({ action: 'claim', label: '认领', style: 'secondary' });
+        }
+        if (this.opsAlertAssignableAdmins.length) {
+            actions.push({
+                action: 'assign',
+                label: status === 'claimed' ? '转交' : '指派',
+                style: 'secondary'
+            });
+        }
+        if (linkedTicketId) {
+            actions.push({ action: 'open_ticket', label: '查看工单', style: 'secondary' });
+        } else if (this.canCreateOpsAlertTicket(alert)) {
+            actions.push({ action: 'create_ticket', label: '转工单', style: 'secondary' });
+        }
+        actions.push({ action: 'snooze', label: '稍后提醒', style: 'ghost' });
+        actions.push({ action: 'add_note', label: status === 'claimed' ? '补充备注' : '备注', style: 'secondary' });
+        actions.push({ action: 'resolve', label: '关闭', style: 'danger' });
+        return actions;
+    }
+
+    normalizeOpsAlertAssignableAdmins(admins = []) {
+        return (Array.isArray(admins) ? admins : [])
+            .map((admin) => ({
+                id: String(admin.id || '').trim(),
+                label: String(admin.label || admin.display_name || admin.email || admin.id || '').trim(),
+                email: String(admin.email || '').trim(),
+                isCurrent: admin.is_current === true
+            }))
+            .filter((admin) => admin.id && admin.label);
+    }
+
+    async ensureOpsAlertMonitorMeta(force = false) {
+        if (!force && (this.opsAlertAssignableAdmins.length || this.opsAlertCurrentAdminId || this.opsAlertCurrentAdminLabel)) {
+            return {
+                assignable_admins: this.opsAlertAssignableAdmins,
+                current_admin_id: this.opsAlertCurrentAdminId,
+                current_admin_label: this.opsAlertCurrentAdminLabel
+            };
+        }
+
+        try {
+            const headers = await this.getOpsAlertCaseApiHeaders();
+            const response = await fetch('/api/admin/settings/ops-alert-monitor', {
+                method: 'GET',
+                headers
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.success === false) {
+                throw new Error(payload.message || '读取站内代办负责人失败');
+            }
+
+            this.opsAlertAssignableAdmins = this.normalizeOpsAlertAssignableAdmins(payload.assignable_admins);
+            this.opsAlertCurrentAdminId = String(payload.current_admin_id || '').trim();
+            this.opsAlertCurrentAdminLabel = String(payload.current_admin_label || '').trim();
+            return payload;
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to load ops alert monitor meta:', error);
+            return {
+                assignable_admins: this.opsAlertAssignableAdmins,
+                current_admin_id: this.opsAlertCurrentAdminId,
+                current_admin_label: this.opsAlertCurrentAdminLabel
+            };
+        }
+    }
+
+    getFilteredOpsAlertMessages() {
+        let alerts = Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [];
+        if (this.opsAlertViewFilter === 'mine') {
+            if (!this.opsAlertCurrentAdminId) {
+                return alerts;
+            }
+            alerts = alerts.filter((alert) => String(alert.case_owner_admin_id || '').trim() === this.opsAlertCurrentAdminId);
+        }
+        if (this.opsAlertViewFilter === 'active') {
+            alerts = alerts.filter((alert) => String(alert.case_status || '').trim().toLowerCase() !== 'resolved');
+        }
+        const ownerFilter = String(this.opsAlertOwnerFilter || 'all').trim();
+        if (!ownerFilter || ownerFilter === 'all') {
+            return alerts;
+        }
+        if (ownerFilter === 'unassigned') {
+            return alerts.filter((alert) => !String(alert.case_owner_admin_id || '').trim());
+        }
+        return alerts.filter((alert) => String(alert.case_owner_admin_id || '').trim() === ownerFilter);
+    }
+
+    setOpsAlertViewFilter(filter = 'all') {
+        const normalizedRaw = String(filter || '').trim().toLowerCase();
+        const normalized = ['mine', 'active'].includes(normalizedRaw) ? normalizedRaw : 'all';
+        if (normalized === this.opsAlertViewFilter) {
+            return;
+        }
+        this.opsAlertViewFilter = normalized;
+        if (this.isOpen && this.currentSessionKey === this.opsAlertSessionId) {
+            this.renderOpsAlertMessages();
+        }
+    }
+
+    getOpsAlertOwnerFilterOptions() {
+        const unresolvedAlerts = (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
+            .filter((alert) => String(alert.case_status || '').trim().toLowerCase() !== 'resolved');
+        const hasUnassigned = unresolvedAlerts.some((alert) => !String(alert.case_owner_admin_id || '').trim());
+        const ownerMap = new Map();
+        unresolvedAlerts.forEach((alert) => {
+            const ownerId = String(alert.case_owner_admin_id || '').trim();
+            const ownerLabel = String(alert.case_owner_label || '').trim();
+            if (!ownerId || !ownerLabel || ownerMap.has(ownerId)) {
+                return;
+            }
+            ownerMap.set(ownerId, ownerLabel);
+        });
+
+        const options = [{ value: 'all', label: '全部负责人' }];
+        if (hasUnassigned) {
+            options.push({ value: 'unassigned', label: '未认领' });
+        }
+        ownerMap.forEach((label, value) => {
+            options.push({ value, label });
+        });
+        return options;
+    }
+
+    syncOpsAlertOwnerFilter(options = []) {
+        if (!Array.isArray(options) || !options.some((option) => option.value === this.opsAlertOwnerFilter)) {
+            this.opsAlertOwnerFilter = 'all';
+        }
+    }
+
+    setOpsAlertOwnerFilter(value = 'all') {
+        const normalized = String(value || 'all').trim() || 'all';
+        if (normalized === this.opsAlertOwnerFilter) {
+            return;
+        }
+        this.opsAlertOwnerFilter = normalized;
+        if (this.isOpen && this.currentSessionKey === this.opsAlertSessionId) {
+            this.renderOpsAlertMessages();
+        }
+    }
+
+    getBatchAssignableOpsAlerts() {
+        const filteredAlerts = this.getFilteredOpsAlertMessages();
+        const caseMap = new Map();
+        filteredAlerts
+            .filter((alert) => String(alert.case_status || '').trim().toLowerCase() !== 'resolved')
+            .forEach((alert) => {
+                const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
+                if (!alert.caseCategoryKey || !alert.caseTargetId || caseMap.has(caseKey)) {
+                    return;
+                }
+                caseMap.set(caseKey, alert);
+            });
+        return Array.from(caseMap.values());
+    }
+
+    shouldShowOpsAlertBatchAssign() {
+        const hasScopedFilter = this.opsAlertViewFilter === 'mine' || this.opsAlertOwnerFilter !== 'all';
+        return hasScopedFilter && this.getBatchAssignableOpsAlerts().length > 0 && this.opsAlertAssignableAdmins.length > 0;
+    }
+
+    applyOpsAlertCasesToMessages(cases = []) {
+        const caseMap = new Map(
+            (Array.isArray(cases) ? cases : [])
+                .map((row) => this.normalizeOpsAlertCaseRecord(row))
+                .filter(Boolean)
+                .map((row) => [this.buildOpsAlertCaseKey(row.category_key, row.target_id), row])
+        );
+
+        this.opsAlertMessages = (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
+            .map((alert) => {
+                const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
+                return caseMap.has(caseKey)
+                    ? this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey))
+                    : alert;
+            });
+    }
+
+    async handleOpsAlertBatchAssign() {
+        if (this.opsAlertBatchAssignBusy) {
+            return false;
+        }
+
+        const alerts = this.getBatchAssignableOpsAlerts();
+        if (!alerts.length) {
+            this.showNotification('当前筛选下没有可转交的站内代办', '📌 站内代办', true);
+            return false;
+        }
+
+        const defaultOwnerAdminId = this.opsAlertOwnerFilter !== 'all' && this.opsAlertOwnerFilter !== 'unassigned'
+            ? this.opsAlertOwnerFilter
+            : this.opsAlertCurrentAdminId;
+
+        try {
+            this.opsAlertBatchAssignBusy = true;
+            this.refreshOpsAlertUi();
+
+            const selectedOwner = await this.promptOpsAlertAssignee(defaultOwnerAdminId);
+            if (!selectedOwner) {
+                return false;
+            }
+
+            const note = String(window.prompt(`可选：填写交接备注（将同步到 ${alerts.length} 条代办）`, '') || '').trim();
+            const label = this.opsAlertOwnerFilter === 'unassigned' ? '批量指派' : '批量接力';
+            if (!window.confirm(`确定将当前筛选下的 ${alerts.length} 条代办${label}给 ${selectedOwner.label} 吗？`)) {
+                return false;
+            }
+
+            const headers = await this.getOpsAlertCaseApiHeaders();
+            const response = await fetch('/api/admin/settings/ops-alert-monitor-cases', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    action: 'assign',
+                    owner_admin_id: selectedOwner.id,
+                    owner_label: selectedOwner.label,
+                    note,
+                    metadata: {
+                        source: 'chat_widget_toolbar_batch_assign',
+                        filter_view: this.opsAlertViewFilter,
+                        filter_owner: this.opsAlertOwnerFilter
+                    },
+                    items: alerts.map((alert) => ({
+                        category_key: alert.caseCategoryKey,
+                        target_id: alert.caseTargetId,
+                        alert_type: alert.alertType || '',
+                        title: alert.title || '',
+                        reference_label: alert.referenceLabel || '',
+                        reference_value: alert.referenceValue || '',
+                        metadata: {
+                            title: alert.title || '',
+                            reference_label: alert.referenceLabel || '',
+                            reference_value: alert.referenceValue || '',
+                            alert_type: alert.alertType || ''
+                        }
+                    }))
+                })
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.success === false) {
+                throw new Error(payload.message || '批量转交站内代办失败');
+            }
+
+            this.applyOpsAlertCasesToMessages(payload.cases || []);
+            await this.refreshOpsAlertCaseStateForAlerts(alerts);
+            this.refreshOpsAlertUi();
+            this.showNotification(payload.message || '站内代办已批量转交', '📌 站内代办', true);
+            return true;
+        } catch (error) {
+            console.error('[ChatWidget] Failed to batch assign ops alerts:', error);
+            this.showNotification(`处理失败：${error.message || '未知错误'}`, '📌 站内代办', true);
+            return false;
+        } finally {
+            this.opsAlertBatchAssignBusy = false;
+            this.refreshOpsAlertUi();
+        }
+    }
+
+    createOpsAlertToolbarElement() {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'ops-alert-toolbar';
+
+        const title = document.createElement('div');
+        title.className = 'ops-alert-toolbar-copy';
+        title.textContent = '筛选范围';
+        wrapper.appendChild(title);
+
+        const actions = document.createElement('div');
+        actions.className = 'ops-alert-toolbar-actions';
+
+        [
+            { key: 'all', label: '全部' },
+            { key: 'active', label: '未关闭' },
+            { key: 'mine', label: '我认领的' }
+        ].forEach((item) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `ops-alert-toolbar-btn${this.opsAlertViewFilter === item.key ? ' is-active' : ''}`;
+            button.textContent = item.label;
+            if (item.key === 'mine' && !this.opsAlertCurrentAdminId) {
+                button.disabled = true;
+            }
+            button.addEventListener('click', () => this.setOpsAlertViewFilter(item.key));
+            actions.appendChild(button);
+        });
+
+        wrapper.appendChild(actions);
+
+        const ownerOptions = this.getOpsAlertOwnerFilterOptions();
+        this.syncOpsAlertOwnerFilter(ownerOptions);
+        if (ownerOptions.length > 1) {
+            const ownerFilterWrap = document.createElement('label');
+            ownerFilterWrap.className = 'ops-alert-toolbar-filter';
+
+            const ownerFilterLabel = document.createElement('span');
+            ownerFilterLabel.className = 'ops-alert-toolbar-copy';
+            ownerFilterLabel.textContent = '负责人';
+            ownerFilterWrap.appendChild(ownerFilterLabel);
+
+            const ownerSelect = document.createElement('select');
+            ownerSelect.className = 'ops-alert-toolbar-select';
+            ownerOptions.forEach((option) => {
+                const optionEl = document.createElement('option');
+                optionEl.value = option.value;
+                optionEl.textContent = option.label;
+                if (option.value === this.opsAlertOwnerFilter) {
+                    optionEl.selected = true;
+                }
+                ownerSelect.appendChild(optionEl);
+            });
+            ownerSelect.addEventListener('change', (event) => {
+                this.setOpsAlertOwnerFilter(event.target.value);
+            });
+            ownerFilterWrap.appendChild(ownerSelect);
+            wrapper.appendChild(ownerFilterWrap);
+        }
+
+        if (this.shouldShowOpsAlertBatchAssign()) {
+            const batchButton = document.createElement('button');
+            batchButton.type = 'button';
+            batchButton.className = 'ops-alert-toolbar-btn ops-alert-toolbar-btn--accent';
+            const count = this.getBatchAssignableOpsAlerts().length;
+            batchButton.textContent = `${this.opsAlertOwnerFilter === 'unassigned' ? '批量指派' : '批量接力'} ${this.formatCompactCount(count)} 条`;
+            batchButton.disabled = this.opsAlertBatchAssignBusy;
+            if (this.opsAlertBatchAssignBusy) {
+                batchButton.textContent = '处理中...';
+            }
+            batchButton.addEventListener('click', () => {
+                this.handleOpsAlertBatchAssign();
+            });
+            wrapper.appendChild(batchButton);
+        }
+
+        return wrapper;
+    }
+
+    async promptOpsAlertAssignee(defaultOwnerAdminId = '') {
+        await this.ensureOpsAlertMonitorMeta();
+        const admins = this.opsAlertAssignableAdmins;
+        if (!admins.length) {
+            throw new Error('当前未加载到可指派的负责人');
+        }
+
+        const defaultIndex = Math.max(
+            1,
+            admins.findIndex((admin) => admin.id === defaultOwnerAdminId) + 1
+            || admins.findIndex((admin) => admin.id === this.opsAlertCurrentAdminId) + 1
+            || 1
+        );
+        const promptText = [
+            '请选择负责人，输入序号后回车：',
+            ...admins.map((admin, index) => `${index + 1}. ${admin.label}${admin.email ? ` (${admin.email})` : ''}${admin.isCurrent ? '（我）' : ''}`)
+        ].join('\n');
+        const answer = String(window.prompt(promptText, String(defaultIndex)) || '').trim();
+        if (!answer) {
+            return null;
+        }
+
+        const selected = admins.find((admin, index) => String(index + 1) === answer || admin.id === answer || admin.email === answer);
+        if (!selected) {
+            throw new Error('未识别的负责人');
+        }
+
+        return selected;
+    }
+
+    getOpsAlertMuteModuleLabel(moduleKey = '') {
+        const normalized = String(moduleKey || '').trim().toLowerCase();
+        const labelMap = {
+            customer_engagement: '客服消息',
+            commerce: '商城与充值',
+            inventory: '库存与补货',
+            payments: '支付与退款',
+            shop_risk: '商城风控',
+            verify: '验证服务',
+            tickets: '工单与售后',
+            fulfillment: '履约与死信',
+            security: '账号安全'
+        };
+        return labelMap[normalized] || '';
+    }
+
+    promptOpsAlertSnoozeDuration(moduleKey = '') {
+        const moduleLabel = this.getOpsAlertMuteModuleLabel(moduleKey);
+        if (!moduleLabel) {
+            throw new Error('当前告警暂不支持稍后提醒');
+        }
+
+        const promptText = [
+            `将“${moduleLabel}”稍后提醒多久？`,
+            '1. 1 小时',
+            '2. 6 小时',
+            '3. 24 小时',
+            '',
+            '输入序号或小时数，默认保留紧急告警继续通知。'
+        ].join('\n');
+        const answer = String(window.prompt(promptText, '1') || '').trim();
+        if (!answer) {
+            return null;
+        }
+
+        const presetMap = {
+            '1': 1,
+            '2': 6,
+            '3': 24,
+            '6': 6,
+            '24': 24
+        };
+        const hours = presetMap[answer] || 0;
+        if (![1, 6, 24].includes(hours)) {
+            throw new Error('未识别的稍后提醒时长');
+        }
+
+        return {
+            hours,
+            until: new Date(Date.now() + hours * 60 * 60 * 1000).toISOString(),
+            allowCritical: true,
+            moduleKey: String(moduleKey || '').trim().toLowerCase(),
+            moduleLabel
+        };
+    }
+
+    buildOpsAlertBatchMuteItems(moduleKey = '', sourceAlert = {}) {
+        const normalizedModuleKey = String(moduleKey || '').trim().toLowerCase();
+        if (!normalizedModuleKey) {
+            return [];
+        }
+
+        const itemMap = new Map();
+        const alerts = Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [];
+        alerts.forEach((item) => {
+            if (String(item.caseCategoryKey || '').trim().toLowerCase() !== normalizedModuleKey) {
+                return;
+            }
+            if (!item.caseTargetId) {
+                return;
+            }
+            const caseKey = this.buildOpsAlertCaseKey(item.caseCategoryKey, item.caseTargetId);
+            if (itemMap.has(caseKey)) {
+                return;
+            }
+            itemMap.set(caseKey, {
+                category_key: item.caseCategoryKey,
+                target_id: item.caseTargetId,
+                alert_type: item.alertType || '',
+                title: item.title || '',
+                reference_label: item.referenceLabel || '',
+                reference_value: item.referenceValue || '',
+                metadata: {
+                    title: item.title || '',
+                    reference_label: item.referenceLabel || '',
+                    reference_value: item.referenceValue || '',
+                    alert_type: item.alertType || ''
+                }
+            });
+        });
+
+        if (!itemMap.size && sourceAlert?.caseTargetId) {
+            const caseKey = this.buildOpsAlertCaseKey(sourceAlert.caseCategoryKey, sourceAlert.caseTargetId);
+            itemMap.set(caseKey, {
+                category_key: sourceAlert.caseCategoryKey,
+                target_id: sourceAlert.caseTargetId,
+                alert_type: sourceAlert.alertType || '',
+                title: sourceAlert.title || '',
+                reference_label: sourceAlert.referenceLabel || '',
+                reference_value: sourceAlert.referenceValue || '',
+                metadata: {
+                    title: sourceAlert.title || '',
+                    reference_label: sourceAlert.referenceLabel || '',
+                    reference_value: sourceAlert.referenceValue || '',
+                    alert_type: sourceAlert.alertType || ''
+                }
+            });
+        }
+
+        return Array.from(itemMap.values());
+    }
+
+    async fetchOpsAlertSettingsConfig() {
+        const headers = await this.getOpsAlertCaseApiHeaders();
+        const response = await fetch('/api/admin/settings/ops-alerts', {
+            method: 'GET',
+            headers
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.success === false) {
+            throw new Error(payload.message || '读取站外告警配置失败');
+        }
+        const normalizedConfig = payload.config && typeof payload.config === 'object' && !Array.isArray(payload.config)
+            ? payload.config
+            : {};
+        this.setOpsAlertModuleMuteRules(normalizedConfig);
+        return normalizedConfig;
+    }
+
+    async saveOpsAlertSettingsConfig(config = {}, caseEvents = []) {
+        const headers = await this.getOpsAlertCaseApiHeaders();
+        const response = await fetch('/api/admin/settings/ops-alerts', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                config,
+                secrets: {
+                    telegram_bot_token: '',
+                    feishu_webhook_url: '',
+                    email_api_key: ''
+                },
+                case_events: Array.isArray(caseEvents) ? caseEvents : []
+            })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.success === false) {
+            throw new Error(payload.message || '保存站外告警配置失败');
+        }
+        const normalizedConfig = payload.config && typeof payload.config === 'object' && !Array.isArray(payload.config)
+            ? payload.config
+            : {};
+        this.setOpsAlertModuleMuteRules(normalizedConfig);
+        return normalizedConfig;
+    }
+
+    async applyOpsAlertSnooze(alert = {}) {
+        const selection = this.promptOpsAlertSnoozeDuration(alert.caseCategoryKey || '');
+        if (!selection) {
+            return null;
+        }
+
+        const currentConfig = await this.fetchOpsAlertSettingsConfig();
+        const nextConfig = JSON.parse(JSON.stringify(currentConfig || {}));
+        if (!nextConfig.mute_rules || typeof nextConfig.mute_rules !== 'object' || Array.isArray(nextConfig.mute_rules)) {
+            nextConfig.mute_rules = {};
+        }
+        if (!nextConfig.mute_rules.modules || typeof nextConfig.mute_rules.modules !== 'object' || Array.isArray(nextConfig.mute_rules.modules)) {
+            nextConfig.mute_rules.modules = {};
+        }
+
+        const currentRule = nextConfig.mute_rules.modules[selection.moduleKey] && typeof nextConfig.mute_rules.modules[selection.moduleKey] === 'object'
+            ? nextConfig.mute_rules.modules[selection.moduleKey]
+            : {};
+        nextConfig.mute_rules.modules[selection.moduleKey] = {
+            ...currentRule,
+            until: selection.until,
+            allow_critical: selection.allowCritical
+        };
+
+        const items = this.buildOpsAlertBatchMuteItems(selection.moduleKey, alert);
+        const caseEvents = items.length ? [{
+            action: 'batch_mute',
+            items,
+            metadata: {
+                mute_until: selection.until,
+                allow_critical: selection.allowCritical,
+                module_keys: [selection.moduleKey],
+                filter_summary: '站内代办稍后提醒'
+            }
+        }] : [];
+
+        await this.saveOpsAlertSettingsConfig(nextConfig, caseEvents);
+        return {
+            message: `已将${selection.moduleLabel}稍后至 ${this.formatOpsAlertDetailTime(selection.until)}`,
+            until: selection.until,
+            moduleLabel: selection.moduleLabel
+        };
+    }
+
+    async fetchOpsAlertCasesForAlerts(alerts = []) {
+        const normalizedAlerts = Array.isArray(alerts) ? alerts : [];
+        const targetIds = [...new Set(normalizedAlerts.map((alert) => String(alert.caseTargetId || '').trim()).filter(Boolean))];
+        const categoryKeys = [...new Set(normalizedAlerts.map((alert) => String(alert.caseCategoryKey || '').trim().toLowerCase()).filter(Boolean))];
+
+        if (!targetIds.length || !categoryKeys.length || !this.supabase?.from) {
+            return new Map();
+        }
+
+        try {
+            const { data, error } = await this.supabase
+                .from('ops_alert_cases')
+                .select('id, category_key, target_id, status, owner_admin_id, owner_label, note, resolution, last_action, last_action_at, created_at, updated_at')
+                .in('category_key', categoryKeys)
+                .in('target_id', targetIds);
+
+            if (error) {
+                throw error;
+            }
+
+            return new Map(
+                (Array.isArray(data) ? data : [])
+                    .map((row) => this.normalizeOpsAlertCaseRecord(row))
+                    .filter(Boolean)
+                    .map((row) => [this.buildOpsAlertCaseKey(row.category_key, row.target_id), row])
+            );
+        } catch (error) {
+            if (this.isMissingOpsAlertCasesTableError(error)) {
+                return new Map();
+            }
+            throw error;
+        }
+    }
+
+    async fetchOpsAlertCaseEventsForAlerts(alerts = []) {
+        const normalizedAlerts = (Array.isArray(alerts) ? alerts : [])
+            .filter((alert) => alert.caseCategoryKey && alert.caseTargetId);
+        if (!normalizedAlerts.length || !this.supabase?.from) {
+            return new Map();
+        }
+
+        const groupedTargets = normalizedAlerts.reduce((accumulator, alert) => {
+            const categoryKey = String(alert.caseCategoryKey || '').trim().toLowerCase();
+            const targetId = String(alert.caseTargetId || '').trim();
+            if (!categoryKey || !targetId) {
+                return accumulator;
+            }
+            if (!accumulator.has(categoryKey)) {
+                accumulator.set(categoryKey, []);
+            }
+            accumulator.get(categoryKey).push(targetId);
+            return accumulator;
+        }, new Map());
+
+        const eventMap = new Map();
+        try {
+            for (const [categoryKey, targetIds] of groupedTargets.entries()) {
+                const { data, error } = await this.supabase
+                    .from('ops_alert_case_events')
+                    .select('id, category_key, target_id, action, status, owner_admin_id, owner_label, actor_admin_id, actor_label, note, resolution, metadata, created_at')
+                    .in('category_key', [categoryKey])
+                    .in('target_id', Array.from(new Set(targetIds)))
+                    .order('created_at', { ascending: false });
+
+                if (error) {
+                    throw error;
+                }
+
+                (Array.isArray(data) ? data : []).forEach((row) => {
+                    const event = this.normalizeOpsAlertCaseEventRecord(row);
+                    if (!event) {
+                        return;
+                    }
+                    const caseKey = this.buildOpsAlertCaseKey(event.category_key, event.target_id);
+                    if (!eventMap.has(caseKey)) {
+                        eventMap.set(caseKey, []);
+                    }
+                    const rows = eventMap.get(caseKey);
+                    if (rows.length < 3) {
+                        rows.push(event);
+                    }
+                });
+            }
+            return eventMap;
+        } catch (error) {
+            if (this.isMissingOpsAlertCaseEventsTableError(error)) {
+                return new Map();
+            }
+            throw error;
+        }
+    }
+
+    async attachOpsAlertCases(alerts = []) {
+        const [caseMap, eventMap] = await Promise.all([
+            this.fetchOpsAlertCasesForAlerts(alerts),
+            this.fetchOpsAlertCaseEventsForAlerts(alerts)
+        ]);
+        return (Array.isArray(alerts) ? alerts : []).map((alert) => {
+            const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
+            this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey) || null);
+            return this.applyOpsAlertCaseEvents(alert, eventMap.get(caseKey) || []);
+        });
+    }
+
+    async refreshOpsAlertCaseStateForAlerts(alerts = []) {
+        const uniqueAlerts = Array.from(new Map(
+            (Array.isArray(alerts) ? alerts : [])
+                .filter((alert) => alert?.caseCategoryKey && alert?.caseTargetId)
+                .map((alert) => [this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId), alert])
+        ).values());
+        if (!uniqueAlerts.length) {
+            return [];
+        }
+
+        const [caseMap, eventMap] = await Promise.all([
+            this.fetchOpsAlertCasesForAlerts(uniqueAlerts),
+            this.fetchOpsAlertCaseEventsForAlerts(uniqueAlerts)
+        ]);
+
+        uniqueAlerts.forEach((alert) => {
+            const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
+            this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey) || null);
+            this.applyOpsAlertCaseEvents(alert, eventMap.get(caseKey) || []);
+        });
+        return uniqueAlerts;
+    }
+
+    async getOpsAlertCaseApiHeaders() {
+        return this.getSupportAuthHeaders();
+    }
+
+    async mutateOpsAlertCase(alert = {}, action = '') {
+        const normalizedAction = String(action || '').trim().toLowerCase();
+        if (!normalizedAction || !alert.caseCategoryKey || !alert.caseTargetId) {
+            throw new Error('缺少可处理的告警标识');
+        }
+
+        let note = '';
+        let resolution = '';
+        let ownerAdminId = '';
+        let ownerLabel = '';
+        if (normalizedAction === 'add_note') {
+            note = String(window.prompt('请填写备注内容', alert.case_note || '') || '').trim();
+            if (!note) {
+                return null;
+            }
+        } else if (normalizedAction === 'assign') {
+            const selectedOwner = await this.promptOpsAlertAssignee(alert.case_owner_admin_id || '');
+            if (!selectedOwner) {
+                return null;
+            }
+            ownerAdminId = selectedOwner.id;
+            ownerLabel = selectedOwner.label;
+            note = String(window.prompt('可选：填写交接备注', alert.case_note || '') || '').trim();
+        } else if (normalizedAction === 'resolve') {
+            resolution = String(window.prompt('请填写关闭结论', alert.case_resolution || alert.case_note || '') || '').trim();
+            if (!resolution) {
+                return null;
+            }
+        }
+
+        const headers = await this.getOpsAlertCaseApiHeaders();
+        const response = await fetch('/api/admin/settings/ops-alert-monitor-cases', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                action: normalizedAction,
+                category_key: alert.caseCategoryKey,
+                target_id: alert.caseTargetId,
+                alert_type: alert.alertType || '',
+                title: alert.title || '',
+                owner_admin_id: ownerAdminId,
+                owner_label: ownerLabel,
+                note,
+                resolution,
+                metadata: {
+                    category: alert.caseCategoryKey,
+                    alert_type: alert.alertType || '',
+                    reference_label: alert.referenceLabel || '',
+                    reference_value: alert.referenceValue || '',
+                    title: alert.title || ''
+                }
+            })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.success === false) {
+            throw new Error(payload.message || '站内代办处理失败');
+        }
+        return payload.case || null;
+    }
+
+    markOpsAlertCaseActionBusy(alertId = '', action = '', busy = false) {
+        const lockKey = `${String(alertId || '').trim()}::${String(action || '').trim().toLowerCase()}`;
+        if (!lockKey) return;
+        if (busy) {
+            this.opsAlertCaseActionLocks.add(lockKey);
+        } else {
+            this.opsAlertCaseActionLocks.delete(lockKey);
+        }
+    }
+
+    isOpsAlertCaseActionBusy(alertId = '', action = '') {
+        const lockKey = `${String(alertId || '').trim()}::${String(action || '').trim().toLowerCase()}`;
+        return this.opsAlertCaseActionLocks.has(lockKey);
+    }
+
+    refreshOpsAlertUi() {
+        this.refreshOpsAlertSessionEntry();
+        if (this.isOpen && this.currentSessionKey === this.opsAlertSessionId) {
+            this.renderOpsAlertMessages();
+        }
+    }
+
+    async handleOpsAlertCaseAction(alert = {}, action = '') {
+        const normalizedAction = String(action || '').trim().toLowerCase();
+        if (!normalizedAction) return false;
+        if (this.isOpsAlertCaseActionBusy(alert.id, normalizedAction)) {
+            return false;
+        }
+
+        try {
+            this.markOpsAlertCaseActionBusy(alert.id, normalizedAction, true);
+            this.refreshOpsAlertUi();
+
+            if (normalizedAction === 'snooze') {
+                const result = await this.applyOpsAlertSnooze(alert);
+                if (!result) {
+                    return false;
+                }
+                await this.refreshOpsAlertCaseStateForAlerts(
+                    (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
+                        .filter((item) => String(item.caseCategoryKey || '').trim().toLowerCase() === String(result.moduleKey || '').trim().toLowerCase())
+                );
+                this.refreshOpsAlertUi();
+                this.showNotification(result.message || '站内代办已更新', '📌 站内代办', true);
+                return true;
+            }
+
+            if (normalizedAction === 'create_ticket') {
+                return await this.handleCreateOpsAlertTicket(alert);
+            }
+
+            if (normalizedAction === 'open_ticket') {
+                return await this.openLinkedOpsAlertTicket(alert);
+            }
+
+            const nextCase = await this.mutateOpsAlertCase(alert, normalizedAction);
+            if (!nextCase) {
+                return false;
+            }
+
+            const targetAlert = this.opsAlertMessages.find((item) => item.id === alert.id) || alert;
+            this.applyOpsAlertCaseRecord(targetAlert, nextCase);
+            await this.refreshOpsAlertCaseStateForAlerts([targetAlert]);
+            this.refreshOpsAlertUi();
+            this.showNotification('站内代办已更新', '📌 站内代办', true);
+            return true;
+        } catch (error) {
+            console.error('[ChatWidget] Failed to mutate ops alert case:', error);
+            this.showNotification(`处理失败：${error.message || '未知错误'}`, '📌 站内代办', true);
+            return false;
+        } finally {
+            this.markOpsAlertCaseActionBusy(alert.id, normalizedAction, false);
+            this.refreshOpsAlertUi();
+        }
+    }
+
+    buildOpsAlertContext(alertType = '', payload = {}, title = '') {
+        const targetId = this.getOpsAlertTargetId(payload);
+        const categoryKey = this.getOpsAlertCaseCategoryKey(alertType, targetId);
 
         return {
             title: String(title || '').trim(),
             alertType,
             alert_type: alertType,
-            category: alertType,
+            category: categoryKey,
             referenceLabel: this.getOpsAlertReferenceLabel(payload),
             referenceValue: this.getOpsAlertReferenceValue(payload),
             targetId,
@@ -3222,6 +5389,8 @@ class ChatWidget {
         const entryPath = String(payload.entry_path || '').trim() || this.extractOpsAlertEntryPath(content);
         const createdAt = row.created_at || row.updated_at || new Date().toISOString();
         const updatedAt = row.updated_at || createdAt;
+        const targetId = this.getOpsAlertTargetId(payload);
+        const caseCategoryKey = this.getOpsAlertCaseCategoryKey(alertType, targetId);
         const alert = {
             id: String(row.id || `ops-alert-${createdAt}`),
             alertType,
@@ -3239,7 +5408,29 @@ class ChatWidget {
             delivered_at: row.delivered_at || '',
             timestamp: new Date(createdAt),
             sortTimestamp: new Date(updatedAt),
-            preview: ''
+            preview: '',
+            caseCategoryKey,
+            caseTargetId: targetId,
+            referenceLabel: this.getOpsAlertReferenceLabel(payload),
+            referenceValue: this.getOpsAlertReferenceValue(payload),
+            case_status: '',
+            case_owner_admin_id: '',
+            case_owner_label: '',
+            case_note: '',
+            case_resolution: '',
+            case_last_action: '',
+            case_last_action_at: '',
+            case_updated_at: '',
+            case_recent_events: [],
+            case_recent_note: '',
+            case_recent_note_at: '',
+            case_latest_event_action: '',
+            case_latest_event_label: '',
+            case_latest_event_summary: '',
+            case_latest_event_at: '',
+            case_latest_event_by_label: '',
+            case_latest_event_owner_label: '',
+            caseRecord: null
         };
 
         alert.workspace = this.resolveOpsAlertWorkspace(alertType, payload, alert.title, entryPath);
@@ -3250,19 +5441,72 @@ class ChatWidget {
     buildOpsAlertSessionSearchText() {
         return this.opsAlertMessages
             .slice(0, 24)
-            .map((alert) => [alert.title, alert.displayContent, alert.entryPath, alert.preview].filter(Boolean).join('\n'))
+            .map((alert) => [alert.title, alert.displayContent, alert.entryPath, alert.preview, alert.case_owner_label].filter(Boolean).join('\n'))
             .join('\n');
+    }
+
+    getOpsAlertActiveCount() {
+        return (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
+            .filter((alert) => String(alert.case_status || '').trim().toLowerCase() !== 'resolved')
+            .length;
+    }
+
+    getOpsAlertMutedModuleCount() {
+        return new Set(
+            (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
+                .filter((alert) => alert.moduleMuteActive && alert.caseCategoryKey)
+                .map((alert) => String(alert.caseCategoryKey || '').trim().toLowerCase())
+                .filter(Boolean)
+        ).size;
+    }
+
+    getOpsAlertOwnerSummary(limit = 2) {
+        const owners = Array.from(new Set(
+            (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
+                .filter((alert) => String(alert.case_status || '').trim().toLowerCase() !== 'resolved')
+                .map((alert) => String(alert.case_owner_label || '').trim())
+                .filter(Boolean)
+        ));
+
+        if (!owners.length) {
+            return '';
+        }
+
+        const visibleOwners = owners.slice(0, Math.max(1, limit));
+        const remaining = owners.length - visibleOwners.length;
+        return `负责人：${visibleOwners.join('、')}${remaining > 0 ? ` +${remaining}` : ''}`;
     }
 
     buildOpsAlertSession() {
         const latest = this.opsAlertMessages[0] || null;
+        const activeCount = this.getOpsAlertActiveCount();
+        const mutedModuleCount = this.getOpsAlertMutedModuleCount();
+        const ownerSummary = this.getOpsAlertOwnerSummary();
         const preview = this.opsAlertLoadError
             ? `同步失败：${this.opsAlertLoadError}`
             : (latest?.preview || '站外告警会同步到这里');
 
-        const subtext = this.opsAlertLoadError
-            ? '站外告警同步异常'
-            : `固定系统联系人${this.opsAlertMessages.length ? ` · ${Math.min(this.opsAlertMessages.length, 99)}${this.opsAlertMessages.length > 99 ? '+' : ''} 条同步` : ''}`;
+        const totalCountLabel = this.opsAlertMessages.length > 99 ? '99+' : String(this.opsAlertMessages.length || 0);
+        const subtextParts = this.opsAlertLoadError
+            ? ['站外告警同步异常']
+            : [ownerSummary || '固定系统联系人'];
+        if (!this.opsAlertLoadError && this.opsAlertMessages.length) {
+            subtextParts.push(`${totalCountLabel} 条同步`);
+        }
+        if (activeCount > 0) {
+            subtextParts.push(`未关闭 ${activeCount > 99 ? '99+' : activeCount}`);
+        }
+        if (mutedModuleCount > 0) {
+            subtextParts.push(`静音 ${mutedModuleCount > 99 ? '99+' : mutedModuleCount} 组`);
+        }
+        const subtext = subtextParts.join(' · ');
+        const badge = this.opsAlertLoadError
+            ? '异常'
+            : activeCount > 0
+                ? `${activeCount > 99 ? '99+' : activeCount}待办`
+                : mutedModuleCount > 0
+                    ? `${mutedModuleCount > 99 ? '99+' : mutedModuleCount}静音`
+                    : '置顶';
 
         return {
             id: this.opsAlertSessionId,
@@ -3277,6 +5521,7 @@ class ChatWidget {
             avatarUrl: '',
             kind: 'ops_alerts',
             subtext,
+            badge,
             searchText: this.buildOpsAlertSessionSearchText()
         };
     }
@@ -3298,8 +5543,23 @@ class ChatWidget {
         const knownIds = new Set((Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : []).map((alert) => alert.id));
 
         try {
-            const rows = await this.fetchOpsAlertJobs();
-            this.processOpsAlertData(rows);
+            const results = await Promise.allSettled([
+                this.fetchOpsAlertJobs(),
+                this.ensureOpsAlertMonitorMeta(),
+                this.fetchOpsAlertSettingsConfig()
+            ]);
+            const rowsResult = results[0];
+            if (results[1]?.status !== 'fulfilled') {
+                console.warn('[ChatWidget] Failed to fetch ops alert assignee meta:', results[1]?.reason);
+            }
+            if (results[2]?.status !== 'fulfilled') {
+                console.warn('[ChatWidget] Failed to fetch ops alert mute rules:', results[2]?.reason);
+            }
+            if (!rowsResult || rowsResult.status !== 'fulfilled') {
+                throw rowsResult?.reason || new Error('站外告警读取失败');
+            }
+            const rows = rowsResult.value;
+            await this.processOpsAlertData(rows);
 
             const newAlerts = this.opsAlertMessages.filter((alert) => !knownIds.has(alert.id));
             if (newAlerts.length && announceNew && !isViewingOpsSession) {
@@ -3340,10 +5600,11 @@ class ChatWidget {
         }, 15000);
     }
 
-    processOpsAlertData(rows) {
+    async processOpsAlertData(rows) {
         this.opsAlertLoadError = '';
-        this.opsAlertMessages = (Array.isArray(rows) ? rows : [])
-            .map((row) => this.normalizeOpsAlertJob(row))
+        const alerts = (Array.isArray(rows) ? rows : [])
+            .map((row) => this.normalizeOpsAlertJob(row));
+        this.opsAlertMessages = (await this.attachOpsAlertCases(alerts))
             .sort((left, right) => {
                 const leftTime = left.sortTimestamp instanceof Date ? left.sortTimestamp.getTime() : 0;
                 const rightTime = right.sortTimestamp instanceof Date ? right.sortTimestamp.getTime() : 0;
@@ -3354,20 +5615,57 @@ class ChatWidget {
     refreshOpsAlertSessionEntry() {
         const nonOpsSessions = (Array.isArray(this.sessions) ? this.sessions : [])
             .filter((session) => !this.isOpsAlertSession(session));
-        this.sessions = [this.buildOpsAlertSession(), ...nonOpsSessions];
+        this.sessions = [this.buildOpsAlertSession(), ...this.sortAdminSessions(nonOpsSessions)];
+        this.renderAdminSessionQueueControls();
         this.renderAdminSessionList();
+    }
+
+    getAdminSessionFilterEmptyMessage() {
+        if (this.adminSessionQueueView === 'priority') {
+            return '当前没有高优先会话';
+        }
+        if (this.adminSessionQueueView === 'ticket_followup') {
+            return '当前没有售后值守会话';
+        }
+        if (this.adminSessionQueueView === 'payment_verify') {
+            return '当前没有支付或验证异常会话';
+        }
+
+        switch (this.adminSessionQueueFilter) {
+            case 'reply':
+                return '当前没有待回复会话';
+            case 'stale_reply':
+                return '当前没有久未回复会话';
+            case 'ticket':
+                return '当前没有工单中的会话';
+            case 'verification':
+                return '当前没有验证异常会话';
+            case 'all':
+            default:
+                return this.t('chat.noSessions', '暂无会话');
+        }
     }
 
     renderAdminSessionList() {
         if (!this.sessionList) return;
 
         this.sessionList.innerHTML = '';
+        this.renderAdminSessionQueueControls();
         if (!Array.isArray(this.sessions) || this.sessions.length === 0) {
             this.sessionList.innerHTML = `<div class="session-loading">${this.t('chat.noSessions', '暂无会话')}</div>`;
             return;
         }
 
-        this.sessions.forEach((session) => {
+        const visibleSessions = this.sessions
+            .filter((session) => this.matchesAdminSessionQueueView(session))
+            .filter((session) => this.matchesAdminSessionQueueFilter(session));
+
+        if (!visibleSessions.length) {
+            this.sessionList.innerHTML = `<div class="session-loading">${this.getAdminSessionFilterEmptyMessage()}</div>`;
+            return;
+        }
+
+        visibleSessions.forEach((session) => {
             const item = document.createElement('div');
             const isOpsSession = this.isOpsAlertSession(session);
             item.className = `session-item${isOpsSession ? ' session-item--ops' : ''}`;
@@ -3386,17 +5684,39 @@ class ChatWidget {
             const displayName = isOpsSession
                 ? '站内代办'
                 : (session.nickname.length > 12 ? `${session.nickname.slice(0, 12)}...` : session.nickname);
-            const detailLine = isOpsSession
+            const prioritySignals = isOpsSession ? [] : this.getAdminSessionPrioritySignals(session);
+            const badgeText = isOpsSession ? session.badge : (prioritySignals[0]?.label || '');
+            const badgeClass = isOpsSession ? '' : (prioritySignals[0]?.badgeClass || '');
+            const baseDetailLine = isOpsSession
                 ? (session.subtext || session.email || '固定系统联系人')
                 : (session.id.startsWith('guest_')
                     ? ''
                     : ((session.email || '').length > 20 ? `${session.email.slice(0, 20)}...` : (session.email || '')));
+            const prioritySubtext = prioritySignals
+                .map((signal) => signal.subtext)
+                .filter(Boolean)
+                .slice(0, 2)
+                .join(' · ');
+            const detailLine = prioritySubtext
+                ? (baseDetailLine ? `${baseDetailLine} · ${prioritySubtext}` : prioritySubtext)
+                : baseDetailLine;
 
             item.dataset.searchText = [
                 displayName,
                 detailLine,
                 previewText,
-                session.searchText || ''
+                session.searchText || '',
+                prioritySignals.map((signal) => `${signal.label} ${signal.subtext || ''}`).join(' '),
+                session.ticketSummary?.latestOpenTicket?.description || '',
+                session.ticketSummary?.latestOpenTicket?.status || '',
+                session.ticketSummary?.latestOpenTicket?.id || '',
+                session.paymentSummary?.status || '',
+                session.paymentSummary?.package_name || '',
+                session.paymentSummary?.id || '',
+                session.verificationSummary?.status || '',
+                session.verificationSummary?.message || '',
+                session.verificationSummary?.verification_id || '',
+                badgeText
             ].filter(Boolean).join('\n').toLowerCase();
 
             const avatarEl = this.createSessionAvatarElement(session);
@@ -3404,9 +5724,21 @@ class ChatWidget {
             const infoEl = document.createElement('div');
             infoEl.className = 'session-info';
 
+            const nameRowEl = document.createElement('div');
+            nameRowEl.className = 'session-name-row';
+
             const nameEl = document.createElement('div');
             nameEl.className = 'session-name';
             nameEl.textContent = displayName;
+
+            nameRowEl.appendChild(nameEl);
+
+            if (badgeText) {
+                const badgeEl = document.createElement('span');
+                badgeEl.className = `session-badge${badgeClass ? ` ${badgeClass}` : ''}`;
+                badgeEl.textContent = badgeText;
+                nameRowEl.appendChild(badgeEl);
+            }
 
             const emailEl = document.createElement('div');
             emailEl.className = 'session-email';
@@ -3416,7 +5748,7 @@ class ChatWidget {
             previewEl.className = 'session-preview';
             previewEl.textContent = preview;
 
-            infoEl.appendChild(nameEl);
+            infoEl.appendChild(nameRowEl);
             infoEl.appendChild(emailEl);
             infoEl.appendChild(previewEl);
 
@@ -3437,6 +5769,28 @@ class ChatWidget {
             item.addEventListener('click', () => this.selectSession(session.id, session));
             this.sessionList.appendChild(item);
         });
+
+        if (this.adminSessionSearchQuery) {
+            void this.searchSessions(this.adminSessionSearchQuery);
+        }
+    }
+
+    updateAdminSessionSearchEmptyState(query = '') {
+        if (!this.sessionList) return;
+
+        this.sessionList.querySelector('.session-search-empty')?.remove();
+        const normalizedQuery = String(query || '').trim();
+        if (!normalizedQuery) return;
+
+        const visibleCount = Array.from(this.sessionList.querySelectorAll('.session-item'))
+            .filter((item) => !item.classList.contains('session-item--hidden'))
+            .length;
+        if (visibleCount > 0) return;
+
+        const emptyEl = document.createElement('div');
+        emptyEl.className = 'session-loading session-search-empty';
+        emptyEl.textContent = `没有匹配“${normalizedQuery}”的会话`;
+        this.sessionList.appendChild(emptyEl);
     }
 
     formatOpsAlertDetailTime(value) {
@@ -3472,6 +5826,18 @@ class ChatWidget {
         title.textContent = alert.title || '系统告警';
 
         titleWrap.appendChild(badge);
+        if (alert.caseTargetId) {
+            const statusBadge = document.createElement('span');
+            statusBadge.className = `ops-alert-card-status ops-alert-card-status--${this.escapeHtml(this.getOpsAlertCaseStatusTone(alert.case_status))}`;
+            statusBadge.textContent = this.getOpsAlertCaseStatusLabel(alert.case_status);
+            titleWrap.appendChild(statusBadge);
+        }
+        if (alert.moduleMuteActive && alert.moduleMuteUntil) {
+            const muteBadge = document.createElement('span');
+            muteBadge.className = 'ops-alert-card-status ops-alert-card-status--muted';
+            muteBadge.textContent = `已静音至 ${this.formatOpsAlertDetailTime(alert.moduleMuteUntil)}`;
+            titleWrap.appendChild(muteBadge);
+        }
         titleWrap.appendChild(title);
 
         const meta = document.createElement('div');
@@ -3495,6 +5861,30 @@ class ChatWidget {
         msgDiv.appendChild(header);
         msgDiv.appendChild(body);
 
+        const caseSummary = this.buildOpsAlertCaseSummary(alert);
+        if (caseSummary) {
+            const summaryEl = document.createElement('div');
+            summaryEl.className = 'ops-alert-card-case-summary';
+            summaryEl.textContent = caseSummary;
+            msgDiv.appendChild(summaryEl);
+        }
+
+        const recentEvents = this.getOpsAlertCaseRecentEvents(alert)
+            .map((event) => this.getOpsAlertCaseRecentEventText(event))
+            .filter(Boolean)
+            .slice(0, 3);
+        if (recentEvents.length) {
+            const historyEl = document.createElement('div');
+            historyEl.className = 'ops-alert-card-history';
+            recentEvents.forEach((eventText) => {
+                const itemEl = document.createElement('div');
+                itemEl.className = 'ops-alert-card-history-item';
+                itemEl.textContent = eventText;
+                historyEl.appendChild(itemEl);
+            });
+            msgDiv.appendChild(historyEl);
+        }
+
         if (alert.lastError) {
             const errorEl = document.createElement('div');
             errorEl.className = 'ops-alert-card-error';
@@ -3509,9 +5899,28 @@ class ChatWidget {
         entry.className = 'ops-alert-card-entry';
         entry.textContent = alert.entryPath || '暂无处理入口';
 
+        footer.appendChild(entry);
+
+        const actionsWrap = document.createElement('div');
+        actionsWrap.className = 'ops-alert-card-actions';
+
+        this.getOpsAlertCaseActions(alert).forEach((item) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `ops-alert-card-action ops-alert-card-action--${item.style || 'secondary'}`;
+            button.textContent = this.isOpsAlertCaseActionBusy(alert.id, item.action) ? '处理中...' : item.label;
+            button.disabled = this.isOpsAlertCaseActionBusy(alert.id, item.action);
+            button.addEventListener('click', async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                await this.handleOpsAlertCaseAction(alert, item.action);
+            });
+            actionsWrap.appendChild(button);
+        });
+
         const actionButton = document.createElement('button');
         actionButton.type = 'button';
-        actionButton.className = 'ops-alert-card-action';
+        actionButton.className = 'ops-alert-card-action ops-alert-card-action--primary';
         actionButton.textContent = this.getOpsAlertActionLabel(alert);
         if (!alert.workspace || alert.workspace.kind === 'none') {
             actionButton.disabled = true;
@@ -3523,8 +5932,8 @@ class ChatWidget {
             });
         }
 
-        footer.appendChild(entry);
-        footer.appendChild(actionButton);
+        actionsWrap.appendChild(actionButton);
+        footer.appendChild(actionsWrap);
         msgDiv.appendChild(footer);
 
         return msgDiv;
@@ -3541,14 +5950,33 @@ class ChatWidget {
             return;
         }
 
-        const alerts = [...this.opsAlertMessages].sort((left, right) => {
+        const toolbar = this.createOpsAlertToolbarElement();
+        if (toolbar) {
+            this.messagesContainer.appendChild(toolbar);
+        }
+
+        const alerts = [...this.getFilteredOpsAlertMessages()].sort((left, right) => {
             const leftTime = left.timestamp instanceof Date ? left.timestamp.getTime() : 0;
             const rightTime = right.timestamp instanceof Date ? right.timestamp.getTime() : 0;
             return leftTime - rightTime;
         });
 
         if (!alerts.length) {
-            this.messagesContainer.innerHTML = `<div class="message admin">${this.t('chat.noOpsAlerts', '当前还没有同步过来的站外告警')}</div>`;
+            let emptyMessage = this.opsAlertViewFilter === 'mine'
+                ? '当前还没有你认领的站内代办'
+                : this.opsAlertViewFilter === 'active'
+                    ? '当前没有未关闭的站内代办'
+                    : this.t('chat.noOpsAlerts', '当前还没有同步过来的站外告警');
+            if (this.opsAlertOwnerFilter === 'unassigned') {
+                emptyMessage = '当前没有未认领的站内代办';
+            } else if (this.opsAlertOwnerFilter !== 'all') {
+                const ownerOption = this.getOpsAlertOwnerFilterOptions()
+                    .find((option) => option.value === this.opsAlertOwnerFilter);
+                if (ownerOption?.label) {
+                    emptyMessage = `当前没有分配给${ownerOption.label}的站内代办`;
+                }
+            }
+            this.messagesContainer.insertAdjacentHTML('beforeend', `<div class="message admin">${this.escapeHtml(emptyMessage)}</div>`);
             return;
         }
 
@@ -3585,10 +6013,14 @@ class ChatWidget {
         const emojiBtn = this.chatWindow?.querySelector('#chatEmojiBtn');
         const sendBtn = this.chatWindow?.querySelector('#chatSendBtn');
         const imageInput = this.chatWindow?.querySelector('#chatImageInput');
+        const templateBar = this.replyTemplateBar;
 
         if (inputArea) {
             inputArea.hidden = readonly;
             inputArea.style.display = readonly ? 'none' : 'flex';
+        }
+        if (templateBar) {
+            templateBar.hidden = readonly;
         }
         if (this.input) {
             this.input.disabled = readonly;
@@ -3716,7 +6148,7 @@ class ChatWidget {
     }
 
     async upsertOpsAlertMessage(row, options = {}) {
-        const normalized = this.normalizeOpsAlertJob(row);
+        const [normalized] = await this.attachOpsAlertCases([this.normalizeOpsAlertJob(row)]);
         const existingIndex = this.opsAlertMessages.findIndex((item) => item.id === normalized.id);
 
         if (existingIndex > -1) {
@@ -3805,6 +6237,7 @@ class ChatWidget {
             // Group USER messages by user_id (for logged-in users) or session_id (for pure guests)
             // This merges all sessions from the same user into one
             const userSessionMap = new Map(); // key: user_id or session_id, value: { lastMsg, sessionIds[] }
+            const sessionIdToGroupKey = new Map();
 
             userMessages.forEach(msg => {
                 // Determine the grouping key: prefer user_id for registered users
@@ -3817,16 +6250,34 @@ class ChatWidget {
                     userSessionMap.set(groupKey, {
                         lastMsg: msg,
                         sessionIds: new Set([msg.session_id]),
-                        userId: msg.user_id
+                        userId: msg.user_id,
+                        lastUserMessageAt: null,
+                        lastAdminMessageAt: null
                     });
                 } else {
                     // Add this session_id to the set (for loading all messages later)
                     userSessionMap.get(groupKey).sessionIds.add(msg.session_id);
                 }
+
+                sessionIdToGroupKey.set(msg.session_id, groupKey);
+            });
+
+            messages.forEach((msg) => {
+                const groupKey = sessionIdToGroupKey.get(msg.session_id) || msg.user_id || msg.session_id;
+                const group = userSessionMap.get(groupKey);
+                if (!group) return;
+
+                if (msg.is_admin) {
+                    if (!group.lastAdminMessageAt) {
+                        group.lastAdminMessageAt = msg.created_at;
+                    }
+                } else if (!group.lastUserMessageAt) {
+                    group.lastUserMessageAt = msg.created_at;
+                }
             });
 
             // Build sessions with user info
-            this.sessions = Array.from(userSessionMap.entries()).map(([groupKey, data]) => {
+            const builtSessions = Array.from(userSessionMap.entries()).map(([groupKey, data]) => {
                 const msg = data.lastMsg;
                 const normalizedGroupKey = typeof groupKey === 'string' ? groupKey.trim() : String(groupKey || '');
                 const userInfo = data.userId
@@ -3848,9 +6299,13 @@ class ChatWidget {
                     lastTime: msg.created_at,
                     isAdmin: msg.is_admin,
                     userId: data.userId,
-                    avatarUrl: userInfo?.avatar_url || null
+                    avatarUrl: userInfo?.avatar_url || null,
+                    lastUserMessageAt: data.lastUserMessageAt || null,
+                    lastAdminMessageAt: data.lastAdminMessageAt || null,
+                    replySummary: this.buildSessionReplySummary(data.lastUserMessageAt, data.lastAdminMessageAt)
                 };
             });
+            this.sessions = await this.attachSessionTicketSummaries(builtSessions);
 
             try {
                 await this.refreshOpsAlerts({ announceNew: false });
@@ -3888,6 +6343,1723 @@ class ChatWidget {
 
         const isEnglish = window.i18n && window.i18n.isEnglish && window.i18n.isEnglish();
         return date.toLocaleDateString(isEnglish ? 'en-US' : 'zh-CN', { month: 'short', day: 'numeric' });
+    }
+
+    formatUserContextDate(value) {
+        if (!value) return '未知时间';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        return date.toLocaleString('zh-CN', {
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+
+    formatUserContextPoints(value) {
+        const points = Number(value || 0);
+        if (!Number.isFinite(points)) return '0 积分';
+        return `${points.toLocaleString('zh-CN')} 积分`;
+    }
+
+    formatUserContextCurrency(value, fallback = '') {
+        const amount = Number(value);
+        if (!Number.isFinite(amount)) {
+            return fallback || '金额未知';
+        }
+        return `¥${amount.toLocaleString('zh-CN', {
+            minimumFractionDigits: amount % 1 ? 2 : 0,
+            maximumFractionDigits: 2
+        })}`;
+    }
+
+    formatUserContextStatus(status = '') {
+        const normalized = String(status || '').trim().toLowerCase();
+        const labelMap = {
+            pending: '待处理',
+            open: '待处理',
+            resolved: '已解决',
+            rejected: '已拒绝',
+            paid: '已支付',
+            succeeded: '已成功',
+            success: '成功',
+            failed: '失败',
+            delivered: '已交付',
+            processing: '处理中',
+            queued: '排队中',
+            retry_waiting: '重试中',
+            refunded: '已退款'
+        };
+        return labelMap[normalized] || (normalized ? normalized.toUpperCase() : '未知');
+    }
+
+    isOpenTicketStatus(status = '') {
+        const normalized = String(status || '').trim().toLowerCase();
+        if (!normalized) return false;
+        return !['resolved', 'rejected'].includes(normalized);
+    }
+
+    buildSessionTicketSummaryMap(rows = []) {
+        const summaryMap = new Map();
+
+        (Array.isArray(rows) ? rows : []).forEach((row) => {
+            const userId = String(row?.user_id || '').trim();
+            if (!userId) return;
+
+            let summary = summaryMap.get(userId);
+            if (!summary) {
+                summary = {
+                    openCount: 0,
+                    latestOpenTicket: null
+                };
+                summaryMap.set(userId, summary);
+            }
+
+            if (!this.isOpenTicketStatus(row.status)) {
+                return;
+            }
+
+            summary.openCount += 1;
+            if (!summary.latestOpenTicket) {
+                summary.latestOpenTicket = row;
+            }
+        });
+
+        for (const [userId, summary] of summaryMap.entries()) {
+            if (!summary.openCount || !summary.latestOpenTicket) {
+                summaryMap.delete(userId);
+            }
+        }
+
+        return summaryMap;
+    }
+
+    async fetchSessionTicketSummaryMap(userIds = []) {
+        const uniqueUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).map((value) => String(value || '').trim()).filter(Boolean))];
+        if (!uniqueUserIds.length || !this.supabase?.from) {
+            return new Map();
+        }
+
+        try {
+            const { data, error } = await this.supabase
+                .from('shop_tickets')
+                .select('id, user_id, status, description, created_at')
+                .in('user_id', uniqueUserIds)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            return this.buildSessionTicketSummaryMap(data || []);
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to fetch session ticket summaries:', error);
+            return new Map();
+        }
+    }
+
+    buildSessionLatestRecordMap(rows = [], userIdField = 'user_id') {
+        const latestMap = new Map();
+
+        (Array.isArray(rows) ? rows : []).forEach((row) => {
+            const userId = String(row?.[userIdField] || '').trim();
+            if (!userId || latestMap.has(userId)) {
+                return;
+            }
+            latestMap.set(userId, row);
+        });
+
+        return latestMap;
+    }
+
+    async fetchSessionPaymentSummaryMap(userIds = []) {
+        const uniqueUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).map((value) => String(value || '').trim()).filter(Boolean))];
+        if (!uniqueUserIds.length || !this.supabase?.from) {
+            return new Map();
+        }
+
+        try {
+            const { data, error } = await this.supabase
+                .from('payment_orders')
+                .select('id, user_id, status, package_name, paid_amount, expected_amount, created_at')
+                .in('user_id', uniqueUserIds)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            return this.buildSessionLatestRecordMap(data || []);
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to fetch session payment summaries:', error);
+            return new Map();
+        }
+    }
+
+    async fetchSessionVerificationSummaryMap(userIds = []) {
+        const uniqueUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).map((value) => String(value || '').trim()).filter(Boolean))];
+        if (!uniqueUserIds.length || !this.supabase?.from) {
+            return new Map();
+        }
+
+        try {
+            const { data, error } = await this.supabase
+                .from('verification_logs')
+                .select('verification_id, user_id, status, message, created_at')
+                .in('user_id', uniqueUserIds)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            return this.buildSessionLatestRecordMap(data || []);
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to fetch session verification summaries:', error);
+            return new Map();
+        }
+    }
+
+    getAdminSessionPaymentSignal(summary = null) {
+        const latestPayment = summary || null;
+        if (!latestPayment) return null;
+
+        const status = String(latestPayment.status || '').trim().toLowerCase();
+        if (!status) return null;
+        if (['paid', 'succeeded', 'success', 'refunded'].includes(status)) {
+            return null;
+        }
+
+        const dangerStatuses = ['failed', 'rejected', 'cancelled', 'canceled', 'expired', 'closed'];
+        if (dangerStatuses.includes(status)) {
+            return {
+                key: 'payment',
+                label: '支付异常',
+                subtext: `支付${this.formatUserContextStatus(status)}`,
+                score: 50,
+                badgeClass: 'session-badge--danger'
+            };
+        }
+
+        const processingStatuses = ['pending', 'processing', 'queued', 'retry_waiting', 'created', 'waiting', 'open', 'unpaid'];
+        if (processingStatuses.includes(status)) {
+            return {
+                key: 'payment',
+                label: '待支付',
+                subtext: `支付${this.formatUserContextStatus(status)}`,
+                score: 45,
+                badgeClass: 'session-badge--warning'
+            };
+        }
+
+        return null;
+    }
+
+    getAdminSessionVerificationSignal(summary = null) {
+        const latestVerification = summary || null;
+        if (!latestVerification) return null;
+
+        const status = String(latestVerification.status || '').trim().toLowerCase();
+        if (!status) return null;
+        if (['success', 'succeeded', 'resolved', 'completed', 'done', 'paid'].includes(status)) {
+            return null;
+        }
+
+        const dangerStatuses = ['failed', 'error', 'dead', 'rejected', 'cancelled', 'timeout', 'exception'];
+        if (dangerStatuses.some((token) => status.includes(token))) {
+            return {
+                key: 'verification',
+                label: '验证异常',
+                subtext: `验证${this.formatUserContextStatus(status)}`,
+                score: 80,
+                badgeClass: 'session-badge--danger'
+            };
+        }
+
+        const processingStatuses = ['pending', 'processing', 'queued', 'retry', 'running', 'waiting'];
+        if (processingStatuses.some((token) => status.includes(token))) {
+            return {
+                key: 'verification',
+                label: '验证中',
+                subtext: `验证${this.formatUserContextStatus(status)}`,
+                score: 55,
+                badgeClass: 'session-badge--warning'
+            };
+        }
+
+        return null;
+    }
+
+    getAdminSessionPrioritySignals(session = {}) {
+        const signals = [];
+        const ticketBadge = this.getAdminSessionTicketBadge(session.ticketSummary);
+        const ticketSubtext = this.getAdminSessionTicketSubtext(session.ticketSummary);
+        if (ticketBadge) {
+            signals.push({
+                key: 'ticket',
+                label: ticketBadge,
+                subtext: ticketSubtext,
+                score: 100 + Number(session?.ticketSummary?.openCount || 0),
+                badgeClass: 'session-badge--ticket'
+            });
+        }
+
+        const verificationSignal = this.getAdminSessionVerificationSignal(session.verificationSummary);
+        if (verificationSignal) {
+            signals.push(verificationSignal);
+        }
+
+        const paymentSignal = this.getAdminSessionPaymentSignal(session.paymentSummary);
+        if (paymentSignal) {
+            signals.push(paymentSignal);
+        }
+
+        if (session.replySummary?.pending) {
+            signals.push({
+                key: 'reply',
+                label: session.replySummary.label,
+                subtext: session.replySummary.subtext,
+                score: Number(session.replySummary.score || 0),
+                badgeClass: session.replySummary.badgeClass || 'session-badge--warning'
+            });
+        }
+
+        return signals.sort((left, right) => Number(right.score || 0) - Number(left.score || 0));
+    }
+
+    sortAdminSessions(sessions = []) {
+        return [...(Array.isArray(sessions) ? sessions : [])].sort((left, right) => {
+            const priorityDiff = this.getAdminSessionPrioritySignals(right)
+                .reduce((maxScore, signal) => Math.max(maxScore, Number(signal?.score || 0)), 0)
+                - this.getAdminSessionPrioritySignals(left)
+                    .reduce((maxScore, signal) => Math.max(maxScore, Number(signal?.score || 0)), 0);
+            if (priorityDiff !== 0) {
+                return priorityDiff;
+            }
+
+            const leftTime = Date.parse(left?.lastTime || left?.lastLogin || 0);
+            const rightTime = Date.parse(right?.lastTime || right?.lastLogin || 0);
+            return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+        });
+    }
+
+    async attachSessionTicketSummaries(sessions = []) {
+        const userIds = (Array.isArray(sessions) ? sessions : []).map((session) => session?.userId);
+        const [ticketSummaryMap, paymentSummaryMap, verificationSummaryMap] = await Promise.all([
+            this.fetchSessionTicketSummaryMap(userIds),
+            this.fetchSessionPaymentSummaryMap(userIds),
+            this.fetchSessionVerificationSummaryMap(userIds)
+        ]);
+
+        return this.sortAdminSessions((Array.isArray(sessions) ? sessions : []).map((session) => {
+            const userId = String(session?.userId || '').trim();
+            return {
+                ...session,
+                ticketSummary: userId ? (ticketSummaryMap.get(userId) || null) : null,
+                paymentSummary: userId ? (paymentSummaryMap.get(userId) || null) : null,
+                verificationSummary: userId ? (verificationSummaryMap.get(userId) || null) : null
+            };
+        }));
+    }
+
+    async refreshAdminSessionTicketSummariesForUserIds(userIds = []) {
+        const uniqueUserIds = [...new Set((Array.isArray(userIds) ? userIds : []).map((value) => String(value || '').trim()).filter(Boolean))];
+        if (!uniqueUserIds.length) {
+            return;
+        }
+
+        const [ticketSummaryMap, paymentSummaryMap, verificationSummaryMap] = await Promise.all([
+            this.fetchSessionTicketSummaryMap(uniqueUserIds),
+            this.fetchSessionPaymentSummaryMap(uniqueUserIds),
+            this.fetchSessionVerificationSummaryMap(uniqueUserIds)
+        ]);
+        const touchedUserIds = new Set(uniqueUserIds);
+        const opsSession = (Array.isArray(this.sessions) ? this.sessions : []).find((session) => this.isOpsAlertSession(session)) || null;
+        const chatSessions = (Array.isArray(this.sessions) ? this.sessions : [])
+            .filter((session) => !this.isOpsAlertSession(session))
+            .map((session) => {
+                const userId = String(session?.userId || '').trim();
+                if (!touchedUserIds.has(userId)) {
+                    return session;
+                }
+                return {
+                    ...session,
+                    ticketSummary: ticketSummaryMap.get(userId) || null,
+                    paymentSummary: paymentSummaryMap.get(userId) || null,
+                    verificationSummary: verificationSummaryMap.get(userId) || null
+                };
+            });
+
+        this.sessions = opsSession
+            ? [opsSession, ...this.sortAdminSessions(chatSessions)]
+            : this.sortAdminSessions(chatSessions);
+        this.renderAdminSessionList();
+    }
+
+    getAdminSessionTicketBadge(summary = null) {
+        const openCount = Number(summary?.openCount || 0);
+        if (!Number.isFinite(openCount) || openCount <= 0) return '';
+        return openCount > 1 ? `${openCount}工单` : '工单中';
+    }
+
+    getAdminSessionTicketSubtext(summary = null) {
+        const latestTicket = summary?.latestOpenTicket;
+        if (!latestTicket) return '';
+        const statusText = this.formatUserContextStatus(latestTicket.status || 'pending');
+        const countText = Number(summary?.openCount || 0) > 1 ? ` · ${summary.openCount}条未结` : '';
+        return `售后${statusText}${countText}`;
+    }
+
+    formatSessionReplyWaitAge(waitMinutes = 0) {
+        const minutes = Math.max(1, Number(waitMinutes || 0));
+        if (minutes < 60) {
+            return `${minutes}分钟前`;
+        }
+
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) {
+            return `${hours}小时前`;
+        }
+
+        const days = Math.floor(hours / 24);
+        return `${days}天前`;
+    }
+
+    buildSessionReplySummary(lastUserMessageAt = '', lastAdminMessageAt = '') {
+        const lastUserTs = lastUserMessageAt ? Date.parse(lastUserMessageAt) : NaN;
+        if (!Number.isFinite(lastUserTs)) {
+            return null;
+        }
+
+        const lastAdminTs = lastAdminMessageAt ? Date.parse(lastAdminMessageAt) : NaN;
+        const pending = !Number.isFinite(lastAdminTs) || lastUserTs > lastAdminTs;
+        if (!pending) {
+            return null;
+        }
+
+        const waitMinutes = Math.max(1, Math.floor((Date.now() - lastUserTs) / 60000));
+        if (waitMinutes < 5) {
+            return null;
+        }
+
+        const isDanger = waitMinutes >= 60;
+        return {
+            pending: true,
+            waitMinutes,
+            label: isDanger ? '久未回复' : '待回复',
+            subtext: `${this.formatSessionReplyWaitAge(waitMinutes)}待回复`,
+            score: isDanger ? 85 : (waitMinutes >= 15 ? 65 : 25),
+            badgeClass: isDanger ? 'session-badge--danger' : 'session-badge--warning'
+        };
+    }
+
+    refreshAdminSessionReplySummaries() {
+        const opsSession = (Array.isArray(this.sessions) ? this.sessions : []).find((session) => this.isOpsAlertSession(session)) || null;
+        const chatSessions = (Array.isArray(this.sessions) ? this.sessions : [])
+            .filter((session) => !this.isOpsAlertSession(session))
+            .map((session) => ({
+                ...session,
+                replySummary: this.buildSessionReplySummary(session.lastUserMessageAt, session.lastAdminMessageAt)
+            }));
+
+        this.sessions = opsSession
+            ? [opsSession, ...this.sortAdminSessions(chatSessions)]
+            : this.sortAdminSessions(chatSessions);
+        this.renderAdminSessionList();
+    }
+
+    startAdminSessionSlaTicker() {
+        if (this.adminSessionSlaTimer) {
+            return;
+        }
+
+        this.adminSessionSlaTimer = window.setInterval(() => {
+            this.refreshAdminSessionReplySummaries();
+        }, 60000);
+    }
+
+    getAdminSessionFilterOptions() {
+        const sessions = (Array.isArray(this.sessions) ? this.sessions : []).filter((session) => !this.isOpsAlertSession(session));
+        return [
+            { value: 'all', label: '全部', count: sessions.length },
+            { value: 'reply', label: '待回复', count: sessions.filter((session) => session.replySummary?.pending).length },
+            { value: 'stale_reply', label: '久未回复', count: sessions.filter((session) => Number(session.replySummary?.waitMinutes || 0) >= 60).length },
+            { value: 'ticket', label: '工单中', count: sessions.filter((session) => Boolean(session.ticketSummary?.latestOpenTicket)).length },
+            { value: 'verification', label: '验证异常', count: sessions.filter((session) => Boolean(this.getAdminSessionVerificationSignal(session.verificationSummary))).length }
+        ];
+    }
+
+    isHighPriorityAdminSession(session = {}) {
+        const maxScore = this.getAdminSessionPrioritySignals(session)
+            .reduce((score, signal) => Math.max(score, Number(signal?.score || 0)), 0);
+        return maxScore >= 45;
+    }
+
+    getAdminSessionOverviewCards() {
+        const sessions = (Array.isArray(this.sessions) ? this.sessions : []).filter((session) => !this.isOpsAlertSession(session));
+        return [
+            { value: 'all', label: '全部会话', count: sessions.length, hint: '当前队列' },
+            { value: 'reply', label: '待回复', count: sessions.filter((session) => session.replySummary?.pending).length, hint: '需要跟进' },
+            { value: 'stale_reply', label: '久未回复', count: sessions.filter((session) => Number(session.replySummary?.waitMinutes || 0) >= 60).length, hint: '优先处理' },
+            { value: 'ticket', label: '工单中', count: sessions.filter((session) => Boolean(session.ticketSummary?.latestOpenTicket)).length, hint: '售后处理中' },
+            { value: 'verification', label: '验证异常', count: sessions.filter((session) => Boolean(this.getAdminSessionVerificationSignal(session.verificationSummary))).length, hint: '需要排查' }
+        ];
+    }
+
+    renderAdminSessionOverview() {
+        const container = this.sessionQueueOverview;
+        if (!container) return;
+
+        const cards = this.getAdminSessionOverviewCards();
+        container.replaceChildren();
+
+        cards.forEach((card) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `session-queue-card${this.adminSessionQueueView === 'all' && this.adminSessionQueueFilter === card.value ? ' is-active' : ''}`;
+            button.setAttribute('data-session-stat-filter', card.value);
+            button.innerHTML = `
+                <span class="session-queue-card__value">${card.count}</span>
+                <span class="session-queue-card__label">${card.label}</span>
+                <span class="session-queue-card__hint">${card.hint}</span>
+            `;
+            container.appendChild(button);
+        });
+    }
+
+    getAdminSessionViewOptions() {
+        const sessions = (Array.isArray(this.sessions) ? this.sessions : []).filter((session) => !this.isOpsAlertSession(session));
+        return [
+            { value: 'all', label: '全部视图', count: sessions.length },
+            { value: 'priority', label: '高优先', count: sessions.filter((session) => this.isHighPriorityAdminSession(session)).length },
+            { value: 'ticket_followup', label: '售后值守', count: sessions.filter((session) => Boolean(session.ticketSummary?.latestOpenTicket)).length },
+            {
+                value: 'payment_verify',
+                label: '支付/验证',
+                count: sessions.filter((session) => Boolean(
+                    this.getAdminSessionPaymentSignal(session.paymentSummary)
+                    || this.getAdminSessionVerificationSignal(session.verificationSummary)
+                )).length
+            }
+        ];
+    }
+
+    renderAdminSessionViews() {
+        const container = this.sessionQueueViews;
+        if (!container) return;
+
+        const options = this.getAdminSessionViewOptions();
+        container.replaceChildren();
+
+        options.forEach((option) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `session-queue-preset${this.adminSessionQueueView === option.value ? ' is-active' : ''}`;
+            button.setAttribute('data-session-view', option.value);
+            button.textContent = option.count > 0 ? `${option.label} ${option.count}` : option.label;
+            container.appendChild(button);
+        });
+    }
+
+    renderAdminSessionQueueControls() {
+        this.renderAdminSessionOverview();
+        this.renderAdminSessionViews();
+        this.renderAdminSessionFilters();
+    }
+
+    renderAdminSessionFilters() {
+        const container = this.sessionFilterBar;
+        if (!container) return;
+
+        const options = this.getAdminSessionFilterOptions();
+        container.replaceChildren();
+
+        options.forEach((option) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `session-filter-btn${this.adminSessionQueueFilter === option.value ? ' is-active' : ''}`;
+            button.setAttribute('data-session-filter', option.value);
+            button.textContent = option.count > 0 ? `${option.label} ${option.count}` : option.label;
+            container.appendChild(button);
+        });
+    }
+
+    setAdminSessionQueueView(value = 'all', { resetFilter = true } = {}) {
+        const nextValue = String(value || 'all').trim() || 'all';
+        this.adminSessionQueueView = nextValue;
+        if (resetFilter) {
+            this.adminSessionQueueFilter = 'all';
+        }
+        this.renderAdminSessionQueueControls();
+        this.renderAdminSessionList();
+    }
+
+    setAdminSessionQueueFilter(value = 'all') {
+        const nextValue = String(value || 'all').trim() || 'all';
+        this.adminSessionQueueFilter = nextValue;
+        this.renderAdminSessionQueueControls();
+        this.renderAdminSessionList();
+    }
+
+    matchesAdminSessionQueueView(session = {}) {
+        if (this.isOpsAlertSession(session)) {
+            return this.adminSessionQueueView === 'all';
+        }
+
+        switch (this.adminSessionQueueView) {
+            case 'priority':
+                return this.isHighPriorityAdminSession(session);
+            case 'ticket_followup':
+                return Boolean(session.ticketSummary?.latestOpenTicket);
+            case 'payment_verify':
+                return Boolean(
+                    this.getAdminSessionPaymentSignal(session.paymentSummary)
+                    || this.getAdminSessionVerificationSignal(session.verificationSummary)
+                );
+            case 'all':
+            default:
+                return true;
+        }
+    }
+
+    matchesAdminSessionQueueFilter(session = {}) {
+        if (this.isOpsAlertSession(session)) {
+            return this.adminSessionQueueView === 'all' && this.adminSessionQueueFilter === 'all';
+        }
+
+        switch (this.adminSessionQueueFilter) {
+            case 'reply':
+                return Boolean(session.replySummary?.pending);
+            case 'stale_reply':
+                return Number(session.replySummary?.waitMinutes || 0) >= 60;
+            case 'ticket':
+                return Boolean(session.ticketSummary?.latestOpenTicket);
+            case 'verification':
+                return Boolean(this.getAdminSessionVerificationSignal(session.verificationSummary));
+            case 'all':
+            default:
+                return true;
+        }
+    }
+
+    getUserContextHeadlineTone(status = '') {
+        const normalized = String(status || '').trim().toLowerCase();
+        if (!normalized) return 'neutral';
+
+        const successTokens = ['resolved', 'delivered', 'paid', 'succeeded', 'success', 'refunded', '已解决', '已交付', '已支付', '已成功', '成功', '已退款'];
+        if (successTokens.some((token) => normalized.includes(token))) {
+            return 'success';
+        }
+
+        const dangerTokens = ['failed', 'rejected', 'dead', '拒绝', '失败', '异常'];
+        if (dangerTokens.some((token) => normalized.includes(token))) {
+            return 'danger';
+        }
+
+        const warningTokens = ['pending', 'open', 'processing', 'queued', 'retry', '待处理', '处理中', '排队中', '重试'];
+        if (warningTokens.some((token) => normalized.includes(token))) {
+            return 'warning';
+        }
+
+        return 'neutral';
+    }
+
+    getUserContextHeadlineItems(context = {}) {
+        const latestOrder = this.getLatestUserContextRecord(context.orders);
+        const latestPayment = this.getLatestUserContextRecord(context.payments);
+        const latestVerification = this.getLatestUserContextRecord(context.verifications);
+        const latestTicket = this.getLatestUserContextRecord(context.tickets);
+        const openTickets = (Array.isArray(context.tickets) ? context.tickets : [])
+            .filter((ticket) => !['resolved', 'rejected'].includes(String(ticket?.status || '').trim().toLowerCase()));
+
+        const items = [];
+
+        if (latestOrder) {
+            const rawStatus = String(latestOrder.delivery_status || latestOrder.refund_status || '').trim();
+            items.push({
+                label: '订单',
+                value: this.formatUserContextStatus(rawStatus),
+                tone: this.getUserContextHeadlineTone(rawStatus)
+            });
+        }
+
+        if (latestPayment) {
+            const rawStatus = String(latestPayment.status || '').trim();
+            items.push({
+                label: '充值',
+                value: this.formatUserContextStatus(rawStatus),
+                tone: this.getUserContextHeadlineTone(rawStatus)
+            });
+        }
+
+        if (latestVerification) {
+            const rawStatus = String(latestVerification.status || '').trim();
+            items.push({
+                label: '验证',
+                value: this.formatUserContextStatus(rawStatus),
+                tone: this.getUserContextHeadlineTone(rawStatus)
+            });
+        }
+
+        if (openTickets.length > 0) {
+            items.push({
+                label: '工单',
+                value: openTickets.length > 1 ? `${openTickets.length} 条待处理` : '待处理',
+                tone: 'warning'
+            });
+        } else if (latestTicket) {
+            const rawStatus = String(latestTicket.status || '').trim();
+            items.push({
+                label: '工单',
+                value: this.formatUserContextStatus(rawStatus),
+                tone: this.getUserContextHeadlineTone(rawStatus)
+            });
+        }
+
+        return items.slice(0, 4);
+    }
+
+    createUserContextHeadline(context = {}) {
+        const items = this.getUserContextHeadlineItems(context);
+        if (!items.length) {
+            return null;
+        }
+
+        const headline = document.createElement('div');
+        headline.className = 'user-context-headline';
+
+        const label = document.createElement('div');
+        label.className = 'user-context-headline__label';
+        label.textContent = '会话摘要';
+        headline.appendChild(label);
+
+        const itemsWrap = document.createElement('div');
+        itemsWrap.className = 'user-context-headline__items';
+
+        items.forEach((item) => {
+            const chip = document.createElement('div');
+            chip.className = `user-context-headline__item user-context-headline__item--${item.tone || 'neutral'}`;
+            chip.innerHTML = `
+                <span class="user-context-headline__item-label">${this.escapeHtml(item.label)}</span>
+                <span class="user-context-headline__item-value">${this.escapeHtml(item.value)}</span>
+            `;
+            itemsWrap.appendChild(chip);
+        });
+
+        headline.appendChild(itemsWrap);
+        return headline;
+    }
+
+    getUserContextHeaderStatusItems(context = {}) {
+        return this.getUserContextHeadlineItems(context).slice(0, 3);
+    }
+
+    renderUserContextHeaderStatus(context = null) {
+        const container = this.chatHeader?.querySelector('#chatUserStatusChips');
+        if (!container) return;
+
+        container.replaceChildren();
+
+        const items = context ? this.getUserContextHeaderStatusItems(context) : [];
+        if (!items.length) {
+            container.hidden = true;
+            return;
+        }
+
+        items.forEach((item) => {
+            const chip = document.createElement('span');
+            chip.className = `chat-user-status-chip chat-user-status-chip--${item.tone || 'neutral'}`;
+            chip.innerHTML = `
+                <span class="chat-user-status-chip__label">${this.escapeHtml(item.label)}</span>
+                <span class="chat-user-status-chip__value">${this.escapeHtml(item.value)}</span>
+            `;
+            container.appendChild(chip);
+        });
+
+        container.hidden = false;
+    }
+
+    buildUserContextActionSignature(action = {}) {
+        return [
+            String(action.workspaceKey || '').trim(),
+            String(action.context?.targetId || action.context?.target_id || '').trim(),
+            String(action.context?.referenceValue || '').trim()
+        ].join('::');
+    }
+
+    getUserContextRecentAction(context = {}) {
+        const cacheKey = String(context.cacheKey || '').trim();
+        if (!cacheKey) return null;
+        return this.userContextRecentActions.get(cacheKey) || null;
+    }
+
+    rememberUserContextAction(context = {}, action = {}) {
+        const cacheKey = String(context.cacheKey || action._contextCacheKey || '').trim();
+        if (!cacheKey) return null;
+
+        const contextPayload = action.context && typeof action.context === 'object'
+            ? { ...action.context }
+            : {};
+        const record = {
+            cacheKey,
+            signature: this.buildUserContextActionSignature(action),
+            label: String(action.label || '已打开工作区').trim(),
+            workspaceKey: String(action.workspaceKey || '').trim(),
+            context: contextPayload,
+            referenceValue: String(contextPayload.referenceValue || contextPayload.targetId || contextPayload.target_id || '').trim(),
+            updatedAt: new Date().toISOString()
+        };
+
+        this.userContextRecentActions.set(cacheKey, record);
+
+        if (this.currentUserContext?.cacheKey === cacheKey) {
+            this.currentUserContext = {
+                ...this.currentUserContext,
+                recentAction: record
+            };
+            this.renderUser360Context(this.currentUserContext);
+        }
+
+        return record;
+    }
+
+    isUserContextActionRecent(context = {}, action = {}) {
+        const recentAction = this.getUserContextRecentAction(context);
+        if (!recentAction) return false;
+        return recentAction.signature === this.buildUserContextActionSignature(action);
+    }
+
+    createUserContextRecentActionBanner(context = {}) {
+        const recentAction = this.getUserContextRecentAction(context);
+        if (!recentAction) {
+            return null;
+        }
+
+        const banner = document.createElement('button');
+        banner.type = 'button';
+        banner.className = 'user-context-recent-action';
+        banner.innerHTML = `
+            <span class="user-context-recent-action__label">最近处理</span>
+            <span class="user-context-recent-action__value">${this.escapeHtml(recentAction.label)}${recentAction.referenceValue ? ` · ${this.escapeHtml(this.truncateText(recentAction.referenceValue, 28))}` : ''}</span>
+            <span class="user-context-recent-action__time">${this.escapeHtml(this.formatUserContextDate(recentAction.updatedAt))}</span>
+        `;
+        banner.addEventListener('click', () => {
+            this.handleUserContextAction({
+                label: recentAction.label,
+                workspaceKey: recentAction.workspaceKey,
+                context: { ...(recentAction.context || {}) },
+                _contextCacheKey: recentAction.cacheKey
+            });
+        });
+        return banner;
+    }
+
+    resolveUserContextEmail(session = {}) {
+        return this.resolveSessionEmail(null, session.email || session.id, session.sessionIds || []);
+    }
+
+    buildUserContextCacheKey(session = {}) {
+        const userId = String(session?.userId || '').trim();
+        const email = this.resolveUserContextEmail(session).toLowerCase();
+        const sessionId = String(session?.id || '').trim();
+        if (userId) return `user:${userId}`;
+        if (email) return `email:${email}`;
+        return `session:${sessionId}`;
+    }
+
+    async fetchUser360Context(session = {}) {
+        const cacheKey = this.buildUserContextCacheKey(session);
+        if (this.userContextCache.has(cacheKey)) {
+            return this.userContextCache.get(cacheKey);
+        }
+
+        const initialUserId = String(session?.userId || '').trim();
+        const initialEmail = this.resolveUserContextEmail(session);
+        const fetchedProfiles = initialUserId
+            ? await this.fetchChatProfiles('id', [initialUserId])
+            : (initialEmail ? await this.fetchChatProfiles('email', [initialEmail]) : []);
+        const profile = Array.isArray(fetchedProfiles) && fetchedProfiles.length
+            ? fetchedProfiles[0]
+            : {};
+        const userId = String(initialUserId || profile.id || '').trim();
+        const email = String(initialEmail || profile.email || '').trim();
+
+        const [ordersResult, paymentsResult, verifyResult, ticketsResult] = await Promise.allSettled([
+            userId
+                ? this.supabase
+                    .from('shop_orders')
+                    .select('id, created_at, price_paid, snapshot_product_name, refund_status, delivery_status')
+                    .eq('user_id', userId)
+                    .order('created_at', { ascending: false })
+                    .limit(2)
+                : Promise.resolve({ data: [] }),
+            userId
+                ? this.supabase
+                    .from('payment_orders')
+                    .select('id, created_at, package_name, paid_amount, expected_amount, status, provider')
+                    .eq('user_id', userId)
+                    .order('created_at', { ascending: false })
+                    .limit(2)
+                : Promise.resolve({ data: [] }),
+            (userId || email)
+                ? (() => {
+                    let query = this.supabase
+                        .from('verification_logs')
+                        .select('verification_id, status, message, created_at')
+                        .order('created_at', { ascending: false })
+                        .limit(2);
+                    if (userId) {
+                        query = query.eq('user_id', userId);
+                    } else {
+                        query = query.eq('verification_id', email);
+                    }
+                    return query;
+                })()
+                : Promise.resolve({ data: [] }),
+            userId
+                ? this.supabase
+                    .from('shop_tickets')
+                    .select('id, order_id, issue_type, status, description, created_at')
+                    .eq('user_id', userId)
+                    .order('created_at', { ascending: false })
+                    .limit(2)
+                : Promise.resolve({ data: [] })
+        ]);
+
+        const context = {
+            cacheKey,
+            userId,
+            email,
+            displayName: this.resolveSessionNickname(profile, session.id || '', email),
+            avatarUrl: String(profile.avatar_url || session.avatarUrl || '').trim(),
+            sessionId: String(session?.id || '').trim(),
+            accountState: userId ? '已绑定账号' : '游客会话',
+            orders: ordersResult.status === 'fulfilled' ? (ordersResult.value.data || []) : [],
+            payments: paymentsResult.status === 'fulfilled' ? (paymentsResult.value.data || []) : [],
+            verifications: verifyResult.status === 'fulfilled' ? (verifyResult.value.data || []) : [],
+            tickets: ticketsResult.status === 'fulfilled' ? (ticketsResult.value.data || []) : []
+        };
+
+        this.userContextCache.set(cacheKey, context);
+        return context;
+    }
+
+    renderUserContextPanelState(message = '', variant = 'loading') {
+        if (!this.userContextPanel) return;
+        const text = String(message || '').trim();
+        if (!text) {
+            this.userContextPanel.hidden = true;
+            this.userContextPanel.replaceChildren();
+            return;
+        }
+        this.userContextPanel.hidden = false;
+        this.userContextPanel.className = `chat-context-panel chat-context-panel--${variant}`;
+        this.userContextPanel.innerHTML = `<div class="chat-context-panel__state">${this.escapeHtml(text)}</div>`;
+    }
+
+    createUserContextSection(title, rows = [], emptyText = '暂无记录') {
+        const section = document.createElement('section');
+        section.className = 'user-context-section';
+
+        const heading = document.createElement('div');
+        heading.className = 'user-context-section__title';
+        heading.textContent = title;
+        section.appendChild(heading);
+
+        if (!rows.length) {
+            const empty = document.createElement('div');
+            empty.className = 'user-context-section__empty';
+            empty.textContent = emptyText;
+            section.appendChild(empty);
+            return section;
+        }
+
+        rows.forEach((row) => {
+            const item = document.createElement('div');
+            item.className = 'user-context-item';
+
+            const main = document.createElement('div');
+            main.className = 'user-context-item__main';
+            main.textContent = row.main;
+            item.appendChild(main);
+
+            if (row.sub) {
+                const sub = document.createElement('div');
+                sub.className = 'user-context-item__sub';
+                sub.textContent = row.sub;
+                item.appendChild(sub);
+            }
+
+            section.appendChild(item);
+        });
+
+        return section;
+    }
+
+    getLatestUserContextRecord(items = []) {
+        return (Array.isArray(items) ? items : [])
+            .find((item) => item && typeof item === 'object') || null;
+    }
+
+    getUserContextQuickActions(context = {}) {
+        const actions = [];
+        const latestOrder = this.getLatestUserContextRecord(context.orders);
+        const latestPayment = this.getLatestUserContextRecord(context.payments);
+        const latestVerification = this.getLatestUserContextRecord(context.verifications);
+        const latestTicket = this.getLatestUserContextRecord(context.tickets);
+        const openTicket = (Array.isArray(context.tickets) ? context.tickets : [])
+            .find((ticket) => !['resolved', 'rejected'].includes(String(ticket?.status || '').trim().toLowerCase()));
+
+        const userSearchValue = String(context.userId || context.email || '').trim();
+        if (userSearchValue) {
+            actions.push({
+                key: 'user',
+                label: '查用户',
+                hint: context.userId
+                    ? `UUID ${String(context.userId || '').slice(0, 8)}`
+                    : this.truncateText(context.email || '当前会话', 24),
+                workspaceKey: 'shop-risk-users',
+                context: {
+                    userId: context.userId || '',
+                    targetId: context.userId || userSearchValue,
+                    target_id: context.userId || userSearchValue,
+                    referenceLabel: context.userId ? '用户' : '邮箱',
+                    referenceValue: userSearchValue
+                }
+            });
+        }
+
+        const orderId = String(latestOrder?.id || latestTicket?.order_id || '').trim();
+        if (orderId) {
+            actions.push({
+                key: 'order',
+                label: '打开订单',
+                hint: `订单 ${orderId.slice(0, 8)}`,
+                workspaceKey: 'shop-risk-orders',
+                context: {
+                    orderId,
+                    targetId: orderId,
+                    target_id: orderId,
+                    referenceLabel: '订单',
+                    referenceValue: orderId
+                }
+            });
+        }
+
+        const ticketId = String(latestTicket?.id || '').trim();
+        if (ticketId) {
+            const isResolved = String(latestTicket?.status || '').trim().toLowerCase() === 'resolved';
+            actions.push({
+                key: 'ticket',
+                label: isResolved ? '查看工单' : '处理工单',
+                hint: `工单 ${ticketId.slice(0, 8)}`,
+                workspaceKey: isResolved ? 'tickets-resolved' : 'tickets-pending',
+                context: {
+                    ticketId,
+                    targetId: ticketId,
+                    target_id: ticketId,
+                    referenceLabel: '工单号',
+                    referenceValue: ticketId
+                }
+            });
+        }
+
+        if (this.canCreateUserContextTicket(context, { openTicket })) {
+            actions.push({
+                key: 'create_ticket',
+                label: '转售后',
+                hint: '将当前会话转成工单',
+                action: 'create_ticket'
+            });
+        }
+
+        if (latestPayment) {
+            const paymentId = String(latestPayment.id || '').trim();
+            actions.push({
+                key: 'payment',
+                label: '充值记录',
+                hint: paymentId ? `支付单 ${paymentId.slice(0, 8)}` : '最近充值',
+                workspaceKey: 'payments-overview',
+                context: {
+                    paymentOrderId: paymentId,
+                    targetId: paymentId,
+                    target_id: paymentId,
+                    referenceLabel: paymentId ? '支付单' : '充值',
+                    referenceValue: paymentId || String(latestPayment.package_name || '最近充值').trim()
+                }
+            });
+        }
+
+        const verificationId = String(latestVerification?.verification_id || '').trim();
+        if (verificationId) {
+            actions.push({
+                key: 'verify',
+                label: '验证面板',
+                hint: this.truncateText(verificationId, 22),
+                workspaceKey: 'verify-monitor',
+                context: {
+                    verificationId,
+                    targetId: verificationId,
+                    target_id: verificationId,
+                    referenceLabel: '验证任务',
+                    referenceValue: verificationId
+                }
+            });
+        }
+
+        return actions.slice(0, 5);
+    }
+
+    canCreateUserContextTicket(context = {}, { openTicket = null } = {}) {
+        if (!context || typeof context !== 'object') {
+            return false;
+        }
+        const activeTicket = openTicket || (Array.isArray(context.tickets) ? context.tickets : [])
+            .find((ticket) => !['resolved', 'rejected'].includes(String(ticket?.status || '').trim().toLowerCase()));
+        if (activeTicket) {
+            return false;
+        }
+        return Boolean(String(context.userId || '').trim());
+    }
+
+    buildChatSessionTicketPayload(context = {}, note = '') {
+        const latestOrder = this.getLatestUserContextRecord(context.orders);
+        const latestPayment = this.getLatestUserContextRecord(context.payments);
+        const latestVerification = this.getLatestUserContextRecord(context.verifications);
+        const latestSummary = [
+            latestOrder ? `最近订单：${this.truncateText(latestOrder.snapshot_product_name || String(latestOrder.id || ''), 24)}（${this.formatUserContextStatus(latestOrder.delivery_status || latestOrder.refund_status)}）` : '',
+            latestPayment ? `最近充值：${this.truncateText(latestPayment.package_name || String(latestPayment.id || ''), 24)}（${this.formatUserContextStatus(latestPayment.status)}）` : '',
+            latestVerification ? `最近验证：${this.truncateText(latestVerification.verification_id || '验证任务', 24)}（${this.formatUserContextStatus(latestVerification.status)}）` : ''
+        ].filter(Boolean).join('\n');
+        const displayTarget = this.truncateText(context.displayName || context.email || context.userId || context.sessionId || '当前会话', 24);
+
+        return {
+            source: 'chat_session',
+            title: `客服会话跟进（${displayTarget}）`,
+            content: latestSummary || '客服会话需要继续跟进处理。',
+            reference_label: '会话',
+            reference_value: context.email || context.sessionId || context.userId || '',
+            user_id: context.userId || '',
+            user_email: context.email || '',
+            session_id: this.currentSessionId || context.sessionId || '',
+            order_id: latestOrder?.id || '',
+            payment_order_id: latestPayment?.id || '',
+            note
+        };
+    }
+
+    async handleCreateUserContextTicket(context = {}) {
+        if (!this.canCreateUserContextTicket(context)) {
+            this.showNotification('当前会话暂不适合直接转售后工单', '💬 客服', true);
+            return false;
+        }
+
+        const note = String(window.prompt('可选：填写转售后补充说明', '') || '').trim();
+        const headers = await this.getOpsAlertCaseApiHeaders();
+        const response = await fetch('/api/admin/tickets/create', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(this.buildChatSessionTicketPayload(context, note))
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.success === false) {
+            throw new Error(payload.message || '转售后工单失败');
+        }
+
+        const ticket = payload.ticket && typeof payload.ticket === 'object' ? payload.ticket : null;
+        if (ticket && context.cacheKey) {
+            const nextContext = {
+                ...context,
+                tickets: [ticket, ...(Array.isArray(context.tickets) ? context.tickets : [])]
+                    .filter(Boolean)
+                    .slice(0, 3)
+            };
+            this.userContextCache.set(context.cacheKey, nextContext);
+            this.currentUserContext = nextContext;
+            this.rememberUserContextAction(nextContext, {
+                label: '处理工单',
+                workspaceKey: 'tickets-pending',
+                context: {
+                    ticketId: String(ticket.id || '').trim(),
+                    targetId: String(ticket.id || '').trim(),
+                    target_id: String(ticket.id || '').trim(),
+                    referenceLabel: '工单号',
+                    referenceValue: String(ticket.id || '').trim()
+                },
+                _contextCacheKey: context.cacheKey
+            });
+        }
+
+        this.showNotification(payload.message || `已转工单：${payload.ticket_id || '已创建'}`, '💬 客服', true);
+        return true;
+    }
+
+    getReplyTemplateDrafts(context = {}) {
+        if (!this.currentSessionId || this.isOpsAlertSessionId(this.currentSessionId)) {
+            return [];
+        }
+
+        const latestOrder = this.getLatestUserContextRecord(context.orders);
+        const latestPayment = this.getLatestUserContextRecord(context.payments);
+        const latestVerification = this.getLatestUserContextRecord(context.verifications);
+        const latestTicket = this.getLatestUserContextRecord(context.tickets);
+        const openTicket = (Array.isArray(context.tickets) ? context.tickets : [])
+            .find((ticket) => !['resolved', 'rejected'].includes(String(ticket?.status || '').trim().toLowerCase()));
+
+        const templates = [{
+            key: 'ack',
+            label: '先接手',
+            hint: '先稳住用户预期',
+            text: '这边已看到你的消息，我先帮你核对一下当前记录，稍后给你明确处理结果。'
+        }];
+
+        if (latestOrder) {
+            const orderName = this.truncateText(latestOrder.snapshot_product_name || '最近订单', 16);
+            const orderStatus = this.formatUserContextStatus(latestOrder.delivery_status || latestOrder.refund_status);
+            templates.push({
+                key: 'order',
+                label: '订单说明',
+                hint: `最近订单 ${orderStatus}`,
+                text: `我这边看到你最近的订单「${orderName}」当前状态是${orderStatus}，我先继续帮你核对处理进度，稍后给你明确反馈。`
+            });
+        }
+
+        if (latestPayment) {
+            const paymentStatus = this.formatUserContextStatus(latestPayment.status);
+            templates.push({
+                key: 'payment',
+                label: '充值核对',
+                hint: `最近充值 ${paymentStatus}`,
+                text: `我这边看到你最近的充值记录当前是${paymentStatus}，先帮你核对到账和处理链路，稍后回复你。`
+            });
+        }
+
+        if (latestVerification) {
+            const verifyStatus = this.formatUserContextStatus(latestVerification.status);
+            templates.push({
+                key: 'verify',
+                label: '验证跟进',
+                hint: `最近验证 ${verifyStatus}`,
+                text: `我这边看到最近验证任务状态是${verifyStatus}，先帮你核对当前提示和处理进度，稍后给你更新。`
+            });
+        }
+
+        if (openTicket || latestTicket) {
+            const ticket = openTicket || latestTicket;
+            const ticketStatus = this.formatUserContextStatus(ticket.status);
+            templates.push({
+                key: 'ticket',
+                label: '工单跟进',
+                hint: `售后工单 ${ticketStatus}`,
+                text: `我这边看到最近售后工单目前是${ticketStatus}，已经接手继续跟进，有结果会第一时间回复你。`
+            });
+        }
+
+        return templates.slice(0, 5);
+    }
+
+    applyReplyTemplate(template = {}) {
+        const templateText = String(template.text || '').trim();
+        if (!this.input || this.input.disabled || !templateText) {
+            return;
+        }
+
+        const currentValue = String(this.input.value || '');
+        const separator = currentValue.trim() ? ' ' : '';
+        this.input.value = `${currentValue}${separator}${templateText}`;
+        this._focusInputWithoutScroll(this.input);
+        this.input.setSelectionRange(this.input.value.length, this.input.value.length);
+        this.input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    renderReplyTemplateBar(context = null) {
+        const bar = this.replyTemplateBar;
+        if (!bar) return;
+
+        const templates = this.getReplyTemplateDrafts(context || {});
+        bar.replaceChildren();
+
+        if (!templates.length) {
+            bar.hidden = true;
+            return;
+        }
+
+        const label = document.createElement('div');
+        label.className = 'chat-reply-templates__label';
+        label.textContent = '快捷回复';
+        bar.appendChild(label);
+
+        const list = document.createElement('div');
+        list.className = 'chat-reply-templates__list';
+
+        templates.forEach((template) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'chat-reply-template-btn';
+            button.innerHTML = `
+                <span class="chat-reply-template-btn__label">${this.escapeHtml(template.label)}</span>
+                <span class="chat-reply-template-btn__hint">${this.escapeHtml(template.hint || '插入到回复框')}</span>
+            `;
+            button.addEventListener('click', () => this.applyReplyTemplate(template));
+            list.appendChild(button);
+        });
+
+        bar.appendChild(list);
+        bar.hidden = false;
+    }
+
+    createUserContextActionsSection(context = {}) {
+        const actions = this.getUserContextQuickActions(context);
+        if (!actions.length) {
+            return null;
+        }
+
+        const iconMap = {
+            user: 'fa-user',
+            order: 'fa-bag-shopping',
+            ticket: 'fa-life-ring',
+            create_ticket: 'fa-ticket',
+            payment: 'fa-wallet',
+            verify: 'fa-shield-halved'
+        };
+
+        const section = document.createElement('section');
+        section.className = 'user-context-section user-context-section--actions';
+
+        const heading = document.createElement('div');
+        heading.className = 'user-context-section__title';
+        heading.textContent = '快捷动作';
+        section.appendChild(heading);
+
+        const actionsWrap = document.createElement('div');
+        actionsWrap.className = 'user-context-actions';
+
+        actions.forEach((action) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = `user-context-action-btn user-context-action-btn--${action.key}${this.isUserContextActionRecent(context, action) ? ' user-context-action-btn--recent' : ''}`;
+            button.innerHTML = `
+                <span class="user-context-action-btn__icon"><i class="fas ${iconMap[action.key] || 'fa-arrow-up-right-from-square'}"></i></span>
+                <span class="user-context-action-btn__text">
+                    <span class="user-context-action-btn__title">${this.escapeHtml(action.label)}</span>
+                    <span class="user-context-action-btn__hint">${this.escapeHtml(action.hint || '打开对应工作区')}</span>
+                </span>
+            `;
+            button.addEventListener('click', () => {
+                this.handleUserContextAction({
+                    ...action,
+                    _contextCacheKey: context.cacheKey || ''
+                });
+            });
+            actionsWrap.appendChild(button);
+        });
+
+        section.appendChild(actionsWrap);
+        return section;
+    }
+
+    async handleUserContextAction(action = {}) {
+        if (String(action.action || action.key || '').trim().toLowerCase() === 'create_ticket') {
+            try {
+                return await this.handleCreateUserContextTicket(this.currentUserContext || {});
+            } catch (error) {
+                console.error('[ChatWidget] Failed to create chat session ticket:', error);
+                this.showNotification(`转工单失败：${error.message || '未知错误'}`, '💬 客服', true);
+                return false;
+            }
+        }
+
+        const workspaceKey = String(action.workspaceKey || '').trim();
+        if (!workspaceKey) {
+            this.showNotification('当前动作缺少目标工作区', '💬 客服', true);
+            return false;
+        }
+
+        try {
+            let result = false;
+            if (typeof window.openOpsAlertWorkspace === 'function') {
+                result = await window.openOpsAlertWorkspace(workspaceKey, action.context || {});
+            } else {
+                result = this.openAdminStudioForOpsAlertWorkspace({
+                    kind: 'ops-workspace',
+                    workspaceKey,
+                    context: action.context || {}
+                });
+            }
+            if (result) {
+                this.rememberUserContextAction(this.currentUserContext || {}, action);
+            }
+            return result;
+        } catch (error) {
+            console.error('[ChatWidget] Failed to open user context workspace:', error);
+            this.showNotification(`打开失败：${error.message || '未知错误'}`, '💬 客服', true);
+            return false;
+        }
+    }
+
+    buildUserContextTimelineAction(kind = '', item = {}) {
+        if (!item || typeof item !== 'object') return null;
+
+        if (kind === 'order') {
+            const orderId = String(item.id || '').trim();
+            if (!orderId) return null;
+            return {
+                key: 'order',
+                label: '打开订单',
+                workspaceKey: 'shop-risk-orders',
+                context: {
+                    orderId,
+                    targetId: orderId,
+                    target_id: orderId,
+                    referenceLabel: '订单',
+                    referenceValue: orderId
+                }
+            };
+        }
+
+        if (kind === 'payment') {
+            const paymentId = String(item.id || '').trim();
+            return {
+                key: 'payment',
+                label: '查看充值记录',
+                workspaceKey: 'payments-overview',
+                context: {
+                    paymentOrderId: paymentId,
+                    targetId: paymentId,
+                    target_id: paymentId,
+                    referenceLabel: paymentId ? '支付单' : '充值',
+                    referenceValue: paymentId || String(item.package_name || '最近充值').trim()
+                }
+            };
+        }
+
+        if (kind === 'verify') {
+            const verificationId = String(item.verification_id || '').trim();
+            if (!verificationId) return null;
+            return {
+                key: 'verify',
+                label: '打开验证面板',
+                workspaceKey: 'verify-monitor',
+                context: {
+                    verificationId,
+                    targetId: verificationId,
+                    target_id: verificationId,
+                    referenceLabel: '验证任务',
+                    referenceValue: verificationId
+                }
+            };
+        }
+
+        if (kind === 'ticket') {
+            const ticketId = String(item.id || '').trim();
+            if (!ticketId) return null;
+            const isResolved = String(item.status || '').trim().toLowerCase() === 'resolved';
+            return {
+                key: 'ticket',
+                label: isResolved ? '查看工单' : '处理工单',
+                workspaceKey: isResolved ? 'tickets-resolved' : 'tickets-pending',
+                context: {
+                    ticketId,
+                    targetId: ticketId,
+                    target_id: ticketId,
+                    referenceLabel: '工单号',
+                    referenceValue: ticketId
+                }
+            };
+        }
+
+        return null;
+    }
+
+    buildUserContextTimelineEntries(context = {}) {
+        const entries = [];
+
+        (Array.isArray(context.orders) ? context.orders : []).forEach((order) => {
+            const action = this.buildUserContextTimelineAction('order', order);
+            entries.push({
+                kind: 'order',
+                label: '订单',
+                time: String(order.created_at || '').trim(),
+                title: this.truncateText(order.snapshot_product_name || `订单 ${String(order.id || '').slice(0, 8)}`, 48),
+                meta: `${this.formatUserContextPoints(order.price_paid)} · ${this.formatUserContextStatus(order.delivery_status || order.refund_status)}`,
+                action: action ? { ...action, _contextCacheKey: context.cacheKey || '' } : null,
+                isRecent: action ? this.isUserContextActionRecent(context, action) : false
+            });
+        });
+
+        (Array.isArray(context.payments) ? context.payments : []).forEach((payment) => {
+            const action = this.buildUserContextTimelineAction('payment', payment);
+            entries.push({
+                kind: 'payment',
+                label: '充值',
+                time: String(payment.created_at || '').trim(),
+                title: this.truncateText(payment.package_name || `支付单 ${String(payment.id || '').slice(0, 8)}`, 48),
+                meta: `${this.formatUserContextCurrency(payment.paid_amount, this.formatUserContextCurrency(payment.expected_amount))} · ${this.formatUserContextStatus(payment.status)}`,
+                action: action ? { ...action, _contextCacheKey: context.cacheKey || '' } : null,
+                isRecent: action ? this.isUserContextActionRecent(context, action) : false
+            });
+        });
+
+        (Array.isArray(context.verifications) ? context.verifications : []).forEach((item) => {
+            const action = this.buildUserContextTimelineAction('verify', item);
+            entries.push({
+                kind: 'verify',
+                label: '验证',
+                time: String(item.created_at || '').trim(),
+                title: this.truncateText(item.verification_id || '验证任务', 48),
+                meta: `${this.formatUserContextStatus(item.status)} · ${this.truncateText(item.message || '暂无描述', 30)}`,
+                action: action ? { ...action, _contextCacheKey: context.cacheKey || '' } : null,
+                isRecent: action ? this.isUserContextActionRecent(context, action) : false
+            });
+        });
+
+        (Array.isArray(context.tickets) ? context.tickets : []).forEach((ticket) => {
+            const action = this.buildUserContextTimelineAction('ticket', ticket);
+            entries.push({
+                kind: 'ticket',
+                label: '工单',
+                time: String(ticket.created_at || '').trim(),
+                title: this.truncateText(ticket.description || `工单 ${String(ticket.id || '').slice(0, 8)}`, 48),
+                meta: `${this.formatUserContextStatus(ticket.status)}${ticket.order_id ? ` · 订单 ${String(ticket.order_id).slice(0, 8)}` : ''}`,
+                action: action ? { ...action, _contextCacheKey: context.cacheKey || '' } : null,
+                isRecent: action ? this.isUserContextActionRecent(context, action) : false
+            });
+        });
+
+        return entries
+            .sort((left, right) => {
+                const leftTime = left.time ? Date.parse(left.time) : 0;
+                const rightTime = right.time ? Date.parse(right.time) : 0;
+                return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+            })
+            .slice(0, 6);
+    }
+
+    createUserContextTimelineSection(entries = []) {
+        const section = document.createElement('section');
+        section.className = 'user-context-section user-context-section--timeline';
+
+        const heading = document.createElement('div');
+        heading.className = 'user-context-section__title';
+        heading.textContent = '业务时间线';
+        section.appendChild(heading);
+
+        if (!entries.length) {
+            const empty = document.createElement('div');
+            empty.className = 'user-context-section__empty';
+            empty.textContent = '最近还没有可串起来的业务记录';
+            section.appendChild(empty);
+            return section;
+        }
+
+        const timeline = document.createElement('div');
+        timeline.className = 'user-context-timeline';
+
+        entries.forEach((entry) => {
+            const item = document.createElement(entry.action ? 'button' : 'div');
+            item.className = `user-context-timeline-item user-context-timeline-item--${entry.kind}${entry.action ? ' user-context-timeline-item--actionable' : ''}${entry.isRecent ? ' user-context-timeline-item--recent' : ''}`;
+            if (entry.action) {
+                item.type = 'button';
+                item.title = entry.action.label || '打开对应工作区';
+                item.addEventListener('click', () => {
+                    this.handleUserContextAction(entry.action);
+                });
+            }
+
+            const badge = document.createElement('span');
+            badge.className = 'user-context-timeline-item__badge';
+            badge.textContent = entry.label;
+            item.appendChild(badge);
+
+            const body = document.createElement('div');
+            body.className = 'user-context-timeline-item__body';
+
+            const main = document.createElement('div');
+            main.className = 'user-context-timeline-item__main';
+            main.textContent = entry.title;
+            body.appendChild(main);
+
+            const sub = document.createElement('div');
+            sub.className = 'user-context-timeline-item__sub';
+            sub.textContent = `${entry.meta} · ${this.formatUserContextDate(entry.time)}`;
+            body.appendChild(sub);
+
+            item.appendChild(body);
+
+            if (entry.action) {
+                const jump = document.createElement('span');
+                jump.className = 'user-context-timeline-item__jump';
+                jump.innerHTML = '<i class="fas fa-arrow-up-right-from-square"></i>';
+                item.appendChild(jump);
+            }
+            timeline.appendChild(item);
+        });
+
+        section.appendChild(timeline);
+        return section;
+    }
+
+    renderUser360Context(context = null) {
+        if (!this.userContextPanel) return;
+        if (!context) {
+            this.userContextPanel.hidden = true;
+            this.userContextPanel.replaceChildren();
+            this.renderUserContextHeaderStatus(null);
+            this.renderReplyTemplateBar(null);
+            return;
+        }
+
+        this.userContextPanel.hidden = false;
+        this.userContextPanel.className = 'chat-context-panel';
+        this.userContextPanel.replaceChildren();
+        this.renderUserContextHeaderStatus(context);
+        this.renderReplyTemplateBar(context);
+
+        const card = document.createElement('div');
+        card.className = 'user-context-card';
+
+        const summary = document.createElement('div');
+        summary.className = 'user-context-summary';
+        [
+            { label: '账号状态', value: context.accountState },
+            { label: '用户邮箱', value: context.email || '未识别邮箱' },
+            { label: '用户 UUID', value: context.userId || this.truncateText(context.sessionId || '未绑定账号', 32) }
+        ].forEach((item) => {
+            const pill = document.createElement('div');
+            pill.className = 'user-context-pill';
+            pill.innerHTML = `<span class="user-context-pill__label">${this.escapeHtml(item.label)}</span><strong class="user-context-pill__value">${this.escapeHtml(item.value)}</strong>`;
+            summary.appendChild(pill);
+        });
+        card.appendChild(summary);
+
+        const headline = this.createUserContextHeadline(context);
+        if (headline) {
+            card.appendChild(headline);
+        }
+
+        const recentActionBanner = this.createUserContextRecentActionBanner(context);
+        if (recentActionBanner) {
+            card.appendChild(recentActionBanner);
+        }
+
+        const actionsSection = this.createUserContextActionsSection(context);
+        if (actionsSection) {
+            card.appendChild(actionsSection);
+        }
+
+        const grid = document.createElement('div');
+        grid.className = 'user-context-grid';
+
+        grid.appendChild(this.createUserContextSection('最近订单', context.orders.map((order) => ({
+            main: this.truncateText(order.snapshot_product_name || `订单 ${String(order.id || '').slice(0, 8)}`, 42),
+            sub: `${this.formatUserContextPoints(order.price_paid)} · ${this.formatUserContextStatus(order.delivery_status || order.refund_status)} · ${this.formatUserContextDate(order.created_at)}`
+        })), '最近没有商城订单'));
+
+        grid.appendChild(this.createUserContextSection('最近充值', context.payments.map((payment) => ({
+            main: this.truncateText(payment.package_name || `支付单 ${String(payment.id || '').slice(0, 8)}`, 42),
+            sub: `${this.formatUserContextCurrency(payment.paid_amount, this.formatUserContextCurrency(payment.expected_amount))} · ${this.formatUserContextStatus(payment.status)} · ${this.formatUserContextDate(payment.created_at)}`
+        })), '最近没有充值记录'));
+
+        grid.appendChild(this.createUserContextSection('验证任务', context.verifications.map((item) => ({
+            main: this.truncateText(item.verification_id || '验证任务', 42),
+            sub: `${this.formatUserContextStatus(item.status)} · ${this.truncateText(item.message || '暂无描述', 26)} · ${this.formatUserContextDate(item.created_at)}`
+        })), '最近没有验证记录'));
+
+        grid.appendChild(this.createUserContextSection('售后工单', context.tickets.map((ticket) => ({
+            main: this.truncateText(ticket.description || `工单 ${String(ticket.id || '').slice(0, 8)}`, 42),
+            sub: `${this.formatUserContextStatus(ticket.status)}${ticket.order_id ? ` · 订单 ${String(ticket.order_id).slice(0, 8)}` : ''} · ${this.formatUserContextDate(ticket.created_at)}`
+        })), '最近没有售后工单'));
+
+        card.appendChild(grid);
+        card.appendChild(this.createUserContextTimelineSection(this.buildUserContextTimelineEntries(context)));
+        this.userContextPanel.appendChild(card);
+    }
+
+    async loadUser360Context(session = {}) {
+        const requestId = ++this._userContextRequestId;
+        this.renderUserContextPanelState('正在整理用户上下文...', 'loading');
+
+        try {
+            const context = await this.fetchUser360Context(session);
+            if (requestId !== this._userContextRequestId || this.currentSessionKey !== session.id) {
+                return null;
+            }
+            this.currentUserContext = context;
+            this.renderUser360Context(context);
+            return context;
+        } catch (error) {
+            if (requestId !== this._userContextRequestId || this.currentSessionKey !== session.id) {
+                return null;
+            }
+            this.currentUserContext = null;
+            this.renderUserContextPanelState('暂时无法读取用户上下文', 'error');
+            return null;
+        }
+    }
+
+    async refreshCurrentUserContext({ silent = true } = {}) {
+        const session = this.currentSessionInfo;
+        const activeSessionKey = String(this.currentSessionKey || '').trim();
+        if (!session || !activeSessionKey || this.isOpsAlertSessionId(activeSessionKey)) {
+            return null;
+        }
+
+        const cacheKey = this.buildUserContextCacheKey(session);
+        this.userContextCache.delete(cacheKey);
+
+        if (!silent) {
+            this.renderUserContextPanelState('正在整理用户上下文...', 'loading');
+        }
+
+        const requestId = ++this._userContextRequestId;
+
+        try {
+            const context = await this.fetchUser360Context(session);
+            if (requestId !== this._userContextRequestId || String(this.currentSessionKey || '').trim() !== activeSessionKey) {
+                return null;
+            }
+            this.currentUserContext = context;
+            this.renderUser360Context(context);
+            return context;
+        } catch (error) {
+            if (!silent && requestId === this._userContextRequestId && String(this.currentSessionKey || '').trim() === activeSessionKey) {
+                this.currentUserContext = null;
+                this.renderUserContextPanelState('暂时无法读取用户上下文', 'error');
+            }
+            return null;
+        }
+    }
+
+    async handleTicketRealtimeChange(ticket = {}) {
+        const currentUserId = String(this.currentUserContext?.userId || '').trim();
+        const ticketUserId = String(ticket?.user_id || '').trim();
+        if (ticketUserId) {
+            await this.refreshAdminSessionTicketSummariesForUserIds([ticketUserId]);
+        }
+        if (!currentUserId || !ticketUserId || currentUserId !== ticketUserId) {
+            return;
+        }
+
+        await this.refreshCurrentUserContext({ silent: true });
+    }
+
+    async handlePaymentRealtimeChange(payment = {}) {
+        const currentUserId = String(this.currentUserContext?.userId || '').trim();
+        const paymentUserId = String(payment?.user_id || '').trim();
+        if (paymentUserId) {
+            await this.refreshAdminSessionTicketSummariesForUserIds([paymentUserId]);
+        }
+        if (!currentUserId || !paymentUserId || currentUserId !== paymentUserId) {
+            return;
+        }
+
+        await this.refreshCurrentUserContext({ silent: true });
+    }
+
+    async handleVerificationRealtimeChange(entry = {}) {
+        const currentUserId = String(this.currentUserContext?.userId || '').trim();
+        const verificationUserId = String(entry?.user_id || '').trim();
+        if (verificationUserId) {
+            await this.refreshAdminSessionTicketSummariesForUserIds([verificationUserId]);
+        }
+        if (!currentUserId || !verificationUserId || currentUserId !== verificationUserId) {
+            return;
+        }
+
+        await this.refreshCurrentUserContext({ silent: true });
     }
 
     async fetchChatProfiles(filterType, values = []) {
@@ -4013,8 +8185,12 @@ class ChatWidget {
         }
 
         if (this.isOpsAlertSession(sessionInfo)) {
+            this.currentSessionInfo = null;
+            this.currentUserContext = null;
+            this.renderUser360Context(null);
             this.chatHeader.querySelector('.chat-user-name').textContent = '站内代办';
-            this.chatHeader.querySelector('.chat-user-id').textContent = '站外告警同步 / 可直接跳转处理页';
+            this.chatHeader.querySelector('.chat-user-id').textContent = '站外告警同步 / 可认领、备注、关闭并跳转处理页';
+            this.renderUserContextHeaderStatus(null);
 
             let statusContainer = this.chatHeader.querySelector('.user-status-indicator');
             if (!statusContainer) {
@@ -4032,6 +8208,16 @@ class ChatWidget {
         }
 
         this.setAdminReplyReadonly(false);
+        this.currentSessionInfo = sessionInfo;
+        this.renderReplyTemplateBar({
+            sessionId,
+            userId: sessionInfo?.userId || '',
+            email: sessionInfo?.email || '',
+            orders: [],
+            payments: [],
+            verifications: [],
+            tickets: []
+        });
 
         // Update header with user info
         this.chatHeader.querySelector('.chat-user-name').textContent = sessionInfo.nickname;
@@ -4075,6 +8261,10 @@ class ChatWidget {
 
         // Slide to chat view on mobile
         this.chatWindow.classList.add('chat-active');
+
+        this.loadUser360Context(sessionInfo).catch((error) => {
+            console.warn('[ChatWidget] Failed to load user 360 context:', error);
+        });
 
         // Clear unread status for this session
         const sessionIdsToMark = sessionInfo.sessionIds || [sessionId];
@@ -4240,6 +8430,8 @@ class ChatWidget {
     }
 
     async searchSessions(query) {
+        const normalizedQuery = String(query || '').toLowerCase().trim();
+
         // First, search in session list (name, email, preview)
         this.sessionList.querySelectorAll('.session-item').forEach(item => {
             this._setSessionItemHidden(item, false);
@@ -4247,13 +8439,18 @@ class ChatWidget {
             const existingCount = item.querySelector('.search-match-count');
             if (existingCount) existingCount.remove();
         });
+        this.updateAdminSessionSearchEmptyState('');
+
+        if (!normalizedQuery) {
+            return;
+        }
 
         // Then search in chat messages database
         try {
             const { data: messages, error } = await this.supabase
                 .from('chat_messages')
                 .select('session_id, content')
-                .ilike('content', `%${query}%`);
+                .ilike('content', `%${normalizedQuery}%`);
 
             if (error) throw error;
 
@@ -4280,7 +8477,10 @@ class ChatWidget {
                 const session = this.sessions?.find(s => s.id === sessionId);
                 const sessionIds = session?.sessionIds || [sessionId];
                 const hasMessageMatch = sessionIds.some(sid => matchedSessionIds.has(sid));
-                const hasInfoMatch = name.includes(query) || email.includes(query) || preview.includes(query) || extra.includes(query);
+                const hasInfoMatch = name.includes(normalizedQuery)
+                    || email.includes(normalizedQuery)
+                    || preview.includes(normalizedQuery)
+                    || extra.includes(normalizedQuery);
 
                 if (hasInfoMatch || hasMessageMatch) {
                     this._setSessionItemHidden(item, false);
@@ -4297,6 +8497,7 @@ class ChatWidget {
                     this._setSessionItemHidden(item, true);
                 }
             });
+            this.updateAdminSessionSearchEmptyState(normalizedQuery);
         } catch (err) {
             console.error('Search failed:', err);
             // Fallback to basic search
@@ -4304,9 +8505,12 @@ class ChatWidget {
                 const name = item.querySelector('.session-name')?.textContent.toLowerCase() || '';
                 const preview = item.querySelector('.session-preview')?.textContent.toLowerCase() || '';
                 const extra = item.dataset.searchText || '';
-                const matches = name.includes(query) || preview.includes(query) || extra.includes(query);
+                const matches = name.includes(normalizedQuery)
+                    || preview.includes(normalizedQuery)
+                    || extra.includes(normalizedQuery);
                 this._setSessionItemHidden(item, !matches);
             });
+            this.updateAdminSessionSearchEmptyState(normalizedQuery);
         }
     }
 
@@ -4333,18 +8537,13 @@ class ChatWidget {
             let searchTimeout;
             searchInput.addEventListener('input', async (e) => {
                 const query = e.target.value.toLowerCase().trim();
+                this.adminSessionSearchQuery = query;
 
                 // Clear previous search timeout
                 if (searchTimeout) clearTimeout(searchTimeout);
 
                 if (!query) {
-                    // Show all sessions when empty
-                    this.sessionList.querySelectorAll('.session-item').forEach(item => {
-                        this._setSessionItemHidden(item, false);
-                        // Remove search highlights
-                        const highlight = item.querySelector('.search-match-count');
-                        if (highlight) highlight.remove();
-                    });
+                    this.renderAdminSessionList();
                     return;
                 }
 
@@ -4352,6 +8551,27 @@ class ChatWidget {
                 searchTimeout = setTimeout(async () => {
                     await this.searchSessions(query);
                 }, 300);
+            });
+        }
+
+        if (this.sessionFilterBar) {
+            this.sessionQueueOverview?.addEventListener('click', (event) => {
+                const button = event.target.closest('[data-session-stat-filter]');
+                if (!button) return;
+                this.adminSessionQueueView = 'all';
+                this.setAdminSessionQueueFilter(button.getAttribute('data-session-stat-filter') || 'all');
+            });
+
+            this.sessionQueueViews?.addEventListener('click', (event) => {
+                const button = event.target.closest('[data-session-view]');
+                if (!button) return;
+                this.setAdminSessionQueueView(button.getAttribute('data-session-view') || 'all');
+            });
+
+            this.sessionFilterBar.addEventListener('click', (event) => {
+                const button = event.target.closest('[data-session-filter]');
+                if (!button) return;
+                this.setAdminSessionQueueFilter(button.getAttribute('data-session-filter') || 'all');
             });
         }
 
@@ -4559,14 +8779,24 @@ class ChatWidget {
         if (this.adminOpsAlertChannel) {
             this.supabase.removeChannel(this.adminOpsAlertChannel);
         }
+        if (this.adminTicketChannel) {
+            this.supabase.removeChannel(this.adminTicketChannel);
+        }
+        if (this.adminPaymentChannel) {
+            this.supabase.removeChannel(this.adminPaymentChannel);
+        }
+        if (this.adminVerificationChannel) {
+            this.supabase.removeChannel(this.adminVerificationChannel);
+        }
 
         this.adminMessageChannel = this.supabase
             .channel(`admin-chat-global-${Date.now()}`)
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
                 const msg = payload.new;
+                const isTicketSyncMessage = this.isTicketSyncChatMessage(msg);
 
                 // Skip admin's own messages
-                if (msg.is_admin) return;
+                if (msg.is_admin && !isTicketSyncMessage) return;
 
                 // Check if we're currently ACTIVELY viewing this session's chat
                 // Must be: window open + selected this session + on mobile: must be in chat view (not list view)
@@ -4593,7 +8823,9 @@ class ChatWidget {
                 // Always show notification if not actively viewing the chat
                 if (!isViewingThisSession) {
                     const messageContent = msg.message_type === 'image' ? '📷 发送了一张图片' : msg.content;
-                    const senderName = msg.user_id ? '已登录用户' : '访客';
+                    const senderName = isTicketSyncMessage
+                        ? '工单结果同步'
+                        : (msg.user_id ? '已登录用户' : '访客');
                     this.showNotification(messageContent, `💬 ${senderName}`, true); // forceShow for admin
 
                     // Mark session as unread
@@ -4612,6 +8844,36 @@ class ChatWidget {
             })
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ops_alert_jobs' }, (payload) => {
                 this.upsertOpsAlertMessage(payload.new, { announce: false });
+            })
+            .subscribe();
+
+        this.adminTicketChannel = this.supabase
+            .channel(`admin-ticket-context-${Date.now()}`)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'shop_tickets' }, (payload) => {
+                this.handleTicketRealtimeChange(payload.new);
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'shop_tickets' }, (payload) => {
+                this.handleTicketRealtimeChange(payload.new);
+            })
+            .subscribe();
+
+        this.adminPaymentChannel = this.supabase
+            .channel(`admin-payment-context-${Date.now()}`)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'payment_orders' }, (payload) => {
+                this.handlePaymentRealtimeChange(payload.new);
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'payment_orders' }, (payload) => {
+                this.handlePaymentRealtimeChange(payload.new);
+            })
+            .subscribe();
+
+        this.adminVerificationChannel = this.supabase
+            .channel(`admin-verification-context-${Date.now()}`)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'verification_logs' }, (payload) => {
+                this.handleVerificationRealtimeChange(payload.new);
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'verification_logs' }, (payload) => {
+                this.handleVerificationRealtimeChange(payload.new);
             })
             .subscribe();
     }
@@ -4751,6 +9013,11 @@ class ChatWidget {
                     pointer-events: none !important;
                     transform: translateY(-10px) !important;
                     transition: opacity 0.3s ease, transform 0.3s ease !important;
+                }
+
+                .user-context-summary,
+                .user-context-grid {
+                    grid-template-columns: 1fr;
                 }
             }
             

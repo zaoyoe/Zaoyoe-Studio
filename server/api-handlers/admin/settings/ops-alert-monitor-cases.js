@@ -5,269 +5,26 @@ const {
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
 const {
+    notifyUsers
+} = require('../../../../api/_lib/admin-notifications');
+const {
     insertOpsAlertCaseEvents,
     isMissingTableAccessError
 } = require('./_ops-alert-case-events');
+const {
+    sanitizeText,
+    normalizeJsonObject,
+    buildOwnerLabel,
+    normalizeCategoryKey,
+    buildCaseResponse,
+    isMissingOpsAlertCasesTableError,
+    fetchExistingCase,
+    applyCaseAction,
+    persistCase
+} = require('./_ops-alert-cases');
 
 const VALID_ACTIONS = new Set(['claim', 'assign', 'add_note', 'resolve', 'reopen']);
 const NOTE_REQUIRED_ACTIONS = new Set(['add_note', 'resolve']);
-
-function sanitizeText(value, maxLength = 4000) {
-    return String(value || '').trim().slice(0, Math.max(0, maxLength));
-}
-
-function normalizeJsonObject(value) {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? value
-        : {};
-}
-
-function buildOwnerLabel(user = {}) {
-    return sanitizeText(user.email, 255) || sanitizeText(user.id, 160) || 'unknown';
-}
-
-function normalizeCategoryKey(value, targetId = '') {
-    const normalized = sanitizeText(value, 80).toLowerCase();
-    if (normalized) {
-        return normalized;
-    }
-
-    if (sanitizeText(targetId, 200).toLowerCase().startsWith('shop_order_risk:')) {
-        return 'shop_risk';
-    }
-
-    return '';
-}
-
-function buildCaseResponse(row = {}) {
-    return {
-        id: sanitizeText(row.id, 160) || null,
-        category_key: sanitizeText(row.category_key, 80).toLowerCase() || null,
-        target_id: sanitizeText(row.target_id, 200) || null,
-        alert_type: sanitizeText(row.alert_type, 120).toLowerCase() || null,
-        status: sanitizeText(row.status, 40).toLowerCase() || 'open',
-        owner_admin_id: sanitizeText(row.owner_admin_id, 160) || null,
-        owner_label: sanitizeText(row.owner_label, 255) || null,
-        note: sanitizeText(row.note, 2000) || null,
-        resolution: sanitizeText(row.resolution, 2000) || null,
-        metadata: normalizeJsonObject(row.metadata),
-        last_action: sanitizeText(row.last_action, 80).toLowerCase() || 'opened',
-        last_action_by: sanitizeText(row.last_action_by, 160) || null,
-        last_action_at: sanitizeText(row.last_action_at, 80) || null,
-        created_at: sanitizeText(row.created_at, 80) || null,
-        updated_at: sanitizeText(row.updated_at, 80) || null
-    };
-}
-
-function isMissingOpsAlertCasesTableError(error) {
-    return isMissingTableAccessError(error, 'ops_alert_cases');
-}
-
-async function fetchLegacyShopRiskCase(supabase, targetId) {
-    const { data, error } = await supabase
-        .from('shop_risk_cases')
-        .select('*')
-        .eq('target_id', targetId)
-        .maybeSingle();
-
-    if (error) {
-        throw error;
-    }
-
-    if (!data) {
-        return null;
-    }
-
-    return {
-        ...data,
-        category_key: 'shop_risk',
-        alert_type: sanitizeText(data?.alert_type || data?.metadata?.alert_type, 120).toLowerCase() || null
-    };
-}
-
-async function fetchExistingCase(supabase, categoryKey, targetId) {
-    try {
-        const { data, error } = await supabase
-            .from('ops_alert_cases')
-            .select('*')
-            .eq('category_key', categoryKey)
-            .eq('target_id', targetId)
-            .maybeSingle();
-
-        if (error) {
-            throw error;
-        }
-
-        return data || null;
-    } catch (error) {
-        if (categoryKey === 'shop_risk' && isMissingOpsAlertCasesTableError(error)) {
-            return fetchLegacyShopRiskCase(supabase, targetId);
-        }
-        throw error;
-    }
-}
-
-function buildCaseMetadata(existingCase = {}, item = {}, requestMetadata = {}) {
-    const existingMetadata = normalizeJsonObject(existingCase?.metadata);
-    const itemMetadata = normalizeJsonObject(item?.metadata);
-    const nextMetadata = {
-        ...existingMetadata,
-        ...requestMetadata,
-        ...itemMetadata
-    };
-
-    const alertType = sanitizeText(item.alert_type || requestMetadata.alert_type || existingCase?.alert_type, 120).toLowerCase();
-    const title = sanitizeText(item.title || itemMetadata.title || requestMetadata.title || existingMetadata.title, 240);
-    const referenceLabel = sanitizeText(
-        item.reference_label || item.referenceLabel || itemMetadata.reference_label || requestMetadata.reference_label || existingMetadata.reference_label,
-        120
-    );
-    const referenceValue = sanitizeText(
-        item.reference_value || item.referenceValue || itemMetadata.reference_value || requestMetadata.reference_value || existingMetadata.reference_value,
-        240
-    );
-
-    if (alertType) {
-        nextMetadata.alert_type = alertType;
-    }
-    if (title) {
-        nextMetadata.title = title;
-    }
-    if (referenceLabel) {
-        nextMetadata.reference_label = referenceLabel;
-    }
-    if (referenceValue) {
-        nextMetadata.reference_value = referenceValue;
-    }
-
-    return nextMetadata;
-}
-
-function resolveAssignedOwner(user = {}, ownerInput = {}) {
-    const ownerLabel = sanitizeText(ownerInput.owner_label || ownerInput.ownerLabel, 255);
-    const ownerAdminId = sanitizeText(ownerInput.owner_admin_id || ownerInput.ownerAdminId, 160);
-
-    if (!ownerLabel && !ownerAdminId) {
-        return {
-            owner_admin_id: user.id,
-            owner_label: buildOwnerLabel(user)
-        };
-    }
-
-    return {
-        owner_admin_id: ownerAdminId || null,
-        owner_label: ownerLabel || buildOwnerLabel(user)
-    };
-}
-
-function applyCaseAction(existingCase = null, action, item = {}, options = {}) {
-    const categoryKey = normalizeCategoryKey(item.category_key || item.categoryKey, item.target_id || item.targetId);
-    const targetId = sanitizeText(item.target_id || item.targetId, 200);
-    const note = sanitizeText(options.note, 4000);
-    const resolution = sanitizeText(options.resolution, 4000) || note;
-    const requestMetadata = normalizeJsonObject(options.metadata);
-    const user = options.user || {};
-    const nowIso = options.nowIso || new Date().toISOString();
-    const owner = resolveAssignedOwner(user, options.owner || {});
-
-    const nextRecord = {
-        category_key: categoryKey,
-        target_id: targetId,
-        alert_type: sanitizeText(item.alert_type || item.alertType || existingCase?.alert_type, 120).toLowerCase() || null,
-        status: sanitizeText(existingCase?.status, 40).toLowerCase() || 'open',
-        owner_admin_id: sanitizeText(existingCase?.owner_admin_id, 160) || null,
-        owner_label: sanitizeText(existingCase?.owner_label, 255) || null,
-        note: sanitizeText(existingCase?.note, 4000) || null,
-        resolution: sanitizeText(existingCase?.resolution, 4000) || null,
-        metadata: buildCaseMetadata(existingCase, item, requestMetadata),
-        last_action: sanitizeText(existingCase?.last_action, 80).toLowerCase() || 'opened',
-        last_action_by: sanitizeText(existingCase?.last_action_by, 160) || null,
-        last_action_at: sanitizeText(existingCase?.last_action_at, 80) || nowIso
-    };
-
-    if (action === 'claim') {
-        nextRecord.status = 'claimed';
-        nextRecord.owner_admin_id = user.id;
-        nextRecord.owner_label = buildOwnerLabel(user);
-        if (note) {
-            nextRecord.note = note;
-        }
-        nextRecord.last_action = 'claimed';
-    } else if (action === 'assign') {
-        nextRecord.status = 'claimed';
-        nextRecord.owner_admin_id = owner.owner_admin_id;
-        nextRecord.owner_label = owner.owner_label;
-        if (note) {
-            nextRecord.note = note;
-        }
-        nextRecord.last_action = 'assigned';
-    } else if (action === 'add_note') {
-        nextRecord.note = note;
-        nextRecord.last_action = 'noted';
-    } else if (action === 'resolve') {
-        nextRecord.status = 'resolved';
-        nextRecord.owner_admin_id = nextRecord.owner_admin_id || user.id;
-        nextRecord.owner_label = nextRecord.owner_label || buildOwnerLabel(user);
-        nextRecord.resolution = resolution;
-        nextRecord.last_action = 'resolved';
-    } else if (action === 'reopen') {
-        nextRecord.status = 'open';
-        nextRecord.last_action = 'reopened';
-    }
-
-    nextRecord.last_action_by = user.id;
-    nextRecord.last_action_at = nowIso;
-
-    return nextRecord;
-}
-
-async function persistCase(supabase, record = {}) {
-    try {
-        const { data, error } = await supabase
-            .from('ops_alert_cases')
-            .upsert(record, { onConflict: 'category_key,target_id' })
-            .select('*')
-            .single();
-
-        if (error) {
-            throw error;
-        }
-
-        return data;
-    } catch (error) {
-        if (record.category_key !== 'shop_risk' || !isMissingOpsAlertCasesTableError(error)) {
-            throw error;
-        }
-
-        const legacyRecord = {
-            target_id: sanitizeText(record.target_id, 200),
-            status: sanitizeText(record.status, 40).toLowerCase() || 'open',
-            owner_admin_id: sanitizeText(record.owner_admin_id, 160) || null,
-            owner_label: sanitizeText(record.owner_label, 255) || null,
-            note: sanitizeText(record.note, 4000) || null,
-            resolution: sanitizeText(record.resolution, 4000) || null,
-            metadata: normalizeJsonObject(record.metadata),
-            last_action: sanitizeText(record.last_action, 80).toLowerCase() || 'opened',
-            last_action_by: sanitizeText(record.last_action_by, 160) || null,
-            last_action_at: sanitizeText(record.last_action_at, 80) || new Date().toISOString()
-        };
-        const { data, error: legacyError } = await supabase
-            .from('shop_risk_cases')
-            .upsert(legacyRecord, { onConflict: 'target_id' })
-            .select('*')
-            .single();
-
-        if (legacyError) {
-            throw legacyError;
-        }
-
-        return {
-            ...data,
-            category_key: 'shop_risk',
-            alert_type: sanitizeText(record.alert_type || data?.alert_type || data?.metadata?.alert_type, 120).toLowerCase() || null
-        };
-    }
-}
 
 function buildActionMessage(action, results = [], skippedCount = 0) {
     const processedCount = Array.isArray(results) ? results.length : 0;
@@ -315,6 +72,69 @@ function buildAuditActionType(categoryKey, action, isBatch = false) {
     return isBatch
         ? `admin.ops_alert_case.batch.${action}`
         : `admin.ops_alert_case.${action}`;
+}
+
+function getOpsAlertNotificationTargetLabel(item = {}) {
+    const referenceLabel = sanitizeText(item.reference_label, 120);
+    const referenceValue = sanitizeText(item.reference_value, 240);
+    const title = sanitizeText(item.title, 240);
+    const targetId = sanitizeText(item.target_id, 200);
+
+    if (referenceLabel && referenceValue) {
+        return `${referenceLabel}：${referenceValue}`;
+    }
+    return title || targetId || '站内代办';
+}
+
+function buildAssignmentNotificationPayload({
+    actor = {},
+    ownerInput = {},
+    results = [],
+    items = [],
+    isBatch = false,
+    skippedCount = 0
+}) {
+    const ownerAdminId = sanitizeText(ownerInput.owner_admin_id || ownerInput.ownerAdminId, 160);
+    if (!ownerAdminId || ownerAdminId === sanitizeText(actor.id, 160)) {
+        return null;
+    }
+
+    const ownerLabel = sanitizeText(ownerInput.owner_label || ownerInput.ownerLabel, 255) || ownerAdminId;
+    const actorLabel = buildOwnerLabel(actor);
+    const normalizedItems = Array.isArray(items) ? items : [];
+    const processedCount = Array.isArray(results) ? results.length : 0;
+    if (processedCount <= 0) {
+        return null;
+    }
+
+    const preview = normalizedItems
+        .slice(0, 3)
+        .map((item) => getOpsAlertNotificationTargetLabel(item))
+        .filter(Boolean);
+    const overflowCount = Math.max(0, processedCount - preview.length);
+    const title = isBatch || processedCount > 1 ? '站内代办已批量转交给你' : '站内代办已转交给你';
+    const lines = [
+        `${actorLabel} 刚刚给你转交了 ${processedCount} 条站内代办。`
+    ];
+
+    if (preview.length) {
+        lines.push(`涉及对象：${preview.join(' / ')}${overflowCount > 0 ? ` 等 ${overflowCount} 条` : ''}`);
+    }
+    if (skippedCount > 0) {
+        lines.push(`本次有 ${skippedCount} 条无效记录被跳过。`);
+    }
+    lines.push(`当前负责人：${ownerLabel}`);
+    lines.push('处理入口：客服消息 -> 站内代办');
+
+    return {
+        userIds: [ownerAdminId],
+        title,
+        content: lines.join('\n'),
+        type: 'info',
+        scope: 'admin_personal',
+        category: 'assignment',
+        dedupeWindowMinutes: 10
+    };
 }
 
 function normalizeRequestItems(body = {}) {
@@ -448,6 +268,29 @@ module.exports = async (req, res) => {
 
         await insertOpsAlertCaseEvents(supabase, eventEntries);
 
+        let assignmentNotification = {
+            recipients: 0,
+            created: 0,
+            skipped: 0
+        };
+        if (action === 'assign') {
+            const notificationPayload = buildAssignmentNotificationPayload({
+                actor: user,
+                ownerInput,
+                results,
+                items,
+                isBatch,
+                skippedCount: skipped.length
+            });
+            if (notificationPayload) {
+                try {
+                    assignmentNotification = await notifyUsers(supabase, notificationPayload);
+                } catch (notificationError) {
+                    console.warn('[AdminAPI] Failed to notify assigned ops alert owner:', notificationError.message || notificationError);
+                }
+            }
+        }
+
         const primaryCategoryKey = results.length === 1
             ? sanitizeText(results[0].category_key, 80).toLowerCase()
             : 'all';
@@ -469,7 +312,9 @@ module.exports = async (req, res) => {
                     owner_label: item.owner_label
                 })).slice(0, 50),
                 note: ['claim', 'assign', 'add_note'].includes(action) ? note || null : null,
-                resolution: action === 'resolve' ? resolution || null : null
+                resolution: action === 'resolve' ? resolution || null : null,
+                assignment_notification_created: assignmentNotification.created || 0,
+                assignment_notification_skipped: assignmentNotification.skipped || 0
             }
         });
 
@@ -480,8 +325,11 @@ module.exports = async (req, res) => {
             cases: results,
             summary: {
                 processed_count: results.length,
-                skipped_count: skipped.length
-            }
+                skipped_count: skipped.length,
+                assignment_notification_created: assignmentNotification.created || 0,
+                assignment_notification_skipped: assignmentNotification.skipped || 0
+            },
+            assignmentNotification
         });
     } catch (error) {
         if (isMissingOpsAlertCasesTableError(error)) {
