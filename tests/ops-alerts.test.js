@@ -537,6 +537,7 @@ test('enqueueOpsAlertJob aggregates inventory low and empty alerts into a single
     assert.equal(state.jobs[0].payload.summary_window_minutes, 120);
     assert.equal(state.jobs[0].payload.summary_max_items, 4);
     assert.equal(state.jobs[0].title, '库存与补货汇总（2 条库存告警）');
+    assert.match(state.jobs[0].content, /窗口：2026-03-27 14:00:00 北京时间 - 2026-03-27 16:00:00 北京时间/);
 });
 
 test('enqueueOpsAlertJob creates the first inventory summary job when no existing summary row is found', async () => {

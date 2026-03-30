@@ -3,6 +3,10 @@ const {
     OPS_ALERT_SECRET_KEYS: CONFIGURED_OPS_ALERT_SECRET_KEYS,
     getStoredAdminSecret
 } = require('./secrets');
+const {
+    formatAlertTimestamp,
+    formatAlertTimestampsInsideText
+} = require('./alert-time');
 
 const OPS_ALERTS_CONFIG_KEY = 'ops_alerts';
 const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
@@ -12,19 +16,6 @@ const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
 });
 const SUPPORTED_CHANNELS = Object.freeze(['telegram', 'feishu', 'email']);
 const DEFAULT_QUIET_HOURS_TIMEZONE = 'Asia/Shanghai';
-const EXTERNAL_ALERT_TIMEZONE = 'Asia/Shanghai';
-const EXTERNAL_ALERT_TIMEZONE_LABEL = '北京时间';
-const EXTERNAL_ALERT_TIMESTAMP_IN_TEXT_PATTERN = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})\b/g;
-const EXTERNAL_ALERT_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat('en-CA', {
-    timeZone: EXTERNAL_ALERT_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23'
-});
 const DEFAULT_SUMMARY_SCHEDULE_MODE = 'rolling_window';
 const WORK_HOURS_SUMMARY_SCHEDULE_MODE = 'work_hours';
 const SUPPORTED_SUMMARY_SCHEDULE_MODES = Object.freeze([
@@ -971,7 +962,7 @@ function buildOpsAlertSummaryItem({ dedupeKey = '', payload = {}, title = '', co
         target_id: normalizeText(payload?.target_id || payload?.order_id || payload?.payment_order_id || payload?.message_id || payload?.id),
         alert_type: normalizeText(payload?.summary_source_alert_type || ''),
         title: normalizeText(title),
-        content: normalizeText(content),
+        content: formatAlertTimestampsInsideText(content),
         created_at: normalizeText(createdAt) || new Date().toISOString(),
         payload: normalizeJsonObject(payload)
     };
@@ -3056,13 +3047,14 @@ function getOpsAlertSummaryScheduleLabel(summaryConfig = {}) {
 }
 
 function buildOpsAlertSummaryContent(summaryConfig, itemCount, bucket) {
+    const windowLabel = `${formatTimestamp(bucket.start_at)} - ${formatTimestamp(bucket.end_at)}`;
     if (summaryConfig.summary_schedule_mode === WORK_HOURS_SUMMARY_SCHEDULE_MODE) {
-        return `当前非工作时段累计 ${itemCount} ${summaryConfig.unit}，将在下一个${getOpsAlertSummaryScheduleLabel(summaryConfig)}开始后统一外发。窗口：${bucket.start_at} - ${bucket.end_at}`;
+        return `当前非工作时段累计 ${itemCount} ${summaryConfig.unit}，将在下一个${getOpsAlertSummaryScheduleLabel(summaryConfig)}开始后统一外发。窗口：${windowLabel}`;
     }
     if (summaryConfig.summary_schedule_mode === DEFAULT_SUMMARY_SCHEDULE_MODE) {
-        return `最近 ${summaryConfig.summary_window_minutes} 分钟内累计 ${itemCount} ${summaryConfig.unit}，将在窗口结束后统一外发。窗口：${bucket.start_at} - ${bucket.end_at}`;
+        return `最近 ${summaryConfig.summary_window_minutes} 分钟内累计 ${itemCount} ${summaryConfig.unit}，将在窗口结束后统一外发。窗口：${windowLabel}`;
     }
-    return `当前固定时点汇总窗口内累计 ${itemCount} ${summaryConfig.unit}，将按 ${getOpsAlertSummaryScheduleLabel(summaryConfig)} 统一外发。窗口：${bucket.start_at} - ${bucket.end_at}`;
+    return `当前固定时点汇总窗口内累计 ${itemCount} ${summaryConfig.unit}，将按 ${getOpsAlertSummaryScheduleLabel(summaryConfig)} 统一外发。窗口：${windowLabel}`;
 }
 
 async function loadExistingOpsAlertSummaryJob(supabase, alertType, dedupeKey) {
@@ -3315,7 +3307,7 @@ async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
     const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, options.env);
     const alertType = normalizeText(input.alertType || input.alert_type);
     const title = normalizeText(input.title);
-    const content = normalizeText(input.content);
+    const content = formatTimestampsInsideText(input.content);
     const severity = normalizeSeverity(input.severity, 'warning');
     const payload = input.payload && typeof input.payload === 'object' ? input.payload : {};
     const requestedChannels = Array.isArray(input.allowedChannels)
@@ -3663,31 +3655,11 @@ function formatBooleanLabel(value) {
 }
 
 function formatTimestamp(value) {
-    const normalized = normalizeText(value);
-    if (!normalized) return '';
-    const parsed = Date.parse(normalized);
-    if (!Number.isFinite(parsed)) {
-        return normalized;
-    }
-
-    const parts = Object.create(null);
-    for (const part of EXTERNAL_ALERT_TIMESTAMP_FORMATTER.formatToParts(new Date(parsed))) {
-        if (part.type !== 'literal') {
-            parts[part.type] = part.value;
-        }
-    }
-
-    if (!parts.year || !parts.month || !parts.day || !parts.hour || !parts.minute || !parts.second) {
-        return normalized;
-    }
-
-    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} ${EXTERNAL_ALERT_TIMEZONE_LABEL}`;
+    return formatAlertTimestamp(value);
 }
 
 function formatTimestampsInsideText(value) {
-    const normalized = normalizeText(value);
-    if (!normalized) return '';
-    return normalized.replace(EXTERNAL_ALERT_TIMESTAMP_IN_TEXT_PATTERN, (matched) => formatTimestamp(matched) || matched);
+    return formatAlertTimestampsInsideText(value);
 }
 
 function getChatMessageTypeLabel(value) {

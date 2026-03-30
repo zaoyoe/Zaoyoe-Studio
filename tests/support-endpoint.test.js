@@ -2,6 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const Module = require('node:module');
+const {
+    buildTicketCreatedAlert: buildTicketCreatedAlertReal
+} = require('../api/_lib/ticket-alerts');
 
 function createMockResponse() {
     const state = {
@@ -205,19 +208,7 @@ test('support create_ticket enqueues an external ops alert for the new ticket', 
         ticketAlertsModule: {
             buildTicketCreatedAlert(ticket = {}) {
                 builtTickets.push(ticket);
-                return {
-                    alertType: 'ticket_new',
-                    severity: 'warning',
-                    title: `新售后工单（${String(ticket.id || '').slice(0, 8) || 'unknown'}）`,
-                    content: '收到新的售后工单，请尽快跟进。',
-                    payload: {
-                        ticket_id: ticket.id || null,
-                        user_id: ticket.user_id || null,
-                        user_email: ticket.user_email || null
-                    },
-                    dedupeKey: 'ticket-new-dedupe',
-                    dedupeWindowMinutes: 24 * 60
-                };
+                return buildTicketCreatedAlertReal(ticket);
             }
         },
         opsAlertsModule: {
@@ -257,6 +248,7 @@ test('support create_ticket enqueues an external ops alert for the new ticket', 
         assert.equal(enqueuedAlerts.length, 1);
         assert.equal(enqueuedAlerts[0].alertType, 'ticket_new');
         assert.equal(enqueuedAlerts[0].source, 'support_ticket');
+        assert.match(enqueuedAlerts[0].content, /创建时间：2026-03-30 20:00:00 北京时间/);
         assert.equal(enqueuedAlerts[0].payload.ticket_id, 'ticket-demo-001');
         assert.equal(enqueuedAlerts[0].payload.user_id, 'user-support-1');
         assert.equal(enqueuedAlerts[0].payload.user_email, 'profile-member@example.com');

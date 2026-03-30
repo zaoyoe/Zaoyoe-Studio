@@ -6,6 +6,9 @@ const {
 const {
     notifyActiveAdmins
 } = require('./admin-notifications');
+const {
+    formatAlertTimestamp
+} = require('./alert-time');
 
 const DEFAULT_TICKET_SLA_MONITOR_CONFIG = Object.freeze({
     enabled: true,
@@ -300,6 +303,7 @@ function buildTicketSlaOverdueAlerts(tickets = [], rawConfig = {}, options = {})
             const reason = getTicketReason(ticket);
             const userEmail = resolveTicketUserEmail(ticket, profilesContext);
             const waitLabel = formatWaitLabel(waitMinutes);
+            const displayCreatedAt = formatAlertTimestamp(createdAt) || createdAt;
             const title = `工单超时未处理（${shortTicketId}）`;
             const lines = [
                 `工单 ${shortTicketId} 已超过 ${Number(config.pending_overdue_minutes || 0)} 分钟仍未处理。`,
@@ -319,8 +323,8 @@ function buildTicketSlaOverdueAlerts(tickets = [], rawConfig = {}, options = {})
             if (reason) {
                 lines.push(`问题描述：${reason}`);
             }
-            if (createdAt) {
-                lines.push(`创建时间：${createdAt}`);
+            if (displayCreatedAt) {
+                lines.push(`创建时间：${displayCreatedAt}`);
             }
             lines.push('处理入口：售后工单 -> 待处理 -> 工单详情');
 
@@ -410,6 +414,9 @@ function buildTicketSlaRecoveryAlerts(tickets = [], stateJobs = [], rawConfig = 
         const userEmail = resolveTicketUserEmail(currentTicket, profilesContext) || normalizeText(overduePayload.user_email, 255);
         const currentReason = getTicketReason(currentTicket) || normalizeText(overduePayload.reason);
         const currentUpdatedAt = normalizeText(currentTicket.updated_at);
+        const displayIncidentStartedAt = formatAlertTimestamp(latestOverdue.created_at) || normalizeText(latestOverdue.created_at);
+        const displayCurrentUpdatedAt = formatAlertTimestamp(currentUpdatedAt) || currentUpdatedAt;
+        const displayIncidentRecoveredAt = formatAlertTimestamp(incidentRecoveredAt) || incidentRecoveredAt;
         const recoverySummary = currentStatus === 'RESOLVED'
             ? '工单已解决，已退出超时未处理状态'
             : currentStatus === 'REJECTED'
@@ -433,13 +440,13 @@ function buildTicketSlaRecoveryAlerts(tickets = [], stateJobs = [], rawConfig = 
             lines.push(`上次超时等待：${normalizeText(overduePayload.wait_label)}`);
         }
         lines.push(`当前状态：${currentStatus}`);
-        if (normalizeText(latestOverdue.created_at)) {
-            lines.push(`上次超时：${normalizeText(latestOverdue.created_at)}`);
+        if (displayIncidentStartedAt) {
+            lines.push(`上次超时：${displayIncidentStartedAt}`);
         }
-        if (currentUpdatedAt) {
-            lines.push(`最近更新时间：${currentUpdatedAt}`);
+        if (displayCurrentUpdatedAt) {
+            lines.push(`最近更新时间：${displayCurrentUpdatedAt}`);
         }
-        lines.push(`恢复时间：${incidentRecoveredAt}`);
+        lines.push(`恢复时间：${displayIncidentRecoveredAt}`);
         lines.push(`持续时长：${formatWaitLabel(incidentDurationMinutes)}`);
         if (currentReason) {
             lines.push(`问题描述：${currentReason}`);

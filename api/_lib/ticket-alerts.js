@@ -1,4 +1,7 @@
 const crypto = require('crypto');
+const {
+    formatAlertTimestamp
+} = require('./alert-time');
 
 function normalizeText(value, maxLength = 1000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -32,6 +35,7 @@ function buildTicketCreatedAlert(ticket = {}) {
     const status = normalizeTicketStatus(ticket.status);
     const description = normalizeText(ticket.reason || ticket.description, 1500);
     const createdAt = normalizeText(ticket.created_at, 80);
+    const displayCreatedAt = formatAlertTimestamp(createdAt) || createdAt;
     const updatedAt = normalizeText(ticket.updated_at, 80) || createdAt || null;
     const lines = [
         `收到新的售后工单，请尽快跟进。`,
@@ -50,8 +54,8 @@ function buildTicketCreatedAlert(ticket = {}) {
     if (description) {
         lines.push(`问题描述：${description}`);
     }
-    if (createdAt) {
-        lines.push(`创建时间：${createdAt}`);
+    if (displayCreatedAt) {
+        lines.push(`创建时间：${displayCreatedAt}`);
     }
     lines.push('处理入口：售后工单 -> 待处理 -> 工单详情');
 
