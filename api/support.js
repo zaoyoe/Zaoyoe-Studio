@@ -195,7 +195,7 @@ async function handleCreateTicket({ requestSupabase, adminSupabase, user, input 
     const { data, error } = await requestSupabase
         .from('shop_tickets')
         .insert(insertPayload)
-        .select('id, user_id, order_id, issue_type, status, reason, description, created_at, updated_at')
+        .select('id, user_id, order_id, issue_type, status, description, created_at, updated_at')
         .single();
 
     if (error) {

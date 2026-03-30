@@ -176,7 +176,7 @@ async function fetchPagedRows(buildQuery, pageSize = 500, maxPages = 10) {
 async function fetchPendingTickets(client, thresholdIso, config) {
     return fetchPagedRows(() => client
         .from('shop_tickets')
-        .select('id, order_id, user_id, status, reason, description, admin_notes, created_at, updated_at')
+        .select('id, order_id, user_id, status, description, admin_notes, created_at, updated_at')
         .lte('created_at', thresholdIso)
         .order('created_at', { ascending: true }), config.page_size, config.max_pages);
 }
@@ -203,7 +203,7 @@ async function fetchTicketsByIds(client, ticketIds = [], config = {}) {
         const batch = normalizedIds.slice(index, index + chunkSize);
         const { data, error } = await client
             .from('shop_tickets')
-            .select('id, order_id, user_id, status, reason, description, admin_notes, created_at, updated_at')
+            .select('id, order_id, user_id, status, description, admin_notes, created_at, updated_at')
             .in('id', batch);
 
         if (error) {
