@@ -21,6 +21,8 @@ class AdminChat {
         this.sessionSlaTimer = null;
         this.sessionQueueView = 'all';
         this.sessionQueueFilter = 'all';
+        this.sessionQueueDefaultView = 'all';
+        this.sessionQueueDefaultFilter = 'all';
         this.opsAlertCaseActionLocks = new Set();
         this.opsAlertBatchAssignBusy = false;
         this.opsAlertViewFilter = 'all';
@@ -37,6 +39,7 @@ class AdminChat {
         this.destroyed = false;
         this.opsAlertSessionId = '__admin_ops_todo__';
         this.handleDocumentClick = this.handleDocumentClick.bind(this);
+        this.restoreSessionQueuePreferences();
 
         window.adminChatInstance = this;
         this.init();
@@ -102,6 +105,120 @@ class AdminChat {
         if (!text) return '';
         if (text.length <= maxLength) return text;
         return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
+    }
+
+    getSessionQueuePreferenceStorageKey() {
+        return 'zaoyoe_admin_support_queue_preferences_v1';
+    }
+
+    normalizeSessionQueueView(value = 'all') {
+        const normalized = String(value || 'all').trim() || 'all';
+        const allowed = new Set(['all', 'priority', 'ticket_followup', 'payment_verify']);
+        return allowed.has(normalized) ? normalized : 'all';
+    }
+
+    normalizeSessionQueueFilter(value = 'all') {
+        const normalized = String(value || 'all').trim() || 'all';
+        const allowed = new Set(['all', 'reply', 'stale_reply', 'ticket', 'verification']);
+        return allowed.has(normalized) ? normalized : 'all';
+    }
+
+    getSessionQueueViewLabel(value = 'all') {
+        const labels = {
+            all: '全部视图',
+            priority: '高优先',
+            ticket_followup: '售后值守',
+            payment_verify: '支付/验证'
+        };
+        return labels[this.normalizeSessionQueueView(value)] || '全部视图';
+    }
+
+    getSessionQueueFilterLabel(value = 'all') {
+        const labels = {
+            all: '全部',
+            reply: '待回复',
+            stale_reply: '久未回复',
+            ticket: '工单中',
+            verification: '验证异常'
+        };
+        return labels[this.normalizeSessionQueueFilter(value)] || '全部';
+    }
+
+    formatSessionQueueModeLabel(view = 'all', filter = 'all') {
+        const normalizedView = this.normalizeSessionQueueView(view);
+        const normalizedFilter = this.normalizeSessionQueueFilter(filter);
+        const viewLabel = this.getSessionQueueViewLabel(normalizedView);
+        if (normalizedFilter === 'all') {
+            return viewLabel;
+        }
+        return `${viewLabel} / ${this.getSessionQueueFilterLabel(normalizedFilter)}`;
+    }
+
+    restoreSessionQueuePreferences() {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const rawValue = window.localStorage.getItem(this.getSessionQueuePreferenceStorageKey());
+            if (!rawValue) return;
+            const parsed = JSON.parse(rawValue);
+            const lastView = this.normalizeSessionQueueView(parsed?.lastView ?? parsed?.view);
+            const lastFilter = this.normalizeSessionQueueFilter(parsed?.lastFilter ?? parsed?.filter);
+            this.sessionQueueView = lastView;
+            this.sessionQueueFilter = lastFilter;
+            this.sessionQueueDefaultView = this.normalizeSessionQueueView(parsed?.defaultView ?? lastView);
+            this.sessionQueueDefaultFilter = this.normalizeSessionQueueFilter(parsed?.defaultFilter ?? lastFilter);
+        } catch (error) {
+            console.warn('[AdminChat] Failed to restore session queue preferences:', error);
+        }
+    }
+
+    persistSessionQueuePreferences({ saveAsDefault = false } = {}) {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const lastView = this.normalizeSessionQueueView(this.sessionQueueView);
+            const lastFilter = this.normalizeSessionQueueFilter(this.sessionQueueFilter);
+            const defaultView = saveAsDefault
+                ? lastView
+                : this.normalizeSessionQueueView(this.sessionQueueDefaultView || lastView);
+            const defaultFilter = saveAsDefault
+                ? lastFilter
+                : this.normalizeSessionQueueFilter(this.sessionQueueDefaultFilter || lastFilter);
+            this.sessionQueueDefaultView = defaultView;
+            this.sessionQueueDefaultFilter = defaultFilter;
+            window.localStorage.setItem(this.getSessionQueuePreferenceStorageKey(), JSON.stringify({
+                lastView,
+                lastFilter,
+                defaultView,
+                defaultFilter,
+                updatedAt: new Date().toISOString()
+            }));
+        } catch (error) {
+            console.warn('[AdminChat] Failed to persist session queue preferences:', error);
+        }
+    }
+
+    isSessionQueueUsingDefaultView() {
+        return this.normalizeSessionQueueView(this.sessionQueueView) === this.normalizeSessionQueueView(this.sessionQueueDefaultView)
+            && this.normalizeSessionQueueFilter(this.sessionQueueFilter) === this.normalizeSessionQueueFilter(this.sessionQueueDefaultFilter);
+    }
+
+    restoreSessionQueueDefaultView() {
+        this.sessionQueueView = this.normalizeSessionQueueView(this.sessionQueueDefaultView);
+        this.sessionQueueFilter = this.normalizeSessionQueueFilter(this.sessionQueueDefaultFilter);
+        this.persistSessionQueuePreferences();
+        this.renderSessionQueueControls();
+        this.renderSessionList(this.searchQuery);
+    }
+
+    saveCurrentSessionQueueAsDefault() {
+        this.persistSessionQueuePreferences({ saveAsDefault: true });
+        this.renderSessionQueueControls();
+        this.renderSessionList(this.searchQuery);
     }
 
     isTicketSyncChatMessage(message = {}) {
@@ -744,6 +861,111 @@ class AdminChat {
         ];
     }
 
+    getSessionQueueSnapshot() {
+        const sessions = this.sessions
+            .filter((session) => this.sessionMatchesQueueView(session))
+            .filter((session) => this.sessionMatchesQueueFilter(session))
+            .filter((session) => this.sessionMatchesFilter(session, this.searchQuery));
+        const chatSessions = sessions.filter((session) => !this.isOpsAlertSession(session));
+
+        const pendingReply = chatSessions.filter((session) => session.replySummary?.pending).length;
+        const staleReply = chatSessions.filter((session) => Number(session.replySummary?.waitMinutes || 0) >= 60).length;
+        const highPriority = chatSessions.filter((session) => this.isHighPrioritySession(session)).length;
+        const openTickets = chatSessions.filter((session) => Boolean(session.ticketSummary?.latestOpenTicket)).length;
+        const verificationAlerts = chatSessions.filter((session) => Boolean(this.getSessionVerificationSignal(session.verificationSummary))).length;
+        const paymentFollowups = chatSessions.filter((session) => Boolean(this.getSessionPaymentSignal(session.paymentSummary))).length;
+        const topWait = chatSessions
+            .map((session) => Number(session.replySummary?.waitMinutes || 0))
+            .filter((value) => value > 0)
+            .sort((left, right) => right - left)[0] || 0;
+
+        return {
+            total: chatSessions.length,
+            pendingReply,
+            staleReply,
+            highPriority,
+            openTickets,
+            verificationAlerts,
+            paymentFollowups,
+            topWait
+        };
+    }
+
+    getSessionQueueCapacityAlerts(snapshot = {}) {
+        const alerts = [];
+
+        if (Number(snapshot.staleReply || 0) >= 3) {
+            alerts.push({
+                tone: 'danger',
+                label: `久未回复积压 ${snapshot.staleReply} 个`
+            });
+        }
+
+        if (Number(snapshot.highPriority || 0) >= 5) {
+            alerts.push({
+                tone: alerts.length ? 'warning' : 'danger',
+                label: `高优先会话 ${snapshot.highPriority} 个`
+            });
+        }
+
+        if (Number(snapshot.pendingReply || 0) >= 8) {
+            alerts.push({
+                tone: 'warning',
+                label: `待回复堆积 ${snapshot.pendingReply} 个`
+            });
+        }
+
+        return alerts.slice(0, 3);
+    }
+
+    renderSessionQueueSnapshot() {
+        const container = document.getElementById('sessionQueueSnapshot');
+        if (!container) return;
+
+        const snapshot = this.getSessionQueueSnapshot();
+        const capacityAlerts = this.getSessionQueueCapacityAlerts(snapshot);
+        const currentMode = this.formatSessionQueueModeLabel(this.sessionQueueView, this.sessionQueueFilter);
+        const defaultMode = this.formatSessionQueueModeLabel(this.sessionQueueDefaultView, this.sessionQueueDefaultFilter);
+        const isDefaultMode = this.isSessionQueueUsingDefaultView();
+        const summaryParts = [];
+        if (snapshot.staleReply > 0) summaryParts.push(`${snapshot.staleReply} 个久未回复`);
+        if (snapshot.openTickets > 0) summaryParts.push(`${snapshot.openTickets} 个售后处理中`);
+        if (snapshot.verificationAlerts > 0) summaryParts.push(`${snapshot.verificationAlerts} 个验证异常`);
+        if (snapshot.paymentFollowups > 0) summaryParts.push(`${snapshot.paymentFollowups} 个支付待跟进`);
+        if (!summaryParts.length) summaryParts.push('当前队列比较平稳');
+
+        container.innerHTML = `
+            <div class="session-queue-snapshot__title">交班摘要</div>
+            <div class="session-queue-snapshot__mode">
+                <span>当前：${currentMode}</span>
+                <span>默认：${defaultMode}</span>
+            </div>
+            <div class="session-queue-snapshot__summary">${summaryParts.slice(0, 3).join(' · ')}</div>
+            <div class="session-queue-snapshot__meta">
+                <span>待回复 ${snapshot.pendingReply}</span>
+                <span>高优先 ${snapshot.highPriority}</span>
+                <span>工单中 ${snapshot.openTickets}</span>
+                <span>验证异常 ${snapshot.verificationAlerts}</span>
+                ${snapshot.topWait > 0 ? `<span>最长等待 ${this.formatSessionReplyWaitAge(snapshot.topWait)}</span>` : ''}
+            </div>
+            ${capacityAlerts.length ? `
+                <div class="session-queue-snapshot__capacity">
+                    ${capacityAlerts.map((alert) => `
+                        <span class="session-queue-snapshot__capacity-badge session-queue-snapshot__capacity-badge--${alert.tone}">
+                            ${alert.label}
+                        </span>
+                    `).join('')}
+                </div>
+            ` : ''}
+            <div class="session-queue-snapshot__actions">
+                ${isDefaultMode
+                    ? '<span class="session-queue-snapshot__hint">当前已使用默认视图</span>'
+                    : '<button type="button" class="session-queue-snapshot__action" data-session-snapshot-action="restore-default">回到默认视图</button>'}
+                <button type="button" class="session-queue-snapshot__action session-queue-snapshot__action--ghost" data-session-snapshot-action="save-default">设为默认</button>
+            </div>
+        `;
+    }
+
     renderSessionQueueViews() {
         const container = document.getElementById('sessionQueueViews');
         if (!container) return;
@@ -763,6 +985,7 @@ class AdminChat {
 
     renderSessionQueueControls() {
         this.renderSessionQueueOverview();
+        this.renderSessionQueueSnapshot();
         this.renderSessionQueueViews();
         this.renderSessionQueueFilters();
     }
@@ -785,18 +1008,20 @@ class AdminChat {
     }
 
     setSessionQueueView(value = 'all', { resetFilter = true } = {}) {
-        const nextValue = String(value || 'all').trim() || 'all';
+        const nextValue = this.normalizeSessionQueueView(value);
         this.sessionQueueView = nextValue;
         if (resetFilter) {
             this.sessionQueueFilter = 'all';
         }
+        this.persistSessionQueuePreferences();
         this.renderSessionQueueControls();
         this.renderSessionList(this.searchQuery);
     }
 
     setSessionQueueFilter(value = 'all') {
-        const nextValue = String(value || 'all').trim() || 'all';
+        const nextValue = this.normalizeSessionQueueFilter(value);
         this.sessionQueueFilter = nextValue;
+        this.persistSessionQueuePreferences();
         this.renderSessionQueueControls();
         this.renderSessionList(this.searchQuery);
     }
@@ -3967,6 +4192,7 @@ class AdminChat {
                         <input type="text" id="sessionSearch" placeholder="${this.t('chat.searchPlaceholder', '搜索会话...')}">
                     </div>
                     <div class="session-queue-overview" id="sessionQueueOverview"></div>
+                    <div class="session-queue-snapshot" id="sessionQueueSnapshot"></div>
                     <div class="session-queue-presets" id="sessionQueueViews"></div>
                     <div class="session-filter-bar" id="sessionFilterBar"></div>
                     <div class="session-list" id="sessionList">
@@ -4016,6 +4242,7 @@ class AdminChat {
         const emojiBtn = container.querySelector('#adminEmojiBtn');
         const emojiPicker = container.querySelector('#adminEmojiPicker');
         const sessionQueueOverview = container.querySelector('#sessionQueueOverview');
+        const sessionQueueSnapshot = container.querySelector('#sessionQueueSnapshot');
         const sessionQueueViews = container.querySelector('#sessionQueueViews');
         const sessionFilterBar = container.querySelector('#sessionFilterBar');
 
@@ -4068,6 +4295,19 @@ class AdminChat {
                 const button = event.target.closest('[data-session-view]');
                 if (!button) return;
                 this.setSessionQueueView(button.getAttribute('data-session-view') || 'all');
+            });
+        }
+
+        if (sessionQueueSnapshot) {
+            sessionQueueSnapshot.addEventListener('click', (event) => {
+                const button = event.target.closest('[data-session-snapshot-action]');
+                if (!button) return;
+                const action = button.getAttribute('data-session-snapshot-action');
+                if (action === 'restore-default') {
+                    this.restoreSessionQueueDefaultView();
+                } else if (action === 'save-default') {
+                    this.saveCurrentSessionQueueAsDefault();
+                }
             });
         }
 

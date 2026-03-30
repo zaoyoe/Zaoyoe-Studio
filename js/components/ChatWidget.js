@@ -56,6 +56,8 @@ class ChatWidget {
         this.adminSessionSlaTimer = null;
         this.adminSessionQueueView = 'all';
         this.adminSessionQueueFilter = 'all';
+        this.adminSessionQueueDefaultView = 'all';
+        this.adminSessionQueueDefaultFilter = 'all';
         this.adminSessionSearchQuery = '';
         this.opsAlertCaseActionLocks = new Set();
         this.opsAlertBatchAssignBusy = false;
@@ -65,6 +67,7 @@ class ChatWidget {
         this.opsAlertCurrentAdminId = '';
         this.opsAlertCurrentAdminLabel = '';
         this.opsAlertModuleMuteRules = {};
+        this.restoreAdminSessionQueuePreferences();
 
         // Preload configuration - lock scroll until messages are loaded
         this.isPreloading = false;
@@ -132,6 +135,120 @@ class ChatWidget {
             return value;
         }
         return fallback || key;
+    }
+
+    getAdminSessionQueuePreferenceStorageKey() {
+        return 'zaoyoe_admin_support_queue_preferences_v1';
+    }
+
+    normalizeAdminSessionQueueView(value = 'all') {
+        const normalized = String(value || 'all').trim() || 'all';
+        const allowed = new Set(['all', 'priority', 'ticket_followup', 'payment_verify']);
+        return allowed.has(normalized) ? normalized : 'all';
+    }
+
+    normalizeAdminSessionQueueFilter(value = 'all') {
+        const normalized = String(value || 'all').trim() || 'all';
+        const allowed = new Set(['all', 'reply', 'stale_reply', 'ticket', 'verification']);
+        return allowed.has(normalized) ? normalized : 'all';
+    }
+
+    getAdminSessionQueueViewLabel(value = 'all') {
+        const labels = {
+            all: '全部视图',
+            priority: '高优先',
+            ticket_followup: '售后值守',
+            payment_verify: '支付/验证'
+        };
+        return labels[this.normalizeAdminSessionQueueView(value)] || '全部视图';
+    }
+
+    getAdminSessionQueueFilterLabel(value = 'all') {
+        const labels = {
+            all: '全部',
+            reply: '待回复',
+            stale_reply: '久未回复',
+            ticket: '工单中',
+            verification: '验证异常'
+        };
+        return labels[this.normalizeAdminSessionQueueFilter(value)] || '全部';
+    }
+
+    formatAdminSessionQueueModeLabel(view = 'all', filter = 'all') {
+        const normalizedView = this.normalizeAdminSessionQueueView(view);
+        const normalizedFilter = this.normalizeAdminSessionQueueFilter(filter);
+        const viewLabel = this.getAdminSessionQueueViewLabel(normalizedView);
+        if (normalizedFilter === 'all') {
+            return viewLabel;
+        }
+        return `${viewLabel} / ${this.getAdminSessionQueueFilterLabel(normalizedFilter)}`;
+    }
+
+    restoreAdminSessionQueuePreferences() {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const rawValue = window.localStorage.getItem(this.getAdminSessionQueuePreferenceStorageKey());
+            if (!rawValue) return;
+            const parsed = JSON.parse(rawValue);
+            const lastView = this.normalizeAdminSessionQueueView(parsed?.lastView ?? parsed?.view);
+            const lastFilter = this.normalizeAdminSessionQueueFilter(parsed?.lastFilter ?? parsed?.filter);
+            this.adminSessionQueueView = lastView;
+            this.adminSessionQueueFilter = lastFilter;
+            this.adminSessionQueueDefaultView = this.normalizeAdminSessionQueueView(parsed?.defaultView ?? lastView);
+            this.adminSessionQueueDefaultFilter = this.normalizeAdminSessionQueueFilter(parsed?.defaultFilter ?? lastFilter);
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to restore admin session queue preferences:', error);
+        }
+    }
+
+    persistAdminSessionQueuePreferences({ saveAsDefault = false } = {}) {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        try {
+            const lastView = this.normalizeAdminSessionQueueView(this.adminSessionQueueView);
+            const lastFilter = this.normalizeAdminSessionQueueFilter(this.adminSessionQueueFilter);
+            const defaultView = saveAsDefault
+                ? lastView
+                : this.normalizeAdminSessionQueueView(this.adminSessionQueueDefaultView || lastView);
+            const defaultFilter = saveAsDefault
+                ? lastFilter
+                : this.normalizeAdminSessionQueueFilter(this.adminSessionQueueDefaultFilter || lastFilter);
+            this.adminSessionQueueDefaultView = defaultView;
+            this.adminSessionQueueDefaultFilter = defaultFilter;
+            window.localStorage.setItem(this.getAdminSessionQueuePreferenceStorageKey(), JSON.stringify({
+                lastView,
+                lastFilter,
+                defaultView,
+                defaultFilter,
+                updatedAt: new Date().toISOString()
+            }));
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to persist admin session queue preferences:', error);
+        }
+    }
+
+    isAdminSessionQueueUsingDefaultView() {
+        return this.normalizeAdminSessionQueueView(this.adminSessionQueueView) === this.normalizeAdminSessionQueueView(this.adminSessionQueueDefaultView)
+            && this.normalizeAdminSessionQueueFilter(this.adminSessionQueueFilter) === this.normalizeAdminSessionQueueFilter(this.adminSessionQueueDefaultFilter);
+    }
+
+    restoreAdminSessionQueueDefaultView() {
+        this.adminSessionQueueView = this.normalizeAdminSessionQueueView(this.adminSessionQueueDefaultView);
+        this.adminSessionQueueFilter = this.normalizeAdminSessionQueueFilter(this.adminSessionQueueDefaultFilter);
+        this.persistAdminSessionQueuePreferences();
+        this.renderAdminSessionQueueControls();
+        this.renderAdminSessionList();
+    }
+
+    saveCurrentAdminSessionQueueAsDefault() {
+        this.persistAdminSessionQueuePreferences({ saveAsDefault: true });
+        this.renderAdminSessionQueueControls();
+        this.renderAdminSessionList();
     }
 
     looksLikeEmail(value) {
@@ -2122,6 +2239,7 @@ class ChatWidget {
                     <input type="text" id="sessionSearch" placeholder="🔍 ${this.t('chat.searchPlaceholderFull', '搜索会话或聊天记录...')}">
                 </div>
                 <div class="session-queue-overview" id="sessionQueueOverview"></div>
+                <div class="session-queue-snapshot" id="sessionQueueSnapshot"></div>
                 <div class="session-queue-presets" id="sessionQueueViews"></div>
                 <div class="session-filter-bar" id="sessionFilterBar"></div>
                 <div class="session-list" id="sessionList">
@@ -2321,6 +2439,87 @@ class ChatWidget {
             }
             .session-queue-card__hint {
                 color: rgba(255, 255, 255, 0.55);
+                font-size: 11px;
+            }
+            .session-queue-snapshot {
+                margin: 0 12px 10px;
+                padding: 10px 12px;
+                border-radius: 14px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                background: rgba(255, 255, 255, 0.05);
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+            .session-queue-snapshot__title {
+                color: rgba(255, 255, 255, 0.72);
+                font-size: 11px;
+                letter-spacing: 0.04em;
+            }
+            .session-queue-snapshot__mode {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                color: rgba(255, 255, 255, 0.58);
+                font-size: 11px;
+            }
+            .session-queue-snapshot__summary {
+                color: #f8fafc;
+                font-size: 12px;
+                font-weight: 600;
+                line-height: 1.45;
+            }
+            .session-queue-snapshot__meta {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                color: rgba(255, 255, 255, 0.58);
+                font-size: 11px;
+            }
+            .session-queue-snapshot__capacity {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .session-queue-snapshot__capacity-badge {
+                display: inline-flex;
+                align-items: center;
+                border-radius: 999px;
+                padding: 5px 10px;
+                font-size: 11px;
+                line-height: 1.2;
+            }
+            .session-queue-snapshot__capacity-badge--warning {
+                background: rgba(244, 195, 99, 0.16);
+                color: #fde68a;
+            }
+            .session-queue-snapshot__capacity-badge--danger {
+                background: rgba(239, 68, 68, 0.18);
+                color: #fecaca;
+            }
+            .session-queue-snapshot__actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                align-items: center;
+            }
+            .session-queue-snapshot__action {
+                appearance: none;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                background: rgba(255, 255, 255, 0.06);
+                color: #f8fafc;
+                border-radius: 999px;
+                padding: 5px 10px;
+                font-size: 11px;
+                line-height: 1.2;
+                cursor: pointer;
+            }
+            .session-queue-snapshot__action--ghost {
+                background: rgba(255, 255, 255, 0.02);
+                color: rgba(255, 255, 255, 0.78);
+            }
+            .session-queue-snapshot__hint {
+                color: rgba(255, 255, 255, 0.62);
                 font-size: 11px;
             }
             .session-queue-presets {
@@ -6836,6 +7035,110 @@ class ChatWidget {
         ];
     }
 
+    getAdminSessionQueueSnapshot() {
+        const sessions = this.sessions
+            .filter((session) => this.matchesAdminSessionQueueView(session))
+            .filter((session) => this.matchesAdminSessionQueueFilter(session));
+        const chatSessions = sessions.filter((session) => !this.isOpsAlertSession(session));
+
+        const pendingReply = chatSessions.filter((session) => session.replySummary?.pending).length;
+        const staleReply = chatSessions.filter((session) => Number(session.replySummary?.waitMinutes || 0) >= 60).length;
+        const highPriority = chatSessions.filter((session) => this.isHighPriorityAdminSession(session)).length;
+        const openTickets = chatSessions.filter((session) => Boolean(session.ticketSummary?.latestOpenTicket)).length;
+        const verificationAlerts = chatSessions.filter((session) => Boolean(this.getAdminSessionVerificationSignal(session.verificationSummary))).length;
+        const paymentFollowups = chatSessions.filter((session) => Boolean(this.getAdminSessionPaymentSignal(session.paymentSummary))).length;
+        const topWait = chatSessions
+            .map((session) => Number(session.replySummary?.waitMinutes || 0))
+            .filter((value) => value > 0)
+            .sort((left, right) => right - left)[0] || 0;
+
+        return {
+            total: chatSessions.length,
+            pendingReply,
+            staleReply,
+            highPriority,
+            openTickets,
+            verificationAlerts,
+            paymentFollowups,
+            topWait
+        };
+    }
+
+    getAdminSessionQueueCapacityAlerts(snapshot = {}) {
+        const alerts = [];
+
+        if (Number(snapshot.staleReply || 0) >= 3) {
+            alerts.push({
+                tone: 'danger',
+                label: `久未回复积压 ${snapshot.staleReply} 个`
+            });
+        }
+
+        if (Number(snapshot.highPriority || 0) >= 5) {
+            alerts.push({
+                tone: alerts.length ? 'warning' : 'danger',
+                label: `高优先会话 ${snapshot.highPriority} 个`
+            });
+        }
+
+        if (Number(snapshot.pendingReply || 0) >= 8) {
+            alerts.push({
+                tone: 'warning',
+                label: `待回复堆积 ${snapshot.pendingReply} 个`
+            });
+        }
+
+        return alerts.slice(0, 3);
+    }
+
+    renderAdminSessionQueueSnapshot() {
+        const container = this.chatWindow?.querySelector('#sessionQueueSnapshot');
+        if (!container) return;
+
+        const snapshot = this.getAdminSessionQueueSnapshot();
+        const capacityAlerts = this.getAdminSessionQueueCapacityAlerts(snapshot);
+        const currentMode = this.formatAdminSessionQueueModeLabel(this.adminSessionQueueView, this.adminSessionQueueFilter);
+        const defaultMode = this.formatAdminSessionQueueModeLabel(this.adminSessionQueueDefaultView, this.adminSessionQueueDefaultFilter);
+        const isDefaultMode = this.isAdminSessionQueueUsingDefaultView();
+        const summaryParts = [];
+        if (snapshot.staleReply > 0) summaryParts.push(`${snapshot.staleReply} 个久未回复`);
+        if (snapshot.openTickets > 0) summaryParts.push(`${snapshot.openTickets} 个售后处理中`);
+        if (snapshot.verificationAlerts > 0) summaryParts.push(`${snapshot.verificationAlerts} 个验证异常`);
+        if (snapshot.paymentFollowups > 0) summaryParts.push(`${snapshot.paymentFollowups} 个支付待跟进`);
+        if (!summaryParts.length) summaryParts.push('当前队列比较平稳');
+
+        container.innerHTML = `
+            <div class="session-queue-snapshot__title">交班摘要</div>
+            <div class="session-queue-snapshot__mode">
+                <span>当前：${currentMode}</span>
+                <span>默认：${defaultMode}</span>
+            </div>
+            <div class="session-queue-snapshot__summary">${summaryParts.slice(0, 3).join(' · ')}</div>
+            <div class="session-queue-snapshot__meta">
+                <span>待回复 ${snapshot.pendingReply}</span>
+                <span>高优先 ${snapshot.highPriority}</span>
+                <span>工单中 ${snapshot.openTickets}</span>
+                <span>验证异常 ${snapshot.verificationAlerts}</span>
+                ${snapshot.topWait > 0 ? `<span>最长等待 ${this.formatSessionReplyWaitAge(snapshot.topWait)}</span>` : ''}
+            </div>
+            ${capacityAlerts.length ? `
+                <div class="session-queue-snapshot__capacity">
+                    ${capacityAlerts.map((alert) => `
+                        <span class="session-queue-snapshot__capacity-badge session-queue-snapshot__capacity-badge--${alert.tone}">
+                            ${alert.label}
+                        </span>
+                    `).join('')}
+                </div>
+            ` : ''}
+            <div class="session-queue-snapshot__actions">
+                ${isDefaultMode
+                    ? '<span class="session-queue-snapshot__hint">当前已使用默认视图</span>'
+                    : '<button type="button" class="session-queue-snapshot__action" data-session-snapshot-action="restore-default">回到默认视图</button>'}
+                <button type="button" class="session-queue-snapshot__action session-queue-snapshot__action--ghost" data-session-snapshot-action="save-default">设为默认</button>
+            </div>
+        `;
+    }
+
     renderAdminSessionViews() {
         const container = this.sessionQueueViews;
         if (!container) return;
@@ -6855,6 +7158,7 @@ class ChatWidget {
 
     renderAdminSessionQueueControls() {
         this.renderAdminSessionOverview();
+        this.renderAdminSessionQueueSnapshot();
         this.renderAdminSessionViews();
         this.renderAdminSessionFilters();
     }
@@ -6877,18 +7181,20 @@ class ChatWidget {
     }
 
     setAdminSessionQueueView(value = 'all', { resetFilter = true } = {}) {
-        const nextValue = String(value || 'all').trim() || 'all';
+        const nextValue = this.normalizeAdminSessionQueueView(value);
         this.adminSessionQueueView = nextValue;
         if (resetFilter) {
             this.adminSessionQueueFilter = 'all';
         }
+        this.persistAdminSessionQueuePreferences();
         this.renderAdminSessionQueueControls();
         this.renderAdminSessionList();
     }
 
     setAdminSessionQueueFilter(value = 'all') {
-        const nextValue = String(value || 'all').trim() || 'all';
+        const nextValue = this.normalizeAdminSessionQueueFilter(value);
         this.adminSessionQueueFilter = nextValue;
+        this.persistAdminSessionQueuePreferences();
         this.renderAdminSessionQueueControls();
         this.renderAdminSessionList();
     }
@@ -8555,6 +8861,17 @@ class ChatWidget {
         }
 
         if (this.sessionFilterBar) {
+            this.chatWindow?.querySelector('#sessionQueueSnapshot')?.addEventListener('click', (event) => {
+                const button = event.target.closest('[data-session-snapshot-action]');
+                if (!button) return;
+                const action = button.getAttribute('data-session-snapshot-action');
+                if (action === 'restore-default') {
+                    this.restoreAdminSessionQueueDefaultView();
+                } else if (action === 'save-default') {
+                    this.saveCurrentAdminSessionQueueAsDefault();
+                }
+            });
+
             this.sessionQueueOverview?.addEventListener('click', (event) => {
                 const button = event.target.closest('[data-session-stat-filter]');
                 if (!button) return;
