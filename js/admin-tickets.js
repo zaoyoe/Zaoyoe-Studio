@@ -5,6 +5,7 @@ const AdminTickets = {
     pageSize: 15,
     currentStatus: 'all',
     searchQuery: '',
+    focusedTicketId: '',
 
     fetchProfilesByIds: async function (userIds = []) {
         const uniqueIds = Array.from(new Set(
@@ -42,11 +43,40 @@ const AdminTickets = {
         return profilesById;
     },
 
-    init: async function () {
-        if (this._initialized) return;
-        this._initialized = true;
+    waitForAuthReady: async function (timeoutMs = 2400) {
+        const auth = window.supabaseClient?.auth;
+        if (!auth?.getUser) {
+            return { ready: false, user: null };
+        }
+
+        const startedAt = Date.now();
+        while ((Date.now() - startedAt) <= timeoutMs) {
+            try {
+                const { data: { user } = {} } = await auth.getUser();
+                if (user?.id) {
+                    return { ready: true, user };
+                }
+            } catch (_) {
+                // Retry while auth is restoring.
+            }
+
+            await new Promise((resolve) => window.setTimeout(resolve, 120));
+        }
+
+        return { ready: false, user: null };
+    },
+
+    init: async function (options = {}) {
+        if (this._initPromise) return this._initPromise;
+        if (this._initialized && options?.force !== true) return;
+
         console.log('[AdminTickets] Initializing...');
-        await this.loadTickets();
+        this._initPromise = this.loadTickets(options)
+            .finally(() => {
+                this._initPromise = null;
+            });
+        await this._initPromise;
+        this._initialized = true;
     },
 
     createTableStateRow: function ({ message, icon = 'fa-inbox', variant = 'empty', spinning = false }) {
@@ -71,7 +101,7 @@ const AdminTickets = {
         return row;
     },
 
-    loadTickets: async function () {
+    loadTickets: async function (options = {}) {
         try {
             const tbody = document.getElementById('ticketsTableBody');
             if (tbody) {
@@ -82,6 +112,8 @@ const AdminTickets = {
                     spinning: true
                 }));
             }
+
+            await this.waitForAuthReady(Number(options?.authTimeoutMs || 2400));
 
             const { data, error } = await window.supabaseClient
                 .from('shop_tickets')
@@ -116,6 +148,50 @@ const AdminTickets = {
         }
     },
 
+    normalizeTicketStatusValue: function (status) {
+        const normalized = this.safeText(status, 'PENDING').trim().toUpperCase();
+        return normalized === 'OPEN' ? 'PENDING' : normalized;
+    },
+
+    fetchTicketById: async function (ticketId) {
+        const normalizedTicketId = this.safeText(ticketId).trim();
+        if (!normalizedTicketId) {
+            return null;
+        }
+
+        await this.waitForAuthReady(2400);
+        const { data, error } = await window.supabaseClient
+            .from('shop_tickets')
+            .select('*')
+            .eq('id', normalizedTicketId)
+            .maybeSingle();
+
+        if (error) {
+            throw error;
+        }
+
+        const ticket = data || null;
+        if (!ticket) {
+            return null;
+        }
+
+        const userId = this.safeText(ticket.user_id);
+        let userEmail = '';
+        if (userId) {
+            try {
+                const profilesById = await this.fetchProfilesByIds([userId]);
+                userEmail = this.safeText(profilesById[userId]?.email);
+            } catch (profileError) {
+                console.warn('[AdminTickets] single ticket profile load error:', profileError);
+            }
+        }
+
+        return {
+            ...ticket,
+            user_email: userEmail
+        };
+    },
+
     applyFilters: function () {
         let result = this.tickets;
 
@@ -145,9 +221,99 @@ const AdminTickets = {
         this.render();
     },
 
+    normalizeStatusFilter: function (status) {
+        const normalized = this.safeText(status, 'all').trim().toLowerCase();
+        if (['pending', 'resolved', 'rejected', 'all'].includes(normalized)) {
+            return normalized;
+        }
+        if (normalized === 'open') {
+            return 'pending';
+        }
+        return 'all';
+    },
+
+    syncFilterButtons: function () {
+        const buttons = document.querySelectorAll('#module-tickets .filter-btn');
+        if (!buttons.length) {
+            return;
+        }
+        buttons.forEach((button) => {
+            button.classList.toggle('active', button.dataset.ticketStatus === this.currentStatus);
+        });
+    },
+
+    syncSearchInput: function () {
+        const input = document.getElementById('ticketSearchInput');
+        if (input) {
+            input.value = this.searchQuery || '';
+        }
+    },
+
+    getFocusedTicketIndex: function (tickets = [], focusedTicketId = '') {
+        const normalizedTicketId = this.safeText(focusedTicketId).trim();
+        if (!normalizedTicketId) {
+            return -1;
+        }
+        return tickets.findIndex((ticket) => this.safeText(ticket?.id).trim() === normalizedTicketId);
+    },
+
+    scrollFocusedTicketIntoView: function () {
+        const normalizedTicketId = this.safeText(this.focusedTicketId).trim();
+        if (!normalizedTicketId || typeof CSS === 'undefined' || typeof CSS.escape !== 'function') {
+            return;
+        }
+
+        window.requestAnimationFrame(() => {
+            const row = document.querySelector(`#ticketsTableBody [data-ticket-id="${CSS.escape(normalizedTicketId)}"]`);
+            if (row instanceof HTMLElement) {
+                row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        });
+    },
+
     search: function () {
         this.searchQuery = document.getElementById('ticketSearchInput').value.trim();
         this.applyFilters();
+    },
+
+    focusTicket: async function (ticketId, options = {}) {
+        const normalizedTicketId = this.safeText(ticketId).trim();
+        if (!normalizedTicketId) {
+            return { opened: false, matched: false };
+        }
+
+        await this.init({ force: !this.tickets.length });
+
+        let targetTicket = this.tickets.find((ticket) => this.safeText(ticket?.id).trim() === normalizedTicketId) || null;
+        if (!targetTicket) {
+            try {
+                targetTicket = await this.fetchTicketById(normalizedTicketId);
+            } catch (error) {
+                console.warn('[AdminTickets] Failed to fetch target ticket by id:', error);
+            }
+            if (targetTicket) {
+                this.tickets = [
+                    targetTicket,
+                    ...this.tickets.filter((ticket) => this.safeText(ticket?.id).trim() !== normalizedTicketId)
+                ];
+            }
+        }
+
+        this.focusedTicketId = normalizedTicketId;
+        const targetStatus = targetTicket
+            ? this.normalizeStatusFilter(this.normalizeTicketStatusValue(targetTicket.status))
+            : this.normalizeStatusFilter(options.status || this.currentStatus || 'all');
+        this.currentStatus = targetStatus;
+        this.searchQuery = normalizedTicketId;
+        this.syncSearchInput();
+        this.syncFilterButtons();
+        this.applyFilters();
+
+        const matched = this.getFocusedTicketIndex(this.filteredTickets, normalizedTicketId) >= 0;
+        return {
+            opened: true,
+            matched
+        };
     },
 
     safeText: function (value, fallback = '') {
@@ -190,7 +356,7 @@ const AdminTickets = {
     },
 
     filter: function (status, btnElement) {
-        this.currentStatus = status;
+        this.currentStatus = this.normalizeStatusFilter(status);
 
         // Fix: Use .filter-btn as defined in the HTML
         const buttons = document.querySelectorAll('#module-tickets .filter-btn');
@@ -208,6 +374,11 @@ const AdminTickets = {
 
         const totalItems = this.filteredTickets.length;
         const totalPages = Math.ceil(totalItems / this.pageSize) || 1;
+
+        const focusedIndex = this.getFocusedTicketIndex(this.filteredTickets, this.focusedTicketId);
+        if (focusedIndex >= 0) {
+            this.currentPage = Math.floor(focusedIndex / this.pageSize) + 1;
+        }
 
         if (this.currentPage > totalPages) this.currentPage = totalPages;
 
@@ -242,7 +413,9 @@ const AdminTickets = {
             const adminNotesPreview = this.truncateText(adminNotesText, 20);
 
             const row = document.createElement('tr');
-            row.className = 'admin-ticket-row';
+            const isFocusedTicket = this.safeText(ticket.id).trim() === this.safeText(this.focusedTicketId).trim();
+            row.className = `admin-ticket-row${isFocusedTicket ? ' admin-ticket-row--focused' : ''}`;
+            row.dataset.ticketId = this.safeText(ticket.id);
 
             const metaCell = document.createElement('td');
             metaCell.className = 'admin-ticket-nowrap-cell';
@@ -342,6 +515,9 @@ const AdminTickets = {
         });
 
         this.renderPagination(totalPages);
+        if (focusedIndex >= 0) {
+            this.scrollFocusedTicketIntoView();
+        }
     },
 
     renderPagination: function (totalPages) {
