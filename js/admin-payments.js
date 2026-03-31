@@ -22,6 +22,7 @@
         autoRefreshTimer: null,
         anomalyActionLoading: {},
         exceptionTopicFilter: 'all',
+        focusOrderId: '',
         pagination: {
             anomalies: 1,
             orders: 1,
@@ -706,6 +707,28 @@
             totalPages,
             totalItems: list.length
         };
+    }
+
+    function matchesFocusedOrder(order = {}, focusOrderId = state.focusOrderId) {
+        const normalizedFocusOrderId = String(focusOrderId || '').trim();
+        if (!normalizedFocusOrderId) return false;
+        return [order?.id, order?.provider_order_no]
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+            .includes(normalizedFocusOrderId);
+    }
+
+    function getFocusedOrderIndex(orders = [], focusOrderId = state.focusOrderId) {
+        return (Array.isArray(orders) ? orders : []).findIndex((order) => matchesFocusedOrder(order, focusOrderId));
+    }
+
+    function scrollFocusedOrderIntoView() {
+        window.requestAnimationFrame(() => {
+            const focused = document.querySelector('[data-payments-focused-order="1"]');
+            if (focused instanceof HTMLElement && typeof focused.scrollIntoView === 'function') {
+                focused.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        });
     }
 
     function renderPager(pageKey, currentPage, totalPages, totalItems) {
@@ -1761,6 +1784,11 @@
         const target = document.getElementById('paymentsOrdersTable');
         if (!target) return;
         const orders = Array.isArray(data?.recent_orders) ? data.recent_orders : [];
+        const focusedOrderIndex = getFocusedOrderIndex(orders);
+
+        if (focusedOrderIndex >= 0) {
+            state.pagination.orders = Math.floor(focusedOrderIndex / PAYMENTS_PAGE_SIZE) + 1;
+        }
 
         if (!orders.length) {
             target.innerHTML = '<div class="payments-empty-state">当前时间范围内暂无支付订单。</div>';
@@ -1777,8 +1805,10 @@
         if (isMobileViewport()) {
             target.innerHTML = `
                 <div class="payments-order-cards">
-                    ${pager.pageItems.map((order) => `
-                        <div class="payments-order-card">
+                    ${pager.pageItems.map((order) => {
+                        const isFocusedOrder = matchesFocusedOrder(order);
+                        return `
+                        <div class="payments-order-card${isFocusedOrder ? ' payments-order-card--focused' : ''}" data-payments-focused-order="${isFocusedOrder ? '1' : '0'}">
                             <div class="payments-order-card-top">
                                 <div>
                                     <div class="payments-order-no">${escapeHtml(order.provider_order_no || '—')}</div>
@@ -1816,10 +1846,14 @@
                                 ${renderOrderActions(order)}
                             </div>
                         </div>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </div>
                 ${renderPager('orders', pager.currentPage, pager.totalPages, pager.totalItems)}
             `;
+            if (focusedOrderIndex >= 0) {
+                scrollFocusedOrderIntoView();
+            }
             return;
         }
 
@@ -1841,8 +1875,10 @@
                         </tr>
                     </thead>
                     <tbody>
-                        ${pager.pageItems.map((order) => `
-                            <tr>
+                        ${pager.pageItems.map((order) => {
+                            const isFocusedOrder = matchesFocusedOrder(order);
+                            return `
+                            <tr class="${isFocusedOrder ? 'payments-order-row--focused' : ''}" data-payments-focused-order="${isFocusedOrder ? '1' : '0'}">
                                 <td>
                                     <div class="payments-order-no">${escapeHtml(order.provider_order_no || '—')}</div>
                                     <div class="payments-order-provider">${escapeHtml(getProviderLabel(order.provider))}</div>
@@ -1857,12 +1893,16 @@
                                 <td>${escapeHtml(formatDateTime(order.claimed_at))}</td>
                                 <td>${renderOrderActions(order)}</td>
                             </tr>
-                        `).join('')}
+                        `;
+                        }).join('')}
                     </tbody>
                 </table>
             </div>
             ${renderPager('orders', pager.currentPage, pager.totalPages, pager.totalItems)}
         `;
+        if (focusedOrderIndex >= 0) {
+            scrollFocusedOrderIntoView();
+        }
     }
 
     function renderCleanupPreview(payload) {
@@ -2496,6 +2536,31 @@
         }
     }
 
+    async function focusOrder(orderId, options = {}) {
+        const normalizedOrderId = String(orderId || '').trim();
+        if (!normalizedOrderId) {
+            return { opened: false, matched: false };
+        }
+
+        state.focusOrderId = normalizedOrderId;
+
+        if (options.switchTab !== false) {
+            switchTab('overview', { reload: false });
+        }
+
+        if (options.reload !== false || !state.summary) {
+            await reload();
+        } else if (state.summary) {
+            renderOrders(state.summary);
+        }
+
+        const matched = getFocusedOrderIndex(state.summary?.recent_orders || [], normalizedOrderId) >= 0;
+        if (matched) {
+            scrollFocusedOrderIntoView();
+        }
+        return { opened: true, matched };
+    }
+
     window.AdminPayments = {
         init,
         reload,
@@ -2510,6 +2575,7 @@
         handleAnomalyAction,
         setExceptionTopicFilter,
         focusExceptionTopic,
-        focusOpsAlertQueue
+        focusOpsAlertQueue,
+        focusOrder
     };
 })();

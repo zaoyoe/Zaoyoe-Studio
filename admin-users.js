@@ -1682,23 +1682,48 @@ async function fetchUserSummaryRecord(criteria = {}) {
     }
 
     try {
-        let profileQuery = window.supabaseClient
-            .from('profiles')
-            .select('id, username, email, avatar_url, created_at');
-
+        const selectVariants = [
+            'id, username, email, avatar_url, created_at',
+            'id, username, email, avatar_url',
+            'id, username, avatar_url, created_at',
+            'id, username, avatar_url'
+        ];
+        const lookupPlans = [];
         if (normalizedUserId) {
-            profileQuery = profileQuery.eq('id', normalizedUserId);
-        } else {
-            profileQuery = profileQuery.ilike('email', normalizedEmail);
+            lookupPlans.push({ field: 'id', value: normalizedUserId, useIlike: false });
+        }
+        if (normalizedEmail) {
+            lookupPlans.push({ field: 'email', value: normalizedEmail, useIlike: true });
         }
 
-        const profileResult = await profileQuery.maybeSingle();
+        let profile = null;
+        for (const selectClause of selectVariants) {
+            for (const plan of lookupPlans) {
+                let profileQuery = window.supabaseClient
+                    .from('profiles')
+                    .select(selectClause)
+                    .limit(1);
 
-        if (profileResult?.error) {
-            throw profileResult.error;
+                profileQuery = plan.useIlike
+                    ? profileQuery.ilike(plan.field, plan.value)
+                    : profileQuery.eq(plan.field, plan.value);
+
+                const profileResult = await profileQuery.maybeSingle();
+                if (profileResult?.error) {
+                    continue;
+                }
+
+                profile = profileResult?.data || null;
+                if (profile) {
+                    break;
+                }
+            }
+
+            if (profile) {
+                break;
+            }
         }
 
-        const profile = profileResult?.data || null;
         if (!profile) {
             return null;
         }
@@ -2106,7 +2131,9 @@ async function openUserModal(userId, options = {}) {
     const user = await ensureUserSummaryInState(userId, options);
     if (!user) {
         console.error('User not found:', userId);
-        showToast('未找到该用户，无法打开详情', 'error');
+        if (options?.silentOnNotFound !== true) {
+            showToast('未找到该用户，无法打开详情', 'error');
+        }
         return false;
     }
 

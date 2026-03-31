@@ -491,6 +491,14 @@ body.admin-access-pending,
                             cursor: pointer;
                         }
 
+                        .shop-order-row--focused td {
+                            background: rgba(108, 162, 255, 0.16);
+                        }
+
+                        .shop-order-row--focused td:first-child {
+                            box-shadow: inset 3px 0 0 rgba(133, 186, 255, 0.92);
+                        }
+
                         .shop-order-user-avatar {
                             width: 36px;
                             height: 36px;

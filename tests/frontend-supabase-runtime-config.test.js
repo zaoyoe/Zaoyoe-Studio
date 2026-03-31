@@ -695,7 +695,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/admin-chat.js?v=20260331_ADMIN_CHAT_USER_EMAIL_FALLBACK_32'),
+        adminStudioHtml.includes('js/admin-chat.js?v=20260331_ADMIN_CHAT_PAYMENT_USER_LINK_34'),
         true,
         'admin-studio.html should load the latest admin chat case action runtime'
     );
@@ -707,7 +707,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/components/ChatWidget.js?v=20260331_CHAT_USER_EMAIL_FALLBACK_36'),
+            source.includes('js/components/ChatWidget.js?v=20260331_CHAT_POPUP_NAV_FIX_39'),
             true,
             'public entry pages should load the latest ops todo case action widget runtime'
         );
@@ -4297,13 +4297,16 @@ test('discount and ticket admin renderers no longer emit inline row or paginatio
 test('ticket admin surfaces user email in search and list rendering', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const ticketsSource = readRepoFile('js/admin-tickets.js');
+    const configSource = readRepoFile('admin-config.js');
 
     assert.equal(adminStudioSource.includes('placeholder="搜索订单号、邮箱或描述..."'), true, 'admin-studio.html should mention email in the ticket search placeholder');
     assert.equal(adminStudioSource.includes('<th>用户 / 邮箱</th>'), true, 'admin-studio.html should label the ticket user column with email support');
-    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260330_ADMIN_TICKETS_EMAIL_1'), true, 'admin-studio.html should load the cache-busted ticket admin script');
+    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260331_ADMIN_TICKETS_FOCUS_3'), true, 'admin-studio.html should load the cache-busted ticket admin script');
     assert.equal(ticketsSource.includes("fetchProfilesByIds: async function"), true, 'js/admin-tickets.js should fetch profile emails for ticket users');
     assert.equal(ticketsSource.includes("t.user_email && t.user_email.toLowerCase().includes(q)"), true, 'js/admin-tickets.js should allow searching tickets by user email');
     assert.equal(ticketsSource.includes("ticket.user_email"), true, 'js/admin-tickets.js should render ticket user email');
+    assert.equal(ticketsSource.includes("focusTicket: async function"), true, 'js/admin-tickets.js should expose a direct ticket focus helper');
+    assert.equal(configSource.includes("window.AdminTickets?.focusTicket"), true, 'admin-config.js should directly focus ticket workspaces when a ticket id is available');
 });
 
 test('discount admin runtime renderers externalize table states, copy toast, and modal visibility styling', () => {
@@ -4750,6 +4753,8 @@ test('shop admin product grid runtime templates externalize card styling and vis
 test('shop admin order workflows externalize runtime table-row and modal styling', () => {
     const shopSource = readRepoFile('js/admin-shop.js');
     const shopStyles = readRepoFile('css/admin-studio-page.css');
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const configSource = readRepoFile('admin-config.js');
 
     const removedRuntimeMarkers = [
         'style="cursor: pointer;" title="点击查看订单详情"',
@@ -4766,7 +4771,8 @@ test('shop admin order workflows externalize runtime table-row and modal styling
     }
 
     const runtimeMarkers = [
-        'class="shop-order-row"',
+        "shop-order-row${isFocusedOrder ? ' shop-order-row--focused' : ''}",
+        'shop-order-row--focused',
         'shop-order-user-avatar',
         'shop-order-content-overlay',
         'shop-order-content-box',
@@ -4774,7 +4780,8 @@ test('shop admin order workflows externalize runtime table-row and modal styling
         'shop-refund-modal-overlay',
         'shop-refund-status-grid',
         'shop-refund-modal-textarea refund-modal-input',
-        'shop-order-action-btn shop-order-action-btn--refund'
+        'shop-order-action-btn shop-order-action-btn--refund',
+        'focusOrder: async function'
     ];
 
     for (const marker of runtimeMarkers) {
@@ -4783,6 +4790,7 @@ test('shop admin order workflows externalize runtime table-row and modal styling
 
     const styleMarkers = [
         '.shop-order-row',
+        '.shop-order-row--focused',
         '.shop-order-content-overlay',
         '.shop-order-content-overlay.is-visible',
         '.shop-order-content-box',
@@ -4796,6 +4804,10 @@ test('shop admin order workflows externalize runtime table-row and modal styling
     for (const marker of styleMarkers) {
         assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
     }
+
+    assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260331_SHOP_ORDER_FOCUS_2'), true, 'admin-studio.html should load the cache-busted shop admin script');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260331_OPS_ALERT_ORDER_FOCUS_9'), true, 'admin-studio.html should load the cache-busted admin config script');
+    assert.equal(configSource.includes('window.ShopAdmin?.focusOrder'), true, 'admin-config.js should directly focus shop order workspaces when an order id is available');
 });
 
 test('shop admin inventory workflows externalize runtime table and modal styling', () => {
@@ -5829,7 +5841,7 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
 
     const htmlMarkers = [
         'css/admin-chat.css?v=20260331_ADMIN_CHAT_QUEUE_DUTY_ADVICE_18',
-        'js/admin-chat.js?v=20260331_ADMIN_CHAT_USER_EMAIL_FALLBACK_32'
+        'js/admin-chat.js?v=20260331_ADMIN_CHAT_PAYMENT_USER_LINK_34'
     ];
 
     for (const marker of htmlMarkers) {

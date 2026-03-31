@@ -1623,30 +1623,38 @@ class AdminChat {
             'id, username, avatar_url'
         ];
 
+        const lookupPlans = [];
+        if (userId) {
+            lookupPlans.push({ field: 'id', value: userId, useIlike: false });
+        }
+        if (email) {
+            lookupPlans.push({ field: 'email', value: email, useIlike: true });
+        }
+
         for (const selectClause of selectVariants) {
-            try {
-                let query = this.supabase
-                    .from('profiles')
-                    .select(selectClause)
-                    .limit(1);
+            for (const plan of lookupPlans) {
+                try {
+                    let query = this.supabase
+                        .from('profiles')
+                        .select(selectClause)
+                        .limit(1);
 
-                if (userId) {
-                    query = query.eq('id', userId);
-                } else {
-                    query = query.eq('email', email);
-                }
+                    query = plan.useIlike
+                        ? query.ilike(plan.field, plan.value)
+                        : query.eq(plan.field, plan.value);
 
-                const { data, error } = await query;
-                if (error) {
+                    const { data, error } = await query;
+                    if (error) {
+                        continue;
+                    }
+
+                    const profile = Array.isArray(data) ? (data[0] || null) : (data || null);
+                    if (profile) {
+                        return profile;
+                    }
+                } catch (error) {
                     continue;
                 }
-
-                const profile = Array.isArray(data) ? (data[0] || null) : (data || null);
-                if (profile) {
-                    return profile;
-                }
-            } catch (error) {
-                continue;
             }
         }
 
@@ -1669,7 +1677,7 @@ class AdminChat {
             ...(session?.profile && typeof session.profile === 'object' ? session.profile : {}),
             ...(fetchedProfile && typeof fetchedProfile === 'object' ? fetchedProfile : {})
         };
-        const userId = String(initialUserId || profile.id || '').trim();
+        const userId = String(profile.id || initialUserId || '').trim();
         const email = String(initialEmail || profile.email || '').trim();
 
         const [ordersResult, paymentsResult, verifyResult, ticketsResult] = await Promise.allSettled([
@@ -1684,7 +1692,7 @@ class AdminChat {
             userId
                 ? this.supabase
                     .from('payment_orders')
-                    .select('id, created_at, package_name, paid_amount, expected_amount, status, provider')
+                    .select('id, user_id, created_at, package_name, paid_amount, expected_amount, status, provider')
                     .eq('user_id', userId)
                     .order('created_at', { ascending: false })
                     .limit(2)
@@ -1847,6 +1855,7 @@ class AdminChat {
                 workspaceKey: isResolved ? 'tickets-resolved' : 'tickets-pending',
                 context: {
                     ticketId,
+                    ticketStatus: latestTicket?.status || '',
                     targetId: ticketId,
                     target_id: ticketId,
                     referenceLabel: '工单号',
@@ -1866,20 +1875,21 @@ class AdminChat {
 
         if (latestPayment) {
             const paymentId = String(latestPayment.id || '').trim();
-            const paymentUserReference = String(context.userId || context.email || '').trim();
+            const paymentUserId = String(latestPayment.user_id || context.userId || '').trim();
+            const paymentUserReference = String(paymentUserId || context.email || '').trim();
             actions.push({
                 key: 'payment',
                 label: '充值记录',
                 hint: paymentId ? `支付单 ${paymentId.slice(0, 8)}` : '最近充值',
                 workspaceKey: paymentUserReference ? 'shop-risk-users' : 'payments-overview',
                 context: paymentUserReference ? {
-                    userId: context.userId || '',
+                    userId: paymentUserId,
                     email: context.email || '',
                     paymentOrderId: paymentId,
-                    targetId: context.userId || paymentUserReference,
-                    target_id: context.userId || paymentUserReference,
-                    referenceLabel: context.userId ? '支付单' : '邮箱',
-                    referenceValue: context.userId
+                    targetId: paymentUserId || paymentUserReference,
+                    target_id: paymentUserId || paymentUserReference,
+                    referenceLabel: paymentUserId ? '支付单' : '邮箱',
+                    referenceValue: paymentUserId
                         ? (paymentId || String(latestPayment.package_name || '最近充值').trim())
                         : paymentUserReference,
                     defaultTab: 'payments',
@@ -2349,19 +2359,20 @@ class AdminChat {
 
         if (kind === 'payment') {
             const paymentId = String(item.id || '').trim();
-            const paymentUserReference = String(context.userId || context.email || '').trim();
+            const paymentUserId = String(item.user_id || context.userId || '').trim();
+            const paymentUserReference = String(paymentUserId || context.email || '').trim();
             return {
                 key: 'payment',
                 label: '查看充值记录',
                 workspaceKey: paymentUserReference ? 'shop-risk-users' : 'payments-overview',
                 context: paymentUserReference ? {
-                    userId: context.userId || '',
+                    userId: paymentUserId,
                     email: context.email || '',
                     paymentOrderId: paymentId,
-                    targetId: context.userId || paymentUserReference,
-                    target_id: context.userId || paymentUserReference,
-                    referenceLabel: context.userId ? '支付单' : '邮箱',
-                    referenceValue: context.userId
+                    targetId: paymentUserId || paymentUserReference,
+                    target_id: paymentUserId || paymentUserReference,
+                    referenceLabel: paymentUserId ? '支付单' : '邮箱',
+                    referenceValue: paymentUserId
                         ? (paymentId || String(item.package_name || '最近充值').trim())
                         : paymentUserReference,
                     defaultTab: 'payments',
@@ -2403,6 +2414,7 @@ class AdminChat {
                 workspaceKey: isResolved ? 'tickets-resolved' : 'tickets-pending',
                 context: {
                     ticketId,
+                    ticketStatus: item.status || '',
                     targetId: ticketId,
                     target_id: ticketId,
                     referenceLabel: '工单号',
@@ -5119,7 +5131,7 @@ class AdminChat {
         this.renderReplyTemplateBar({
             sessionId,
             userId: session?.profile?.id || session?.userId || '',
-            email: session?.profile?.email || '',
+            email: this.resolveSessionContextEmail(session),
             orders: [],
             payments: [],
             verifications: [],

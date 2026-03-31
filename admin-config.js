@@ -13776,6 +13776,9 @@ function normalizeOpsAlertWorkspaceContext(context = {}) {
         referenceLabel: String(context.referenceLabel || context.reference_label || '').trim(),
         referenceValue: String(context.referenceValue || context.reference_value || '').trim(),
         targetId: String(context.targetId || context.target_id || '').trim(),
+        orderId: String(context.orderId || context.order_id || '').trim(),
+        ticketId: String(context.ticketId || context.ticket_id || '').trim(),
+        ticketStatus: String(context.ticketStatus || context.ticket_status || '').trim().toLowerCase(),
         userId: String(context.userId || context.user_id || context.workspaceUserId || '').trim(),
         paymentOrderId: String(context.paymentOrderId || context.payment_order_id || '').trim(),
         clientIp: String(context.clientIp || context.client_ip || context.workspaceClientIp || '').trim(),
@@ -13828,6 +13831,7 @@ function getOpsAlertWorkspaceRiskUserId(context = {}) {
 async function tryOpenOpsAlertWorkspaceUserModal(userId, options = {}) {
     const normalizedUserId = String(userId || '').trim();
     const normalizedEmail = String(options?.email || options?.userEmail || '').trim();
+    const silentOnNotFound = options?.silentOnNotFound === true;
     const normalizedTab = String(options?.defaultTab || options?.tab || '').trim().toLowerCase();
     const normalizedPaymentOrderId = String(options?.paymentOrderId || options?.payment_order_id || '').trim();
     const attemptCount = Number(options?.attemptCount || 6);
@@ -13840,7 +13844,8 @@ async function tryOpenOpsAlertWorkspaceUserModal(userId, options = {}) {
         return window.openUserModal(normalizedUserId, {
             defaultTab: normalizedTab,
             paymentOrderId: normalizedPaymentOrderId,
-            fallbackEmail: normalizedEmail
+            fallbackEmail: normalizedEmail,
+            silentOnNotFound
         });
     }
 
@@ -13856,7 +13861,8 @@ async function tryOpenOpsAlertWorkspaceUserModal(userId, options = {}) {
                 await window.openUserModal(normalizedUserId, {
                     defaultTab: normalizedTab,
                     paymentOrderId: normalizedPaymentOrderId,
-                    fallbackEmail: normalizedEmail
+                    fallbackEmail: normalizedEmail,
+                    silentOnNotFound
                 });
             } else {
                 row.click();
@@ -13867,6 +13873,33 @@ async function tryOpenOpsAlertWorkspaceUserModal(userId, options = {}) {
     }
 
     return false;
+}
+
+async function focusOpsAlertWorkspacePaymentOrder(paymentOrderId) {
+    const normalizedPaymentOrderId = String(paymentOrderId || '').trim();
+    if (!normalizedPaymentOrderId) {
+        return { opened: false, matched: false };
+    }
+
+    window.switchModule?.('payments');
+    await settleOpsAlertWorkspace();
+    await window.AdminPayments?.init?.();
+
+    if (window.AdminPayments?.focusOrder) {
+        const result = await window.AdminPayments.focusOrder(normalizedPaymentOrderId, {
+            switchTab: true,
+            reload: true
+        });
+        await settleOpsAlertWorkspace();
+        return result && typeof result === 'object'
+            ? result
+            : { opened: Boolean(result), matched: Boolean(result) };
+    }
+
+    window.AdminPayments?.switchTab?.('overview', { reload: false });
+    await settleOpsAlertWorkspace();
+    scrollToOpsAlertWorkspaceTarget('paymentsProviderStats');
+    return { opened: true, matched: false };
 }
 
 function getOpsAlertWorkspaceSearchValue(context = {}) {
@@ -13942,12 +13975,19 @@ async function openOpsAlertWorkspace(workspaceKey, context = {}) {
             await window.refreshAdminAuditMonitor?.(true);
             scrollToOpsAlertWorkspaceTarget('adminAuditMonitorSection');
         } else if (normalizedKey === 'payments-overview') {
-            window.switchModule?.('payments');
-            await settleOpsAlertWorkspace();
-            await window.AdminPayments?.init?.();
-            window.AdminPayments?.switchTab?.('overview', { reload: false });
-            await settleOpsAlertWorkspace();
-            scrollToOpsAlertWorkspaceTarget('paymentsProviderStats');
+            if (normalizedContext.paymentOrderId) {
+                const paymentFocusResult = await focusOpsAlertWorkspacePaymentOrder(normalizedContext.paymentOrderId);
+                if (!paymentFocusResult.opened || !paymentFocusResult.matched) {
+                    scrollToOpsAlertWorkspaceTarget('paymentsProviderStats');
+                }
+            } else {
+                window.switchModule?.('payments');
+                await settleOpsAlertWorkspace();
+                await window.AdminPayments?.init?.();
+                window.AdminPayments?.switchTab?.('overview', { reload: false });
+                await settleOpsAlertWorkspace();
+                scrollToOpsAlertWorkspaceTarget('paymentsProviderStats');
+            }
         } else if (normalizedKey === 'payments-ops') {
             window.switchModule?.('payments');
             await settleOpsAlertWorkspace();
@@ -13955,18 +13995,38 @@ async function openOpsAlertWorkspace(workspaceKey, context = {}) {
             await window.AdminPayments?.focusExceptionTopic?.(getOpsAlertWorkspacePaymentsTopic(normalizedContext));
         } else if (normalizedKey === 'tickets-pending' || normalizedKey === 'tickets-resolved') {
             const nextStatus = normalizedKey === 'tickets-pending' ? 'pending' : 'resolved';
+            const normalizedTicketId = String(normalizedContext.ticketId || '').trim()
+                || (normalizedContext.referenceLabel === '工单号' ? String(workspaceSearchValue || '').trim() : '');
             window.switchModule?.('tickets');
             await settleOpsAlertWorkspace();
             await window.AdminTickets?.init?.();
-            const searchInput = document.getElementById('ticketSearchInput');
-            if (searchInput) searchInput.value = workspaceSearchValue || '';
-            if (window.AdminTickets) {
-                window.AdminTickets.searchQuery = workspaceSearchValue || '';
-            }
-            const filterButton = document.querySelector(`[data-admin-action="tickets-filter"][data-ticket-status="${nextStatus}"]`);
-            window.AdminTickets?.filter?.(nextStatus, filterButton);
-            if (workspaceSearchValue) {
-                window.AdminTickets?.search?.();
+            if (normalizedTicketId && window.AdminTickets?.focusTicket) {
+                const ticketFocusResult = await window.AdminTickets.focusTicket(normalizedTicketId, {
+                    status: normalizedContext.ticketStatus || nextStatus
+                });
+                if (!ticketFocusResult.matched) {
+                    const searchInput = document.getElementById('ticketSearchInput');
+                    if (searchInput) searchInput.value = workspaceSearchValue || '';
+                    if (window.AdminTickets) {
+                        window.AdminTickets.searchQuery = workspaceSearchValue || '';
+                    }
+                    const filterButton = document.querySelector(`[data-admin-action="tickets-filter"][data-ticket-status="${nextStatus}"]`);
+                    window.AdminTickets?.filter?.(nextStatus, filterButton);
+                    if (workspaceSearchValue) {
+                        window.AdminTickets?.search?.();
+                    }
+                }
+            } else {
+                const searchInput = document.getElementById('ticketSearchInput');
+                if (searchInput) searchInput.value = workspaceSearchValue || '';
+                if (window.AdminTickets) {
+                    window.AdminTickets.searchQuery = workspaceSearchValue || '';
+                }
+                const filterButton = document.querySelector(`[data-admin-action="tickets-filter"][data-ticket-status="${nextStatus}"]`);
+                window.AdminTickets?.filter?.(nextStatus, filterButton);
+                if (workspaceSearchValue) {
+                    window.AdminTickets?.search?.();
+                }
             }
             await settleOpsAlertWorkspace();
             scrollToOpsAlertWorkspaceTarget('module-tickets');
@@ -14007,19 +14067,24 @@ async function openOpsAlertWorkspace(workspaceKey, context = {}) {
             }
             scrollToOpsAlertWorkspaceTarget('deliveryDeadLetterSummary');
         } else if (normalizedKey === 'shop-risk-orders') {
-            const orderSearchValue = ['订单号', '订单'].includes(normalizedContext.referenceLabel)
-                ? workspaceSearchValue
-                : '';
+            const normalizedOrderId = String(normalizedContext.orderId || '').trim()
+                || (['订单号', '订单'].includes(normalizedContext.referenceLabel)
+                    ? String(workspaceSearchValue || '').trim()
+                    : '');
             window.switchModule?.('shop');
             await settleOpsAlertWorkspace();
             await window.ShopAdmin?.init?.();
-            window.ShopAdmin?.switchTab?.('orders');
+            window.ShopAdmin?.switchTab?.('orders', { load: !normalizedOrderId });
             await settleOpsAlertWorkspace();
-            const orderSearchInput = document.getElementById('orderSearchInput');
-            if (orderSearchInput) {
-                orderSearchInput.value = orderSearchValue || '';
+            if (normalizedOrderId && window.ShopAdmin?.focusOrder) {
+                await window.ShopAdmin.focusOrder(normalizedOrderId, { openDetails: true });
+            } else {
+                const orderSearchInput = document.getElementById('orderSearchInput');
+                if (orderSearchInput) {
+                    orderSearchInput.value = normalizedOrderId || '';
+                }
+                await window.ShopAdmin?.searchOrders?.(1);
             }
-            await window.ShopAdmin?.searchOrders?.(1);
             scrollToOpsAlertWorkspaceTarget('shop-view-orders');
         } else if (normalizedKey === 'shop-risk-discounts') {
             const discountSearchValue = getOpsAlertWorkspaceDiscountCode(normalizedContext) || workspaceSearchValue || '';
@@ -14051,9 +14116,21 @@ async function openOpsAlertWorkspace(workspaceKey, context = {}) {
                 const modalOpened = await tryOpenOpsAlertWorkspaceUserModal(riskUserId, {
                     defaultTab: normalizedContext.tab,
                     paymentOrderId: normalizedContext.paymentOrderId,
-                    email: riskUserEmail
+                    email: riskUserEmail,
+                    silentOnNotFound: Boolean(normalizedContext.paymentOrderId)
                 });
                 if (!modalOpened) {
+                    const paymentFocusResult = await focusOpsAlertWorkspacePaymentOrder(normalizedContext.paymentOrderId);
+                    if (paymentFocusResult.opened) {
+                        showToast(
+                            paymentFocusResult.matched
+                                ? '未找到后台用户，已自动定位到这笔充值记录'
+                                : '未找到后台用户，已打开支付总览',
+                            'warning'
+                        );
+                        return true;
+                    }
+                    showToast('未找到该用户，无法打开详情', 'error');
                     return false;
                 }
             } else {

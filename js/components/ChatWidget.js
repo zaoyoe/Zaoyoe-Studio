@@ -6777,11 +6777,18 @@ class ChatWidget {
             targetUrl.searchParams.set('module', moduleName);
         }
 
-        const openedWindow = window.open(targetUrl.toString(), '_blank', 'noopener');
-        if (!openedWindow) {
-            window.location.assign(targetUrl.toString());
+        const openedWindow = window.open(targetUrl.toString(), '_blank');
+        if (openedWindow) {
+            try {
+                openedWindow.opener = null;
+            } catch (_) {
+                // Ignore browsers that disallow touching opener after launch.
+            }
+            return true;
         }
-        return true;
+
+        this.showNotification('浏览器拦截了新窗口，请允许弹窗后重试', '💬 客服', true);
+        return false;
     }
 
     async handleOpsAlertNavigation(alert = {}) {
@@ -8349,13 +8356,16 @@ class ChatWidget {
 
         const initialUserId = String(session?.userId || '').trim();
         const initialEmail = this.resolveUserContextEmail(session);
-        const fetchedProfiles = initialUserId
+        let fetchedProfiles = initialUserId
             ? await this.fetchChatProfiles('id', [initialUserId])
-            : (initialEmail ? await this.fetchChatProfiles('email', [initialEmail]) : []);
+            : [];
+        if ((!Array.isArray(fetchedProfiles) || !fetchedProfiles.length) && initialEmail) {
+            fetchedProfiles = await this.fetchChatProfiles('email', [initialEmail]);
+        }
         const profile = Array.isArray(fetchedProfiles) && fetchedProfiles.length
             ? fetchedProfiles[0]
             : {};
-        const userId = String(initialUserId || profile.id || '').trim();
+        const userId = String(profile.id || initialUserId || '').trim();
         const email = String(initialEmail || profile.email || '').trim();
 
         const [ordersResult, paymentsResult, verifyResult, ticketsResult] = await Promise.allSettled([
@@ -8370,7 +8380,7 @@ class ChatWidget {
             userId
                 ? this.supabase
                     .from('payment_orders')
-                    .select('id, created_at, package_name, paid_amount, expected_amount, status, provider')
+                    .select('id, user_id, created_at, package_name, paid_amount, expected_amount, status, provider')
                     .eq('user_id', userId)
                     .order('created_at', { ascending: false })
                     .limit(2)
@@ -8531,6 +8541,7 @@ class ChatWidget {
                 workspaceKey: isResolved ? 'tickets-resolved' : 'tickets-pending',
                 context: {
                     ticketId,
+                    ticketStatus: latestTicket?.status || '',
                     targetId: ticketId,
                     target_id: ticketId,
                     referenceLabel: '工单号',
@@ -8550,20 +8561,21 @@ class ChatWidget {
 
         if (latestPayment) {
             const paymentId = String(latestPayment.id || '').trim();
-            const paymentUserReference = String(context.userId || context.email || '').trim();
+            const paymentUserId = String(latestPayment.user_id || context.userId || '').trim();
+            const paymentUserReference = String(paymentUserId || context.email || '').trim();
             actions.push({
                 key: 'payment',
                 label: '充值记录',
                 hint: paymentId ? `支付单 ${paymentId.slice(0, 8)}` : '最近充值',
                 workspaceKey: paymentUserReference ? 'shop-risk-users' : 'payments-overview',
                 context: paymentUserReference ? {
-                    userId: context.userId || '',
+                    userId: paymentUserId,
                     email: context.email || '',
                     paymentOrderId: paymentId,
-                    targetId: context.userId || paymentUserReference,
-                    target_id: context.userId || paymentUserReference,
-                    referenceLabel: context.userId ? '支付单' : '邮箱',
-                    referenceValue: context.userId
+                    targetId: paymentUserId || paymentUserReference,
+                    target_id: paymentUserId || paymentUserReference,
+                    referenceLabel: paymentUserId ? '支付单' : '邮箱',
+                    referenceValue: paymentUserId
                         ? (paymentId || String(latestPayment.package_name || '最近充值').trim())
                         : paymentUserReference,
                     defaultTab: 'payments',
@@ -9036,19 +9048,20 @@ class ChatWidget {
 
         if (kind === 'payment') {
             const paymentId = String(item.id || '').trim();
-            const paymentUserReference = String(context.userId || context.email || '').trim();
+            const paymentUserId = String(item.user_id || context.userId || '').trim();
+            const paymentUserReference = String(paymentUserId || context.email || '').trim();
             return {
                 key: 'payment',
                 label: '查看充值记录',
                 workspaceKey: paymentUserReference ? 'shop-risk-users' : 'payments-overview',
                 context: paymentUserReference ? {
-                    userId: context.userId || '',
+                    userId: paymentUserId,
                     email: context.email || '',
                     paymentOrderId: paymentId,
-                    targetId: context.userId || paymentUserReference,
-                    target_id: context.userId || paymentUserReference,
-                    referenceLabel: context.userId ? '支付单' : '邮箱',
-                    referenceValue: context.userId
+                    targetId: paymentUserId || paymentUserReference,
+                    target_id: paymentUserId || paymentUserReference,
+                    referenceLabel: paymentUserId ? '支付单' : '邮箱',
+                    referenceValue: paymentUserId
                         ? (paymentId || String(item.package_name || '最近充值').trim())
                         : paymentUserReference,
                     defaultTab: 'payments',
@@ -9090,6 +9103,7 @@ class ChatWidget {
                 workspaceKey: isResolved ? 'tickets-resolved' : 'tickets-pending',
                 context: {
                     ticketId,
+                    ticketStatus: item.status || '',
                     targetId: ticketId,
                     target_id: ticketId,
                     referenceLabel: '工单号',

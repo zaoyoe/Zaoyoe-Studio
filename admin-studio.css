@@ -2731,6 +2731,14 @@ body {
     vertical-align: middle;
 }
 
+.admin-ticket-row--focused td {
+    background: rgba(108, 162, 255, 0.16);
+}
+
+.admin-ticket-row--focused td:first-child {
+    box-shadow: inset 3px 0 0 rgba(133, 186, 255, 0.92);
+}
+
 .admin-ticket-nowrap-cell {
     white-space: nowrap;
 }
@@ -15675,6 +15683,14 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     color: var(--text-main);
 }
 
+.payments-order-row--focused td {
+    background: rgba(96, 165, 250, 0.12);
+}
+
+.payments-order-row--focused td:first-child {
+    box-shadow: inset 3px 0 0 rgba(96, 165, 250, 0.95);
+}
+
 .payments-order-no {
     font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
     font-size: 0.82rem;
@@ -16432,6 +16448,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         display: flex;
         flex-direction: column;
         gap: 14px;
+    }
+
+    .payments-order-card--focused {
+        border-color: rgba(96, 165, 250, 0.8);
+        box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.24), 0 18px 36px rgba(15, 23, 42, 0.22);
+        background: linear-gradient(180deg, rgba(96, 165, 250, 0.12), rgba(255, 255, 255, 0.04));
     }
 
     .payments-order-card-top {

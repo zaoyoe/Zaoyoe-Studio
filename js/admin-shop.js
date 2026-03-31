@@ -55,6 +55,9 @@ const ShopAdmin = {
     selectedProductId: null,
     inventoryPage: 1,
     ordersPage: 1,
+    focusedOrderId: '',
+    pendingOpenOrderDetails: false,
+    orderSearchRequestToken: 0,
     deliveryTaskPage: 1,
     deliveryTaskStatusFilter: 'all',
     deliveryTaskQuery: '',
@@ -2671,12 +2674,13 @@ Example output format:
         }
     },
 
-    switchTab: function (tabName) {
+    switchTab: function (tabName, options = {}) {
         this.currentTab = tabName;
         this.ensureDeliveryWorkspaceMounted();
         this.syncShopUrlState();
 
         this.applyShopTabState(tabName);
+        const shouldLoadOrders = options?.load !== false;
 
         // Load Data
         if (tabName === 'products') {
@@ -2685,8 +2689,56 @@ Example output format:
         }
         if (tabName === 'import') this.initImportView();
         if (tabName === 'inventory') this.initInventoryBrowser(); // Renamed from loadInventoryProductList, consistent with previous edit
-        if (tabName === 'orders') this.searchOrders();
+        if (tabName === 'orders' && shouldLoadOrders) this.searchOrders();
         if (tabName === 'fulfillment') this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
+    scrollFocusedOrderIntoView: function () {
+        if (!this.focusedOrderId) {
+            return;
+        }
+
+        const encodedOrderId = window.CSS?.escape
+            ? window.CSS.escape(this.focusedOrderId)
+            : this.focusedOrderId.replace(/"/g, '\\"');
+        const row = document.querySelector(`.shop-order-row[data-order-id="${encodedOrderId}"]`);
+        if (row instanceof HTMLElement) {
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    },
+
+    focusOrder: async function (orderId, options = {}) {
+        const normalizedOrderId = String(orderId || '').replace(/^SHOP_ORDER_/i, '').trim();
+        if (!normalizedOrderId) {
+            return { opened: false, matched: false };
+        }
+
+        if (!this._initialized) {
+            await this.init();
+        }
+
+        this.focusedOrderId = normalizedOrderId;
+        this.pendingOpenOrderDetails = options?.openDetails !== false;
+
+        if (this.currentTab !== 'orders') {
+            this.switchTab('orders', { load: false });
+        } else {
+            this.applyShopTabState('orders');
+        }
+
+        const orderSearchInput = document.getElementById('orderSearchInput');
+        if (orderSearchInput) {
+            orderSearchInput.value = normalizedOrderId;
+        }
+
+        const result = await this.searchOrders(1, {
+            queryOverride: normalizedOrderId,
+            focusOrderId: normalizedOrderId,
+            openDetails: this.pendingOpenOrderDetails
+        });
+        return result && typeof result === 'object'
+            ? result
+            : { opened: Boolean(result), matched: Boolean(result) };
     },
 
     applyShopTabState: function (tabName) {
@@ -7105,10 +7157,33 @@ Example output format:
         }
     },
 
-    searchOrders: async function (page = 1) {
+    searchOrders: async function (page = 1, options = {}) {
         this.ordersPage = page;
-        const query = document.getElementById('orderSearchInput')?.value?.trim() || '';
+        const normalizedOptions = options && typeof options === 'object' ? options : {};
+        const orderSearchInput = document.getElementById('orderSearchInput');
+        const query = String(
+            normalizedOptions.queryOverride !== undefined
+                ? normalizedOptions.queryOverride
+                : orderSearchInput?.value || ''
+        ).trim();
         const tbody = document.getElementById('ordersTableBody');
+        const explicitFocusedOrderId = String(normalizedOptions.focusOrderId || '').replace(/^SHOP_ORDER_/i, '').trim();
+        const persistedFocusedOrderId = String(this.focusedOrderId || '').replace(/^SHOP_ORDER_/i, '').trim();
+        const focusedOrderId = explicitFocusedOrderId
+            || (persistedFocusedOrderId && persistedFocusedOrderId === query.replace(/^SHOP_ORDER_/i, '').trim()
+                ? persistedFocusedOrderId
+                : '');
+        const shouldOpenDetails = normalizedOptions.openDetails === true
+            || (normalizedOptions.openDetails !== false && this.pendingOpenOrderDetails === true && Boolean(focusedOrderId));
+        const requestToken = (this.orderSearchRequestToken || 0) + 1;
+        this.orderSearchRequestToken = requestToken;
+        this.focusedOrderId = focusedOrderId;
+        this.pendingOpenOrderDetails = shouldOpenDetails;
+
+        if (orderSearchInput && orderSearchInput.value !== query) {
+            orderSearchInput.value = query;
+        }
+
         tbody.innerHTML = '<tr><td colspan="6" class="text-center">加载中...</td></tr>';
 
         const limit = this.pageSize;
@@ -7203,11 +7278,18 @@ Example output format:
                 }
             }
 
+            if (requestToken !== this.orderSearchRequestToken) {
+                return { opened: true, matched: false, stale: true };
+            }
+
             tbody.innerHTML = '';
             if (!data || data.length === 0) {
+                if (focusedOrderId) {
+                    this.pendingOpenOrderDetails = false;
+                }
                 tbody.innerHTML = '<tr><td colspan="6" class="text-center">无数据 - 请检查订单号是否正确</td></tr>';
                 this.renderPagination('ordersPagination', page, count || 0, this.pageSize, 'searchOrders');
-                return;
+                return { opened: true, matched: false };
             }
 
             // 2. Fetch Profiles via RPC (same as user management for reliable email access)
@@ -7305,6 +7387,8 @@ Example output format:
 
             console.log('[ShopAdmin] Inventory map:', inventoryMap);
 
+            let matchedFocusedOrder = null;
+
             for (const order of data) {
                 const date = new Date(order.created_at).toLocaleString();
                 // Get user info from map
@@ -7365,9 +7449,16 @@ Example output format:
                 }
 
                 const status = this.getOrderDeliveryStatusBadge(order);
+                const isFocusedOrder = focusedOrderId && String(order.id || '').trim() === focusedOrderId;
+                if (isFocusedOrder) {
+                    matchedFocusedOrder = {
+                        id: String(order.id || '').trim(),
+                        itemsData: contentData
+                    };
+                }
 
                 tbody.innerHTML += `
-                <tr class="shop-order-row" data-shop-action="order-show-content" data-order-id="${this.escapeForAttr(order.id)}" data-items-data="${contentData}" title="点击查看订单详情">
+                <tr class="shop-order-row${isFocusedOrder ? ' shop-order-row--focused' : ''}" data-shop-action="order-show-content" data-order-id="${this.escapeForAttr(order.id)}" data-items-data="${contentData}" title="点击查看订单详情">
                     <td data-label="用户" title="${safeOrderUserId}">${userDisplay}</td>
                     <td data-label="订单时间">${safeDate}</td>
                     <td data-label="商品">${this.escapeHtml(productName)}</td>
@@ -7393,9 +7484,28 @@ Example output format:
                 window.enableHorizontalScroll(ordersTableContainer);
             }
 
+            const matched = Boolean(matchedFocusedOrder);
+            if (matchedFocusedOrder) {
+                window.requestAnimationFrame(() => {
+                    this.scrollFocusedOrderIntoView();
+                    if (this.pendingOpenOrderDetails && matchedFocusedOrder.itemsData) {
+                        this.pendingOpenOrderDetails = false;
+                        this.showOrderContent(matchedFocusedOrder.id, matchedFocusedOrder.itemsData);
+                    }
+                });
+            } else if (focusedOrderId) {
+                this.pendingOpenOrderDetails = false;
+            }
+
+            return { opened: true, matched };
+
         } catch (err) {
+            if (requestToken !== this.orderSearchRequestToken) {
+                return { opened: true, matched: false, stale: true };
+            }
             console.error(err);
             tbody.innerHTML = `<tr><td colspan="6" class="text-danger">Error: ${this.escapeHtml(err.message)}</td></tr>`;
+            return { opened: false, matched: false, error: err };
         }
     },
 
@@ -7417,6 +7527,7 @@ Example output format:
 
     // Show order content in a modal
     showOrderContent: function (orderId, itemsData) {
+        this.closeDynamicModal?.('orderContentModal');
         let items = [];
         try {
             items = JSON.parse(decodeURIComponent(itemsData));
