@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Notification Smoke Harness</title>
+    <link rel="stylesheet" href="css/smoke-notifications.css?v=20260331_LOCAL_SMOKE_FIXTURES_4">
+    <link rel="stylesheet" href="css/notification-client.css?v=20260331_NOTIFICATION_FILTER_MEMORY_1">
+</head>
+
+<body>
+    <div class="smoke-shell">
+        <div class="smoke-shell__nav">
+            <div id="navNotifWrapper" hidden>
+                <button type="button" class="smoke-shell__button" id="dropdownNotifBtn" aria-label="个人消息">
+                    <span>个人消息</span>
+                    <span id="notifBadge" class="smoke-shell__badge" hidden>0</span>
+                </button>
+            </div>
+        </div>
+
+        <section class="smoke-shell__hero">
+            <div class="smoke-shell__eyebrow">Local Smoke Harness</div>
+            <h1>Notification Center Regression</h1>
+            <p>打开 <code>?smoke=1</code> 时会载入本地夹具，并自动验证分类筛选、已读状态、置顶排序和未读徽标这几条链路。</p>
+        </section>
+    </div>
+
+    <script src="js/local-smoke-fixtures.js?v=20260331_LOCAL_SMOKE_FIXTURES_4"></script>
+    <script src="notification-client.js?v=20260331_NOTIFICATION_FILTER_MEMORY_1"></script>
+</body>
+
+</html>

@@ -19,9 +19,9 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260330_TICKET_COPYABLE_BLUE_1">
+    <link rel="stylesheet" href="admin-studio.css?v=20260331_OPS_ALERT_SHIFT_REPORT_VIEWS_2">
     <link rel="stylesheet" href="admin-sidebar.css?v=11">
-    <link rel="stylesheet" href="css/admin-chat.css?v=20260330_ADMIN_CHAT_OPS_TODO_CASE_ACTIONS_17">
+    <link rel="stylesheet" href="css/admin-chat.css?v=20260331_ADMIN_CHAT_QUEUE_DUTY_ADVICE_18">
 
 
     <!-- Cropper.js CSS -->
@@ -2253,6 +2253,18 @@
                                                 </button>
                                             </div>
                                         </div>
+                                        <div class="ops-alert-shift-report" id="opsAlertMonitorShiftReport">
+                                            <div class="ops-alert-shift-report__head">
+                                                <div class="ops-alert-shift-report__copy">
+                                                    <div class="ops-alert-shift-report__eyebrow">本班处理统计 / 交班视图</div>
+                                                    <div class="ops-alert-shift-report__title">正在汇总认领、转交、关闭和积压趋势...</div>
+                                                    <div class="ops-alert-shift-report__summary">会优先给出本班处理量、当前积压和交班时最值得说明的几块模块。</div>
+                                                </div>
+                                                <div class="ops-alert-shift-report__stats">
+                                                    <span class="ops-alert-monitor-badge ops-alert-monitor-badge--neutral">等待加载</span>
+                                                </div>
+                                            </div>
+                                        </div>
                                         <div class="ops-alert-monitor-toolbar" id="opsAlertMonitorToolbar">
                                             <div class="ops-alert-monitor-filter-group" id="opsAlertMonitorScopeFilters">
                                                 <span class="ops-alert-monitor-filter-label">范围</span>
@@ -2836,6 +2848,22 @@
                                     <div class="config-inline-note">
                                         <i class="fas fa-circle-info"></i>
                                         <span>适合控制客服提醒的节奏。可以继续用滚动窗口，也可以改成每小时固定分钟或每天固定时间统一汇总；回看窗口和去重冷却时间仍决定补扫范围与重复外发控制。</span>
+                                    </div>
+                                    <div class="ops-alert-quick-reply-config">
+                                        <div class="ops-alert-quick-reply-config__header">
+                                            <div>
+                                                <div class="config-label">快捷回复模板</div>
+                                                <div class="config-desc">把客服工作台的快捷回复改成后台配置，可按业务类型启停，也能手动新增、删除或改写文案。</div>
+                                            </div>
+                                            <button type="button" class="btn-add-config btn-add-config--compact" id="opsAlertCustomerChatQuickReplyAddButton">
+                                                <i class="fas fa-plus"></i> 新增模板
+                                            </button>
+                                        </div>
+                                        <div class="ops-alert-quick-reply-config__body" id="opsAlertCustomerChatQuickReplyTemplates"></div>
+                                        <div class="config-inline-note ops-alert-quick-reply-config__note">
+                                            <i class="fas fa-circle-info"></i>
+                                            <span>可用变量：订单类支持 {{order_name}} / {{order_status}}；充值类支持 {{payment_status}}；验证类支持 {{verification_status}}；工单类支持 {{ticket_status}}。点击模板卡片里的变量标签，可直接插入当前聚焦输入框。</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -6043,6 +6071,10 @@
                                         data-admin-action="users-switch-tab" data-user-tab="ledger">
                                         <i class="fas fa-chart-line"></i> 积分流水
                                     </button>
+                                    <button class="user-tab-btn" data-tab="payments"
+                                        data-admin-action="users-switch-tab" data-user-tab="payments">
+                                        <i class="fas fa-wallet"></i> 充值记录
+                                    </button>
                                     <button class="user-tab-btn" data-tab="activity"
                                         data-admin-action="users-switch-tab" data-user-tab="activity">
                                         <i class="fas fa-history"></i> 近期动态
@@ -9063,7 +9095,7 @@
     <!-- Chart.js for Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="js/admin-studio-bootstrap.js?v=20260326_ADMIN_STUDIO_FALLBACK_BINDINGS_1"></script>
-    <script src="admin-users.js?v=20260327_ADMIN_USERS_MODAL_MOTION_1"></script>
+    <script src="admin-users.js?v=20260331_ADMIN_USERS_EMAIL_FALLBACK_4"></script>
     <script src="admin-points.js?v=20260327_ADMIN_POINTS_MODAL_MOTION_1"></script>
     <script src="admin-discounts.js?v=20260327_ADMIN_DISCOUNT_SCOPE_RULES_1"></script>
     <script src="starry-sky.js"></script>
@@ -9074,16 +9106,17 @@
     <script src="admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1"></script>
     <script src="admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1"></script>
     <script src="js/admin-payments.js?v=20260324_ADMIN_PAYMENTS_RUNTIME_STYLE_2"></script>
-    <script src="admin-config.js?v=20260330_OPS_WORKSPACE_RESTORE_1"></script>
+    <script src="js/local-smoke-fixtures.js?v=20260331_LOCAL_SMOKE_FIXTURES_4"></script>
+    <script src="admin-config.js?v=20260331_OPS_ALERT_USER_EMAIL_FALLBACK_6"></script>
     <script src="admin-homepage.js?v=20260329_HOMEPAGE_CACHE_SYNC_3"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
     <script src="js/admin-tickets.js?v=20260330_ADMIN_TICKETS_EMAIL_1"></script>
     <script src="js/admin-access.js?v=20260329_ADMIN_ENTRY_TRAMPOLINE_1"></script>
-    <script src="admin-studio.js?v=20260329_SCROLLBAR_AUTO_HIDE_1"></script>
+    <script src="admin-studio.js?v=20260331_OPS_ALERT_SHIFT_REPORT_VIEWS_2"></script>
     <script src="js/admin-shop.js?v=20260327_SHOP_MODAL_MOTION_1"></script>
 </body>
 
 <!-- Admin Chat Script -->
-<script src="js/admin-chat.js?v=20260330_ADMIN_CHAT_OPS_TODO_CASE_ACTIONS_28"></script>
+<script src="js/admin-chat.js?v=20260331_ADMIN_CHAT_USER_EMAIL_FALLBACK_32"></script>
 </html>

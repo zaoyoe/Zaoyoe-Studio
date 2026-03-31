@@ -450,6 +450,241 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillme
         assert.equal(shopRisk.recent_threshold_hits[0].status, 'applied');
         assert.equal(shopRisk.recent_auto_responses[0].action, 'disable-coupon');
         assert.equal(shopRisk.recent_auto_responses[0].status, 'applied');
+        assert.equal(payload.summary.shift_report.totals.active_backlog_count, 5);
+        assert.equal(payload.summary.shift_report.totals.active_pending_count, 5);
+        assert.equal(payload.summary.shift_report.totals.active_claimed_count, 0);
+    });
+});
+
+test('ops alert monitor handler builds shift report totals, owner workload, close reasons, and backlog trend', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('payment_gateway_degraded', {
+                id: 'gateway-shift-1',
+                severity: 'critical',
+                title: '支付通道成功率下降',
+                content: '支付通道告警\n支付成功率持续下降',
+                payload: {
+                    target_id: 'payment_gateway:shift-a'
+                },
+                created_at: hoursAgo(8)
+            }),
+            buildJob('shop_inventory_low', {
+                id: 'inventory-shift-1',
+                severity: 'warning',
+                title: '库存预警（商品 A）',
+                content: '库存不足\n商品：商品 A',
+                payload: {
+                    target_id: 'shop_inventory:product-a',
+                    product_name: '商品 A'
+                },
+                created_at: hoursAgo(4)
+            }),
+            buildJob('shop_order_risk_anomaly', {
+                id: 'shop-risk-shift-1',
+                severity: 'critical',
+                title: '优惠码高频使用（FLASH1）',
+                content: '商城风控告警\n优惠码：FLASH1',
+                payload: {
+                    target_id: 'shop_order_risk:coupon:FLASH1',
+                    signal_type: 'discount_code_spike',
+                    discount_code: 'FLASH1',
+                    risk_level: 'critical',
+                    risk_score: 95,
+                    primary_action: 'disable-coupon',
+                    response_summary: '建议先停用优惠码，再复核最近命中订单。'
+                },
+                created_at: hoursAgo(2)
+            })
+        ],
+        cases: [
+            {
+                category_key: 'payments',
+                target_id: 'payment_gateway:shift-a',
+                alert_type: 'payment_gateway_degraded',
+                status: 'resolved',
+                owner_admin_id: 'admin-user-1',
+                owner_label: '当前值班',
+                note: '已联系支付通道同学。',
+                resolution: '支付通道恢复正常，已验证回调。',
+                last_action: 'resolved',
+                last_action_at: hoursAgo(6),
+                updated_at: hoursAgo(6)
+            },
+            {
+                category_key: 'inventory',
+                target_id: 'shop_inventory:product-a',
+                alert_type: 'shop_inventory_low',
+                status: 'claimed',
+                owner_admin_id: 'admin-user-2',
+                owner_label: '支付值班',
+                note: '已通知仓库补货，等待回执。',
+                resolution: null,
+                last_action: 'claimed',
+                last_action_at: hoursAgo(3.5),
+                updated_at: hoursAgo(3)
+            },
+            {
+                category_key: 'shop_risk',
+                target_id: 'shop_order_risk:coupon:FLASH1',
+                alert_type: 'shop_order_risk_anomaly',
+                status: 'resolved',
+                owner_admin_id: 'admin-user-2',
+                owner_label: '支付值班',
+                note: '已交接给商城风控值班。',
+                resolution: '已停用优惠码并完成风险复核。',
+                last_action: 'resolved',
+                last_action_at: hoursAgo(1),
+                updated_at: hoursAgo(1)
+            }
+        ],
+        events: [
+            {
+                id: 'shift-event-payment-claim',
+                category_key: 'payments',
+                target_id: 'payment_gateway:shift-a',
+                alert_type: 'payment_gateway_degraded',
+                action: 'claim',
+                status: 'claimed',
+                owner_admin_id: 'admin-user-1',
+                owner_label: '当前值班',
+                actor_admin_id: 'admin-user-1',
+                actor_label: '当前值班',
+                note: '先认领并开始排查支付通道。',
+                resolution: null,
+                metadata: {},
+                created_at: hoursAgo(7.5)
+            },
+            {
+                id: 'shift-event-payment-resolve',
+                category_key: 'payments',
+                target_id: 'payment_gateway:shift-a',
+                alert_type: 'payment_gateway_degraded',
+                action: 'resolve',
+                status: 'resolved',
+                owner_admin_id: 'admin-user-1',
+                owner_label: '当前值班',
+                actor_admin_id: 'admin-user-1',
+                actor_label: '当前值班',
+                note: '',
+                resolution: '支付通道恢复正常，已验证回调。',
+                metadata: {},
+                created_at: hoursAgo(6)
+            },
+            {
+                id: 'shift-event-inventory-claim',
+                category_key: 'inventory',
+                target_id: 'shop_inventory:product-a',
+                alert_type: 'shop_inventory_low',
+                action: 'claim',
+                status: 'claimed',
+                owner_admin_id: 'admin-user-2',
+                owner_label: '支付值班',
+                actor_admin_id: 'admin-user-2',
+                actor_label: '支付值班',
+                note: '已认领库存预警。',
+                resolution: null,
+                metadata: {},
+                created_at: hoursAgo(3.5)
+            },
+            {
+                id: 'shift-event-inventory-note',
+                category_key: 'inventory',
+                target_id: 'shop_inventory:product-a',
+                alert_type: 'shop_inventory_low',
+                action: 'add_note',
+                status: 'claimed',
+                owner_admin_id: 'admin-user-2',
+                owner_label: '支付值班',
+                actor_admin_id: 'admin-user-2',
+                actor_label: '支付值班',
+                note: '已通知仓库补货，等待回执。',
+                resolution: null,
+                metadata: {},
+                created_at: hoursAgo(3)
+            },
+            {
+                id: 'shift-event-risk-claim',
+                category_key: 'shop_risk',
+                target_id: 'shop_order_risk:coupon:FLASH1',
+                alert_type: 'shop_order_risk_anomaly',
+                action: 'claim',
+                status: 'claimed',
+                owner_admin_id: 'admin-user-1',
+                owner_label: '当前值班',
+                actor_admin_id: 'admin-user-1',
+                actor_label: '当前值班',
+                note: '先认领优惠码风险。',
+                resolution: null,
+                metadata: {},
+                created_at: hoursAgo(1.8)
+            },
+            {
+                id: 'shift-event-risk-assign',
+                category_key: 'shop_risk',
+                target_id: 'shop_order_risk:coupon:FLASH1',
+                alert_type: 'shop_order_risk_anomaly',
+                action: 'assign',
+                status: 'claimed',
+                owner_admin_id: 'admin-user-2',
+                owner_label: '支付值班',
+                actor_admin_id: 'admin-user-1',
+                actor_label: '当前值班',
+                note: '转给商城风控值班跟进。',
+                resolution: null,
+                metadata: {},
+                created_at: hoursAgo(1.6)
+            },
+            {
+                id: 'shift-event-risk-resolve',
+                category_key: 'shop_risk',
+                target_id: 'shop_order_risk:coupon:FLASH1',
+                alert_type: 'shop_order_risk_anomaly',
+                action: 'resolve',
+                status: 'resolved',
+                owner_admin_id: 'admin-user-2',
+                owner_label: '支付值班',
+                actor_admin_id: 'admin-user-2',
+                actor_label: '支付值班',
+                note: '',
+                resolution: '已停用优惠码并完成风险复核。',
+                metadata: {},
+                created_at: hoursAgo(1)
+            }
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const report = payload.summary.shift_report;
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(report.shift_hours, 12);
+        assert.equal(report.totals.claimed_count, 3);
+        assert.equal(report.totals.assigned_count, 1);
+        assert.equal(report.totals.resolved_count, 2);
+        assert.equal(report.totals.note_count, 1);
+        assert.equal(report.totals.active_backlog_count, 1);
+        assert.equal(report.totals.active_claimed_count, 1);
+        assert.equal(report.totals.active_pending_count, 0);
+        assert.equal(report.totals.previous_backlog_count, 0);
+        assert.equal(report.totals.backlog_delta, 1);
+        assert.equal(report.totals.avg_resolution_minutes, 69);
+        assert.equal(report.totals.longest_waiting_minutes, 240);
+        assert.equal(report.categories[0].key, 'inventory');
+        assert.equal(report.categories[0].backlog_count, 1);
+        assert.equal(report.categories[0].claimed_count, 1);
+        assert.equal(report.admin_stats.length >= 2, true);
+        assert.equal(report.admin_stats.some((item) => item.admin_id === 'admin-user-1' && item.claimed_count === 2 && item.resolved_count === 1), true);
+        assert.equal(report.admin_stats.some((item) => item.admin_id === 'admin-user-2' && item.active_count === 1 && item.assigned_count === 1 && item.resolved_count === 1), true);
+        assert.equal(report.close_reasons.some((item) => item.key === 'recovered' && item.count === 1), true);
+        assert.equal(report.close_reasons.some((item) => item.key === 'auto_response' && item.count === 1), true);
+        assert.equal(Array.isArray(report.trend), true);
+        assert.equal(report.trend.length, 6);
+        assert.equal(report.trend[report.trend.length - 1].backlog_count, 1);
     });
 });
 

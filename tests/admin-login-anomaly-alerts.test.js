@@ -95,6 +95,8 @@ function applyRange(rows, range) {
 function createSupabaseStub(state = {}) {
     const jobs = state.jobs || [];
     const auditRows = state.auditRows || [];
+    const adminRoles = state.adminRoles || [];
+    const systemNotifications = state.systemNotifications || [];
 
     return {
         from(table) {
@@ -109,6 +111,35 @@ function createSupabaseStub(state = {}) {
                 if (table === 'ops_alert_jobs' && query.mode === 'select') {
                     return {
                         data: applyRange(sortRows(applyFilters(jobs, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'admin_roles' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(adminRoles, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'system_notifications' && query.mode === 'select') {
+                    return {
+                        data: applyRange(sortRows(applyFilters(systemNotifications, query.filters), query.order), query.range),
+                        error: null
+                    };
+                }
+
+                if (table === 'system_notifications' && query.mode === 'insert') {
+                    const payload = Array.isArray(query.payload) ? query.payload : [query.payload];
+                    const inserted = payload.map((row, index) => ({
+                        id: row.id || `notification-${systemNotifications.length + index + 1}`,
+                        created_at: row.created_at || new Date().toISOString(),
+                        ...row
+                    }));
+
+                    inserted.forEach((row) => systemNotifications.push({ ...row }));
+                    return {
+                        data: query.single ? inserted[0] : inserted,
                         error: null
                     };
                 }
@@ -196,6 +227,11 @@ test('buildAdminLoginAnomalyAlerts flags new admin login IPs and short-window dr
 test('runAdminLoginAnomalySweep enqueues anomalous admin login alerts with stable dedupe', async () => {
     const state = {
         jobs: [],
+        adminRoles: [
+            { user_id: 'admin-1', role_name: 'admin', expires_at: null },
+            { user_id: 'admin-2', role_name: 'super_admin', expires_at: null }
+        ],
+        systemNotifications: [],
         auditRows: [
             {
                 id: 'log-1',
@@ -232,9 +268,14 @@ test('runAdminLoginAnomalySweep enqueues anomalous admin login alerts with stabl
     assert.equal(first.anomaly_count, 1);
     assert.equal(first.queued, 1);
     assert.equal(first.deduped, 0);
+    assert.equal(first.admin_notifications_created, 2);
+    assert.equal(first.admin_notifications_skipped, 0);
     assert.equal(state.jobs.length, 1);
+    assert.equal(state.systemNotifications.length, 2);
     assert.equal(state.jobs[0].alert_type, 'security_admin_login_anomaly');
     assert.equal(state.jobs[0].payload.client_ip, '203.0.113.88');
+    assert.equal(state.systemNotifications[0].scope, 'admin_personal');
+    assert.equal(state.systemNotifications[0].category, 'security');
 
     const second = await runAdminLoginAnomalySweep(supabase, {
         runtime,
@@ -244,5 +285,8 @@ test('runAdminLoginAnomalySweep enqueues anomalous admin login alerts with stabl
     assert.equal(second.anomaly_count, 1);
     assert.equal(second.queued, 0);
     assert.equal(second.deduped, 1);
+    assert.equal(second.admin_notifications_created, 0);
+    assert.equal(second.admin_notifications_skipped, 2);
     assert.equal(state.jobs.length, 1);
+    assert.equal(state.systemNotifications.length, 2);
 });

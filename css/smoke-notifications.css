@@ -1,0 +1,81 @@
+:root {
+    color-scheme: dark;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Outfit", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background:
+        radial-gradient(circle at top, rgba(56, 189, 248, 0.2), transparent 32%),
+        linear-gradient(180deg, #020617 0%, #0f172a 48%, #111827 100%);
+    color: #e2e8f0;
+}
+
+.smoke-shell {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+}
+
+.smoke-shell__nav {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.smoke-shell__button {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    background: rgba(15, 23, 42, 0.72);
+    color: inherit;
+    font: inherit;
+}
+
+.smoke-shell__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #fb7185;
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.smoke-shell__hero {
+    margin-top: 64px;
+    padding: 28px;
+    border-radius: 28px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(15, 23, 42, 0.72);
+    box-shadow: 0 28px 70px rgba(15, 23, 42, 0.28);
+}
+
+.smoke-shell__eyebrow {
+    margin-bottom: 12px;
+    color: #7dd3fc;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.smoke-shell__hero h1 {
+    margin: 0 0 16px;
+    font-size: clamp(28px, 5vw, 44px);
+    line-height: 1.1;
+}
+
+.smoke-shell__hero p {
+    margin: 0;
+    max-width: 680px;
+    color: #cbd5e1;
+    line-height: 1.7;
+}

@@ -3,6 +3,9 @@ const {
     enqueueOpsAlertJob,
     loadOpsAlertsRuntimeConfig
 } = require('./ops-alerts');
+const {
+    notifyActiveAdmins
+} = require('./admin-notifications');
 
 const ADMIN_ACCESS_AUDIT_ACTION = 'admin.access.session.issue';
 const DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG = Object.freeze({
@@ -255,6 +258,25 @@ function buildAdminLoginAnomalyAlerts(auditRows = [], rawConfig = {}, options = 
         .filter(Boolean);
 }
 
+async function notifyAdminLoginAnomalyReminder(supabase, alert = {}) {
+    if (!supabase || !alert?.title || !alert?.content) {
+        return {
+            created: 0,
+            skipped: 0,
+            recipients: 0
+        };
+    }
+
+    return notifyActiveAdmins(supabase, {
+        title: alert.title,
+        content: alert.content,
+        type: 'alert',
+        scope: 'admin_personal',
+        category: 'security',
+        dedupeWindowMinutes: Number(alert.dedupeWindowMinutes || DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.dedupe_window_minutes)
+    });
+}
+
 async function runAdminLoginAnomalySweep(supabase, options = {}) {
     const env = options.env || process.env;
     const config = normalizeAdminLoginAnomalyMonitorConfig(options.config, env);
@@ -288,6 +310,8 @@ async function runAdminLoginAnomalySweep(supabase, options = {}) {
     let queued = 0;
     let deduped = 0;
     let skippedNoChannels = 0;
+    let adminNotificationsCreated = 0;
+    let adminNotificationsSkipped = 0;
     const results = [];
 
     for (const alert of alerts) {
@@ -307,6 +331,14 @@ async function runAdminLoginAnomalySweep(supabase, options = {}) {
             skippedNoChannels += 1;
         }
 
+        try {
+            const reminderResult = await notifyAdminLoginAnomalyReminder(supabase, alert);
+            adminNotificationsCreated += Number(reminderResult?.created || 0);
+            adminNotificationsSkipped += Number(reminderResult?.skipped || 0);
+        } catch (notificationError) {
+            console.warn('[admin-login-anomaly-alerts] failed to create admin personal reminder:', notificationError.message || notificationError);
+        }
+
         results.push({
             admin_id: alert.payload?.admin_id || null,
             client_ip: alert.payload?.client_ip || null,
@@ -320,6 +352,8 @@ async function runAdminLoginAnomalySweep(supabase, options = {}) {
         queued,
         deduped,
         skipped_no_channels: skippedNoChannels,
+        admin_notifications_created: adminNotificationsCreated,
+        admin_notifications_skipped: adminNotificationsSkipped,
         results
     };
 }

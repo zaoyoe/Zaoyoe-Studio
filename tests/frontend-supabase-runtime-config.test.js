@@ -351,6 +351,9 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'rememberUserContextAction(context = {}, action = {})',
         'createUserContextRecentActionBanner(context = {})',
         'getUserContextQuickActions(context = {})',
+        'getDefaultReplyTemplateDefinitions()',
+        'normalizeReplyTemplateDefinitions(templates)',
+        'ensureReplyTemplateConfigLoaded(force = false)',
         'getReplyTemplateDrafts(context = {})',
         'applyReplyTemplate(template = {})',
         'renderReplyTemplateBar(context = null)',
@@ -393,8 +396,14 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'isHighPriorityAdminSession(session = {})',
         'getAdminSessionOverviewCards()',
         'renderAdminSessionOverview()',
+        'buildAdminSessionQueueSnapshot({ view = \'all\', filter = \'all\' } = {})',
         'getAdminSessionQueueSnapshot()',
+        'getAdminSessionQueueBacklogSnapshot()',
         'getAdminSessionQueueCapacityAlerts(snapshot = {})',
+        'getAdminSessionQueuePriorityItems(snapshot = {})',
+        'getAdminSessionQueueRecommendedMode(snapshot = {})',
+        'getAdminSessionQueueCoordinationAdvice(snapshot = {})',
+        'getAdminSessionQueueDutyAdvice(snapshot = null)',
         'renderAdminSessionQueueSnapshot()',
         'getAdminSessionViewOptions()',
         'renderAdminSessionViews()',
@@ -404,7 +413,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'setAdminSessionQueueFilter(value = \'all\')',
         'matchesAdminSessionQueueView(session = {})',
         'matchesAdminSessionQueueFilter(session = {})',
-        'buildUserContextTimelineAction(kind = \'\', item = {})',
+        'buildUserContextTimelineAction(kind = \'\', item = {}, context = {})',
         'buildUserContextTimelineEntries(context = {})',
         'createUserContextTimelineSection(entries = [])',
         'session-name-row',
@@ -418,6 +427,9 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'session-queue-snapshot__hint',
         'session-queue-snapshot__capacity',
         'session-queue-snapshot__capacity-badge',
+        'session-queue-snapshot__suggestions',
+        'session-queue-suggestion',
+        'session-queue-suggestion__action',
         'session-queue-presets',
         'session-queue-preset',
         'session-filter-bar',
@@ -453,7 +465,17 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         '批量指派',
         '转售后',
         '转工单',
-        '查看工单'
+        '查看工单',
+        'adminSidebarInsightsCollapsed = true',
+        'userContextPanelCollapsed = true',
+        'getAdminSessionListSkeletonMarkup(count = 6)',
+        'getUserContextPanelSummaryText(context = {})',
+        'setAdminSidebarInsightsCollapsed(collapsed = false)',
+        'setAdminChatSessions(chatSessions = [])',
+        'setUserContextPanelCollapsed(collapsed = false)',
+        'data-user-context-panel-toggle',
+        'applyAdminReplySessionUpdate(sessionId = \'\', message = {})',
+        'upsertAdminMessageCacheEntry(message = {})'
     ];
 
     for (const marker of chatWidgetMarkers) {
@@ -497,6 +519,9 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'rememberUserContextAction(context = {}, action = {})',
         'createUserContextRecentActionBanner(context = {})',
         'getUserContextQuickActions(context = {})',
+        'getDefaultReplyTemplateDefinitions()',
+        'normalizeReplyTemplateDefinitions(templates)',
+        'ensureReplyTemplateConfigLoaded(force = false)',
         'getReplyTemplateDrafts(context = {})',
         'applyReplyTemplate(template = {})',
         'renderReplyTemplateBar(context = null)',
@@ -552,7 +577,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'sessionMatchesQueueView(session = {})',
         'sessionMatchesQueueFilter(session = {})',
         'getChatSessionSortPriority(session = {})',
-        'buildUserContextTimelineAction(kind = \'\', item = {})',
+        'buildUserContextTimelineAction(kind = \'\', item = {}, context = {})',
         'buildUserContextTimelineEntries(context = {})',
         'createUserContextTimelineSection(entries = [])',
         'admin-alert-toolbar',
@@ -643,6 +668,9 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         '.session-queue-snapshot__capacity-badge',
         '.session-queue-snapshot__capacity-badge--warning',
         '.session-queue-snapshot__capacity-badge--danger',
+        '.session-queue-snapshot__suggestions',
+        '.session-queue-suggestion',
+        '.session-queue-suggestion__action',
         '.session-queue-presets',
         '.session-queue-preset',
         '.session-queue-preset.is-active',
@@ -667,19 +695,19 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/admin-chat.js?v=20260330_ADMIN_CHAT_OPS_TODO_CASE_ACTIONS_28'),
+        adminStudioHtml.includes('js/admin-chat.js?v=20260331_ADMIN_CHAT_USER_EMAIL_FALLBACK_32'),
         true,
         'admin-studio.html should load the latest admin chat case action runtime'
     );
     assert.equal(
-        adminStudioHtml.includes('css/admin-chat.css?v=20260330_ADMIN_CHAT_OPS_TODO_CASE_ACTIONS_17'),
+        adminStudioHtml.includes('css/admin-chat.css?v=20260331_ADMIN_CHAT_QUEUE_DUTY_ADVICE_18'),
         true,
         'admin-studio.html should load the latest admin chat case action stylesheet'
     );
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/components/ChatWidget.js?v=20260330_CHAT_OPS_TODO_CASE_ACTIONS_28'),
+            source.includes('js/components/ChatWidget.js?v=20260331_CHAT_USER_EMAIL_FALLBACK_36'),
             true,
             'public entry pages should load the latest ops todo case action widget runtime'
         );
@@ -2624,6 +2652,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'id="opsAlertMonitorPanel"',
         'id="opsAlertMonitorGrid"',
         'id="opsAlertMonitorMeta"',
+        'id="opsAlertMonitorShiftReport"',
         'id="opsAlertMonitorToolbar"',
         'id="opsAlertMonitorScopeFilters"',
         'id="opsAlertMonitorSeverityFilters"',
@@ -2677,6 +2706,8 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'id="opsAlertCustomerChatMessageSummaryDailyHour"',
         'id="opsAlertCustomerChatMessageSummaryDailyMinute"',
         'id="opsAlertCustomerChatMessageSummaryMaxItems"',
+        'id="opsAlertCustomerChatQuickReplyAddButton"',
+        'id="opsAlertCustomerChatQuickReplyTemplates"',
         'id="opsAlertShopPurchaseSuccessEnabledToggle"',
         'id="opsAlertShopPurchaseSuccessSweepIntervalMinutes"',
         'id="opsAlertShopPurchaseSuccessLookbackMinutes"',
@@ -2835,6 +2866,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         "case 'settings-refresh-ops-alert-monitor':",
         "case 'settings-copy-ops-alert-monitor-checklist':",
         "case 'settings-export-ops-alert-monitor-csv':",
+        "case 'settings-copy-ops-alert-shift-report':",
+        "case 'settings-export-ops-alert-shift-report-csv':",
+        "case 'settings-set-ops-alert-shift-report-view':",
         "case 'settings-copy-ops-alert-monitor-category':",
         "case 'settings-open-ops-alert-workspace':",
         "case 'settings-toggle-ops-alert-shop-risk-auto-response':",
@@ -2916,7 +2950,23 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 8000;',
         'const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 8000;',
         'function getDefaultOpsAlertMonitorState()',
+        'function getDefaultOpsAlertMonitorShiftReport()',
+        'function normalizeOpsAlertMonitorShiftReport(raw)',
+        'function getOpsAlertCustomerChatQuickReplyPreviewPlaceholders(businessType = \'general\') {',
+        'function interpolateOpsAlertCustomerChatQuickReplyPreviewText(templateText = \'\', businessType = \'general\') {',
+        'function getOpsAlertCustomerChatQuickReplyTemplateValidationErrors(template = {}, options = {}) {',
+        'function renderOpsAlertCustomerChatQuickReplyTemplateValidation(row, errors = [], options = {}) {',
+        'function syncOpsAlertCustomerChatQuickReplyTemplateValidationState(options = {}) {',
+        'function validateOpsAlertCustomerChatQuickReplyTemplatesBeforeSave() {',
+        'function insertOpsAlertCustomerChatQuickReplyToken(row, token) {',
         'function getDefaultOpsAlertMonitorViewState()',
+        'function getDefaultOpsAlertMonitorShiftReportViewState() {',
+        'function normalizeOpsAlertMonitorShiftReportView(value = \'all\') {',
+        'function getOpsAlertMonitorShiftReportViewMeta(value = opsAlertMonitorShiftReportViewState) {',
+        'function getOpsAlertMonitorShiftReportCurrentAdminStat(report = normalizeOpsAlertMonitorShiftReport(), currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId()) {',
+        'function buildOpsAlertMonitorShiftReportOwnedCategoryItems(categories = [], currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId()) {',
+        'function buildOpsAlertMonitorShiftReportViewSwitchMarkup(currentView = opsAlertMonitorShiftReportViewState) {',
+        "label: '我的接班'",
         'function renderOpsAlertMonitorPanel()',
         'function getOpsAlertRiskSpotlightCategory(filters = getOpsAlertMonitorViewFilters())',
         'function getOpsAlertMonitorAutoResponseTone(status)',
@@ -2925,15 +2975,33 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'function buildOpsAlertRiskSpotlightActivitySection(title, items = [], emptyMessage = \'\', kind = \'threshold\')',
         'function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlertMonitorViewFilters())',
         'function renderOpsAlertRiskSpotlight(filters = getOpsAlertMonitorViewFilters())',
+        'function buildOpsAlertMonitorShiftReportMarkup(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\')',
+        'data-admin-action="settings-copy-ops-alert-shift-report"',
+        'data-admin-action="settings-export-ops-alert-shift-report-csv"',
+        'data-admin-action="settings-set-ops-alert-shift-report-view"',
+        'function buildOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\')',
+        'function buildOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\')',
+        'function setOpsAlertMonitorShiftReportView(value = \'all\') {',
+        'current_admin_active_count:',
+        'function renderOpsAlertMonitorShiftReport()',
         'function getOpsAlertMonitorPreparedCategories(filters = getOpsAlertMonitorViewFilters())',
         'async function copyOpsAlertMonitorChecklist(categoryKey = \'\')',
+        'async function copyOpsAlertMonitorShiftReportSummary()',
         'function exportOpsAlertMonitorCsv(categoryKey = \'\')',
+        'function exportOpsAlertMonitorShiftReportCsv()',
         'async function loadOpsAlertMonitor(force = false)',
         'window.setOpsAlertMonitorFilter = setOpsAlertMonitorFilter;',
         'window.loadOpsAlertMonitor = loadOpsAlertMonitor;',
         'window.refreshOpsAlertMonitorPanel = refreshOpsAlertMonitorPanel;',
         'window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;',
         'window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;',
+        'window.setOpsAlertMonitorShiftReportView = setOpsAlertMonitorShiftReportView;',
+        'window.copyOpsAlertMonitorShiftReportSummary = copyOpsAlertMonitorShiftReportSummary;',
+        'window.exportOpsAlertMonitorShiftReportCsv = exportOpsAlertMonitorShiftReportCsv;',
+        'data-ops-alert-quick-reply-move="up"',
+        'data-ops-alert-quick-reply-token="${escapeConfigHtml(token)}"',
+        'data-ops-alert-quick-reply-role="preview-text"',
+        'data-ops-alert-quick-reply-role="validation"',
         'async function openOpsAlertWorkspace(workspaceKey, context = {})',
         'function getDefaultShopRiskCaseComposerState()',
         'function getShopRiskCaseStatusTone(status)',
@@ -3032,6 +3100,24 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         '.ops-alert-risk-spotlight__entry-title',
         '.ops-alert-risk-spotlight__entry-summary',
         '.ops-alert-risk-spotlight__entry-meta',
+        '.ops-alert-shift-report',
+        '.ops-alert-shift-report__actions',
+        '.ops-alert-shift-report__view-switch',
+        '.ops-alert-shift-report__view-chip',
+        '.ops-alert-shift-report__view-summary',
+        '.ops-alert-shift-report__metrics',
+        '.ops-alert-shift-report__panel',
+        '.ops-alert-shift-report__trend-bars',
+        '.ops-alert-shift-report__trend-bar',
+        '.ops-alert-quick-reply-template__actions',
+        '.ops-alert-quick-reply-template__move',
+        '.ops-alert-quick-reply-template.has-validation-error',
+        '.ops-alert-quick-reply-template__field.is-invalid',
+        '.ops-alert-quick-reply-template__chip--action',
+        '.ops-alert-quick-reply-template__preview',
+        '.ops-alert-quick-reply-template__preview-pill',
+        '.ops-alert-quick-reply-template__preview-body',
+        '.ops-alert-quick-reply-template__validation',
         '.ops-alert-monitor-card',
         '.ops-alert-monitor-card__actions',
         '.ops-alert-monitor-item__actions',
@@ -3246,6 +3332,7 @@ test('admin studio points and users controls route through delegated actions', (
 
 test('admin user runtime renderers route list, modal, toolbar, and notification controls through delegated actions', () => {
     const adminUsersSource = readRepoFile('admin-users.js');
+    const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
     const adminStudioStyles = readRepoFile('admin-studio.css');
 
@@ -3394,7 +3481,11 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         'function bindPointsModalInteractions(overlay)',
         'function bindClearContentModalInteractions(overlay)',
         'function animateUsersOverlayIn(',
-        'function animateUsersOverlayOut('
+        'function animateUsersOverlayOut(',
+        'fetchUserPaymentOrders(userId)',
+        'renderPaymentsTab(container)',
+        'renderPaymentItems(data)',
+        'normalizeUserModalTab(tabName = \'\')'
     ];
 
     for (const marker of delegatedMarkers) {
@@ -3460,12 +3551,17 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         '.custom-tag-input',
         '.scope-options-pills--tone-unban',
         '.users-fixed-flatpickr-calendar',
-        '.users-notes-input--overflow'
+        '.users-notes-input--overflow',
+        '.users-payment-item',
+        '.users-payment-head',
+        '.users-payment-focus-pill'
     ];
 
     for (const marker of styleMarkers) {
         assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
+
+    assert.equal(adminStudioSource.includes('data-user-tab="payments"'), true, 'admin-studio.html should expose the payments tab in user detail modal');
 });
 
 test('admin points runtime renderers route batch tables and modals through delegated actions', () => {
@@ -5702,7 +5798,9 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
         "subEl.className = 'session-preview session-preview-subtext';",
         "this.setElementHidden(document.getElementById('chatEmptyState'), true);",
         "this.setElementHidden(interfaceEl, false);",
-        '<div class="chat-loading-state">'
+        '<div class="chat-loading-state">',
+        'getSessionQueueDutyAdvice(snapshot = null)',
+        'data-session-snapshot-action="apply-recommended-mode"'
     ];
 
     for (const marker of runtimeMarkers) {
@@ -5719,7 +5817,10 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
         '.admin-alert-action-btn',
         '.chat-interface[hidden]',
         '.admin-emoji-picker:not([hidden])',
-        '.chat-loading-state'
+        '.chat-loading-state',
+        '.session-queue-snapshot__suggestions',
+        '.session-queue-suggestion',
+        '.session-queue-suggestion__action'
     ];
 
     for (const marker of styleMarkers) {
@@ -5727,8 +5828,8 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
     }
 
     const htmlMarkers = [
-        'css/admin-chat.css?v=20260330_ADMIN_CHAT_OPS_TODO_CASE_ACTIONS_17',
-        'js/admin-chat.js?v=20260330_ADMIN_CHAT_OPS_TODO_CASE_ACTIONS_28'
+        'css/admin-chat.css?v=20260331_ADMIN_CHAT_QUEUE_DUTY_ADVICE_18',
+        'js/admin-chat.js?v=20260331_ADMIN_CHAT_USER_EMAIL_FALLBACK_32'
     ];
 
     for (const marker of htmlMarkers) {
@@ -5851,7 +5952,11 @@ test('final frontend runtime remnants route through delegated or bound listeners
 
     const delegatedMarkers = [
         'data-notif-action="clear-all"',
+        'data-notif-action="mark-all-read"',
+        'data-notif-action="filter-read"',
+        'data-notif-action="toggle-pin"',
         'function handleDrawerClick(e)',
+        'data-notif-action="filter-category"',
         'data-announcement-action="acknowledge"',
         "querySelector('[data-announcement-action=\"acknowledge\"]')?.addEventListener('click'",
         'data-guestbook-action="toggle-like"',
@@ -5861,13 +5966,17 @@ test('final frontend runtime remnants route through delegated or bound listeners
     ];
 
     assert.equal(notificationSource.includes(delegatedMarkers[0]), true, 'notification-client.js should render a delegated clear-all control');
-    assert.equal(notificationSource.includes(delegatedMarkers[1]), true, 'notification-client.js should handle delegated drawer actions');
-    assert.equal(announcementSource.includes(delegatedMarkers[2]), true, 'announcement-loader.js should render a bound acknowledge action');
-    assert.equal(announcementSource.includes(delegatedMarkers[3]), true, 'announcement-loader.js should bind the acknowledge button');
-    assert.equal(guestbookSource.includes(delegatedMarkers[4]), true, 'supabase-guestbook-functions.js should render delegated like actions');
-    assert.equal(guestbookSource.includes(delegatedMarkers[5]), true, 'supabase-guestbook-functions.js should bind fallback like actions');
-    assert.equal(adminStudioScript.includes(delegatedMarkers[6]), true, 'admin-studio.js should render delegated preview removal controls');
-    assert.equal(adminStudioScript.includes(delegatedMarkers[7]), true, 'admin-studio.js should handle delegated preview removal controls');
+    assert.equal(notificationSource.includes(delegatedMarkers[1]), true, 'notification-client.js should render a delegated mark-all-read control');
+    assert.equal(notificationSource.includes(delegatedMarkers[2]), true, 'notification-client.js should render delegated read filters');
+    assert.equal(notificationSource.includes(delegatedMarkers[3]), true, 'notification-client.js should render delegated pin controls');
+    assert.equal(notificationSource.includes(delegatedMarkers[4]), true, 'notification-client.js should handle delegated drawer actions');
+    assert.equal(notificationSource.includes(delegatedMarkers[5]), true, 'notification-client.js should render delegated admin notification filters');
+    assert.equal(announcementSource.includes(delegatedMarkers[6]), true, 'announcement-loader.js should render a bound acknowledge action');
+    assert.equal(announcementSource.includes(delegatedMarkers[7]), true, 'announcement-loader.js should bind the acknowledge button');
+    assert.equal(guestbookSource.includes(delegatedMarkers[8]), true, 'supabase-guestbook-functions.js should render delegated like actions');
+    assert.equal(guestbookSource.includes(delegatedMarkers[9]), true, 'supabase-guestbook-functions.js should bind fallback like actions');
+    assert.equal(adminStudioScript.includes(delegatedMarkers[10]), true, 'admin-studio.js should render delegated preview removal controls');
+    assert.equal(adminStudioScript.includes(delegatedMarkers[11]), true, 'admin-studio.js should handle delegated preview removal controls');
 
     const notificationRuntimeMarkers = [
         'wrapper.hidden = true;',
@@ -5877,13 +5986,33 @@ test('final frontend runtime remnants route through delegated or bound listeners
         "const PERSONAL_MESSAGE_TITLE = '个人消息';",
         "const EMPTY_PERSONAL_MESSAGE_TEXT = '暂无个人消息';",
         "const EMPTY_ADMIN_PERSONAL_MESSAGE_TEXT = '暂无个人提醒';",
+        'ADMIN_PERSONAL_CATEGORY_META',
+        'ADMIN_PERSONAL_FILTER_ORDER',
+        'NOTIFICATION_READ_FILTER_ORDER',
+        'NOTIFICATION_PINNED_STORAGE_KEY',
+        'NOTIFICATION_FILTER_STORAGE_KEY',
         'ADMIN_OPS_NOTIFICATION_BLOCK_TITLE_PATTERNS',
         'ADMIN_PERSONAL_NOTIFICATION_ALLOW_TITLE_PATTERNS',
         "if (scope === 'admin_personal') {",
         "if (scope === 'user_personal') {",
         "function normalizeNotificationScope(value) {",
+        "function normalizeNotificationCategory(value) {",
+        'function loadPinnedNotificationIds() {',
+        'function loadNotificationFilterState() {',
+        'function persistNotificationFilterState() {',
+        'function syncNotificationFilterStateForViewer() {',
+        'function getSortedNotifications(sourceNotifications = notifications) {',
+        'function buildNotificationReadFilterStrip(sourceNotifications = notifications) {',
+        'function getFilteredNotifications(sourceNotifications = notifications) {',
+        'class="notif-filter-chip${currentAdminNotificationFilter === filterKey ? \' is-active\' : \'\'}"',
+        'class="notif-filter-chip${currentNotificationReadFilter === filterKey ? \' is-active\' : \'\'}"',
+        'class="notif-card-pin${n.is_pinned ? \' is-active\' : \'\'}"',
         'await resolveNotificationViewer();',
-        'notifications = (data || []).filter((row) => shouldIncludeNotification(row));',
+        'notifications = syncNotificationPinnedState((data || []).filter((row) => shouldIncludeNotification(row)));',
+        'data-notif-category="${escapeHtml(visualMeta.categoryMeta?.key || normalizeNotificationCategory(n.category) || \'\')}"',
+        'notif-card-tag',
+        'window.toggleNotificationPin = function (id) {',
+        'window.markAllNotificationsRead = async function () {',
         "document.documentElement.classList.add('notif-scroll-locked');",
         "document.body.classList.add('notif-scroll-locked');"
     ];
@@ -5905,10 +6034,18 @@ test('final frontend runtime remnants route through delegated or bound listeners
     }
 
     const notificationStyleMarkers = [
+        '.notif-drawer-actions',
+        '.notif-mark-read',
+        '.notif-filter-strip',
+        '.notif-filter-strip--status',
+        '.notif-filter-chip',
         '.notif-expand-wrapper',
         '#navNotifWrapper[hidden]',
         '.notif-drawer',
         '.notif-card.exit',
+        '.notif-card.is-pinned',
+        '.notif-card-pin',
+        '.notif-card-tag',
         '.notif-scroll-locked'
     ];
 
@@ -5917,8 +6054,8 @@ test('final frontend runtime remnants route through delegated or bound listeners
     }
 
     const notificationAssetMarkers = [
-        'css/notification-client.css?v=20260330_NOTIFICATION_PERSONAL_CENTER_1',
-        'notification-client.js?v=20260330_NOTIFICATION_PERSONAL_CENTER_1'
+        'css/notification-client.css?v=20260331_NOTIFICATION_FILTER_MEMORY_1',
+        'notification-client.js?v=20260331_NOTIFICATION_FILTER_MEMORY_1'
     ];
 
     for (const marker of notificationAssetMarkers) {
@@ -5929,6 +6066,61 @@ test('final frontend runtime remnants route through delegated or bound listeners
         assert.equal(shopHtml.includes(marker), true, `shop.html should contain ${marker}`);
         assert.equal(legacyIndexSource.includes(marker), true, `index_old.html should contain ${marker}`);
     }
+});
+
+test('local smoke fixtures expose admin and notification regression harnesses', () => {
+    const smokeFixtureSource = readRepoFile('js/local-smoke-fixtures.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const smokeNotificationHtml = readRepoFile('smoke-notifications.html');
+
+    const fixtureMarkers = [
+        "const smokeEnabled = searchParams.get('smoke') === '1';",
+        'function installSupabaseStub() {',
+        'function installFetchStub() {',
+        'async function runAdminStudioSmoke() {',
+        'async function runAdminChatSmoke() {',
+        'async function runNotificationSmoke() {',
+        'function shouldRunMobileLayoutChecks() {',
+        'function recordSelectorsNoHorizontalOverflow(label, selectors = [], tolerance = 6) {',
+        "document.documentElement.setAttribute('data-local-smoke-status', status);",
+        "recordResult('启用模板切换不再跳页'",
+        '交班报表可切到“我的接班”视角',
+        '客服工作台队列总览已渲染',
+        '快捷回复点击后会回填插值正文',
+        '客服工作台窄屏下值班建议与会话区没有横向溢出',
+        '通知中心窄屏下长文案会自然换行',
+        "recordResult('通知置顶会立即影响排序'"
+    ];
+
+    for (const marker of fixtureMarkers) {
+        assert.equal(smokeFixtureSource.includes(marker), true, `js/local-smoke-fixtures.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260331_LOCAL_SMOKE_FIXTURES_4'),
+        true,
+        'admin-studio.html should load the local smoke fixtures entry'
+    );
+    assert.equal(
+        smokeNotificationHtml.includes('css/smoke-notifications.css?v=20260331_LOCAL_SMOKE_FIXTURES_4'),
+        true,
+        'smoke-notifications.html should load the dedicated smoke harness stylesheet'
+    );
+    assert.equal(
+        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260331_LOCAL_SMOKE_FIXTURES_4'),
+        true,
+        'smoke-notifications.html should load the local smoke fixtures entry'
+    );
+    assert.equal(
+        smokeNotificationHtml.includes('notification-client.js?v=20260331_NOTIFICATION_FILTER_MEMORY_1'),
+        true,
+        'smoke-notifications.html should load the current notification runtime'
+    );
+    assert.equal(
+        smokeNotificationHtml.includes('id="navNotifWrapper" hidden'),
+        true,
+        'smoke-notifications.html should provide the notification wrapper expected by notification-client.js'
+    );
 });
 
 test('admin studio modal scrollers auto-hide after scroll activity settles', () => {

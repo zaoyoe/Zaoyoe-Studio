@@ -607,6 +607,7 @@ async function tryNotifyRefundOpsAlert(supabase, target, processingResult, conte
             title: config.title,
             content: buildRefundAlertContent(target, config.topicLabel, config.detail),
             type: config.type,
+            category: 'admin_notice',
             dedupeWindowMinutes: 45
         });
     } catch (error) {

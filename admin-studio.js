@@ -797,6 +797,15 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-export-ops-alert-monitor-csv':
                 window.exportOpsAlertMonitorCsv?.();
                 break;
+            case 'settings-copy-ops-alert-shift-report':
+                window.copyOpsAlertMonitorShiftReportSummary?.();
+                break;
+            case 'settings-export-ops-alert-shift-report-csv':
+                window.exportOpsAlertMonitorShiftReportCsv?.();
+                break;
+            case 'settings-set-ops-alert-shift-report-view':
+                window.setOpsAlertMonitorShiftReportView?.(actionEl.dataset.opsAlertShiftReportView);
+                break;
             case 'settings-copy-ops-alert-monitor-category':
                 window.copyOpsAlertMonitorChecklist?.(actionEl.dataset.opsAlertMonitorCategoryKey);
                 break;

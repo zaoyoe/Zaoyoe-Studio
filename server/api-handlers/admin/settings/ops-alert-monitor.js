@@ -18,6 +18,11 @@ const OPS_ALERT_MONITOR_LOOKBACK_HOURS = 7 * 24;
 const OPS_ALERT_MONITOR_PAGE_SIZE = 200;
 const OPS_ALERT_MONITOR_MAX_PAGES = 5;
 const OPS_ALERT_CASE_EVENT_LIMIT = 3;
+const OPS_ALERT_MONITOR_SHIFT_HOURS = 12;
+const OPS_ALERT_MONITOR_SHIFT_BUCKET_COUNT = 6;
+const OPS_ALERT_MONITOR_SHIFT_CATEGORY_LIMIT = 4;
+const OPS_ALERT_MONITOR_SHIFT_ADMIN_LIMIT = 6;
+const OPS_ALERT_MONITOR_SHIFT_CLOSE_REASON_LIMIT = 5;
 const OPS_ALERT_CASES_SELECT_FIELDS = 'category_key, target_id, alert_type, status, owner_admin_id, owner_label, note, resolution, metadata, last_action, last_action_at, updated_at';
 
 const ALERT_MONITOR_CATEGORIES = Object.freeze([
@@ -64,6 +69,18 @@ const ALL_MONITOR_ALERT_TYPES = Object.freeze(
         ...(category.recovery_types || [])
     ]))]
 );
+const ALL_MONITOR_PROBLEM_TYPES = new Set(
+    ALERT_MONITOR_CATEGORIES.flatMap((category) => category.problem_types || [])
+);
+const ALL_MONITOR_RECOVERY_TYPES = new Set(
+    ALERT_MONITOR_CATEGORIES.flatMap((category) => category.recovery_types || [])
+);
+const ALERT_MONITOR_CATEGORY_LABELS = Object.freeze(
+    ALERT_MONITOR_CATEGORIES.reduce((accumulator, category) => {
+        accumulator[category.key] = category.label;
+        return accumulator;
+    }, {})
+);
 
 function normalizeText(value, maxLength = 400) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -81,6 +98,28 @@ function normalizePayload(value) {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? value
         : {};
+}
+
+function getSafeTimestamp(value) {
+    const parsed = Date.parse(normalizeText(value, 80));
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toIsoString(timestamp) {
+    return Number.isFinite(timestamp) && timestamp > 0
+        ? new Date(timestamp).toISOString()
+        : null;
+}
+
+function getAlertTypeState(alertType = '') {
+    const normalizedAlertType = normalizeText(alertType, 120).toLowerCase();
+    if (ALL_MONITOR_PROBLEM_TYPES.has(normalizedAlertType)) {
+        return 'problem';
+    }
+    if (ALL_MONITOR_RECOVERY_TYPES.has(normalizedAlertType)) {
+        return 'recovered';
+    }
+    return 'unknown';
 }
 
 function buildOpsAlertCaseKey(categoryKey, targetId) {
@@ -808,6 +847,588 @@ function buildCategorySnapshot(category, jobs = [], options = {}) {
     };
 }
 
+function buildOpsAlertMonitorEventTimeline(caseEventsByKey = new Map()) {
+    const timelineByKey = new Map();
+
+    if (!(caseEventsByKey instanceof Map)) {
+        return timelineByKey;
+    }
+
+    caseEventsByKey.forEach((events, caseKey) => {
+        const normalizedEvents = (Array.isArray(events) ? events : [])
+            .map((event) => ({
+                ...event,
+                created_time: getSafeTimestamp(event?.created_at)
+            }))
+            .filter((event) => event.created_time > 0)
+            .sort((left, right) => left.created_time - right.created_time);
+
+        timelineByKey.set(caseKey, normalizedEvents);
+    });
+
+    return timelineByKey;
+}
+
+function buildOpsAlertMonitorJobTimeline(jobs = []) {
+    const timelineByKey = new Map();
+
+    sortByCreatedAtDesc(jobs)
+        .slice()
+        .reverse()
+        .forEach((job) => {
+            const categoryKey = getAlertCategoryKey(job.alert_type);
+            const targetId = getAlertTargetId(job);
+            if (!categoryKey || !targetId) {
+                return;
+            }
+
+            const caseKey = buildOpsAlertCaseKey(categoryKey, targetId);
+            if (!timelineByKey.has(caseKey)) {
+                timelineByKey.set(caseKey, []);
+            }
+
+            timelineByKey.get(caseKey).push({
+                category_key: categoryKey,
+                category_label: ALERT_MONITOR_CATEGORY_LABELS[categoryKey] || categoryKey,
+                target_id: targetId,
+                alert_type: normalizeText(job.alert_type, 120).toLowerCase(),
+                severity: normalizeSeverity(job.severity),
+                created_at: normalizeText(job.created_at, 80) || null,
+                created_time: getCreatedAtTime(job)
+            });
+        });
+
+    return timelineByKey;
+}
+
+function getLatestTimelineEntryBeforeTime(entries = [], timeMs = 0) {
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const candidate = entries[index];
+        if (Number(candidate?.created_time || 0) <= timeMs) {
+            return candidate;
+        }
+    }
+
+    return null;
+}
+
+function isOpsAlertBacklogAtTime(jobEntries = [], eventEntries = [], timeMs = 0) {
+    const latestJob = getLatestTimelineEntryBeforeTime(jobEntries, timeMs);
+    if (!latestJob || getAlertTypeState(latestJob.alert_type) !== 'problem') {
+        return false;
+    }
+
+    const latestEvent = getLatestTimelineEntryBeforeTime(eventEntries, timeMs);
+    if (!latestEvent) {
+        return true;
+    }
+
+    const latestEventStatus = normalizeText(latestEvent.status, 40).toLowerCase();
+    const latestEventAction = normalizeText(latestEvent.action, 80).toLowerCase();
+    const latestEventTime = Number(latestEvent.created_time || 0);
+
+    if (
+        (latestEventStatus === 'resolved' || latestEventAction === 'resolve')
+        && latestEventTime >= Number(latestJob.created_time || 0)
+    ) {
+        return false;
+    }
+
+    return true;
+}
+
+function countOpsAlertBacklogAtTime(jobTimelineByKey = new Map(), eventTimelineByKey = new Map(), timeMs = 0) {
+    let count = 0;
+
+    jobTimelineByKey.forEach((jobEntries, caseKey) => {
+        if (isOpsAlertBacklogAtTime(jobEntries, eventTimelineByKey.get(caseKey) || [], timeMs)) {
+            count += 1;
+        }
+    });
+
+    return count;
+}
+
+function getLatestProblemJobBeforeTime(jobEntries = [], timeMs = 0, minTimeMs = 0) {
+    for (let index = jobEntries.length - 1; index >= 0; index -= 1) {
+        const candidate = jobEntries[index];
+        const candidateTime = Number(candidate?.created_time || 0);
+        if (candidateTime <= minTimeMs || candidateTime > timeMs) {
+            continue;
+        }
+        if (getAlertTypeState(candidate.alert_type) === 'problem') {
+            return candidate;
+        }
+    }
+
+    return null;
+}
+
+function getOpsAlertResolveDurationMinutes(resolveEvent = {}, eventEntries = [], jobEntries = []) {
+    const resolveTime = Number(resolveEvent.created_time || getSafeTimestamp(resolveEvent.created_at));
+    if (!resolveTime) {
+        return null;
+    }
+
+    let cycleStartTime = 0;
+    let lastResolvedTime = 0;
+
+    for (const event of Array.isArray(eventEntries) ? eventEntries : []) {
+        const eventTime = Number(event?.created_time || getSafeTimestamp(event?.created_at));
+        if (!eventTime || eventTime >= resolveTime) {
+            break;
+        }
+
+        const action = normalizeText(event.action, 80).toLowerCase();
+        if (action === 'resolve') {
+            lastResolvedTime = eventTime;
+            cycleStartTime = 0;
+            continue;
+        }
+        if (action === 'reopen') {
+            cycleStartTime = eventTime;
+            continue;
+        }
+        if (!cycleStartTime && ['claim', 'assign'].includes(action)) {
+            cycleStartTime = eventTime;
+        }
+    }
+
+    if (!cycleStartTime) {
+        const latestProblemJob = getLatestProblemJobBeforeTime(jobEntries, resolveTime, lastResolvedTime);
+        cycleStartTime = Number(latestProblemJob?.created_time || 0);
+    }
+
+    if (!cycleStartTime || cycleStartTime > resolveTime) {
+        return null;
+    }
+
+    return Math.max(0, Math.round((resolveTime - cycleStartTime) / 60000));
+}
+
+function buildOpsAlertShiftAdminKey(adminId = '', adminLabel = '') {
+    const normalizedAdminId = normalizeText(adminId, 160);
+    if (normalizedAdminId) {
+        return normalizedAdminId;
+    }
+
+    const normalizedAdminLabel = normalizeText(adminLabel, 255).toLowerCase();
+    return normalizedAdminLabel ? `label:${normalizedAdminLabel}` : '';
+}
+
+function ensureOpsAlertShiftAdminStat(statsMap, adminLookupById, adminId = '', adminLabel = '', currentAdminId = '') {
+    const key = buildOpsAlertShiftAdminKey(adminId, adminLabel);
+    if (!key) {
+        return null;
+    }
+
+    if (!statsMap.has(key)) {
+        const normalizedAdminId = normalizeText(adminId, 160) || null;
+        const normalizedLabel = normalizeText(
+            adminLookupById.get(normalizedAdminId)?.label || adminLabel || adminId,
+            255
+        ) || '未指定负责人';
+
+        statsMap.set(key, {
+            admin_id: normalizedAdminId,
+            label: normalizedLabel,
+            claimed_count: 0,
+            assigned_count: 0,
+            resolved_count: 0,
+            note_count: 0,
+            reopened_count: 0,
+            active_count: 0,
+            critical_active_count: 0,
+            resolution_minutes_total: 0,
+            resolution_sample_count: 0,
+            is_current: normalizedAdminId !== null && normalizedAdminId === normalizeText(currentAdminId, 160)
+        });
+    }
+
+    return statsMap.get(key);
+}
+
+function getOpsAlertResolutionBucket(event = {}) {
+    const categoryKey = normalizeText(event.category_key, 80).toLowerCase();
+    const resolutionText = [
+        normalizeText(event.resolution, 2000),
+        normalizeText(event.summary, 2000)
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    if (resolutionText.includes('误报') || resolutionText.includes('无需处理') || resolutionText.includes('重复')) {
+        return { key: 'false_positive', label: '误报 / 无需处理' };
+    }
+    if (
+        resolutionText.includes('自动')
+        || resolutionText.includes('已停用')
+        || resolutionText.includes('已封禁')
+        || resolutionText.includes('已下架')
+    ) {
+        return { key: 'auto_response', label: '自动处置完成' };
+    }
+    if (
+        resolutionText.includes('恢复')
+        || resolutionText.includes('已补货')
+        || resolutionText.includes('补货完成')
+        || resolutionText.includes('恢复正常')
+        || resolutionText.includes('阈值已解除')
+    ) {
+        return { key: 'recovered', label: '系统恢复 / 已补齐' };
+    }
+    if (
+        categoryKey === 'shop_risk'
+        || resolutionText.includes('风控')
+        || resolutionText.includes('优惠码')
+        || resolutionText.includes('封禁')
+        || resolutionText.includes('下架')
+    ) {
+        return { key: 'risk_control', label: '风控处置完成' };
+    }
+    if (
+        categoryKey === 'payments'
+        || resolutionText.includes('支付')
+        || resolutionText.includes('退款')
+        || resolutionText.includes('通道')
+    ) {
+        return { key: 'payments', label: '支付 / 退款已处理' };
+    }
+    if (
+        categoryKey === 'inventory'
+        || resolutionText.includes('库存')
+        || resolutionText.includes('补货')
+    ) {
+        return { key: 'inventory', label: '库存 / 补货已处理' };
+    }
+    if (
+        categoryKey === 'fulfillment'
+        || resolutionText.includes('履约')
+        || resolutionText.includes('发货')
+        || resolutionText.includes('死信')
+    ) {
+        return { key: 'fulfillment', label: '履约 / 死信已处理' };
+    }
+    if (
+        categoryKey === 'tickets'
+        || resolutionText.includes('工单')
+        || resolutionText.includes('售后')
+    ) {
+        return { key: 'tickets', label: '工单 / 售后已处理' };
+    }
+    if (resolutionText) {
+        return { key: 'manual', label: '人工处理完成' };
+    }
+    return { key: 'other', label: '其他关闭原因' };
+}
+
+function buildOpsAlertShiftCategorySummary(categories = []) {
+    return (Array.isArray(categories) ? categories : [])
+        .map((category) => {
+            const items = Array.isArray(category.items) ? category.items : [];
+            const backlogItems = items.filter((item) => normalizeText(item?.case_status, 40).toLowerCase() !== 'resolved');
+            const claimedCount = backlogItems.filter((item) => normalizeText(item?.case_status, 40).toLowerCase() === 'claimed').length;
+            const pendingCount = backlogItems.filter((item) => normalizeText(item?.case_status, 40).toLowerCase() !== 'claimed').length;
+            const criticalCount = backlogItems.filter((item) => normalizeSeverity(item?.severity) === 'critical').length;
+
+            return {
+                key: normalizeText(category.key, 80).toLowerCase() || null,
+                label: normalizeText(category.label, 120) || normalizeText(category.key, 80) || '告警分类',
+                backlog_count: backlogItems.length,
+                claimed_count: claimedCount,
+                pending_count: pendingCount,
+                critical_count: criticalCount
+            };
+        })
+        .filter((category) => Number(category.backlog_count || 0) > 0)
+        .sort((left, right) => {
+            const backlogDelta = Number(right.backlog_count || 0) - Number(left.backlog_count || 0);
+            if (backlogDelta !== 0) return backlogDelta;
+            const criticalDelta = Number(right.critical_count || 0) - Number(left.critical_count || 0);
+            if (criticalDelta !== 0) return criticalDelta;
+            return normalizeText(left.label, 120).localeCompare(normalizeText(right.label, 120));
+        })
+        .slice(0, OPS_ALERT_MONITOR_SHIFT_CATEGORY_LIMIT);
+}
+
+function buildOpsAlertMonitorShiftReport({
+    categories = [],
+    jobs = [],
+    caseEventsByKey = new Map(),
+    assignableAdmins = [],
+    currentAdminId = '',
+    now = new Date()
+} = {}) {
+    const nowTime = now instanceof Date ? now.getTime() : getSafeTimestamp(now);
+    const shiftWindowMs = OPS_ALERT_MONITOR_SHIFT_HOURS * 60 * 60 * 1000;
+    const windowStartTime = nowTime - shiftWindowMs;
+    const previousWindowStartTime = windowStartTime - shiftWindowMs;
+    const bucketDurationMs = Math.round(shiftWindowMs / OPS_ALERT_MONITOR_SHIFT_BUCKET_COUNT);
+    const eventTimelineByKey = buildOpsAlertMonitorEventTimeline(caseEventsByKey);
+    const jobTimelineByKey = buildOpsAlertMonitorJobTimeline(jobs);
+    const adminLookupById = new Map(
+        (Array.isArray(assignableAdmins) ? assignableAdmins : [])
+            .map((admin) => [normalizeText(admin?.id, 160), admin])
+            .filter(([adminId]) => Boolean(adminId))
+    );
+    const shiftEvents = [];
+
+    eventTimelineByKey.forEach((events) => {
+        (Array.isArray(events) ? events : []).forEach((event) => {
+            const eventTime = Number(event?.created_time || 0);
+            if (eventTime >= previousWindowStartTime && eventTime <= nowTime) {
+                shiftEvents.push(event);
+            }
+        });
+    });
+    shiftEvents.sort((left, right) => Number(left.created_time || 0) - Number(right.created_time || 0));
+
+    const totals = {
+        claimed_count: 0,
+        assigned_count: 0,
+        resolved_count: 0,
+        note_count: 0,
+        reopened_count: 0,
+        avg_resolution_minutes: null,
+        active_backlog_count: 0,
+        active_claimed_count: 0,
+        active_pending_count: 0,
+        previous_backlog_count: 0,
+        backlog_delta: 0,
+        longest_waiting_minutes: null
+    };
+    const reasonMap = new Map();
+    const adminStatsMap = new Map();
+    const resolvedDurations = [];
+    const categorySummary = buildOpsAlertShiftCategorySummary(categories);
+
+    (Array.isArray(categories) ? categories : []).forEach((category) => {
+        const items = Array.isArray(category?.items) ? category.items : [];
+        items.forEach((item) => {
+            if (normalizeText(item?.case_status, 40).toLowerCase() === 'resolved') {
+                return;
+            }
+
+            totals.active_backlog_count += 1;
+            if (normalizeText(item?.case_status, 40).toLowerCase() === 'claimed') {
+                totals.active_claimed_count += 1;
+            } else {
+                totals.active_pending_count += 1;
+            }
+
+            const createdTime = getSafeTimestamp(item?.created_at);
+            if (createdTime > 0) {
+                const waitMinutes = Math.max(0, Math.round((nowTime - createdTime) / 60000));
+                if (totals.longest_waiting_minutes === null || waitMinutes > totals.longest_waiting_minutes) {
+                    totals.longest_waiting_minutes = waitMinutes;
+                }
+            }
+
+            const ownerStat = ensureOpsAlertShiftAdminStat(
+                adminStatsMap,
+                adminLookupById,
+                item?.case_owner_admin_id,
+                item?.case_owner_label,
+                currentAdminId
+            );
+            if (ownerStat) {
+                ownerStat.active_count += 1;
+                if (normalizeSeverity(item?.severity) === 'critical') {
+                    ownerStat.critical_active_count += 1;
+                }
+            }
+        });
+    });
+
+    shiftEvents
+        .filter((event) => Number(event?.created_time || 0) >= windowStartTime)
+        .forEach((event) => {
+            const action = normalizeText(event.action, 80).toLowerCase();
+            const caseKey = buildOpsAlertCaseKey(event.category_key, event.target_id);
+            const caseEvents = eventTimelineByKey.get(caseKey) || [];
+            const jobEntries = jobTimelineByKey.get(caseKey) || [];
+
+            if (action === 'claim') {
+                totals.claimed_count += 1;
+                const stat = ensureOpsAlertShiftAdminStat(
+                    adminStatsMap,
+                    adminLookupById,
+                    event.owner_admin_id || event.actor_admin_id,
+                    event.owner_label || event.actor_label,
+                    currentAdminId
+                );
+                if (stat) {
+                    stat.claimed_count += 1;
+                }
+                return;
+            }
+
+            if (action === 'assign') {
+                totals.assigned_count += 1;
+                const stat = ensureOpsAlertShiftAdminStat(
+                    adminStatsMap,
+                    adminLookupById,
+                    event.owner_admin_id || event.actor_admin_id,
+                    event.owner_label || event.actor_label,
+                    currentAdminId
+                );
+                if (stat) {
+                    stat.assigned_count += 1;
+                }
+                return;
+            }
+
+            if (action === 'add_note') {
+                totals.note_count += 1;
+                const stat = ensureOpsAlertShiftAdminStat(
+                    adminStatsMap,
+                    adminLookupById,
+                    event.actor_admin_id || event.owner_admin_id,
+                    event.actor_label || event.owner_label,
+                    currentAdminId
+                );
+                if (stat) {
+                    stat.note_count += 1;
+                }
+                return;
+            }
+
+            if (action === 'reopen') {
+                totals.reopened_count += 1;
+                const stat = ensureOpsAlertShiftAdminStat(
+                    adminStatsMap,
+                    adminLookupById,
+                    event.actor_admin_id || event.owner_admin_id,
+                    event.actor_label || event.owner_label,
+                    currentAdminId
+                );
+                if (stat) {
+                    stat.reopened_count += 1;
+                }
+                return;
+            }
+
+            if (action === 'resolve') {
+                totals.resolved_count += 1;
+                const stat = ensureOpsAlertShiftAdminStat(
+                    adminStatsMap,
+                    adminLookupById,
+                    event.actor_admin_id || event.owner_admin_id,
+                    event.actor_label || event.owner_label,
+                    currentAdminId
+                );
+                if (stat) {
+                    stat.resolved_count += 1;
+                }
+
+                const durationMinutes = getOpsAlertResolveDurationMinutes(event, caseEvents, jobEntries);
+                if (Number.isFinite(durationMinutes)) {
+                    resolvedDurations.push(durationMinutes);
+                    if (stat) {
+                        stat.resolution_minutes_total += durationMinutes;
+                        stat.resolution_sample_count += 1;
+                    }
+                }
+
+                const bucket = getOpsAlertResolutionBucket(event);
+                const bucketKey = normalizeText(bucket.key, 80) || 'other';
+                if (!reasonMap.has(bucketKey)) {
+                    reasonMap.set(bucketKey, {
+                        key: bucketKey,
+                        label: normalizeText(bucket.label, 120) || '其他关闭原因',
+                        count: 0
+                    });
+                }
+                reasonMap.get(bucketKey).count += 1;
+            }
+        });
+
+    if (resolvedDurations.length) {
+        totals.avg_resolution_minutes = Math.round(
+            resolvedDurations.reduce((sum, value) => sum + Number(value || 0), 0) / resolvedDurations.length
+        );
+    }
+
+    totals.previous_backlog_count = countOpsAlertBacklogAtTime(jobTimelineByKey, eventTimelineByKey, windowStartTime);
+    totals.backlog_delta = totals.active_backlog_count - totals.previous_backlog_count;
+
+    const trend = Array.from({ length: OPS_ALERT_MONITOR_SHIFT_BUCKET_COUNT }, (_, index) => {
+        const bucketStartTime = windowStartTime + index * bucketDurationMs;
+        const bucketEndTime = index === OPS_ALERT_MONITOR_SHIFT_BUCKET_COUNT - 1
+            ? nowTime
+            : Math.min(nowTime, bucketStartTime + bucketDurationMs);
+
+        const bucketEvents = shiftEvents.filter((event) => (
+            Number(event?.created_time || 0) >= bucketStartTime
+            && Number(event?.created_time || 0) < bucketEndTime
+        ));
+
+        return {
+            bucket_start: toIsoString(bucketStartTime),
+            bucket_end: toIsoString(bucketEndTime),
+            backlog_count: countOpsAlertBacklogAtTime(jobTimelineByKey, eventTimelineByKey, bucketEndTime),
+            claimed_count: bucketEvents.filter((event) => normalizeText(event.action, 80).toLowerCase() === 'claim').length,
+            assigned_count: bucketEvents.filter((event) => normalizeText(event.action, 80).toLowerCase() === 'assign').length,
+            resolved_count: bucketEvents.filter((event) => normalizeText(event.action, 80).toLowerCase() === 'resolve').length
+        };
+    });
+
+    const adminStats = Array.from(adminStatsMap.values())
+        .map((stat) => ({
+            admin_id: stat.admin_id,
+            label: stat.label,
+            claimed_count: stat.claimed_count,
+            assigned_count: stat.assigned_count,
+            resolved_count: stat.resolved_count,
+            note_count: stat.note_count,
+            reopened_count: stat.reopened_count,
+            active_count: stat.active_count,
+            critical_active_count: stat.critical_active_count,
+            avg_resolution_minutes: stat.resolution_sample_count > 0
+                ? Math.round(stat.resolution_minutes_total / stat.resolution_sample_count)
+                : null,
+            is_current: stat.is_current
+        }))
+        .sort((left, right) => {
+            const resolvedDelta = Number(right.resolved_count || 0) - Number(left.resolved_count || 0);
+            if (resolvedDelta !== 0) return resolvedDelta;
+            const activeDelta = Number(right.active_count || 0) - Number(left.active_count || 0);
+            if (activeDelta !== 0) return activeDelta;
+            const intakeDelta = (
+                Number(right.claimed_count || 0)
+                + Number(right.assigned_count || 0)
+            ) - (
+                Number(left.claimed_count || 0)
+                + Number(left.assigned_count || 0)
+            );
+            if (intakeDelta !== 0) return intakeDelta;
+            if (left.is_current && !right.is_current) return -1;
+            if (!left.is_current && right.is_current) return 1;
+            return normalizeText(left.label, 255).localeCompare(normalizeText(right.label, 255));
+        })
+        .slice(0, OPS_ALERT_MONITOR_SHIFT_ADMIN_LIMIT);
+
+    const closeReasons = Array.from(reasonMap.values())
+        .sort((left, right) => {
+            const countDelta = Number(right.count || 0) - Number(left.count || 0);
+            if (countDelta !== 0) return countDelta;
+            return normalizeText(left.label, 120).localeCompare(normalizeText(right.label, 120));
+        })
+        .slice(0, OPS_ALERT_MONITOR_SHIFT_CLOSE_REASON_LIMIT);
+
+    return {
+        shift_hours: OPS_ALERT_MONITOR_SHIFT_HOURS,
+        bucket_hours: Math.max(1, Math.round(bucketDurationMs / (60 * 60 * 1000))),
+        window_start: toIsoString(windowStartTime),
+        window_end: toIsoString(nowTime),
+        previous_window_start: toIsoString(previousWindowStartTime),
+        previous_window_end: toIsoString(windowStartTime),
+        totals,
+        close_reasons: closeReasons,
+        admin_stats: adminStats,
+        categories: categorySummary,
+        trend
+    };
+}
+
 module.exports = async (req, res) => {
     try {
         const { supabase, adminSupabase, user } = await requireAdmin(req);
@@ -845,6 +1466,14 @@ module.exports = async (req, res) => {
             opsAlertCasesByKey,
             caseEventsByKey
         }));
+        const shiftReport = buildOpsAlertMonitorShiftReport({
+            categories,
+            jobs,
+            caseEventsByKey,
+            assignableAdmins,
+            currentAdminId: normalizeText(currentAdmin?.id || user.id, 160) || null,
+            now
+        });
         const totalActiveCount = categories.reduce((sum, category) => sum + Number(category.active_count || 0), 0);
         const totalCriticalCount = categories.reduce((sum, category) => sum + Number(category.critical_count || 0), 0);
         const activeCategoryCount = categories.filter((category) => Number(category.active_count || 0) > 0).length;
@@ -857,7 +1486,8 @@ module.exports = async (req, res) => {
                 total_job_count: jobs.length,
                 total_active_count: totalActiveCount,
                 total_critical_count: totalCriticalCount,
-                active_category_count: activeCategoryCount
+                active_category_count: activeCategoryCount,
+                shift_report: shiftReport
             },
             assignable_admins: assignableAdmins,
             current_admin_id: normalizeText(currentAdmin?.id || user.id, 160) || null,

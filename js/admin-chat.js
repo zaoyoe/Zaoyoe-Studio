@@ -35,11 +35,17 @@ class AdminChat {
         this.userContextRecentActions = new Map();
         this.currentUserContext = null;
         this.currentSessionInfo = null;
+        this.replyTemplateConfigTemplates = null;
+        this.replyTemplateConfigLoadedAt = 0;
+        this.replyTemplateConfigPromise = null;
+        this._replyTemplateRenderToken = 0;
         this._userContextRequestId = 0;
         this.destroyed = false;
         this.opsAlertSessionId = '__admin_ops_todo__';
         this.handleDocumentClick = this.handleDocumentClick.bind(this);
+        this.handleOpsAlertConfigUpdated = this.handleOpsAlertConfigUpdated.bind(this);
         this.restoreSessionQueuePreferences();
+        window.addEventListener('ops-alerts-config-updated', this.handleOpsAlertConfigUpdated);
 
         window.adminChatInstance = this;
         this.init();
@@ -77,6 +83,7 @@ class AdminChat {
         }
 
         document.removeEventListener('click', this.handleDocumentClick);
+        window.removeEventListener('ops-alerts-config-updated', this.handleOpsAlertConfigUpdated);
     }
 
     // i18n helper with fallback
@@ -861,11 +868,14 @@ class AdminChat {
         ];
     }
 
-    getSessionQueueSnapshot() {
-        const sessions = this.sessions
-            .filter((session) => this.sessionMatchesQueueView(session))
-            .filter((session) => this.sessionMatchesQueueFilter(session))
-            .filter((session) => this.sessionMatchesFilter(session, this.searchQuery));
+    buildSessionQueueSnapshot({ view = 'all', filter = 'all', respectSearch = false } = {}) {
+        const normalizedView = this.normalizeSessionQueueView(view);
+        const normalizedFilter = this.normalizeSessionQueueFilter(filter);
+        const searchQuery = respectSearch ? this.searchQuery : '';
+        const sessions = (Array.isArray(this.sessions) ? this.sessions : [])
+            .filter((session) => this.matchesSessionQueueViewMode(session, normalizedView))
+            .filter((session) => this.matchesSessionQueueFilterMode(session, normalizedFilter, normalizedView))
+            .filter((session) => this.sessionMatchesFilter(session, searchQuery));
         const chatSessions = sessions.filter((session) => !this.isOpsAlertSession(session));
 
         const pendingReply = chatSessions.filter((session) => session.replySummary?.pending).length;
@@ -880,6 +890,8 @@ class AdminChat {
             .sort((left, right) => right - left)[0] || 0;
 
         return {
+            view: normalizedView,
+            filter: normalizedFilter,
             total: chatSessions.length,
             pendingReply,
             staleReply,
@@ -887,8 +899,25 @@ class AdminChat {
             openTickets,
             verificationAlerts,
             paymentFollowups,
+            specializedLoad: verificationAlerts + paymentFollowups,
             topWait
         };
+    }
+
+    getSessionQueueSnapshot() {
+        return this.buildSessionQueueSnapshot({
+            view: this.sessionQueueView,
+            filter: this.sessionQueueFilter,
+            respectSearch: true
+        });
+    }
+
+    getSessionQueueBacklogSnapshot() {
+        return this.buildSessionQueueSnapshot({
+            view: 'all',
+            filter: 'all',
+            respectSearch: false
+        });
     }
 
     getSessionQueueCapacityAlerts(snapshot = {}) {
@@ -918,12 +947,219 @@ class AdminChat {
         return alerts.slice(0, 3);
     }
 
+    getSessionQueuePriorityItems(snapshot = {}) {
+        const items = [];
+
+        if (Number(snapshot.staleReply || 0) > 0) {
+            items.push({
+                key: 'stale_reply',
+                title: `${snapshot.staleReply} 个久未回复`,
+                detail: snapshot.topWait > 0
+                    ? `最长等待 ${this.formatSessionReplyWaitAge(snapshot.topWait)}`
+                    : '先清最老会话',
+                weight: snapshot.staleReply * 140 + Math.min(240, Number(snapshot.topWait || 0)),
+                tone: snapshot.staleReply >= 3 || Number(snapshot.topWait || 0) >= 120 ? 'danger' : 'warning'
+            });
+        }
+
+        if (Number(snapshot.openTickets || 0) > 0) {
+            items.push({
+                key: 'ticket',
+                title: `${snapshot.openTickets} 个售后处理中`,
+                detail: '优先守住工单与退款闭环',
+                weight: snapshot.openTickets * 120,
+                tone: snapshot.openTickets >= 5 ? 'danger' : 'warning'
+            });
+        }
+
+        if (Number(snapshot.verificationAlerts || 0) > 0) {
+            items.push({
+                key: 'verification',
+                title: `${snapshot.verificationAlerts} 个验证异常`,
+                detail: '先核验失败、超时与重试中的会话',
+                weight: snapshot.verificationAlerts * 110,
+                tone: snapshot.verificationAlerts >= 3 ? 'danger' : 'warning'
+            });
+        }
+
+        if (Number(snapshot.paymentFollowups || 0) > 0) {
+            items.push({
+                key: 'payment',
+                title: `${snapshot.paymentFollowups} 个支付待跟进`,
+                detail: '确认到账、补单和回填状态',
+                weight: snapshot.paymentFollowups * 95,
+                tone: snapshot.paymentFollowups >= 4 ? 'warning' : 'calm'
+            });
+        }
+
+        if (Number(snapshot.pendingReply || 0) > 0) {
+            items.push({
+                key: 'reply',
+                title: `${snapshot.pendingReply} 个待回复`,
+                detail: '避免新会话继续老化',
+                weight: snapshot.pendingReply * 70,
+                tone: snapshot.pendingReply >= 8 ? 'warning' : 'calm'
+            });
+        }
+
+        return items
+            .sort((left, right) => Number(right.weight || 0) - Number(left.weight || 0))
+            .slice(0, 3);
+    }
+
+    getSessionQueueRecommendedMode(snapshot = {}) {
+        const specializedLoad = Number(snapshot.specializedLoad || 0);
+        const defaultView = this.normalizeSessionQueueView(this.sessionQueueDefaultView || 'all');
+        const defaultFilter = this.normalizeSessionQueueFilter(this.sessionQueueDefaultFilter || 'all');
+
+        if (Number(snapshot.staleReply || 0) >= 3 || Number(snapshot.topWait || 0) >= 120) {
+            return {
+                view: 'all',
+                filter: 'stale_reply',
+                tone: Number(snapshot.staleReply || 0) >= 5 || Number(snapshot.topWait || 0) >= 180 ? 'danger' : 'warning',
+                reason: `先把 ${snapshot.staleReply} 个久未回复清掉，最长已经等了 ${this.formatSessionReplyWaitAge(snapshot.topWait || 60)}。`
+            };
+        }
+
+        if (Number(snapshot.openTickets || 0) >= 5 || Number(snapshot.openTickets || 0) >= Math.max(3, specializedLoad + 1)) {
+            return {
+                view: 'ticket_followup',
+                filter: 'all',
+                tone: Number(snapshot.openTickets || 0) >= 6 ? 'danger' : 'warning',
+                reason: `售后闭环里的会话有 ${snapshot.openTickets} 个，先盯工单、退款和承诺中的用户。`
+            };
+        }
+
+        if (Number(snapshot.verificationAlerts || 0) >= 2 && Number(snapshot.verificationAlerts || 0) >= Number(snapshot.paymentFollowups || 0)) {
+            return {
+                view: 'payment_verify',
+                filter: 'verification',
+                tone: Number(snapshot.verificationAlerts || 0) >= 4 ? 'danger' : 'warning',
+                reason: `验证异常更集中，适合先切到验证异常视图集中排查。`
+            };
+        }
+
+        if (specializedLoad >= 3) {
+            return {
+                view: 'payment_verify',
+                filter: 'all',
+                tone: specializedLoad >= 5 ? 'danger' : 'warning',
+                reason: `支付和验证待跟进共 ${specializedLoad} 个，适合切到异常工作流连续处理。`
+            };
+        }
+
+        if (Number(snapshot.highPriority || 0) >= 5) {
+            return {
+                view: 'priority',
+                filter: 'all',
+                tone: Number(snapshot.highPriority || 0) >= 7 ? 'danger' : 'warning',
+                reason: `高优先会话已经堆到 ${snapshot.highPriority} 个，先按综合优先级清队列。`
+            };
+        }
+
+        if (Number(snapshot.pendingReply || 0) >= 6) {
+            return {
+                view: 'all',
+                filter: 'reply',
+                tone: Number(snapshot.pendingReply || 0) >= 10 ? 'warning' : 'calm',
+                reason: `先接住还没回复的 ${snapshot.pendingReply} 个会话，避免继续变成超时积压。`
+            };
+        }
+
+        return {
+            view: defaultView,
+            filter: defaultFilter,
+            tone: 'calm',
+            reason: '当前没有明显拥堵，保持默认值班视图即可。'
+        };
+    }
+
+    getSessionQueueCoordinationAdvice(snapshot = {}) {
+        const specializedLoad = Number(snapshot.specializedLoad || 0);
+
+        if (Number(snapshot.staleReply || 0) >= 5 && (Number(snapshot.openTickets || 0) >= 4 || specializedLoad >= 4)) {
+            return {
+                tone: 'danger',
+                title: '建议立刻补位增援',
+                description: '当前回复清 backlog 和售后/异常会互相打断，建议至少加 1 人：一人清久未回复，一人盯售后或异常链路。'
+            };
+        }
+
+        if (Number(snapshot.openTickets || 0) >= 4 && specializedLoad >= 3) {
+            return {
+                tone: 'warning',
+                title: '建议拆成两路值守',
+                description: '把售后值守和支付/验证分开，异常会话优先转交到对应工作区负责人，客服只保留对用户的回访。'
+            };
+        }
+
+        if (Number(snapshot.verificationAlerts || 0) >= 3) {
+            return {
+                tone: 'warning',
+                title: '建议转给验证线协同',
+                description: '验证异常已经成堆，适合先让验证负责人盯排查，客服工作台负责同步结果和稳住用户预期。'
+            };
+        }
+
+        if (Number(snapshot.paymentFollowups || 0) >= 3) {
+            return {
+                tone: 'warning',
+                title: '建议支付会话单独处理',
+                description: '到账、补单和回填类问题最好成线处理，必要时直接转给支付工作区值守，减少在客服列表里来回切换。'
+            };
+        }
+
+        if (Number(snapshot.openTickets || 0) >= 4) {
+            return {
+                tone: 'warning',
+                title: '建议补一个售后值守',
+                description: '工单中的会话偏多，优先让一位同学专门看退款和工单推进，避免用户刚被回复又重新排队。'
+            };
+        }
+
+        if (Number(snapshot.staleReply || 0) >= 3 || Number(snapshot.pendingReply || 0) >= 8) {
+            return {
+                tone: 'calm',
+                title: '先切视图集中清队列',
+                description: '暂时不一定要增援，先切到建议视图把老会话清掉，队列通常会先明显回落。'
+            };
+        }
+
+        return {
+            tone: 'calm',
+            title: '维持默认值守即可',
+            description: '当前还不需要专门转交或增援，按默认视图持续跟进就够了。'
+        };
+    }
+
+    getSessionQueueDutyAdvice(snapshot = null) {
+        const backlogSnapshot = snapshot || this.getSessionQueueBacklogSnapshot();
+        const recommendedMode = this.getSessionQueueRecommendedMode(backlogSnapshot);
+        const priorityItems = this.getSessionQueuePriorityItems(backlogSnapshot);
+        const coordination = this.getSessionQueueCoordinationAdvice(backlogSnapshot);
+        const recommendedLabel = this.formatSessionQueueModeLabel(recommendedMode.view, recommendedMode.filter);
+        const isCurrentModeRecommended = this.normalizeSessionQueueView(this.sessionQueueView) === recommendedMode.view
+            && this.normalizeSessionQueueFilter(this.sessionQueueFilter) === recommendedMode.filter;
+
+        return {
+            snapshot: backlogSnapshot,
+            recommendedMode: {
+                ...recommendedMode,
+                label: recommendedLabel
+            },
+            priorityItems,
+            coordination,
+            isCurrentModeRecommended
+        };
+    }
+
     renderSessionQueueSnapshot() {
         const container = document.getElementById('sessionQueueSnapshot');
         if (!container) return;
 
-        const snapshot = this.getSessionQueueSnapshot();
+        const snapshot = this.getSessionQueueBacklogSnapshot();
         const capacityAlerts = this.getSessionQueueCapacityAlerts(snapshot);
+        const dutyAdvice = this.getSessionQueueDutyAdvice(snapshot);
         const currentMode = this.formatSessionQueueModeLabel(this.sessionQueueView, this.sessionQueueFilter);
         const defaultMode = this.formatSessionQueueModeLabel(this.sessionQueueDefaultView, this.sessionQueueDefaultFilter);
         const isDefaultMode = this.isSessionQueueUsingDefaultView();
@@ -939,6 +1175,7 @@ class AdminChat {
             <div class="session-queue-snapshot__mode">
                 <span>当前：${currentMode}</span>
                 <span>默认：${defaultMode}</span>
+                <span>摘要：全队列</span>
             </div>
             <div class="session-queue-snapshot__summary">${summaryParts.slice(0, 3).join(' · ')}</div>
             <div class="session-queue-snapshot__meta">
@@ -957,6 +1194,37 @@ class AdminChat {
                     `).join('')}
                 </div>
             ` : ''}
+            <div class="session-queue-snapshot__suggestions">
+                <div class="session-queue-suggestion session-queue-suggestion--${dutyAdvice.recommendedMode.tone}">
+                    <div class="session-queue-suggestion__eyebrow">适合切到</div>
+                    <div class="session-queue-suggestion__title">${this.escapeHtml(dutyAdvice.recommendedMode.label)}</div>
+                    <div class="session-queue-suggestion__desc">${this.escapeHtml(dutyAdvice.recommendedMode.reason)}</div>
+                    ${dutyAdvice.isCurrentModeRecommended
+                        ? '<span class="session-queue-suggestion__hint">当前已在建议视图</span>'
+                        : `<button type="button" class="session-queue-suggestion__action" data-session-snapshot-action="apply-recommended-mode" data-session-recommended-view="${this.escapeHtml(dutyAdvice.recommendedMode.view)}" data-session-recommended-filter="${this.escapeHtml(dutyAdvice.recommendedMode.filter)}">切到建议视图</button>`}
+                </div>
+                <div class="session-queue-suggestion session-queue-suggestion--${dutyAdvice.priorityItems[0]?.tone || dutyAdvice.recommendedMode.tone}">
+                    <div class="session-queue-suggestion__eyebrow">优先处理</div>
+                    ${dutyAdvice.priorityItems.length ? `
+                        <div class="session-queue-suggestion__list">
+                            ${dutyAdvice.priorityItems.map((item, index) => `
+                                <div class="session-queue-suggestion__list-item">
+                                    <span class="session-queue-suggestion__index">${index + 1}</span>
+                                    <span class="session-queue-suggestion__list-body">
+                                        <span class="session-queue-suggestion__list-title">${this.escapeHtml(item.title)}</span>
+                                        <span class="session-queue-suggestion__list-detail">${this.escapeHtml(item.detail)}</span>
+                                    </span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : '<div class="session-queue-suggestion__desc">当前队列比较平稳，按默认节奏处理即可。</div>'}
+                </div>
+                <div class="session-queue-suggestion session-queue-suggestion--${dutyAdvice.coordination.tone}">
+                    <div class="session-queue-suggestion__eyebrow">协同安排</div>
+                    <div class="session-queue-suggestion__title">${this.escapeHtml(dutyAdvice.coordination.title)}</div>
+                    <div class="session-queue-suggestion__desc">${this.escapeHtml(dutyAdvice.coordination.description)}</div>
+                </div>
+            </div>
             <div class="session-queue-snapshot__actions">
                 ${isDefaultMode
                     ? '<span class="session-queue-snapshot__hint">当前已使用默认视图</span>'
@@ -1058,11 +1326,16 @@ class AdminChat {
     }
 
     sessionMatchesQueueView(session = {}) {
+        return this.matchesSessionQueueViewMode(session, this.sessionQueueView);
+    }
+
+    matchesSessionQueueViewMode(session = {}, view = 'all') {
+        const normalizedView = this.normalizeSessionQueueView(view);
         if (this.isOpsAlertSession(session)) {
-            return this.sessionQueueView === 'all';
+            return normalizedView === 'all';
         }
 
-        switch (this.sessionQueueView) {
+        switch (normalizedView) {
             case 'priority':
                 return this.isHighPrioritySession(session);
             case 'ticket_followup':
@@ -1079,11 +1352,17 @@ class AdminChat {
     }
 
     sessionMatchesQueueFilter(session = {}) {
+        return this.matchesSessionQueueFilterMode(session, this.sessionQueueFilter, this.sessionQueueView);
+    }
+
+    matchesSessionQueueFilterMode(session = {}, filter = 'all', view = 'all') {
+        const normalizedFilter = this.normalizeSessionQueueFilter(filter);
+        const normalizedView = this.normalizeSessionQueueView(view);
         if (this.isOpsAlertSession(session)) {
-            return this.sessionQueueView === 'all' && this.sessionQueueFilter === 'all';
+            return normalizedView === 'all' && normalizedFilter === 'all';
         }
 
-        switch (this.sessionQueueFilter) {
+        switch (normalizedFilter) {
             case 'reply':
                 return Boolean(session.replySummary?.pending);
             case 'stale_reply':
@@ -1532,6 +1811,7 @@ class AdminChat {
                 workspaceKey: 'shop-risk-users',
                 context: {
                     userId: context.userId || '',
+                    email: context.email || '',
                     targetId: context.userId || userSearchValue,
                     target_id: context.userId || userSearchValue,
                     referenceLabel: context.userId ? '用户' : '邮箱',
@@ -1586,12 +1866,25 @@ class AdminChat {
 
         if (latestPayment) {
             const paymentId = String(latestPayment.id || '').trim();
+            const paymentUserReference = String(context.userId || context.email || '').trim();
             actions.push({
                 key: 'payment',
                 label: '充值记录',
                 hint: paymentId ? `支付单 ${paymentId.slice(0, 8)}` : '最近充值',
-                workspaceKey: 'payments-overview',
-                context: {
+                workspaceKey: paymentUserReference ? 'shop-risk-users' : 'payments-overview',
+                context: paymentUserReference ? {
+                    userId: context.userId || '',
+                    email: context.email || '',
+                    paymentOrderId: paymentId,
+                    targetId: context.userId || paymentUserReference,
+                    target_id: context.userId || paymentUserReference,
+                    referenceLabel: context.userId ? '支付单' : '邮箱',
+                    referenceValue: context.userId
+                        ? (paymentId || String(latestPayment.package_name || '最近充值').trim())
+                        : paymentUserReference,
+                    defaultTab: 'payments',
+                    tab: 'payments'
+                } : {
                     paymentOrderId: paymentId,
                     targetId: paymentId,
                     target_id: paymentId,
@@ -1706,68 +1999,186 @@ class AdminChat {
         return true;
     }
 
-    getReplyTemplateDrafts(context = {}) {
-        if (!this.currentSessionId || this.isOpsAlertSessionId(this.currentSessionId)) {
+    getDefaultReplyTemplateDefinitions() {
+        return [{
+            id: 'ack',
+            business_type: 'general',
+            enabled: true,
+            label: '先接手',
+            hint: '先稳住用户预期',
+            text: '这边已看到你的消息，我先帮你核对一下当前记录，稍后给你明确处理结果。'
+        }, {
+            id: 'order',
+            business_type: 'order',
+            enabled: true,
+            label: '订单说明',
+            hint: '最近订单 {{order_status}}',
+            text: '我这边看到你最近的订单「{{order_name}}」当前状态是{{order_status}}，我先继续帮你核对处理进度，稍后给你明确反馈。'
+        }, {
+            id: 'payment',
+            business_type: 'payment',
+            enabled: true,
+            label: '充值核对',
+            hint: '最近充值 {{payment_status}}',
+            text: '我这边看到你最近的充值记录当前是{{payment_status}}，先帮你核对到账和处理链路，稍后回复你。'
+        }, {
+            id: 'verify',
+            business_type: 'verification',
+            enabled: true,
+            label: '验证跟进',
+            hint: '最近验证 {{verification_status}}',
+            text: '我这边看到最近验证任务状态是{{verification_status}}，先帮你核对当前提示和处理进度，稍后给你更新。'
+        }, {
+            id: 'ticket',
+            business_type: 'ticket',
+            enabled: true,
+            label: '工单跟进',
+            hint: '售后工单 {{ticket_status}}',
+            text: '我这边看到最近售后工单目前是{{ticket_status}}，已经接手继续跟进，有结果会第一时间回复你。'
+        }];
+    }
+
+    normalizeReplyTemplateBusinessType(value = 'general') {
+        const normalized = String(value || '').trim().toLowerCase();
+        return ['general', 'order', 'payment', 'verification', 'ticket'].includes(normalized)
+            ? normalized
+            : 'general';
+    }
+
+    normalizeReplyTemplateDefinitions(templates) {
+        if (!Array.isArray(templates)) {
+            return this.getDefaultReplyTemplateDefinitions();
+        }
+        if (!templates.length) {
             return [];
         }
 
+        const defaults = this.getDefaultReplyTemplateDefinitions();
+        const normalized = [];
+        templates.forEach((item) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                return;
+            }
+
+            const businessType = this.normalizeReplyTemplateBusinessType(
+                item.business_type || item.businessType || item.type
+            );
+            const fallback = defaults.find((candidate) => candidate.id === String(item.id || '').trim())
+                || defaults.find((candidate) => candidate.business_type === businessType)
+                || null;
+            const text = String(item.text || '').trim();
+            if (!text) {
+                return;
+            }
+
+            normalized.push({
+                id: String(item.id || fallback?.id || `template_${normalized.length + 1}`).trim() || `template_${normalized.length + 1}`,
+                business_type: businessType,
+                enabled: item.enabled !== false,
+                label: String(item.label || '').trim() || fallback?.label || '快捷回复',
+                hint: String(item.hint || '').trim(),
+                text
+            });
+        });
+
+        return normalized.slice(0, 12);
+    }
+
+    getReplyTemplateDefinitions() {
+        return this.normalizeReplyTemplateDefinitions(this.replyTemplateConfigTemplates);
+    }
+
+    buildReplyTemplateContextState(context = {}) {
         const latestOrder = this.getLatestUserContextRecord(context.orders);
         const latestPayment = this.getLatestUserContextRecord(context.payments);
         const latestVerification = this.getLatestUserContextRecord(context.verifications);
         const latestTicket = this.getLatestUserContextRecord(context.tickets);
         const openTicket = (Array.isArray(context.tickets) ? context.tickets : [])
             .find((ticket) => !['resolved', 'rejected'].includes(String(ticket?.status || '').trim().toLowerCase()));
+        const activeTicket = openTicket || latestTicket;
 
-        const templates = [{
-            key: 'ack',
-            label: '先接手',
-            hint: '先稳住用户预期',
-            text: '这边已看到你的消息，我先帮你核对一下当前记录，稍后给你明确处理结果。'
-        }];
+        return {
+            availability: {
+                general: true,
+                order: Boolean(latestOrder),
+                payment: Boolean(latestPayment),
+                verification: Boolean(latestVerification),
+                ticket: Boolean(activeTicket)
+            },
+            placeholders: {
+                order_name: latestOrder ? this.truncateText(latestOrder.snapshot_product_name || '最近订单', 16) : '最近订单',
+                order_status: latestOrder ? this.formatUserContextStatus(latestOrder.delivery_status || latestOrder.refund_status) : '处理中',
+                payment_status: latestPayment ? this.formatUserContextStatus(latestPayment.status) : '处理中',
+                verification_status: latestVerification ? this.formatUserContextStatus(latestVerification.status) : '处理中',
+                ticket_status: activeTicket ? this.formatUserContextStatus(activeTicket.status) : '处理中'
+            }
+        };
+    }
 
-        if (latestOrder) {
-            const orderName = this.truncateText(latestOrder.snapshot_product_name || '最近订单', 16);
-            const orderStatus = this.formatUserContextStatus(latestOrder.delivery_status || latestOrder.refund_status);
-            templates.push({
-                key: 'order',
-                label: '订单说明',
-                hint: `最近订单 ${orderStatus}`,
-                text: `我这边看到你最近的订单「${orderName}」当前状态是${orderStatus}，我先继续帮你核对处理进度，稍后给你明确反馈。`
-            });
+    interpolateReplyTemplateText(templateText = '', placeholders = {}) {
+        return String(templateText || '').replace(/{{\s*([a-z0-9_]+)\s*}}/gi, (_match, rawKey) => {
+            const key = String(rawKey || '').trim().toLowerCase();
+            return String(placeholders[key] ?? '').trim();
+        }).replace(/\s{2,}/g, ' ').trim();
+    }
+
+    async ensureReplyTemplateConfigLoaded(force = false) {
+        if (!force && this.replyTemplateConfigPromise) {
+            return this.replyTemplateConfigPromise;
         }
 
-        if (latestPayment) {
-            const paymentStatus = this.formatUserContextStatus(latestPayment.status);
-            templates.push({
-                key: 'payment',
-                label: '充值核对',
-                hint: `最近充值 ${paymentStatus}`,
-                text: `我这边看到你最近的充值记录当前是${paymentStatus}，先帮你核对到账和处理链路，稍后回复你。`
-            });
+        const now = Date.now();
+        if (!force && this.replyTemplateConfigLoadedAt && (now - this.replyTemplateConfigLoadedAt) < 5 * 60 * 1000) {
+            return false;
         }
 
-        if (latestVerification) {
-            const verifyStatus = this.formatUserContextStatus(latestVerification.status);
-            templates.push({
-                key: 'verify',
-                label: '验证跟进',
-                hint: `最近验证 ${verifyStatus}`,
-                text: `我这边看到最近验证任务状态是${verifyStatus}，先帮你核对当前提示和处理进度，稍后给你更新。`
-            });
+        this.replyTemplateConfigPromise = (async () => {
+            try {
+                const config = await this.fetchOpsAlertSettingsConfig();
+                const nextTemplates = this.normalizeReplyTemplateDefinitions(config?.customer_chat_message?.quick_reply_templates);
+                const previousSnapshot = JSON.stringify(Array.isArray(this.replyTemplateConfigTemplates) ? this.replyTemplateConfigTemplates : null);
+                const nextSnapshot = JSON.stringify(nextTemplates);
+                this.replyTemplateConfigTemplates = nextTemplates;
+                this.replyTemplateConfigLoadedAt = Date.now();
+                return previousSnapshot !== nextSnapshot;
+            } catch (error) {
+                this.replyTemplateConfigLoadedAt = Date.now();
+                console.warn('[AdminChat] Failed to load quick reply templates:', error);
+                return false;
+            } finally {
+                this.replyTemplateConfigPromise = null;
+            }
+        })();
+
+        return this.replyTemplateConfigPromise;
+    }
+
+    handleOpsAlertConfigUpdated(event = {}) {
+        const config = event?.detail?.config && typeof event.detail.config === 'object'
+            ? event.detail.config
+            : null;
+        this.replyTemplateConfigTemplates = this.normalizeReplyTemplateDefinitions(
+            config?.customer_chat_message?.quick_reply_templates
+        );
+        this.replyTemplateConfigLoadedAt = Date.now();
+        this.renderReplyTemplateBar(this.currentUserContext || null);
+    }
+
+    getReplyTemplateDrafts(context = {}) {
+        if (!this.currentSessionId || this.isOpsAlertSessionId(this.currentSessionId)) {
+            return [];
         }
 
-        if (openTicket || latestTicket) {
-            const ticket = openTicket || latestTicket;
-            const ticketStatus = this.formatUserContextStatus(ticket.status);
-            templates.push({
-                key: 'ticket',
-                label: '工单跟进',
-                hint: `售后工单 ${ticketStatus}`,
-                text: `我这边看到最近售后工单目前是${ticketStatus}，已经接手继续跟进，有结果会第一时间回复你。`
-            });
-        }
-
-        return templates.slice(0, 5);
+        const templateState = this.buildReplyTemplateContextState(context || {});
+        return this.getReplyTemplateDefinitions()
+            .filter((template) => template.enabled !== false && templateState.availability[template.business_type] !== false)
+            .map((template, index) => ({
+                key: String(template.id || `template_${index + 1}`).trim() || `template_${index + 1}`,
+                label: this.interpolateReplyTemplateText(template.label, templateState.placeholders) || `快捷回复 ${index + 1}`,
+                hint: this.interpolateReplyTemplateText(template.hint, templateState.placeholders),
+                text: this.interpolateReplyTemplateText(template.text, templateState.placeholders)
+            }))
+            .filter((template) => template.text);
     }
 
     applyReplyTemplate(template = {}) {
@@ -1788,36 +2199,46 @@ class AdminChat {
         const bar = document.getElementById('chatReplyTemplateBar');
         if (!bar) return;
 
-        const templates = this.getReplyTemplateDrafts(context || {});
+        const renderToken = (this._replyTemplateRenderToken || 0) + 1;
+        this._replyTemplateRenderToken = renderToken;
+        const renderTemplates = () => this.getReplyTemplateDrafts(context || {});
+        const templates = renderTemplates();
         bar.replaceChildren();
 
         if (!templates.length) {
             bar.hidden = true;
-            return;
+        } else {
+            const label = document.createElement('div');
+            label.className = 'chat-reply-templates__label';
+            label.textContent = '快捷回复';
+            bar.appendChild(label);
+
+            const list = document.createElement('div');
+            list.className = 'chat-reply-templates__list';
+
+            templates.forEach((template) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'chat-reply-template-btn';
+                button.innerHTML = `
+                    <span class="chat-reply-template-btn__label">${this.escapeHtml(template.label)}</span>
+                    <span class="chat-reply-template-btn__hint">${this.escapeHtml(template.hint || '插入到回复框')}</span>
+                `;
+                button.addEventListener('click', () => this.applyReplyTemplate(template));
+                list.appendChild(button);
+            });
+
+            bar.appendChild(list);
+            bar.hidden = false;
         }
 
-        const label = document.createElement('div');
-        label.className = 'chat-reply-templates__label';
-        label.textContent = '快捷回复';
-        bar.appendChild(label);
-
-        const list = document.createElement('div');
-        list.className = 'chat-reply-templates__list';
-
-        templates.forEach((template) => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'chat-reply-template-btn';
-            button.innerHTML = `
-                <span class="chat-reply-template-btn__label">${this.escapeHtml(template.label)}</span>
-                <span class="chat-reply-template-btn__hint">${this.escapeHtml(template.hint || '插入到回复框')}</span>
-            `;
-            button.addEventListener('click', () => this.applyReplyTemplate(template));
-            list.appendChild(button);
-        });
-
-        bar.appendChild(list);
-        bar.hidden = false;
+        this.ensureReplyTemplateConfigLoaded()
+            .then((changed) => {
+                if (changed && this._replyTemplateRenderToken === renderToken) {
+                    this.renderReplyTemplateBar(context);
+                }
+            })
+            .catch(() => {});
     }
 
     createUserContextActionsSection(context = {}) {
@@ -1906,7 +2327,7 @@ class AdminChat {
         }
     }
 
-    buildUserContextTimelineAction(kind = '', item = {}) {
+    buildUserContextTimelineAction(kind = '', item = {}, context = {}) {
         if (!item || typeof item !== 'object') return null;
 
         if (kind === 'order') {
@@ -1928,11 +2349,24 @@ class AdminChat {
 
         if (kind === 'payment') {
             const paymentId = String(item.id || '').trim();
+            const paymentUserReference = String(context.userId || context.email || '').trim();
             return {
                 key: 'payment',
                 label: '查看充值记录',
-                workspaceKey: 'payments-overview',
-                context: {
+                workspaceKey: paymentUserReference ? 'shop-risk-users' : 'payments-overview',
+                context: paymentUserReference ? {
+                    userId: context.userId || '',
+                    email: context.email || '',
+                    paymentOrderId: paymentId,
+                    targetId: context.userId || paymentUserReference,
+                    target_id: context.userId || paymentUserReference,
+                    referenceLabel: context.userId ? '支付单' : '邮箱',
+                    referenceValue: context.userId
+                        ? (paymentId || String(item.package_name || '最近充值').trim())
+                        : paymentUserReference,
+                    defaultTab: 'payments',
+                    tab: 'payments'
+                } : {
                     paymentOrderId: paymentId,
                     targetId: paymentId,
                     target_id: paymentId,
@@ -1984,7 +2418,7 @@ class AdminChat {
         const entries = [];
 
         (Array.isArray(context.orders) ? context.orders : []).forEach((order) => {
-            const action = this.buildUserContextTimelineAction('order', order);
+            const action = this.buildUserContextTimelineAction('order', order, context);
             entries.push({
                 kind: 'order',
                 label: '订单',
@@ -1997,7 +2431,7 @@ class AdminChat {
         });
 
         (Array.isArray(context.payments) ? context.payments : []).forEach((payment) => {
-            const action = this.buildUserContextTimelineAction('payment', payment);
+            const action = this.buildUserContextTimelineAction('payment', payment, context);
             entries.push({
                 kind: 'payment',
                 label: '充值',
@@ -2010,7 +2444,7 @@ class AdminChat {
         });
 
         (Array.isArray(context.verifications) ? context.verifications : []).forEach((item) => {
-            const action = this.buildUserContextTimelineAction('verify', item);
+            const action = this.buildUserContextTimelineAction('verify', item, context);
             entries.push({
                 kind: 'verify',
                 label: '验证',
@@ -2023,7 +2457,7 @@ class AdminChat {
         });
 
         (Array.isArray(context.tickets) ? context.tickets : []).forEach((ticket) => {
-            const action = this.buildUserContextTimelineAction('ticket', ticket);
+            const action = this.buildUserContextTimelineAction('ticket', ticket, context);
             entries.push({
                 kind: 'ticket',
                 label: '工单',
@@ -4305,6 +4739,12 @@ class AdminChat {
                 const action = button.getAttribute('data-session-snapshot-action');
                 if (action === 'restore-default') {
                     this.restoreSessionQueueDefaultView();
+                } else if (action === 'apply-recommended-mode') {
+                    this.sessionQueueView = this.normalizeSessionQueueView(button.getAttribute('data-session-recommended-view') || 'all');
+                    this.sessionQueueFilter = this.normalizeSessionQueueFilter(button.getAttribute('data-session-recommended-filter') || 'all');
+                    this.persistSessionQueuePreferences();
+                    this.renderSessionQueueControls();
+                    this.renderSessionList(this.searchQuery);
                 } else if (action === 'save-default') {
                     this.saveCurrentSessionQueueAsDefault();
                 }

@@ -1627,6 +1627,199 @@ async function exportUsersToExcel(users, options) {
 let currentModalUser = null;
 let currentModalData = {};
 let currentTab = 'ledger';
+const USER_MODAL_SUPPORTED_TABS = new Set(['ledger', 'payments', 'activity', 'notes', 'audit', 'blocks', 'affiliate', 'relatives']);
+
+function normalizeUserModalTab(tabName = '') {
+    const normalized = String(tabName || '').trim().toLowerCase();
+    return USER_MODAL_SUPPORTED_TABS.has(normalized) ? normalized : 'ledger';
+}
+
+function formatAdminCurrencyValue(value, fallback = '—') {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return fallback;
+    return `¥${numericValue.toLocaleString('zh-CN', {
+        minimumFractionDigits: numericValue % 1 ? 2 : 0,
+        maximumFractionDigits: 2
+    })}`;
+}
+
+function getAdminPaymentProviderLabel(provider = '') {
+    const normalized = String(provider || '').trim().toLowerCase();
+    const labels = {
+        hupijiao: '虎皮椒',
+        stripe: 'Stripe',
+        mock: '模拟支付',
+        manual: '人工补录'
+    };
+    return labels[normalized] || (normalized ? normalized.toUpperCase() : '未知通道');
+}
+
+function getAdminPaymentStatusMeta(status = '') {
+    const normalized = String(status || '').trim().toLowerCase();
+    const map = {
+        paid: { label: '已支付', tone: 'success' },
+        redeemed: { label: '已兑换', tone: 'success' },
+        completed: { label: '已完成', tone: 'success' },
+        pending_review: { label: '待审核', tone: 'warning' },
+        amount_mismatch: { label: '金额异常', tone: 'danger' },
+        rejected: { label: '已拒绝', tone: 'danger' },
+        failed: { label: '失败', tone: 'danger' },
+        expired: { label: '已过期', tone: 'muted' },
+        redirect_ready: { label: '待支付', tone: 'info' },
+        pending: { label: '处理中', tone: 'info' }
+    };
+    return map[normalized] || {
+        label: normalized || '未知状态',
+        tone: 'muted'
+    };
+}
+
+async function fetchUserSummaryRecord(criteria = {}) {
+    const normalizedUserId = String(criteria?.userId || '').trim();
+    const normalizedEmail = String(criteria?.email || criteria?.fallbackEmail || '').trim().toLowerCase();
+    if (!normalizedUserId && !normalizedEmail) {
+        return null;
+    }
+
+    try {
+        let profileQuery = window.supabaseClient
+            .from('profiles')
+            .select('id, username, email, avatar_url, created_at');
+
+        if (normalizedUserId) {
+            profileQuery = profileQuery.eq('id', normalizedUserId);
+        } else {
+            profileQuery = profileQuery.ilike('email', normalizedEmail);
+        }
+
+        const profileResult = await profileQuery.maybeSingle();
+
+        if (profileResult?.error) {
+            throw profileResult.error;
+        }
+
+        const profile = profileResult?.data || null;
+        if (!profile) {
+            return null;
+        }
+
+        const resolvedUserId = String(profile.id || normalizedUserId || '').trim();
+        if (!resolvedUserId) {
+            return null;
+        }
+
+        let pointsQuery = window.supabaseClient
+            .from('points_balance')
+            .select('user_id, total_balance')
+            .eq('user_id', resolvedUserId);
+
+        if (window.AdminSiteFilter?.applySiteFilter) {
+            pointsQuery = window.AdminSiteFilter.applySiteFilter(pointsQuery);
+        }
+
+        const [pointsResult, tagsResult, blocksResult, rolesResult, loginResult] = await Promise.all([
+            pointsQuery.maybeSingle(),
+            window.supabaseClient
+                .from('user_tags')
+                .select('tag')
+                .eq('user_id', resolvedUserId),
+            window.supabaseClient
+                .from('blocked_users')
+                .select('user_id, scope, expires_at')
+                .eq('user_id', resolvedUserId),
+            window.supabaseClient
+                .from('admin_roles')
+                .select('user_id, role_name, permissions, expires_at')
+                .eq('user_id', resolvedUserId),
+            window.supabaseClient
+                .from('user_login_history')
+                .select('created_at')
+                .eq('user_id', resolvedUserId)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle()
+        ]);
+
+        if (pointsResult?.error) {
+            console.warn('Failed to load user points summary:', pointsResult.error);
+        }
+        if (tagsResult?.error) {
+            console.warn('Failed to load user tags summary:', tagsResult.error);
+        }
+        if (blocksResult?.error) {
+            console.warn('Failed to load user block summary:', blocksResult.error);
+        }
+        if (rolesResult?.error) {
+            console.warn('Failed to load user role summary:', rolesResult.error);
+        }
+        if (loginResult?.error) {
+            console.warn('Failed to load user login summary:', loginResult.error);
+        }
+
+        const email = profile.email || null;
+        const username = profile.username || 'Unknown';
+        const pointsBalance = Number(pointsResult?.data?.total_balance || 0);
+        const activeRole = (rolesResult?.data || []).find((role) => !role.expires_at || new Date(role.expires_at) > new Date()) || null;
+        const accountFlags = classifyUserAccount({ email, username });
+
+        return {
+            id: resolvedUserId,
+            username,
+            email,
+            avatar_url: profile.avatar_url || null,
+            created_at: profile.created_at || null,
+            last_sign_in_at: loginResult?.data?.created_at || null,
+            points: pointsBalance,
+            total_earned: pointsBalance,
+            vip_level: pointsBalance >= 1000 ? 'VIP' : null,
+            tags: (tagsResult?.data || []).map((item) => item.tag).filter(Boolean),
+            is_banned: Array.isArray(blocksResult?.data) && blocksResult.data.length > 0,
+            block_info: Array.isArray(blocksResult?.data) ? blocksResult.data[0] || null : null,
+            is_admin: Boolean(activeRole) || ['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(email),
+            admin_role: activeRole,
+            is_test_or_system: accountFlags.isTestOrSystem
+        };
+    } catch (error) {
+        console.error('Failed to fetch user summary by id:', error);
+        return null;
+    }
+}
+
+async function fetchUserSummaryById(userId) {
+    return fetchUserSummaryRecord({ userId });
+}
+
+async function ensureUserSummaryInState(userId, options = {}) {
+    const normalizedUserId = String(userId || '').trim();
+    const normalizedEmail = String(options?.email || options?.fallbackEmail || '').trim().toLowerCase();
+    if (!normalizedUserId && !normalizedEmail) {
+        return null;
+    }
+
+    const existingUser = userState.users.find((user) => {
+        if (normalizedUserId && user.id === normalizedUserId) {
+            return true;
+        }
+        return normalizedEmail && String(user.email || '').trim().toLowerCase() === normalizedEmail;
+    });
+    if (existingUser) {
+        return existingUser;
+    }
+
+    let fetchedUser = null;
+    if (normalizedUserId) {
+        fetchedUser = await fetchUserSummaryRecord({ userId: normalizedUserId });
+    }
+    if (!fetchedUser && normalizedEmail) {
+        fetchedUser = await fetchUserSummaryRecord({ email: normalizedEmail });
+    }
+    if (!fetchedUser) {
+        return null;
+    }
+
+    userState.users = [fetchedUser, ...userState.users.filter((user) => user.id !== fetchedUser.id)];
+    return fetchedUser;
+}
 
 // Fetch Active Bans
 async function fetchActiveBans(userId) {
@@ -1909,15 +2102,17 @@ async function ensureAffiliateModalData(userId) {
 }
 
 // Open User Modal
-async function openUserModal(userId) {
-    const user = userState.users.find(u => u.id === userId);
+async function openUserModal(userId, options = {}) {
+    const user = await ensureUserSummaryInState(userId, options);
     if (!user) {
         console.error('User not found:', userId);
-        return;
+        showToast('未找到该用户，无法打开详情', 'error');
+        return false;
     }
 
     currentModalUser = user;
-    currentTab = 'ledger';
+    currentTab = normalizeUserModalTab(options?.defaultTab || options?.tab);
+    const paymentFocusOrderId = String(options?.paymentOrderId || options?.payment_order_id || '').trim();
 
     const overlay = document.getElementById('userModalOverlay');
     const leftPanel = document.getElementById('userModalLeft');
@@ -1932,12 +2127,13 @@ async function openUserModal(userId) {
     try {
         // Fetch all data in parallel
         console.log('📡 Fetching user data for:', userId);
-        const [contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, isSuperAdmin, activeBans, registrationOrigin] = await Promise.all([
+        const [contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, paymentOrders, isSuperAdmin, activeBans, registrationOrigin] = await Promise.all([
             fetchUserContentLog(userId),
             fetchUserBlockHistory(userId),
             fetchRelatedAccounts(userId),
             fetchUserRoleInfo(userId),
             fetchPointsLedger(userId),
+            fetchUserPaymentOrders(userId),
             checkSuperAdmin(),
             fetchActiveBans(userId),
             fetchUserRegistrationOrigin(userId)
@@ -1946,7 +2142,7 @@ async function openUserModal(userId) {
         Object.assign(user, registrationOrigin || {});
         currentModalUser = user;
 
-        console.log('✅ Data fetched:', { contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, isSuperAdmin, activeBans, registrationOrigin });
+        console.log('✅ Data fetched:', { contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, paymentOrders, isSuperAdmin, activeBans, registrationOrigin });
 
         // Store data for tabs
         currentModalData = {
@@ -1955,6 +2151,8 @@ async function openUserModal(userId) {
             relatedAccounts,
             roleInfo,
             pointsLedger,
+            paymentOrders,
+            paymentFocusOrderId,
             ledgerDetails: {},
             isSuperAdmin,
             activeBans,
@@ -1965,24 +2163,26 @@ async function openUserModal(userId) {
         renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans);
 
         // Render initial tab
-        renderUserTab('ledger');
+        renderUserTab(currentTab);
 
         // Render actions
         renderModalActions(user);
 
         // Reset tab active states
         document.querySelectorAll('.user-tab-btn').forEach(btn => btn.classList.remove('active'));
-        const defaultTabBtn = document.querySelector('.user-tab-btn[data-tab="ledger"]');
+        const defaultTabBtn = document.querySelector(`.user-tab-btn[data-tab="${currentTab}"]`);
         if (defaultTabBtn) {
             defaultTabBtn.classList.add('active');
             // Initialize indicator position with a small delay to ensure rendering
             setTimeout(() => updateTabIndicator(defaultTabBtn), 10);
         }
+        return true;
 
     } catch (err) {
         console.error('❌ Error loading user modal:', err);
         leftPanel.innerHTML = `<div class="users-modal-error">加载失败: ${escapeHtml(err.message)}</div>`;
         tabContent.innerHTML = '';
+        return false;
     }
 }
 
@@ -2384,6 +2584,9 @@ function renderUserTab(tabName) {
         case 'ledger':
             renderLedgerTab(container);
             break;
+        case 'payments':
+            renderPaymentsTab(container);
+            break;
         case 'activity':
             renderActivityTab(container);
             break;
@@ -2461,6 +2664,18 @@ function renderLedgerTab(container) {
     `;
 }
 
+function renderPaymentsTab(container) {
+    const data = currentModalData.paymentOrders || [];
+
+    container.innerHTML = `
+        ${buildUserTabToolbar('payments', { includeCustomDate: true, exportLabel: '导出充值记录' })}
+        <input type="text" id="paymentsDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
+        <div class="data-list" id="paymentsList">
+            ${renderPaymentItems(data)}
+        </div>
+    `;
+}
+
 // Render ledger items helper
 function renderLedgerItems(data) {
     if (data.length === 0) {
@@ -2496,6 +2711,56 @@ function renderLedgerItems(data) {
                     </div>
                 </div>
                 <i class="fas fa-chevron-right admin-ledger-arrow"></i>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderPaymentItems(data) {
+    if (data.length === 0) {
+        return buildUsersTabEmptyState('暂无充值记录');
+    }
+
+    const focusOrderId = String(currentModalData.paymentFocusOrderId || '').trim();
+
+    return data.map((order) => {
+        const statusMeta = getAdminPaymentStatusMeta(order.status);
+        const statusValue = String(order.status || 'pending').trim().toLowerCase() || 'pending';
+        const paidAmount = Number.isFinite(Number(order.paid_amount))
+            ? Number(order.paid_amount)
+            : Number(order.expected_amount || 0);
+        const pointsAmount = Number(order.points_amount || 0);
+        const toneClass = statusMeta.tone === 'success'
+            ? 'users-tab-item-icon-success'
+            : statusMeta.tone === 'danger'
+                ? 'users-tab-item-icon-danger'
+                : 'users-tab-item-icon-info';
+        const isFocused = focusOrderId && String(order.id || '').trim() === focusOrderId;
+
+        return `
+            <div class="data-list-item users-payment-item${isFocused ? ' is-focused' : ''}">
+                <div class="users-tab-item-icon ${toneClass}">
+                    <i class="fas fa-wallet users-tab-item-icon-glyph"></i>
+                </div>
+                <div class="users-tab-item-main">
+                    <div class="users-payment-head">
+                        <div class="users-payment-copy">
+                            <div class="users-tab-item-title">${escapeHtml(order.package_name || '未命名充值套餐')}</div>
+                            <div class="users-tab-item-subtitle users-payment-order-no">${escapeHtml(order.provider_order_no || String(order.id || '未记录'))}</div>
+                        </div>
+                        <div class="users-payment-side">
+                            <span class="payments-status-badge status-${escapeHtml(statusValue)}">${escapeHtml(statusMeta.label)}</span>
+                            <div class="users-payment-amount">${escapeHtml(formatAdminCurrencyValue(paidAmount))}</div>
+                            <div class="users-payment-points">${escapeHtml(formatAdminPointValue(pointsAmount))} 分</div>
+                        </div>
+                    </div>
+                    <div class="users-payment-meta">
+                        <span>${escapeHtml(getAdminPaymentProviderLabel(order.provider))} · ${escapeHtml(String(order.site || 'cn').toUpperCase())}</span>
+                        <span>创建 ${escapeHtml(formatAdminDateTime(order.created_at))}</span>
+                        ${order.claimed_at ? `<span>到账 ${escapeHtml(formatAdminDateTime(order.claimed_at))}</span>` : ''}
+                        ${isFocused ? '<span class="users-payment-focus-pill">当前会话命中</span>' : ''}
+                    </div>
+                </div>
             </div>
         `;
     }).join('');
@@ -3318,6 +3583,9 @@ function filterTabByDate(tabName, range, label) {
         case 'ledger':
             data = currentModalData.pointsLedger || [];
             break;
+        case 'payments':
+            data = currentModalData.paymentOrders || [];
+            break;
         case 'activity':
             data = currentModalData.contentLog || [];
             break;
@@ -3357,6 +3625,9 @@ function filterTabByDate(tabName, range, label) {
         switch (tabName) {
             case 'ledger':
                 listEl.innerHTML = renderLedgerItems(data);
+                break;
+            case 'payments':
+                listEl.innerHTML = renderPaymentItems(data);
                 break;
             case 'activity':
                 listEl.innerHTML = renderActivityItems(data);
@@ -3435,6 +3706,9 @@ function openCustomDatePicker(tabName) {
                     case 'ledger':
                         data = currentModalData.pointsLedger || [];
                         break;
+                    case 'payments':
+                        data = currentModalData.paymentOrders || [];
+                        break;
                     case 'activity':
                         data = currentModalData.contentLog || [];
                         break;
@@ -3455,6 +3729,9 @@ function openCustomDatePicker(tabName) {
                     switch (tabName) {
                         case 'ledger':
                             listEl.innerHTML = renderLedgerItems(data);
+                            break;
+                        case 'payments':
+                            listEl.innerHTML = renderPaymentItems(data);
                             break;
                         case 'activity':
                             listEl.innerHTML = renderActivityItems(data);
@@ -4037,6 +4314,22 @@ async function exportTabData(tabName) {
                 filenameBase = `${username}_积分流水_${date}`;
                 sheetName = '积分流水';
                 break;
+            case 'payments':
+                data = (currentModalData.paymentOrders || []).map(r => ({
+                    '支付记录 ID': r.id || '',
+                    '订单号': r.provider_order_no || '',
+                    '通道': getAdminPaymentProviderLabel(r.provider),
+                    '套餐': r.package_name || '',
+                    '金额': Number.isFinite(Number(r.paid_amount)) ? Number(r.paid_amount) : Number(r.expected_amount || 0),
+                    '积分': Number(r.points_amount || 0),
+                    '状态': getAdminPaymentStatusMeta(r.status).label,
+                    '站点': String(r.site || 'cn').toUpperCase(),
+                    '创建时间': formatAdminDateTime(r.created_at),
+                    '到账时间': formatAdminDateTime(r.claimed_at)
+                }));
+                filenameBase = `${username}_充值记录_${date}`;
+                sheetName = '充值记录';
+                break;
             case 'activity':
                 data = (currentModalData.contentLog || []).map(r => ({
                     '类型': r.type,
@@ -4236,6 +4529,24 @@ async function fetchPointsLedger(userId) {
         return data || [];
     } catch (err) {
         console.error('Failed to fetch points ledger:', err);
+        return [];
+    }
+}
+
+async function fetchUserPaymentOrders(userId) {
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('payment_orders')
+            .select('id, provider, provider_order_no, package_name, paid_amount, expected_amount, points_amount, status, created_at, claimed_at, site')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(30);
+
+        if (error) throw error;
+
+        return data || [];
+    } catch (err) {
+        console.error('Failed to fetch user payment orders:', err);
         return [];
     }
 }
