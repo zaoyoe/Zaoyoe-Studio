@@ -366,6 +366,17 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'buildSessionLatestRecordMap(rows = [], userIdField = \'user_id\')',
         'fetchSessionPaymentSummaryMap(userIds = [])',
         'fetchSessionVerificationSummaryMap(userIds = [])',
+        'getAdminSessionQueuePreferenceStorageKey()',
+        'normalizeAdminSessionQueueView(value = \'all\')',
+        'normalizeAdminSessionQueueFilter(value = \'all\')',
+        'getAdminSessionQueueViewLabel(value = \'all\')',
+        'getAdminSessionQueueFilterLabel(value = \'all\')',
+        'formatAdminSessionQueueModeLabel(view = \'all\', filter = \'all\')',
+        'restoreAdminSessionQueuePreferences()',
+        'persistAdminSessionQueuePreferences()',
+        'isAdminSessionQueueUsingDefaultView()',
+        'restoreAdminSessionQueueDefaultView()',
+        'saveCurrentAdminSessionQueueAsDefault()',
         'getAdminSessionPaymentSignal(summary = null)',
         'getAdminSessionVerificationSignal(summary = null)',
         'getAdminSessionPrioritySignals(session = {})',
@@ -382,6 +393,9 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'isHighPriorityAdminSession(session = {})',
         'getAdminSessionOverviewCards()',
         'renderAdminSessionOverview()',
+        'getAdminSessionQueueSnapshot()',
+        'getAdminSessionQueueCapacityAlerts(snapshot = {})',
+        'renderAdminSessionQueueSnapshot()',
         'getAdminSessionViewOptions()',
         'renderAdminSessionViews()',
         'renderAdminSessionQueueControls()',
@@ -397,6 +411,13 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'ops-alert-toolbar',
         'session-queue-overview',
         'session-queue-card',
+        'session-queue-snapshot',
+        'session-queue-snapshot__mode',
+        'session-queue-snapshot__actions',
+        'session-queue-snapshot__action',
+        'session-queue-snapshot__hint',
+        'session-queue-snapshot__capacity',
+        'session-queue-snapshot__capacity-badge',
         'session-queue-presets',
         'session-queue-preset',
         'session-filter-bar',
@@ -491,6 +512,17 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'buildSessionLatestRecordMap(rows = [], userIdField = \'user_id\')',
         'fetchSessionPaymentSummaryMap(userIds = [])',
         'fetchSessionVerificationSummaryMap(userIds = [])',
+        'getSessionQueuePreferenceStorageKey()',
+        'normalizeSessionQueueView(value = \'all\')',
+        'normalizeSessionQueueFilter(value = \'all\')',
+        'getSessionQueueViewLabel(value = \'all\')',
+        'getSessionQueueFilterLabel(value = \'all\')',
+        'formatSessionQueueModeLabel(view = \'all\', filter = \'all\')',
+        'restoreSessionQueuePreferences()',
+        'persistSessionQueuePreferences()',
+        'isSessionQueueUsingDefaultView()',
+        'restoreSessionQueueDefaultView()',
+        'saveCurrentSessionQueueAsDefault()',
         'getSessionPaymentSignal(summary = null)',
         'getSessionVerificationSignal(summary = null)',
         'getSessionPrioritySignals(session = {})',
@@ -508,6 +540,9 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'isHighPrioritySession(session = {})',
         'getSessionQueueOverviewCards()',
         'renderSessionQueueOverview()',
+        'getSessionQueueSnapshot()',
+        'getSessionQueueCapacityAlerts(snapshot = {})',
+        'renderSessionQueueSnapshot()',
         'getSessionQueueViewOptions()',
         'renderSessionQueueViews()',
         'renderSessionQueueControls()',
@@ -523,6 +558,13 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'admin-alert-toolbar',
         'session-queue-overview',
         'session-queue-card',
+        'session-queue-snapshot',
+        'session-queue-snapshot__mode',
+        'session-queue-snapshot__actions',
+        'session-queue-snapshot__action',
+        'session-queue-snapshot__hint',
+        'session-queue-snapshot__capacity',
+        'session-queue-snapshot__capacity-badge',
         'session-queue-presets',
         'session-queue-preset',
         'session-filter-bar',
@@ -590,6 +632,17 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         '.session-queue-overview',
         '.session-queue-card',
         '.session-queue-card__value',
+        '.session-queue-snapshot',
+        '.session-queue-snapshot__mode',
+        '.session-queue-snapshot__summary',
+        '.session-queue-snapshot__meta',
+        '.session-queue-snapshot__actions',
+        '.session-queue-snapshot__action',
+        '.session-queue-snapshot__hint',
+        '.session-queue-snapshot__capacity',
+        '.session-queue-snapshot__capacity-badge',
+        '.session-queue-snapshot__capacity-badge--warning',
+        '.session-queue-snapshot__capacity-badge--danger',
         '.session-queue-presets',
         '.session-queue-preset',
         '.session-queue-preset.is-active',
@@ -614,19 +667,19 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/admin-chat.js?v=20260330_ADMIN_CHAT_OPS_TODO_CASE_ACTIONS_24'),
+        adminStudioHtml.includes('js/admin-chat.js?v=20260330_ADMIN_CHAT_OPS_TODO_CASE_ACTIONS_28'),
         true,
         'admin-studio.html should load the latest admin chat case action runtime'
     );
     assert.equal(
-        adminStudioHtml.includes('css/admin-chat.css?v=20260330_ADMIN_CHAT_OPS_TODO_CASE_ACTIONS_15'),
+        adminStudioHtml.includes('css/admin-chat.css?v=20260330_ADMIN_CHAT_OPS_TODO_CASE_ACTIONS_17'),
         true,
         'admin-studio.html should load the latest admin chat case action stylesheet'
     );
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/components/ChatWidget.js?v=20260330_CHAT_OPS_TODO_CASE_ACTIONS_24'),
+            source.includes('js/components/ChatWidget.js?v=20260330_CHAT_OPS_TODO_CASE_ACTIONS_28'),
             true,
             'public entry pages should load the latest ops todo case action widget runtime'
         );
@@ -5674,8 +5727,8 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
     }
 
     const htmlMarkers = [
-        'css/admin-chat.css?v=20260330_ADMIN_CHAT_OPS_TODO_CASE_ACTIONS_15',
-        'js/admin-chat.js?v=20260330_ADMIN_CHAT_OPS_TODO_CASE_ACTIONS_24'
+        'css/admin-chat.css?v=20260330_ADMIN_CHAT_OPS_TODO_CASE_ACTIONS_17',
+        'js/admin-chat.js?v=20260330_ADMIN_CHAT_OPS_TODO_CASE_ACTIONS_28'
     ];
 
     for (const marker of htmlMarkers) {
