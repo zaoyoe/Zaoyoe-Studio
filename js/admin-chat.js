@@ -114,6 +114,24 @@ class AdminChat {
         return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
     }
 
+    buildMessageAreaLoadingSkeleton() {
+        const rows = [68, 52, 60, 44].map((width, index) => `
+            <div class="chat-skeleton-row${index % 2 === 1 ? ' chat-skeleton-row--self' : ''}">
+                <div class="chat-skeleton-bubble">
+                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${width}%"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${Math.max(32, width - 18)}%"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--tiny" style="width:${18 + (index % 3) * 8}%"></span>
+                </div>
+            </div>
+        `).join('');
+
+        return `
+            <div class="chat-loading-state chat-loading-state--skeleton" aria-hidden="true">
+                ${rows}
+            </div>
+        `;
+    }
+
     getSessionQueuePreferenceStorageKey() {
         return 'zaoyoe_admin_support_queue_preferences_v1';
     }
@@ -5122,7 +5140,7 @@ class AdminChat {
             document.getElementById('currentChatId').textContent = '站外告警同步 / 可认领、备注、关闭并跳转处理页';
             this.renderUserContextHeaderStatus(null);
             this.setReadonlyMode(true);
-            area.innerHTML = `<div class="chat-loading-state">${this.t('chat.loading', '加载中...')}</div>`;
+            area.innerHTML = this.buildMessageAreaLoadingSkeleton();
             this.renderOpsAlertMessages();
             return;
         }
@@ -5149,7 +5167,7 @@ class AdminChat {
         document.getElementById('currentChatUser').textContent = title;
         document.getElementById('currentChatId').textContent = sub;
 
-        area.innerHTML = `<div class="chat-loading-state">${this.t('chat.loading', '加载中...')}</div>`;
+        area.innerHTML = this.buildMessageAreaLoadingSkeleton();
         this.renderUserContextPanelState('正在整理用户上下文...', 'loading');
 
         const [messagesResult, contextResult] = await Promise.allSettled([

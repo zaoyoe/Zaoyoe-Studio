@@ -44,7 +44,7 @@ module.exports = async (req, res) => {
             })
         };
 
-        const { supabase, user } = await requireAdmin(req);
+        const { supabase, user } = await requireAdmin(req, { permission: 'settings.manage' });
 
         if (req.method === 'GET') {
             const { paymentChannels } = await loadStoredPaymentConfigs(supabase);

@@ -359,6 +359,82 @@ test('requireAdmin also falls back to admin client when no public client config 
     });
 });
 
+test('requireAdmin rejects admins that lack the requested module permission and allows anyOf matches', async () => {
+    await withEnv({
+        SUPABASE_URL: 'https://example.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: undefined,
+        SUPABASE_ANON_KEY: undefined,
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: undefined,
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: undefined,
+        SUPABASE_SERVICE_ROLE_KEY: 'service-key'
+    }, async () => {
+        await withAdminModule(({ key }) => {
+            if (key === 'service-key') {
+                return {
+                    kind: 'admin',
+                    auth: {
+                        async getUser() {
+                            return {
+                                data: {
+                                    user: {
+                                        id: 'admin-2',
+                                        email: 'operator@example.com'
+                                    }
+                                },
+                                error: null
+                            };
+                        }
+                    },
+                    async rpc(name) {
+                        assert.equal(name, 'get_user_permissions');
+                        return {
+                            data: {
+                                is_admin: true,
+                                is_super_admin: false,
+                                role: 'admin',
+                                permissions: ['users.manage'],
+                                expires_at: null
+                            },
+                            error: null
+                        };
+                    }
+                };
+            }
+
+            throw new Error(`Unexpected key: ${key}`);
+        }, async ({ adminModule }) => {
+            await assert.rejects(
+                () => adminModule.requireAdmin({
+                    headers: {
+                        authorization: 'Bearer limited-admin-token'
+                    }
+                }, {
+                    permission: 'shop.manage'
+                }),
+                (error) => {
+                    assert.equal(error.statusCode, 403);
+                    assert.equal(error.code, 'admin_permission_required');
+                    assert.deepEqual(error.requiredPermissions, ['shop.manage']);
+                    assert.deepEqual(error.currentPermissions, ['users.manage']);
+                    return true;
+                }
+            );
+
+            const result = await adminModule.requireAdmin({
+                headers: {
+                    authorization: 'Bearer limited-admin-token'
+                }
+            }, {
+                anyOf: ['shop.manage', 'users.manage']
+            });
+
+            assert.equal(result.user.id, 'admin-2');
+            assert.deepEqual(result.permissions, ['users.manage']);
+            assert.equal(result.isSuperAdmin, false);
+        });
+    });
+});
+
 test('payment create handler passes request and admin Supabase clients separately', async () => {
     await withPaymentHandler('../api/payments/create.js', {
         authResult: {

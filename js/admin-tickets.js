@@ -101,16 +101,53 @@ const AdminTickets = {
         return row;
     },
 
+    buildTableLoadingSkeleton: function (rowCount = 6) {
+        const rows = Math.max(4, Number.parseInt(rowCount, 10) || 6);
+        const titleWidths = ['admin-skeleton-w-40', 'admin-skeleton-w-50', 'admin-skeleton-w-60'];
+        const metaWidths = ['admin-skeleton-w-30', 'admin-skeleton-w-40'];
+
+        return Array.from({ length: rows }, (_, index) => `
+            <tr class="admin-table-skeleton-row admin-ticket-table-skeleton-row" aria-hidden="true" data-skeleton-index="${index}">
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
+                        <span class="admin-skeleton-block admin-skeleton-block--title ${titleWidths[index % titleWidths.length]}"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${metaWidths[index % metaWidths.length]}"></span>
+                    </div>
+                </td>
+                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-50"></span></div></td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-80"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
+                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span>
+                    </div>
+                </td>
+                <td>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-actions">
+                        <span class="admin-skeleton-block admin-skeleton-block--action"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--action"></span>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    },
+
     loadTickets: async function (options = {}) {
         try {
             const tbody = document.getElementById('ticketsTableBody');
             if (tbody) {
-                tbody.replaceChildren(this.createTableStateRow({
-                    message: '加载中...',
-                    icon: 'fa-spinner',
-                    variant: 'loading',
-                    spinning: true
-                }));
+                tbody.innerHTML = this.buildTableLoadingSkeleton();
             }
 
             await this.waitForAuthReady(Number(options?.authTimeoutMs || 2400));

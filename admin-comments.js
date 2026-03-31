@@ -31,6 +31,34 @@ const filterState = {
     searchTags: []         // Array of search strings
 };
 
+function buildCommentLoadingSkeleton(count = 6) {
+    const itemCount = Math.max(3, Number.parseInt(count, 10) || 6);
+    return Array.from({ length: itemCount }, (_, index) => `
+        <div class="comment-admin-item comment-admin-item--skeleton" aria-hidden="true" data-skeleton-index="${index}">
+            <div class="item-checkbox-wrapper">
+                <span class="admin-skeleton-block admin-skeleton-block--checkbox"></span>
+            </div>
+            <div class="item-header">
+                <span class="admin-skeleton-block admin-skeleton-block--avatar"></span>
+                <div class="item-meta">
+                    <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${44 + (index % 3) * 12}%"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${26 + (index % 3) * 8}%"></span>
+                </div>
+            </div>
+            <div class="item-content">
+                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:100%"></span>
+                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${76 - (index % 2) * 12}%"></span>
+                <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${58 + (index % 3) * 10}%"></span>
+            </div>
+            <div class="item-actions">
+                <span class="admin-skeleton-block admin-skeleton-block--action"></span>
+                <span class="admin-skeleton-block admin-skeleton-block--action"></span>
+                <span class="admin-skeleton-block admin-skeleton-block--action"></span>
+            </div>
+        </div>
+    `).join('');
+}
+
 /**
  * Initialize Comments Module
  */
@@ -585,7 +613,7 @@ async function loadComments(view) {
         return;
     }
 
-    listContainer.innerHTML = '<p class="loading-text">加载中...</p>';
+    listContainer.innerHTML = buildCommentLoadingSkeleton();
 
     try {
         const client = getSupabase();

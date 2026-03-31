@@ -450,7 +450,7 @@ function buildChannelStatus(channelKey, config = {}, secretStatus = {}, jobs = [
 
 module.exports = async (req, res) => {
     try {
-        const { supabase } = await requireAdmin(req);
+        const { supabase } = await requireAdmin(req, { permission: 'ops_alerts.manage' });
 
         if (req.method !== 'GET') {
             res.setHeader('Allow', 'GET');

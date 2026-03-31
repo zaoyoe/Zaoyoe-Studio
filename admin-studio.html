@@ -19,9 +19,9 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=20260331_OPS_ALERT_QUICK_REPLY_COLLAPSE_3">
-    <link rel="stylesheet" href="admin-sidebar.css?v=11">
-    <link rel="stylesheet" href="css/admin-chat.css?v=20260331_ADMIN_CHAT_QUEUE_DUTY_ADVICE_18">
+    <link rel="stylesheet" href="admin-studio.css?v=20260331_ADMIN_LOADING_SKELETON_SWEEP_1">
+    <link rel="stylesheet" href="admin-sidebar.css?v=20260331_ADMIN_MODULE_GUARDS_1">
+    <link rel="stylesheet" href="css/admin-chat.css?v=20260331_ADMIN_CHAT_LOADING_SKELETON_1">
 
 
     <!-- Cropper.js CSS -->
@@ -30,7 +30,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
     <!-- Prevent flash of wrong theme -->
-    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260327_ADMIN_MODAL_MOTION_SWEEP_1">
+    <link rel="stylesheet" href="css/admin-studio-page.css?v=20260331_ADMIN_LOADING_SKELETONS_1">
     <script src="./js/theme-preload.js"></script>
 
 </head>
@@ -5847,7 +5847,7 @@
             </div>
 
             <!-- Delete Confirmation Modal -->
-            <div class="batch-modal-overlay admin-studio-inline-style-attr-3" id="deleteConfirmOverlay">
+            <div class="batch-modal-overlay admin-studio-inline-style-attr-3" id="deleteConfirmOverlay" data-admin-overlay-close="delete-confirm-modal">
                 <div class="batch-modal confirm-modal">
                     <h3 class="batch-modal-title">⚠️ 确认删除</h3>
                     <div class="batch-modal-body">
@@ -5868,7 +5868,7 @@
             </div>
 
             <!-- Crop Modal -->
-            <div class="batch-modal-overlay admin-studio-inline-style-attr-3" id="cropModalOverlay">
+            <div class="batch-modal-overlay admin-studio-inline-style-attr-3" id="cropModalOverlay" data-admin-overlay-close="crop-modal">
                 <div class="batch-modal crop-modal">
                     <h3 class="batch-modal-title">✂️ 裁切图片</h3>
                     <div class="crop-aspect-buttons">
@@ -5950,6 +5950,24 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <div class="filter-dropdown admin-studio-inline-style-attr-3" data-filter="userAdminExpiry" id="adminExpiryFilter">
+                                <button class="filter-btn" data-admin-action="users-toggle-admin-expiry-filter">
+                                    <i class="fas fa-hourglass-half"></i>
+                                    <span class="filter-label">权限到期</span>
+                                    <i class="fas fa-chevron-down filter-arrow"></i>
+                                </button>
+                                <div class="filter-popup glass-popup">
+                                    <div class="filter-option selected" data-value="all"
+                                        data-admin-action="users-filter-admin-expiry" data-user-admin-expiry="all">全部</div>
+                                    <div class="filter-option" data-value="due_soon"
+                                        data-admin-action="users-filter-admin-expiry" data-user-admin-expiry="due_soon">7 天内到期</div>
+                                    <div class="filter-option" data-value="due_today"
+                                        data-admin-action="users-filter-admin-expiry" data-user-admin-expiry="due_today">24 小时内</div>
+                                    <div class="filter-option" data-value="permanent"
+                                        data-admin-action="users-filter-admin-expiry" data-user-admin-expiry="permanent">长期有效</div>
+                                </div>
+                            </div>
                         </div>
                         <div class="user-account-visibility" title="默认隐藏明显的测试与系统账号，可按需切换查看">
                             <div class="user-account-visibility-copy">
@@ -6000,6 +6018,14 @@
                                         <i class="fas fa-ban"></i>
                                         <span>封禁管理</span>
                                     </div>
+                                    <div class="batch-menu-item" data-admin-action="users-batch-renew-admin">
+                                        <i class="fas fa-hourglass-half"></i>
+                                        <span>批量续期权限</span>
+                                    </div>
+                                    <div class="batch-menu-item" data-admin-action="users-batch-set-admin-expiry">
+                                        <i class="fas fa-calendar-check"></i>
+                                        <span>批量设置到期时间</span>
+                                    </div>
                                 </div>
                             </div>
                             <div class="prompt-count admin-studio-inline-style-attr-3" id="userSelectedCountWrapper">
@@ -6024,15 +6050,26 @@
                         </thead>
                         <tbody id="usersTableBody">
                             <!-- Populated by JS -->
-                            <tr>
-                                <td colspan="5" class="loading-cell">
-                                    <div class="neural-loader small">
-                                        <div class="neural-dot"></div>
-                                        <div class="neural-dot"></div>
-                                        <div class="neural-dot"></div>
-                                    </div>
-                                    <span>加载用户数据...</span>
-                                </td>
+                            <tr class="admin-table-skeleton-row users-table-skeleton-row" aria-hidden="true">
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--avatar"></span><div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack"><span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-40"></span><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span></div></div></td>
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-20"></span></div></td>
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span></div></td>
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span></div></td>
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span><span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span></div></td>
+                            </tr>
+                            <tr class="admin-table-skeleton-row users-table-skeleton-row" aria-hidden="true">
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--avatar"></span><div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack"><span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-50"></span><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-40"></span></div></div></td>
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-20"></span></div></td>
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span></div></td>
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span></div></td>
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span><span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span></div></td>
+                            </tr>
+                            <tr class="admin-table-skeleton-row users-table-skeleton-row" aria-hidden="true">
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--avatar"></span><div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack"><span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-60"></span><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span></div></div></td>
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-20"></span></div></td>
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span></div></td>
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span></div></td>
+                                <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span><span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span></div></td>
                             </tr>
                         </tbody>
                     </table>
@@ -6045,15 +6082,12 @@
                 </div>
 
                 <!-- User Details Modal (Fullscreen Card) -->
-                <div class="user-modal-overlay" id="userModalOverlay">
+                <div class="user-modal-overlay" id="userModalOverlay" data-admin-overlay-close="user-modal">
                     <div class="user-modal" id="userModal">
                         <!-- Modal Header -->
                         <div class="user-modal-header">
 
                             <h2 class="modal-title">用户详情</h2>
-                            <button class="modal-close-btn" data-admin-action="users-close-modal">
-                                <i class="fas fa-times"></i>
-                            </button>
                         </div>
 
                         <!-- Modal Body (Two-Column Layout) -->
@@ -6066,37 +6100,8 @@
                             <!-- Right Column: Tabs -->
                             <div class="user-modal-right">
                                 <!-- Tab Navigation -->
-                                <div class="user-tab-nav">
-                                    <button class="user-tab-btn active" data-tab="ledger"
-                                        data-admin-action="users-switch-tab" data-user-tab="ledger">
-                                        <i class="fas fa-chart-line"></i> 积分流水
-                                    </button>
-                                    <button class="user-tab-btn" data-tab="payments"
-                                        data-admin-action="users-switch-tab" data-user-tab="payments">
-                                        <i class="fas fa-wallet"></i> 充值记录
-                                    </button>
-                                    <button class="user-tab-btn" data-tab="activity"
-                                        data-admin-action="users-switch-tab" data-user-tab="activity">
-                                        <i class="fas fa-history"></i> 近期动态
-                                    </button>
-                                    <button class="user-tab-btn" data-tab="notes" data-admin-action="users-switch-tab" data-user-tab="notes">
-                                        <i class="far fa-sticky-note"></i> 备注
-                                    </button>
-                                    <button class="user-tab-btn" data-tab="audit" data-admin-action="users-switch-tab" data-user-tab="audit">
-                                        <i class="fas fa-shield-alt"></i> 审计
-                                    </button>
-                                    <button class="user-tab-btn" data-tab="blocks" data-admin-action="users-switch-tab" data-user-tab="blocks">
-                                        <i class="fas fa-ban"></i> 封禁记录
-                                    </button>
-                                    <button class="user-tab-btn" data-tab="affiliate"
-                                        data-admin-action="users-switch-tab" data-user-tab="affiliate">
-                                        <i class="fas fa-share-alt"></i> 推广
-                                    </button>
-                                    <button class="user-tab-btn" data-tab="relatives"
-                                        data-admin-action="users-switch-tab" data-user-tab="relatives">
-                                        <i class="fas fa-users-cog"></i> 关联账号
-                                    </button>
-                                    <div class="tab-indicator"></div>
+                                <div class="user-tab-nav" id="userTabNav">
+                                    <!-- Filled dynamically from registry -->
                                 </div>
 
                                 <!-- Tab Content Area -->
@@ -6613,7 +6618,7 @@
                 </div>
 
                 <!-- Release Reserve Modal -->
-                <div id="releaseReserveModal" class="modal-overlay admin-studio-inline-style-attr-121"
+                <div id="releaseReserveModal" class="modal-overlay admin-studio-inline-style-attr-121" data-admin-overlay-close="inventory-release-modal"
                    >
                     <div
                         class="admin-studio-inline-style-attr-122">
@@ -6644,7 +6649,7 @@
                 </div>
 
                 <!-- Import Modal -->
-                <div id="importInventoryModal" class="modal-overlay admin-studio-inline-style-attr-121"
+                <div id="importInventoryModal" class="modal-overlay admin-studio-inline-style-attr-121" data-admin-overlay-close="inventory-import-modal"
                    >
                     <div
                         class="admin-studio-inline-style-attr-131">
@@ -8764,7 +8769,7 @@
     <!-- END admin-layout -->
 
     <!-- A/B Experiment Modal -->
-    <div class="modal" id="experimentModal">
+    <div class="modal" id="experimentModal" data-admin-overlay-close="experiment-modal">
         <div class="modal-content experiment-form">
             <div class="modal-header">
                 <h3><i class="fas fa-flask"></i> 创建 A/B 实验</h3>
@@ -9094,29 +9099,30 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <!-- Chart.js for Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="js/admin-studio-bootstrap.js?v=20260326_ADMIN_STUDIO_FALLBACK_BINDINGS_1"></script>
-    <script src="admin-users.js?v=20260331_ADMIN_USERS_PROFILE_SELECT_FALLBACK_6"></script>
-    <script src="admin-points.js?v=20260327_ADMIN_POINTS_MODAL_MOTION_1"></script>
-    <script src="admin-discounts.js?v=20260327_ADMIN_DISCOUNT_SCOPE_RULES_1"></script>
+    <script src="js/admin-studio-bootstrap.js?v=20260331_ADMIN_MODULE_GUARDS_1"></script>
+    <script src="js/ios-scroll-lock.js"></script>
+    <script src="admin-users.js?v=20260331_USER_TABLE_SKELETON_10"></script>
+    <script src="admin-points.js?v=20260331_ADMIN_POINTS_LOADING_SKELETONS_1"></script>
+    <script src="admin-discounts.js?v=20260331_ADMIN_DISCOUNT_LOADING_SKELETON_1"></script>
     <script src="starry-sky.js"></script>
     <!-- Flatpickr JS -->
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="js/admin-ai.js"></script>
-    <script src="admin-comments.js?v=20260324_ADMIN_COMMENTS_RUNTIME_STYLE_1"></script>
-    <script src="admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1"></script>
+    <script src="admin-comments.js?v=20260331_ADMIN_COMMENTS_LOADING_SKELETONS_1"></script>
+    <script src="admin-analytics.js?v=20260331_ANALYTICS_EXPERIMENT_OVERLAY_CLOSE_1"></script>
     <script src="js/admin-payments.js?v=20260331_ADMIN_PAYMENTS_FOCUS_ORDER_3"></script>
-    <script src="js/local-smoke-fixtures.js?v=20260331_LOCAL_SMOKE_FIXTURES_4"></script>
+    <script src="js/local-smoke-fixtures.js?v=20260331_LOCAL_SMOKE_FIXTURES_6"></script>
     <script src="admin-config.js?v=20260331_OPS_ALERT_QUICK_REPLY_COLLAPSE_10"></script>
     <script src="admin-homepage.js?v=20260329_HOMEPAGE_CACHE_SYNC_3"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js?v=20260323_SITE_FILTER_DELEGATION_1"></script>
-    <script src="js/admin-tickets.js?v=20260331_ADMIN_TICKETS_FOCUS_3"></script>
+    <script src="js/admin-tickets.js?v=20260331_ADMIN_TICKETS_LOADING_SKELETON_1"></script>
     <script src="js/admin-access.js?v=20260329_ADMIN_ENTRY_TRAMPOLINE_1"></script>
-    <script src="admin-studio.js?v=20260331_OPS_ALERT_QUICK_REPLY_ACTIONS_3"></script>
-    <script src="js/admin-shop.js?v=20260331_SHOP_ORDER_FOCUS_2"></script>
+    <script src="admin-studio.js?v=20260331_ADMIN_MODAL_OUTSIDE_CLOSE_2"></script>
+    <script src="js/admin-shop.js?v=20260331_SHOP_LOADING_SKELETONS_1"></script>
 </body>
 
 <!-- Admin Chat Script -->
-<script src="js/admin-chat.js?v=20260331_ADMIN_CHAT_PAYMENT_USER_LINK_34"></script>
+<script src="js/admin-chat.js?v=20260331_ADMIN_CHAT_LOADING_SKELETON_1"></script>
 </html>

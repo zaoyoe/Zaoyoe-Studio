@@ -13,7 +13,7 @@ const {
 
 module.exports = async (req, res) => {
     try {
-        const { supabase, user } = await requireAdmin(req);
+        const { supabase, user } = await requireAdmin(req, { permission: 'settings.manage' });
 
         if (req.method === 'GET') {
             const config = await resolveGeminiRuntimeConfig(supabase);

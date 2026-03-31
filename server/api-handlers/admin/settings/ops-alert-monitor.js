@@ -1431,7 +1431,7 @@ function buildOpsAlertMonitorShiftReport({
 
 module.exports = async (req, res) => {
     try {
-        const { supabase, adminSupabase, user } = await requireAdmin(req);
+        const { supabase, adminSupabase, user } = await requireAdmin(req, { permission: 'ops_alerts.manage' });
 
         if (req.method !== 'GET') {
             res.setHeader('Allow', 'GET');

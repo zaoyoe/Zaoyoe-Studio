@@ -112,7 +112,7 @@ function formatMinutesSince(isoString, nowMs) {
 
 module.exports = async (req, res) => {
     try {
-        const { supabase } = await requireAdmin(req);
+        const { supabase } = await requireAdmin(req, { permission: 'settings.manage' });
 
         if (req.method !== 'GET') {
             res.setHeader('Allow', 'GET');

@@ -179,7 +179,92 @@ async function requireAuthenticatedUser(req) {
     };
 }
 
-async function requireAdmin(req) {
+function normalizeAdminPermissionList(value) {
+    const values = Array.isArray(value)
+        ? value
+        : (value ? [value] : []);
+
+    return [...new Set(
+        values
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)
+    )];
+}
+
+function collectAdminRolePermissions(roles = []) {
+    const permissions = new Set();
+    let isSuperAdmin = false;
+
+    for (const role of Array.isArray(roles) ? roles : []) {
+        const roleName = String(role?.role_name || '').trim().toLowerCase();
+        if (roleName === 'super_admin') {
+            isSuperAdmin = true;
+        }
+
+        const rolePermissions = Array.isArray(role?.permissions) ? role.permissions : [];
+        for (const permission of rolePermissions) {
+            const normalizedPermission = String(permission || '').trim();
+            if (!normalizedPermission) continue;
+            if (normalizedPermission === '*') {
+                isSuperAdmin = true;
+            }
+            permissions.add(normalizedPermission);
+        }
+    }
+
+    return {
+        permissions: [...permissions],
+        isSuperAdmin
+    };
+}
+
+function resolveAdminPermissionRequirements(options = {}) {
+    const anyOf = normalizeAdminPermissionList(options.anyOf || options.permission);
+    const allOf = normalizeAdminPermissionList(options.allOf);
+    return { anyOf, allOf };
+}
+
+function hasRequiredAdminPermissions(availablePermissions = [], options = {}) {
+    const normalizedPermissions = normalizeAdminPermissionList(availablePermissions);
+    const { anyOf, allOf } = resolveAdminPermissionRequirements(options);
+
+    if (!anyOf.length && !allOf.length) {
+        return true;
+    }
+
+    if (normalizedPermissions.includes('*')) {
+        return true;
+    }
+
+    if (anyOf.length && !anyOf.some((permission) => normalizedPermissions.includes(permission))) {
+        return false;
+    }
+
+    if (allOf.length && !allOf.every((permission) => normalizedPermissions.includes(permission))) {
+        return false;
+    }
+
+    return true;
+}
+
+function buildAdminPermissionError(options = {}, availablePermissions = []) {
+    const { anyOf, allOf } = resolveAdminPermissionRequirements(options);
+    const requiredPermissions = [...new Set([...allOf, ...anyOf])];
+    const error = new Error(
+        options.message
+        || (requiredPermissions.length
+            ? `Missing required admin permission: ${requiredPermissions.join(' / ')}`
+            : 'Admin permission required')
+    );
+
+    error.statusCode = 403;
+    error.code = 'admin_permission_required';
+    error.requiredPermissions = requiredPermissions;
+    error.currentPermissions = normalizeAdminPermissionList(availablePermissions);
+    return error;
+}
+
+async function requireAdmin(req, options = {}) {
     const { user, error } = await getAuthenticatedUser(req);
     if (!user) {
         const authError = new Error(error?.message || 'Unauthorized');
@@ -238,12 +323,23 @@ async function requireAdmin(req) {
         throw forbiddenError;
     }
 
+    const {
+        permissions: resolvedPermissions,
+        isSuperAdmin
+    } = collectAdminRolePermissions(activeRoles);
+
+    if (!isSuperAdmin && !hasRequiredAdminPermissions(resolvedPermissions, options)) {
+        throw buildAdminPermissionError(options, resolvedPermissions);
+    }
+
     return {
         supabase,
         requestSupabase: requestClient,
         adminSupabase,
         user,
-        roles: activeRoles
+        roles: activeRoles,
+        permissions: resolvedPermissions,
+        isSuperAdmin
     };
 }
 
@@ -277,6 +373,8 @@ module.exports = {
     parseJsonBody,
     requireAuthenticatedUser,
     requireAdmin,
+    normalizeAdminPermissionList,
+    hasRequiredAdminPermissions,
     sendJson,
     writeAdminAuditLog
 };

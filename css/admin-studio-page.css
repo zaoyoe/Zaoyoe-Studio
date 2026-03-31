@@ -242,6 +242,125 @@ body.admin-access-pending,
                             grid-column: 1 / -1;
                         }
 
+                        .shop-admin-product-card--skeleton,
+                        .shop-admin-product-card--skeleton-create {
+                            position: relative;
+                            overflow: hidden;
+                            pointer-events: none;
+                        }
+
+                        .shop-admin-product-card--skeleton {
+                            min-height: 330px;
+                        }
+
+                        .shop-admin-product-card--skeleton::after,
+                        .shop-admin-product-card--skeleton-create::after {
+                            content: "";
+                            position: absolute;
+                            inset: 0;
+                            background: linear-gradient(
+                                110deg,
+                                transparent 0%,
+                                rgba(255, 255, 255, 0.03) 35%,
+                                rgba(255, 255, 255, 0.12) 50%,
+                                rgba(255, 255, 255, 0.03) 65%,
+                                transparent 100%
+                            );
+                            transform: translateX(-100%);
+                            animation: shop-admin-skeleton-shimmer 1.5s ease-in-out infinite;
+                        }
+
+                        .shop-admin-product-card--skeleton-create {
+                            min-height: 200px;
+                            border-style: solid;
+                        }
+
+                        .shop-admin-product-card--skeleton-create:hover,
+                        .shop-admin-product-card--skeleton:hover {
+                            transform: none;
+                            background: inherit;
+                            border-color: inherit;
+                            box-shadow: none;
+                        }
+
+                        .shop-admin-skeleton {
+                            border-radius: 999px;
+                            background: rgba(148, 163, 184, 0.18);
+                        }
+
+                        .shop-admin-product-cover--skeleton {
+                            background: rgba(56, 189, 248, 0.08);
+                            justify-content: flex-end;
+                            align-items: flex-start;
+                            padding: 12px;
+                            box-sizing: border-box;
+                        }
+
+                        .shop-admin-skeleton--badge {
+                            width: 64px;
+                            height: 28px;
+                        }
+
+                        .shop-admin-skeleton--title {
+                            width: 58%;
+                            height: 20px;
+                            margin-bottom: 12px;
+                            border-radius: 10px;
+                        }
+
+                        .shop-admin-skeleton--text {
+                            width: 100%;
+                            height: 12px;
+                            margin-bottom: 10px;
+                            border-radius: 8px;
+                        }
+
+                        .shop-admin-skeleton--text-short {
+                            width: 68%;
+                            margin-bottom: 0;
+                        }
+
+                        .shop-admin-skeleton--price {
+                            width: 72px;
+                            height: 20px;
+                            margin-bottom: 8px;
+                            border-radius: 10px;
+                        }
+
+                        .shop-admin-skeleton--stock {
+                            width: 56px;
+                            height: 14px;
+                            border-radius: 8px;
+                        }
+
+                        .shop-admin-skeleton--icon-btn {
+                            width: 34px;
+                            height: 34px;
+                            border-radius: 10px;
+                        }
+
+                        .shop-admin-skeleton--create-icon {
+                            width: 56px;
+                            height: 56px;
+                            border-radius: 18px;
+                            margin-bottom: 18px;
+                        }
+
+                        .shop-admin-skeleton--create-label {
+                            width: 92px;
+                            height: 16px;
+                            border-radius: 10px;
+                        }
+
+                        @keyframes shop-admin-skeleton-shimmer {
+                            0% {
+                                transform: translateX(-100%);
+                            }
+                            100% {
+                                transform: translateX(100%);
+                            }
+                        }
+
                         .shop-admin-grid-error {
                             padding: 20px;
                             text-align: center;
@@ -562,6 +681,11 @@ body.admin-access-pending,
                             padding: 30px;
                             text-align: center;
                             color: rgba(255, 255, 255, 0.55);
+                        }
+
+                        .shop-table-skeleton-row td {
+                            padding-top: 18px;
+                            padding-bottom: 18px;
                         }
 
                         .shop-inventory-empty-cell--error {
@@ -967,6 +1091,40 @@ body.admin-access-pending,
                         .shop-inventory-detail-error {
                             text-align: center;
                             padding: 20px;
+                        }
+
+                        .shop-inventory-detail-loading--skeleton {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 16px;
+                            padding: 0;
+                            text-align: left;
+                        }
+
+                        .shop-inventory-detail-skeleton-grid {
+                            display: grid;
+                            grid-template-columns: repeat(2, minmax(0, 1fr));
+                            gap: 14px;
+                        }
+
+                        .shop-inventory-detail-skeleton-section {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 10px;
+                            padding: 18px;
+                            border-radius: 14px;
+                            border: 1px solid rgba(255, 255, 255, 0.06);
+                            background: rgba(255, 255, 255, 0.03);
+                        }
+
+                        .shop-inventory-detail-skeleton-section--hero {
+                            gap: 12px;
+                        }
+
+                        .shop-inventory-detail-skeleton-actions {
+                            display: flex;
+                            justify-content: flex-start;
+                            padding-top: 6px;
                         }
 
                         .shop-inventory-detail-error {
@@ -2388,6 +2546,40 @@ body.admin-access-pending,
                             font-size: 13px;
                         }
 
+                        .shop-import-tree-state--skeleton {
+                            padding: 0;
+                            background: transparent;
+                        }
+
+                        .shop-import-tree-skeleton {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 14px;
+                        }
+
+                        .shop-import-tree-skeleton-group {
+                            padding: 16px;
+                            border-radius: 16px;
+                            border: 1px solid rgba(255, 255, 255, 0.06);
+                            background: rgba(255, 255, 255, 0.03);
+                            display: flex;
+                            flex-direction: column;
+                            gap: 14px;
+                        }
+
+                        .shop-import-tree-skeleton-items {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 10px;
+                            padding-left: 12px;
+                        }
+
+                        .shop-import-tree-skeleton-item {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 8px;
+                        }
+
                         .shop-import-tree-state--error {
                             color: rgba(255, 100, 100, 0.6);
                         }
@@ -3276,6 +3468,52 @@ body.admin-access-pending,
                             background: rgba(255, 255, 255, 0.02);
                         }
 
+                        .shop-delivery-empty--skeleton {
+                            display: flex;
+                            flex-direction: column;
+                            align-items: stretch;
+                            gap: 16px;
+                            color: transparent;
+                        }
+
+                        .shop-delivery-chart-skeleton {
+                            display: flex;
+                            align-items: flex-end;
+                            gap: 10px;
+                            height: 140px;
+                            padding-top: 4px;
+                        }
+
+                        .shop-delivery-chart-skeleton-bar {
+                            flex: 1;
+                            min-height: 32px;
+                            border-radius: 12px 12px 6px 6px;
+                        }
+
+                        .shop-delivery-chart-skeleton-bar--sm {
+                            height: 42%;
+                        }
+
+                        .shop-delivery-chart-skeleton-bar--sm-mid {
+                            height: 48%;
+                        }
+
+                        .shop-delivery-chart-skeleton-bar--md {
+                            height: 56%;
+                        }
+
+                        .shop-delivery-chart-skeleton-bar--lg {
+                            height: 68%;
+                        }
+
+                        .shop-delivery-chart-skeleton-bar--lg-mid {
+                            height: 74%;
+                        }
+
+                        .shop-delivery-chart-skeleton-bar--xl {
+                            height: 82%;
+                        }
+
                         .shop-delivery-meta {
                             display: flex;
                             gap: 6px;
@@ -3503,12 +3741,26 @@ body.admin-access-pending,
                             line-height: 1.5;
                         }
 
+                        .shop-delivery-table-note--skeleton {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 10px;
+                            color: transparent;
+                        }
+
                         .shop-delivery-table-note--soft {
                             color: rgba(191, 219, 254, 0.78);
                         }
 
                         .shop-delivery-table-note--spaced {
                             margin-top: 8px;
+                        }
+
+                        .shop-delivery-meta-skeleton {
+                            display: flex;
+                            flex-wrap: wrap;
+                            justify-content: flex-end;
+                            gap: 8px;
                         }
 
                         .shop-delivery-placeholder {
@@ -5821,3 +6073,25 @@ body.admin-access-pending,
 .shop-admin-clipboard-helper { position: fixed; opacity: 0; pointer-events: none; inset: 0 auto auto 0; }
 .shop-admin-preview-icon-image { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; display: block; }
 /* END 20260324_ADMIN_STUDIO_INLINE_STYLE_ATTRS_1 admin-studio.html */
+
+/* 20260331_ADMIN_MODAL_SURFACE_SWEEP_1 */
+.shop-order-content-overlay,
+.shop-inventory-detail-overlay {
+    background: rgba(4, 11, 24, 0.62);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.shop-order-content-modal,
+.shop-inventory-detail-modal,
+.admin-studio-inline-style-attr-203 {
+    background: #1f2a40;
+    border: 1px solid rgba(107, 158, 206, 0.16);
+    box-shadow: 0 28px 90px rgba(2, 8, 23, 0.46);
+}
+
+.shop-order-content-close,
+.shop-inventory-detail-close,
+.form-close-btn {
+    display: none !important;
+}

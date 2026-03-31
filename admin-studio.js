@@ -19,6 +19,21 @@ const ADMIN_STUDIO_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';
 const ADMIN_SCROLLBAR_AUTO_HIDE_CLASS = 'admin-scrollbar-auto-hide';
 const ADMIN_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS = 'admin-scrollbar-auto-hide--visible';
 const ADMIN_SCROLLBAR_AUTO_HIDE_BOUND_ATTR = 'data-admin-scrollbar-auto-hide-bound';
+const ADMIN_MODAL_SCROLL_LOCK_SELECTORS = [
+    '#experimentModal.active',
+    '.modal-overlay.active',
+    '.user-modal-overlay.active',
+    '.custom-modal-overlay.active',
+    '.batch-export-modal-overlay.active',
+    '.admin-ledger-modal-overlay.active',
+    '.batch-modal-overlay.active',
+    '.batch-action-modal-overlay.active',
+    '.codes-modal-overlay.is-visible',
+    '.edit-modal-overlay.is-visible',
+    '.shop-refund-modal-overlay.is-visible',
+    '.shop-order-content-overlay.is-visible',
+    '.shop-inventory-detail-overlay.is-visible'
+].join(', ');
 const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [
     '.select-options',
     '.modal-content',
@@ -115,6 +130,122 @@ function observeAdminScrollbarAutoHide() {
     });
 
     window.__adminScrollbarAutoHideObserver = observer;
+}
+
+const adminStudioModalScrollLockState = {
+    locked: false,
+    activeModal: null,
+    fallbackScrollY: 0,
+    scrollbarGap: 0
+};
+
+function measureAdminStudioScrollbarGap() {
+    const viewportWidth = window.innerWidth || 0;
+    const documentWidth = document.documentElement?.clientWidth || 0;
+    return Math.max(0, Math.round(viewportWidth - documentWidth));
+}
+
+function applyAdminStudioScrollbarGapCompensation() {
+    const gap = measureAdminStudioScrollbarGap();
+    adminStudioModalScrollLockState.scrollbarGap = gap;
+    document.documentElement.style.setProperty('--admin-scroll-lock-gap', `${gap}px`);
+}
+
+function clearAdminStudioScrollbarGapCompensation() {
+    adminStudioModalScrollLockState.scrollbarGap = 0;
+    document.documentElement.style.removeProperty('--admin-scroll-lock-gap');
+}
+
+function getActiveAdminStudioModalOverlays() {
+    return Array.from(document.querySelectorAll(ADMIN_MODAL_SCROLL_LOCK_SELECTORS)).filter((element) => {
+        if (!(element instanceof HTMLElement) || !element.isConnected) {
+            return false;
+        }
+        if (element.hidden || element.getAttribute('aria-hidden') === 'true') {
+            return false;
+        }
+        return true;
+    });
+}
+
+function getTopActiveAdminStudioModalOverlay() {
+    const overlays = getActiveAdminStudioModalOverlays();
+    return overlays.length ? overlays[overlays.length - 1] : null;
+}
+
+function lockAdminStudioBackgroundScroll(modalElement) {
+    if (!(modalElement instanceof HTMLElement)) {
+        return;
+    }
+
+    adminStudioModalScrollLockState.activeModal = modalElement;
+
+    if (!adminStudioModalScrollLockState.locked) {
+        applyAdminStudioScrollbarGapCompensation();
+    }
+
+    if (window.iOSScrollLock?.lock) {
+        window.iOSScrollLock.lock(modalElement);
+        adminStudioModalScrollLockState.locked = true;
+        return;
+    }
+
+    if (!adminStudioModalScrollLockState.locked) {
+        adminStudioModalScrollLockState.fallbackScrollY = window.scrollY || window.pageYOffset || 0;
+    }
+
+    document.documentElement.classList.add('no-scroll');
+    document.body.classList.add('no-scroll', 'ios-scroll-lock-fixed');
+    document.body.style.setProperty('--ios-scroll-lock-offset', `-${adminStudioModalScrollLockState.fallbackScrollY}px`);
+    adminStudioModalScrollLockState.locked = true;
+}
+
+function unlockAdminStudioBackgroundScroll() {
+    if (window.iOSScrollLock?.unlock) {
+        window.iOSScrollLock.unlock();
+    } else if (adminStudioModalScrollLockState.locked) {
+        const restoreScrollY = adminStudioModalScrollLockState.fallbackScrollY || 0;
+        document.documentElement.classList.remove('no-scroll');
+        document.body.classList.remove('no-scroll', 'ios-scroll-lock-fixed');
+        document.body.style.removeProperty('--ios-scroll-lock-offset');
+        window.scrollTo(0, restoreScrollY);
+    }
+
+    clearAdminStudioScrollbarGapCompensation();
+    adminStudioModalScrollLockState.locked = false;
+    adminStudioModalScrollLockState.activeModal = null;
+}
+
+function syncAdminStudioModalScrollLock() {
+    const topModal = getTopActiveAdminStudioModalOverlay();
+    if (topModal) {
+        lockAdminStudioBackgroundScroll(topModal);
+        return;
+    }
+
+    unlockAdminStudioBackgroundScroll();
+}
+
+function observeAdminStudioModalScrollLock() {
+    if (document.documentElement.dataset.adminModalScrollLockObserver === '1') {
+        return;
+    }
+
+    document.documentElement.dataset.adminModalScrollLockObserver = '1';
+    syncAdminStudioModalScrollLock();
+
+    const observer = new MutationObserver(() => {
+        syncAdminStudioModalScrollLock();
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'hidden', 'style', 'open', 'aria-hidden']
+    });
+
+    window.__adminModalScrollLockObserver = observer;
 }
 
 function setAdminStudioVisibility(target, visible, visibleClass = '') {
@@ -334,6 +465,7 @@ async function requireAdminStudioAccess() {
 function initializeAdminStudioShell() {
     bindAdminStudioDelegatedControls();
     observeAdminScrollbarAutoHide();
+    observeAdminStudioModalScrollLock();
     initUploadZone();
     initForm();
     initCustomDropdown();
@@ -1154,6 +1286,12 @@ function bindAdminStudioDelegatedControls() {
             case 'users-filter-role':
                 window.filterUserByRole?.(actionEl.dataset.userRole);
                 break;
+            case 'users-toggle-admin-expiry-filter':
+                window.toggleUserAdminExpiryFilter?.();
+                break;
+            case 'users-filter-admin-expiry':
+                window.filterUserByAdminExpiry?.(actionEl.dataset.userAdminExpiry);
+                break;
             case 'users-toggle-select-mode':
                 window.toggleUserSelectMode?.();
                 break;
@@ -1178,11 +1316,20 @@ function bindAdminStudioDelegatedControls() {
             case 'users-batch-ban':
                 window.batchBanUsers?.();
                 break;
+            case 'users-batch-renew-admin':
+                window.batchRenewAdminAccess?.();
+                break;
+            case 'users-batch-set-admin-expiry':
+                window.batchSetAdminExpiry?.();
+                break;
             case 'users-close-modal':
                 window.closeUserModal?.();
                 break;
             case 'users-switch-tab':
                 window.switchUserTab?.(actionEl.dataset.userTab);
+                break;
+            case 'users-reload-tab':
+                window.reloadUserModalTab?.(actionEl.dataset.userTab);
                 break;
             case 'users-open-drawer':
                 window.openUserDrawer?.(decodeURIComponent(actionEl.dataset.userId || ''));
@@ -1217,6 +1364,12 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'users-save-modal-admin-permissions':
                 window.saveModalAdminPermissions?.(decodeURIComponent(actionEl.dataset.userId || ''));
+                break;
+            case 'users-apply-permission-template':
+                window.applyModalAdminPermissionTemplate?.(
+                    decodeURIComponent(actionEl.dataset.userId || ''),
+                    actionEl.dataset.adminPermissionTemplateId || ''
+                );
                 break;
             case 'users-toggle-block':
                 window.toggleUserBlock?.(
@@ -1710,6 +1863,24 @@ function bindAdminStudioDelegatedControls() {
             case 'ops-alert-batch-mute-modal':
                 window.closeOpsAlertBatchMuteModal?.();
                 break;
+            case 'delete-confirm-modal':
+                hideDeleteConfirmation();
+                break;
+            case 'crop-modal':
+                closeCropModal();
+                break;
+            case 'user-modal':
+                window.closeUserModal?.();
+                break;
+            case 'experiment-modal':
+                window.closeExperimentModal?.();
+                break;
+            case 'inventory-release-modal':
+                window.ShopAdmin?.closeReleaseModal?.();
+                break;
+            case 'inventory-import-modal':
+                window.ShopAdmin?.closeImportModal?.();
+                break;
             default:
                 break;
         }
@@ -1770,9 +1941,14 @@ window.hasPermission = function (permission) {
 function updateUIBasedOnPermissions() {
     // Hide/Show sections based on permissions
     const manageTab = document.querySelector('[data-view="manage"]');
-    if (manageTab && !hasPermission('prompts.manage') && !hasPermission('content.moderate')) {
-        manageTab.hidden = true;
+    if (manageTab) {
+        manageTab.hidden = !hasPermission('prompts.manage') && !hasPermission('content.moderate');
     }
+
+    window.syncAdminStudioModuleAccess?.({
+        preferredModule: window.restoreAdminStudioModuleFromUrl?.(),
+        enforceActiveModule: true
+    });
 
     // Additional UI updates can be handled by respective modules listening to 'permissionsLoaded'
 }

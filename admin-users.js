@@ -15,6 +15,7 @@ const userState = {
         status: 'all', // all, active, banned
         level: 'all',  // all, vip
         role: 'all',   // all, admin, user
+        adminExpiry: 'all', // all, due_soon, due_today, permanent
         search: '',
         showTestAccounts: false
     }
@@ -62,6 +63,20 @@ const SYNTHETIC_TIMESTAMP_RE = /(?:^|[._-])\d{8,}$/;
 const SYSTEM_USERNAME_RE = /^(?:system|bot|service|worker|cron|automation)(?:[._-]|$)/i;
 const PHONE_ONLY_USERNAME_RE = /^\+?\d{8,}$/;
 const USERS_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';
+const LOCKED_SUPER_ADMIN_EMAILS = new Set(['fjivvid@163.com', 'zaoyoe@gmail.com']);
+const ADMIN_ROLE_EXPIRY_WARNING_WINDOW_DAYS = 7;
+const USER_MODAL_SESSION_STORAGE_KEY = 'admin_studio_user_modal_state_v1';
+const USER_MODAL_URL_PARAM_USER = 'user';
+const USER_MODAL_URL_PARAM_TAB = 'userTab';
+const USER_MODAL_URL_PARAM_RANGE = 'userRange';
+const USER_MODAL_URL_PARAM_START = 'userStart';
+const USER_MODAL_URL_PARAM_END = 'userEnd';
+const USER_FILTER_DEFAULT_LABELS = {
+    userStatus: '状态',
+    userLevel: '等级',
+    userRole: '角色',
+    userAdminExpiry: '权限到期'
+};
 
 function getTagClass(tag) {
     return TAG_CONFIG[tag]?.class || 'tag-custom';
@@ -73,6 +88,115 @@ function getTagLabel(tag) {
 
 function normalizeUserIdentity(value) {
     return String(value || '').trim().toLowerCase();
+}
+
+function isLockedSuperAdminEmail(email = '') {
+    return LOCKED_SUPER_ADMIN_EMAILS.has(normalizeUserIdentity(email));
+}
+
+function formatAdminRoleExpiryCountdown(expiresAt) {
+    const expiresAtMs = new Date(expiresAt).getTime();
+    if (!Number.isFinite(expiresAtMs)) {
+        return '未设置到期时间';
+    }
+
+    const diffMs = expiresAtMs - Date.now();
+    if (diffMs <= 0) {
+        return '已到期';
+    }
+
+    const diffHours = Math.ceil(diffMs / (1000 * 60 * 60));
+    if (diffHours <= 24) {
+        return `${diffHours} 小时后到期`;
+    }
+
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    return `${diffDays} 天后到期`;
+}
+
+function getAdminRoleExpiryMeta(roleInfo = null, { email = '' } = {}) {
+    if (isLockedSuperAdminEmail(email)) {
+        return {
+            status: 'locked_super_admin',
+            label: '内置超管',
+            detail: '固定后台权限，不受到期时间限制',
+            tone: 'success',
+            highlightOnList: false
+        };
+    }
+
+    if (!roleInfo) {
+        return {
+            status: 'none',
+            label: '未授予',
+            detail: '当前没有后台角色',
+            tone: 'neutral',
+            highlightOnList: false
+        };
+    }
+
+    if (!roleInfo.expires_at) {
+        return {
+            status: 'permanent',
+            label: '长期有效',
+            detail: '未设置后台权限到期时间',
+            tone: 'success',
+            highlightOnList: false
+        };
+    }
+
+    const expiresAt = new Date(roleInfo.expires_at);
+    const expiresAtMs = expiresAt.getTime();
+    if (!Number.isFinite(expiresAtMs)) {
+        return {
+            status: 'invalid',
+            label: '时间异常',
+            detail: '权限到期时间格式异常',
+            tone: 'danger',
+            highlightOnList: true
+        };
+    }
+
+    const diffMs = expiresAtMs - Date.now();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+    if (diffMs <= 0) {
+        return {
+            status: 'expired',
+            label: '已过期',
+            detail: `${formatAdminDateTime(roleInfo.expires_at)} 已失效`,
+            tone: 'danger',
+            highlightOnList: true
+        };
+    }
+
+    if (diffDays <= 1) {
+        return {
+            status: 'due_today',
+            label: '24 小时内到期',
+            detail: `${formatAdminRoleExpiryCountdown(roleInfo.expires_at)} · ${formatAdminDateTime(roleInfo.expires_at)}`,
+            tone: 'danger',
+            highlightOnList: true
+        };
+    }
+
+    if (diffDays <= ADMIN_ROLE_EXPIRY_WARNING_WINDOW_DAYS) {
+        return {
+            status: 'due_soon',
+            label: `${Math.ceil(diffDays)} 天内到期`,
+            detail: `${formatAdminRoleExpiryCountdown(roleInfo.expires_at)} · ${formatAdminDateTime(roleInfo.expires_at)}`,
+            tone: 'warning',
+            highlightOnList: true
+        };
+    }
+
+    return {
+        status: 'scheduled',
+        label: '已设置到期',
+        detail: `${formatAdminRoleExpiryCountdown(roleInfo.expires_at)} · ${formatAdminDateTime(roleInfo.expires_at)}`,
+        tone: 'accent',
+        highlightOnList: false
+    };
 }
 
 function classifyUserAccount({ email, username }) {
@@ -164,7 +288,9 @@ function initUserModule() {
     // Show admin role filter for super admins
     if (window._isSuperAdmin) {
         const roleFilter = document.getElementById('adminRoleFilter');
+        const expiryFilter = document.getElementById('adminExpiryFilter');
         setUsersHiddenState(roleFilter, false);
+        setUsersHiddenState(expiryFilter, false);
     }
 
     // Bind Modal Overlay Click
@@ -226,7 +352,7 @@ function initUserFilterDropdowns() {
             // Update label
             const label = dropdown.querySelector('.filter-label');
             if (value === 'all') {
-                label.textContent = filterType === 'userStatus' ? '状态' : '等级';
+                label.textContent = USER_FILTER_DEFAULT_LABELS[filterType] || '筛选';
             } else {
                 label.textContent = option.textContent;
             }
@@ -238,6 +364,8 @@ function initUserFilterDropdowns() {
                 userState.filters.level = value;
             } else if (filterType === 'userRole') {
                 userState.filters.role = value;
+            } else if (filterType === 'userAdminExpiry') {
+                userState.filters.adminExpiry = value;
             }
 
             // Close dropdown and re-render
@@ -280,6 +408,16 @@ function toggleUserLevelFilter() {
 
 function toggleUserRoleFilter() {
     const filter = document.querySelector('#module-users .filter-dropdown[data-filter="userRole"]');
+    if (!filter) return;
+    const wasOpen = filter.classList.contains('open');
+    closeUserFilterDropdowns();
+    if (!wasOpen) {
+        filter.classList.add('open');
+    }
+}
+
+function toggleUserAdminExpiryFilter() {
+    const filter = document.querySelector('#module-users .filter-dropdown[data-filter="userAdminExpiry"]');
     if (!filter) return;
     const wasOpen = filter.classList.contains('open');
     closeUserFilterDropdowns();
@@ -331,6 +469,26 @@ function filterUserByRole(value) {
     if (label) label.textContent = labels[value] || '角色';
 
     document.querySelectorAll('#module-users .filter-dropdown[data-filter="userRole"] .filter-option').forEach(opt => {
+        opt.classList.toggle('selected', opt.dataset.value === value);
+    });
+
+    closeUserFilterDropdowns();
+    userState.currentPage = 1;
+    renderUsersTable();
+}
+
+function filterUserByAdminExpiry(value) {
+    userState.filters.adminExpiry = value;
+    const labels = {
+        all: '权限到期',
+        due_soon: '7 天内到期',
+        due_today: '24 小时内',
+        permanent: '长期有效'
+    };
+    const label = document.querySelector('#module-users .filter-dropdown[data-filter="userAdminExpiry"] .filter-label');
+    if (label) label.textContent = labels[value] || '权限到期';
+
+    document.querySelectorAll('#module-users .filter-dropdown[data-filter="userAdminExpiry"] .filter-option').forEach(opt => {
         opt.classList.toggle('selected', opt.dataset.value === value);
     });
 
@@ -470,6 +628,7 @@ async function loadUsers() {
 
             const userPoints = pointsMap.get(id);
             const accountFlags = classifyUserAccount({ email, username });
+            const activeRole = rolesMap.get(id) || null;
             return {
                 id: id,
                 username: username || 'Unknown',
@@ -487,13 +646,15 @@ async function loadUsers() {
                 is_banned: blockedMap.has(id),
                 block_info: blockedMap.get(id),
                 // Admin Role
-                is_admin: rolesMap.has(id) || ['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(email),
-                admin_role: rolesMap.get(id),
+                is_admin: rolesMap.has(id) || isLockedSuperAdminEmail(email),
+                admin_role: activeRole,
+                admin_role_expiry_meta: getAdminRoleExpiryMeta(activeRole, { email }),
                 is_test_or_system: accountFlags.isTestOrSystem
             };
         });
 
         renderUsersTable();
+        void maybeRestoreUserModalFromUrl();
 
     } catch (err) {
         console.error('Failed to load users:', err);
@@ -562,10 +723,24 @@ function toggleUserTestAccountVisibility(checked) {
     renderBatchActionBar();
 }
 
+function renderAdminRoleExpiryInlineBadge(user = {}) {
+    const expiryMeta = user?.admin_role_expiry_meta;
+    if (!user?.is_admin || !expiryMeta?.highlightOnList) {
+        return '';
+    }
+
+    return `
+        <span class="admin-expiry-chip admin-expiry-chip--${escapeHtml(expiryMeta.tone || 'warning')}" title="${escapeHtml(expiryMeta.detail || expiryMeta.label || '')}">
+            <i class="fas fa-hourglass-half"></i>
+            <span>${escapeHtml(expiryMeta.label || '即将到期')}</span>
+        </span>
+    `;
+}
+
 // Render Users Table
 function renderUsersTable() {
     // 1. Filter Users
-    const { status, level, role, search, showTestAccounts } = userState.filters;
+    const { status, level, role, adminExpiry, search, showTestAccounts } = userState.filters;
     const term = search ? search.toLowerCase() : '';
 
     userState.filteredUsers = userState.users.filter(u => {
@@ -591,9 +766,15 @@ function renderUsersTable() {
             (role === 'admin' && u.is_admin) ||
             (role === 'user' && !u.is_admin);
 
+        const expiryStatus = String(u.admin_role_expiry_meta?.status || '').trim();
+        const matchAdminExpiry = adminExpiry === 'all' ||
+            (adminExpiry === 'due_soon' && ['due_soon', 'due_today'].includes(expiryStatus)) ||
+            (adminExpiry === 'due_today' && expiryStatus === 'due_today') ||
+            (adminExpiry === 'permanent' && expiryStatus === 'permanent');
+
         const matchAccountScope = showTestAccounts || !u.is_test_or_system;
 
-        return matchSearch && matchStatus && matchLevel && matchRole && matchAccountScope;
+        return matchSearch && matchStatus && matchLevel && matchRole && matchAdminExpiry && matchAccountScope;
     });
 
     updateUserAccountVisibilityMeta();
@@ -670,7 +851,7 @@ function renderUsersTable() {
         }
 
         return `
-        <tr class="user-row ${userState.selectedUsers.has(u.id) ? 'selected' : ''}" data-admin-action="users-open-drawer" data-user-id="${encodeURIComponent(u.id)}">
+        <tr class="user-row ${userState.selectedUsers.has(u.id) ? 'selected' : ''}${u.admin_role_expiry_meta?.highlightOnList ? ' user-row--admin-expiring' : ''}" data-admin-action="users-open-drawer" data-user-id="${encodeURIComponent(u.id)}">
             ${userState.selectMode ? `
             <td class="checkbox-col" data-admin-action="users-stop-propagation">
                 <label class="custom-checkbox">
@@ -695,6 +876,7 @@ function renderUsersTable() {
                             ${u.vip_level === 'VIP' ? '<i class="fas fa-crown vip-icon"></i>' : ''}
                             ${u.is_admin ? '<i class="fas fa-shield-alt admin-icon" title="管理员"></i>' : ''}
                             ${u.is_test_or_system ? '<span class="user-account-pill">测试/系统</span>' : ''}
+                            ${renderAdminRoleExpiryInlineBadge(u)}
                         </div>
                         <div class="user-email">${escapeHtml(u.email || 'No Email')}</div>
                     </div>
@@ -733,9 +915,41 @@ function renderUsersTable() {
 }
 
 // Loading State
+function buildUsersTableLoadingSkeleton(rowCount = 7) {
+    const rows = Math.max(4, Number.parseInt(rowCount, 10) || 7);
+    const nameWidths = ['admin-skeleton-w-40', 'admin-skeleton-w-50', 'admin-skeleton-w-60'];
+    const metaWidths = ['admin-skeleton-w-30', 'admin-skeleton-w-40'];
+
+    return Array.from({ length: rows }, (_, index) => `
+        <tr class="admin-table-skeleton-row users-table-skeleton-row" aria-hidden="true" data-skeleton-index="${index}">
+            <td>
+                <div class="admin-table-skeleton-cell">
+                    <span class="admin-skeleton-block admin-skeleton-block--avatar"></span>
+                    <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
+                        <span class="admin-skeleton-block admin-skeleton-block--title ${nameWidths[index % nameWidths.length]}"></span>
+                        <span class="admin-skeleton-block admin-skeleton-block--line ${metaWidths[index % metaWidths.length]}"></span>
+                    </div>
+                </div>
+            </td>
+            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-20"></span></div></td>
+            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-30"></span></div></td>
+            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span></div></td>
+            <td>
+                <div class="admin-table-skeleton-cell">
+                    <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
 function renderUserLoading() {
-    document.getElementById('usersTableBody').innerHTML = '';
-    setUsersEmptyStateContent('<div class="neural-loader small"><div class="neural-dot"></div><div class="neural-dot"></div><div class="neural-dot"></div></div>', { isHtml: true });
+    const tbody = document.getElementById('usersTableBody');
+    if (tbody) {
+        tbody.innerHTML = buildUsersTableLoadingSkeleton();
+    }
+    hideUsersEmptyState();
 }
 
 // ========================================
@@ -894,7 +1108,6 @@ function getNotificationModal() {
         <div class="custom-modal notification-modal-dialog">
             <div class="modal-header">
                 <h3 class="modal-title">${buildNotificationModalTitle()}</h3>
-                <button class="modal-close-btn" type="button" data-admin-action="users-close-notification-modal"><i class="fas fa-times"></i></button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
@@ -1214,6 +1427,353 @@ async function executeBatchPointsAdjustment() {
     }
 }
 
+function syncCurrentModalRoleInfoFromUserState(userIds = []) {
+    const selectedUserIds = new Set((Array.isArray(userIds) ? userIds : []).map((userId) => String(userId || '').trim()).filter(Boolean));
+    if (!currentModalUser?.id || !selectedUserIds.has(currentModalUser.id) || hasPendingModalAdminPermissionsWork()) {
+        return;
+    }
+
+    const latestUser = userState.users.find((user) => user.id === currentModalUser.id);
+    if (!latestUser || !currentModalData?.roleInfo) {
+        return;
+    }
+
+    currentModalData.roleInfo = {
+        ...currentModalData.roleInfo,
+        is_admin: latestUser.is_admin === true,
+        permissions: Array.isArray(latestUser.admin_role?.permissions) ? latestUser.admin_role.permissions : (currentModalData.roleInfo.permissions || []),
+        expires_at: latestUser.admin_role?.expires_at || null
+    };
+
+    renderModalLeftPanel(currentModalUser, currentModalData.roleInfo, currentModalData.isSuperAdmin, currentModalData.activeBans || []);
+}
+
+function showBatchAdminRenewModal({ selectedCount, eligibleCount, skippedCount }) {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-content users-batch-renew-modal">
+                <div class="modal-header">
+                    <h3>批量续期权限 (${selectedCount} 人)</h3>
+                </div>
+                <div class="modal-body users-batch-renew-body">
+                    <p class="users-batch-renew-note">将从“当前到期时间”继续顺延；如果已到期，则从现在开始顺延。</p>
+                    <div class="users-batch-renew-meta">
+                        <span><strong>${eligibleCount}</strong> 位可续期管理员</span>
+                        <span><strong>${skippedCount}</strong> 位已跳过</span>
+                    </div>
+                    <div class="users-batch-renew-options">
+                        <button class="users-batch-renew-card" type="button" data-users-renew-days="7">
+                            <span class="users-batch-renew-card-title">续 7 天</span>
+                            <span class="users-batch-renew-card-meta">适合短期值班和临时协作</span>
+                        </button>
+                        <button class="users-batch-renew-card" type="button" data-users-renew-days="30">
+                            <span class="users-batch-renew-card-title">续 30 天</span>
+                            <span class="users-batch-renew-card-meta">适合月度运营和常规排班</span>
+                        </button>
+                        <button class="users-batch-renew-card" type="button" data-users-renew-days="90">
+                            <span class="users-batch-renew-card-title">续 90 天</span>
+                            <span class="users-batch-renew-card-meta">适合长期项目负责人</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        animateUsersOverlayIn(modal);
+
+        const closeModal = (value = null) => {
+            animateUsersOverlayOut(modal, () => {
+                modal.remove();
+                resolve(value);
+            });
+        };
+
+        modal.addEventListener('click', (event) => {
+            const actionEl = event.target instanceof Element ? event.target.closest('[data-users-renew-days]') : null;
+
+            if (actionEl?.hasAttribute('data-users-renew-days')) {
+                const renewDays = parseInt(actionEl.getAttribute('data-users-renew-days') || '', 10);
+                closeModal(Number.isFinite(renewDays) && renewDays > 0 ? renewDays : null);
+                return;
+            }
+
+            if (event.target === modal) {
+                closeModal(null);
+            }
+        });
+    });
+}
+
+function showBatchAdminExpiryModal({ selectedCount, eligibleCount, skippedCount }) {
+    return new Promise((resolve) => {
+        const now = new Date();
+        now.setSeconds(0, 0);
+        const minValue = formatDateTimeLocalInputValue(now);
+        const defaultValue = buildDefaultBatchAdminExpiryInputValue(7);
+        const presetOptions = [
+            { label: '今晚 23:59', value: buildDefaultBatchAdminExpiryInputValue(0) },
+            { label: '7 天后 23:59', value: buildDefaultBatchAdminExpiryInputValue(7) },
+            { label: '30 天后 23:59', value: buildDefaultBatchAdminExpiryInputValue(30) }
+        ];
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-content users-batch-expiry-modal">
+                <div class="modal-header">
+                    <h3>批量设置到期时间 (${selectedCount} 人)</h3>
+                </div>
+                <div class="modal-body users-batch-expiry-body">
+                    <p class="users-batch-renew-note">会直接覆盖这些管理员当前的权限到期时间；如果你只是想在原时间上顺延，请继续使用“批量续期权限”。</p>
+                    <div class="users-batch-renew-meta">
+                        <span><strong>${eligibleCount}</strong> 位可设置管理员</span>
+                        <span><strong>${skippedCount}</strong> 位已跳过</span>
+                    </div>
+                    <div class="users-batch-expiry-form">
+                        <label class="users-batch-expiry-label" for="usersBatchAdminExpiryInput">指定新的到期时间</label>
+                        <input id="usersBatchAdminExpiryInput" class="users-batch-expiry-input" type="datetime-local" value="${escapeHtml(defaultValue)}" min="${escapeHtml(minValue)}">
+                        <div class="users-batch-expiry-presets">
+                            ${presetOptions.map((option) => `
+                                <button class="users-batch-expiry-preset" type="button" data-users-batch-expiry-preset="${escapeHtml(option.value)}">${escapeHtml(option.label)}</button>
+                            `).join('')}
+                        </div>
+                        <p class="users-batch-expiry-help">按当前浏览器时区解释。保存后会覆盖这些管理员原有的到期时间。</p>
+                    </div>
+                    <div class="users-batch-expiry-actions">
+                        <button class="users-batch-expiry-btn users-batch-expiry-btn--secondary" type="button" data-users-batch-expiry-mode="permanent">设为长期有效</button>
+                        <button class="users-batch-expiry-btn users-batch-expiry-btn--primary" type="button" data-users-batch-expiry-confirm="absolute">应用到期时间</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        animateUsersOverlayIn(modal);
+
+        const input = modal.querySelector('#usersBatchAdminExpiryInput');
+
+        const closeModal = (value = null) => {
+            animateUsersOverlayOut(modal, () => {
+                modal.remove();
+                resolve(value);
+            });
+        };
+
+        modal.addEventListener('click', (event) => {
+            const actionEl = event.target instanceof Element
+                ? event.target.closest('[data-users-batch-expiry-preset],[data-users-batch-expiry-mode],[data-users-batch-expiry-confirm]')
+                : null;
+
+            if (actionEl?.hasAttribute('data-users-batch-expiry-preset')) {
+                if (input instanceof HTMLInputElement) {
+                    input.value = actionEl.getAttribute('data-users-batch-expiry-preset') || '';
+                    input.focus();
+                }
+                return;
+            }
+
+            if (actionEl?.getAttribute('data-users-batch-expiry-mode') === 'permanent') {
+                closeModal({ mode: 'permanent', expiresAt: null });
+                return;
+            }
+
+            if (actionEl?.getAttribute('data-users-batch-expiry-confirm') === 'absolute') {
+                const expiresAt = parseDateTimeLocalInputValue(input?.value || '');
+                const minDate = parseDateTimeLocalInputValue(minValue);
+                if (!expiresAt) {
+                    showToast('请选择有效的到期时间', 'warning');
+                    input?.focus();
+                    return;
+                }
+
+                if (minDate && new Date(expiresAt).getTime() < new Date(minDate).getTime()) {
+                    showToast('到期时间不能早于当前时间', 'warning');
+                    input?.focus();
+                    return;
+                }
+
+                closeModal({ mode: 'absolute', expiresAt });
+                return;
+            }
+
+            if (event.target === modal) {
+                closeModal(null);
+            }
+        });
+    });
+}
+
+async function batchRenewAdminAccess() {
+    const selectedUserIds = Array.from(userState.selectedUsers);
+    if (selectedUserIds.length === 0) {
+        showToast('请先选择用户', 'error');
+        return;
+    }
+
+    const selectedUsers = userState.users.filter((user) => selectedUserIds.includes(user.id));
+    const eligibleUsers = selectedUsers.filter((user) => user.is_admin && !isLockedSuperAdminEmail(user.email) && user.admin_role?.expires_at);
+    const skippedCount = selectedUsers.length - eligibleUsers.length;
+
+    if (eligibleUsers.length === 0) {
+        showToast('所选用户中没有可续期的管理员权限', 'warning');
+        return;
+    }
+
+    const renewDays = await showBatchAdminRenewModal({
+        selectedCount: selectedUsers.length,
+        eligibleCount: eligibleUsers.length,
+        skippedCount
+    });
+    if (!renewDays) {
+        return;
+    }
+
+    showToast(`正在为 ${eligibleUsers.length} 位管理员顺延 ${renewDays} 天...`, 'info');
+
+    try {
+        const nowMs = Date.now();
+
+        for (const user of eligibleUsers) {
+            const currentExpiresAtMs = new Date(user.admin_role?.expires_at || '').getTime();
+            const baseMs = Number.isFinite(currentExpiresAtMs) && currentExpiresAtMs > nowMs ? currentExpiresAtMs : nowMs;
+            const nextExpiresAt = new Date(baseMs + (renewDays * 24 * 60 * 60 * 1000)).toISOString();
+
+            const { error } = await window.supabaseClient
+                .from('admin_roles')
+                .update({ expires_at: nextExpiresAt })
+                .eq('user_id', user.id);
+
+            if (error) throw error;
+
+            const previousRoleInfo = {
+                is_admin: true,
+                permissions: Array.isArray(user.admin_role?.permissions) ? user.admin_role.permissions : [],
+                expires_at: user.admin_role?.expires_at || null,
+                unlimited_shop_purchases: false
+            };
+            const permissionAudit = buildAdminPermissionChangeDetails(previousRoleInfo, {
+                isAdmin: true,
+                permissions: previousRoleInfo.permissions,
+                expiresAt: nextExpiresAt,
+                unlimitedShopPurchases: false
+            }, {
+                save_reason: 'batch-renew',
+                batch_extend_days: renewDays
+            });
+
+            if (permissionAudit.hasChanges) {
+                await logAdminAction('update_admin_permissions', user.id, permissionAudit.details);
+            }
+
+            user.admin_role = {
+                ...(user.admin_role || {}),
+                user_id: user.id,
+                role_name: user.admin_role?.role_name || 'admin',
+                expires_at: nextExpiresAt
+            };
+            user.admin_role_expiry_meta = getAdminRoleExpiryMeta(user.admin_role, { email: user.email });
+        }
+
+        renderUsersTable();
+        renderBatchActionBar();
+        syncCurrentModalRoleInfoFromUserState(eligibleUsers.map((user) => user.id));
+        showToast(`已为 ${eligibleUsers.length} 位管理员顺延 ${renewDays} 天${skippedCount > 0 ? `，跳过 ${skippedCount} 位非目标账号` : ''}`, 'success');
+    } catch (error) {
+        console.error('Batch renew admin access failed:', error);
+        showToast(`批量续期失败: ${error.message}`, 'error');
+        return;
+    }
+
+    clearAllSelections();
+}
+
+async function batchSetAdminExpiry() {
+    const selectedUserIds = Array.from(userState.selectedUsers);
+    if (selectedUserIds.length === 0) {
+        showToast('请先选择用户', 'error');
+        return;
+    }
+
+    const selectedUsers = userState.users.filter((user) => selectedUserIds.includes(user.id));
+    const eligibleUsers = selectedUsers.filter((user) => user.is_admin && !isLockedSuperAdminEmail(user.email));
+    const skippedCount = selectedUsers.length - eligibleUsers.length;
+
+    if (eligibleUsers.length === 0) {
+        showToast('所选用户中没有可设置到期时间的管理员', 'warning');
+        return;
+    }
+
+    const selection = await showBatchAdminExpiryModal({
+        selectedCount: selectedUsers.length,
+        eligibleCount: eligibleUsers.length,
+        skippedCount
+    });
+    if (!selection) {
+        return;
+    }
+
+    const isPermanent = selection.mode === 'permanent';
+    const nextExpiresAt = isPermanent ? null : selection.expiresAt;
+    const actionLabel = isPermanent
+        ? '设为长期有效'
+        : `设置到 ${formatAdminDateTime(nextExpiresAt)}`;
+
+    showToast(`正在为 ${eligibleUsers.length} 位管理员${isPermanent ? '设为长期有效' : '覆盖到期时间'}...`, 'info');
+
+    try {
+        for (const user of eligibleUsers) {
+            const previousRoleInfo = {
+                is_admin: true,
+                permissions: Array.isArray(user.admin_role?.permissions) ? user.admin_role.permissions : [],
+                expires_at: user.admin_role?.expires_at || null,
+                unlimited_shop_purchases: false
+            };
+
+            const { error } = await window.supabaseClient
+                .from('admin_roles')
+                .update({ expires_at: nextExpiresAt })
+                .eq('user_id', user.id);
+
+            if (error) throw error;
+
+            const permissionAudit = buildAdminPermissionChangeDetails(previousRoleInfo, {
+                isAdmin: true,
+                permissions: previousRoleInfo.permissions,
+                expiresAt: nextExpiresAt,
+                unlimitedShopPurchases: false
+            }, {
+                save_reason: 'batch-set-expiry',
+                batch_expiry_mode: isPermanent ? 'permanent' : 'absolute',
+                batch_expiry_label: isPermanent ? '长期有效' : nextExpiresAt
+            });
+
+            if (permissionAudit.hasChanges) {
+                await logAdminAction('update_admin_permissions', user.id, permissionAudit.details);
+            }
+
+            user.admin_role = {
+                ...(user.admin_role || {}),
+                user_id: user.id,
+                role_name: user.admin_role?.role_name || 'admin',
+                expires_at: nextExpiresAt
+            };
+            user.admin_role_expiry_meta = getAdminRoleExpiryMeta(user.admin_role, { email: user.email });
+        }
+
+        renderUsersTable();
+        renderBatchActionBar();
+        syncCurrentModalRoleInfoFromUserState(eligibleUsers.map((user) => user.id));
+        showToast(`已为 ${eligibleUsers.length} 位管理员${actionLabel}${skippedCount > 0 ? `，跳过 ${skippedCount} 位非目标账号` : ''}`, 'success');
+    } catch (error) {
+        console.error('Batch set admin expiry failed:', error);
+        showToast(`批量设置到期时间失败: ${error.message}`, 'error');
+        return;
+    }
+
+    clearAllSelections();
+}
+
 // Batch add tags
 async function batchAddTags() {
     const userIds = Array.from(userState.selectedUsers);
@@ -1284,7 +1844,6 @@ function showBatchTagModal(count) {
             <div class="modal-content users-batch-tag-modal">
                 <div class="modal-header">
                     <h3>批量添加标签 (${count} 人)</h3>
-                    <button class="modal-close" type="button" data-batch-tag-close="1">&times;</button>
                 </div>
                 <div class="modal-body users-batch-tag-body">
                     <p class="users-batch-tag-note">选择要添加的标签：</p>
@@ -1313,16 +1872,8 @@ function showBatchTagModal(count) {
         };
 
         modal.addEventListener('click', (e) => {
-            const actionEl = e.target instanceof Element ? e.target.closest('[data-batch-tag-value],[data-batch-tag-close],[data-batch-tag-submit]') : null;
+            const actionEl = e.target instanceof Element ? e.target.closest('[data-batch-tag-value],[data-batch-tag-submit]') : null;
             if (actionEl) {
-                if (actionEl.hasAttribute('data-batch-tag-close')) {
-                    animateUsersOverlayOut(modal, () => {
-                        modal.remove();
-                        resolve(null);
-                    });
-                    return;
-                }
-
                 if (actionEl.hasAttribute('data-batch-tag-submit')) {
                     resolveBatchTag(document.getElementById('customTagInput')?.value || '');
                     return;
@@ -1627,11 +2178,1549 @@ async function exportUsersToExcel(users, options) {
 let currentModalUser = null;
 let currentModalData = {};
 let currentTab = 'ledger';
-const USER_MODAL_SUPPORTED_TABS = new Set(['ledger', 'payments', 'activity', 'notes', 'audit', 'blocks', 'affiliate', 'relatives']);
+let modalRoleExpiryPickerCleanup = null;
+const MODAL_ADMIN_AUTOSAVE_DELAY_MS = 900;
+const DEFAULT_ADMIN_PERMISSION_KEY = 'content.moderate';
+const USER_MODAL_TAB_PREFETCH_DELAY_MS = 420;
+const USER_MODAL_TAB_REGISTRY = Object.freeze({
+    ledger: {
+        id: 'ledger',
+        label: '积分流水',
+        icon: 'fas fa-chart-line',
+        emptyLabel: '暂无积分记录',
+        loadingLabel: '加载积分流水...',
+        prefetchOnOpen: false,
+        load: (userId) => fetchPointsLedger(userId),
+        render: renderLedgerTab
+    },
+    payments: {
+        id: 'payments',
+        label: '充值记录',
+        icon: 'fas fa-wallet',
+        emptyLabel: '暂无充值记录',
+        loadingLabel: '加载充值记录...',
+        prefetchOnOpen: true,
+        load: (userId) => fetchUserPaymentOrders(userId),
+        render: renderPaymentsTab
+    },
+    activity: {
+        id: 'activity',
+        label: '近期动态',
+        icon: 'fas fa-history',
+        emptyLabel: '暂无内容记录',
+        loadingLabel: '加载近期动态...',
+        prefetchOnOpen: true,
+        load: (userId) => fetchUserContentLog(userId),
+        render: renderActivityTab
+    },
+    notes: {
+        id: 'notes',
+        label: '备注',
+        icon: 'far fa-sticky-note',
+        emptyLabel: '暂无备注',
+        loadingLabel: '加载备注...',
+        prefetchOnOpen: true,
+        load: (userId) => fetchUserNotes(userId),
+        render: renderNotesTab
+    },
+    audit: {
+        id: 'audit',
+        label: '审计',
+        icon: 'fas fa-shield-alt',
+        emptyLabel: '暂无审计日志',
+        loadingLabel: '加载审计日志...',
+        prefetchOnOpen: false,
+        load: (userId) => fetchUserAuditLogs(userId),
+        render: renderAuditTab
+    },
+    blocks: {
+        id: 'blocks',
+        label: '封禁记录',
+        icon: 'fas fa-ban',
+        emptyLabel: '无封禁记录',
+        loadingLabel: '加载封禁记录...',
+        prefetchOnOpen: false,
+        load: (userId) => fetchUserBlockHistory(userId),
+        render: renderBlocksTab
+    },
+    affiliate: {
+        id: 'affiliate',
+        label: '推广',
+        icon: 'fas fa-share-alt',
+        emptyLabel: '暂无推广记录',
+        loadingLabel: '加载推广数据...',
+        prefetchOnOpen: false,
+        load: (userId) => fetchUserAffiliateBundle(userId),
+        render: renderAffiliateTab
+    },
+    relatives: {
+        id: 'relatives',
+        label: '关联账号',
+        icon: 'fas fa-users-cog',
+        emptyLabel: '未检测到关联账号',
+        loadingLabel: '加载关联账号...',
+        prefetchOnOpen: false,
+        load: (userId) => fetchRelatedAccounts(userId),
+        render: renderRelatedTab
+    }
+});
+const USER_MODAL_TAB_ORDER = Object.freeze(Object.keys(USER_MODAL_TAB_REGISTRY));
+const USER_MODAL_SUPPORTED_TABS = new Set(USER_MODAL_TAB_ORDER);
+const USER_MODAL_TAB_DATA_KEY_MAP = Object.freeze({
+    ledger: 'pointsLedger',
+    payments: 'paymentOrders',
+    activity: 'contentLog',
+    notes: 'notes',
+    audit: 'auditLogs',
+    blocks: 'blockHistory',
+    affiliate: 'affiliate',
+    relatives: 'relatedAccounts'
+});
+const USER_MODAL_DATE_FILTER_TABS = new Set(['ledger', 'payments', 'activity', 'notes', 'audit', 'blocks']);
+const USER_MODAL_TAB_FEEDBACK_AUTO_DISMISS_MS = Object.freeze({
+    info: 2200,
+    success: 2400,
+    error: 4200
+});
+const USER_MODAL_TAB_FEEDBACK_FADE_MS = 220;
+let userModalTabPrefetchHandle = 0;
+let userModalTabPrefetchMode = '';
+let userModalTabPrefetchGeneration = 0;
+let userModalUrlRestoreSignature = '';
+const userModalTabFeedbackTimers = new Map();
+const ADMIN_PERMISSION_TEMPLATES = [
+    {
+        id: 'content_ops',
+        label: '内容运营',
+        description: '内容审核、Prompt 运营与基础分析',
+        permissions: ['content.moderate', 'prompts.manage', 'analytics.view']
+    },
+    {
+        id: 'support_ops',
+        label: '客服售后',
+        description: '客服消息、用户排查与工单处理',
+        permissions: ['chat.manage', 'users.manage', 'tickets.manage']
+    },
+    {
+        id: 'commerce_ops',
+        label: '商城运营',
+        description: '商品、券码、积分与商城分析',
+        permissions: ['shop.manage', 'discounts.manage', 'points.manage', 'analytics.view']
+    },
+    {
+        id: 'finance_ops',
+        label: '交易财务',
+        description: '支付对账、订单核对与积分核查',
+        permissions: ['payments.manage', 'shop.manage', 'points.manage', 'analytics.view']
+    },
+    {
+        id: 'site_ops',
+        label: '站点运营',
+        description: '主页内容、站外告警与系统设置',
+        permissions: ['homepage.manage', 'ops_alerts.manage', 'settings.manage', 'analytics.view']
+    }
+];
+let modalAdminPermissionsState = createModalAdminPermissionsState();
+
+function createModalAdminPermissionsState() {
+    return {
+        userId: '',
+        lastSavedSnapshot: '',
+        dirty: false,
+        saving: false,
+        pendingAfterSave: false,
+        saveTimer: 0,
+        savePromise: null,
+        lastError: '',
+        lastSavedAt: 0,
+        pendingTemplateId: ''
+    };
+}
 
 function normalizeUserModalTab(tabName = '') {
     const normalized = String(tabName || '').trim().toLowerCase();
     return USER_MODAL_SUPPORTED_TABS.has(normalized) ? normalized : 'ledger';
+}
+
+function getUserModalTabDefinition(tabName = '') {
+    return USER_MODAL_TAB_REGISTRY[normalizeUserModalTab(tabName)] || USER_MODAL_TAB_REGISTRY.ledger;
+}
+
+function getUserModalTabStatusLabel(tabName = '') {
+    const tabDef = getUserModalTabDefinition(tabName);
+    const tabState = getUserModalTabState(tabName);
+    const status = tabState?.status || 'idle';
+    const freshnessMeta = getUserModalTabFreshnessMeta(tabName);
+
+    if (tabState?.refreshing) {
+        return `${tabDef.label}刷新中${freshnessMeta?.label ? ` · ${freshnessMeta.label}` : ''}`;
+    }
+
+    switch (status) {
+        case 'loading':
+            return `${tabDef.label}加载中`;
+        case 'loaded':
+            return `${tabDef.label}已就绪${freshnessMeta?.label ? ` · ${freshnessMeta.label}` : ''}`;
+        case 'error':
+            return `${tabDef.label}加载失败${freshnessMeta?.label ? ` · ${freshnessMeta.label}` : ''}`;
+        default:
+            return `${tabDef.label}按需加载`;
+    }
+}
+
+function formatUserModalTabLoadedAt(value) {
+    if (!value) {
+        return '';
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
+
+    const now = new Date();
+    const isSameDay = now.toDateString() === date.toDateString();
+    return date.toLocaleString('zh-CN', isSameDay
+        ? {
+            hour: '2-digit',
+            minute: '2-digit'
+        }
+        : {
+            month: 'numeric',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+}
+
+function getUserModalTabFreshnessMeta(tabName = '') {
+    const normalized = normalizeUserModalTab(tabName);
+    const tabState = getUserModalTabState(normalized);
+
+    if (tabState.refreshing) {
+        return {
+            label: '刷新中...',
+            title: '正在拉取最新数据',
+            icon: 'fas fa-rotate-right fa-spin',
+            tone: 'loading'
+        };
+    }
+
+    const loadedAtLabel = formatUserModalTabLoadedAt(tabState.loadedAt);
+    if (loadedAtLabel) {
+        return {
+            label: `更新于 ${loadedAtLabel}`,
+            title: `最近更新 ${formatAdminDateTime(tabState.loadedAt)}`,
+            icon: 'far fa-clock',
+            tone: 'ready'
+        };
+    }
+
+    if (tabState.status === 'error') {
+        return {
+            label: '加载失败',
+            title: String(tabState.error || '最近一次加载失败').trim(),
+            icon: 'fas fa-circle-exclamation',
+            tone: 'error'
+        };
+    }
+
+    return null;
+}
+
+function createDefaultUserModalTabFilterState(tabName = '') {
+    return {
+        enabled: USER_MODAL_DATE_FILTER_TABS.has(normalizeUserModalTab(tabName)),
+        mode: 'preset',
+        range: 'all',
+        label: '全部时间',
+        start: '',
+        end: ''
+    };
+}
+
+function getUserModalPresetFilterLabel(range = 'all') {
+    switch (String(range || '').trim().toLowerCase()) {
+        case 'today':
+            return '今天';
+        case 'week':
+            return '本周';
+        case 'month':
+            return '本月';
+        case 'custom':
+            return '自定义';
+        default:
+            return '全部时间';
+    }
+}
+
+function buildUserModalCustomFilterLabel(startValue = '', endValue = '') {
+    const startDate = new Date(startValue);
+    const endDate = new Date(endValue);
+    if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime())) {
+        return '自定义';
+    }
+
+    return `${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`;
+}
+
+function getUserModalUrlObject() {
+    try {
+        return new URL(window.location.href);
+    } catch (error) {
+        console.warn('[AdminUsers] Failed to parse current URL:', error);
+        return null;
+    }
+}
+
+function readUserModalSessionState() {
+    if (typeof window.sessionStorage === 'undefined') {
+        return null;
+    }
+
+    try {
+        const rawValue = window.sessionStorage.getItem(USER_MODAL_SESSION_STORAGE_KEY);
+        if (!rawValue) {
+            return null;
+        }
+
+        const parsed = JSON.parse(rawValue);
+        return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (error) {
+        console.warn('[AdminUsers] Failed to read user modal session state:', error);
+        return null;
+    }
+}
+
+function writeUserModalSessionState(snapshot = null) {
+    if (typeof window.sessionStorage === 'undefined') {
+        return;
+    }
+
+    try {
+        if (!snapshot) {
+            window.sessionStorage.removeItem(USER_MODAL_SESSION_STORAGE_KEY);
+            return;
+        }
+        window.sessionStorage.setItem(USER_MODAL_SESSION_STORAGE_KEY, JSON.stringify(snapshot));
+    } catch (error) {
+        console.warn('[AdminUsers] Failed to write user modal session state:', error);
+    }
+}
+
+function getUserModalUrlState() {
+    const url = getUserModalUrlObject();
+    if (!url) {
+        return null;
+    }
+
+    const userId = String(url.searchParams.get(USER_MODAL_URL_PARAM_USER) || '').trim();
+    if (!userId) {
+        return null;
+    }
+
+    const tab = normalizeUserModalTab(url.searchParams.get(USER_MODAL_URL_PARAM_TAB) || 'ledger');
+    const range = String(url.searchParams.get(USER_MODAL_URL_PARAM_RANGE) || '').trim().toLowerCase();
+    const start = String(url.searchParams.get(USER_MODAL_URL_PARAM_START) || '').trim();
+    const end = String(url.searchParams.get(USER_MODAL_URL_PARAM_END) || '').trim();
+    const activeFilter = createDefaultUserModalTabFilterState(tab);
+
+    if (range === 'custom' && start && end) {
+        activeFilter.mode = 'custom';
+        activeFilter.range = 'custom';
+        activeFilter.start = start;
+        activeFilter.end = end;
+        activeFilter.label = buildUserModalCustomFilterLabel(start, end);
+    } else if (range && range !== 'all') {
+        activeFilter.mode = 'preset';
+        activeFilter.range = range;
+        activeFilter.label = getUserModalPresetFilterLabel(range);
+    }
+
+    return {
+        userId,
+        tab,
+        activeFilter
+    };
+}
+
+function getUserModalUrlStateSignature(urlState = getUserModalUrlState()) {
+    if (!urlState?.userId) {
+        return '';
+    }
+
+    const activeFilter = urlState.activeFilter || {};
+    return [
+        urlState.userId,
+        normalizeUserModalTab(urlState.tab),
+        String(activeFilter.mode || ''),
+        String(activeFilter.range || ''),
+        String(activeFilter.start || ''),
+        String(activeFilter.end || '')
+    ].join('|');
+}
+
+function buildUserModalRestoreStateForUser(userId, options = {}) {
+    const normalizedUserId = String(userId || '').trim();
+    if (!normalizedUserId) {
+        return null;
+    }
+
+    const sessionState = readUserModalSessionState();
+    const restoreState = sessionState && String(sessionState.userId || '').trim() === normalizedUserId
+        ? {
+            userId: normalizedUserId,
+            tab: normalizeUserModalTab(sessionState.tab || 'ledger'),
+            tabs: sessionState.tabs && typeof sessionState.tabs === 'object' ? sessionState.tabs : null
+        }
+        : null;
+
+    const urlState = options.preferUrl !== false ? getUserModalUrlState() : null;
+    if (urlState && urlState.userId === normalizedUserId) {
+        const merged = restoreState || {
+            userId: normalizedUserId,
+            tab: urlState.tab,
+            tabs: {}
+        };
+        merged.tab = normalizeUserModalTab(urlState.tab || merged.tab || 'ledger');
+        merged.tabs = {
+            ...(merged.tabs || {}),
+            [merged.tab]: {
+                ...(merged.tabs?.[merged.tab] || {}),
+                filter: {
+                    ...createDefaultUserModalTabFilterState(merged.tab),
+                    ...(merged.tabs?.[merged.tab]?.filter || {}),
+                    ...(urlState.activeFilter || {})
+                }
+            }
+        };
+        return merged;
+    }
+
+    return restoreState;
+}
+
+function getUserModalTabDefaultData(tabName = '') {
+    return normalizeUserModalTab(tabName) === 'affiliate' ? createEmptyAffiliateModalState() : [];
+}
+
+function createUserModalTabState(tabName = '', overrides = {}) {
+    const defaultData = getUserModalTabDefaultData(tabName);
+    const hasOwnData = Object.prototype.hasOwnProperty.call(overrides, 'data');
+    const status = overrides.status || 'idle';
+    return {
+        status,
+        data: hasOwnData ? overrides.data : defaultData,
+        error: overrides.error || '',
+        promise: null,
+        loadedAt: status === 'loaded' ? new Date().toISOString() : null,
+        filter: {
+            ...createDefaultUserModalTabFilterState(tabName),
+            ...(overrides.filter || {})
+        },
+        refreshing: false,
+        feedbackMessage: '',
+        feedbackTone: 'info',
+        feedbackAt: 0,
+        feedbackClosing: false,
+        noteSubmitting: false,
+        pendingNoteDraft: '',
+        pendingNotePreview: null
+    };
+}
+
+function createInitialUserModalData({ paymentFocusOrderId = '', preservedTabUiState = null } = {}) {
+    const tabs = {};
+    USER_MODAL_TAB_ORDER.forEach((tabName) => {
+        tabs[tabName] = createUserModalTabState(tabName, {
+            filter: preservedTabUiState?.[tabName]?.filter || null
+        });
+    });
+
+    const initialData = {
+        roleInfo: {
+            is_admin: false,
+            is_super_admin: false,
+            permissions: [],
+            expires_at: null,
+            role_name: 'admin',
+            unlimited_shop_purchases: false
+        },
+        isSuperAdmin: false,
+        activeBans: [],
+        paymentFocusOrderId,
+        ledgerDetails: {},
+        tabs
+    };
+
+    Object.values(USER_MODAL_TAB_DATA_KEY_MAP).forEach((dataKey) => {
+        initialData[dataKey] = dataKey === 'affiliate' ? createEmptyAffiliateModalState() : [];
+    });
+
+    return initialData;
+}
+
+function getUserModalTabState(tabName = '') {
+    const normalized = normalizeUserModalTab(tabName);
+    if (!currentModalData?.tabs) {
+        currentModalData = createInitialUserModalData();
+    }
+    if (!currentModalData.tabs[normalized]) {
+        currentModalData.tabs[normalized] = createUserModalTabState(normalized);
+    }
+    return currentModalData.tabs[normalized];
+}
+
+function getUserModalTabFilterState(tabName = '') {
+    const tabState = getUserModalTabState(tabName);
+    if (!tabState.filter) {
+        tabState.filter = createDefaultUserModalTabFilterState(tabName);
+    }
+    return tabState.filter;
+}
+
+function setUserModalTabFilterState(tabName = '', updates = {}) {
+    const normalized = normalizeUserModalTab(tabName);
+    const existingState = getUserModalTabState(normalized);
+    const nextFilter = {
+        ...createDefaultUserModalTabFilterState(normalized),
+        ...(existingState.filter || {}),
+        ...(updates || {})
+    };
+    currentModalData.tabs[normalized] = {
+        ...existingState,
+        filter: nextFilter
+    };
+    return nextFilter;
+}
+
+function captureUserModalTabUiState() {
+    if (!currentModalData?.tabs) {
+        return null;
+    }
+
+    const snapshot = {};
+    USER_MODAL_TAB_ORDER.forEach((tabName) => {
+        const tabState = currentModalData.tabs?.[tabName];
+        if (!tabState?.filter) {
+            return;
+        }
+
+        snapshot[tabName] = {
+            filter: { ...tabState.filter }
+        };
+    });
+
+    return snapshot;
+}
+
+function buildCurrentUserModalSessionSnapshot() {
+    const userId = String(currentModalUser?.id || '').trim();
+    if (!userId) {
+        return null;
+    }
+
+    return {
+        userId,
+        tab: normalizeUserModalTab(currentTab),
+        tabs: captureUserModalTabUiState(),
+        updatedAt: new Date().toISOString()
+    };
+}
+
+function syncUserModalUrlState(options = {}) {
+    const { clear = false } = options || {};
+    const url = getUserModalUrlObject();
+    if (!url || typeof window.history?.replaceState !== 'function') {
+        return;
+    }
+
+    if (clear || !currentModalUser?.id) {
+        url.searchParams.delete(USER_MODAL_URL_PARAM_USER);
+        url.searchParams.delete(USER_MODAL_URL_PARAM_TAB);
+        url.searchParams.delete(USER_MODAL_URL_PARAM_RANGE);
+        url.searchParams.delete(USER_MODAL_URL_PARAM_START);
+        url.searchParams.delete(USER_MODAL_URL_PARAM_END);
+        userModalUrlRestoreSignature = '';
+    } else {
+        url.searchParams.set('module', 'users');
+        url.searchParams.set(USER_MODAL_URL_PARAM_USER, String(currentModalUser.id));
+        url.searchParams.set(USER_MODAL_URL_PARAM_TAB, normalizeUserModalTab(currentTab));
+
+        const filterState = getUserModalTabFilterState(currentTab);
+        if (filterState.mode === 'custom' && filterState.start && filterState.end) {
+            url.searchParams.set(USER_MODAL_URL_PARAM_RANGE, 'custom');
+            url.searchParams.set(USER_MODAL_URL_PARAM_START, filterState.start);
+            url.searchParams.set(USER_MODAL_URL_PARAM_END, filterState.end);
+        } else if (filterState.range && filterState.range !== 'all') {
+            url.searchParams.set(USER_MODAL_URL_PARAM_RANGE, filterState.range);
+            url.searchParams.delete(USER_MODAL_URL_PARAM_START);
+            url.searchParams.delete(USER_MODAL_URL_PARAM_END);
+        } else {
+            url.searchParams.delete(USER_MODAL_URL_PARAM_RANGE);
+            url.searchParams.delete(USER_MODAL_URL_PARAM_START);
+            url.searchParams.delete(USER_MODAL_URL_PARAM_END);
+        }
+
+        userModalUrlRestoreSignature = getUserModalUrlStateSignature({
+            userId: String(currentModalUser.id),
+            tab: normalizeUserModalTab(currentTab),
+            activeFilter: filterState
+        });
+    }
+
+    const nextRelativeUrl = `${url.pathname}${url.search}${url.hash}`;
+    const currentRelativeUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextRelativeUrl !== currentRelativeUrl) {
+        window.history.replaceState(window.history.state, '', nextRelativeUrl);
+    }
+}
+
+function syncCurrentUserModalPersistentState() {
+    const snapshot = buildCurrentUserModalSessionSnapshot();
+    if (!snapshot) {
+        return;
+    }
+
+    writeUserModalSessionState(snapshot);
+    syncUserModalUrlState();
+}
+
+async function maybeRestoreUserModalFromUrl() {
+    const urlState = getUserModalUrlState();
+    if (!urlState?.userId) {
+        userModalUrlRestoreSignature = '';
+        return false;
+    }
+
+    const signature = getUserModalUrlStateSignature(urlState);
+    if (!signature || signature === userModalUrlRestoreSignature) {
+        return false;
+    }
+
+    const overlay = document.getElementById('userModalOverlay');
+    if (overlay?.classList.contains('active')) {
+        return false;
+    }
+
+    userModalUrlRestoreSignature = signature;
+    const restored = await openUserModal(urlState.userId, {
+        tab: urlState.tab,
+        silentOnNotFound: true
+    });
+
+    if (!restored) {
+        userModalUrlRestoreSignature = '';
+    }
+
+    return restored;
+}
+
+function setUserModalTabData(tabName = '', data, options = {}) {
+    const normalized = normalizeUserModalTab(tabName);
+    const existingState = getUserModalTabState(normalized);
+    const nextStatus = options.status || 'loaded';
+    const nextError = options.error || '';
+
+    currentModalData.tabs[normalized] = {
+        ...existingState,
+        status: nextStatus,
+        data,
+        error: nextError,
+        promise: null,
+        loadedAt: nextStatus === 'loaded' ? new Date().toISOString() : existingState.loadedAt
+    };
+
+    const dataKey = USER_MODAL_TAB_DATA_KEY_MAP[normalized];
+    if (dataKey) {
+        currentModalData[dataKey] = data;
+    }
+
+    renderUserTabNavigation(currentTab);
+
+    return currentModalData.tabs[normalized];
+}
+
+function patchUserModalTabState(tabName = '', updates = {}) {
+    const normalized = normalizeUserModalTab(tabName);
+    const existingState = getUserModalTabState(normalized);
+    currentModalData.tabs[normalized] = {
+        ...existingState,
+        ...(updates || {})
+    };
+    renderUserTabNavigation(currentTab);
+    return currentModalData.tabs[normalized];
+}
+
+function clearUserModalTabFeedbackDismiss(tabName = '') {
+    const normalized = normalizeUserModalTab(tabName);
+    const handles = userModalTabFeedbackTimers.get(normalized);
+    if (handles?.dismiss) {
+        window.clearTimeout(handles.dismiss);
+    }
+    if (handles?.clear) {
+        window.clearTimeout(handles.clear);
+    }
+    userModalTabFeedbackTimers.delete(normalized);
+}
+
+function clearAllUserModalTabFeedbackDismiss() {
+    [...userModalTabFeedbackTimers.keys()].forEach((tabName) => clearUserModalTabFeedbackDismiss(tabName));
+}
+
+function clearUserModalTabFeedback(tabName = '', options = {}) {
+    const normalized = normalizeUserModalTab(tabName);
+    clearUserModalTabFeedbackDismiss(normalized);
+    patchUserModalTabState(normalized, {
+        feedbackMessage: '',
+        feedbackTone: 'info',
+        feedbackAt: 0,
+        feedbackClosing: false
+    });
+    if (options.renderActive !== false && currentTab === normalized) {
+        renderUserTab(normalized);
+    }
+}
+
+function scheduleUserModalTabFeedbackDismiss(tabName = '', tone = 'info', durationMs = null) {
+    const normalized = normalizeUserModalTab(tabName);
+    const tabState = getUserModalTabState(normalized);
+    if (!tabState.feedbackMessage || tabState.refreshing) {
+        return;
+    }
+
+    clearUserModalTabFeedbackDismiss(normalized);
+    const fallbackDuration = USER_MODAL_TAB_FEEDBACK_AUTO_DISMISS_MS[tone] || USER_MODAL_TAB_FEEDBACK_AUTO_DISMISS_MS.info;
+    const dismissAfter = Number.isFinite(durationMs) && durationMs > 0 ? durationMs : fallbackDuration;
+    const dismissHandle = window.setTimeout(() => {
+        const currentState = getUserModalTabState(normalized);
+        if (!currentState.feedbackMessage || currentState.refreshing) {
+            return;
+        }
+
+        patchUserModalTabState(normalized, { feedbackClosing: true });
+        if (currentTab === normalized) {
+            renderUserTab(normalized);
+        }
+
+        const clearHandle = window.setTimeout(() => {
+            clearUserModalTabFeedback(normalized);
+        }, USER_MODAL_TAB_FEEDBACK_FADE_MS);
+
+        userModalTabFeedbackTimers.set(normalized, {
+            dismiss: dismissHandle,
+            clear: clearHandle
+        });
+    }, dismissAfter);
+
+    userModalTabFeedbackTimers.set(normalized, {
+        dismiss: dismissHandle,
+        clear: 0
+    });
+}
+
+function setUserModalTabFeedback(tabName = '', message = '', tone = 'info') {
+    return patchUserModalTabState(tabName, {
+        feedbackMessage: String(message || '').trim(),
+        feedbackTone: tone || 'info',
+        feedbackAt: message ? Date.now() : 0,
+        feedbackClosing: false
+    });
+}
+
+function setUserModalTabLoading(tabName = '', promise) {
+    const normalized = normalizeUserModalTab(tabName);
+    const existingState = getUserModalTabState(normalized);
+    currentModalData.tabs[normalized] = {
+        ...existingState,
+        status: 'loading',
+        error: '',
+        refreshing: false,
+        promise
+    };
+    renderUserTabNavigation(currentTab);
+    return currentModalData.tabs[normalized];
+}
+
+function invalidateUserModalTab(tabName = '', options = {}) {
+    const normalized = normalizeUserModalTab(tabName);
+    const existingState = getUserModalTabState(normalized);
+    const resetData = options.resetData !== false;
+    const nextData = resetData ? getUserModalTabDefaultData(normalized) : existingState.data;
+    setUserModalTabData(normalized, nextData, {
+        status: 'idle',
+        error: ''
+    });
+}
+
+function getUserModalTabRawData(tabName = '', dataOverride) {
+    if (arguments.length > 1) {
+        return dataOverride;
+    }
+
+    const normalized = normalizeUserModalTab(tabName);
+    const dataKey = USER_MODAL_TAB_DATA_KEY_MAP[normalized];
+    if (dataKey && currentModalData && Object.prototype.hasOwnProperty.call(currentModalData, dataKey)) {
+        return currentModalData[dataKey];
+    }
+
+    return getUserModalTabState(normalized).data;
+}
+
+function getUserModalPresetDateCutoff(range = 'all') {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    switch (range) {
+        case 'today':
+            return today;
+        case 'week':
+            return new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+        case 'month':
+            return new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+        default:
+            return null;
+    }
+}
+
+function getUserModalTabVisibleData(tabName = '', dataOverride) {
+    const rawData = getUserModalTabRawData(tabName, dataOverride);
+    if (!Array.isArray(rawData)) {
+        return rawData;
+    }
+
+    const filterState = getUserModalTabFilterState(tabName);
+    if (filterState.enabled !== true) {
+        return rawData;
+    }
+
+    if (filterState.mode === 'custom' && filterState.start && filterState.end) {
+        const startDate = new Date(filterState.start);
+        const endDate = new Date(filterState.end);
+        if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime())) {
+            return rawData;
+        }
+
+        const inclusiveEnd = new Date(endDate.getTime() + 24 * 60 * 60 * 1000);
+        return rawData.filter((item) => {
+            const createdAt = new Date(item?.created_at);
+            return Number.isFinite(createdAt.getTime()) && createdAt >= startDate && createdAt < inclusiveEnd;
+        });
+    }
+
+    if (!filterState.range || filterState.range === 'all') {
+        return rawData;
+    }
+
+    const cutoff = getUserModalPresetDateCutoff(filterState.range);
+    if (!cutoff) {
+        return rawData;
+    }
+
+    return rawData.filter((item) => {
+        const createdAt = new Date(item?.created_at);
+        return Number.isFinite(createdAt.getTime()) && createdAt >= cutoff;
+    });
+}
+
+function clearUserModalTabPrefetch() {
+    if (!userModalTabPrefetchHandle) {
+        return;
+    }
+
+    if (userModalTabPrefetchMode === 'idle' && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(userModalTabPrefetchHandle);
+    } else {
+        window.clearTimeout(userModalTabPrefetchHandle);
+    }
+
+    userModalTabPrefetchHandle = 0;
+    userModalTabPrefetchMode = '';
+}
+
+function getUserModalTabPrefetchQueue(activeTab = currentTab) {
+    const normalizedActiveTab = normalizeUserModalTab(activeTab);
+    return USER_MODAL_TAB_ORDER.filter((tabName) => {
+        if (tabName === normalizedActiveTab) {
+            return false;
+        }
+
+        const tabDef = getUserModalTabDefinition(tabName);
+        if (tabDef.prefetchOnOpen !== true) {
+            return false;
+        }
+
+        const tabState = getUserModalTabState(tabName);
+        return tabState.status === 'idle';
+    });
+}
+
+function scheduleUserModalTabPrefetch(activeTab = currentTab) {
+    const userId = String(currentModalUser?.id || '').trim();
+    const queue = getUserModalTabPrefetchQueue(activeTab);
+    clearUserModalTabPrefetch();
+
+    if (!userId || queue.length === 0) {
+        return;
+    }
+
+    const generation = ++userModalTabPrefetchGeneration;
+    const runPrefetch = async () => {
+        userModalTabPrefetchHandle = 0;
+        userModalTabPrefetchMode = '';
+
+        for (const tabName of queue) {
+            if (generation !== userModalTabPrefetchGeneration || currentModalUser?.id !== userId) {
+                return;
+            }
+
+            try {
+                await ensureUserModalTabData(tabName, { userId });
+            } catch (error) {
+                console.warn(`User modal tab prefetch failed: ${tabName}`, error);
+            }
+        }
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+        userModalTabPrefetchMode = 'idle';
+        userModalTabPrefetchHandle = window.requestIdleCallback(() => {
+            void runPrefetch();
+        }, { timeout: 1400 });
+        return;
+    }
+
+    userModalTabPrefetchMode = 'timeout';
+    userModalTabPrefetchHandle = window.setTimeout(() => {
+        void runPrefetch();
+    }, USER_MODAL_TAB_PREFETCH_DELAY_MS);
+}
+
+function clearModalAdminPermissionsSaveTimer() {
+    if (modalAdminPermissionsState.saveTimer) {
+        window.clearTimeout(modalAdminPermissionsState.saveTimer);
+        modalAdminPermissionsState.saveTimer = 0;
+    }
+}
+
+function resetModalAdminPermissionsState() {
+    clearModalAdminPermissionsSaveTimer();
+    modalAdminPermissionsState = createModalAdminPermissionsState();
+    syncModalAdminPermissionsSaveUi();
+    syncModalAdminPermissionInsights();
+}
+
+function formatModalRoleExpiryInputValue(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '';
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
+
+function formatDateTimeLocalInputValue(value) {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value);
+    if (!Number.isFinite(date.getTime())) return '';
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function parseDateTimeLocalInputValue(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return null;
+
+    const date = new Date(normalized);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function buildDefaultBatchAdminExpiryInputValue(offsetDays = 7) {
+    const date = new Date();
+    date.setSeconds(0, 0);
+    date.setDate(date.getDate() + offsetDays);
+    date.setHours(23, 59, 0, 0);
+    return formatDateTimeLocalInputValue(date);
+}
+
+function normalizeModalAdminPermissionKeys(permissionKeys = []) {
+    return Array.from(new Set(
+        (Array.isArray(permissionKeys) ? permissionKeys : [])
+            .map((permissionKey) => String(permissionKey || '').trim())
+            .filter(Boolean)
+    )).sort();
+}
+
+function getAdminPermissionTemplate(templateId = '') {
+    const normalizedTemplateId = String(templateId || '').trim().toLowerCase();
+    return ADMIN_PERMISSION_TEMPLATES.find((template) => template.id === normalizedTemplateId) || null;
+}
+
+function collectAdminPermissionCoverage(permissionKeys = []) {
+    const normalizedPermissionKeys = normalizeModalAdminPermissionKeys(permissionKeys);
+    const permissionDefinitions = normalizedPermissionKeys
+        .map((permissionKey) => window.getAdminPermissionDefinition?.(permissionKey) || null)
+        .filter(Boolean);
+    const moduleLabels = Array.from(new Set(
+        permissionDefinitions.flatMap((permissionDef) =>
+            (Array.isArray(permissionDef.modules) ? permissionDef.modules : [])
+                .map((moduleId) => window.getAdminModuleDefinition?.(moduleId)?.label || String(moduleId || '').trim())
+                .filter(Boolean)
+        )
+    ));
+    const groupTitles = Array.from(new Set(
+        permissionDefinitions
+            .map((permissionDef) => permissionDef.groupTitle || '')
+            .filter(Boolean)
+    ));
+
+    return {
+        permissionKeys: normalizedPermissionKeys,
+        permissionLabels: normalizedPermissionKeys.map((permissionKey) => window.getAdminPermissionLabel?.(permissionKey) || permissionKey),
+        moduleLabels,
+        groupTitles
+    };
+}
+
+function getMatchingAdminPermissionTemplateId(permissionKeys = []) {
+    const currentSignature = normalizeModalAdminPermissionKeys(permissionKeys).join('|');
+    const matchedTemplate = ADMIN_PERMISSION_TEMPLATES.find((template) =>
+        normalizeModalAdminPermissionKeys(template.permissions).join('|') === currentSignature
+    );
+    return matchedTemplate?.id || '';
+}
+
+function renderAdminPermissionTemplateButtons(userId, permissionList = []) {
+    const matchedTemplateId = getMatchingAdminPermissionTemplateId(permissionList);
+    return `
+        <div class="perm-template-grid">
+            ${ADMIN_PERMISSION_TEMPLATES.map((template) => `
+                <button
+                    class="perm-template-btn${matchedTemplateId === template.id ? ' is-active' : ''}"
+                    type="button"
+                    data-admin-action="users-apply-permission-template"
+                    data-user-id="${encodeURIComponent(userId)}"
+                    data-admin-permission-template-id="${escapeHtml(template.id)}"
+                >
+                    <span class="perm-template-title">${escapeHtml(template.label)}</span>
+                    <span class="perm-template-desc">${escapeHtml(template.description)}</span>
+                </button>
+            `).join('')}
+        </div>
+    `;
+}
+
+function buildModalAdminPermissionCoverageMarkup(permissionKeys = []) {
+    const coverage = collectAdminPermissionCoverage(permissionKeys);
+    if (coverage.permissionLabels.length === 0) {
+        return `
+            <div class="perm-coverage-empty">
+                未勾选后台权限，当前不会开放任何后台模块。
+            </div>
+        `;
+    }
+
+    return `
+        <div class="perm-coverage-summary">
+            <span><strong>${coverage.permissionLabels.length}</strong> 项权限</span>
+            <span><strong>${coverage.moduleLabels.length}</strong> 个模块</span>
+        </div>
+        <div class="perm-coverage-pills">
+            ${coverage.moduleLabels.map((moduleLabel) => `<span class="perm-coverage-pill">${escapeHtml(moduleLabel)}</span>`).join('')}
+        </div>
+        <div class="perm-coverage-caption">
+            覆盖分组：${escapeHtml(coverage.groupTitles.join(' / ') || '未分组')}
+        </div>
+    `;
+}
+
+function syncModalAdminPermissionInsights() {
+    const formState = readModalAdminPermissionsFormState();
+    const isAdmin = formState?.isAdmin === true;
+    const permissionKeys = isAdmin ? formState.permissions : [];
+    const coverageEl = document.getElementById('modalAdminPermissionCoverage');
+    const matchedTemplateId = isAdmin ? getMatchingAdminPermissionTemplateId(permissionKeys) : '';
+
+    if (coverageEl) {
+        coverageEl.innerHTML = buildModalAdminPermissionCoverageMarkup(permissionKeys);
+        coverageEl.dataset.empty = permissionKeys.length === 0 ? '1' : '0';
+    }
+
+    if (modalAdminPermissionsState.pendingTemplateId && matchedTemplateId !== modalAdminPermissionsState.pendingTemplateId) {
+        modalAdminPermissionsState.pendingTemplateId = '';
+    }
+
+    document.querySelectorAll('[data-admin-permission-template-id]').forEach((button) => {
+        if (!(button instanceof HTMLElement)) {
+            return;
+        }
+
+        const templateId = button.dataset.adminPermissionTemplateId || '';
+        button.classList.toggle('is-active', matchedTemplateId === templateId);
+        button.toggleAttribute('disabled', !isAdmin);
+    });
+
+    syncModalAdminPermissionsSectionHeight();
+}
+
+function markModalAdminPermissionsAsSaved(formState, { clearPendingTemplate = true, lastSavedAt = Date.now() } = {}) {
+    const normalizedFormState = formState || readModalAdminPermissionsFormState();
+    if (!normalizedFormState) {
+        return;
+    }
+
+    modalAdminPermissionsState.lastSavedSnapshot = serializeModalAdminPermissionsFormState(normalizedFormState);
+    modalAdminPermissionsState.dirty = false;
+    modalAdminPermissionsState.lastError = '';
+    modalAdminPermissionsState.lastSavedAt = lastSavedAt;
+    if (clearPendingTemplate) {
+        modalAdminPermissionsState.pendingTemplateId = '';
+    }
+    syncCurrentModalRoleInfoFromFormState(normalizedFormState);
+    syncModalAdminPermissionsSaveUi();
+    syncModalAdminPermissionInsights();
+}
+
+function getNormalizedAdminPermissionAuditState(roleInfo = {}) {
+    const rawExpiresAt = roleInfo?.expires_at ? new Date(roleInfo.expires_at) : null;
+    return {
+        isAdmin: roleInfo?.is_admin === true,
+        permissions: normalizeModalAdminPermissionKeys(roleInfo?.permissions || []),
+        expiresAt: rawExpiresAt && Number.isFinite(rawExpiresAt.getTime()) ? rawExpiresAt.toISOString() : null,
+        unlimitedShopPurchases: roleInfo?.unlimited_shop_purchases === true
+    };
+}
+
+function buildAdminPermissionChangeDetails(previousRoleInfo = {}, nextFormState = {}, extras = {}) {
+    const previousState = getNormalizedAdminPermissionAuditState(previousRoleInfo);
+    const nextState = {
+        isAdmin: nextFormState?.isAdmin === true,
+        permissions: nextFormState?.isAdmin ? normalizeModalAdminPermissionKeys(nextFormState.permissions || []) : [],
+        expiresAt: nextFormState?.isAdmin ? (nextFormState.expiresAt || null) : null,
+        unlimitedShopPurchases: nextFormState?.unlimitedShopPurchases === true
+    };
+    const permissionsAdded = nextState.permissions.filter((permissionKey) => !previousState.permissions.includes(permissionKey));
+    const permissionsRemoved = previousState.permissions.filter((permissionKey) => !nextState.permissions.includes(permissionKey));
+    const hasChanges =
+        previousState.isAdmin !== nextState.isAdmin ||
+        previousState.expiresAt !== nextState.expiresAt ||
+        previousState.unlimitedShopPurchases !== nextState.unlimitedShopPurchases ||
+        permissionsAdded.length > 0 ||
+        permissionsRemoved.length > 0;
+
+    return {
+        hasChanges,
+        details: {
+            permissions: nextState.permissions,
+            permissions_before: previousState.permissions,
+            permissions_after: nextState.permissions,
+            permissions_added: permissionsAdded,
+            permissions_removed: permissionsRemoved,
+            is_admin_before: previousState.isAdmin,
+            is_admin_after: nextState.isAdmin,
+            expires_at_before: previousState.expiresAt,
+            expires_at_after: nextState.expiresAt,
+            unlimited_shop_purchases_before: previousState.unlimitedShopPurchases,
+            unlimited_shop_purchases_after: nextState.unlimitedShopPurchases,
+            ...extras
+        }
+    };
+}
+
+function formatAdminPermissionExpiryLabel(value) {
+    if (!value) return '未设置';
+    return formatAdminDateTime(value);
+}
+
+function getModalAdminPermissionsNodes() {
+    return {
+        panel: document.getElementById('modalPermissionsPanel'),
+        adminToggle: document.getElementById('modalAdminToggle'),
+        adminSection: document.getElementById('modalAdminPermissionsSection'),
+        expiryInput: document.getElementById('modalRoleExpiry'),
+        unlimitedPurchasesToggle: document.getElementById('modalUnlimitedPurchasesToggle'),
+        saveButton: document.getElementById('modalAdminPermissionsSaveButton'),
+        saveStatus: document.getElementById('modalAdminPermissionsSaveStatus')
+    };
+}
+
+function readModalAdminPermissionsFormState() {
+    const {
+        panel,
+        adminToggle,
+        adminSection,
+        expiryInput,
+        unlimitedPurchasesToggle
+    } = getModalAdminPermissionsNodes();
+
+    if (!panel) {
+        return null;
+    }
+
+    const isAdmin = adminToggle?.checked === true;
+    const permissions = [];
+    if (isAdmin && adminSection) {
+        adminSection.querySelectorAll('input[data-perm]:checked').forEach((checkbox) => {
+            permissions.push(checkbox.dataset.perm);
+        });
+    }
+
+    const expiresAtRaw = expiryInput?.value?.trim() || '';
+    const expiryDate = expiresAtRaw ? new Date(expiresAtRaw) : null;
+    const expiresAt = expiryDate && Number.isFinite(expiryDate.getTime())
+        ? expiryDate.toISOString()
+        : null;
+
+    return {
+        isAdmin,
+        permissions: normalizeModalAdminPermissionKeys(permissions),
+        expiresAt,
+        expiresAtRaw: isAdmin ? expiresAtRaw : '',
+        unlimitedShopPurchases: unlimitedPurchasesToggle?.checked === true
+    };
+}
+
+function serializeModalAdminPermissionsFormState(formState = {}) {
+    return JSON.stringify({
+        isAdmin: formState.isAdmin === true,
+        permissions: formState.isAdmin ? normalizeModalAdminPermissionKeys(formState.permissions) : [],
+        expiresAtRaw: formState.isAdmin ? String(formState.expiresAtRaw || '').trim() : '',
+        unlimitedShopPurchases: formState.unlimitedShopPurchases === true
+    });
+}
+
+function syncModalAdminPermissionsSaveUi() {
+    const { saveButton, saveStatus } = getModalAdminPermissionsNodes();
+    if (!saveButton && !saveStatus) {
+        return;
+    }
+
+    const { dirty, saving, saveTimer, lastError, lastSavedAt } = modalAdminPermissionsState;
+    let state = 'idle';
+    let statusText = '自动保存已开启';
+
+    if (lastError) {
+        state = 'error';
+        statusText = `保存失败：${lastError}`;
+    } else if (saving) {
+        state = 'saving';
+        statusText = '正在保存权限修改...';
+    } else if (dirty && saveTimer) {
+        state = 'dirty';
+        statusText = '检测到修改，稍后自动保存';
+    } else if (dirty) {
+        state = 'dirty';
+        statusText = '有未保存修改，正在排队保存';
+    } else if (lastSavedAt) {
+        state = 'saved';
+        statusText = '已保存到数据库';
+    }
+
+    if (saveStatus) {
+        saveStatus.dataset.state = state;
+        saveStatus.textContent = statusText;
+    }
+
+    if (saveButton) {
+        saveButton.disabled = saving;
+        saveButton.dataset.state = state;
+        saveButton.innerHTML = saving
+            ? '<i class="fas fa-spinner fa-spin"></i> 保存中...'
+            : '<i class="fas fa-save"></i> 立即保存';
+    }
+}
+
+function syncCurrentModalRoleInfoFromFormState(formState = null) {
+    if (!currentModalData?.roleInfo || !formState) {
+        return;
+    }
+
+    const nextRoleInfo = {
+        ...currentModalData.roleInfo,
+        is_admin: formState.isAdmin === true,
+        permissions: formState.isAdmin ? normalizeModalAdminPermissionKeys(formState.permissions) : [],
+        expires_at: formState.isAdmin ? formState.expiresAt : null,
+        unlimited_shop_purchases: formState.unlimitedShopPurchases === true
+    };
+
+    currentModalData.roleInfo = nextRoleInfo;
+
+    const userIndex = userState.users.findIndex((user) => user.id === modalAdminPermissionsState.userId);
+    if (userIndex !== -1) {
+        const currentUser = userState.users[userIndex];
+        userState.users[userIndex] = {
+            ...currentUser,
+            is_admin: formState.isAdmin === true,
+            admin_role: formState.isAdmin
+                ? {
+                    ...(currentUser.admin_role || {}),
+                    user_id: currentUser.id,
+                    role_name: nextRoleInfo.role_name || 'admin',
+                    permissions: nextRoleInfo.permissions,
+                    expires_at: nextRoleInfo.expires_at
+                }
+                : null,
+            admin_role_expiry_meta: getAdminRoleExpiryMeta(
+                formState.isAdmin
+                    ? {
+                        ...(currentUser.admin_role || {}),
+                        user_id: currentUser.id,
+                        role_name: nextRoleInfo.role_name || 'admin',
+                        permissions: nextRoleInfo.permissions,
+                        expires_at: nextRoleInfo.expires_at
+                    }
+                    : null,
+                { email: currentUser.email }
+            )
+        };
+        renderUsersTable();
+    }
+}
+
+function primeModalAdminPermissionsState(userId, roleInfo = {}) {
+    modalAdminPermissionsState.userId = String(userId || '');
+    const snapshot = serializeModalAdminPermissionsFormState({
+        isAdmin: roleInfo?.is_admin === true,
+        permissions: normalizeModalAdminPermissionKeys(roleInfo?.permissions || []),
+        expiresAtRaw: formatModalRoleExpiryInputValue(roleInfo?.expires_at),
+        unlimitedShopPurchases: roleInfo?.unlimited_shop_purchases === true
+    });
+
+    modalAdminPermissionsState.lastSavedSnapshot = snapshot;
+    modalAdminPermissionsState.dirty = false;
+    modalAdminPermissionsState.saving = false;
+    modalAdminPermissionsState.pendingAfterSave = false;
+    modalAdminPermissionsState.lastError = '';
+    modalAdminPermissionsState.lastSavedAt = 0;
+    modalAdminPermissionsState.pendingTemplateId = '';
+    clearModalAdminPermissionsSaveTimer();
+    syncModalAdminPermissionsSaveUi();
+    syncModalAdminPermissionInsights();
+}
+
+function queueModalAdminPermissionsAutosave({ immediate = false, reason = 'change' } = {}) {
+    const userId = currentModalUser?.id || modalAdminPermissionsState.userId;
+    if (!userId) {
+        return;
+    }
+
+    clearModalAdminPermissionsSaveTimer();
+    if (!modalAdminPermissionsState.dirty) {
+        syncModalAdminPermissionsSaveUi();
+        return;
+    }
+
+    const runSave = () => {
+        void saveModalAdminPermissions(userId, {
+            showSuccess: false,
+            silentFailure: true,
+            reason,
+            skipIfPristine: true
+        });
+    };
+
+    if (immediate) {
+        runSave();
+        return;
+    }
+
+    modalAdminPermissionsState.saveTimer = window.setTimeout(runSave, MODAL_ADMIN_AUTOSAVE_DELAY_MS);
+    syncModalAdminPermissionsSaveUi();
+}
+
+function updateModalAdminPermissionsDirtyState({ autosave = true, immediate = false, reason = 'change' } = {}) {
+    const formState = readModalAdminPermissionsFormState();
+    if (!formState) {
+        return;
+    }
+
+    const snapshot = serializeModalAdminPermissionsFormState(formState);
+    modalAdminPermissionsState.dirty = snapshot !== modalAdminPermissionsState.lastSavedSnapshot;
+    if (!modalAdminPermissionsState.dirty) {
+        modalAdminPermissionsState.lastError = '';
+        clearModalAdminPermissionsSaveTimer();
+        syncModalAdminPermissionsSaveUi();
+        syncModalAdminPermissionInsights();
+        return;
+    }
+
+    modalAdminPermissionsState.lastError = '';
+    syncModalAdminPermissionsSaveUi();
+    syncModalAdminPermissionInsights();
+    if (autosave) {
+        queueModalAdminPermissionsAutosave({ immediate, reason });
+    }
+}
+
+function ensureModalAdminDefaultPermissionSelection() {
+    const { adminSection, adminToggle } = getModalAdminPermissionsNodes();
+    if (adminToggle?.checked !== true || !adminSection) {
+        return;
+    }
+
+    const selected = adminSection.querySelectorAll('input[data-perm]:checked');
+    if (selected.length > 0) {
+        return;
+    }
+
+    const defaultPermissionCheckbox = adminSection.querySelector(`input[data-perm="${DEFAULT_ADMIN_PERMISSION_KEY}"]`);
+    if (defaultPermissionCheckbox) {
+        defaultPermissionCheckbox.checked = true;
+    }
+}
+
+function hasPendingModalAdminPermissionsWork() {
+    return modalAdminPermissionsState.dirty || modalAdminPermissionsState.saving || modalAdminPermissionsState.saveTimer !== 0;
+}
+
+async function flushModalAdminPermissionsBeforeExit({ reason = 'close', confirmOnFailure = true } = {}) {
+    const userId = currentModalUser?.id || modalAdminPermissionsState.userId;
+    if (!userId || !hasPendingModalAdminPermissionsWork()) {
+        return true;
+    }
+
+    clearModalAdminPermissionsSaveTimer();
+
+    try {
+        await saveModalAdminPermissions(userId, {
+            showSuccess: false,
+            silentFailure: true,
+            reason,
+            skipIfPristine: false
+        });
+    } catch (error) {
+        console.warn(`Failed to flush modal admin permissions before ${reason}:`, error);
+    }
+
+    if (!modalAdminPermissionsState.dirty) {
+        return true;
+    }
+
+    if (!confirmOnFailure) {
+        return false;
+    }
+
+    return window.confirm('权限修改还没有保存成功。确定要放弃这些改动并继续吗？');
+}
+
+function destroyModalRoleExpiryPicker() {
+    if (typeof modalRoleExpiryPickerCleanup === 'function') {
+        modalRoleExpiryPickerCleanup();
+    }
+    modalRoleExpiryPickerCleanup = null;
+}
+
+function bindFloatingFlatpickrCalendar(instance, anchorEl, scrollContainer = null) {
+    if (!instance?.calendarContainer || !(anchorEl instanceof HTMLElement)) {
+        return () => {};
+    }
+
+    const calendar = instance.calendarContainer;
+    const viewportPadding = 12;
+    const offset = 8;
+    let frameId = 0;
+
+    const clearFloatingStyles = () => {
+        if (!calendar.isConnected) {
+            return;
+        }
+        calendar.classList.remove('users-fixed-flatpickr-calendar');
+        ['position', 'display', 'visibility', 'opacity', 'top', 'left'].forEach((property) => {
+            calendar.style.removeProperty(property);
+        });
+    };
+
+    const reposition = () => {
+        frameId = 0;
+        if (!calendar.isConnected || !anchorEl.isConnected) {
+            return;
+        }
+        if (!calendar.classList.contains('open')) {
+            clearFloatingStyles();
+            return;
+        }
+
+        const rect = anchorEl.getBoundingClientRect();
+        if (!Number.isFinite(rect.top) || !Number.isFinite(rect.left)) {
+            return;
+        }
+
+        calendar.classList.add('users-fixed-flatpickr-calendar');
+        Object.assign(calendar.style, {
+            position: 'fixed',
+            display: 'block',
+            visibility: 'hidden',
+            opacity: '1',
+            top: '0px',
+            left: '0px'
+        });
+
+        const calendarRect = calendar.getBoundingClientRect();
+        const calendarWidth = Math.max(calendarRect.width || calendar.offsetWidth || 307, 280);
+        const calendarHeight = Math.max(calendarRect.height || calendar.offsetHeight || 320, 280);
+
+        let top = rect.bottom + offset;
+        if (top + calendarHeight > window.innerHeight - viewportPadding) {
+            top = rect.top - calendarHeight - offset;
+        }
+        top = Math.max(viewportPadding, Math.min(top, window.innerHeight - calendarHeight - viewportPadding));
+
+        let left = rect.left;
+        if (left + calendarWidth > window.innerWidth - viewportPadding) {
+            left = window.innerWidth - calendarWidth - viewportPadding;
+        }
+        left = Math.max(viewportPadding, left);
+
+        Object.assign(calendar.style, {
+            top: `${Math.round(top)}px`,
+            left: `${Math.round(left)}px`,
+            visibility: 'visible'
+        });
+    };
+
+    const scheduleReposition = () => {
+        if (frameId) {
+            window.cancelAnimationFrame(frameId);
+        }
+        frameId = window.requestAnimationFrame(reposition);
+    };
+
+    instance._scheduleFloatingPosition = scheduleReposition;
+    instance._clearFloatingPosition = clearFloatingStyles;
+    window.addEventListener('resize', scheduleReposition, { passive: true });
+    if (scrollContainer instanceof HTMLElement) {
+        scrollContainer.addEventListener('scroll', scheduleReposition, { passive: true });
+    }
+
+    return () => {
+        if (frameId) {
+            window.cancelAnimationFrame(frameId);
+            frameId = 0;
+        }
+        window.removeEventListener('resize', scheduleReposition);
+        if (scrollContainer instanceof HTMLElement) {
+            scrollContainer.removeEventListener('scroll', scheduleReposition);
+        }
+        clearFloatingStyles();
+        if (instance._scheduleFloatingPosition === scheduleReposition) {
+            delete instance._scheduleFloatingPosition;
+        }
+        if (instance._clearFloatingPosition === clearFloatingStyles) {
+            delete instance._clearFloatingPosition;
+        }
+        if (instance && typeof instance.destroy === 'function') {
+            instance.destroy();
+        }
+    };
 }
 
 function formatAdminCurrencyValue(value, fallback = '—') {
@@ -1800,8 +3889,9 @@ async function fetchUserSummaryRecord(criteria = {}) {
             tags: (tagsResult?.data || []).map((item) => item.tag).filter(Boolean),
             is_banned: Array.isArray(blocksResult?.data) && blocksResult.data.length > 0,
             block_info: Array.isArray(blocksResult?.data) ? blocksResult.data[0] || null : null,
-            is_admin: Boolean(activeRole) || ['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(email),
+            is_admin: Boolean(activeRole) || isLockedSuperAdminEmail(email),
             admin_role: activeRole,
+            admin_role_expiry_meta: getAdminRoleExpiryMeta(activeRole, { email }),
             is_test_or_system: accountFlags.isTestOrSystem
         };
     } catch (error) {
@@ -2087,47 +4177,56 @@ async function fetchUserAffiliateRewards(userId) {
     return details;
 }
 
-async function ensureAffiliateModalData(userId) {
-    if (!currentModalData.affiliate) {
-        currentModalData.affiliate = createEmptyAffiliateModalState();
-    }
+async function fetchUserAffiliateBundle(userId) {
+    const [stats, rewards] = await Promise.all([
+        fetchUserAffiliateStats(userId),
+        fetchUserAffiliateRewards(userId)
+    ]);
 
-    if (currentModalData.affiliate.loading || currentModalData.affiliate.loaded) {
+    return {
+        loaded: true,
+        loading: false,
+        error: null,
+        stats,
+        rewards,
+        loadedAt: new Date().toISOString()
+    };
+}
+
+async function ensureAffiliateModalData(userId) {
+    return ensureUserModalTabData('affiliate', { userId });
+}
+
+function bindUserModalOverlayDismiss() {
+    const overlay = document.getElementById('userModalOverlay');
+    if (!(overlay instanceof HTMLElement) || overlay.dataset.overlayDismissBound === '1') {
         return;
     }
 
-    currentModalData.affiliate.loading = true;
-    currentModalData.affiliate.error = null;
-
-    try {
-        const [stats, rewards] = await Promise.all([
-            fetchUserAffiliateStats(userId),
-            fetchUserAffiliateRewards(userId)
-        ]);
-
-        currentModalData.affiliate = {
-            loaded: true,
-            loading: false,
-            error: null,
-            stats,
-            rewards,
-            loadedAt: new Date().toISOString()
-        };
-    } catch (err) {
-        console.error('Failed to load affiliate data:', err);
-        currentModalData.affiliate = {
-            ...createEmptyAffiliateModalState(),
-            error: err.message || '推广数据加载失败'
-        };
-    }
-
-    if (currentModalUser?.id === userId && currentTab === 'affiliate') {
-        renderUserTab('affiliate');
-    }
+    overlay.dataset.overlayDismissBound = '1';
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) {
+            void closeUserModal();
+        }
+    });
 }
 
 // Open User Modal
 async function openUserModal(userId, options = {}) {
+    const overlay = document.getElementById('userModalOverlay');
+    const restoreState = buildUserModalRestoreStateForUser(userId, { preferUrl: true });
+    const preservedTabUiState = overlay?.classList.contains('active') && String(currentModalUser?.id || '') === String(userId || '')
+        ? captureUserModalTabUiState()
+        : (restoreState?.tabs || null);
+    if (overlay?.classList.contains('active')) {
+        const canProceed = await flushModalAdminPermissionsBeforeExit({
+            reason: currentModalUser?.id === userId ? 'refresh' : 'switch-user'
+        });
+        if (!canProceed) {
+            return false;
+        }
+    }
+
     const user = await ensureUserSummaryInState(userId, options);
     if (!user) {
         console.error('User not found:', userId);
@@ -2138,29 +4237,26 @@ async function openUserModal(userId, options = {}) {
     }
 
     currentModalUser = user;
-    currentTab = normalizeUserModalTab(options?.defaultTab || options?.tab);
+    currentTab = normalizeUserModalTab(options?.defaultTab || options?.tab || restoreState?.tab);
     const paymentFocusOrderId = String(options?.paymentOrderId || options?.payment_order_id || '').trim();
+    clearAllUserModalTabFeedbackDismiss();
+    currentModalData = createInitialUserModalData({ paymentFocusOrderId, preservedTabUiState });
 
-    const overlay = document.getElementById('userModalOverlay');
     const leftPanel = document.getElementById('userModalLeft');
     const tabContent = document.getElementById('userTabContent');
-    const actionsPanel = document.getElementById('userModalActions');
 
     // Show modal with loading state
+    bindUserModalOverlayDismiss();
     overlay.classList.add('active');
-    leftPanel.innerHTML = '<div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>';
-    tabContent.innerHTML = '<div class="modal-loading"><i class="fas fa-spinner fa-spin"></i></div>';
+    leftPanel.innerHTML = '<div class="modal-loading modal-loading--skeleton"><span class="modal-loading__label">加载中...</span></div>';
+    renderUserTabNavigation(currentTab);
+    tabContent.innerHTML = buildUserTabLoadingState(currentTab);
 
     try {
-        // Fetch all data in parallel
-        console.log('📡 Fetching user data for:', userId);
-        const [contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, paymentOrders, isSuperAdmin, activeBans, registrationOrigin] = await Promise.all([
-            fetchUserContentLog(userId),
-            fetchUserBlockHistory(userId),
-            fetchRelatedAccounts(userId),
+        // Fetch lightweight first-screen data only.
+        console.log('📡 Fetching user modal overview for:', userId);
+        const [roleInfo, isSuperAdmin, activeBans, registrationOrigin] = await Promise.all([
             fetchUserRoleInfo(userId),
-            fetchPointsLedger(userId),
-            fetchUserPaymentOrders(userId),
             checkSuperAdmin(),
             fetchActiveBans(userId),
             fetchUserRegistrationOrigin(userId)
@@ -2169,40 +4265,21 @@ async function openUserModal(userId, options = {}) {
         Object.assign(user, registrationOrigin || {});
         currentModalUser = user;
 
-        console.log('✅ Data fetched:', { contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, paymentOrders, isSuperAdmin, activeBans, registrationOrigin });
-
-        // Store data for tabs
-        currentModalData = {
-            contentLog,
-            blockHistory,
-            relatedAccounts,
-            roleInfo,
-            pointsLedger,
-            paymentOrders,
-            paymentFocusOrderId,
-            ledgerDetails: {},
-            isSuperAdmin,
-            activeBans,
-            affiliate: createEmptyAffiliateModalState()
-        };
+        currentModalData.roleInfo = roleInfo;
+        currentModalData.isSuperAdmin = isSuperAdmin;
+        currentModalData.activeBans = activeBans;
 
         // Render left panel
         renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans);
 
-        // Render initial tab
-        renderUserTab(currentTab);
-
         // Render actions
         renderModalActions(user);
 
-        // Reset tab active states
-        document.querySelectorAll('.user-tab-btn').forEach(btn => btn.classList.remove('active'));
-        const defaultTabBtn = document.querySelector(`.user-tab-btn[data-tab="${currentTab}"]`);
-        if (defaultTabBtn) {
-            defaultTabBtn.classList.add('active');
-            // Initialize indicator position with a small delay to ensure rendering
-            setTimeout(() => updateTabIndicator(defaultTabBtn), 10);
-        }
+        // Build tabs from registry and load the requested tab lazily.
+        renderUserTabNavigation(currentTab);
+        renderUserTab(currentTab);
+        scheduleUserModalTabPrefetch(currentTab);
+        syncCurrentUserModalPersistentState();
         return true;
 
     } catch (err) {
@@ -2213,13 +4290,188 @@ async function openUserModal(userId, options = {}) {
     }
 }
 
+function getAdminPermissionGroupsForModal() {
+    if (Array.isArray(window.ADMIN_PERMISSION_GROUPS) && window.ADMIN_PERMISSION_GROUPS.length > 0) {
+        return window.ADMIN_PERMISSION_GROUPS;
+    }
+
+    return [
+        {
+            id: 'legacy',
+            title: '后台权限',
+            description: '基础后台权限配置',
+            permissions: [
+                { key: 'content.moderate', label: '内容审核', icon: '📝', description: 'Gallery 与评论审核', modules: ['gallery', 'comments'] },
+                { key: 'users.manage', label: '用户管理', icon: '👥', description: '用户详情与封禁处置', modules: ['users'] },
+                { key: 'prompts.manage', label: 'Prompt 管理', icon: '🎨', description: 'Prompt 运营与管理页', modules: ['gallery'] },
+                { key: 'analytics.view', label: '数据分析', icon: '📊', description: '后台分析与趋势看板', modules: ['analytics'] }
+            ]
+        }
+    ];
+}
+
+function getAdminPermissionDisplayLabel(permissionDef = {}) {
+    return `${permissionDef.icon || ''} ${permissionDef.label || permissionDef.key || ''}`.trim();
+}
+
+function getAdminPermissionCoverageText(permissionDef = {}) {
+    const moduleIds = Array.isArray(permissionDef.modules) ? permissionDef.modules : [];
+    const moduleLabels = moduleIds
+        .map((moduleId) => window.getAdminModuleDefinition?.(moduleId)?.label || String(moduleId || '').trim())
+        .filter(Boolean);
+    const moduleText = moduleLabels.length ? `覆盖 ${moduleLabels.join(' / ')}` : '';
+    return [permissionDef.description || '', moduleText].filter(Boolean).join(' · ') || '后台模块权限';
+}
+
+function formatAdminPermissionLabels(permissionKeys = []) {
+    if (!Array.isArray(permissionKeys) || permissionKeys.length === 0) {
+        return '无';
+    }
+
+    return permissionKeys
+        .map((permissionKey) => window.getAdminPermissionLabel?.(permissionKey) || String(permissionKey || '').trim())
+        .filter(Boolean)
+        .join(', ');
+}
+
+function renderAdminPermissionChecklist(permissionList = []) {
+    return getAdminPermissionGroupsForModal().map((group) => {
+        const permissions = Array.isArray(group.permissions) ? group.permissions : [];
+        if (!permissions.length) {
+            return '';
+        }
+
+        return `
+            <div class="perm-subsection">
+                <div class="perm-subsection-title">${escapeHtml(group.title || '权限分组')}</div>
+                ${group.description ? `<div class="perm-subsection-help">${escapeHtml(group.description)}</div>` : ''}
+                <div class="perm-checkboxes">
+                    ${permissions.map((permissionDef) => `
+                        <label class="perm-item perm-item--rich">
+                            <input type="checkbox" data-perm="${escapeHtml(permissionDef.key)}" ${permissionList.includes(permissionDef.key) ? 'checked' : ''}>
+                            <span class="perm-item-copy">
+                                <span class="perm-item-label">${escapeHtml(getAdminPermissionDisplayLabel(permissionDef))}</span>
+                                <span class="perm-item-meta">${escapeHtml(getAdminPermissionCoverageText(permissionDef))}</span>
+                            </span>
+                        </label>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function isAdminPaymentSettled(order = {}) {
+    const normalizedStatus = String(order.status || '').trim().toLowerCase();
+    return ['paid', 'redeemed', 'completed'].includes(normalizedStatus);
+}
+
+function buildUserOverviewCard({ label, value, meta, tone = 'neutral' }) {
+    return `
+        <article class="user-overview-card user-overview-card--${tone}">
+            <div class="user-overview-label">${escapeHtml(label || '')}</div>
+            <div class="user-overview-value">${escapeHtml(value || '-')}</div>
+            <div class="user-overview-meta">${escapeHtml(meta || '-')}</div>
+        </article>
+    `;
+}
+
+function buildUserProfileOverview(user, roleInfo, activeBans = []) {
+    const permissionList = Array.isArray(roleInfo?.permissions) ? roleInfo.permissions : [];
+    const isLockedSuperAdmin = isLockedSuperAdminEmail(user?.email);
+    const roleExpiryMeta = getAdminRoleExpiryMeta(
+        roleInfo?.is_admin
+            ? { ...(roleInfo || {}), is_admin: true }
+            : null,
+        { email: user?.email }
+    );
+    const roleValue = isLockedSuperAdmin
+        ? '内置超管'
+        : roleInfo?.is_admin
+            ? '管理员'
+            : '普通用户';
+    const roleMetaParts = [];
+
+    if (roleInfo?.is_admin) {
+        roleMetaParts.push(`${permissionList.length} 项后台权限`);
+        roleMetaParts.push(roleInfo?.expires_at ? `${formatAdminDateTime(roleInfo.expires_at)} 到期` : '长期有效');
+    } else {
+        roleMetaParts.push('未授予后台角色');
+    }
+
+    if (roleInfo?.unlimited_shop_purchases) {
+        roleMetaParts.push('商城无限购');
+    }
+
+    const userTags = Array.isArray(user?.tags) ? user.tags : [];
+    const riskValue = activeBans.length > 0
+        ? `${activeBans.length} 项限制`
+        : (user?.is_test_or_system ? '测试 / 系统账号' : '正常');
+    const riskMeta = [
+        userTags.length > 0 ? `${userTags.length} 个标签` : '无标签',
+        user?.registration_location || '注册地未记录'
+    ].filter(Boolean).join(' · ');
+
+    const overviewCards = [
+        {
+            label: '最近活跃',
+            value: user?.last_sign_in_at ? formatTimeAgo(user.last_sign_in_at) : '暂无登录',
+            meta: user?.last_sign_in_at
+                ? `最后登录 ${formatAdminDateTime(user.last_sign_in_at)}`
+                : `注册于 ${formatAdminDateTime(user?.created_at)}`,
+            tone: user?.last_sign_in_at ? 'accent' : 'neutral'
+        },
+        {
+            label: '后台角色',
+            value: roleValue,
+            meta: roleMetaParts.join(' · '),
+            tone: roleInfo?.is_admin ? 'success' : 'neutral'
+        },
+        {
+            label: '权限到期',
+            value: roleExpiryMeta.label,
+            meta: roleExpiryMeta.detail,
+            tone: roleExpiryMeta.tone
+        },
+        {
+            label: '积分概览',
+            value: `${formatAdminPointValue(user?.points || 0)} 分`,
+            meta: user?.vip_level
+                ? `${user.vip_level} · ${userTags.length} 个标签`
+                : `${userTags.length} 个标签 · ${user?.email ? '已绑定邮箱' : '邮箱缺失'}`,
+            tone: Number(user?.points || 0) > 0 ? 'success' : 'neutral'
+        },
+        {
+            label: '风险与身份',
+            value: riskValue,
+            meta: riskMeta,
+            tone: activeBans.length > 0 ? 'warning' : 'neutral'
+        }
+    ];
+
+    return `
+        <div class="info-block user-overview-block">
+            <div class="user-overview-header">
+                <div class="admin-control-left">
+                    <div class="admin-control-icon"><i class="fas fa-layer-group"></i></div>
+                    <span class="admin-control-title">概览</span>
+                </div>
+                <span class="user-overview-caption">首屏判断</span>
+            </div>
+            <div class="user-overview-grid">
+                ${overviewCards.map(buildUserOverviewCard).join('')}
+            </div>
+        </div>
+    `;
+}
+
 // Render Left Panel
 function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
     const leftPanel = document.getElementById('userModalLeft');
     const fullEmail = user.email || 'Not available';
     const registrationLocation = user.registration_location || '未记录';
     const registrationLocationTitle = user.registration_location_title || '';
-    const isLockedSuperAdmin = ['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(user.email);
+    const isLockedSuperAdmin = isLockedSuperAdminEmail(user.email);
     const permissionList = Array.isArray(roleInfo.permissions) ? roleInfo.permissions : [];
 
     // Format ban details for tooltip
@@ -2271,7 +4523,6 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
             </div>
         </div>
 
-        <!--Assets Info - Compact Icon + Value-- >
         <div class="assets-refined-section compact">
             <div class="asset-stat-row">
                 <i class="fas fa-coins coin-icon"></i>
@@ -2279,9 +4530,9 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
             </div>
         </div>
 
-        <!--Tags - Custom Dropdown-- >
-        < !--Tags - Custom Dropdown-- >
-            ${window.hasPermission && window.hasPermission('users.manage') ? `
+        ${buildUserProfileOverview(user, roleInfo, activeBans)}
+
+        ${window.hasPermission && window.hasPermission('users.manage') ? `
         <div class="info-block tags-block">
             <div class="admin-control-header">
                 <div class="admin-control-left">
@@ -2340,28 +4591,18 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
             <div class="modal-permissions-panel modal-permissions-panel--flush${roleInfo.is_admin ? '' : ' modal-permissions-panel--admin-collapsed'}" id="modalPermissionsPanel">
                 ${!isLockedSuperAdmin ? `
                     <div class="perm-section perm-section--collapsible${roleInfo.is_admin ? '' : ' perm-section--collapsed'}" id="modalAdminPermissionsSection"${roleInfo.is_admin ? '' : ' hidden aria-hidden="true"'}>
+                        <div class="perm-section-title">预设模板</div>
+                        <div class="perm-help">先套用常用角色模板，再微调个别权限会更快。</div>
+                        ${renderAdminPermissionTemplateButtons(user.id, permissionList)}
+                        <div class="perm-coverage-card" id="modalAdminPermissionCoverage" aria-live="polite">
+                            ${buildModalAdminPermissionCoverageMarkup(permissionList)}
+                        </div>
                         <div class="perm-section-title">后台权限</div>
-                        <div class="perm-checkboxes">
-                        <label class="perm-item">
-                            <input type="checkbox" data-perm="content.moderate" ${permissionList.includes('content.moderate') ? 'checked' : ''}>
-                            <span>📝 内容审核</span>
-                        </label>
-                        <label class="perm-item">
-                            <input type="checkbox" data-perm="users.manage" ${permissionList.includes('users.manage') ? 'checked' : ''}>
-                            <span>👥 用户管理</span>
-                        </label>
-                        <label class="perm-item">
-                            <input type="checkbox" data-perm="prompts.manage" ${permissionList.includes('prompts.manage') ? 'checked' : ''}>
-                            <span>🎨 Prompt 管理</span>
-                        </label>
-                        <label class="perm-item">
-                            <input type="checkbox" data-perm="analytics.view" ${permissionList.includes('analytics.view') ? 'checked' : ''}>
-                            <span>📊 数据分析</span>
-                        </label>
-                    </div>
+                        ${renderAdminPermissionChecklist(permissionList)}
                         <div class="perm-expiry">
                             <label>到期时间</label>
                             <input type="text" id="modalRoleExpiry" placeholder="日期和时间"
+                                value="${escapeHtml(formatModalRoleExpiryInputValue(roleInfo.expires_at))}"
                                 data-initial-value="${roleInfo.expires_at || ''}">
                         </div>
                     </div>
@@ -2381,9 +4622,12 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                     <div class="perm-help">勾选后，该用户可跳过商城单次限购、24 小时累计限购、N 分钟累计限购和每账号限购。</div>
                 </div>
 
-                <button class="perm-save-btn" type="button" data-admin-action="users-save-modal-admin-permissions" data-user-id="${encodeURIComponent(user.id)}">
-                    <i class="fas fa-save"></i> 保存权限
-                </button>
+                <div class="perm-save-stack">
+                    <div class="perm-save-status" id="modalAdminPermissionsSaveStatus" data-state="idle" aria-live="polite">自动保存已开启</div>
+                    <button class="perm-save-btn" id="modalAdminPermissionsSaveButton" type="button" data-admin-action="users-save-modal-admin-permissions" data-user-id="${encodeURIComponent(user.id)}">
+                        <i class="fas fa-save"></i> 立即保存
+                    </button>
+                </div>
             </div>
         </div>
         ` : ''
@@ -2391,9 +4635,11 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
         `;
 
     setModalAdminPermissionsSectionVisible(roleInfo.is_admin, { immediate: true });
+    primeModalAdminPermissionsState(user.id, roleInfo);
 
     // Initialize Flatpickr for expiry date after DOM is updated
     setTimeout(() => {
+        destroyModalRoleExpiryPicker();
         const expiryInput = document.getElementById('modalRoleExpiry');
         if (expiryInput && typeof flatpickr !== 'undefined') {
             const initialValue = expiryInput.dataset.initialValue;
@@ -2406,8 +4652,36 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                 defaultDate: initialValue ? new Date(initialValue) : null,
                 minDate: 'today',
                 disableMobile: true,
-                appendTo: modalLeft || document.body,
-                positionElement: expiryInput
+                appendTo: document.body,
+                positionElement: expiryInput,
+                onReady: (selectedDates, dateStr, instance) => {
+                    modalRoleExpiryPickerCleanup = bindFloatingFlatpickrCalendar(instance, expiryInput, modalLeft);
+                },
+                onOpen: (selectedDates, dateStr, instance) => {
+                    if (typeof instance._scheduleFloatingPosition === 'function') {
+                        instance._scheduleFloatingPosition();
+                    }
+                },
+                onMonthChange: (selectedDates, dateStr, instance) => {
+                    if (typeof instance._scheduleFloatingPosition === 'function') {
+                        instance._scheduleFloatingPosition();
+                    }
+                },
+                onYearChange: (selectedDates, dateStr, instance) => {
+                    if (typeof instance._scheduleFloatingPosition === 'function') {
+                        instance._scheduleFloatingPosition();
+                    }
+                },
+                onValueUpdate: (selectedDates, dateStr, instance) => {
+                    if (typeof instance._scheduleFloatingPosition === 'function') {
+                        instance._scheduleFloatingPosition();
+                    }
+                },
+                onClose: (selectedDates, dateStr, instance) => {
+                    if (typeof instance._clearFloatingPosition === 'function') {
+                        instance._clearFloatingPosition();
+                    }
+                }
             });
         }
     }, 100);
@@ -2428,6 +4702,29 @@ function toggleModalDropdown(dropdownId) {
     setTimeout(() => document.addEventListener('click', closeHandler), 0);
 }
 
+function syncModalAdminPermissionsSectionHeight({ immediate = false } = {}) {
+    const adminSection = document.getElementById('modalAdminPermissionsSection');
+    if (!(adminSection instanceof HTMLElement) || adminSection.hidden || adminSection.classList.contains('perm-section--collapsed')) {
+        return;
+    }
+
+    const nextHeight = Math.max(adminSection.scrollHeight + 16, 0);
+    if (!nextHeight) {
+        return;
+    }
+
+    const applyHeight = () => {
+        adminSection.style.maxHeight = `${nextHeight}px`;
+    };
+
+    if (immediate) {
+        applyHeight();
+        return;
+    }
+
+    requestAnimationFrame(applyHeight);
+}
+
 function setModalAdminPermissionsSectionVisible(visible, { immediate = false } = {}) {
     const adminSection = document.getElementById('modalAdminPermissionsSection');
     const panel = document.getElementById('modalPermissionsPanel');
@@ -2445,23 +4742,32 @@ function setModalAdminPermissionsSectionVisible(visible, { immediate = false } =
 
         if (immediate) {
             adminSection.classList.remove('perm-section--collapsed');
+            syncModalAdminPermissionsSectionHeight({ immediate: true });
             return;
         }
 
         requestAnimationFrame(() => {
             adminSection.classList.remove('perm-section--collapsed');
+            syncModalAdminPermissionsSectionHeight();
         });
         return;
     }
 
     panel?.classList.add('modal-permissions-panel--admin-collapsed');
     adminSection.setAttribute('aria-hidden', 'true');
-    adminSection.classList.add('perm-section--collapsed');
+    adminSection.style.maxHeight = `${Math.max(adminSection.scrollHeight, 0)}px`;
 
     if (immediate) {
+        adminSection.classList.add('perm-section--collapsed');
+        adminSection.style.maxHeight = '0px';
         adminSection.hidden = true;
         return;
     }
+
+    requestAnimationFrame(() => {
+        adminSection.classList.add('perm-section--collapsed');
+        adminSection.style.maxHeight = '0px';
+    });
 
     adminSection._collapseHideTimer = window.setTimeout(() => {
         if (adminSection.classList.contains('perm-section--collapsed')) {
@@ -2472,51 +4778,148 @@ function setModalAdminPermissionsSectionVisible(visible, { immediate = false } =
 }
 
 // Handle admin toggle in modal
-function handleModalAdminToggle(userId, isEnabled) {
+async function handleModalAdminToggle(userId, isEnabled) {
     setModalAdminPermissionsSectionVisible(isEnabled);
-    toggleAdminRole(userId, isEnabled);
+    const updated = await toggleAdminRole(userId, isEnabled);
+    if (!updated) {
+        return false;
+    }
+
+    if (isEnabled) {
+        ensureModalAdminDefaultPermissionSelection();
+    }
+
+    const formState = readModalAdminPermissionsFormState();
+    if (formState) {
+        markModalAdminPermissionsAsSaved(formState, {
+            clearPendingTemplate: true,
+            lastSavedAt: Date.now()
+        });
+    } else {
+        syncModalAdminPermissionInsights();
+    }
+    return true;
+}
+
+async function applyModalAdminPermissionTemplate(userId, templateId) {
+    const template = getAdminPermissionTemplate(templateId);
+    if (!template) {
+        return false;
+    }
+
+    const { adminToggle, adminSection } = getModalAdminPermissionsNodes();
+    if (!adminSection) {
+        return false;
+    }
+
+    if (adminToggle?.checked !== true) {
+        adminToggle.checked = true;
+        const enabled = await handleModalAdminToggle(userId, true);
+        if (!enabled) {
+            return false;
+        }
+    }
+
+    const targetPermissions = normalizeModalAdminPermissionKeys(template.permissions);
+    adminSection.querySelectorAll('input[data-perm]').forEach((checkbox) => {
+        if (!(checkbox instanceof HTMLInputElement)) {
+            return;
+        }
+        checkbox.checked = targetPermissions.includes(checkbox.dataset.perm || '');
+    });
+
+    modalAdminPermissionsState.pendingTemplateId = template.id;
+    syncModalAdminPermissionInsights();
+    updateModalAdminPermissionsDirtyState({
+        autosave: true,
+        immediate: false,
+        reason: `apply-template:${template.id}`
+    });
+
+    if (typeof showToast === 'function') {
+        showToast(`已应用模板：${template.label}`, 'info');
+    }
+    return true;
 }
 
 // Save admin permissions from modal
-async function saveModalAdminPermissions(userId) {
+async function saveModalAdminPermissions(userId, options = {}) {
     const panel = document.getElementById('modalPermissionsPanel');
-    const adminToggle = document.getElementById('modalAdminToggle');
-    const adminSection = document.getElementById('modalAdminPermissionsSection');
-    const expiryInput = document.getElementById('modalRoleExpiry');
-    const unlimitedPurchasesToggle = document.getElementById('modalUnlimitedPurchasesToggle');
+    if (!panel) return true;
 
-    if (!panel) return;
-
-    const permissions = [];
-    if (adminToggle?.checked && adminSection) {
-        adminSection.querySelectorAll('input[data-perm]:checked').forEach(cb => {
-            permissions.push(cb.dataset.perm);
-        });
+    const {
+        showSuccess = true,
+        silentFailure = false,
+        reason = 'manual',
+        skipIfPristine = true
+    } = options || {};
+    const targetUserId = String(userId || currentModalUser?.id || modalAdminPermissionsState.userId || '').trim();
+    if (!targetUserId) {
+        return false;
     }
 
-    const expiresAt = adminToggle?.checked && expiryInput?.value
-        ? new Date(expiryInput.value).toISOString()
-        : null;
-    const unlimitedShopPurchases = unlimitedPurchasesToggle?.checked === true;
+    const formState = readModalAdminPermissionsFormState();
+    if (!formState) {
+        return true;
+    }
 
-    try {
+    const snapshot = serializeModalAdminPermissionsFormState(formState);
+    modalAdminPermissionsState.userId = targetUserId;
+    const previousRoleInfo = currentModalData?.roleInfo
+        ? { ...currentModalData.roleInfo }
+        : {
+            is_admin: false,
+            permissions: [],
+            expires_at: null,
+            unlimited_shop_purchases: false
+        };
+    const pendingTemplate = getAdminPermissionTemplate(modalAdminPermissionsState.pendingTemplateId);
+    const permissionAudit = buildAdminPermissionChangeDetails(previousRoleInfo, formState, pendingTemplate
+        ? {
+            template_id: pendingTemplate.id,
+            template_label: pendingTemplate.label
+        }
+        : {});
+
+    if (skipIfPristine && !modalAdminPermissionsState.dirty && snapshot === modalAdminPermissionsState.lastSavedSnapshot && !modalAdminPermissionsState.saving) {
+        if (showSuccess) {
+            if (typeof showToast === 'function') {
+                showToast('没有待保存的权限改动', 'info');
+            } else {
+                alert('当前没有待保存的权限改动');
+            }
+        }
+        syncModalAdminPermissionsSaveUi();
+        return true;
+    }
+
+    if (modalAdminPermissionsState.saving && modalAdminPermissionsState.savePromise) {
+        modalAdminPermissionsState.pendingAfterSave = true;
+        return modalAdminPermissionsState.savePromise;
+    }
+
+    clearModalAdminPermissionsSaveTimer();
+    modalAdminPermissionsState.saving = true;
+    modalAdminPermissionsState.lastError = '';
+    syncModalAdminPermissionsSaveUi();
+    modalAdminPermissionsState.savePromise = (async () => {
         const { data: currentAuth } = await window.supabaseClient.auth.getUser();
         const currentAdminId = currentAuth?.user?.id || null;
 
-        if (adminToggle?.checked) {
+        if (formState.isAdmin) {
             const { error } = await window.supabaseClient
                 .from('admin_roles')
-                .update({ permissions, expires_at: expiresAt })
-                .eq('user_id', userId);
+                .update({ permissions: formState.permissions, expires_at: formState.expiresAt })
+                .eq('user_id', targetUserId);
 
             if (error) throw error;
         }
 
-        if (unlimitedShopPurchases) {
+        if (formState.unlimitedShopPurchases) {
             const { error } = await window.supabaseClient
                 .from('user_purchase_entitlements')
                 .upsert({
-                    user_id: userId,
+                    user_id: targetUserId,
                     unlimited_shop_purchases: true,
                     updated_at: new Date().toISOString(),
                     updated_by: currentAdminId
@@ -2527,21 +4930,59 @@ async function saveModalAdminPermissions(userId) {
             const { error } = await window.supabaseClient
                 .from('user_purchase_entitlements')
                 .delete()
-                .eq('user_id', userId);
+                .eq('user_id', targetUserId);
 
             if (error) throw error;
         }
 
-        logAdminAction('update_user_permissions', userId, {
-            is_admin: adminToggle?.checked === true,
-            permissions,
-            unlimited_shop_purchases: unlimitedShopPurchases
+        if (permissionAudit.hasChanges) {
+            logAdminAction('update_admin_permissions', targetUserId, {
+                ...permissionAudit.details,
+                save_reason: reason
+            });
+        }
+
+        markModalAdminPermissionsAsSaved(formState, {
+            clearPendingTemplate: true,
+            lastSavedAt: Date.now()
         });
-        alert('✅ 权限配置已保存');
-    } catch (err) {
+
+        if (showSuccess) {
+            if (typeof showToast === 'function') {
+                showToast('权限配置已保存', 'success');
+            } else {
+                alert('✅ 权限配置已保存');
+            }
+        }
+        return true;
+    })().catch((err) => {
+        modalAdminPermissionsState.dirty = snapshot !== modalAdminPermissionsState.lastSavedSnapshot;
+        modalAdminPermissionsState.lastError = err.message || '未知错误';
         console.error('Failed to save permissions:', err);
-        alert('保存失败: ' + err.message);
-    }
+        if (!silentFailure) {
+            if (typeof showToast === 'function') {
+                showToast(`保存失败: ${err.message}`, 'error');
+            } else {
+                alert('保存失败: ' + err.message);
+            }
+        }
+        return false;
+    }).finally(() => {
+        modalAdminPermissionsState.saving = false;
+        modalAdminPermissionsState.savePromise = null;
+        syncModalAdminPermissionsSaveUi();
+
+        if (modalAdminPermissionsState.pendingAfterSave) {
+            modalAdminPermissionsState.pendingAfterSave = false;
+            const latestState = readModalAdminPermissionsFormState();
+            const latestSnapshot = serializeModalAdminPermissionsFormState(latestState || {});
+            if (latestState && latestSnapshot !== modalAdminPermissionsState.lastSavedSnapshot) {
+                queueModalAdminPermissionsAutosave({ immediate: true, reason: `${reason}-follow-up` });
+            }
+        }
+    });
+
+    return modalAdminPermissionsState.savePromise;
 }
 
 // Render Modal Actions
@@ -2576,70 +5017,512 @@ function renderModalActions(user) {
 
 // Switch Tab
 function switchUserTab(tabName) {
-    currentTab = tabName;
-
-    // Update tab buttons
-    document.querySelectorAll('.user-tab-btn').forEach(btn => {
-        const isActive = btn.dataset.tab === tabName;
-        btn.classList.toggle('active', isActive);
-        if (!isActive) {
-            btn.removeAttribute('aria-current');
-        }
-
-        // Move indicator to active button
-        if (isActive) {
-            updateTabIndicator(btn);
-        }
-    });
-
-    // Render tab content
-    renderUserTab(tabName);
+    currentTab = normalizeUserModalTab(tabName);
+    renderUserTabNavigation(currentTab);
+    renderUserTab(currentTab);
+    scheduleUserModalTabPrefetch(currentTab);
+    syncCurrentUserModalPersistentState();
 }
 
-// Update Sliding Indicator Position
-function updateTabIndicator(activeBtn) {
-    if (activeBtn) {
-        activeBtn.setAttribute('aria-current', 'page');
+function renderUserTabNavigation(activeTab = currentTab) {
+    const nav = document.getElementById('userTabNav');
+    if (!(nav instanceof HTMLElement)) {
+        return;
     }
+
+    const normalizedActiveTab = normalizeUserModalTab(activeTab);
+    nav.innerHTML = `
+        ${USER_MODAL_TAB_ORDER.map((tabName) => {
+            const tabDef = getUserModalTabDefinition(tabName);
+            const isActive = tabName === normalizedActiveTab;
+            const tabState = getUserModalTabState(tabName);
+            const statusLabel = getUserModalTabStatusLabel(tabName);
+            const visualState = tabState.refreshing ? 'loading' : tabState.status;
+            return `
+                <button class="user-tab-btn${isActive ? ' active' : ''}" data-tab="${escapeHtml(tabDef.id)}"
+                    data-admin-action="users-switch-tab" data-user-tab="${escapeHtml(tabDef.id)}"
+                    data-tab-state="${escapeHtml(visualState)}" title="${escapeHtml(statusLabel)}"${isActive ? ' aria-current="page"' : ''}>
+                    <i class="${escapeHtml(tabDef.icon)}"></i>
+                    <span class="user-tab-btn-label">${escapeHtml(tabDef.label)}</span>
+                    <span class="user-tab-status-dot" aria-hidden="true"></span>
+                </button>
+            `;
+        }).join('')}
+        <div class="tab-indicator"></div>
+    `;
+}
+
+function userTabSupportsToolbar(tabName = '') {
+    const normalized = normalizeUserModalTab(tabName);
+    return normalized !== 'affiliate' && normalized !== 'relatives';
+}
+
+function getUserTabActiveFilterLabel(tabName = '') {
+    const normalized = normalizeUserModalTab(tabName);
+    const filterState = currentModalData?.tabs?.[normalized]?.filter;
+    if (!filterState?.enabled) {
+        return '';
+    }
+
+    if (filterState.mode === 'custom' && filterState.start && filterState.end) {
+        return String(filterState.label || buildUserModalCustomFilterLabel(filterState.start, filterState.end)).trim();
+    }
+
+    if (String(filterState.range || 'all') !== 'all') {
+        return String(filterState.label || getUserModalPresetFilterLabel(filterState.range)).trim();
+    }
+
+    return '';
+}
+
+function buildUserTabStateSummary(tabName = '', status = 'loading') {
+    const normalized = normalizeUserModalTab(tabName);
+    const filterLabel = getUserTabActiveFilterLabel(normalized);
+
+    if (status === 'error') {
+        if (filterLabel) {
+            return `重新加载时会保留当前筛选：${filterLabel}`;
+        }
+        return '可以直接重试，不会影响当前用户详情里的其它内容。';
+    }
+
+    if (filterLabel) {
+        return `正在恢复上次查看状态，当前筛选：${filterLabel}`;
+    }
+
+    if (userTabSupportsToolbar(normalized)) {
+        return '首次加载完成后可以继续筛选、切换时间范围并导出当前内容。';
+    }
+
+    return '首次加载完成后会缓存到当前会话，切换回来会更快。';
+}
+
+function buildUserTabStateShell(tabName = currentTab, options = {}) {
+    const normalized = normalizeUserModalTab(tabName);
+    const tabDef = getUserModalTabDefinition(normalized);
+    const {
+        state = 'loading',
+        title = state === 'error' ? `${tabDef.label}加载失败` : (tabDef.loadingLabel || `加载${tabDef.label}...`),
+        description = buildUserTabStateSummary(normalized, state),
+        bodyMarkup = '',
+        actionsMarkup = '',
+        rootClassName = '',
+        titleClassName = '',
+        descriptionClassName = '',
+        actionsClassName = ''
+    } = options;
+    const badgeLabel = state === 'error' ? '需重试' : '准备中';
+
+    return `
+        <section class="users-tab-state users-tab-state--${escapeHtml(state)}${rootClassName ? ` ${escapeHtml(rootClassName)}` : ''}">
+            <div class="users-tab-state-header">
+                <div class="users-tab-state-copy">
+                    <div class="users-tab-state-eyebrow">${escapeHtml(tabDef.label)}</div>
+                    <div class="users-tab-state-title-row">
+                        <span class="users-tab-state-icon" aria-hidden="true">
+                            <i class="${escapeHtml(tabDef.icon)}"></i>
+                        </span>
+                        <h4 class="users-tab-state-title${titleClassName ? ` ${escapeHtml(titleClassName)}` : ''}">${escapeHtml(title)}</h4>
+                    </div>
+                    <p class="users-tab-state-description${descriptionClassName ? ` ${escapeHtml(descriptionClassName)}` : ''}">${escapeHtml(description)}</p>
+                </div>
+                <span class="users-tab-state-badge">${escapeHtml(badgeLabel)}</span>
+            </div>
+            ${bodyMarkup ? `<div class="users-tab-state-body">${bodyMarkup}</div>` : ''}
+            ${actionsMarkup ? `<div class="users-tab-state-actions${actionsClassName ? ` ${escapeHtml(actionsClassName)}` : ''}">${actionsMarkup}</div>` : ''}
+        </section>
+    `;
+}
+
+function buildUserTabToolbarSkeleton() {
+    return `
+        <div class="tab-toolbar users-tab-toolbar users-tab-toolbar-skeleton" aria-hidden="true">
+            <span class="users-tab-skeleton users-tab-skeleton--pill users-tab-skeleton--toolbar-main"></span>
+            <div class="users-tab-skeleton-toolbar-actions">
+                <span class="users-tab-skeleton users-tab-skeleton--pill users-tab-skeleton--toolbar-action"></span>
+                <span class="users-tab-skeleton users-tab-skeleton--pill users-tab-skeleton--toolbar-action"></span>
+            </div>
+        </div>
+    `;
+}
+
+function buildUserTabSkeletonList(count = 4, options = {}) {
+    const {
+        chipCount = 3,
+        avatar = false,
+        side = false
+    } = options;
+    const titleWidths = ['users-tab-skeleton--w-title-wide', 'users-tab-skeleton--w-title-mid', 'users-tab-skeleton--w-title-long'];
+    const lineWidths = ['users-tab-skeleton--w-line-wide', 'users-tab-skeleton--w-line-mid', 'users-tab-skeleton--w-line-short'];
+    const chipWidths = ['users-tab-skeleton--w-chip-wide', 'users-tab-skeleton--w-chip-mid', 'users-tab-skeleton--w-chip-short'];
+
+    return `
+        <div class="users-tab-skeleton-list" aria-hidden="true">
+            ${Array.from({ length: count }, (_, index) => `
+                <div class="users-tab-skeleton-card">
+                    <span class="users-tab-skeleton users-tab-skeleton--icon${avatar ? ' users-tab-skeleton--avatar' : ''}"></span>
+                    <div class="users-tab-skeleton-card-copy">
+                        <span class="users-tab-skeleton users-tab-skeleton--title ${titleWidths[index % titleWidths.length]}"></span>
+                        <span class="users-tab-skeleton users-tab-skeleton--line ${lineWidths[(index + 1) % lineWidths.length]}"></span>
+                        <div class="users-tab-skeleton-card-meta">
+                            ${Array.from({ length: Math.max(1, chipCount) }, (value, chipIndex) => `
+                                <span class="users-tab-skeleton users-tab-skeleton--pill ${chipWidths[(index + chipIndex) % chipWidths.length]}"></span>
+                            `).join('')}
+                        </div>
+                    </div>
+                    ${side ? `
+                        <div class="users-tab-skeleton-card-side">
+                            <span class="users-tab-skeleton users-tab-skeleton--amount"></span>
+                            <span class="users-tab-skeleton users-tab-skeleton--time"></span>
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function buildAffiliateTabLoadingSkeleton() {
+    return `
+        <div class="users-tab-skeleton-dashboard" aria-hidden="true">
+            <div class="users-tab-skeleton-hero-card">
+                <span class="users-tab-skeleton users-tab-skeleton--eyebrow users-tab-skeleton--w-chip-wide"></span>
+                <span class="users-tab-skeleton users-tab-skeleton--headline users-tab-skeleton--w-hero"></span>
+                <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-line-wide"></span>
+                <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-line-mid"></span>
+            </div>
+            <div class="users-tab-skeleton-stats">
+                ${Array.from({ length: 4 }, () => `
+                    <div class="users-tab-skeleton-stat-card">
+                        <span class="users-tab-skeleton users-tab-skeleton--eyebrow users-tab-skeleton--w-chip-mid"></span>
+                        <span class="users-tab-skeleton users-tab-skeleton--stat-value users-tab-skeleton--w-chip-wide"></span>
+                        <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-line-short"></span>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="users-tab-skeleton-panels">
+                ${Array.from({ length: 2 }, () => `
+                    <div class="users-tab-skeleton-panel">
+                        <span class="users-tab-skeleton users-tab-skeleton--title users-tab-skeleton--w-title-mid"></span>
+                        <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-line-wide"></span>
+                        <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-line-mid"></span>
+                        <span class="users-tab-skeleton users-tab-skeleton--line users-tab-skeleton--w-line-short"></span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function buildUserTabLoadingBody(tabName = currentTab) {
+    const normalized = normalizeUserModalTab(tabName);
+
+    switch (normalized) {
+        case 'affiliate':
+            return buildAffiliateTabLoadingSkeleton();
+        case 'notes':
+            return `
+                ${buildUserTabToolbarSkeleton()}
+                ${buildUserTabSkeletonList(3, { chipCount: 2 })}
+                <div class="users-tab-skeleton-composer" aria-hidden="true">
+                    <span class="users-tab-skeleton users-tab-skeleton--composer-input"></span>
+                    <span class="users-tab-skeleton users-tab-skeleton--composer-button"></span>
+                </div>
+            `;
+        case 'relatives':
+            return buildUserTabSkeletonList(4, { chipCount: 1, avatar: true });
+        case 'payments':
+            return `
+                ${buildUserTabToolbarSkeleton()}
+                ${buildUserTabSkeletonList(4, { chipCount: 3, side: true })}
+            `;
+        case 'ledger':
+            return `
+                ${buildUserTabToolbarSkeleton()}
+                ${buildUserTabSkeletonList(4, { chipCount: 3, side: true })}
+            `;
+        case 'audit':
+            return `
+                ${buildUserTabToolbarSkeleton()}
+                ${buildUserTabSkeletonList(4, { chipCount: 2 })}
+            `;
+        default:
+            return `
+                ${userTabSupportsToolbar(normalized) ? buildUserTabToolbarSkeleton() : ''}
+                ${buildUserTabSkeletonList(4, { chipCount: 2 })}
+            `;
+    }
+}
+
+function buildUserTabLoadingState(tabName = currentTab, options = {}) {
+    const normalized = normalizeUserModalTab(tabName);
+    return buildUserTabStateShell(normalized, {
+        state: 'loading',
+        description: options.description || buildUserTabStateSummary(normalized, 'loading'),
+        bodyMarkup: buildUserTabLoadingBody(normalized)
+    });
+}
+
+function buildUserTabActionBanner(tabName = '') {
+    const normalized = normalizeUserModalTab(tabName);
+    const tabDef = getUserModalTabDefinition(normalized);
+    const tabState = getUserModalTabState(normalized);
+    const isRefreshing = tabState.refreshing === true;
+    const message = String(tabState.feedbackMessage || '').trim();
+
+    if (!isRefreshing && !message) {
+        return '';
+    }
+
+    const tone = isRefreshing ? 'info' : (tabState.feedbackTone || 'info');
+    const icon = isRefreshing
+        ? 'fas fa-rotate-right fa-spin'
+        : tone === 'success'
+            ? 'fas fa-circle-check'
+            : tone === 'error'
+                ? 'fas fa-circle-exclamation'
+                : 'fas fa-circle-info';
+    const text = isRefreshing
+        ? (message || `正在刷新${tabDef.label}...`)
+        : message;
+
+    return `
+        <div class="users-tab-inline-banner users-tab-inline-banner--${escapeHtml(tone)}${tabState.feedbackClosing ? ' is-closing' : ''}" role="status" aria-live="polite">
+            <i class="${escapeHtml(icon)}" aria-hidden="true"></i>
+            <span>${escapeHtml(text)}</span>
+        </div>
+    `;
+}
+
+function buildUserTabRefreshOverlay(tabName = '', variant = 'list') {
+    const normalized = normalizeUserModalTab(tabName);
+    const tabState = getUserModalTabState(normalized);
+    if (tabState.refreshing !== true) {
+        return '';
+    }
+
+    let bodyMarkup = buildUserTabSkeletonList(3, { chipCount: 2 });
+    switch (variant) {
+        case 'dashboard':
+            bodyMarkup = buildAffiliateTabLoadingSkeleton();
+            break;
+        case 'notes':
+            bodyMarkup = buildUserTabSkeletonList(2, { chipCount: 2 });
+            break;
+        case 'payments':
+        case 'ledger':
+            bodyMarkup = buildUserTabSkeletonList(3, { chipCount: 3, side: true });
+            break;
+        case 'relatives':
+            bodyMarkup = buildUserTabSkeletonList(3, { chipCount: 1, avatar: true });
+            break;
+        default:
+            break;
+    }
+
+    return `
+        <div class="users-tab-refresh-overlay" aria-hidden="true">
+            <div class="users-tab-refresh-overlay-panel">
+                ${bodyMarkup}
+            </div>
+        </div>
+    `;
+}
+
+function wrapUserTabRefreshShell(tabName = '', contentMarkup = '', options = {}) {
+    const normalized = normalizeUserModalTab(tabName);
+    const tabState = getUserModalTabState(normalized);
+    const variant = options.variant || 'list';
+    const shellClassName = options.shellClassName ? ` ${options.shellClassName}` : '';
+    return `
+        <div class="users-tab-refresh-shell${tabState.refreshing ? ' is-refreshing' : ''}${shellClassName}">
+            ${contentMarkup}
+            ${buildUserTabRefreshOverlay(normalized, variant)}
+        </div>
+    `;
+}
+
+function buildUserTabErrorState(tabName, message) {
+    const normalized = normalizeUserModalTab(tabName);
+    const tabDef = getUserModalTabDefinition(normalized);
+    const helperText = buildUserTabStateSummary(normalized, 'error');
+    const actionsMarkup = `
+        <button class="btn-export users-tab-retry-btn" type="button" data-admin-action="users-reload-tab" data-user-tab="${escapeHtml(tabDef.id)}">
+            <i class="fas fa-rotate-right"></i> 重新加载
+        </button>
+        <span class="users-tab-state-meta">${escapeHtml(helperText)}</span>
+    `;
+
+    return buildUserTabStateShell(normalized, {
+        state: 'error',
+        description: message || '未知错误',
+        actionsMarkup,
+        rootClassName: 'empty-state users-affiliate-error-state',
+        titleClassName: 'users-affiliate-error-title',
+        descriptionClassName: 'users-affiliate-error-message'
+    });
+}
+
+async function ensureUserModalTabData(tabName, options = {}) {
+    const normalized = normalizeUserModalTab(tabName);
+    const userId = String(options?.userId || currentModalUser?.id || '').trim();
+    const tabDef = getUserModalTabDefinition(normalized);
+    const tabState = getUserModalTabState(normalized);
+    const preserveData = options.preserveData === true && (tabState.status === 'loaded' || Boolean(tabState.loadedAt));
+
+    if (!userId || typeof tabDef.load !== 'function') {
+        return tabState.data;
+    }
+
+    if (options.force !== true) {
+        if (tabState.status === 'loaded' && tabState.refreshing !== true) {
+            return tabState.data;
+        }
+        if ((tabState.status === 'loading' || tabState.refreshing === true) && tabState.promise) {
+            return tabState.promise;
+        }
+    }
+
+    const loadPromise = Promise.resolve(tabDef.load(userId))
+        .then((data) => {
+            if (currentModalUser?.id !== userId) {
+                return data;
+            }
+
+            setUserModalTabData(normalized, data, { status: 'loaded' });
+            patchUserModalTabState(normalized, {
+                refreshing: false,
+                feedbackMessage: options.successMessage ? String(options.successMessage).trim() : '',
+                feedbackTone: options.successMessage ? 'success' : 'info',
+                feedbackAt: options.successMessage ? Date.now() : 0,
+                feedbackClosing: false,
+                noteSubmitting: options.clearPendingNote ? false : getUserModalTabState(normalized).noteSubmitting,
+                pendingNoteDraft: options.clearPendingNote ? '' : getUserModalTabState(normalized).pendingNoteDraft,
+                pendingNotePreview: options.clearPendingNote ? null : getUserModalTabState(normalized).pendingNotePreview
+            });
+            if (options.successMessage) {
+                scheduleUserModalTabFeedbackDismiss(normalized, 'success');
+            } else {
+                clearUserModalTabFeedbackDismiss(normalized);
+            }
+            if (currentTab === normalized) {
+                renderUserTab(normalized);
+            }
+            return data;
+        })
+        .catch((error) => {
+            if (currentModalUser?.id === userId) {
+                if (preserveData) {
+                    patchUserModalTabState(normalized, {
+                        refreshing: false,
+                        promise: null,
+                        feedbackMessage: String(options.errorMessage || `${tabDef.label}刷新失败，请稍后重试`).trim(),
+                        feedbackTone: 'error',
+                        feedbackAt: Date.now(),
+                        feedbackClosing: false,
+                        noteSubmitting: options.clearPendingNote ? false : getUserModalTabState(normalized).noteSubmitting,
+                        pendingNoteDraft: options.clearPendingNote ? '' : getUserModalTabState(normalized).pendingNoteDraft
+                    });
+                    scheduleUserModalTabFeedbackDismiss(normalized, 'error');
+                } else {
+                    setUserModalTabData(normalized, getUserModalTabState(normalized).data, {
+                        status: 'error',
+                        error: error?.message || '加载失败'
+                    });
+                }
+                if (currentTab === normalized) {
+                    renderUserTab(normalized);
+                }
+            }
+            throw error;
+        });
+
+    if (preserveData) {
+        clearUserModalTabFeedbackDismiss(normalized);
+        patchUserModalTabState(normalized, {
+            refreshing: true,
+            error: '',
+            promise: loadPromise,
+            feedbackMessage: String(options.loadingMessage || `正在刷新${tabDef.label}...`).trim(),
+            feedbackTone: 'info',
+            feedbackAt: Date.now(),
+            feedbackClosing: false
+        });
+        if (currentTab === normalized) {
+            renderUserTab(normalized);
+        }
+    } else {
+        setUserModalTabLoading(normalized, loadPromise);
+    }
+    return loadPromise;
+}
+
+function reloadUserModalTab(tabName, options = {}) {
+    const normalized = normalizeUserModalTab(tabName);
+    const tabState = getUserModalTabState(normalized);
+    const preserveData = options.preserveData !== false && (tabState.status === 'loaded' || Boolean(tabState.loadedAt));
+
+    if (!preserveData) {
+        invalidateUserModalTab(normalized, { resetData: true });
+    }
+
+    currentTab = normalized;
+    renderUserTabNavigation(currentTab);
+    const container = document.getElementById('userTabContent');
+    if (container) {
+        container.innerHTML = preserveData ? '' : buildUserTabLoadingState(normalized);
+    }
+    if (preserveData) {
+        renderUserTab(normalized);
+    }
+    const tabDef = getUserModalTabDefinition(normalized);
+    return ensureUserModalTabData(normalized, {
+        force: true,
+        preserveData,
+        loadingMessage: options.loadingMessage || `正在刷新${tabDef.label}...`,
+        successMessage: Object.prototype.hasOwnProperty.call(options, 'successMessage') ? options.successMessage : `${tabDef.label}已更新`,
+        errorMessage: options.errorMessage || `${tabDef.label}刷新失败，请稍后重试`,
+        clearPendingNote: options.clearPendingNote === true
+    }).catch((error) => {
+        console.error(`Failed to reload user modal tab: ${normalized}`, error);
+        return null;
+    });
 }
 
 // Render Tab Content
 function renderUserTab(tabName) {
     const container = document.getElementById('userTabContent');
-    // Switch Logic
-    switch (tabName) {
-        case 'ledger':
-            renderLedgerTab(container);
-            break;
-        case 'payments':
-            renderPaymentsTab(container);
-            break;
-        case 'activity':
-            renderActivityTab(container);
-            break;
-        case 'notes':
-            renderNotesTab(container);
-            break;
-        case 'audit':
-            renderAuditTab(container);
-            break;
-        case 'blocks':
-            renderBlocksTab(container);
-            break;
-        case 'affiliate':
-            renderAffiliateTab(container);
-            break;
-        case 'relatives':
-            renderRelatedTab(container);
-            break;
+    if (!(container instanceof HTMLElement)) {
+        return;
     }
+
+    const normalized = normalizeUserModalTab(tabName);
+    const tabDef = getUserModalTabDefinition(normalized);
+    const tabState = getUserModalTabState(normalized);
+
+    if (tabState.status === 'error') {
+        container.innerHTML = buildUserTabErrorState(normalized, tabState.error);
+        return;
+    }
+
+    if (tabState.status !== 'loaded') {
+        container.innerHTML = buildUserTabLoadingState(normalized);
+        ensureUserModalTabData(normalized).catch((error) => {
+            console.error(`Failed to load user modal tab: ${normalized}`, error);
+        });
+        return;
+    }
+
+    tabDef.render(container, tabState.data, tabState);
 }
 
 function buildUserTabToolbar(tabName, options = {}) {
     const {
         includeCustomDate = false,
-        exportLabel = '导出 Excel'
+        exportLabel = '导出 Excel',
+        includeRefresh = true
     } = options;
+    const filterState = getUserModalTabFilterState(tabName);
 
     const baseRanges = [
         ['all', '全部时间'],
@@ -2650,22 +5533,72 @@ function buildUserTabToolbar(tabName, options = {}) {
 
     return `
         <div class="tab-toolbar users-tab-toolbar">
-            <div class="modal-dropdown" id="${tabName}TimeDropdown">
-                <div class="modal-dropdown-trigger users-tab-date-trigger" data-admin-action="users-toggle-modal-dropdown" data-dropdown-id="${tabName}TimeDropdown">
-                    <i class="far fa-calendar-alt"></i>
-                    <span id="${tabName}TimeLabel">全部时间</span>
-                    <i class="fas fa-chevron-down"></i>
+            <div class="users-tab-toolbar-main">
+                <div class="modal-dropdown" id="${tabName}TimeDropdown">
+                    <div class="modal-dropdown-trigger users-tab-date-trigger" data-admin-action="users-toggle-modal-dropdown" data-dropdown-id="${tabName}TimeDropdown">
+                        <i class="far fa-calendar-alt"></i>
+                        <span id="${tabName}TimeLabel">${escapeHtml(filterState.label || '全部时间')}</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <div class="modal-dropdown-menu">
+                        ${baseRanges.map(([range, label]) => `
+                            <div class="modal-dropdown-item" data-admin-action="users-filter-tab-date" data-user-tab-name="${tabName}" data-user-date-range="${range}" data-user-date-label="${label}">${label}</div>
+                        `).join('')}
+                        ${includeCustomDate ? `<div class="modal-dropdown-item" data-admin-action="users-open-custom-date-picker" data-user-tab-name="${tabName}">📅 自定义</div>` : ''}
+                    </div>
                 </div>
-                <div class="modal-dropdown-menu">
-                    ${baseRanges.map(([range, label]) => `
-                        <div class="modal-dropdown-item" data-admin-action="users-filter-tab-date" data-user-tab-name="${tabName}" data-user-date-range="${range}" data-user-date-label="${label}">${label}</div>
-                    `).join('')}
-                    ${includeCustomDate ? `<div class="modal-dropdown-item" data-admin-action="users-open-custom-date-picker" data-user-tab-name="${tabName}">📅 自定义</div>` : ''}
-                </div>
+                ${buildUserTabToolbarMeta(tabName)}
             </div>
-            <button class="btn-export users-tab-export-btn" type="button" data-admin-action="users-export-tab-data" data-user-tab-name="${tabName}">
-                <i class="fas fa-download"></i> ${exportLabel}
-            </button>
+            <div class="users-tab-toolbar-actions">
+                ${includeRefresh ? `
+                    <button class="btn-export users-tab-refresh-btn" type="button" data-admin-action="users-reload-tab" data-user-tab="${tabName}">
+                        <i class="fas fa-rotate-right"></i> 刷新
+                    </button>
+                ` : ''}
+                <button class="btn-export users-tab-export-btn" type="button" data-admin-action="users-export-tab-data" data-user-tab-name="${tabName}">
+                    <i class="fas fa-download"></i> ${exportLabel}
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function buildUserTabStandaloneActions(tabName = '', options = {}) {
+    const normalized = normalizeUserModalTab(tabName);
+    const includeExport = options.includeExport !== false;
+    const exportLabel = options.exportLabel || '导出 Excel';
+
+    return `
+        <div class="tab-toolbar users-tab-toolbar users-tab-toolbar--standalone">
+            <div class="users-tab-toolbar-main">
+                ${buildUserTabToolbarMeta(normalized)}
+            </div>
+            <div class="users-tab-standalone-actions">
+                <button class="btn-export users-tab-refresh-btn" type="button" data-admin-action="users-reload-tab" data-user-tab="${escapeHtml(normalized)}">
+                    <i class="fas fa-rotate-right"></i> 刷新
+                </button>
+                ${includeExport ? `
+                    <button class="btn-export users-tab-export-btn" type="button" data-admin-action="users-export-tab-data" data-user-tab-name="${escapeHtml(normalized)}">
+                        <i class="fas fa-download"></i> ${escapeHtml(exportLabel)}
+                    </button>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function buildUserTabToolbarMeta(tabName = '') {
+    const freshnessMeta = getUserModalTabFreshnessMeta(tabName);
+    if (!freshnessMeta) {
+        return '';
+    }
+
+    return `
+        <div class="users-tab-toolbar-meta">
+            <span class="users-tab-freshness-chip users-tab-freshness-chip--${escapeHtml(freshnessMeta.tone || 'ready')}" title="${escapeHtml(freshnessMeta.title || freshnessMeta.label)}">
+                <i class="${escapeHtml(freshnessMeta.icon || 'far fa-clock')}" aria-hidden="true"></i>
+                <span>${escapeHtml(freshnessMeta.label || '')}</span>
+            </span>
         </div>
     `;
 }
@@ -2679,27 +5612,33 @@ function buildUsersTabError(message) {
 }
 
 // Render Ledger Tab
-function renderLedgerTab(container) {
-    const data = currentModalData.pointsLedger || [];
+function renderLedgerTab(container, rawData = currentModalData.pointsLedger || []) {
+    const data = getUserModalTabVisibleData('ledger', rawData);
 
     container.innerHTML = `
         ${buildUserTabToolbar('ledger', { includeCustomDate: true })}
+        ${buildUserTabActionBanner('ledger')}
         <input type="text" id="ledgerDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
-        <div class="data-list" id="ledgerList">
-            ${renderLedgerItems(data)}
-        </div>
+        ${wrapUserTabRefreshShell('ledger', `
+            <div class="data-list" id="ledgerList">
+                ${renderLedgerItems(data)}
+            </div>
+        `, { variant: 'ledger' })}
     `;
 }
 
-function renderPaymentsTab(container) {
-    const data = currentModalData.paymentOrders || [];
+function renderPaymentsTab(container, rawData = currentModalData.paymentOrders || []) {
+    const data = getUserModalTabVisibleData('payments', rawData);
 
     container.innerHTML = `
         ${buildUserTabToolbar('payments', { includeCustomDate: true, exportLabel: '导出充值记录' })}
+        ${buildUserTabActionBanner('payments')}
         <input type="text" id="paymentsDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
-        <div class="data-list" id="paymentsList">
-            ${renderPaymentItems(data)}
-        </div>
+        ${wrapUserTabRefreshShell('payments', `
+            <div class="data-list" id="paymentsList">
+                ${renderPaymentItems(data)}
+            </div>
+        `, { variant: 'payments' })}
     `;
 }
 
@@ -3526,9 +6465,6 @@ function renderAdminLedgerDetailModal(detail) {
                     <div class="admin-ledger-modal-title">${escapeHtml(detail.meta.title)}</div>
                     <div class="admin-ledger-modal-subtitle">${escapeHtml(detail.meta.subtitle)}</div>
                 </div>
-                <button class="modal-close-btn" type="button" data-admin-action="users-close-ledger-detail">
-                    <i class="fas fa-times"></i>
-                </button>
             </div>
             <div class="admin-ledger-modal-body">
                 <section class="admin-ledger-section">
@@ -3560,7 +6496,7 @@ async function openAdminLedgerDetail(ledgerId) {
 
     overlay.innerHTML = `
         <div class="admin-ledger-modal admin-ledger-modal-loading">
-            <div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载流水详情...</div>
+            <div class="modal-loading modal-loading--skeleton"><span class="modal-loading__label">加载流水详情...</span></div>
         </div>
     `;
     document.body.appendChild(overlay);
@@ -3594,89 +6530,30 @@ window.closeAdminLedgerDetailModal = closeAdminLedgerDetailModal;
 
 // Filter tab data by date
 function filterTabByDate(tabName, range, label) {
-    // Update label
-    const labelEl = document.getElementById(`${tabName}TimeLabel`);
-    if (labelEl) labelEl.textContent = label;
+    const normalized = normalizeUserModalTab(tabName);
+    setUserModalTabFilterState(normalized, {
+        mode: 'preset',
+        range: range || 'all',
+        label: label || '全部时间',
+        start: '',
+        end: ''
+    });
 
-    // Close dropdown
-    document.getElementById(`${tabName}TimeDropdown`)?.classList.remove('open');
+    document.getElementById(`${normalized}TimeDropdown`)?.classList.remove('open');
 
-    // Filter data
-    let data = [];
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-    switch (tabName) {
-        case 'ledger':
-            data = currentModalData.pointsLedger || [];
-            break;
-        case 'payments':
-            data = currentModalData.paymentOrders || [];
-            break;
-        case 'activity':
-            data = currentModalData.contentLog || [];
-            break;
-        case 'blocks':
-            data = currentModalData.blockHistory || [];
-            break;
-        case 'blocks':
-            data = currentModalData.blockHistory || [];
-            break;
-        case 'notes':
-            data = currentModalData.notes || [];
-            break;
-        case 'audit':
-            data = currentModalData.auditLogs || [];
-            break;
+    if (currentTab === normalized) {
+        renderUserTab(normalized);
     }
 
-    if (range !== 'all') {
-        let cutoff;
-        switch (range) {
-            case 'today':
-                cutoff = today;
-                break;
-            case 'week':
-                cutoff = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-                break;
-            case 'month':
-                cutoff = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-                break;
-        }
-        data = data.filter(item => new Date(item.created_at) >= cutoff);
-    }
-
-    // Re-render list
-    const listEl = document.getElementById(`${tabName}List`);
-    if (listEl) {
-        switch (tabName) {
-            case 'ledger':
-                listEl.innerHTML = renderLedgerItems(data);
-                break;
-            case 'payments':
-                listEl.innerHTML = renderPaymentItems(data);
-                break;
-            case 'activity':
-                listEl.innerHTML = renderActivityItems(data);
-                break;
-            case 'blocks':
-                listEl.innerHTML = renderBlocksItems(data);
-                break;
-            case 'notes':
-                listEl.innerHTML = renderNotesItems(data);
-                break;
-            case 'audit':
-                listEl.innerHTML = renderAuditItems(data);
-                break;
-        }
-    }
+    syncCurrentUserModalPersistentState();
 }
 
 // Open custom date picker
 function openCustomDatePicker(tabName) {
-    document.getElementById(`${tabName}TimeDropdown`)?.classList.remove('open');
+    const normalized = normalizeUserModalTab(tabName);
+    document.getElementById(`${normalized}TimeDropdown`)?.classList.remove('open');
 
-    const pickerEl = document.getElementById(`${tabName}DatePicker`);
+    const pickerEl = document.getElementById(`${normalized}DatePicker`);
     if (!pickerEl) return;
 
     // Destroy previous instance if any
@@ -3685,8 +6562,12 @@ function openCustomDatePicker(tabName) {
     }
 
     // Get dropdown for positioning reference
-    const dropdown = document.getElementById(`${tabName}TimeDropdown`);
+    const dropdown = document.getElementById(`${normalized}TimeDropdown`);
     const dropdownTrigger = dropdown ? dropdown.querySelector('.modal-dropdown-trigger') : null;
+    const filterState = getUserModalTabFilterState(normalized);
+    const defaultDate = filterState.mode === 'custom' && filterState.start && filterState.end
+        ? [filterState.start, filterState.end]
+        : null;
 
     // Position calendar function
     function positionCalendar(instance) {
@@ -3717,6 +6598,7 @@ function openCustomDatePicker(tabName) {
         mode: 'range',
         locale: 'zh',
         dateFormat: 'Y-m-d',
+        defaultDate,
         appendTo: document.body, // Always append to body to avoid stacking context issues
         clickOpens: false, // We open it manually
         onReady: (selectedDates, dateStr, instance) => positionCalendar(instance),
@@ -3724,50 +6606,19 @@ function openCustomDatePicker(tabName) {
         onClose: (selectedDates, dateStr, instance) => {
             if (selectedDates.length === 2) {
                 const [start, end] = selectedDates;
-                const labelEl = document.getElementById(`${tabName}TimeLabel`);
-                if (labelEl) labelEl.textContent = `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
-
-                // Get source data based on tab
-                let data = [];
-                switch (tabName) {
-                    case 'ledger':
-                        data = currentModalData.pointsLedger || [];
-                        break;
-                    case 'payments':
-                        data = currentModalData.paymentOrders || [];
-                        break;
-                    case 'activity':
-                        data = currentModalData.contentLog || [];
-                        break;
-                    case 'blocks':
-                        data = currentModalData.blockHistory || [];
-                        break;
-                }
-
-                // Filter by custom range
-                data = data.filter(item => {
-                    const d = new Date(item.created_at);
-                    return d >= start && d <= new Date(end.getTime() + 86400000);
+                setUserModalTabFilterState(normalized, {
+                    mode: 'custom',
+                    range: 'custom',
+                    label: `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`,
+                    start: start.toISOString(),
+                    end: end.toISOString()
                 });
 
-                // Re-render
-                const listEl = document.getElementById(`${tabName}List`);
-                if (listEl) {
-                    switch (tabName) {
-                        case 'ledger':
-                            listEl.innerHTML = renderLedgerItems(data);
-                            break;
-                        case 'payments':
-                            listEl.innerHTML = renderPaymentItems(data);
-                            break;
-                        case 'activity':
-                            listEl.innerHTML = renderActivityItems(data);
-                            break;
-                        case 'blocks':
-                            listEl.innerHTML = renderBlocksItems(data);
-                            break;
-                    }
+                if (currentTab === normalized) {
+                    renderUserTab(normalized);
                 }
+
+                syncCurrentUserModalPersistentState();
             }
             // Cleanup flatpickr instance after selection  
             setTimeout(() => {
@@ -3780,15 +6631,18 @@ function openCustomDatePicker(tabName) {
 }
 
 // Render Activity Tab
-function renderActivityTab(container) {
-    const data = currentModalData.contentLog || [];
+function renderActivityTab(container, rawData = currentModalData.contentLog || []) {
+    const data = getUserModalTabVisibleData('activity', rawData);
 
     container.innerHTML = `
         ${buildUserTabToolbar('activity', { includeCustomDate: true })}
+        ${buildUserTabActionBanner('activity')}
         <input type="text" id="activityDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
-        <div class="data-list" id="activityList">
-            ${renderActivityItems(data)}
-        </div>
+        ${wrapUserTabRefreshShell('activity', `
+            <div class="data-list" id="activityList">
+                ${renderActivityItems(data)}
+            </div>
+        `)}
     `;
 }
 
@@ -3811,15 +6665,18 @@ function renderActivityItems(data) {
 }
 
 // Render Blocks Tab
-function renderBlocksTab(container) {
-    const data = currentModalData.blockHistory || [];
+function renderBlocksTab(container, rawData = currentModalData.blockHistory || []) {
+    const data = getUserModalTabVisibleData('blocks', rawData);
 
     container.innerHTML = `
         ${buildUserTabToolbar('blocks', { includeCustomDate: true })}
+        ${buildUserTabActionBanner('blocks')}
         <input type="text" id="blocksDatePicker" class="users-hidden-date-picker" placeholder="选择日期范围">
-        <div class="data-list" id="blocksList">
-            ${renderBlocksItems(data)}
-        </div>
+        ${wrapUserTabRefreshShell('blocks', `
+            <div class="data-list" id="blocksList">
+                ${renderBlocksItems(data)}
+            </div>
+        `)}
     `;
 }
 
@@ -3846,20 +6703,24 @@ function renderRelatedTab(container) {
     const data = currentModalData.relatedAccounts || [];
 
     container.innerHTML = `
-        <div class="data-list">
-            ${data.length > 0 ? data.map(acc => `
-                <div class="data-list-item users-related-item" data-admin-action="users-open-user-modal" data-user-id="${encodeURIComponent(acc.related_user_id)}">
-                    <div class="users-related-avatar">
-                        <i class="fas fa-user-circle users-related-avatar-icon"></i>
+        ${buildUserTabStandaloneActions('relatives', { includeExport: false })}
+        ${buildUserTabActionBanner('relatives')}
+        ${wrapUserTabRefreshShell('relatives', `
+            <div class="data-list">
+                ${data.length > 0 ? data.map(acc => `
+                    <div class="data-list-item users-related-item" data-admin-action="users-open-user-modal" data-user-id="${encodeURIComponent(acc.related_user_id)}">
+                        <div class="users-related-avatar">
+                            <i class="fas fa-user-circle users-related-avatar-icon"></i>
+                        </div>
+                        <div class="users-tab-item-main">
+                            <div class="users-related-title">${escapeHtml(acc.related_username || 'Unknown')}</div>
+                            <div class="users-tab-item-subtitle">共享 IP: ${escapeHtml(acc.shared_ip || '-')}</div>
+                        </div>
+                        <i class="fas fa-chevron-right users-related-arrow"></i>
                     </div>
-                    <div class="users-tab-item-main">
-                        <div class="users-related-title">${escapeHtml(acc.related_username || 'Unknown')}</div>
-                        <div class="users-tab-item-subtitle">共享 IP: ${escapeHtml(acc.shared_ip || '-')}</div>
-                    </div>
-                    <i class="fas fa-chevron-right users-related-arrow"></i>
-                </div>
-            `).join('') : buildUsersTabEmptyState('未检测到关联账号')}
-        </div>
+                `).join('') : buildUsersTabEmptyState('未检测到关联账号')}
+            </div>
+        `, { variant: 'relatives' })}
     `;
 }
 
@@ -3869,30 +6730,6 @@ function renderAffiliateTab(container) {
 
     if (!currentModalUser?.id) {
         container.innerHTML = buildUsersTabEmptyState('未找到用户');
-        return;
-    }
-
-    if (!affiliateState.loaded && !affiliateState.loading) {
-        container.innerHTML = '<div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载推广数据...</div>';
-        ensureAffiliateModalData(currentModalUser.id);
-        return;
-    }
-
-    if (affiliateState.loading) {
-        container.innerHTML = '<div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载推广数据...</div>';
-        return;
-    }
-
-    if (affiliateState.error) {
-        container.innerHTML = `
-            <div class="empty-state users-affiliate-error-state">
-                <div class="users-affiliate-error-title">推广数据加载失败</div>
-                <div class="users-affiliate-error-message">${escapeHtml(affiliateState.error)}</div>
-                <button class="btn-export" type="button" data-admin-action="users-reload-affiliate">
-                    <i class="fas fa-rotate-right"></i> 重新加载
-                </button>
-            </div>
-        `;
         return;
     }
 
@@ -3914,6 +6751,9 @@ function renderAffiliateTab(container) {
     const consumeRate = invitedCount > 0 ? (consumedCount / invitedCount) * 100 : 0;
 
     container.innerHTML = `
+        ${buildUserTabStandaloneActions('affiliate', { exportLabel: '导出推广记录' })}
+        ${buildUserTabActionBanner('affiliate')}
+        ${wrapUserTabRefreshShell('affiliate', `
         <div class="affiliate-admin-shell">
             <section class="affiliate-admin-link-strip">
                 <div class="affiliate-admin-link-card affiliate-admin-link-card--wide">
@@ -4087,21 +6927,34 @@ function renderAffiliateTab(container) {
                 </section>
             </div>
         </div>
+        `, { variant: 'dashboard' })}
     `;
 }
 
 function reloadAffiliateModalData() {
-    currentModalData.affiliate = createEmptyAffiliateModalState();
-    renderUserTab('affiliate');
+    return reloadUserModalTab('affiliate');
 }
 
 // Close Modal
-function closeUserModal() {
+async function closeUserModal() {
+    const canClose = await flushModalAdminPermissionsBeforeExit({ reason: 'close' });
+    if (!canClose) {
+        return false;
+    }
+
+    syncCurrentUserModalPersistentState();
     closeAdminLedgerDetailModal();
+    destroyModalRoleExpiryPicker();
+    clearUserModalTabPrefetch();
+    clearAllUserModalTabFeedbackDismiss();
+    userModalTabPrefetchGeneration += 1;
+    syncUserModalUrlState({ clear: true });
     const overlay = document.getElementById('userModalOverlay');
     overlay.classList.remove('active');
     currentModalUser = null;
     currentModalData = {};
+    resetModalAdminPermissionsState();
+    return true;
 }
 
 function sanitizeAdminExportFilename(value = 'export') {
@@ -4296,14 +7149,16 @@ async function exportTabData(tabName) {
     let headers = [];
     let filenameBase = '';
     let sheetName = '';
+    const normalizedTab = normalizeUserModalTab(tabName);
+    const visibleData = getUserModalTabVisibleData(normalizedTab);
     const username = sanitizeAdminExportFilename(currentModalUser?.username || 'user');
     const date = new Date().toISOString().split('T')[0];
 
     try {
-        switch (tabName) {
+        switch (normalizedTab) {
             case 'ledger':
                 showToast?.('正在整理积分流水导出内容...', 'info');
-                data = await buildAdminLedgerExportData(currentModalData.pointsLedger || []);
+                data = await buildAdminLedgerExportData(Array.isArray(visibleData) ? visibleData : []);
                 headers = [
                     '用户昵称',
                     '用户邮箱',
@@ -4342,7 +7197,7 @@ async function exportTabData(tabName) {
                 sheetName = '积分流水';
                 break;
             case 'payments':
-                data = (currentModalData.paymentOrders || []).map(r => ({
+                data = (Array.isArray(visibleData) ? visibleData : []).map(r => ({
                     '支付记录 ID': r.id || '',
                     '订单号': r.provider_order_no || '',
                     '通道': getAdminPaymentProviderLabel(r.provider),
@@ -4358,7 +7213,7 @@ async function exportTabData(tabName) {
                 sheetName = '充值记录';
                 break;
             case 'activity':
-                data = (currentModalData.contentLog || []).map(r => ({
+                data = (Array.isArray(visibleData) ? visibleData : []).map(r => ({
                     '类型': r.type,
                     '内容': r.content,
                     '来源': r.source,
@@ -4368,7 +7223,7 @@ async function exportTabData(tabName) {
                 sheetName = '近期动态';
                 break;
             case 'notes':
-                data = (currentModalData.notes || []).map(r => ({
+                data = (Array.isArray(visibleData) ? visibleData : []).map(r => ({
                     '操作人': r.admin_email,
                     '内容': r.content,
                     '时间': new Date(r.created_at).toLocaleString()
@@ -4377,7 +7232,7 @@ async function exportTabData(tabName) {
                 sheetName = '备注记录';
                 break;
             case 'audit':
-                data = (currentModalData.auditLogs || []).map(r => {
+                data = (Array.isArray(visibleData) ? visibleData : []).map(r => {
                     let details = '';
                     try { details = JSON.stringify(r.details); } catch (e) { }
                     return {
@@ -4391,7 +7246,7 @@ async function exportTabData(tabName) {
                 sheetName = '审计日志';
                 break;
             case 'blocks':
-                data = (currentModalData.blockHistory || []).map(r => ({
+                data = (Array.isArray(visibleData) ? visibleData : []).map(r => ({
                     '操作': r.action,
                     '范围': r.scope,
                     '原因': r.reason || '',
@@ -4653,7 +7508,6 @@ function injectBanUserModal() {
         <div class="custom-modal ban-user-modal">
             <div class="modal-header">
                 <h3 class="modal-title users-danger-modal-title">🚫 封禁管理</h3>
-                <button class="modal-close-btn" type="button" data-users-ban-action="close"><i class="fas fa-times"></i></button>
             </div>
             <div class="modal-body users-ban-modal-body">
                  <input type="hidden" id="banTargetUserId">
@@ -5174,7 +8028,6 @@ function injectPointsModal() {
             <div class="custom-modal ban-user-modal points-adjustment-modal">
                 <div class="modal-header">
                     <h3 class="modal-title">⚖️ 调整积分</h3>
-                    <button class="modal-close-btn" type="button" data-users-points-action="close"><i class="fas fa-times"></i></button>
                 </div>
                 <div class="modal-body">
                     <div class="data-row">
@@ -5363,7 +8216,6 @@ function injectClearContentModal() {
             <div class="custom-modal ban-user-modal danger-modal">
                 <div class="modal-header">
                     <h3 class="modal-title users-danger-modal-title">⚠️ 危险操作</h3>
-                    <button class="modal-close-btn" type="button" data-users-clear-action="close"><i class="fas fa-times"></i></button>
                 </div>
                 <div class="modal-body">
                     <div class="checklist-container users-danger-checklist">
@@ -5858,6 +8710,7 @@ async function toggleAdminRole(userId, enabled) {
 
             console.log('✅ Admin role granted to', userId);
             logAdminAction('grant_admin', userId, { permissions: ['content.moderate'] });
+            return true;
         } catch (err) {
             console.error('Failed to grant admin role:', err);
             alert('授予管理员权限失败: ' + err.message);
@@ -5865,6 +8718,7 @@ async function toggleAdminRole(userId, enabled) {
             if (toggleInput) toggleInput.checked = false;
             setModalAdminPermissionsSectionVisible(false);
             if (permPanel && permPanel !== document.getElementById('modalAdminPermissionsSection')) permPanel.hidden = true;
+            return false;
         }
     } else {
         // Remove role
@@ -5878,6 +8732,7 @@ async function toggleAdminRole(userId, enabled) {
 
             console.log('✅ Admin role revoked from', userId);
             logAdminAction('revoke_admin', userId, {});
+            return true;
         } catch (err) {
             console.error('Failed to revoke admin role:', err);
             alert('撤销管理员权限失败: ' + err.message);
@@ -5885,6 +8740,7 @@ async function toggleAdminRole(userId, enabled) {
             if (toggleInput) toggleInput.checked = true;
             setModalAdminPermissionsSectionVisible(true);
             if (permPanel && permPanel !== document.getElementById('modalAdminPermissionsSection')) permPanel.hidden = false;
+            return false;
         }
     }
 }
@@ -5941,6 +8797,8 @@ window.getTagLabel = getTagLabel;
 window.toggleAdminRole = toggleAdminRole;
 window.saveAdminPermissions = saveAdminPermissions;
 window.checkSuperAdmin = checkSuperAdmin;
+window.toggleUserAdminExpiryFilter = toggleUserAdminExpiryFilter;
+window.filterUserByAdminExpiry = filterUserByAdminExpiry;
 window.openUserModal = openUserModal;
 window.closeUserModal = closeUserModal;
 window.switchUserTab = switchUserTab;
@@ -5949,9 +8807,12 @@ window.openUserDrawer = openUserDrawer;
 window.closeUserDrawer = closeUserDrawer;
 window.toggleModalDropdown = toggleModalDropdown;
 window.handleModalAdminToggle = handleModalAdminToggle;
+window.applyModalAdminPermissionTemplate = applyModalAdminPermissionTemplate;
 window.saveModalAdminPermissions = saveModalAdminPermissions;
 window.filterTabByDate = filterTabByDate;
 window.openCustomDatePicker = openCustomDatePicker;
+window.batchRenewAdminAccess = batchRenewAdminAccess;
+window.batchSetAdminExpiry = batchSetAdminExpiry;
 
 function bindAdminUsersRuntimeDelegates() {
     if (document.documentElement.dataset.adminUsersRuntimeDelegatesBound === '1') {
@@ -5978,11 +8839,37 @@ function bindAdminUsersRuntimeDelegates() {
     document.addEventListener('input', (event) => {
         const target = event.target;
         if (!(target instanceof HTMLTextAreaElement)) {
+            if (target instanceof HTMLInputElement && target.id === 'modalRoleExpiry') {
+                updateModalAdminPermissionsDirtyState({
+                    autosave: /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}$/.test(String(target.value || '').trim()),
+                    immediate: false,
+                    reason: 'expiry-input'
+                });
+            }
             return;
         }
 
         if (target.matches('[data-users-note-input="1"]')) {
             window.autoResizeNotesInput?.(target);
+        }
+    });
+
+    document.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) {
+            return;
+        }
+
+        if (
+            target.matches('#modalAdminPermissionsSection input[data-perm]') ||
+            target.matches('#modalUnlimitedPurchasesToggle') ||
+            target.matches('#modalRoleExpiry')
+        ) {
+            updateModalAdminPermissionsDirtyState({
+                autosave: true,
+                immediate: false,
+                reason: 'modal-change'
+            });
         }
     });
 
@@ -6005,7 +8892,25 @@ function bindAdminUsersRuntimeDelegates() {
 
         if (target.matches('[data-users-tag-input="1"]')) {
             resetTagInput(target.dataset.userId || '', target);
+            return;
         }
+
+        if (target.id === 'modalRoleExpiry') {
+            updateModalAdminPermissionsDirtyState({
+                autosave: true,
+                immediate: true,
+                reason: 'expiry-blur'
+            });
+        }
+    });
+
+    window.addEventListener('beforeunload', (event) => {
+        if (!hasPendingModalAdminPermissionsWork()) {
+            return;
+        }
+
+        event.preventDefault();
+        event.returnValue = '';
     });
 }
 
@@ -6031,38 +8936,56 @@ window.autoResizeNotesInput = function (el) {
     el.classList.toggle('users-notes-input--overflow', contentRows > maxRows);
 };
 
-async function renderNotesTab(container) {
+async function fetchUserNotes(userId) {
+    const { data, error } = await window.supabaseClient
+        .from('admin_notes_view')
+        .select('id, content, created_at, admin_email')
+        .eq('target_user_id', userId)
+        .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+}
+
+function renderNotesTab(container, rawData = currentModalData.notes || []) {
+    const data = getUserModalTabVisibleData('notes', rawData);
+    const tabState = getUserModalTabState('notes');
+    const pendingDraft = String(tabState.pendingNoteDraft || '');
+    const pendingPreview = tabState.pendingNotePreview;
+    const isSubmitting = tabState.noteSubmitting === true;
     container.innerHTML = `
         ${buildUserTabToolbar('notes')}
+        ${buildUserTabActionBanner('notes')}
         <div class="notes-container users-notes-container">
-             <div class="notes-list users-notes-list" id="notesList">
-                 <div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载备注...</div>
-             </div>
+             ${wrapUserTabRefreshShell('notes', `
+                 <div class="notes-list users-notes-list" id="notesList">
+                     ${pendingPreview ? buildPendingUserNoteItem(pendingPreview) : ''}
+                     ${renderNotesItems(data)}
+                 </div>
+             `, { variant: 'notes', shellClassName: 'users-tab-refresh-shell--notes' })}
              <div class="notes-input-area users-notes-input-area">
-                 <div class="users-notes-composer">
-                     <textarea id="newNoteInput" class="users-notes-input" placeholder="添加内部备注..." rows="1" data-users-note-input="1"></textarea>
-                     <button class="btn-primary users-notes-submit-btn" type="button" data-admin-action="users-submit-note"><i class="fas fa-paper-plane"></i></button>
+                 <div class="users-notes-composer${isSubmitting ? ' is-submitting' : ''}">
+                     <textarea id="newNoteInput" class="users-notes-input" placeholder="添加内部备注..." rows="1" data-users-note-input="1"${isSubmitting ? ' disabled' : ''}>${escapeHtml(pendingDraft)}</textarea>
+                     <button class="btn-primary users-notes-submit-btn" type="button" data-admin-action="users-submit-note"${isSubmitting ? ' disabled data-busy="1"' : ''}>
+                        <i class="fas ${isSubmitting ? 'fa-spinner fa-spin' : 'fa-paper-plane'}"></i>
+                        <span>${isSubmitting ? '发送中' : '发送'}</span>
+                     </button>
                  </div>
              </div>
         </div>
     `;
+}
 
-    try {
-        const { data, error } = await window.supabaseClient
-            .from('admin_notes_view')
-            .select('id, content, created_at, admin_email')
-            .eq('target_user_id', currentModalUser.id)
-            .order('created_at', { ascending: true });
-
-        if (error) throw error;
-
-        currentModalData.notes = data; // Store for filtering
-        document.getElementById('notesList').innerHTML = renderNotesItems(data);
-
-    } catch (err) {
-        console.error('Error loading notes:', err);
-        document.getElementById('notesList').innerHTML = buildUsersTabError(err.message);
-    }
+function buildPendingUserNoteItem(note = {}) {
+    return `
+        <div class="note-item users-note-item users-note-item--pending">
+            <div class="note-content users-note-content">${escapeHtml(String(note.content || ''))}</div>
+            <div class="note-meta users-note-meta">
+                <span><i class="fas fa-user-shield"></i> ${escapeHtml(note.admin_email || '当前管理员')}</span>
+                <span class="users-note-pending-chip"><i class="fas fa-rotate-right fa-spin"></i> 发送中</span>
+            </div>
+        </div>
+    `;
 }
 
 function renderNotesItems(data) {
@@ -6086,13 +9009,35 @@ function renderNotesItems(data) {
 
 async function submitUserNote() {
     const input = document.getElementById('newNoteInput');
+    if (!(input instanceof HTMLTextAreaElement)) {
+        return;
+    }
+
     const content = input.value.trim();
     if (!content) return;
+
+    const notesState = getUserModalTabState('notes');
+    if (notesState.noteSubmitting) {
+        return;
+    }
 
     try {
         // Get current admin ID
         const { data: { user } } = await window.supabaseClient.auth.getUser();
         if (!user) throw new Error('Not authenticated');
+
+        patchUserModalTabState('notes', {
+            noteSubmitting: true,
+            pendingNoteDraft: content,
+            pendingNotePreview: {
+                content,
+                admin_email: user.email || '当前管理员',
+                created_at: new Date().toISOString()
+            }
+        });
+        clearUserModalTabFeedbackDismiss('notes');
+        setUserModalTabFeedback('notes', '正在发送备注...', 'info');
+        renderUserTab('notes');
 
         const { error } = await window.supabaseClient
             .from('admin_notes')
@@ -6104,43 +9049,133 @@ async function submitUserNote() {
 
         if (error) throw error;
 
-        input.value = '';
-        renderNotesTab(document.getElementById('userTabContent')); // Reload list
+        await reloadUserModalTab('notes', {
+            preserveData: true,
+            loadingMessage: '备注已发送，正在同步最新记录...',
+            successMessage: '备注已发送',
+            errorMessage: '备注已发送，但同步最新记录失败，可稍后手动刷新',
+            clearPendingNote: true
+        });
 
         logAdminAction('ADD_NOTE', currentModalUser.id, { content_preview: content.substring(0, 20) });
 
     } catch (err) {
-        alert('发送失败: ' + err.message);
+        patchUserModalTabState('notes', {
+            noteSubmitting: false,
+            pendingNotePreview: null,
+            pendingNoteDraft: content
+        });
+        setUserModalTabFeedback('notes', `备注发送失败: ${err.message || '未知错误'}`, 'error');
+        scheduleUserModalTabFeedbackDismiss('notes', 'error');
+        renderUserTab('notes');
+        showToast?.(`备注发送失败: ${err.message}`, 'error');
     }
 }
 
 // ==========================================
 // AUDIT TAB
 // ==========================================
-async function renderAuditTab(container) {
+async function fetchUserAuditLogs(userId) {
+    const { data, error } = await window.supabaseClient
+        .from('admin_audit_logs_view')
+        .select('id, action_type, details, created_at, admin_email')
+        .eq('target_user_id', userId)
+        .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+}
+
+function renderAuditTab(container, rawData = currentModalData.auditLogs || []) {
+    const data = getUserModalTabVisibleData('audit', rawData);
     container.innerHTML = `
         ${buildUserTabToolbar('audit')}
-        <div class="audit-list users-audit-list" id="auditList">
-            <div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载审计日志...</div>
-        </div>
+        ${buildUserTabActionBanner('audit')}
+        ${wrapUserTabRefreshShell('audit', `
+            <div class="audit-list users-audit-list" id="auditList">
+                ${renderAuditItems(data)}
+            </div>
+        `)}
     `;
+}
 
-    try {
-        const { data, error } = await window.supabaseClient
-            .from('admin_audit_logs_view')
-            .select('id, action_type, details, created_at, admin_email')
-            .eq('target_user_id', currentModalUser.id)
-            .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        currentModalData.auditLogs = data; // Store for filtering
-        document.getElementById('auditList').innerHTML = renderAuditItems(data);
-
-    } catch (err) {
-        console.error('Error loading audit logs:', err);
-        document.getElementById('auditList').innerHTML = buildUsersTabError(err.message);
+function buildAuditDiffPills(permissionKeys = [], tone = 'neutral') {
+    const normalizedPermissionKeys = normalizeModalAdminPermissionKeys(permissionKeys);
+    if (normalizedPermissionKeys.length === 0) {
+        return '<span class="audit-diff-pill audit-diff-pill--muted">无</span>';
     }
+
+    return normalizedPermissionKeys
+        .map((permissionKey) => `<span class="audit-diff-pill audit-diff-pill--${tone}">${escapeHtml(window.getAdminPermissionLabel?.(permissionKey) || permissionKey)}</span>`)
+        .join('');
+}
+
+function renderAdminPermissionAuditDetails(details = {}) {
+    const permissionsBefore = normalizeModalAdminPermissionKeys(details.permissions_before || []);
+    const permissionsAfter = normalizeModalAdminPermissionKeys(details.permissions_after || details.permissions || []);
+    const permissionsAdded = normalizeModalAdminPermissionKeys(details.permissions_added || permissionsAfter.filter((permissionKey) => !permissionsBefore.includes(permissionKey)));
+    const permissionsRemoved = normalizeModalAdminPermissionKeys(details.permissions_removed || permissionsBefore.filter((permissionKey) => !permissionsAfter.includes(permissionKey)));
+    const lines = [];
+
+    if (details.template_label) {
+        lines.push(`
+            <div class="audit-diff-row">
+                <span class="audit-diff-label">应用模板</span>
+                <span class="audit-diff-pill audit-diff-pill--template">${escapeHtml(details.template_label)}</span>
+            </div>
+        `);
+    }
+
+    if (permissionsAdded.length > 0) {
+        lines.push(`
+            <div class="audit-diff-row">
+                <span class="audit-diff-label">新增权限</span>
+                <span class="audit-diff-pills">${buildAuditDiffPills(permissionsAdded, 'added')}</span>
+            </div>
+        `);
+    }
+
+    if (permissionsRemoved.length > 0) {
+        lines.push(`
+            <div class="audit-diff-row">
+                <span class="audit-diff-label">移除权限</span>
+                <span class="audit-diff-pills">${buildAuditDiffPills(permissionsRemoved, 'removed')}</span>
+            </div>
+        `);
+    }
+
+    if ((details.expires_at_before || null) !== (details.expires_at_after || null)) {
+        lines.push(`
+            <div class="audit-diff-row">
+                <span class="audit-diff-label">到期时间</span>
+                <span class="audit-diff-text">${escapeHtml(formatAdminPermissionExpiryLabel(details.expires_at_before))} -> ${escapeHtml(formatAdminPermissionExpiryLabel(details.expires_at_after))}</span>
+            </div>
+        `);
+    }
+
+    if ((details.unlimited_shop_purchases_before === true) !== (details.unlimited_shop_purchases_after === true)) {
+        lines.push(`
+            <div class="audit-diff-row">
+                <span class="audit-diff-label">商城无限购</span>
+                <span class="audit-diff-text">${details.unlimited_shop_purchases_after === true ? '已开启' : '已关闭'}</span>
+            </div>
+        `);
+    }
+
+    if (lines.length === 0 && permissionsAfter.length > 0) {
+        lines.push(`
+            <div class="audit-diff-row">
+                <span class="audit-diff-label">当前权限</span>
+                <span class="audit-diff-pills">${buildAuditDiffPills(permissionsAfter, 'neutral')}</span>
+            </div>
+        `);
+    }
+
+    if (lines.length === 0) {
+        lines.push('<div class="audit-diff-row"><span class="audit-diff-text">权限结构未发生变化</span></div>');
+    }
+
+    return `<div class="audit-diff-stack">${lines.join('')}</div>`;
 }
 
 function renderAuditItems(data) {
@@ -6163,19 +9198,13 @@ function renderAuditItems(data) {
             if (type.includes('CLEAR')) return `清空项目: ${Array.isArray(details.cleared_items) ? details.cleared_items.map((item) => escapeHtml(String(item))).join(', ') : '无'}`;
 
             // Admin Permission Changes
-            if (type === 'grant_admin' || type === 'update_admin_permissions') {
-                const permMap = {
-                    'content.moderate': '内容审核',
-                    'users.manage': '用户管理',
-                    'prompts.manage': 'Prompt 管理',
-                    'analytics.view': '数据分析'
-                };
-                const perms = details.permissions
-                    ? details.permissions.map(p => permMap[p] || p).join(', ')
-                    : '无';
-                return `授予权限: ${escapeHtml(perms)}`;
+            if (type === 'grant_admin') {
+                return `授予权限: ${escapeHtml(formatAdminPermissionLabels(details.permissions || []))}`;
             }
             if (type === 'revoke_admin') return '已移除该用户的管理员权限';
+            if (type === 'update_admin_permissions' || type === 'update_user_permissions' || type === 'update_permissions') {
+                return renderAdminPermissionAuditDetails(details);
+            }
 
             return escapeHtml(JSON.stringify(details, null, 2)); // Fallback
         };
@@ -6189,7 +9218,7 @@ function renderAuditItems(data) {
         else if (log.action_type.includes('NOTE')) { icon = 'fa-sticky-note'; toneClass = 'is-info'; }
         else if (log.action_type.includes('CLEAR')) { icon = 'fa-trash-alt'; toneClass = 'is-danger'; }
         else if (log.action_type.includes('NOTIFICATION')) { icon = 'fa-bell'; toneClass = 'is-accent'; }
-        else if (log.action_type.includes('admin')) { icon = 'fa-user-shield'; toneClass = 'is-accent'; }
+        else if (log.action_type.includes('admin') || log.action_type.includes('permission')) { icon = 'fa-user-shield'; toneClass = 'is-accent'; }
 
         return `
             <div class="audit-item users-audit-item ${toneClass}">
@@ -6227,7 +9256,9 @@ function formatAuditAction(action) {
         'RESET_AVATAR': '重置头像',
         'grant_admin': '授予管理员',
         'revoke_admin': '移除管理员',
-        'update_admin_permissions': '更新权限'
+        'update_admin_permissions': '更新权限',
+        'update_user_permissions': '更新权限',
+        'update_permissions': '更新权限'
     };
     return map[action] || action;
 }
@@ -6338,6 +9369,7 @@ window.showTagInput = showTagInput;
 window.renderNotesTab = renderNotesTab;
 window.submitUserNote = submitUserNote;
 window.renderAuditTab = renderAuditTab;
+window.reloadUserModalTab = reloadUserModalTab;
 window.reloadAffiliateModalData = reloadAffiliateModalData;
 window.showNotificationModal = showNotificationModal;
 window.closeNotificationModal = closeNotificationModal;

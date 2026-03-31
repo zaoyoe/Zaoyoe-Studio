@@ -1361,7 +1361,7 @@ async function handleDeliveryStrategyRequest(req, res, supabase, user) {
 
 module.exports = async (req, res) => {
     try {
-        const { supabase, user } = await requireAdmin(req);
+        const { supabase, user } = await requireAdmin(req, { permission: 'shop.manage' });
         const url = new URL(req.url || '', 'http://localhost');
         const routeName = String(url.searchParams.get('route') || '').trim().toLowerCase();
         const isDeliveryStrategyRequest = url.searchParams.get('deliveryStrategy') === '1'

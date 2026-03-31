@@ -175,7 +175,7 @@ function normalizeRequestItems(body = {}) {
 
 module.exports = async (req, res) => {
     try {
-        const { supabase, user } = await requireAdmin(req);
+        const { supabase, user } = await requireAdmin(req, { permission: 'ops_alerts.manage' });
 
         if (req.method !== 'POST') {
             res.setHeader('Allow', 'POST');
