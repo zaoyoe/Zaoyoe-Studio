@@ -472,6 +472,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-add-channel':
                 window.addChannel?.();
                 break;
+            case 'settings-add-ops-alert-quick-reply-template':
+                window.addOpsAlertCustomerChatQuickReplyTemplate?.();
+                break;
             case 'settings-delete-channel': {
                 const index = parseInt(actionEl.dataset.channelIndex || '', 10);
                 if (!Number.isNaN(index)) {

@@ -6449,10 +6449,49 @@ function getOpsAlertCustomerChatQuickReplyBusinessTypeTone(businessType = 'gener
     }
 }
 
-function buildOpsAlertCustomerChatQuickReplyTemplateRowHtml(template = {}, index = 0, total = 0) {
+function summarizeOpsAlertCustomerChatQuickReplyText(value = '', fallback = '', maxLength = 72) {
+    const normalizedValue = String(value || '').replace(/\s+/g, ' ').trim();
+    const resolvedValue = normalizedValue || String(fallback || '').trim();
+    if (resolvedValue.length <= maxLength) {
+        return resolvedValue;
+    }
+    return `${resolvedValue.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function buildOpsAlertCustomerChatQuickReplyCollapsedSummaryMarkup(template = {}) {
+    const businessType = getOpsAlertCustomerChatQuickReplyBusinessTypeMeta(template.business_type).value;
+    const labelText = summarizeOpsAlertCustomerChatQuickReplyText(
+        interpolateOpsAlertCustomerChatQuickReplyPreviewText(template.label || '', businessType),
+        '未填写按钮文案',
+        24
+    );
+    const hintText = summarizeOpsAlertCustomerChatQuickReplyText(
+        interpolateOpsAlertCustomerChatQuickReplyPreviewText(template.hint || '', businessType),
+        '未填写提示文案',
+        72
+    );
+    const bodyText = summarizeOpsAlertCustomerChatQuickReplyText(
+        interpolateOpsAlertCustomerChatQuickReplyPreviewText(template.text || '', businessType),
+        '未填写回复正文',
+        120
+    );
+
+    return `
+        <div class="ops-alert-quick-reply-template__collapsed-summary" data-ops-alert-quick-reply-role="collapsed-summary">
+            <div class="ops-alert-quick-reply-template__collapsed-top">
+                <span class="ops-alert-quick-reply-template__collapsed-pill" data-ops-alert-quick-reply-role="collapsed-label">${escapeConfigHtml(labelText)}</span>
+                <span class="ops-alert-quick-reply-template__collapsed-hint" data-ops-alert-quick-reply-role="collapsed-hint">${escapeConfigHtml(hintText)}</span>
+            </div>
+            <div class="ops-alert-quick-reply-template__collapsed-text" data-ops-alert-quick-reply-role="collapsed-text">${escapeConfigHtml(bodyText)}</div>
+        </div>
+    `;
+}
+
+function buildOpsAlertCustomerChatQuickReplyTemplateRowHtml(template = {}, index = 0, total = 0, options = {}) {
     const businessTypeMeta = getOpsAlertCustomerChatQuickReplyBusinessTypeMeta(template.business_type);
     const businessType = businessTypeMeta.value;
     const isEnabled = template.enabled !== false;
+    const isExpanded = options && options.expanded === true;
     const templateId = escapeConfigHtml(template.id || `template_${index + 1}`);
     const isFirst = index === 0;
     const isLast = index >= Math.max(0, Number(total || 0) - 1);
@@ -6462,9 +6501,10 @@ function buildOpsAlertCustomerChatQuickReplyTemplateRowHtml(template = {}, index
 
     return `
         <article
-            class="ops-alert-quick-reply-template${isEnabled ? ' is-enabled' : ' is-disabled'}"
+            class="ops-alert-quick-reply-template${isEnabled ? ' is-enabled' : ' is-disabled'}${isExpanded ? ' is-expanded' : ' is-collapsed'}"
             data-ops-alert-quick-reply-index="${index}"
             data-ops-alert-quick-reply-id="${templateId}"
+            data-ops-alert-quick-reply-expanded="${isExpanded ? 'true' : 'false'}"
         >
             <div class="ops-alert-quick-reply-template__header">
                 <div class="ops-alert-quick-reply-template__header-copy">
@@ -6491,6 +6531,17 @@ function buildOpsAlertCustomerChatQuickReplyTemplateRowHtml(template = {}, index
                     <div class="ops-alert-quick-reply-template__meta" data-ops-alert-quick-reply-role="business-meta">把这条模板展示给 ${escapeConfigHtml(businessTypeMeta.label)} 场景，用来给管理员快速接手和回复。</div>
                 </div>
                 <div class="ops-alert-quick-reply-template__actions">
+                    <button
+                        type="button"
+                        class="btn-add-config btn-add-config--compact btn-add-config--ghost ops-alert-quick-reply-template__toggle"
+                        data-ops-alert-quick-reply-toggle="${index}"
+                        data-ops-alert-quick-reply-role="toggle-button"
+                        aria-expanded="${isExpanded ? 'true' : 'false'}"
+                        title="${isExpanded ? '收起模板' : '展开模板'}"
+                    >
+                        <i class="fas fa-chevron-${isExpanded ? 'up' : 'down'}" data-ops-alert-quick-reply-role="toggle-icon"></i>
+                        <span data-ops-alert-quick-reply-role="toggle-label">${isExpanded ? '收起' : '展开'}</span>
+                    </button>
                     <button
                         type="button"
                         class="btn-add-config btn-add-config--compact btn-add-config--ghost ops-alert-quick-reply-template__move"
@@ -6522,7 +6573,11 @@ function buildOpsAlertCustomerChatQuickReplyTemplateRowHtml(template = {}, index
                     </button>
                 </div>
             </div>
-            <div class="ops-alert-quick-reply-template__layout">
+            ${buildOpsAlertCustomerChatQuickReplyCollapsedSummaryMarkup(template).replace(
+                'data-ops-alert-quick-reply-role="collapsed-summary"',
+                `data-ops-alert-quick-reply-role="collapsed-summary"${isExpanded ? ' hidden' : ''}`
+            )}
+            <div class="ops-alert-quick-reply-template__layout" data-ops-alert-quick-reply-role="body"${isExpanded ? '' : ' hidden'}>
                 <div class="ops-alert-quick-reply-template__summary">
                     <div class="ops-alert-quick-reply-template__panel">
                         <span class="ops-alert-quick-reply-template__panel-label">使用场景</span>
@@ -6581,15 +6636,85 @@ function buildOpsAlertCustomerChatQuickReplyTemplateRowHtml(template = {}, index
     `;
 }
 
-function renderOpsAlertCustomerChatQuickReplyTemplates(templates = []) {
+function collectOpsAlertCustomerChatQuickReplyExpansionState(container = document.getElementById('opsAlertCustomerChatQuickReplyTemplates')) {
+    if (!(container instanceof HTMLElement)) {
+        return {};
+    }
+
+    const previousState = container.__opsAlertQuickReplyExpansionState
+        && typeof container.__opsAlertQuickReplyExpansionState === 'object'
+        ? { ...container.__opsAlertQuickReplyExpansionState }
+        : {};
+
+    container.querySelectorAll('[data-ops-alert-quick-reply-index]').forEach((row, index) => {
+        if (!(row instanceof HTMLElement)) {
+            return;
+        }
+
+        const templateId = normalizeOpsAlertCustomerChatQuickReplyTemplateId(
+            row.getAttribute('data-ops-alert-quick-reply-id') || '',
+            index
+        );
+        previousState[templateId] = row.dataset.opsAlertQuickReplyExpanded === 'true';
+    });
+
+    return previousState;
+}
+
+function setOpsAlertCustomerChatQuickReplyRowExpanded(row, expanded) {
+    if (!(row instanceof HTMLElement)) {
+        return false;
+    }
+
+    const isExpanded = expanded === true;
+    row.dataset.opsAlertQuickReplyExpanded = isExpanded ? 'true' : 'false';
+    row.classList.toggle('is-expanded', isExpanded);
+    row.classList.toggle('is-collapsed', !isExpanded);
+
+    const body = row.querySelector('[data-ops-alert-quick-reply-role="body"]');
+    if (body instanceof HTMLElement) {
+        body.hidden = !isExpanded;
+    }
+
+    const collapsedSummary = row.querySelector('[data-ops-alert-quick-reply-role="collapsed-summary"]');
+    if (collapsedSummary instanceof HTMLElement) {
+        collapsedSummary.hidden = isExpanded;
+    }
+
+    const toggleButton = row.querySelector('[data-ops-alert-quick-reply-role="toggle-button"]');
+    if (toggleButton instanceof HTMLElement) {
+        toggleButton.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+        toggleButton.setAttribute('title', isExpanded ? '收起模板' : '展开模板');
+    }
+
+    const toggleLabel = row.querySelector('[data-ops-alert-quick-reply-role="toggle-label"]');
+    if (toggleLabel instanceof HTMLElement) {
+        toggleLabel.textContent = isExpanded ? '收起' : '展开';
+    }
+
+    const toggleIcon = row.querySelector('[data-ops-alert-quick-reply-role="toggle-icon"]');
+    if (toggleIcon instanceof HTMLElement) {
+        toggleIcon.classList.toggle('fa-chevron-up', isExpanded);
+        toggleIcon.classList.toggle('fa-chevron-down', !isExpanded);
+    }
+
+    return isExpanded;
+}
+
+function renderOpsAlertCustomerChatQuickReplyTemplates(templates = [], options = {}) {
     const container = document.getElementById('opsAlertCustomerChatQuickReplyTemplates');
     if (!container) {
         return;
     }
 
     const normalizedTemplates = normalizeOpsAlertCustomerChatQuickReplyTemplates(templates, { preserveDrafts: true });
+    const expansionState = {
+        ...collectOpsAlertCustomerChatQuickReplyExpansionState(container),
+        ...((options && options.expansionState && typeof options.expansionState === 'object') ? options.expansionState : {})
+    };
     if (!normalizedTemplates.length) {
         container.dataset.opsAlertQuickReplyValidationVisible = 'false';
+        container.__opsAlertQuickReplyExpansionState = {};
         container.innerHTML = `
             <div class="ops-alert-quick-reply-empty">
                 <i class="fas fa-comment-slash"></i>
@@ -6600,8 +6725,32 @@ function renderOpsAlertCustomerChatQuickReplyTemplates(templates = []) {
     }
 
     container.innerHTML = normalizedTemplates
-        .map((template, index) => buildOpsAlertCustomerChatQuickReplyTemplateRowHtml(template, index, normalizedTemplates.length))
+        .map((template, index) => buildOpsAlertCustomerChatQuickReplyTemplateRowHtml(
+            template,
+            index,
+            normalizedTemplates.length,
+            {
+                expanded: expansionState[normalizeOpsAlertCustomerChatQuickReplyTemplateId(template.id, index)] === true
+            }
+        ))
         .join('');
+
+    container.__opsAlertQuickReplyExpansionState = normalizedTemplates.reduce((state, template, index) => {
+        const templateId = normalizeOpsAlertCustomerChatQuickReplyTemplateId(template.id, index);
+        state[templateId] = expansionState[templateId] === true;
+        return state;
+    }, {});
+
+    container.querySelectorAll('[data-ops-alert-quick-reply-index]').forEach((row, index) => {
+        if (!(row instanceof HTMLElement)) {
+            return;
+        }
+        const templateId = normalizeOpsAlertCustomerChatQuickReplyTemplateId(
+            row.getAttribute('data-ops-alert-quick-reply-id') || '',
+            index
+        );
+        setOpsAlertCustomerChatQuickReplyRowExpanded(row, container.__opsAlertQuickReplyExpansionState[templateId] === true);
+    });
 
     if (container.dataset.opsAlertQuickReplyValidationVisible === 'true') {
         syncOpsAlertCustomerChatQuickReplyTemplateValidationState();
@@ -6658,6 +6807,7 @@ function focusOpsAlertCustomerChatQuickReplyField(row, fieldName = 'text') {
         return;
     }
 
+    setOpsAlertCustomerChatQuickReplyRowExpanded(row, true);
     const normalizedFieldName = row.querySelector(`[data-ops-alert-quick-reply-field="${fieldName}"]`)
         ? fieldName
         : 'text';
@@ -6985,31 +7135,73 @@ function syncOpsAlertCustomerChatQuickReplyTemplateState(row) {
     if (businessDescription instanceof HTMLElement) {
         businessDescription.textContent = businessTypeMeta.description;
     }
+
+    const collapsedLabel = row.querySelector('[data-ops-alert-quick-reply-role="collapsed-label"]');
+    if (collapsedLabel instanceof HTMLElement) {
+        collapsedLabel.textContent = summarizeOpsAlertCustomerChatQuickReplyText(
+            interpolateOpsAlertCustomerChatQuickReplyPreviewText(labelValue, businessType),
+            '未填写按钮文案',
+            24
+        );
+    }
+
+    const collapsedHint = row.querySelector('[data-ops-alert-quick-reply-role="collapsed-hint"]');
+    if (collapsedHint instanceof HTMLElement) {
+        collapsedHint.textContent = summarizeOpsAlertCustomerChatQuickReplyText(
+            interpolateOpsAlertCustomerChatQuickReplyPreviewText(hintValue, businessType),
+            '未填写提示文案',
+            72
+        );
+    }
+
+    const collapsedText = row.querySelector('[data-ops-alert-quick-reply-role="collapsed-text"]');
+    if (collapsedText instanceof HTMLElement) {
+        collapsedText.textContent = summarizeOpsAlertCustomerChatQuickReplyText(
+            interpolateOpsAlertCustomerChatQuickReplyPreviewText(textValue, businessType),
+            '未填写回复正文',
+            120
+        );
+    }
 }
 
 function refreshOpsAlertQuickReplyDraftIndicators() {
     updateOpsAlertStrategyDraftIndicators();
 }
 
-function ensureOpsAlertCustomerChatQuickReplyTemplateEvents() {
-    const addButton = document.getElementById('opsAlertCustomerChatQuickReplyAddButton');
-    if (addButton && addButton.dataset.quickReplyReady !== 'true') {
-        addButton.dataset.quickReplyReady = 'true';
-        addButton.addEventListener('click', () => {
-            const currentTemplates = collectOpsAlertCustomerChatQuickReplyTemplatesFromForm({ preserveDrafts: true });
-            if (currentTemplates.length >= 12) {
-                if (typeof showToast === 'function') {
-                    showToast('快捷回复模板最多保留 12 条', 'warning');
-                }
-                return;
-            }
-
-            currentTemplates.push(createOpsAlertCustomerChatQuickReplyTemplateDraft());
-            renderOpsAlertCustomerChatQuickReplyTemplates(currentTemplates);
-            refreshOpsAlertQuickReplyDraftIndicators();
-        });
+function addOpsAlertCustomerChatQuickReplyTemplate(options = {}) {
+    const container = document.getElementById('opsAlertCustomerChatQuickReplyTemplates');
+    const currentTemplates = collectOpsAlertCustomerChatQuickReplyTemplatesFromForm({ preserveDrafts: true });
+    if (currentTemplates.length >= 12) {
+        if (typeof showToast === 'function') {
+            showToast('快捷回复模板最多保留 12 条', 'warning');
+        }
+        return false;
     }
 
+    const draft = createOpsAlertCustomerChatQuickReplyTemplateDraft(options?.businessType || 'general');
+    const expansionState = collectOpsAlertCustomerChatQuickReplyExpansionState(container);
+    currentTemplates.forEach((template, index) => {
+        const templateId = normalizeOpsAlertCustomerChatQuickReplyTemplateId(template.id, index);
+        expansionState[templateId] = expansionState[templateId] === true;
+    });
+    expansionState[draft.id] = true;
+    currentTemplates.push(draft);
+    renderOpsAlertCustomerChatQuickReplyTemplates(currentTemplates, { expansionState });
+    refreshOpsAlertQuickReplyDraftIndicators();
+
+    const nextRow = container?.querySelector(`[data-ops-alert-quick-reply-id="${draft.id}"]`);
+    if (nextRow instanceof HTMLElement) {
+        focusOpsAlertCustomerChatQuickReplyField(nextRow, 'label');
+    }
+
+    if (typeof showToast === 'function') {
+        showToast('已新增快捷回复模板草稿', 'info');
+    }
+
+    return true;
+}
+
+function ensureOpsAlertCustomerChatQuickReplyTemplateEvents() {
     const container = document.getElementById('opsAlertCustomerChatQuickReplyTemplates');
     if (!container || container.dataset.quickReplyReady === 'true') {
         return;
@@ -7017,6 +7209,19 @@ function ensureOpsAlertCustomerChatQuickReplyTemplateEvents() {
 
     container.dataset.quickReplyReady = 'true';
     container.addEventListener('click', (event) => {
+        const toggleTrigger = event.target instanceof HTMLElement
+            ? event.target.closest('[data-ops-alert-quick-reply-toggle]')
+            : null;
+        if (toggleTrigger instanceof HTMLElement) {
+            const row = toggleTrigger.closest('[data-ops-alert-quick-reply-index]');
+            if (row instanceof HTMLElement) {
+                const nextExpanded = row.dataset.opsAlertQuickReplyExpanded !== 'true';
+                setOpsAlertCustomerChatQuickReplyRowExpanded(row, nextExpanded);
+                container.__opsAlertQuickReplyExpansionState = collectOpsAlertCustomerChatQuickReplyExpansionState(container);
+            }
+            return;
+        }
+
         const tokenTrigger = event.target instanceof HTMLElement
             ? event.target.closest('[data-ops-alert-quick-reply-token]')
             : null;
@@ -7039,13 +7244,14 @@ function ensureOpsAlertCustomerChatQuickReplyTemplateEvents() {
                 : direction === 'down'
                     ? index + 1
                     : -1;
+            const expansionState = collectOpsAlertCustomerChatQuickReplyExpansionState(container);
 
             if (index < 0 || targetIndex < 0 || targetIndex >= currentTemplates.length) {
                 return;
             }
 
             [currentTemplates[index], currentTemplates[targetIndex]] = [currentTemplates[targetIndex], currentTemplates[index]];
-            renderOpsAlertCustomerChatQuickReplyTemplates(currentTemplates);
+            renderOpsAlertCustomerChatQuickReplyTemplates(currentTemplates, { expansionState });
             refreshOpsAlertQuickReplyDraftIndicators();
             return;
         }
@@ -7063,8 +7269,9 @@ function ensureOpsAlertCustomerChatQuickReplyTemplateEvents() {
         }
 
         const currentTemplates = collectOpsAlertCustomerChatQuickReplyTemplatesFromForm({ preserveDrafts: true });
+        const expansionState = collectOpsAlertCustomerChatQuickReplyExpansionState(container);
         currentTemplates.splice(index, 1);
-        renderOpsAlertCustomerChatQuickReplyTemplates(currentTemplates);
+        renderOpsAlertCustomerChatQuickReplyTemplates(currentTemplates, { expansionState });
         refreshOpsAlertQuickReplyDraftIndicators();
     });
     container.addEventListener('focusin', (event) => {
@@ -17653,6 +17860,7 @@ window.toggleOpsAlertCustomerChatMessageEnabled = toggleOpsAlertCustomerChatMess
 window.toggleOpsAlertCustomerChatMessageSummaryEnabled = toggleOpsAlertCustomerChatMessageSummaryEnabled;
 window.toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled = toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled;
 window.handleOpsAlertCustomerChatMessageSummaryScheduleModeChange = handleOpsAlertCustomerChatMessageSummaryScheduleModeChange;
+window.addOpsAlertCustomerChatQuickReplyTemplate = addOpsAlertCustomerChatQuickReplyTemplate;
 window.toggleOpsAlertShopPurchaseSuccessEnabled = toggleOpsAlertShopPurchaseSuccessEnabled;
 window.toggleOpsAlertShopPurchaseSuccessSummaryEnabled = toggleOpsAlertShopPurchaseSuccessSummaryEnabled;
 window.toggleOpsAlertShopPurchaseSuccessWorkHoursOnlyEnabled = toggleOpsAlertShopPurchaseSuccessWorkHoursOnlyEnabled;

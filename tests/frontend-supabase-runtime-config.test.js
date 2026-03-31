@@ -2869,6 +2869,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         "case 'settings-copy-ops-alert-shift-report':",
         "case 'settings-export-ops-alert-shift-report-csv':",
         "case 'settings-set-ops-alert-shift-report-view':",
+        "case 'settings-add-ops-alert-quick-reply-template':",
         "case 'settings-copy-ops-alert-monitor-category':",
         "case 'settings-open-ops-alert-workspace':",
         "case 'settings-toggle-ops-alert-shop-risk-auto-response':",
@@ -2958,6 +2959,8 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'function renderOpsAlertCustomerChatQuickReplyTemplateValidation(row, errors = [], options = {}) {',
         'function syncOpsAlertCustomerChatQuickReplyTemplateValidationState(options = {}) {',
         'function validateOpsAlertCustomerChatQuickReplyTemplatesBeforeSave() {',
+        'function setOpsAlertCustomerChatQuickReplyRowExpanded(row, expanded) {',
+        'function addOpsAlertCustomerChatQuickReplyTemplate(options = {}) {',
         'function insertOpsAlertCustomerChatQuickReplyToken(row, token) {',
         'function getDefaultOpsAlertMonitorViewState()',
         'function getDefaultOpsAlertMonitorShiftReportViewState() {',
@@ -2999,6 +3002,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.copyOpsAlertMonitorShiftReportSummary = copyOpsAlertMonitorShiftReportSummary;',
         'window.exportOpsAlertMonitorShiftReportCsv = exportOpsAlertMonitorShiftReportCsv;',
         'data-ops-alert-quick-reply-move="up"',
+        'data-ops-alert-quick-reply-role="collapsed-summary"',
+        'data-ops-alert-quick-reply-role="toggle-button"',
+        'data-ops-alert-quick-reply-role="body"',
         'data-ops-alert-quick-reply-token="${escapeConfigHtml(token)}"',
         'data-ops-alert-quick-reply-role="preview-text"',
         'data-ops-alert-quick-reply-role="validation"',
@@ -3041,6 +3047,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.toggleOpsAlertQuietHoursEnabled = toggleOpsAlertQuietHoursEnabled;',
         'window.toggleOpsAlertQuietHoursAllowCritical = toggleOpsAlertQuietHoursAllowCritical;',
         'window.toggleOpsAlertShopRiskAutoResponseEnabled = toggleOpsAlertShopRiskAutoResponseEnabled;',
+        'window.addOpsAlertCustomerChatQuickReplyTemplate = addOpsAlertCustomerChatQuickReplyTemplate;',
         'window.saveOpsAlertSettings = saveOpsAlertSettings;',
         'window.deleteOpsAlertSecret = deleteOpsAlertSecret;'
     ];
@@ -3109,6 +3116,11 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         '.ops-alert-shift-report__panel',
         '.ops-alert-shift-report__trend-bars',
         '.ops-alert-shift-report__trend-bar',
+        '.ops-alert-quick-reply-template.is-collapsed',
+        '.ops-alert-quick-reply-template__toggle',
+        '.ops-alert-quick-reply-template__collapsed-summary',
+        '.ops-alert-quick-reply-template__collapsed-pill',
+        '.ops-alert-quick-reply-template__collapsed-text',
         '.ops-alert-quick-reply-template__actions',
         '.ops-alert-quick-reply-template__move',
         '.ops-alert-quick-reply-template.has-validation-error',
@@ -4806,7 +4818,7 @@ test('shop admin order workflows externalize runtime table-row and modal styling
     }
 
     assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260331_SHOP_ORDER_FOCUS_2'), true, 'admin-studio.html should load the cache-busted shop admin script');
-    assert.equal(adminStudioSource.includes('admin-config.js?v=20260331_OPS_ALERT_ORDER_FOCUS_9'), true, 'admin-studio.html should load the cache-busted admin config script');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260331_OPS_ALERT_QUICK_REPLY_COLLAPSE_10'), true, 'admin-studio.html should load the cache-busted admin config script');
     assert.equal(configSource.includes('window.ShopAdmin?.focusOrder'), true, 'admin-config.js should directly focus shop order workspaces when an order id is available');
 });
 

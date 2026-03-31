@@ -25956,6 +25956,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     opacity: 0.88;
 }
 
+.ops-alert-quick-reply-template.is-collapsed {
+    gap: 12px;
+}
+
 .ops-alert-quick-reply-template__header {
     display: flex;
     align-items: flex-start;
@@ -26089,10 +26093,61 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     padding: 8px 10px;
 }
 
+.ops-alert-quick-reply-template__toggle {
+    min-width: 84px;
+    padding: 8px 12px;
+    gap: 8px;
+}
+
 .ops-alert-quick-reply-template__move[disabled] {
     opacity: 0.42;
     cursor: default;
     pointer-events: none;
+}
+
+.ops-alert-quick-reply-template__collapsed-summary {
+    display: grid;
+    gap: 10px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(107, 158, 206, 0.14);
+    background: rgba(107, 158, 206, 0.06);
+}
+
+.ops-alert-quick-reply-template__collapsed-summary[hidden] {
+    display: none;
+}
+
+.ops-alert-quick-reply-template__collapsed-top {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.ops-alert-quick-reply-template__collapsed-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(96, 165, 250, 0.24);
+    background: rgba(96, 165, 250, 0.12);
+    color: rgba(219, 232, 248, 0.94);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.ops-alert-quick-reply-template__collapsed-hint {
+    color: rgba(147, 197, 253, 0.82);
+    font-size: 0.78rem;
+    line-height: 1.6;
+}
+
+.ops-alert-quick-reply-template__collapsed-text {
+    color: rgba(226, 232, 240, 0.88);
+    font-size: 0.82rem;
+    line-height: 1.7;
 }
 
 .ops-alert-quick-reply-template__layout {
@@ -26100,6 +26155,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
     gap: 16px;
     align-items: start;
+}
+
+.ops-alert-quick-reply-template__layout[hidden] {
+    display: none;
 }
 
 .ops-alert-quick-reply-template__summary,
@@ -26474,6 +26533,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     }
 
     .ops-alert-quick-reply-template__toggle-card {
+        align-items: flex-start;
+    }
+
+    .ops-alert-quick-reply-template__collapsed-top {
+        flex-direction: column;
         align-items: flex-start;
     }
 }
