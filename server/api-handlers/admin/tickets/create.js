@@ -127,7 +127,7 @@ module.exports = async (req, res) => {
     }
 
     try {
-        const { supabase, user } = await requireAdmin(req);
+        const { supabase, user } = await requireAdmin(req, { permission: 'tickets.manage' });
         const body = await parseJsonBody(req);
         const source = normalizeSource(body.source || body.source_type || body.sourceType);
         const actorLabel = sanitizeText(user?.email, 255) || sanitizeText(user?.id, 120) || 'unknown';

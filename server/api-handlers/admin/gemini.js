@@ -7,7 +7,9 @@ const { resolveGeminiRuntimeConfig } = require('../../../api/_lib/secrets');
 
 module.exports = async (req, res) => {
     try {
-        const { supabase, user } = await requireAdmin(req);
+        const { supabase, user } = await requireAdmin(req, {
+            anyOf: ['prompts.manage', 'content.moderate']
+        });
 
         if (req.method === 'GET') {
             const config = await resolveGeminiRuntimeConfig(supabase);

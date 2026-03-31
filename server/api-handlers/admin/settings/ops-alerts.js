@@ -1009,7 +1009,7 @@ async function upsertSystemConfig(supabase, configKey, configValue, userId, desc
 
 module.exports = async (req, res) => {
     try {
-        const { supabase, user } = await requireAdmin(req);
+        const { supabase, user } = await requireAdmin(req, { permission: 'ops_alerts.manage' });
 
         if (req.method === 'GET') {
             const runtime = await loadOpsAlertsRuntimeConfig(supabase);

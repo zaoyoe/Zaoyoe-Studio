@@ -304,7 +304,7 @@ async function handler(req, res) {
     }
 
     try {
-        const { user } = await requireAdmin(req);
+        const { user } = await requireAdmin(req, { permission: 'payments.manage' });
         const supabaseAdmin = getSupabaseAdmin();
         const preview = await buildCleanupPreview(supabaseAdmin);
 

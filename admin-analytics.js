@@ -2037,9 +2037,24 @@ if (typeof window !== 'undefined') {
 // A/B EXPERIMENT MANAGEMENT UI
 // ============================================
 
+function bindExperimentModalOverlayDismiss() {
+    const modal = document.getElementById('experimentModal');
+    if (!(modal instanceof HTMLElement) || modal.dataset.overlayDismissBound === '1') {
+        return;
+    }
+
+    modal.dataset.overlayDismissBound = '1';
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            closeExperimentModal();
+        }
+    });
+}
+
 function openExperimentModal() {
     const modal = document.getElementById('experimentModal');
     if (modal) {
+        bindExperimentModalOverlayDismiss();
         modal.classList.add('active');
         document.getElementById('expName').value = '';
         document.getElementById('expDescription').value = '';

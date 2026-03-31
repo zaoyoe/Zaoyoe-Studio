@@ -376,6 +376,39 @@ Example output format:
         }
     },
 
+    bindOverlayDismiss: function (overlayOrId, onDismiss) {
+        const overlay = typeof overlayOrId === 'string'
+            ? document.getElementById(overlayOrId)
+            : overlayOrId;
+        if (!(overlay instanceof HTMLElement) || overlay.dataset.overlayDismissBound === '1') {
+            return overlay instanceof HTMLElement ? overlay : null;
+        }
+
+        overlay.dataset.overlayDismissBound = '1';
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) {
+                onDismiss?.();
+            }
+        });
+        return overlay;
+    },
+
+    bindProductModalOverlayDismiss: function () {
+        this.bindOverlayDismiss('productModal', () => {
+            this.hideProductModal();
+        });
+    },
+
+    bindStaticOverlayDismisses: function () {
+        this.bindProductModalOverlayDismiss();
+        this.bindOverlayDismiss('releaseReserveModal', () => {
+            this.closeReleaseModal();
+        });
+        this.bindOverlayDismiss('importInventoryModal', () => {
+            this.closeImportModal();
+        });
+    },
+
     closeDynamicModal: function (modalId) {
         const modal = document.getElementById(modalId);
         if (!modal) return;
@@ -396,6 +429,11 @@ Example output format:
         const lineCount = textarea.value.trim() ? textarea.value.trim().split('\n').length : 0;
         counter.textContent = `(${lineCount}行)`;
     },
+
+    productGridCache: new Map(),
+    categoryFetchPromise: null,
+    productCategoryDropdownPromise: null,
+    activeProductEditRequestId: '',
 
     updateImportViewLineCount: function () {
         const textarea = document.getElementById('importViewContentInput');
@@ -1000,6 +1038,7 @@ Example output format:
 
         console.log('Admin Shop Init...');
         this.bindDelegatedHandlers();
+        this.bindStaticOverlayDismisses();
         await this.renderProductCategoryFilters();
         await this.loadProducts();
         this.ensureRichTextEditors();
@@ -2780,13 +2819,220 @@ Example output format:
         }
     },
 
+    renderProductGridSkeleton: function (container, { count = 4 } = {}) {
+        if (!(container instanceof HTMLElement)) {
+            return;
+        }
+
+        const skeletonCount = Math.max(2, Number.parseInt(count, 10) || 4);
+        const skeletonCards = Array.from({ length: skeletonCount }, (_, index) => `
+            <div class="shop-admin-product-card shop-admin-product-card--skeleton" aria-hidden="true" data-skeleton-index="${index}">
+                <div class="shop-admin-product-cover shop-admin-product-cover--skeleton">
+                    <div class="shop-admin-skeleton shop-admin-skeleton--badge"></div>
+                </div>
+                <div class="shop-admin-product-body">
+                    <div class="shop-admin-skeleton shop-admin-skeleton--title"></div>
+                    <div class="shop-admin-skeleton shop-admin-skeleton--text"></div>
+                    <div class="shop-admin-skeleton shop-admin-skeleton--text shop-admin-skeleton--text-short"></div>
+                </div>
+                <div class="shop-admin-product-footer">
+                    <div class="shop-admin-product-meta">
+                        <div class="shop-admin-skeleton shop-admin-skeleton--price"></div>
+                        <div class="shop-admin-skeleton shop-admin-skeleton--stock"></div>
+                    </div>
+                    <div class="shop-admin-product-actions">
+                        <div class="shop-admin-skeleton shop-admin-skeleton--icon-btn"></div>
+                        <div class="shop-admin-skeleton shop-admin-skeleton--icon-btn"></div>
+                        <div class="shop-admin-skeleton shop-admin-skeleton--icon-btn"></div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
+        container.innerHTML = `
+            <div class="shop-admin-product-card shop-admin-product-card--create shop-admin-product-card--skeleton-create" aria-hidden="true">
+                <div class="shop-admin-skeleton shop-admin-skeleton--create-icon"></div>
+                <div class="shop-admin-skeleton shop-admin-skeleton--create-label"></div>
+            </div>
+            ${skeletonCards}
+        `;
+    },
+
+    buildShopTableLoadingSkeleton: function (columnCount, { rowCount = 5, includeCheckbox = false, actionCount = 2 } = {}) {
+        const totalColumns = Math.max(1, Number.parseInt(columnCount, 10) || 1);
+        const totalRows = Math.max(3, Number.parseInt(rowCount, 10) || 5);
+        const totalActions = Math.max(1, Number.parseInt(actionCount, 10) || 2);
+        const titleWidths = ['admin-skeleton-w-40', 'admin-skeleton-w-60', 'admin-skeleton-w-70'];
+        const metaWidths = ['admin-skeleton-w-30', 'admin-skeleton-w-40'];
+        const pillWidths = ['admin-skeleton-w-chip-sm', 'admin-skeleton-w-chip-md'];
+        const lineWidths = ['admin-skeleton-w-40', 'admin-skeleton-w-60', 'admin-skeleton-w-80'];
+
+        return Array.from({ length: totalRows }, (_, rowIndex) => `
+            <tr class="admin-table-skeleton-row shop-table-skeleton-row" aria-hidden="true" data-skeleton-index="${rowIndex}">
+                ${Array.from({ length: totalColumns }, (_, columnIndex) => {
+                    if (includeCheckbox && columnIndex === 0) {
+                        return `
+                            <td>
+                                <div class="admin-table-skeleton-cell">
+                                    <span class="admin-skeleton-block admin-skeleton-block--checkbox"></span>
+                                </div>
+                            </td>
+                        `;
+                    }
+
+                    const effectiveIndex = includeCheckbox ? columnIndex - 1 : columnIndex;
+                    const isLastColumn = columnIndex === totalColumns - 1;
+
+                    if (isLastColumn) {
+                        return `
+                            <td>
+                                <div class="admin-table-skeleton-cell admin-table-skeleton-actions">
+                                    ${Array.from({ length: totalActions }, () => '<span class="admin-skeleton-block admin-skeleton-block--action"></span>').join('')}
+                                </div>
+                            </td>
+                        `;
+                    }
+
+                    if (effectiveIndex === 0) {
+                        return `
+                            <td>
+                                <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
+                                    <span class="admin-skeleton-block admin-skeleton-block--title ${titleWidths[rowIndex % titleWidths.length]}"></span>
+                                    <span class="admin-skeleton-block admin-skeleton-block--line ${metaWidths[rowIndex % metaWidths.length]}"></span>
+                                </div>
+                            </td>
+                        `;
+                    }
+
+                    if (effectiveIndex === 1) {
+                        return `
+                            <td>
+                                <div class="admin-table-skeleton-cell">
+                                    <span class="admin-skeleton-block admin-skeleton-block--pill ${pillWidths[rowIndex % pillWidths.length]}"></span>
+                                </div>
+                            </td>
+                        `;
+                    }
+
+                    return `
+                        <td>
+                            <div class="admin-table-skeleton-cell">
+                                <span class="admin-skeleton-block admin-skeleton-block--line ${lineWidths[(rowIndex + columnIndex) % lineWidths.length]}"></span>
+                            </div>
+                        </td>
+                    `;
+                }).join('')}
+            </tr>
+        `).join('');
+    },
+
+    buildImportTreeLoadingSkeleton: function () {
+        const pillWidths = ['admin-skeleton-w-chip-md', 'admin-skeleton-w-chip-lg', 'admin-skeleton-w-chip-lg'];
+        const lineWidths = ['admin-skeleton-w-60', 'admin-skeleton-w-70', 'admin-skeleton-w-80'];
+        const metaWidths = ['admin-skeleton-w-30', 'admin-skeleton-w-40'];
+
+        return `
+            <div class="shop-import-tree-state shop-import-tree-state--skeleton" aria-hidden="true">
+                <div class="shop-import-tree-skeleton">
+                    ${Array.from({ length: 3 }, (_, groupIndex) => `
+                        <div class="shop-import-tree-skeleton-group">
+                            <span class="admin-skeleton-block admin-skeleton-block--pill ${pillWidths[groupIndex % pillWidths.length]}"></span>
+                            <div class="shop-import-tree-skeleton-items">
+                                ${Array.from({ length: 3 }, (_, itemIndex) => `
+                                    <div class="shop-import-tree-skeleton-item">
+                                        <span class="admin-skeleton-block admin-skeleton-block--line ${lineWidths[itemIndex % lineWidths.length]}"></span>
+                                        <span class="admin-skeleton-block admin-skeleton-block--tiny ${metaWidths[itemIndex % metaWidths.length]}"></span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    },
+
+    buildInventoryDetailLoadingSkeleton: function () {
+        return `
+            <div class="shop-inventory-detail-loading shop-inventory-detail-loading--skeleton" aria-hidden="true">
+                <div class="shop-inventory-detail-skeleton-section shop-inventory-detail-skeleton-section--hero">
+                    <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-30"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-full"></span>
+                    <div class="shop-inventory-detail-skeleton-actions">
+                        <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                    </div>
+                </div>
+                <div class="shop-inventory-detail-skeleton-grid">
+                    ${Array.from({ length: 4 }, (_, index) => `
+                        <div class="shop-inventory-detail-skeleton-section">
+                            <span class="admin-skeleton-block admin-skeleton-block--tiny ${index % 2 === 0 ? 'admin-skeleton-w-20' : 'admin-skeleton-w-30'}"></span>
+                            <span class="admin-skeleton-block admin-skeleton-block--title ${index % 2 === 0 ? 'admin-skeleton-w-60' : 'admin-skeleton-w-80'}"></span>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="shop-inventory-detail-skeleton-section">
+                    <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-20"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-full"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-70"></span>
+                </div>
+                <div class="shop-inventory-detail-skeleton-section">
+                    <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-30"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-80"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
+                </div>
+            </div>
+        `;
+    },
+
+    buildDeliveryMetaLoadingSkeleton: function ({ rich = false } = {}) {
+        if (rich) {
+            return `
+                <div class="shop-delivery-meta-skeleton" aria-hidden="true">
+                    <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-md"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-sm"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-xs"></span>
+                </div>
+            `;
+        }
+
+        return '<span class="admin-skeleton-block admin-skeleton-block--pill admin-skeleton-w-chip-lg" aria-hidden="true"></span>';
+    },
+
+    buildDeliveryTrendLoadingSkeleton: function () {
+        return `
+            <div class="shop-delivery-empty shop-delivery-empty--skeleton" aria-hidden="true">
+                <span class="admin-skeleton-block admin-skeleton-block--title admin-skeleton-w-40"></span>
+                <div class="shop-delivery-chart-skeleton">
+                    <span class="admin-skeleton-block shop-delivery-chart-skeleton-bar shop-delivery-chart-skeleton-bar--sm"></span>
+                    <span class="admin-skeleton-block shop-delivery-chart-skeleton-bar shop-delivery-chart-skeleton-bar--lg"></span>
+                    <span class="admin-skeleton-block shop-delivery-chart-skeleton-bar shop-delivery-chart-skeleton-bar--md"></span>
+                    <span class="admin-skeleton-block shop-delivery-chart-skeleton-bar shop-delivery-chart-skeleton-bar--xl"></span>
+                    <span class="admin-skeleton-block shop-delivery-chart-skeleton-bar shop-delivery-chart-skeleton-bar--sm-mid"></span>
+                    <span class="admin-skeleton-block shop-delivery-chart-skeleton-bar shop-delivery-chart-skeleton-bar--lg-mid"></span>
+                </div>
+            </div>
+        `;
+    },
+
+    buildDeliveryHotspotLoadingSkeleton: function () {
+        return `
+            <div class="shop-delivery-table-note shop-delivery-table-note--skeleton" aria-hidden="true">
+                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-full"></span>
+                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-80"></span>
+                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-70"></span>
+                <span class="admin-skeleton-block admin-skeleton-block--line admin-skeleton-w-60"></span>
+            </div>
+        `;
+    },
+
     // ==================== Products (Grid View) ====================
     loadProducts: async function () {
         const container = document.getElementById('productsGrid');
         if (!container) return; // Grid container might be missing if HTML update failed
 
         container.classList.add('shop-grid', 'shop-admin-products-grid');
-        container.innerHTML = '<div class="loading-spinner">Loading...</div>';
+        this.renderProductGridSkeleton(container);
+        this.productGridCache = new Map();
 
         try {
             let query = supabaseClient
@@ -2809,6 +3055,7 @@ Example output format:
             const { data, error } = await query;
 
             if (error) throw error;
+            this.productGridCache = new Map((data || []).map((product) => [String(product.id || ''), { ...product }]));
 
             container.innerHTML = '';
 
@@ -3323,6 +3570,100 @@ Example output format:
         }
     },
 
+    applyProductModalCategorySelection: async function (categoryName = 'other') {
+        try {
+            await (this.productCategoryDropdownPromise || Promise.resolve());
+        } catch (error) {
+            console.warn('[ShopAdmin] Failed while waiting for category dropdown readiness:', error);
+        }
+
+        const normalizedCategoryName = String(categoryName || 'other').trim() || 'other';
+        const categoryData = this.categoryData.find((cat) => cat.name === normalizedCategoryName);
+        const categoryColor = categoryData?.color || '#6b9ece';
+        this.selectCategory(normalizedCategoryName, categoryColor);
+    },
+
+    fillProductModalFromData: function (data) {
+        if (!data) {
+            return;
+        }
+
+        this.editingProductSnapshot = data;
+        const fields = this.getFieldMap();
+        const sortValue = Number.parseInt(data.display_order, 10);
+        const normalizedDeliveryType = data.delivery_type === 'API' ? 'API' : 'KEY';
+
+        document.getElementById('editProductId').value = data.id;
+        document.getElementById('prodName').value = data[fields.name] || '';
+        document.getElementById('prodPrice').value = data[fields.price] != null ? data[fields.price] : '';
+        document.getElementById('prodIcon').value = data.icon_url;
+        document.getElementById('prodDesc').value = data[fields.desc] || '';
+        document.getElementById('prodSort').value = Number.isFinite(sortValue) ? sortValue : 0;
+        document.getElementById('prodMaxPurchaseQuantity').value = data.max_purchase_quantity != null
+            ? data.max_purchase_quantity
+            : '';
+        this.setOptionalInputValue(
+            'prodPurchaseLimit24hQuantity',
+            data.purchase_limit_24h_quantity != null ? data.purchase_limit_24h_quantity : ''
+        );
+        this.setOptionalInputValue(
+            'prodPurchaseLimitWindowQuantity',
+            data.purchase_limit_window_quantity != null ? data.purchase_limit_window_quantity : ''
+        );
+        this.setOptionalInputValue(
+            'prodPurchaseLimitWindowMinutes',
+            data.purchase_limit_window_minutes != null ? data.purchase_limit_window_minutes : ''
+        );
+        this.setOptionalInputValue(
+            'prodPerAccountPurchaseLimit',
+            data.per_account_purchase_limit != null ? data.per_account_purchase_limit : ''
+        );
+
+        let parsedRules = [];
+        if (data.quantity_rules && Array.isArray(data.quantity_rules)) {
+            parsedRules = data.quantity_rules;
+        } else if (typeof data.quantity_rules === 'string' && data.quantity_rules.trim() !== '') {
+            try {
+                parsedRules = JSON.parse(data.quantity_rules);
+            } catch (error) {
+                console.error('Failed to parse quantity rules:', error);
+            }
+        }
+        this.renderTieredPricingRules(parsedRules);
+
+        document.getElementById('prodFlashSalePrice').value = data.flash_sale_price != null ? data.flash_sale_price : '';
+        if (data.flash_sale_end) {
+            const date = new Date(data.flash_sale_end);
+            const localIso = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+            document.getElementById('prodFlashSaleEnd').value = localIso;
+        } else {
+            document.getElementById('prodFlashSaleEnd').value = '';
+        }
+
+        document.getElementById('prodDeliveryType').value = normalizedDeliveryType;
+        const deliveryTypeName = normalizedDeliveryType === 'API' ? '外部接口履约 (API Webhook)' : '卡密池发放 (KEY)';
+        const deliveryTypeLabel = document.getElementById('prodDeliveryTypeName');
+        if (deliveryTypeLabel) {
+            deliveryTypeLabel.textContent = deliveryTypeName;
+        }
+
+        document.getElementById('prodWebhookTarget').value = data.webhook_target || '';
+        this.toggleWebhookField(normalizedDeliveryType);
+
+        const showPurchaseNotes = !!data.show_purchase_notes;
+        document.getElementById('prodShowPurchaseNotes').checked = showPurchaseNotes;
+        document.getElementById('prodPurchaseNotes').value = typeof data.purchase_notes === 'string' ? data.purchase_notes : '';
+        this.togglePurchaseNotes(showPurchaseNotes);
+
+        const showUsageInstructions = !!data.show_usage_instructions;
+        document.getElementById('prodShowUsageInstructions').checked = showUsageInstructions;
+        document.getElementById('prodUsageInstructions').value = typeof data.usage_instructions === 'string' ? data.usage_instructions : '';
+        this.toggleUsageInstructions(showUsageInstructions);
+
+        void this.applyProductModalCategorySelection(data.category || 'other');
+        this.updatePreview();
+    },
+
     // Show input field for adding new category
     showAddCategoryInput: function () {
         const inputContainer = document.getElementById('newCategoryInputContainer');
@@ -3571,9 +3912,10 @@ Example output format:
         const modal = document.getElementById('productModal');
         if (!modal) { alert('Modal not found in DOM'); return; }
         this.ensureRichTextEditors();
-
-        // Populate category dropdown first
-        await this.populateCategoryDropdown();
+        this.bindProductModalOverlayDismiss();
+        this.productCategoryDropdownPromise = this.populateCategoryDropdown().finally(() => {
+            this.productCategoryDropdownPromise = null;
+        });
 
         const title = document.getElementById('productModalTitle');
         const siteEmoji = this.getEditSite() === 'intl' ? ' 🌍' : ' 🇨🇳';
@@ -3599,6 +3941,7 @@ Example output format:
             }
 
             // If no current category or it's 'all', select first available
+            await this.productCategoryDropdownPromise;
             if (!defaultCategory) {
                 const firstOption = document.querySelector('#prodCategoryOptions .custom-category-option');
                 if (firstOption) {
@@ -3653,93 +3996,34 @@ Example output format:
     },
 
     editProduct: async function (id) {
-        const { data } = await supabaseClient.from('shop_products').select('*').eq('id', id).single();
-        if (data) {
-            this.editingProductSnapshot = data;
-            const fields = this.getFieldMap();
-            const sortValue = Number.parseInt(data.display_order, 10);
-            const normalizedDeliveryType = data.delivery_type === 'API' ? 'API' : 'KEY';
+        const requestId = `${String(id || '')}:${Date.now()}`;
+        this.activeProductEditRequestId = requestId;
 
-            document.getElementById('editProductId').value = data.id;
-            document.getElementById('prodName').value = data[fields.name] || '';
-            document.getElementById('prodPrice').value = data[fields.price] != null ? data[fields.price] : '';
-            document.getElementById('prodIcon').value = data.icon_url;
-            document.getElementById('prodDesc').value = data[fields.desc] || '';
-            document.getElementById('prodSort').value = Number.isFinite(sortValue) ? sortValue : 0;
-            document.getElementById('prodMaxPurchaseQuantity').value = data.max_purchase_quantity != null
-                ? data.max_purchase_quantity
-                : '';
-            this.setOptionalInputValue(
-                'prodPurchaseLimit24hQuantity',
-                data.purchase_limit_24h_quantity != null ? data.purchase_limit_24h_quantity : ''
-            );
-            this.setOptionalInputValue(
-                'prodPurchaseLimitWindowQuantity',
-                data.purchase_limit_window_quantity != null ? data.purchase_limit_window_quantity : ''
-            );
-            this.setOptionalInputValue(
-                'prodPurchaseLimitWindowMinutes',
-                data.purchase_limit_window_minutes != null ? data.purchase_limit_window_minutes : ''
-            );
-            this.setOptionalInputValue(
-                'prodPerAccountPurchaseLimit',
-                data.per_account_purchase_limit != null ? data.per_account_purchase_limit : ''
-            );
+        void this.openProductModal(true);
 
-            // Populate marketing fields (Phase 2)
-            let parsedRules = [];
-            if (data.quantity_rules && Array.isArray(data.quantity_rules)) {
-                parsedRules = data.quantity_rules;
-            } else if (typeof data.quantity_rules === 'string' && data.quantity_rules.trim() !== '') {
-                try {
-                    parsedRules = JSON.parse(data.quantity_rules);
-                } catch (e) {
-                    console.error("Failed to parse quantity rules:", e);
-                }
-            }
-            this.renderTieredPricingRules(parsedRules);
+        const cachedProduct = this.productGridCache instanceof Map
+            ? this.productGridCache.get(String(id || ''))
+            : null;
+        if (cachedProduct) {
+            this.fillProductModalFromData(cachedProduct);
+        }
 
-            document.getElementById('prodFlashSalePrice').value = data.flash_sale_price != null ? data.flash_sale_price : '';
-            if (data.flash_sale_end) {
-                const date = new Date(data.flash_sale_end);
-                const localIso = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-                document.getElementById('prodFlashSaleEnd').value = localIso;
-            } else {
-                document.getElementById('prodFlashSaleEnd').value = '';
+        try {
+            const { data } = await supabaseClient.from('shop_products').select('*').eq('id', id).single();
+            if (!data || this.activeProductEditRequestId !== requestId) {
+                return;
             }
 
-            // Populate delivery fields
-            const deliveryType = normalizedDeliveryType;
-            document.getElementById('prodDeliveryType').value = deliveryType;
-            const typeName = deliveryType === 'API' ? '外部接口履约 (API Webhook)' : '卡密池发放 (KEY)';
-            const nameLabel = document.getElementById('prodDeliveryTypeName');
-            if (nameLabel) nameLabel.textContent = typeName;
-
-            document.getElementById('prodWebhookTarget').value = data.webhook_target || '';
-            this.toggleWebhookField(deliveryType);
-
-            // Populate purchase notes
-            const showPurchaseNotes = !!data.show_purchase_notes;
-            document.getElementById('prodShowPurchaseNotes').checked = showPurchaseNotes;
-            document.getElementById('prodPurchaseNotes').value = typeof data.purchase_notes === 'string' ? data.purchase_notes : '';
-            this.togglePurchaseNotes(showPurchaseNotes);
-
-            // Populate usage instructions
-            const showUI = !!data.show_usage_instructions;
-            document.getElementById('prodShowUsageInstructions').checked = showUI;
-            document.getElementById('prodUsageInstructions').value = typeof data.usage_instructions === 'string' ? data.usage_instructions : '';
-            this.toggleUsageInstructions(showUI);
-
-            await this.openProductModal(true);
-
-            // Set category value in custom dropdown (after modal opens and populates dropdown)
-            const categoryName = data.category || 'other';
-            const categoryData = this.categoryData.find(c => c.name === categoryName);
-            const categoryColor = categoryData?.color || '#6b9ece';
-            this.selectCategory(categoryName, categoryColor);
-
-            // Trigger preview update after data population
-            this.updatePreview();
+            if (this.productGridCache instanceof Map) {
+                this.productGridCache.set(String(data.id || ''), { ...data });
+            }
+            this.fillProductModalFromData(data);
+        } catch (error) {
+            console.error('[ShopAdmin] Failed to load product details for edit:', error);
+            if (!cachedProduct) {
+                alert('加载商品详情失败: ' + (error?.message || '未知错误'));
+                this.hideProductModal();
+            }
         }
     },
 
@@ -6318,10 +6602,10 @@ Example output format:
         this.syncShopUrlState();
 
         if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center">正在加载履约任务...</td></tr>';
+            tbody.innerHTML = this.buildShopTableLoadingSkeleton(8, { rowCount: 4, actionCount: 3 });
         }
         if (summary) {
-            summary.innerHTML = '<span class="shop-delivery-pill">正在统计履约任务...</span>';
+            summary.innerHTML = this.buildDeliveryMetaLoadingSkeleton();
         }
         if (filterHint && !this.hasDeliveryActiveFilterBreadcrumbs()) {
             filterHint.innerHTML = `
@@ -6331,59 +6615,59 @@ Example output format:
             `;
         }
         if (deadLetterBody) {
-            deadLetterBody.innerHTML = '<tr><td colspan="6" class="text-center">正在加载死信任务...</td></tr>';
+            deadLetterBody.innerHTML = this.buildShopTableLoadingSkeleton(6, { rowCount: 3 });
         }
         if (lockBody) {
-            lockBody.innerHTML = '<tr><td colspan="6" class="text-center">正在加载锁冲突任务...</td></tr>';
+            lockBody.innerHTML = this.buildShopTableLoadingSkeleton(6, { rowCount: 3 });
         }
         if (reservationBody) {
-            reservationBody.innerHTML = '<tr><td colspan="6" class="text-center">正在加载全局占位观测...</td></tr>';
+            reservationBody.innerHTML = this.buildShopTableLoadingSkeleton(6, { rowCount: 3 });
         }
         if (replayBody) {
-            replayBody.innerHTML = '<tr><td colspan="6" class="text-center">正在加载人工重放记录...</td></tr>';
+            replayBody.innerHTML = this.buildShopTableLoadingSkeleton(6, { rowCount: 3 });
         }
         if (conflictAuditBody) {
-            conflictAuditBody.innerHTML = '<tr><td colspan="5" class="text-center">正在加载冲突审计...</td></tr>';
+            conflictAuditBody.innerHTML = this.buildShopTableLoadingSkeleton(5, { rowCount: 3, actionCount: 1 });
         }
         if (conflictTrendChart) {
-            conflictTrendChart.innerHTML = `<div class="shop-delivery-empty">正在加载${analyticsWindowConfig.description}冲突趋势...</div>`;
+            conflictTrendChart.innerHTML = this.buildDeliveryTrendLoadingSkeleton();
         }
         if (conflictTrendLegend) {
             conflictTrendLegend.innerHTML = '';
         }
         if (targetHotspots) {
-            targetHotspots.innerHTML = `<div class="shop-delivery-table-note">正在加载${analyticsWindowConfig.description}热点目标...</div>`;
+            targetHotspots.innerHTML = this.buildDeliveryHotspotLoadingSkeleton();
         }
         if (channelHotspots) {
-            channelHotspots.innerHTML = `<div class="shop-delivery-table-note">正在加载${analyticsWindowConfig.description}热点通道...</div>`;
+            channelHotspots.innerHTML = this.buildDeliveryHotspotLoadingSkeleton();
         }
         if (conflictAnalyticsSummary) {
             conflictAnalyticsSummary.classList.add('shop-delivery-subcard-meta--rich');
-            conflictAnalyticsSummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
+            conflictAnalyticsSummary.innerHTML = this.buildDeliveryMetaLoadingSkeleton({ rich: true });
         }
         if (deadLetterSummary) {
             deadLetterSummary.classList.add('shop-delivery-subcard-meta--rich');
-            deadLetterSummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
+            deadLetterSummary.innerHTML = this.buildDeliveryMetaLoadingSkeleton({ rich: true });
         }
         if (lockSummary) {
             lockSummary.classList.add('shop-delivery-subcard-meta--rich');
-            lockSummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
+            lockSummary.innerHTML = this.buildDeliveryMetaLoadingSkeleton({ rich: true });
         }
         if (reservationSummary) {
             reservationSummary.classList.add('shop-delivery-subcard-meta--rich');
-            reservationSummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
+            reservationSummary.innerHTML = this.buildDeliveryMetaLoadingSkeleton({ rich: true });
         }
         if (replaySummary) {
             replaySummary.classList.add('shop-delivery-subcard-meta--rich');
-            replaySummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
+            replaySummary.innerHTML = this.buildDeliveryMetaLoadingSkeleton({ rich: true });
         }
         if (conflictAuditSummary) {
             conflictAuditSummary.classList.add('shop-delivery-subcard-meta--rich');
-            conflictAuditSummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
+            conflictAuditSummary.innerHTML = this.buildDeliveryMetaLoadingSkeleton({ rich: true });
         }
         if (strategySummary && !this.deliveryStrategyConfig) {
             strategySummary.classList.add('shop-delivery-subcard-meta--rich');
-            strategySummary.innerHTML = '<span class="shop-delivery-table-note">正在加载策略…</span>';
+            strategySummary.innerHTML = this.buildDeliveryMetaLoadingSkeleton({ rich: true });
         }
 
         try {
@@ -7184,7 +7468,7 @@ Example output format:
             orderSearchInput.value = query;
         }
 
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center">加载中...</td></tr>';
+        tbody.innerHTML = this.buildShopTableLoadingSkeleton(6, { rowCount: 5, actionCount: 3 });
 
         const limit = this.pageSize;
         const from = (page - 1) * limit;
@@ -7583,6 +7867,9 @@ Example output format:
             });
         });
 
+        this.bindOverlayDismiss(overlay, () => {
+            this.closeDynamicModal('orderContentModal');
+        });
         document.body.appendChild(overlay);
         requestAnimationFrame(() => {
             overlay.classList.add('is-visible');
@@ -7637,6 +7924,9 @@ Example output format:
             </div>
         `;
         document.body.insertAdjacentHTML('beforeend', modalHtml);
+        this.bindOverlayDismiss('refundModal', () => {
+            this.closeDynamicModal('refundModal');
+        });
         requestAnimationFrame(() => {
             document.getElementById('refundModal')?.classList.add('is-visible');
         });
@@ -8025,7 +8315,7 @@ Example output format:
         const tbody = document.getElementById('inventoryTableBody');
         if (!tbody) return;
 
-        tbody.innerHTML = '<tr><td colspan="7" class="shop-inventory-loading-cell"><i class="fas fa-spinner fa-spin"></i> 加载中...</td></tr>';
+        tbody.innerHTML = this.buildShopTableLoadingSkeleton(7, { rowCount: 5, includeCheckbox: true, actionCount: 3 });
 
         const productId = document.getElementById('invFilterProduct')?.value || null;
         const status = document.getElementById('invFilterStatus')?.value || null;
@@ -8313,6 +8603,9 @@ Example output format:
             </div>
         `;
         document.body.insertAdjacentHTML('beforeend', modalHtml);
+        this.bindOverlayDismiss('markFaultModal', () => {
+            this.closeDynamicModal('markFaultModal');
+        });
         requestAnimationFrame(() => {
             document.getElementById('markFaultModal')?.classList.add('is-visible');
         });
@@ -8356,12 +8649,15 @@ Example output format:
                         <button type="button" data-shop-action="inventory-detail-close" data-modal-id="inventoryDetailModal" class="shop-inventory-detail-close" aria-label="关闭">&times;</button>
                     </div>
                     <div id="detailContent" class="shop-inventory-detail-content">
-                        <div class="shop-inventory-detail-loading"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>
+                        ${this.buildInventoryDetailLoadingSkeleton()}
                     </div>
                 </div>
             </div>
         `;
         document.body.insertAdjacentHTML('beforeend', modalHtml);
+        this.bindOverlayDismiss('inventoryDetailModal', () => {
+            this.closeDynamicModal('inventoryDetailModal');
+        });
         requestAnimationFrame(() => {
             document.getElementById('inventoryDetailModal')?.classList.add('is-visible');
         });
@@ -8705,47 +9001,58 @@ Example output format:
     contextMenuCategory: null, // Currently selected category for context menu
 
     // Load categories from database
-    loadCategories: async function () {
+    loadCategories: async function ({ force = false } = {}) {
+        const fallbackCategories = [
+            { id: 'account', name: 'account', color: '#6b9ece', sort_order: 0 },
+            { id: 'gemini', name: 'Gemini', color: '#f4b400', sort_order: 1 },
+            { id: 'other', name: 'other', color: '#9aa0a6', sort_order: 99 }
+        ];
+
+        if (!force && Array.isArray(this.categoryData) && this.categoryData.length > 0) {
+            return this.categoryData;
+        }
+
+        if (!force && this.categoryFetchPromise) {
+            await this.categoryFetchPromise;
+            return this.categoryData;
+        }
+
+        this.categoryFetchPromise = (async () => {
+            try {
+                console.log('loadCategories: fetching from shop_categories...');
+                const { data, error } = await supabaseClient
+                    .from('shop_categories')
+                    .select('*')
+                    .order('sort_order');
+
+                console.log('loadCategories result:', { data, error });
+
+                if (error) {
+                    console.warn('shop_categories table error, using defaults:', error.message);
+                    this.categoryData = fallbackCategories;
+                    return this.categoryData;
+                }
+
+                if (!data || data.length === 0) {
+                    console.warn('shop_categories table is empty, using defaults');
+                    this.categoryData = fallbackCategories;
+                    return this.categoryData;
+                }
+
+                this.categoryData = data;
+                console.log('loadCategories: loaded', this.categoryData.length, 'categories');
+                return this.categoryData;
+            } catch (error) {
+                console.error('Failed to load categories:', error);
+                this.categoryData = fallbackCategories;
+                return this.categoryData;
+            }
+        })();
+
         try {
-            console.log('loadCategories: fetching from shop_categories...');
-            const { data, error } = await supabaseClient
-                .from('shop_categories')
-                .select('*')
-                .order('sort_order');
-
-            console.log('loadCategories result:', { data, error });
-
-            if (error) {
-                // If table doesn't exist, use fallback hardcoded categories
-                console.warn('shop_categories table error, using defaults:', error.message);
-                this.categoryData = [
-                    { id: 'account', name: 'account', color: '#6b9ece', sort_order: 0 },
-                    { id: 'gemini', name: 'Gemini', color: '#f4b400', sort_order: 1 },
-                    { id: 'other', name: 'other', color: '#9aa0a6', sort_order: 99 }
-                ];
-                return;
-            }
-
-            // If data is empty, also use fallback
-            if (!data || data.length === 0) {
-                console.warn('shop_categories table is empty, using defaults');
-                this.categoryData = [
-                    { id: 'account', name: 'account', color: '#6b9ece', sort_order: 0 },
-                    { id: 'gemini', name: 'Gemini', color: '#f4b400', sort_order: 1 },
-                    { id: 'other', name: 'other', color: '#9aa0a6', sort_order: 99 }
-                ];
-                return;
-            }
-
-            this.categoryData = data;
-            console.log('loadCategories: loaded', this.categoryData.length, 'categories');
-        } catch (e) {
-            console.error('Failed to load categories:', e);
-            this.categoryData = [
-                { id: 'account', name: 'account', color: '#6b9ece', sort_order: 0 },
-                { id: 'gemini', name: 'Gemini', color: '#f4b400', sort_order: 1 },
-                { id: 'other', name: 'other', color: '#9aa0a6', sort_order: 99 }
-            ];
+            return await this.categoryFetchPromise;
+        } finally {
+            this.categoryFetchPromise = null;
         }
     },
 
@@ -8753,7 +9060,7 @@ Example output format:
         // Target the tree container (new structure)
         const treeContainer = document.getElementById('importProductTree');
         // Clear and add loading state
-        treeContainer.innerHTML = '<div class="shop-import-tree-state">正在加载商品...</div>';
+        treeContainer.innerHTML = this.buildImportTreeLoadingSkeleton();
 
         // Reset selection
         document.getElementById('importViewProductId').value = '';

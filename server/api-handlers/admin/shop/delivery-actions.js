@@ -47,7 +47,7 @@ module.exports = async (req, res) => {
     }
 
     try {
-        const { supabase, user } = await requireAdmin(req);
+        const { supabase, user } = await requireAdmin(req, { permission: 'shop.manage' });
         const body = await parseJsonBody(req);
         const taskId = String(body.taskId || '').trim();
         const action = normalizeAction(body.action);

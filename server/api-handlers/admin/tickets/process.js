@@ -297,7 +297,7 @@ module.exports = async (req, res) => {
     }
 
     try {
-        const { supabase, user } = await requireAdmin(req);
+        const { supabase, user } = await requireAdmin(req, { permission: 'tickets.manage' });
         const body = await parseJsonBody(req);
         const ticketId = String(body.ticketId || '').trim();
         const newStatus = String(body.newStatus || '').trim().toUpperCase();

@@ -162,9 +162,39 @@ const batchPageSize = 10;
 // All available packages (for filter dropdown)
 let allPackages = [];
 
+function buildPointsBatchLoadingSkeleton(rowCount = 6) {
+    const rows = Math.max(4, Number.parseInt(rowCount, 10) || 6);
+    return Array.from({ length: rows }, (_, index) => `
+        <tr class="admin-table-skeleton-row" aria-hidden="true" data-skeleton-index="${index}">
+            <td>
+                <div class="admin-table-skeleton-cell">
+                    <span class="admin-skeleton-block admin-skeleton-block--checkbox"></span>
+                </div>
+            </td>
+            <td>
+                <div class="admin-table-skeleton-cell admin-table-skeleton-cell--stack">
+                    <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${42 + (index % 3) * 12}%"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--line" style="width:${30 + (index % 2) * 12}%"></span>
+                </div>
+            </td>
+            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill" style="width:92px"></span></div></td>
+            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--pill" style="width:76px"></span></div></td>
+            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line" style="width:52px"></span></div></td>
+            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line" style="width:48px"></span></div></td>
+            <td><div class="admin-table-skeleton-cell"><span class="admin-skeleton-block admin-skeleton-block--line" style="width:116px"></span></div></td>
+            <td>
+                <div class="admin-table-skeleton-cell admin-table-skeleton-actions">
+                    <span class="admin-skeleton-block admin-skeleton-block--action"></span>
+                    <span class="admin-skeleton-block admin-skeleton-block--action"></span>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
 async function loadBatches() {
     const tbody = document.getElementById('batchesTableBody');
-    tbody.innerHTML = '<tr><td colspan="8" class="loading-cell">加载中...</td></tr>';
+    tbody.innerHTML = buildPointsBatchLoadingSkeleton();
 
     try {
         // Load batches

@@ -1657,7 +1657,7 @@ module.exports = async function handler(req, res) {
     }
 
     try {
-        const { supabase, requestSupabase, user } = await requireAdmin(req);
+        const { supabase, requestSupabase, user } = await requireAdmin(req, { permission: 'payments.manage' });
         const scopedClient = supabase || requestSupabase;
         const site = typeof req.query?.site === 'string' && req.query.site.trim() ? req.query.site.trim() : null;
         const view = ['overview', 'finance', 'ops'].includes(String(req.query?.view || '').trim())

@@ -695,12 +695,12 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/admin-chat.js?v=20260331_ADMIN_CHAT_PAYMENT_USER_LINK_34'),
+        adminStudioHtml.includes('js/admin-chat.js?v=20260331_ADMIN_CHAT_LOADING_SKELETON_1'),
         true,
         'admin-studio.html should load the latest admin chat case action runtime'
     );
     assert.equal(
-        adminStudioHtml.includes('css/admin-chat.css?v=20260331_ADMIN_CHAT_QUEUE_DUTY_ADVICE_18'),
+        adminStudioHtml.includes('css/admin-chat.css?v=20260331_ADMIN_CHAT_LOADING_SKELETON_1'),
         true,
         'admin-studio.html should load the latest admin chat case action stylesheet'
     );
@@ -1052,7 +1052,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260324_INDEX_STYLE_ATTRS_1'],
         ['shop.html', 'css/shop-page.css?v=20260324_SHOP_RUNTIME_STYLE_1'],
-        ['admin-studio.html', 'css/admin-studio-page.css?v=20260327_ADMIN_MODAL_MOTION_SWEEP_1'],
+        ['admin-studio.html', 'css/admin-studio-page.css?v=20260331_ADMIN_LOADING_SKELETONS_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260324_ADMIN_ENTRY_PAGE_STYLES_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260324_AUTH_CALLBACK_PAGE_STYLES_1'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
@@ -3251,6 +3251,8 @@ test('admin studio routes hardened shell and dashboard controls through delegate
 test('admin studio points and users controls route through delegated actions', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+    const adminUsersSource = readRepoFile('admin-users.js');
 
     const removedInlineMarkers = [
         `onclick="switchPointsView('batches')"`,
@@ -3328,16 +3330,23 @@ test('admin studio points and users controls route through delegated actions', (
         'data-admin-action="users-batch-add-tags"',
         'data-admin-action="users-batch-export"',
         'data-admin-action="users-batch-ban"',
-        'data-admin-action="users-close-modal"',
-        'data-admin-action="users-switch-tab"'
+        'id="userTabNav"'
     ];
 
     for (const marker of delegatedMarkers) {
         assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
     }
 
+    assert.equal(adminStudioSource.includes('js/ios-scroll-lock.js'), true, 'admin-studio.html should load the shared iOS scroll lock helper');
     assert.equal(adminStudioScript.includes('points-switch-view'), true, 'admin-studio.js should handle points tab delegation');
     assert.equal(adminStudioScript.includes('users-switch-tab'), true, 'admin-studio.js should handle user modal tab delegation');
+    assert.equal(adminUsersSource.includes('USER_MODAL_TAB_REGISTRY'), true, 'admin-users.js should register user modal tabs centrally');
+    assert.equal(adminUsersSource.includes('renderUserTabNavigation(activeTab = currentTab)'), true, 'admin-users.js should render the user modal tab nav from the registry');
+    assert.equal(adminStudioScript.includes('function measureAdminStudioScrollbarGap()'), true, 'admin-studio.js should measure the viewport scrollbar gap before locking the background');
+    assert.equal(adminStudioScript.includes('function observeAdminStudioModalScrollLock()'), true, 'admin-studio.js should observe modal visibility and lock background scroll');
+    assert.equal(adminStudioStyles.includes('body.ios-scroll-lock-fixed'), true, 'admin-studio.css should define the fixed-body scroll lock state');
+    assert.equal(adminStudioStyles.includes('scrollbar-gutter: stable;'), true, 'admin-studio.css should reserve a stable root scrollbar gutter for modal transitions');
+    assert.equal(adminStudioStyles.includes('right: var(--admin-scroll-lock-gap, 0px);'), true, 'admin-studio.css should compensate the hidden scrollbar width while a modal is open');
     assert.equal(adminStudioScript.includes('[data-admin-keydown-action]'), true, 'admin-studio.js should delegate keydown-based admin controls');
     assert.equal(adminStudioScript.includes("form.id === 'generateCodesForm'"), true, 'admin-studio.js should delegate points generate form submission');
 });
@@ -3437,6 +3446,7 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         'data-avatar-fallback-src="https://via.placeholder.com/80"',
         'data-admin-action="users-copy-meta"',
         'data-admin-action="users-show-tag-input"',
+        'data-admin-action="users-apply-permission-template"',
         'data-admin-action="users-remove-tag"',
         'data-admin-change-action="users-toggle-modal-admin"',
         'data-admin-action="users-save-modal-admin-permissions"',
@@ -3450,12 +3460,10 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         'data-admin-action="users-open-custom-date-picker"',
         'data-admin-action="users-export-tab-data"',
         'data-admin-action="users-open-ledger-detail"',
-        'data-admin-action="users-close-ledger-detail"',
         'data-admin-action="users-open-user-modal"',
-        'data-admin-action="users-reload-affiliate"',
+        'data-admin-action="users-reload-tab"',
         'data-users-note-input="1"',
         'data-admin-action="users-submit-note"',
-        'data-admin-action="users-close-notification-modal"',
         'data-admin-action="users-select-notification-type"',
         'data-admin-action="users-send-notification"',
         'batch-export-modal-overlay',
@@ -3478,39 +3486,102 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         'users-points-form-group-first',
         'custom-tag-input',
         'data-batch-tag-value="',
-        'data-batch-tag-close="1"',
         'data-batch-tag-submit="1"',
-        'data-users-ban-action="close"',
         'data-users-ban-action="select"',
         'data-users-ban-action="details"',
         'data-users-ban-action="confirm"',
-        'data-users-points-action="close"',
         'data-users-clear-action="close"',
         'document.documentElement.dataset.adminUsersRuntimeDelegatesBound',
         "target.matches('[data-users-tag-input=\"1\"]')",
         'function setModalAdminPermissionsSectionVisible(',
+        'function getAdminRoleExpiryMeta(',
+        'function showBatchAdminRenewModal(',
+        'function batchRenewAdminAccess(',
+        'function showBatchAdminExpiryModal(',
+        'function batchSetAdminExpiry(',
         'function bindBanUserModalInteractions(overlay)',
         'function bindPointsModalInteractions(overlay)',
         'function bindClearContentModalInteractions(overlay)',
         'function animateUsersOverlayIn(',
         'function animateUsersOverlayOut(',
+        'function renderUserTabNavigation(activeTab = currentTab)',
+        'async function ensureUserModalTabData(tabName, options = {})',
+        'function reloadUserModalTab(tabName, options = {})',
+        'function scheduleUserModalTabPrefetch(activeTab = currentTab)',
+        'function clearUserModalTabPrefetch()',
+        'function createDefaultUserModalTabFilterState(tabName = \'\')',
+        'function getUserModalTabFilterState(tabName = \'\')',
+        'function getUserModalTabVisibleData(tabName = \'\', dataOverride)',
+        'captureUserModalTabUiState()',
+        'function formatUserModalTabLoadedAt(value)',
+        'function getUserModalTabFreshnessMeta(tabName = \'\')',
+        'function userTabSupportsToolbar(tabName = \'\')',
+        'function buildUserTabStateShell(tabName = currentTab, options = {})',
+        'function buildUserTabLoadingBody(tabName = currentTab)',
+        'function buildAffiliateTabLoadingSkeleton()',
+        'function buildUserTabActionBanner(tabName = \'\')',
+        'function buildUserTabRefreshOverlay(tabName = \'\', variant = \'list\')',
+        'function wrapUserTabRefreshShell(tabName = \'\', contentMarkup = \'\', options = {})',
+        'function buildUserTabStandaloneActions(tabName = \'\', options = {})',
+        'function buildUserTabToolbarMeta(tabName = \'\')',
+        'function setUserModalTabFeedback(tabName = \'\', message = \'\', tone = \'info\')',
+        'function patchUserModalTabState(tabName = \'\', updates = {})',
+        'function buildPendingUserNoteItem(note = {})',
+        'function clearUserModalTabFeedbackDismiss(tabName = \'\')',
+        'function clearAllUserModalTabFeedbackDismiss()',
+        'function clearUserModalTabFeedback(tabName = \'\', options = {})',
+        'function scheduleUserModalTabFeedbackDismiss(tabName = \'\', tone = \'info\', durationMs = null)',
+        'tabContent.innerHTML = buildUserTabLoadingState(currentTab);',
+        "const USER_MODAL_SESSION_STORAGE_KEY = 'admin_studio_user_modal_state_v1'",
+        'function getUserModalUrlState()',
+        'function buildUserModalRestoreStateForUser(userId, options = {})',
+        'function syncUserModalUrlState(options = {})',
+        'function syncCurrentUserModalPersistentState()',
+        'async function maybeRestoreUserModalFromUrl()',
+        'window.sessionStorage.getItem(USER_MODAL_SESSION_STORAGE_KEY)',
+        "window.history.replaceState(window.history.state, '', nextRelativeUrl);",
+        'void maybeRestoreUserModalFromUrl();',
+        'async function fetchUserNotes(userId)',
+        'async function fetchUserAuditLogs(userId)',
+        'async function fetchUserAffiliateBundle(userId)',
         'fetchUserPaymentOrders(userId)',
-        'renderPaymentsTab(container)',
+        'function renderPaymentsTab(container, rawData = currentModalData.paymentOrders || [])',
         'renderPaymentItems(data)',
-        'normalizeUserModalTab(tabName = \'\')'
+        'normalizeUserModalTab(tabName = \'\')',
+        'data-tab-state="${escapeHtml(visualState)}"',
+        'window.requestIdleCallback',
+        'const visibleData = getUserModalTabVisibleData(normalizedTab);',
+        'noteSubmitting: false,',
+        'pendingNotePreview: null',
+        'feedbackClosing: false'
     ];
 
     for (const marker of delegatedMarkers) {
         assert.equal(adminUsersSource.includes(marker), true, `admin-users.js should contain ${marker}`);
     }
 
+    assert.equal(
+        adminStudioSource.includes('data-admin-action="users-batch-renew-admin"'),
+        true,
+        'admin-studio.html should expose the batch admin renewal action in the users batch menu'
+    );
+
+    assert.equal(
+        adminStudioSource.includes('data-admin-action="users-batch-set-admin-expiry"'),
+        true,
+        'admin-studio.html should expose the batch admin expiry setter action in the users batch menu'
+    );
+
     const delegatedHandlerMarkers = [
         "case 'users-open-drawer':",
         "case 'users-stop-propagation':",
         "case 'users-copy-meta':",
         "case 'users-show-tag-input':",
+        "case 'users-apply-permission-template':",
         "case 'users-remove-tag':",
         "case 'users-save-modal-admin-permissions':",
+        "case 'users-batch-renew-admin':",
+        "case 'users-batch-set-admin-expiry':",
         "case 'users-toggle-block':",
         "case 'users-adjust-points':",
         "case 'users-reset-avatar':",
@@ -3523,11 +3594,14 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         "case 'users-open-ledger-detail':",
         "case 'users-close-ledger-detail':",
         "case 'users-open-user-modal':",
+        "case 'users-reload-tab':",
         "case 'users-reload-affiliate':",
         "case 'users-submit-note':",
         "case 'users-close-notification-modal':",
         "case 'users-select-notification-type':",
         "case 'users-send-notification':",
+        "case 'users-toggle-admin-expiry-filter':",
+        "case 'users-filter-admin-expiry':",
         "case 'users-toggle-select-all-page':",
         "case 'users-toggle-selection':",
         "case 'users-toggle-modal-admin':"
@@ -3552,6 +3626,12 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         '.modal-permissions-panel--admin-collapsed',
         '.perm-section--collapsible',
         '.perm-section--collapsed',
+        '.perm-template-grid',
+        '.perm-coverage-card',
+        '.users-batch-renew-modal',
+        '.users-batch-renew-card',
+        '.users-batch-expiry-modal',
+        '.users-batch-expiry-input',
         '.admin-ledger-item--emerald',
         '.admin-ledger-modal-overlay.active',
         '.admin-ledger-modal-overlay.active .admin-ledger-modal',
@@ -3563,17 +3643,38 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         '.custom-tag-input',
         '.scope-options-pills--tone-unban',
         '.users-fixed-flatpickr-calendar',
+        '.audit-diff-pill',
+        '.admin-expiry-chip',
+        '.user-row--admin-expiring',
         '.users-notes-input--overflow',
         '.users-payment-item',
         '.users-payment-head',
-        '.users-payment-focus-pill'
+        '.users-payment-focus-pill',
+        '.user-tab-status-dot',
+        '@keyframes userTabStatusPulse',
+        '.users-tab-state',
+        '.users-tab-state-header',
+        '.users-tab-skeleton-card',
+        '.users-tab-skeleton-dashboard',
+        '.users-tab-retry-btn',
+        '@keyframes userTabSkeletonSweep',
+        '.users-tab-inline-banner',
+        '.users-tab-inline-banner.is-closing',
+        '.users-tab-refresh-shell',
+        '.users-tab-toolbar--standalone',
+        '.users-tab-toolbar-main',
+        '.users-tab-standalone-actions',
+        '.users-tab-toolbar-meta',
+        '.users-tab-freshness-chip',
+        '.users-note-item--pending',
+        '.users-note-pending-chip'
     ];
 
     for (const marker of styleMarkers) {
         assert.equal(adminStudioStyles.includes(marker), true, `admin-studio.css should contain ${marker}`);
     }
 
-    assert.equal(adminStudioSource.includes('data-user-tab="payments"'), true, 'admin-studio.html should expose the payments tab in user detail modal');
+    assert.equal(adminStudioSource.includes('id="userTabNav"'), true, 'admin-studio.html should expose a dedicated container for registry-driven user detail tabs');
 });
 
 test('admin points runtime renderers route batch tables and modals through delegated actions', () => {
@@ -3620,6 +3721,209 @@ test('admin points runtime renderers route batch tables and modals through deleg
     for (const marker of delegatedMarkers) {
         assert.equal(adminPointsSource.includes(marker), true, `admin-points.js should contain ${marker}`);
     }
+});
+
+test('user modal expiry picker uses a body-mounted floating flatpickr inside the permissions panel', () => {
+    const adminUsersSource = readRepoFile('admin-users.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+
+    assert.match(
+        adminUsersSource,
+        /function destroyModalRoleExpiryPicker\(\)/,
+        'admin-users.js should expose a dedicated cleanup path for the modal expiry picker'
+    );
+    assert.match(
+        adminUsersSource,
+        /function bindFloatingFlatpickrCalendar\(instance, anchorEl, scrollContainer = null\)/,
+        'admin-users.js should centralize floating flatpickr positioning for the modal expiry input'
+    );
+    assert.match(
+        adminUsersSource,
+        /appendTo:\s*document\.body/,
+        'admin-users.js should append the role expiry flatpickr to document.body to avoid modal column drift'
+    );
+    assert.match(
+        adminUsersSource,
+        /instance\._scheduleFloatingPosition/,
+        'admin-users.js should keep a reusable reposition hook for the modal expiry flatpickr'
+    );
+    assert.match(
+        adminStudioStyles,
+        /\.users-fixed-flatpickr-calendar\s*\{[\s\S]*position:\s*fixed !important;/,
+        'admin-studio.css should keep the fixed-position flatpickr helper class for floating calendars'
+    );
+});
+
+test('admin studio centralizes module permissions and gates sidebar modules through the shared registry', () => {
+    const bootstrapSource = readRepoFile('js/admin-studio-bootstrap.js');
+    const sidebarStyles = readRepoFile('admin-sidebar.css');
+
+    assert.match(
+        bootstrapSource,
+        /window\.ADMIN_PERMISSION_GROUPS\s*=\s*ADMIN_PERMISSION_GROUPS/,
+        'admin-studio-bootstrap.js should expose the shared admin permission groups'
+    );
+    assert.match(
+        bootstrapSource,
+        /window\.hasModulePermission\s*=\s*hasModulePermission/,
+        'admin-studio-bootstrap.js should expose a module-level permission guard helper'
+    );
+    assert.match(
+        bootstrapSource,
+        /function syncAdminStudioModuleAccess\(options = \{\}\)/,
+        'admin-studio-bootstrap.js should centralize sidebar permission syncing'
+    );
+    assert.match(
+        bootstrapSource,
+        /adminModuleAccessNotice/,
+        'admin-studio-bootstrap.js should render a dedicated empty state when no module permissions are assigned'
+    );
+    assert.match(
+        sidebarStyles,
+        /\.sidebar-item\.disabled\s*\{[\s\S]*cursor:\s*not-allowed;/,
+        'admin-sidebar.css should visibly lock unauthorized sidebar modules'
+    );
+});
+
+test('user modal renders overview cards and grouped permission checklists from the shared admin permission registry', () => {
+    const adminUsersSource = readRepoFile('admin-users.js');
+    const adminStudioStyles = readRepoFile('admin-studio.css');
+
+    assert.match(
+        adminUsersSource,
+        /function renderAdminPermissionChecklist\(permissionList = \[\]\)/,
+        'admin-users.js should render the modal permission list from a shared checklist builder'
+    );
+    assert.match(
+        adminUsersSource,
+        /window\.ADMIN_PERMISSION_GROUPS/,
+        'admin-users.js should consume the shared admin permission registry'
+    );
+    assert.match(
+        adminUsersSource,
+        /function buildUserProfileOverview\(user, roleInfo, activeBans = \[\]\)/,
+        'admin-users.js should build a dedicated overview panel for user detail'
+    );
+    assert.match(
+        adminUsersSource,
+        /user-overview-grid/,
+        'admin-users.js should render the overview grid markup in the user detail modal'
+    );
+    assert.doesNotMatch(
+        adminUsersSource,
+        /<!--Assets Info - Compact Icon \+ Value-- >/,
+        'admin-users.js should not leave malformed HTML comments ahead of the assets and overview block'
+    );
+    assert.doesNotMatch(
+        adminUsersSource,
+        /< !--Tags - Custom Dropdown-- >/,
+        'admin-users.js should not leave malformed HTML comments ahead of the tags block'
+    );
+    assert.match(
+        adminStudioStyles,
+        /\.user-overview-grid\s*\{[\s\S]*grid-template-columns:/,
+        'admin-studio.css should style the user detail overview grid'
+    );
+    assert.match(
+        adminStudioStyles,
+        /\.perm-item--rich\s*\{/,
+        'admin-studio.css should support the richer grouped permission checklist rows'
+    );
+    assert.match(
+        adminUsersSource,
+        /function queueModalAdminPermissionsAutosave\(/,
+        'admin-users.js should queue modal permission writes through a dedicated autosave helper'
+    );
+    assert.match(
+        adminUsersSource,
+        /function flushModalAdminPermissionsBeforeExit\(/,
+        'admin-users.js should flush or confirm modal permission edits before closing or switching users'
+    );
+    assert.match(
+        adminUsersSource,
+        /function bindUserModalOverlayDismiss\(\)/,
+        'admin-users.js should bind a dedicated overlay dismiss handler for the user detail modal'
+    );
+    assert.match(
+        adminUsersSource,
+        /window\.addEventListener\('beforeunload'/,
+        'admin-users.js should warn before a hard refresh when modal permission edits are still pending'
+    );
+    assert.match(
+        adminUsersSource,
+        /id="modalAdminPermissionsSaveStatus"/,
+        'admin-users.js should render a visible modal permission save-status indicator'
+    );
+    assert.match(
+        adminUsersSource,
+        /ensureModalAdminDefaultPermissionSelection\(\)/,
+        'admin-users.js should realign the UI with the default admin permission immediately after granting admin access'
+    );
+    assert.match(
+        adminUsersSource,
+        /const ADMIN_PERMISSION_TEMPLATES = \[/,
+        'admin-users.js should define reusable admin permission templates for common operator roles'
+    );
+    assert.match(
+        adminUsersSource,
+        /function applyModalAdminPermissionTemplate\(userId, templateId\)/,
+        'admin-users.js should apply permission templates inside the user detail modal'
+    );
+    assert.match(
+        adminUsersSource,
+        /function buildAdminPermissionChangeDetails\(previousRoleInfo = \{\}, nextFormState = \{\}, extras = \{\}\)/,
+        'admin-users.js should normalize permission change diffs before writing audit entries'
+    );
+    assert.match(
+        adminUsersSource,
+        /function renderAdminPermissionAuditDetails\(details = \{\}\)/,
+        'admin-users.js should render permission audit entries as structured diffs'
+    );
+    assert.match(
+        adminUsersSource,
+        /template_label/,
+        'admin-users.js should preserve the applied permission template label in permission audit details'
+    );
+    assert.match(
+        adminUsersSource,
+        /function getAdminRoleExpiryMeta\(roleInfo = null, \{ email = '' \} = \{\}\)/,
+        'admin-users.js should derive admin role expiry reminder metadata for lists and overview cards'
+    );
+    assert.match(
+        adminUsersSource,
+        /label: '权限到期'/,
+        'admin-users.js should surface admin expiry state in the overview card set'
+    );
+    assert.match(
+        adminUsersSource,
+        /class="admin-expiry-chip admin-expiry-chip--/,
+        'admin-users.js should render an inline expiry chip for soon-to-expire admins in the users table'
+    );
+    assert.match(
+        adminStudioStyles,
+        /\.perm-save-status\s*\{/,
+        'admin-studio.css should style the modal permission autosave status row'
+    );
+    assert.match(
+        adminStudioStyles,
+        /\.perm-save-btn:disabled\s*\{/,
+        'admin-studio.css should style the permission save button while a save is in flight'
+    );
+    assert.match(
+        adminStudioStyles,
+        /\.perm-template-btn\.is-active\s*\{/,
+        'admin-studio.css should visibly mark the active permission template'
+    );
+    assert.match(
+        adminStudioStyles,
+        /\.audit-diff-pill--added\s*\{/,
+        'admin-studio.css should style added permission badges inside audit diffs'
+    );
+    assert.match(
+        adminStudioStyles,
+        /\.user-row--admin-expiring td:first-child\s*\{/,
+        'admin-studio.css should highlight rows for admins whose permissions are close to expiring'
+    );
 });
 
 test('admin points runtime renderers externalize tab state, panel visibility, and lookup styling', () => {
@@ -4313,7 +4617,7 @@ test('ticket admin surfaces user email in search and list rendering', () => {
 
     assert.equal(adminStudioSource.includes('placeholder="搜索订单号、邮箱或描述..."'), true, 'admin-studio.html should mention email in the ticket search placeholder');
     assert.equal(adminStudioSource.includes('<th>用户 / 邮箱</th>'), true, 'admin-studio.html should label the ticket user column with email support');
-    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260331_ADMIN_TICKETS_FOCUS_3'), true, 'admin-studio.html should load the cache-busted ticket admin script');
+    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260331_ADMIN_TICKETS_LOADING_SKELETON_1'), true, 'admin-studio.html should load the cache-busted ticket admin script');
     assert.equal(ticketsSource.includes("fetchProfilesByIds: async function"), true, 'js/admin-tickets.js should fetch profile emails for ticket users');
     assert.equal(ticketsSource.includes("t.user_email && t.user_email.toLowerCase().includes(q)"), true, 'js/admin-tickets.js should allow searching tickets by user email');
     assert.equal(ticketsSource.includes("ticket.user_email"), true, 'js/admin-tickets.js should render ticket user email');
@@ -4362,6 +4666,7 @@ test('discount admin runtime renderers externalize table states, copy toast, and
     const runtimeMarkers = [
         'bindStaticControls: function',
         'createTableStateRow: function',
+        'buildTableLoadingSkeleton: function',
         'setGenerateModalVisible: function',
         'setTypeDropdownOpen: function',
         'getDiscountTypeMarkup: function',
@@ -4453,7 +4758,7 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
 
     const delegatedRuntimeMarkers = [
         'createTableStateRow: function',
-        "variant: 'loading'",
+        'buildTableLoadingSkeleton: function',
         'admin-ticket-status-badge admin-ticket-status-badge--${normalizedStatus.toLowerCase()}',
         'admin-ticket-action-btn admin-ticket-action-btn--${variant}',
         'admin-ticket-pagination-shell',
@@ -4568,12 +4873,24 @@ test('admin studio security, verify, affiliate, and experiment controls route th
         'analytics-show-ab-results',
         '[data-admin-focus-action]',
         '[data-admin-blur-action]',
-        "form.id === 'experimentForm'"
+        "form.id === 'experimentForm'",
+        "case 'user-modal':"
     ];
 
     for (const marker of adminScriptMarkers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
+
+    assert.equal(
+        analyticsSource.includes('function bindExperimentModalOverlayDismiss()'),
+        true,
+        'admin-analytics.js should bind the experiment modal overlay dismiss handler'
+    );
+    assert.equal(
+        adminStudioSource.includes('id="userModalOverlay" data-admin-overlay-close="user-modal"'),
+        true,
+        'admin-studio.html should let the shared overlay close dispatcher dismiss the user modal'
+    );
 
     assert.equal(adminStudioSource.includes('id="lockedAccountsRefreshButton"'), true, 'admin-studio.html should expose a dedicated locked accounts refresh button');
     assert.equal(adminStudioSource.includes('id="lockedAccountsRefreshIndicator"'), true, 'admin-studio.html should expose locked accounts refresh feedback');
@@ -4703,6 +5020,8 @@ test('shop admin pagination and inventory/product workflows no longer emit targe
 
     assert.equal(shopSource.includes('bindDelegatedHandlers: function'), true, 'js/admin-shop.js should bind delegated handlers');
     assert.equal(shopSource.includes('data-shop-overlay-close="dynamic-modal"'), true, 'js/admin-shop.js should render delegated dynamic modal overlays');
+    assert.equal(shopSource.includes('bindOverlayDismiss: function'), true, 'js/admin-shop.js should expose a shared overlay dismiss helper for shop modals');
+    assert.equal(shopSource.includes('bindStaticOverlayDismisses: function'), true, 'js/admin-shop.js should bind dedicated dismiss handlers for static shop overlays');
 });
 
 test('shop admin product grid runtime templates externalize card styling and visibility state', () => {
@@ -4732,6 +5051,7 @@ test('shop admin product grid runtime templates externalize card styling and vis
 
     const delegatedMarkers = [
         "container.classList.add('shop-grid', 'shop-admin-products-grid')",
+        'renderProductGridSkeleton: function',
         "addCard.dataset.shopAction = 'product-open-create-modal'",
         'shop-admin-product-card shop-admin-product-card--create',
         'shop-admin-product-cover',
@@ -4751,6 +5071,9 @@ test('shop admin product grid runtime templates externalize card styling and vis
         '.shop-view--active',
         '.batch-menu.is-open',
         '.shop-admin-products-grid',
+        '.shop-admin-product-card--skeleton',
+        '.shop-admin-skeleton--title',
+        '@keyframes shop-admin-skeleton-shimmer',
         '.shop-admin-product-card--create',
         '.shop-admin-product-cover',
         '.shop-admin-status-badge',
@@ -4793,7 +5116,10 @@ test('shop admin order workflows externalize runtime table-row and modal styling
         'shop-refund-status-grid',
         'shop-refund-modal-textarea refund-modal-input',
         'shop-order-action-btn shop-order-action-btn--refund',
-        'focusOrder: async function'
+        'focusOrder: async function',
+        'buildInventoryDetailLoadingSkeleton: function',
+        'buildImportTreeLoadingSkeleton: function',
+        'buildDeliveryTrendLoadingSkeleton: function'
     ];
 
     for (const marker of runtimeMarkers) {
@@ -4810,14 +5136,19 @@ test('shop admin order workflows externalize runtime table-row and modal styling
         '.shop-refund-modal-overlay.is-visible',
         '.shop-refund-status-grid',
         '.shop-refund-modal-textarea',
-        '.shop-order-action-btn--refund'
+        '.shop-order-action-btn--refund',
+        '.shop-inventory-detail-loading--skeleton',
+        '.shop-import-tree-state--skeleton',
+        '.shop-delivery-empty--skeleton',
+        '.shop-delivery-table-note--skeleton',
+        '.shop-delivery-chart-skeleton'
     ];
 
     for (const marker of styleMarkers) {
         assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
     }
 
-    assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260331_SHOP_ORDER_FOCUS_2'), true, 'admin-studio.html should load the cache-busted shop admin script');
+    assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260331_SHOP_LOADING_SKELETONS_1'), true, 'admin-studio.html should load the cache-busted shop admin script');
     assert.equal(adminStudioSource.includes('admin-config.js?v=20260331_OPS_ALERT_QUICK_REPLY_COLLAPSE_10'), true, 'admin-studio.html should load the cache-busted admin config script');
     assert.equal(configSource.includes('window.ShopAdmin?.focusOrder'), true, 'admin-config.js should directly focus shop order workspaces when an order id is available');
 });
@@ -4840,7 +5171,7 @@ test('shop admin inventory workflows externalize runtime table and modal styling
     }
 
     const runtimeMarkers = [
-        'shop-inventory-loading-cell',
+        'buildShopTableLoadingSkeleton: function',
         'shop-inventory-content-chip',
         'shop-inventory-status-badge',
         'shop-inventory-fault-overlay',
@@ -5423,7 +5754,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
     const htmlMarkers = [
         '<div class="anomaly-alerts-area" id="anomalyAlertsArea" hidden>',
         '<div class="ab-results-chart" id="abResultsChart" hidden>',
-        'admin-analytics.js?v=20260324_ANALYTICS_RUNTIME_STYLE_1'
+        'admin-analytics.js?v=20260331_ANALYTICS_EXPERIMENT_OVERLAY_CLOSE_1'
     ];
 
     for (const marker of htmlMarkers) {
@@ -5822,7 +6153,8 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
         "subEl.className = 'session-preview session-preview-subtext';",
         "this.setElementHidden(document.getElementById('chatEmptyState'), true);",
         "this.setElementHidden(interfaceEl, false);",
-        '<div class="chat-loading-state">',
+        'buildMessageAreaLoadingSkeleton()',
+        'chat-loading-state chat-loading-state--skeleton',
         'getSessionQueueDutyAdvice(snapshot = null)',
         'data-session-snapshot-action="apply-recommended-mode"'
     ];
@@ -5842,6 +6174,8 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
         '.chat-interface[hidden]',
         '.admin-emoji-picker:not([hidden])',
         '.chat-loading-state',
+        '.chat-loading-state--skeleton',
+        '.chat-skeleton-bubble',
         '.session-queue-snapshot__suggestions',
         '.session-queue-suggestion',
         '.session-queue-suggestion__action'
@@ -5852,8 +6186,8 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
     }
 
     const htmlMarkers = [
-        'css/admin-chat.css?v=20260331_ADMIN_CHAT_QUEUE_DUTY_ADVICE_18',
-        'js/admin-chat.js?v=20260331_ADMIN_CHAT_PAYMENT_USER_LINK_34'
+        'css/admin-chat.css?v=20260331_ADMIN_CHAT_LOADING_SKELETON_1',
+        'js/admin-chat.js?v=20260331_ADMIN_CHAT_LOADING_SKELETON_1'
     ];
 
     for (const marker of htmlMarkers) {
@@ -6102,6 +6436,8 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'function installSupabaseStub() {',
         'function installFetchStub() {',
         'async function runAdminStudioSmoke() {',
+        'async function runUserModalSmoke() {',
+        'async function runExperimentModalSmoke() {',
         'async function runAdminChatSmoke() {',
         'async function runNotificationSmoke() {',
         'function shouldRunMobileLayoutChecks() {',
@@ -6111,6 +6447,8 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         '交班报表可切到“我的接班”视角',
         '客服工作台队列总览已渲染',
         '快捷回复点击后会回填插值正文',
+        '用户详情弹窗支持点击外部关闭',
+        'A/B 实验弹窗支持点击外部关闭',
         '客服工作台窄屏下值班建议与会话区没有横向溢出',
         '通知中心窄屏下长文案会自然换行',
         "recordResult('通知置顶会立即影响排序'"
@@ -6121,17 +6459,17 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260331_LOCAL_SMOKE_FIXTURES_4'),
+        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260331_LOCAL_SMOKE_FIXTURES_6'),
         true,
         'admin-studio.html should load the local smoke fixtures entry'
     );
     assert.equal(
-        smokeNotificationHtml.includes('css/smoke-notifications.css?v=20260331_LOCAL_SMOKE_FIXTURES_4'),
+        smokeNotificationHtml.includes('css/smoke-notifications.css?v=20260331_LOCAL_SMOKE_FIXTURES_6'),
         true,
         'smoke-notifications.html should load the dedicated smoke harness stylesheet'
     );
     assert.equal(
-        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260331_LOCAL_SMOKE_FIXTURES_4'),
+        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260331_LOCAL_SMOKE_FIXTURES_6'),
         true,
         'smoke-notifications.html should load the local smoke fixtures entry'
     );

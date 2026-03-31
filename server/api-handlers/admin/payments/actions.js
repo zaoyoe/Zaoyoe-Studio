@@ -1197,7 +1197,7 @@ module.exports = async function handler(req, res) {
     }
 
     try {
-        const { supabase, requestSupabase, user } = await requireAdmin(req);
+        const { supabase, requestSupabase, user } = await requireAdmin(req, { permission: 'payments.manage' });
         const body = await parseJsonBody(req);
         const targetType = normalizeText(body.targetType).toLowerCase();
         const targetId = normalizeText(body.targetId);

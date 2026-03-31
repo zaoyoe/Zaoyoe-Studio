@@ -23,7 +23,7 @@ function getForwardHeaders(req) {
 
 module.exports = async (req, res) => {
     try {
-        await requireAdmin(req);
+        await requireAdmin(req, { permission: 'settings.manage' });
 
         if (req.method !== 'GET') {
             res.setHeader('Allow', 'GET');

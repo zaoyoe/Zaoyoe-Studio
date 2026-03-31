@@ -1348,6 +1348,87 @@
             Boolean(activeMineChip) && /我名下积压模块|我的处理量/.test(minePanelText),
             minePanelText.replace(/\s+/g, ' ').trim().slice(0, 72)
         );
+
+        await runUserModalSmoke();
+        await runExperimentModalSmoke();
+    }
+
+    async function runUserModalSmoke() {
+        await waitFor(() => typeof globalScope.openUserModal === 'function', { message: '用户详情弹窗入口未加载完成' });
+        const targetUserId = String(smokeState.profiles?.[0]?.id || '').trim();
+        if (!targetUserId) {
+            recordResult('用户详情弹窗支持点击外部关闭', false, '本地 smoke 未提供测试用户');
+            return;
+        }
+
+        const opened = await globalScope.openUserModal(targetUserId, { tab: 'ledger' });
+        const overlay = await waitFor(
+            () => {
+                const node = document.getElementById('userModalOverlay');
+                return node?.classList.contains('active') ? node : null;
+            },
+            { message: '用户详情弹窗未能打开' }
+        );
+
+        await nextFrame();
+        await sleep(80);
+
+        const bodyLocked = document.body.classList.contains('no-scroll')
+            || document.body.classList.contains('ios-scroll-lock-fixed')
+            || document.documentElement.classList.contains('no-scroll');
+        recordResult(
+            '用户详情弹窗打开时背景滚动已锁定',
+            Boolean(opened) && bodyLocked,
+            `body=${document.body.className || '<empty>'} / html=${document.documentElement.className || '<empty>'}`
+        );
+
+        overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await sleep(180);
+
+        let closeDetail = 'overlay click dismissed modal';
+        let closed = !overlay.classList.contains('active');
+        if (!closed && typeof globalScope.closeUserModal === 'function') {
+            const directCloseResult = await globalScope.closeUserModal();
+            await sleep(120);
+            closed = !overlay.classList.contains('active');
+            closeDetail = closed
+                ? `overlay click missed, direct close succeeded (result=${String(directCloseResult)})`
+                : `overlay click missed, direct close also failed (result=${String(directCloseResult)})`;
+        }
+
+        const lockCleared = !document.body.classList.contains('no-scroll')
+            && !document.body.classList.contains('ios-scroll-lock-fixed')
+            && !document.documentElement.classList.contains('no-scroll');
+        recordResult('用户详情弹窗支持点击外部关闭', closed, closeDetail);
+        recordResult(
+            '用户详情弹窗关闭后背景滚动会恢复',
+            lockCleared,
+            `body=${document.body.className || '<empty>'} / html=${document.documentElement.className || '<empty>'}`
+        );
+    }
+
+    async function runExperimentModalSmoke() {
+        await waitFor(() => typeof globalScope.openExperimentModal === 'function', { message: 'A/B 实验弹窗入口未加载完成' });
+        globalScope.openExperimentModal();
+
+        const modal = await waitFor(
+            () => {
+                const node = document.getElementById('experimentModal');
+                return node?.classList.contains('active') ? node : null;
+            },
+            { message: 'A/B 实验弹窗未能打开' }
+        );
+
+        await nextFrame();
+        await sleep(60);
+        modal.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await sleep(120);
+
+        recordResult(
+            'A/B 实验弹窗支持点击外部关闭',
+            !modal.classList.contains('active'),
+            modal.classList.contains('active') ? 'overlay click did not dismiss modal' : 'overlay click dismissed modal'
+        );
     }
 
     async function runAdminChatSmoke() {

@@ -166,7 +166,7 @@ module.exports = async function adminAuditMonitorHandler(req, res) {
             });
         }
 
-        const { supabase } = await requireAdmin(req);
+        const { supabase } = await requireAdmin(req, { permission: 'settings.manage' });
         const nowDate = new Date();
         const sinceIso = new Date(nowDate.getTime() - DEFAULT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
