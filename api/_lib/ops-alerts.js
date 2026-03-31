@@ -51,6 +51,55 @@ const SUPPORTED_MUTE_RULE_MODULE_KEYS = Object.freeze([
     'fulfillment',
     'security'
 ]);
+const SUPPORTED_CUSTOMER_CHAT_QUICK_REPLY_BUSINESS_TYPES = Object.freeze([
+    'general',
+    'order',
+    'payment',
+    'verification',
+    'ticket'
+]);
+const DEFAULT_CUSTOMER_CHAT_QUICK_REPLY_TEMPLATES = Object.freeze([
+    Object.freeze({
+        id: 'ack',
+        business_type: 'general',
+        enabled: true,
+        label: '先接手',
+        hint: '先稳住用户预期',
+        text: '这边已看到你的消息，我先帮你核对一下当前记录，稍后给你明确处理结果。'
+    }),
+    Object.freeze({
+        id: 'order',
+        business_type: 'order',
+        enabled: true,
+        label: '订单说明',
+        hint: '最近订单 {{order_status}}',
+        text: '我这边看到你最近的订单「{{order_name}}」当前状态是{{order_status}}，我先继续帮你核对处理进度，稍后给你明确反馈。'
+    }),
+    Object.freeze({
+        id: 'payment',
+        business_type: 'payment',
+        enabled: true,
+        label: '充值核对',
+        hint: '最近充值 {{payment_status}}',
+        text: '我这边看到你最近的充值记录当前是{{payment_status}}，先帮你核对到账和处理链路，稍后回复你。'
+    }),
+    Object.freeze({
+        id: 'verify',
+        business_type: 'verification',
+        enabled: true,
+        label: '验证跟进',
+        hint: '最近验证 {{verification_status}}',
+        text: '我这边看到最近验证任务状态是{{verification_status}}，先帮你核对当前提示和处理进度，稍后给你更新。'
+    }),
+    Object.freeze({
+        id: 'ticket',
+        business_type: 'ticket',
+        enabled: true,
+        label: '工单跟进',
+        hint: '售后工单 {{ticket_status}}',
+        text: '我这边看到最近售后工单目前是{{ticket_status}}，已经接手继续跟进，有结果会第一时间回复你。'
+    })
+]);
 const ALERT_TYPE_ROUTING_MAP = Object.freeze({
     customer_chat_message_received: 'customer_chat_message',
     customer_chat_message_summary: 'customer_chat_message',
@@ -442,7 +491,8 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
         summary_schedule_mode: DEFAULT_SUMMARY_SCHEDULE_MODE,
         summary_hourly_minute: 0,
         summary_daily_hour: 9,
-        summary_daily_minute: 0
+        summary_daily_minute: 0,
+        quick_reply_templates: DEFAULT_CUSTOMER_CHAT_QUICK_REPLY_TEMPLATES
     }),
     shop_purchase_success: Object.freeze({
         enabled: true,
@@ -684,6 +734,102 @@ function normalizeStringArray(value) {
     }
 
     return [];
+}
+
+function cloneCustomerChatQuickReplyTemplates(templates = DEFAULT_CUSTOMER_CHAT_QUICK_REPLY_TEMPLATES) {
+    return (Array.isArray(templates) ? templates : DEFAULT_CUSTOMER_CHAT_QUICK_REPLY_TEMPLATES).map((template, index) => ({
+        id: normalizeText(template?.id || template?.key) || `template_${index + 1}`,
+        business_type: SUPPORTED_CUSTOMER_CHAT_QUICK_REPLY_BUSINESS_TYPES.includes(normalizeText(template?.business_type).toLowerCase())
+            ? normalizeText(template?.business_type).toLowerCase()
+            : 'general',
+        enabled: template?.enabled !== false,
+        label: normalizeText(template?.label),
+        hint: normalizeText(template?.hint),
+        text: normalizeText(template?.text)
+    }));
+}
+
+function getDefaultCustomerChatQuickReplyTemplates() {
+    return cloneCustomerChatQuickReplyTemplates(DEFAULT_CUSTOMER_CHAT_QUICK_REPLY_TEMPLATES);
+}
+
+function normalizeCustomerChatQuickReplyBusinessType(value, fallback = 'general') {
+    const normalized = normalizeText(value).toLowerCase();
+    return SUPPORTED_CUSTOMER_CHAT_QUICK_REPLY_BUSINESS_TYPES.includes(normalized)
+        ? normalized
+        : fallback;
+}
+
+function normalizeCustomerChatQuickReplyTemplateId(value, fallbackIndex = 0, fallbackId = '') {
+    const normalized = normalizeText(value)
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 48);
+
+    if (normalized) {
+        return normalized;
+    }
+
+    const fallback = normalizeText(fallbackId)
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 48);
+    if (fallback) {
+        return fallback;
+    }
+
+    return `template_${Math.max(1, fallbackIndex + 1)}`;
+}
+
+function getCustomerChatQuickReplyTypeLabel(businessType = 'general') {
+    const labels = {
+        general: '通用回复',
+        order: '订单回复',
+        payment: '充值回复',
+        verification: '验证回复',
+        ticket: '工单回复'
+    };
+    return labels[normalizeCustomerChatQuickReplyBusinessType(businessType)] || labels.general;
+}
+
+function normalizeCustomerChatQuickReplyTemplates(value) {
+    if (!Array.isArray(value)) {
+        return getDefaultCustomerChatQuickReplyTemplates();
+    }
+    if (!value.length) {
+        return [];
+    }
+
+    const defaults = getDefaultCustomerChatQuickReplyTemplates();
+    const normalized = [];
+
+    (Array.isArray(value) ? value : []).forEach((item, index) => {
+        const template = normalizeJsonObject(item);
+        const businessType = normalizeCustomerChatQuickReplyBusinessType(
+            template.business_type || template.businessType || template.type,
+            'general'
+        );
+        const fallback = defaults.find((candidate) => candidate.id === normalizeText(template.id))
+            || defaults.find((candidate) => candidate.business_type === businessType)
+            || null;
+        const text = normalizeText(template.text);
+        if (!text) {
+            return;
+        }
+
+        normalized.push({
+            id: normalizeCustomerChatQuickReplyTemplateId(template.id || template.key, normalized.length, fallback?.id),
+            business_type: businessType,
+            enabled: normalizeBoolean(template.enabled, fallback ? fallback.enabled !== false : true),
+            label: normalizeText(template.label) || fallback?.label || getCustomerChatQuickReplyTypeLabel(businessType),
+            hint: normalizeText(template.hint),
+            text
+        });
+    });
+
+    return normalized.slice(0, 12);
 }
 
 function normalizeTimeZone(value, fallback = DEFAULT_QUIET_HOURS_TIMEZONE) {
@@ -1203,7 +1349,8 @@ function cloneDefaultConfig() {
             summary_schedule_mode: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_schedule_mode,
             summary_hourly_minute: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_hourly_minute,
             summary_daily_hour: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_daily_hour,
-            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_daily_minute
+            summary_daily_minute: DEFAULT_OPS_ALERTS_CONFIG.customer_chat_message.summary_daily_minute,
+            quick_reply_templates: getDefaultCustomerChatQuickReplyTemplates()
         },
         shop_purchase_success: {
             enabled: DEFAULT_OPS_ALERTS_CONFIG.shop_purchase_success.enabled,
@@ -1721,6 +1868,9 @@ function normalizeOpsAlertsConfig(rawConfig = {}, env = process.env) {
         config.customer_chat_message.summary_daily_minute,
         0,
         59
+    );
+    config.customer_chat_message.quick_reply_templates = normalizeCustomerChatQuickReplyTemplates(
+        customerChatMessageConfig.quick_reply_templates
     );
 
     config.shop_purchase_success.enabled = normalizeBoolean(
@@ -5661,6 +5811,7 @@ module.exports = {
         getRetryDelayMs,
         hasRecentOpsAlertJob,
         normalizeChannelName,
+        normalizeCustomerChatQuickReplyTemplates,
         resolveEnabledChannels,
         normalizeSeverity,
         normalizeStringArray,

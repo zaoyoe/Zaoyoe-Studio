@@ -283,6 +283,60 @@ test('normalizeOpsAlertsConfig preserves admin-managed shop risk auto-response t
     assert.equal(config.shop_order_risk.auto_suspend_product_min_risk_score, 98);
 });
 
+test('normalizeOpsAlertsConfig supports configurable customer chat quick reply templates', () => {
+    const defaults = normalizeOpsAlertsConfig({});
+    assert.equal(defaults.customer_chat_message.quick_reply_templates.length, 5);
+
+    const disabledAll = normalizeOpsAlertsConfig({
+        customer_chat_message: {
+            quick_reply_templates: []
+        }
+    });
+    assert.deepEqual(disabledAll.customer_chat_message.quick_reply_templates, []);
+
+    const config = normalizeOpsAlertsConfig({
+        customer_chat_message: {
+            quick_reply_templates: [
+                {
+                    id: 'claim-first',
+                    business_type: 'general',
+                    enabled: true,
+                    label: '先接手',
+                    hint: '先稳住',
+                    text: '这边先接手处理。'
+                },
+                {
+                    id: 'pay-check',
+                    business_type: 'payment',
+                    enabled: false,
+                    label: '充值核对',
+                    hint: '最近充值 {{payment_status}}',
+                    text: '我先帮你核对充值状态。'
+                }
+            ]
+        }
+    });
+
+    assert.deepEqual(config.customer_chat_message.quick_reply_templates, [
+        {
+            id: 'claim-first',
+            business_type: 'general',
+            enabled: true,
+            label: '先接手',
+            hint: '先稳住',
+            text: '这边先接手处理。'
+        },
+        {
+            id: 'pay-check',
+            business_type: 'payment',
+            enabled: false,
+            label: '充值核对',
+            hint: '最近充值 {{payment_status}}',
+            text: '我先帮你核对充值状态。'
+        }
+    ]);
+});
+
 async function withOpsAlertsModuleWithoutSecretKeyMap(callback) {
     const modulePath = path.resolve(__dirname, '../api/_lib/ops-alerts.js');
     const originalLoad = Module._load;

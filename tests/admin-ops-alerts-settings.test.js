@@ -35,6 +35,86 @@ function createMockResponse() {
     };
 }
 
+function createDefaultQuickReplyTemplates() {
+    return [
+        {
+            id: 'ack',
+            business_type: 'general',
+            enabled: true,
+            label: '先接手',
+            hint: '先稳住用户预期',
+            text: '这边已看到你的消息，我先帮你核对一下当前记录，稍后给你明确处理结果。'
+        },
+        {
+            id: 'order',
+            business_type: 'order',
+            enabled: true,
+            label: '订单说明',
+            hint: '最近订单 {{order_status}}',
+            text: '我这边看到你最近的订单「{{order_name}}」当前状态是{{order_status}}，我先继续帮你核对处理进度，稍后给你明确反馈。'
+        },
+        {
+            id: 'payment',
+            business_type: 'payment',
+            enabled: true,
+            label: '充值核对',
+            hint: '最近充值 {{payment_status}}',
+            text: '我这边看到你最近的充值记录当前是{{payment_status}}，先帮你核对到账和处理链路，稍后回复你。'
+        },
+        {
+            id: 'verify',
+            business_type: 'verification',
+            enabled: true,
+            label: '验证跟进',
+            hint: '最近验证 {{verification_status}}',
+            text: '我这边看到最近验证任务状态是{{verification_status}}，先帮你核对当前提示和处理进度，稍后给你更新。'
+        },
+        {
+            id: 'ticket',
+            business_type: 'ticket',
+            enabled: true,
+            label: '工单跟进',
+            hint: '售后工单 {{ticket_status}}',
+            text: '我这边看到最近售后工单目前是{{ticket_status}}，已经接手继续跟进，有结果会第一时间回复你。'
+        }
+    ];
+}
+
+function normalizeQuickReplyTemplates(value) {
+    if (!Array.isArray(value)) {
+        return createDefaultQuickReplyTemplates();
+    }
+    if (!value.length) {
+        return [];
+    }
+
+    return value
+        .map((item, index) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                return null;
+            }
+
+            const businessType = ['general', 'order', 'payment', 'verification', 'ticket'].includes(String(item.business_type || item.businessType || item.type || '').trim().toLowerCase())
+                ? String(item.business_type || item.businessType || item.type || '').trim().toLowerCase()
+                : 'general';
+            const text = typeof item.text === 'string' ? item.text.trim() : '';
+            if (!text) {
+                return null;
+            }
+
+            return {
+                id: String(item.id || item.key || `template_${index + 1}`).trim() || `template_${index + 1}`,
+                business_type: businessType,
+                enabled: normalizeBoolean(item.enabled, true),
+                label: String(item.label || '').trim() || '快捷回复',
+                hint: typeof item.hint === 'string' ? item.hint.trim() : '',
+                text
+            };
+        })
+        .filter(Boolean)
+        .slice(0, 12);
+}
+
 function createDefaultState() {
     return {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
@@ -211,7 +291,8 @@ function createDefaultState() {
                 summary_schedule_mode: 'rolling_window',
                 summary_hourly_minute: 0,
                 summary_daily_hour: 9,
-                summary_daily_minute: 0
+                summary_daily_minute: 0,
+                quick_reply_templates: createDefaultQuickReplyTemplates()
             },
             shop_purchase_success: {
                 enabled: true,
@@ -714,7 +795,8 @@ function createNormalizedConfig(raw) {
             summary_schedule_mode: normalizeSummaryScheduleMode(customerChatMessage.summary_schedule_mode, 'rolling_window'),
             summary_hourly_minute: Math.min(59, Math.max(0, Number(customerChatMessage.summary_hourly_minute || 0) || 0)),
             summary_daily_hour: Math.min(23, Math.max(0, Number(customerChatMessage.summary_daily_hour ?? 9) || 9)),
-            summary_daily_minute: Math.min(59, Math.max(0, Number(customerChatMessage.summary_daily_minute || 0) || 0))
+            summary_daily_minute: Math.min(59, Math.max(0, Number(customerChatMessage.summary_daily_minute || 0) || 0)),
+            quick_reply_templates: normalizeQuickReplyTemplates(customerChatMessage.quick_reply_templates)
         },
         shop_purchase_success: {
             enabled: normalizeBoolean(shopPurchaseSuccess.enabled, true),
@@ -1221,6 +1303,11 @@ test('ops alert settings GET returns the current config and secret status', asyn
         assert.equal(payload.config.customer_chat_message.summary_hourly_minute, 0);
         assert.equal(payload.config.customer_chat_message.summary_daily_hour, 9);
         assert.equal(payload.config.customer_chat_message.summary_daily_minute, 0);
+        assert.equal(payload.config.customer_chat_message.quick_reply_templates.length, 5);
+        assert.deepEqual(
+            payload.config.customer_chat_message.quick_reply_templates.map((template) => template.id),
+            ['ack', 'order', 'payment', 'verify', 'ticket']
+        );
         assert.equal(payload.config.shop_purchase_success.enabled, true);
         assert.equal(payload.config.shop_purchase_success.sweep_interval_ms, 2 * 60 * 1000);
         assert.equal(payload.config.shop_purchase_success.lookback_minutes, 30);
@@ -1522,7 +1609,33 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
                         summary_schedule_mode: 'hourly',
                         summary_hourly_minute: 0,
                         summary_daily_hour: 9,
-                        summary_daily_minute: 0
+                        summary_daily_minute: 0,
+                        quick_reply_templates: [
+                            {
+                                id: 'claim_first',
+                                business_type: 'general',
+                                enabled: true,
+                                label: '先安抚',
+                                hint: '先确认已接手',
+                                text: '这边先接手你的问题，我先帮你核对当前处理记录，稍后给你明确反馈。'
+                            },
+                            {
+                                id: 'order_followup',
+                                business_type: 'order',
+                                enabled: true,
+                                label: '订单进度',
+                                hint: '最近订单 {{order_status}}',
+                                text: '我先根据你最近订单「{{order_name}}」的状态继续核对处理进度，稍后同步你。'
+                            },
+                            {
+                                id: 'ticket_hold',
+                                business_type: 'ticket',
+                                enabled: false,
+                                label: '工单等待',
+                                hint: '售后工单 {{ticket_status}}',
+                                text: '我先继续跟进你这边的售后工单处理，进展出来后第一时间同步你。'
+                            }
+                        ]
                     },
                     shop_purchase_success: {
                         enabled: false,
@@ -1820,6 +1933,28 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.customer_chat_message.summary_hourly_minute, 0);
         assert.equal(payload.config.customer_chat_message.summary_daily_hour, 9);
         assert.equal(payload.config.customer_chat_message.summary_daily_minute, 0);
+        assert.deepEqual(payload.config.customer_chat_message.quick_reply_templates, [{
+            id: 'claim_first',
+            business_type: 'general',
+            enabled: true,
+            label: '先安抚',
+            hint: '先确认已接手',
+            text: '这边先接手你的问题，我先帮你核对当前处理记录，稍后给你明确反馈。'
+        }, {
+            id: 'order_followup',
+            business_type: 'order',
+            enabled: true,
+            label: '订单进度',
+            hint: '最近订单 {{order_status}}',
+            text: '我先根据你最近订单「{{order_name}}」的状态继续核对处理进度，稍后同步你。'
+        }, {
+            id: 'ticket_hold',
+            business_type: 'ticket',
+            enabled: false,
+            label: '工单等待',
+            hint: '售后工单 {{ticket_status}}',
+            text: '我先继续跟进你这边的售后工单处理，进展出来后第一时间同步你。'
+        }]);
         assert.equal(payload.config.shop_purchase_success.enabled, false);
         assert.equal(payload.config.shop_purchase_success.sweep_interval_ms, 4 * 60 * 1000);
         assert.equal(payload.config.shop_purchase_success.lookback_minutes, 45);
@@ -2045,6 +2180,9 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(state.auditLogs[0].details.customer_chat_message_summary_hourly_minute, 0);
         assert.equal(state.auditLogs[0].details.customer_chat_message_summary_daily_hour, 9);
         assert.equal(state.auditLogs[0].details.customer_chat_message_summary_daily_minute, 0);
+        assert.equal(state.auditLogs[0].details.customer_chat_message_quick_reply_template_count, 3);
+        assert.equal(state.auditLogs[0].details.customer_chat_message_quick_reply_enabled_count, 2);
+        assert.deepEqual(state.auditLogs[0].details.customer_chat_message_quick_reply_business_types, ['general', 'order', 'ticket']);
         assert.equal(state.auditLogs[0].details.shop_purchase_success_enabled, false);
         assert.equal(state.auditLogs[0].details.shop_purchase_success_sweep_interval_ms, 4 * 60 * 1000);
         assert.equal(state.auditLogs[0].details.shop_purchase_success_lookback_minutes, 45);

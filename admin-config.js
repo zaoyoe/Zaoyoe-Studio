@@ -11,6 +11,7 @@ let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
 let opsAlertHealthState = getDefaultOpsAlertHealthState();
 let opsAlertMonitorState = getDefaultOpsAlertMonitorState();
 let opsAlertMonitorViewState = getDefaultOpsAlertMonitorViewState();
+let opsAlertMonitorShiftReportViewState = getDefaultOpsAlertMonitorShiftReportViewState();
 let shopRiskCaseComposerState = getDefaultShopRiskCaseComposerState();
 let opsAlertBatchMuteState = getDefaultOpsAlertBatchMuteState();
 let opsAlertStrategySaveInFlight = false;
@@ -63,6 +64,32 @@ const OPS_ALERT_MONITOR_CARD_TONE_CLASSES = [
     'ops-alert-monitor-card--warning',
     'ops-alert-monitor-card--danger'
 ];
+const OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS = Object.freeze([
+    Object.freeze({
+        key: 'all',
+        label: '全览',
+        description: '同时查看积压模块、人员工作量、关闭原因和积压走势。',
+        sections: Object.freeze(['categories', 'admins', 'close_reasons', 'trend'])
+    }),
+    Object.freeze({
+        key: 'handoff',
+        label: '交接优先',
+        description: '优先查看待认领积压、接班负载和积压走势。',
+        sections: Object.freeze(['categories', 'admins', 'trend'])
+    }),
+    Object.freeze({
+        key: 'review',
+        label: '闭环复盘',
+        description: '优先查看本班处理产出、关闭原因和积压变化。',
+        sections: Object.freeze(['admins', 'close_reasons', 'trend'])
+    }),
+    Object.freeze({
+        key: 'mine',
+        label: '我的接班',
+        description: '只看当前值班管理员名下积压和个人处理量，更适合接班自检。',
+        sections: Object.freeze(['categories', 'admins'])
+    })
+]);
 const OPS_ALERT_HEALTH_CARD_TONE_CLASSES = [
     'ops-alert-health-card--neutral',
     'ops-alert-health-card--success',
@@ -103,6 +130,13 @@ const OPS_ALERT_DATE_PICKER_PRESETS = Object.freeze([
     Object.freeze({ key: '6h', label: '6 小时', hours: 6 }),
     Object.freeze({ key: '24h', label: '24 小时', hours: 24 }),
     Object.freeze({ key: 'tonight', label: '今天结束', mode: 'end_of_day' })
+]);
+const OPS_ALERT_CUSTOMER_CHAT_QUICK_REPLY_BUSINESS_TYPES = Object.freeze([
+    Object.freeze({ value: 'general', label: '通用接手', description: '任何客服会话都展示' }),
+    Object.freeze({ value: 'order', label: '订单会话', description: '只有命中订单上下文时展示' }),
+    Object.freeze({ value: 'payment', label: '充值会话', description: '只有命中充值上下文时展示' }),
+    Object.freeze({ value: 'verification', label: '验证会话', description: '只有命中验证上下文时展示' }),
+    Object.freeze({ value: 'ticket', label: '工单会话', description: '只有命中售后工单时展示' })
 ]);
 const opsAlertDatePickerState = Object.create(null);
 let opsAlertDatePickerEventsReady = false;
@@ -1176,6 +1210,54 @@ function getDefaultOpsAlertHealthState() {
     };
 }
 
+function getDefaultOpsAlertMonitorShiftReport() {
+    return {
+        shift_hours: 12,
+        bucket_hours: 2,
+        window_start: '',
+        window_end: '',
+        previous_window_start: '',
+        previous_window_end: '',
+        totals: {
+            claimed_count: 0,
+            assigned_count: 0,
+            resolved_count: 0,
+            note_count: 0,
+            reopened_count: 0,
+            avg_resolution_minutes: null,
+            active_backlog_count: 0,
+            active_claimed_count: 0,
+            active_pending_count: 0,
+            previous_backlog_count: 0,
+            backlog_delta: 0,
+            longest_waiting_minutes: null
+        },
+        close_reasons: [],
+        admin_stats: [],
+        categories: [],
+        trend: []
+    };
+}
+
+function normalizeOpsAlertMonitorShiftReport(raw) {
+    const defaults = getDefaultOpsAlertMonitorShiftReport();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    return {
+        ...defaults,
+        ...source,
+        totals: {
+            ...defaults.totals,
+            ...(source.totals && typeof source.totals === 'object' && !Array.isArray(source.totals)
+                ? source.totals
+                : {})
+        },
+        close_reasons: Array.isArray(source.close_reasons) ? source.close_reasons : [],
+        admin_stats: Array.isArray(source.admin_stats) ? source.admin_stats : [],
+        categories: Array.isArray(source.categories) ? source.categories : [],
+        trend: Array.isArray(source.trend) ? source.trend : []
+    };
+}
+
 function getDefaultOpsAlertMonitorState() {
     return {
         status: 'idle',
@@ -1185,7 +1267,8 @@ function getDefaultOpsAlertMonitorState() {
             total_job_count: 0,
             total_active_count: 0,
             total_critical_count: 0,
-            active_category_count: 0
+            active_category_count: 0,
+            shift_report: getDefaultOpsAlertMonitorShiftReport()
         },
         assignable_admins: [],
         current_admin_id: '',
@@ -1201,6 +1284,10 @@ function getDefaultOpsAlertMonitorViewState() {
         severity: 'all',
         category: 'all'
     };
+}
+
+function getDefaultOpsAlertMonitorShiftReportViewState() {
+    return 'all';
 }
 
 function getDefaultShopRiskCaseComposerState() {
@@ -1537,7 +1624,8 @@ function getDefaultOpsAlertConfig() {
             summary_schedule_mode: 'rolling_window',
             summary_hourly_minute: 0,
             summary_daily_hour: 9,
-            summary_daily_minute: 0
+            summary_daily_minute: 0,
+            quick_reply_templates: getDefaultOpsAlertCustomerChatQuickReplyTemplates()
         },
         shop_purchase_success: {
             enabled: true,
@@ -2621,6 +2709,137 @@ function escapeConfigHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function getDefaultOpsAlertCustomerChatQuickReplyTemplates() {
+    return [
+        {
+            id: 'ack',
+            business_type: 'general',
+            enabled: true,
+            label: '先接手',
+            hint: '先稳住用户预期',
+            text: '这边已看到你的消息，我先帮你核对一下当前记录，稍后给你明确处理结果。'
+        },
+        {
+            id: 'order',
+            business_type: 'order',
+            enabled: true,
+            label: '订单说明',
+            hint: '最近订单 {{order_status}}',
+            text: '我这边看到你最近的订单「{{order_name}}」当前状态是{{order_status}}，我先继续帮你核对处理进度，稍后给你明确反馈。'
+        },
+        {
+            id: 'payment',
+            business_type: 'payment',
+            enabled: true,
+            label: '充值核对',
+            hint: '最近充值 {{payment_status}}',
+            text: '我这边看到你最近的充值记录当前是{{payment_status}}，先帮你核对到账和处理链路，稍后回复你。'
+        },
+        {
+            id: 'verify',
+            business_type: 'verification',
+            enabled: true,
+            label: '验证跟进',
+            hint: '最近验证 {{verification_status}}',
+            text: '我这边看到最近验证任务状态是{{verification_status}}，先帮你核对当前提示和处理进度，稍后给你更新。'
+        },
+        {
+            id: 'ticket',
+            business_type: 'ticket',
+            enabled: true,
+            label: '工单跟进',
+            hint: '售后工单 {{ticket_status}}',
+            text: '我这边看到最近售后工单目前是{{ticket_status}}，已经接手继续跟进，有结果会第一时间回复你。'
+        }
+    ];
+}
+
+function getOpsAlertCustomerChatQuickReplyBusinessTypeMeta(value = 'general') {
+    const normalized = String(value || '').trim().toLowerCase();
+    return OPS_ALERT_CUSTOMER_CHAT_QUICK_REPLY_BUSINESS_TYPES.find((item) => item.value === normalized)
+        || OPS_ALERT_CUSTOMER_CHAT_QUICK_REPLY_BUSINESS_TYPES[0];
+}
+
+function normalizeOpsAlertCustomerChatQuickReplyTemplateId(value, fallbackIndex = 0, fallbackId = '') {
+    const normalized = String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 48);
+
+    if (normalized) {
+        return normalized;
+    }
+
+    const fallback = String(fallbackId || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 48);
+
+    if (fallback) {
+        return fallback;
+    }
+
+    return `template_${Math.max(1, fallbackIndex + 1)}`;
+}
+
+function createOpsAlertCustomerChatQuickReplyTemplateDraft(businessType = 'general') {
+    const meta = getOpsAlertCustomerChatQuickReplyBusinessTypeMeta(businessType);
+    const seed = Date.now().toString(36);
+    return {
+        id: `template_${seed}_${Math.random().toString(36).slice(2, 6)}`,
+        business_type: meta.value,
+        enabled: true,
+        label: `新${meta.label}`,
+        hint: '',
+        text: ''
+    };
+}
+
+function normalizeOpsAlertCustomerChatQuickReplyTemplates(value, options = {}) {
+    const preserveDrafts = options && options.preserveDrafts === true;
+    if (!Array.isArray(value)) {
+        return getDefaultOpsAlertCustomerChatQuickReplyTemplates();
+    }
+    if (!value.length) {
+        return [];
+    }
+
+    const defaults = getDefaultOpsAlertCustomerChatQuickReplyTemplates();
+    const normalized = [];
+
+    value.forEach((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+            return;
+        }
+
+        const businessType = getOpsAlertCustomerChatQuickReplyBusinessTypeMeta(
+            item.business_type || item.businessType || item.type
+        ).value;
+        const fallback = defaults.find((candidate) => candidate.id === String(item.id || '').trim())
+            || defaults.find((candidate) => candidate.business_type === businessType)
+            || null;
+        const text = String(item.text || '').trim();
+        if (!text && !preserveDrafts) {
+            return;
+        }
+
+        normalized.push({
+            id: normalizeOpsAlertCustomerChatQuickReplyTemplateId(item.id || item.key, normalized.length, fallback?.id),
+            business_type: businessType,
+            enabled: normalizeConfigBoolean(item.enabled, fallback ? fallback.enabled !== false : true),
+            label: String(item.label || '').trim() || fallback?.label || getOpsAlertCustomerChatQuickReplyBusinessTypeMeta(businessType).label,
+            hint: String(item.hint || '').trim(),
+            text
+        });
+    });
+
+    return normalized.slice(0, 12);
+}
+
 function normalizeCheckinConfig(raw) {
     const defaults = getDefaultCheckinConfig();
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
@@ -3163,7 +3382,8 @@ function normalizeOpsAlertConfig(raw) {
                 toWholeNumber(customerChatMessageSource.summary_daily_minute, defaults.customer_chat_message.summary_daily_minute),
                 0,
                 59
-            )
+            ),
+            quick_reply_templates: normalizeOpsAlertCustomerChatQuickReplyTemplates(customerChatMessageSource.quick_reply_templates)
         },
         shop_purchase_success: {
             enabled: normalizeConfigBoolean(shopPurchaseSuccessSource.enabled, defaults.shop_purchase_success.enabled),
@@ -6130,6 +6350,754 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
     renderOpsAlertStrategySummary(normalizedConfig);
 }
 
+function getOpsAlertCustomerChatQuickReplyVariableTokens(businessType = 'general') {
+    switch (getOpsAlertCustomerChatQuickReplyBusinessTypeMeta(businessType).value) {
+        case 'order':
+            return ['{{order_name}}', '{{order_status}}'];
+        case 'payment':
+            return ['{{payment_status}}'];
+        case 'verification':
+            return ['{{verification_status}}'];
+        case 'ticket':
+            return ['{{ticket_status}}'];
+        default:
+            return [];
+    }
+}
+
+function getOpsAlertCustomerChatQuickReplyPreviewPlaceholders(businessType = 'general') {
+    switch (getOpsAlertCustomerChatQuickReplyBusinessTypeMeta(businessType).value) {
+        case 'order':
+            return {
+                order_name: '示例订单',
+                order_status: '待确认'
+            };
+        case 'payment':
+            return {
+                payment_status: '处理中'
+            };
+        case 'verification':
+            return {
+                verification_status: '排队中'
+            };
+        case 'ticket':
+            return {
+                ticket_status: '已受理'
+            };
+        default:
+            return {};
+    }
+}
+
+function interpolateOpsAlertCustomerChatQuickReplyPreviewText(templateText = '', businessType = 'general') {
+    const placeholders = getOpsAlertCustomerChatQuickReplyPreviewPlaceholders(businessType);
+    return String(templateText || '').replace(/{{\s*([a-z0-9_]+)\s*}}/gi, (_match, rawKey) => {
+        const normalizedKey = String(rawKey || '').trim().toLowerCase();
+        return Object.prototype.hasOwnProperty.call(placeholders, normalizedKey)
+            ? String(placeholders[normalizedKey] || '')
+            : `{{${normalizedKey}}}`;
+    });
+}
+
+function buildOpsAlertCustomerChatQuickReplyPreviewMarkup(template = {}) {
+    const businessType = getOpsAlertCustomerChatQuickReplyBusinessTypeMeta(template.business_type).value;
+    const previewLabel = interpolateOpsAlertCustomerChatQuickReplyPreviewText(template.label || '', businessType) || '未填写按钮文案';
+    const previewHint = interpolateOpsAlertCustomerChatQuickReplyPreviewText(template.hint || '', businessType) || '可在这里预览按钮下方提示';
+    const previewText = interpolateOpsAlertCustomerChatQuickReplyPreviewText(template.text || '', businessType) || '可在这里预览填入发送框的正文';
+
+    return `
+        <div class="ops-alert-quick-reply-template__preview">
+            <div class="ops-alert-quick-reply-template__preview-pill" data-ops-alert-quick-reply-role="preview-label">${escapeConfigHtml(previewLabel)}</div>
+            <div class="ops-alert-quick-reply-template__preview-hint" data-ops-alert-quick-reply-role="preview-hint">${escapeConfigHtml(previewHint)}</div>
+            <div class="ops-alert-quick-reply-template__preview-body" data-ops-alert-quick-reply-role="preview-text">${escapeConfigHtml(previewText)}</div>
+        </div>
+    `;
+}
+
+function buildOpsAlertCustomerChatQuickReplyVariableChipsHtml(businessType = 'general') {
+    const tokens = getOpsAlertCustomerChatQuickReplyVariableTokens(businessType);
+    if (!tokens.length) {
+        return '<span class="ops-alert-quick-reply-template__chip ops-alert-quick-reply-template__chip--muted">无需额外变量</span>';
+    }
+
+    return tokens.map((token) => (
+        `
+            <button
+                type="button"
+                class="ops-alert-quick-reply-template__chip ops-alert-quick-reply-template__chip--action"
+                data-ops-alert-quick-reply-token="${escapeConfigHtml(token)}"
+                title="插入 ${escapeConfigHtml(token)}"
+            >
+                ${escapeConfigHtml(token)}
+            </button>
+        `
+    )).join('');
+}
+
+function getOpsAlertCustomerChatQuickReplyBusinessTypeTone(businessType = 'general') {
+    switch (getOpsAlertCustomerChatQuickReplyBusinessTypeMeta(businessType).value) {
+        case 'order':
+            return 'order';
+        case 'payment':
+            return 'payment';
+        case 'verification':
+            return 'verification';
+        case 'ticket':
+            return 'ticket';
+        default:
+            return 'general';
+    }
+}
+
+function buildOpsAlertCustomerChatQuickReplyTemplateRowHtml(template = {}, index = 0, total = 0) {
+    const businessTypeMeta = getOpsAlertCustomerChatQuickReplyBusinessTypeMeta(template.business_type);
+    const businessType = businessTypeMeta.value;
+    const isEnabled = template.enabled !== false;
+    const templateId = escapeConfigHtml(template.id || `template_${index + 1}`);
+    const isFirst = index === 0;
+    const isLast = index >= Math.max(0, Number(total || 0) - 1);
+    const businessTypeOptions = OPS_ALERT_CUSTOMER_CHAT_QUICK_REPLY_BUSINESS_TYPES.map((item) => (
+        `<option value="${escapeConfigHtml(item.value)}"${item.value === businessType ? ' selected' : ''}>${escapeConfigHtml(item.label)}</option>`
+    )).join('');
+
+    return `
+        <article
+            class="ops-alert-quick-reply-template${isEnabled ? ' is-enabled' : ' is-disabled'}"
+            data-ops-alert-quick-reply-index="${index}"
+            data-ops-alert-quick-reply-id="${templateId}"
+        >
+            <div class="ops-alert-quick-reply-template__header">
+                <div class="ops-alert-quick-reply-template__header-copy">
+                    <div class="ops-alert-quick-reply-template__eyebrow">快捷回复 ${index + 1}</div>
+                    <div class="ops-alert-quick-reply-template__title-row">
+                        <div class="ops-alert-quick-reply-template__title">模板 ID: ${templateId}</div>
+                        <div class="ops-alert-quick-reply-template__badges">
+                            <span
+                                class="ops-alert-quick-reply-template__badge"
+                                data-ops-alert-quick-reply-role="business-badge"
+                                data-tone="${escapeConfigHtml(getOpsAlertCustomerChatQuickReplyBusinessTypeTone(businessType))}"
+                            >
+                                ${escapeConfigHtml(businessTypeMeta.label)}
+                            </span>
+                            <span
+                                class="ops-alert-quick-reply-template__badge"
+                                data-ops-alert-quick-reply-role="status-badge"
+                                data-tone="${isEnabled ? 'success' : 'muted'}"
+                            >
+                                ${isEnabled ? '启用中' : '已停用'}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="ops-alert-quick-reply-template__meta" data-ops-alert-quick-reply-role="business-meta">把这条模板展示给 ${escapeConfigHtml(businessTypeMeta.label)} 场景，用来给管理员快速接手和回复。</div>
+                </div>
+                <div class="ops-alert-quick-reply-template__actions">
+                    <button
+                        type="button"
+                        class="btn-add-config btn-add-config--compact btn-add-config--ghost ops-alert-quick-reply-template__move"
+                        data-ops-alert-quick-reply-move="up"
+                        data-ops-alert-quick-reply-move-index="${index}"
+                        ${isFirst ? 'disabled' : ''}
+                        aria-label="上移模板"
+                        title="上移模板"
+                    >
+                        <i class="fas fa-arrow-up"></i>
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-add-config btn-add-config--compact btn-add-config--ghost ops-alert-quick-reply-template__move"
+                        data-ops-alert-quick-reply-move="down"
+                        data-ops-alert-quick-reply-move-index="${index}"
+                        ${isLast ? 'disabled' : ''}
+                        aria-label="下移模板"
+                        title="下移模板"
+                    >
+                        <i class="fas fa-arrow-down"></i>
+                    </button>
+                    <button
+                        type="button"
+                        class="btn-add-config btn-add-config--compact btn-add-config--ghost ops-alert-quick-reply-template__remove"
+                        data-ops-alert-quick-reply-remove="${index}"
+                    >
+                        删除
+                    </button>
+                </div>
+            </div>
+            <div class="ops-alert-quick-reply-template__layout">
+                <div class="ops-alert-quick-reply-template__summary">
+                    <div class="ops-alert-quick-reply-template__panel">
+                        <span class="ops-alert-quick-reply-template__panel-label">使用场景</span>
+                        <p data-ops-alert-quick-reply-role="business-panel-copy">${escapeConfigHtml(businessTypeMeta.description)}</p>
+                    </div>
+                    <div class="ops-alert-quick-reply-template__panel">
+                        <span class="ops-alert-quick-reply-template__panel-label">可用变量</span>
+                        <div class="ops-alert-quick-reply-template__chips" data-ops-alert-quick-reply-role="variable-chips">
+                            ${buildOpsAlertCustomerChatQuickReplyVariableChipsHtml(businessType)}
+                        </div>
+                    </div>
+                    <div class="ops-alert-quick-reply-template__panel">
+                        <span class="ops-alert-quick-reply-template__panel-label">发送预览</span>
+                        ${buildOpsAlertCustomerChatQuickReplyPreviewMarkup(template)}
+                    </div>
+                    <label class="ops-alert-quick-reply-template__toggle-card">
+                        <div class="ops-alert-quick-reply-template__toggle-copy">
+                            <span>启用模板</span>
+                            <small>关闭后不会出现在客服工作台的快捷回复栏里。</small>
+                        </div>
+                        <span class="ops-alert-quick-reply-template__toggle-control">
+                            <input type="checkbox" data-ops-alert-quick-reply-field="enabled"${isEnabled ? ' checked' : ''}>
+                            <span class="ops-alert-quick-reply-template__switch" aria-hidden="true"></span>
+                        </span>
+                    </label>
+                </div>
+                <div class="ops-alert-quick-reply-template__editor">
+                    <div class="ops-alert-quick-reply-template__grid">
+                        <label class="ops-alert-quick-reply-template__field" data-ops-alert-quick-reply-field-wrap="business_type">
+                            <span>业务类型</span>
+                            <select class="config-input" data-ops-alert-quick-reply-field="business_type">
+                                ${businessTypeOptions}
+                            </select>
+                            <small data-ops-alert-quick-reply-role="business-description">${escapeConfigHtml(businessTypeMeta.description)}</small>
+                        </label>
+                        <label class="ops-alert-quick-reply-template__field" data-ops-alert-quick-reply-field-wrap="label">
+                            <span>按钮文案</span>
+                            <input type="text" class="config-input" maxlength="24" data-ops-alert-quick-reply-field="label" value="${escapeConfigHtml(template.label || '')}" placeholder="例如：订单说明">
+                            <small>显示在快捷回复按钮上的短文案。</small>
+                        </label>
+                        <label class="ops-alert-quick-reply-template__field ops-alert-quick-reply-template__field--full" data-ops-alert-quick-reply-field-wrap="hint">
+                            <span>提示文案</span>
+                            <input type="text" class="config-input" maxlength="40" data-ops-alert-quick-reply-field="hint" value="${escapeConfigHtml(template.hint || '')}" placeholder="例如：最近订单 {{order_status}}">
+                            <small>显示在按钮下方的辅助说明，可插入当前会话的上下文变量。</small>
+                        </label>
+                    </div>
+                    <label class="ops-alert-quick-reply-template__field ops-alert-quick-reply-template__field--full" data-ops-alert-quick-reply-field-wrap="text">
+                        <span>回复正文</span>
+                        <textarea class="config-input ops-alert-quick-reply-template__textarea" rows="4" maxlength="240" data-ops-alert-quick-reply-field="text" placeholder="支持插入上下文字段，例如 {{order_name}}、{{order_status}}。">${escapeConfigHtml(template.text || '')}</textarea>
+                        <small>会直接填入管理员发送框，建议写成可快速确认、接手或同步进度的短句。</small>
+                    </label>
+                    <div class="ops-alert-quick-reply-template__validation" data-ops-alert-quick-reply-role="validation" hidden></div>
+                </div>
+            </div>
+        </article>
+    `;
+}
+
+function renderOpsAlertCustomerChatQuickReplyTemplates(templates = []) {
+    const container = document.getElementById('opsAlertCustomerChatQuickReplyTemplates');
+    if (!container) {
+        return;
+    }
+
+    const normalizedTemplates = normalizeOpsAlertCustomerChatQuickReplyTemplates(templates, { preserveDrafts: true });
+    if (!normalizedTemplates.length) {
+        container.dataset.opsAlertQuickReplyValidationVisible = 'false';
+        container.innerHTML = `
+            <div class="ops-alert-quick-reply-empty">
+                <i class="fas fa-comment-slash"></i>
+                <span>当前没有快捷回复模板。可按业务类型新增一条。</span>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = normalizedTemplates
+        .map((template, index) => buildOpsAlertCustomerChatQuickReplyTemplateRowHtml(template, index, normalizedTemplates.length))
+        .join('');
+
+    if (container.dataset.opsAlertQuickReplyValidationVisible === 'true') {
+        syncOpsAlertCustomerChatQuickReplyTemplateValidationState();
+    }
+}
+
+function collectOpsAlertCustomerChatQuickReplyTemplatesFromForm(options = {}) {
+    const preserveDrafts = options && options.preserveDrafts === true;
+    const container = document.getElementById('opsAlertCustomerChatQuickReplyTemplates');
+    if (!container) {
+        return normalizeOpsAlertCustomerChatQuickReplyTemplates(undefined);
+    }
+
+    const templates = Array.from(container.querySelectorAll('[data-ops-alert-quick-reply-index]')).map((row, index) => ({
+        id: normalizeOpsAlertCustomerChatQuickReplyTemplateId(
+            row.getAttribute('data-ops-alert-quick-reply-id') || '',
+            index
+        ),
+        business_type: row.querySelector('[data-ops-alert-quick-reply-field="business_type"]')?.value || 'general',
+        enabled: row.querySelector('[data-ops-alert-quick-reply-field="enabled"]')?.checked !== false,
+        label: row.querySelector('[data-ops-alert-quick-reply-field="label"]')?.value || '',
+        hint: row.querySelector('[data-ops-alert-quick-reply-field="hint"]')?.value || '',
+        text: row.querySelector('[data-ops-alert-quick-reply-field="text"]')?.value || ''
+    }));
+
+    return normalizeOpsAlertCustomerChatQuickReplyTemplates(templates, { preserveDrafts });
+}
+
+function getOpsAlertCustomerChatQuickReplyEditableFieldNames() {
+    return new Set(['label', 'hint', 'text']);
+}
+
+function getOpsAlertCustomerChatQuickReplyRowDraft(row, index = 0) {
+    if (!(row instanceof HTMLElement)) {
+        return null;
+    }
+
+    return {
+        index,
+        id: normalizeOpsAlertCustomerChatQuickReplyTemplateId(
+            row.getAttribute('data-ops-alert-quick-reply-id') || '',
+            index
+        ),
+        business_type: row.querySelector('[data-ops-alert-quick-reply-field="business_type"]')?.value || 'general',
+        enabled: row.querySelector('[data-ops-alert-quick-reply-field="enabled"]')?.checked !== false,
+        label: row.querySelector('[data-ops-alert-quick-reply-field="label"]')?.value || '',
+        hint: row.querySelector('[data-ops-alert-quick-reply-field="hint"]')?.value || '',
+        text: row.querySelector('[data-ops-alert-quick-reply-field="text"]')?.value || ''
+    };
+}
+
+function focusOpsAlertCustomerChatQuickReplyField(row, fieldName = 'text') {
+    if (!(row instanceof HTMLElement)) {
+        return;
+    }
+
+    const normalizedFieldName = row.querySelector(`[data-ops-alert-quick-reply-field="${fieldName}"]`)
+        ? fieldName
+        : 'text';
+    const target = row.querySelector(`[data-ops-alert-quick-reply-field="${normalizedFieldName}"]`);
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (target instanceof HTMLElement) {
+        window.setTimeout(() => target.focus(), 60);
+    }
+}
+
+function getOpsAlertCustomerChatQuickReplyFieldLabel(fieldName = '') {
+    switch (String(fieldName || '').trim().toLowerCase()) {
+        case 'business_type':
+            return '业务类型';
+        case 'label':
+            return '按钮文案';
+        case 'hint':
+            return '提示文案';
+        case 'text':
+            return '回复正文';
+        default:
+            return '当前模板';
+    }
+}
+
+function getOpsAlertCustomerChatQuickReplyTemplateTokenViolations(template = {}) {
+    const allowedKeys = new Set(
+        getOpsAlertCustomerChatQuickReplyVariableTokens(template.business_type)
+            .map((token) => String(token || '').replace(/[{}]/g, '').trim().toLowerCase())
+            .filter(Boolean)
+    );
+    const violations = [];
+
+    ['label', 'hint', 'text'].forEach((fieldName) => {
+        const fieldValue = String(template[fieldName] || '');
+        const matchedTokens = fieldValue.match(/{{\s*([a-z0-9_]+)\s*}}/gi) || [];
+        const unknownTokens = [];
+        matchedTokens.forEach((token) => {
+            const normalizedKey = token.replace(/[{}]/g, '').trim().toLowerCase();
+            if (!allowedKeys.has(normalizedKey) && !unknownTokens.includes(token)) {
+                unknownTokens.push(token);
+            }
+        });
+
+        if (unknownTokens.length) {
+            violations.push({
+                field: fieldName,
+                tokens: unknownTokens
+            });
+        }
+    });
+
+    return violations;
+}
+
+function getOpsAlertCustomerChatQuickReplyTemplateUnknownTokens(template = {}) {
+    return getOpsAlertCustomerChatQuickReplyTemplateTokenViolations(template)
+        .flatMap((violation) => violation.tokens || [])
+        .filter((token, index, source) => source.indexOf(token) === index);
+}
+
+function getOpsAlertCustomerChatQuickReplyTemplateValidationErrors(template = {}, options = {}) {
+    const errors = [];
+    const supportedTokens = getOpsAlertCustomerChatQuickReplyVariableTokens(template.business_type);
+
+    if (options.duplicateId === true) {
+        errors.push({
+            field: 'label',
+            message: '这张模板和另一张卡片的模板 ID 冲突了，请删除重复模板后再保存。'
+        });
+    }
+
+    if (!String(template.text || '').trim()) {
+        errors.push({
+            field: 'text',
+            message: '请补全回复正文，或者删除这张草稿卡片。'
+        });
+    }
+
+    getOpsAlertCustomerChatQuickReplyTemplateTokenViolations(template).forEach((violation) => {
+        const fieldLabel = getOpsAlertCustomerChatQuickReplyFieldLabel(violation.field);
+        errors.push({
+            field: violation.field,
+            message: supportedTokens.length
+                ? `${fieldLabel}里使用了当前业务类型不支持的变量：${violation.tokens.join('、')}。当前可用：${supportedTokens.join('、')}`
+                : `${fieldLabel}当前不支持变量 ${violation.tokens.join('、')}。这个业务类型下无需额外变量。`
+        });
+    });
+
+    return errors;
+}
+
+function renderOpsAlertCustomerChatQuickReplyTemplateValidation(row, errors = [], options = {}) {
+    if (!(row instanceof HTMLElement)) {
+        return false;
+    }
+
+    const validationEl = row.querySelector('[data-ops-alert-quick-reply-role="validation"]');
+    const shouldReveal = options.reveal === true;
+    const invalidFields = new Set(
+        (Array.isArray(errors) ? errors : [])
+            .map((error) => String(error?.field || '').trim())
+            .filter(Boolean)
+    );
+
+    row.classList.toggle('has-validation-error', shouldReveal && invalidFields.size > 0);
+
+    row.querySelectorAll('[data-ops-alert-quick-reply-field-wrap]').forEach((fieldWrap) => {
+        if (!(fieldWrap instanceof HTMLElement)) {
+            return;
+        }
+
+        const fieldName = String(fieldWrap.getAttribute('data-ops-alert-quick-reply-field-wrap') || '').trim();
+        const isInvalid = shouldReveal && invalidFields.has(fieldName);
+        fieldWrap.classList.toggle('is-invalid', isInvalid);
+
+        const input = fieldWrap.querySelector('[data-ops-alert-quick-reply-field]');
+        if (input instanceof HTMLElement) {
+            if (isInvalid) {
+                input.setAttribute('aria-invalid', 'true');
+            } else {
+                input.removeAttribute('aria-invalid');
+            }
+        }
+    });
+
+    if (validationEl instanceof HTMLElement) {
+        if (shouldReveal && errors.length) {
+            validationEl.hidden = false;
+            validationEl.innerHTML = errors.map((error) => `
+                <div class="ops-alert-quick-reply-template__validation-item">
+                    <i class="fas fa-circle-exclamation"></i>
+                    <span>${escapeConfigHtml(error.message || '')}</span>
+                </div>
+            `).join('');
+        } else {
+            validationEl.hidden = true;
+            validationEl.innerHTML = '';
+        }
+    }
+
+    return errors.length > 0;
+}
+
+function syncOpsAlertCustomerChatQuickReplyTemplateValidationState(options = {}) {
+    const container = document.getElementById('opsAlertCustomerChatQuickReplyTemplates');
+    if (!container) {
+        return { invalidCount: 0, firstInvalid: null };
+    }
+
+    const rows = Array.from(container.querySelectorAll('[data-ops-alert-quick-reply-index]'));
+    const drafts = rows.map((row, index) => getOpsAlertCustomerChatQuickReplyRowDraft(row, index));
+    const firstIndexById = new Map();
+    const duplicateIndexes = new Set();
+    let firstInvalid = null;
+    let invalidCount = 0;
+    const shouldReveal = options.revealAll === true || container.dataset.opsAlertQuickReplyValidationVisible === 'true';
+
+    drafts.forEach((draft, index) => {
+        if (!draft) {
+            return;
+        }
+
+        if (firstIndexById.has(draft.id)) {
+            duplicateIndexes.add(index);
+            duplicateIndexes.add(firstIndexById.get(draft.id));
+            return;
+        }
+
+        firstIndexById.set(draft.id, index);
+    });
+
+    rows.forEach((row, index) => {
+        const draft = drafts[index];
+        const errors = draft
+            ? getOpsAlertCustomerChatQuickReplyTemplateValidationErrors(draft, {
+                duplicateId: duplicateIndexes.has(index)
+            })
+            : [];
+        const hasErrors = renderOpsAlertCustomerChatQuickReplyTemplateValidation(row, errors, { reveal: shouldReveal });
+        if (!hasErrors) {
+            return;
+        }
+
+        invalidCount += errors.length;
+        if (!firstInvalid) {
+            firstInvalid = {
+                row,
+                errors
+            };
+        }
+    });
+
+    container.dataset.opsAlertQuickReplyValidationVisible = invalidCount > 0 && shouldReveal
+        ? 'true'
+        : 'false';
+
+    return {
+        invalidCount,
+        firstInvalid
+    };
+}
+
+function validateOpsAlertCustomerChatQuickReplyTemplatesBeforeSave() {
+    const container = document.getElementById('opsAlertCustomerChatQuickReplyTemplates');
+    if (!container) {
+        return true;
+    }
+
+    container.dataset.opsAlertQuickReplyValidationVisible = 'true';
+    const validationResult = syncOpsAlertCustomerChatQuickReplyTemplateValidationState({ revealAll: true });
+    if (validationResult.invalidCount > 0) {
+        if (typeof showToast === 'function') {
+            showToast(`快捷回复模板里还有 ${validationResult.invalidCount} 处待修正项，已在卡片内标出`, 'warning');
+        }
+        const preferredField = validationResult.firstInvalid?.errors?.[0]?.field || 'text';
+        focusOpsAlertCustomerChatQuickReplyField(validationResult.firstInvalid?.row, preferredField);
+        return false;
+    }
+
+    return true;
+}
+
+function getOpsAlertCustomerChatQuickReplyInsertionTarget(row) {
+    if (!(row instanceof HTMLElement)) {
+        return null;
+    }
+
+    const editableFieldNames = getOpsAlertCustomerChatQuickReplyEditableFieldNames();
+    const preferredField = String(row.dataset.opsAlertQuickReplyActiveField || '').trim();
+    if (editableFieldNames.has(preferredField)) {
+        const preferredInput = row.querySelector(`[data-ops-alert-quick-reply-field="${preferredField}"]`);
+        if (preferredInput instanceof HTMLInputElement || preferredInput instanceof HTMLTextAreaElement) {
+            return preferredInput;
+        }
+    }
+
+    const fallbackInput = row.querySelector('[data-ops-alert-quick-reply-field="text"]');
+    return (fallbackInput instanceof HTMLInputElement || fallbackInput instanceof HTMLTextAreaElement)
+        ? fallbackInput
+        : null;
+}
+
+function insertOpsAlertCustomerChatQuickReplyToken(row, token) {
+    const normalizedToken = String(token || '').trim();
+    if (!(row instanceof HTMLElement) || !normalizedToken) {
+        return false;
+    }
+
+    const input = getOpsAlertCustomerChatQuickReplyInsertionTarget(row);
+    if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)) {
+        return false;
+    }
+
+    const currentValue = String(input.value || '');
+    const start = Number.isInteger(input.selectionStart) ? input.selectionStart : currentValue.length;
+    const end = Number.isInteger(input.selectionEnd) ? input.selectionEnd : currentValue.length;
+    input.value = `${currentValue.slice(0, start)}${normalizedToken}${currentValue.slice(end)}`;
+    const nextCaret = start + normalizedToken.length;
+    input.setSelectionRange(nextCaret, nextCaret);
+    input.focus();
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+}
+
+function syncOpsAlertCustomerChatQuickReplyTemplateState(row) {
+    if (!(row instanceof HTMLElement)) {
+        return;
+    }
+
+    const businessType = row.querySelector('[data-ops-alert-quick-reply-field="business_type"]')?.value || 'general';
+    const enabled = row.querySelector('[data-ops-alert-quick-reply-field="enabled"]')?.checked !== false;
+    const businessTypeMeta = getOpsAlertCustomerChatQuickReplyBusinessTypeMeta(businessType);
+    const businessTone = getOpsAlertCustomerChatQuickReplyBusinessTypeTone(businessType);
+
+    row.classList.toggle('is-enabled', enabled);
+    row.classList.toggle('is-disabled', !enabled);
+
+    const businessBadge = row.querySelector('[data-ops-alert-quick-reply-role="business-badge"]');
+    if (businessBadge instanceof HTMLElement) {
+        businessBadge.dataset.tone = businessTone;
+        businessBadge.textContent = businessTypeMeta.label;
+    }
+
+    const statusBadge = row.querySelector('[data-ops-alert-quick-reply-role="status-badge"]');
+    if (statusBadge instanceof HTMLElement) {
+        statusBadge.dataset.tone = enabled ? 'success' : 'muted';
+        statusBadge.textContent = enabled ? '启用中' : '已停用';
+    }
+
+    const businessMeta = row.querySelector('[data-ops-alert-quick-reply-role="business-meta"]');
+    if (businessMeta instanceof HTMLElement) {
+        businessMeta.textContent = `把这条模板展示给 ${businessTypeMeta.label} 场景，用来给管理员快速接手和回复。`;
+    }
+
+    const businessPanelCopy = row.querySelector('[data-ops-alert-quick-reply-role="business-panel-copy"]');
+    if (businessPanelCopy instanceof HTMLElement) {
+        businessPanelCopy.textContent = businessTypeMeta.description;
+    }
+
+    const variableChips = row.querySelector('[data-ops-alert-quick-reply-role="variable-chips"]');
+    if (variableChips instanceof HTMLElement) {
+        variableChips.innerHTML = buildOpsAlertCustomerChatQuickReplyVariableChipsHtml(businessType);
+    }
+
+    const labelValue = row.querySelector('[data-ops-alert-quick-reply-field="label"]')?.value || '';
+    const hintValue = row.querySelector('[data-ops-alert-quick-reply-field="hint"]')?.value || '';
+    const textValue = row.querySelector('[data-ops-alert-quick-reply-field="text"]')?.value || '';
+    const previewLabel = row.querySelector('[data-ops-alert-quick-reply-role="preview-label"]');
+    if (previewLabel instanceof HTMLElement) {
+        previewLabel.textContent = interpolateOpsAlertCustomerChatQuickReplyPreviewText(labelValue, businessType) || '未填写按钮文案';
+    }
+
+    const previewHint = row.querySelector('[data-ops-alert-quick-reply-role="preview-hint"]');
+    if (previewHint instanceof HTMLElement) {
+        previewHint.textContent = interpolateOpsAlertCustomerChatQuickReplyPreviewText(hintValue, businessType) || '可在这里预览按钮下方提示';
+    }
+
+    const previewText = row.querySelector('[data-ops-alert-quick-reply-role="preview-text"]');
+    if (previewText instanceof HTMLElement) {
+        previewText.textContent = interpolateOpsAlertCustomerChatQuickReplyPreviewText(textValue, businessType) || '可在这里预览填入发送框的正文';
+    }
+
+    const businessDescription = row.querySelector('[data-ops-alert-quick-reply-role="business-description"]');
+    if (businessDescription instanceof HTMLElement) {
+        businessDescription.textContent = businessTypeMeta.description;
+    }
+}
+
+function refreshOpsAlertQuickReplyDraftIndicators() {
+    updateOpsAlertStrategyDraftIndicators();
+}
+
+function ensureOpsAlertCustomerChatQuickReplyTemplateEvents() {
+    const addButton = document.getElementById('opsAlertCustomerChatQuickReplyAddButton');
+    if (addButton && addButton.dataset.quickReplyReady !== 'true') {
+        addButton.dataset.quickReplyReady = 'true';
+        addButton.addEventListener('click', () => {
+            const currentTemplates = collectOpsAlertCustomerChatQuickReplyTemplatesFromForm({ preserveDrafts: true });
+            if (currentTemplates.length >= 12) {
+                if (typeof showToast === 'function') {
+                    showToast('快捷回复模板最多保留 12 条', 'warning');
+                }
+                return;
+            }
+
+            currentTemplates.push(createOpsAlertCustomerChatQuickReplyTemplateDraft());
+            renderOpsAlertCustomerChatQuickReplyTemplates(currentTemplates);
+            refreshOpsAlertQuickReplyDraftIndicators();
+        });
+    }
+
+    const container = document.getElementById('opsAlertCustomerChatQuickReplyTemplates');
+    if (!container || container.dataset.quickReplyReady === 'true') {
+        return;
+    }
+
+    container.dataset.quickReplyReady = 'true';
+    container.addEventListener('click', (event) => {
+        const tokenTrigger = event.target instanceof HTMLElement
+            ? event.target.closest('[data-ops-alert-quick-reply-token]')
+            : null;
+        if (tokenTrigger instanceof HTMLElement) {
+            const row = tokenTrigger.closest('[data-ops-alert-quick-reply-index]');
+            insertOpsAlertCustomerChatQuickReplyToken(row, tokenTrigger.getAttribute('data-ops-alert-quick-reply-token'));
+            refreshOpsAlertQuickReplyDraftIndicators();
+            return;
+        }
+
+        const moveTrigger = event.target instanceof HTMLElement
+            ? event.target.closest('[data-ops-alert-quick-reply-move]')
+            : null;
+        if (moveTrigger instanceof HTMLElement) {
+            const index = toWholeNumber(moveTrigger.getAttribute('data-ops-alert-quick-reply-move-index'), -1);
+            const direction = String(moveTrigger.getAttribute('data-ops-alert-quick-reply-move') || '').trim().toLowerCase();
+            const currentTemplates = collectOpsAlertCustomerChatQuickReplyTemplatesFromForm({ preserveDrafts: true });
+            const targetIndex = direction === 'up'
+                ? index - 1
+                : direction === 'down'
+                    ? index + 1
+                    : -1;
+
+            if (index < 0 || targetIndex < 0 || targetIndex >= currentTemplates.length) {
+                return;
+            }
+
+            [currentTemplates[index], currentTemplates[targetIndex]] = [currentTemplates[targetIndex], currentTemplates[index]];
+            renderOpsAlertCustomerChatQuickReplyTemplates(currentTemplates);
+            refreshOpsAlertQuickReplyDraftIndicators();
+            return;
+        }
+
+        const trigger = event.target instanceof HTMLElement
+            ? event.target.closest('[data-ops-alert-quick-reply-remove]')
+            : null;
+        if (!(trigger instanceof HTMLElement)) {
+            return;
+        }
+
+        const index = toWholeNumber(trigger.getAttribute('data-ops-alert-quick-reply-remove'), -1);
+        if (index < 0) {
+            return;
+        }
+
+        const currentTemplates = collectOpsAlertCustomerChatQuickReplyTemplatesFromForm({ preserveDrafts: true });
+        currentTemplates.splice(index, 1);
+        renderOpsAlertCustomerChatQuickReplyTemplates(currentTemplates);
+        refreshOpsAlertQuickReplyDraftIndicators();
+    });
+    container.addEventListener('focusin', (event) => {
+        const target = event.target instanceof HTMLElement ? event.target : null;
+        const row = target?.closest('[data-ops-alert-quick-reply-index]');
+        const field = target?.getAttribute('data-ops-alert-quick-reply-field') || '';
+        if (!(row instanceof HTMLElement) || !getOpsAlertCustomerChatQuickReplyEditableFieldNames().has(field)) {
+            return;
+        }
+        row.dataset.opsAlertQuickReplyActiveField = field;
+    });
+    container.addEventListener('input', (event) => {
+        event.stopPropagation();
+        const target = event.target instanceof HTMLElement
+            ? event.target
+            : null;
+        const row = target?.closest('[data-ops-alert-quick-reply-index]');
+        syncOpsAlertCustomerChatQuickReplyTemplateState(row);
+        syncOpsAlertCustomerChatQuickReplyTemplateValidationState();
+        refreshOpsAlertQuickReplyDraftIndicators();
+    });
+    container.addEventListener('change', (event) => {
+        event.stopPropagation();
+        const target = event.target instanceof HTMLElement
+            ? event.target
+            : null;
+        const row = target?.closest('[data-ops-alert-quick-reply-index]');
+        syncOpsAlertCustomerChatQuickReplyTemplateState(row);
+        syncOpsAlertCustomerChatQuickReplyTemplateValidationState();
+        refreshOpsAlertQuickReplyDraftIndicators();
+    });
+}
+
 function applyOpsAlertShopRiskControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const shopRiskConfig = normalizedConfig.shop_order_risk || getDefaultOpsAlertConfig().shop_order_risk;
@@ -6233,6 +7201,8 @@ function applyOpsAlertSummaryModeControls(monitorConfig = {}, ids = {}) {
 function applyOpsAlertCustomerChatControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const monitorConfig = normalizedConfig.customer_chat_message || getDefaultOpsAlertConfig().customer_chat_message;
+    ensureOpsAlertCustomerChatQuickReplyTemplateEvents();
+    renderOpsAlertCustomerChatQuickReplyTemplates(monitorConfig.quick_reply_templates);
     const toggleEl = document.getElementById('opsAlertCustomerChatMessageEnabledToggle');
     if (toggleEl) {
         toggleEl.classList.toggle('active', monitorConfig.enabled);
@@ -9178,6 +10148,710 @@ function renderOpsAlertRiskSpotlight(filters = getOpsAlertMonitorViewFilters()) 
     target.innerHTML = buildOpsAlertRiskSpotlightMarkup(getOpsAlertRiskSpotlightCategory(filters), filters);
 }
 
+function formatOpsAlertMonitorSignedCount(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num) || num === 0) return '0';
+    return `${num > 0 ? '+' : ''}${formatVerifyMonitorInteger(num)}`;
+}
+
+function formatOpsAlertMonitorTimeShort(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    });
+}
+
+function getOpsAlertMonitorBacklogDeltaTone(delta) {
+    const numericDelta = Number(delta || 0);
+    if (numericDelta < 0) return 'success';
+    if (numericDelta > 0) return 'warning';
+    return 'neutral';
+}
+
+function normalizeOpsAlertMonitorShiftReportView(value = 'all') {
+    const normalized = String(value || '').trim().toLowerCase();
+    return OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS.some((item) => item.key === normalized)
+        ? normalized
+        : getDefaultOpsAlertMonitorShiftReportViewState();
+}
+
+function getOpsAlertMonitorShiftReportViewMeta(value = opsAlertMonitorShiftReportViewState) {
+    const normalized = normalizeOpsAlertMonitorShiftReportView(value);
+    return OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS.find((item) => item.key === normalized)
+        || OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS[0];
+}
+
+function getOpsAlertMonitorShiftReportVisibleSections(view = opsAlertMonitorShiftReportViewState) {
+    return new Set(getOpsAlertMonitorShiftReportViewMeta(view).sections || []);
+}
+
+function getOpsAlertMonitorShiftReportCurrentAdminId() {
+    return String(opsAlertMonitorState?.current_admin_id || '').trim();
+}
+
+function getOpsAlertMonitorShiftReportCurrentAdminStat(report = normalizeOpsAlertMonitorShiftReport(), currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId()) {
+    const normalizedCurrentAdminId = String(currentAdminId || '').trim();
+    const adminItems = Array.isArray(report?.admin_stats) ? report.admin_stats : [];
+
+    return adminItems.find((item) => normalizedCurrentAdminId && String(item?.admin_id || '').trim() === normalizedCurrentAdminId)
+        || adminItems.find((item) => item?.is_current === true)
+        || null;
+}
+
+function buildOpsAlertMonitorShiftReportOwnedCategoryItems(categories = [], currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId()) {
+    const normalizedCurrentAdminId = String(currentAdminId || '').trim();
+    if (!normalizedCurrentAdminId) {
+        return [];
+    }
+
+    return (Array.isArray(categories) ? categories : [])
+        .map((category) => {
+            const items = Array.isArray(category?.items) ? category.items : [];
+            const ownedItems = items.filter((item) => {
+                const status = String(item?.case_status || '').trim().toLowerCase() || 'open';
+                if (status === 'resolved') {
+                    return false;
+                }
+                return String(item?.case_owner_admin_id || '').trim() === normalizedCurrentAdminId;
+            });
+
+            if (!ownedItems.length) {
+                return null;
+            }
+
+            const claimedCount = ownedItems.filter((item) => (String(item?.case_status || '').trim().toLowerCase() || 'open') === 'claimed').length;
+            const criticalCount = ownedItems.filter((item) => String(item?.severity || '').trim().toLowerCase() === 'critical').length;
+
+            return {
+                key: category?.key || '',
+                label: category?.label || category?.key || '告警模块',
+                backlog_count: ownedItems.length,
+                pending_count: Math.max(0, ownedItems.length - claimedCount),
+                claimed_count: claimedCount,
+                critical_count: criticalCount
+            };
+        })
+        .filter(Boolean)
+        .sort((left, right) => {
+            const backlogDelta = Number(right.backlog_count || 0) - Number(left.backlog_count || 0);
+            if (backlogDelta !== 0) return backlogDelta;
+            const criticalDelta = Number(right.critical_count || 0) - Number(left.critical_count || 0);
+            if (criticalDelta !== 0) return criticalDelta;
+            return String(left.label || '').localeCompare(String(right.label || ''), 'zh-CN');
+        });
+}
+
+function buildOpsAlertMonitorShiftReportViewSwitchMarkup(currentView = opsAlertMonitorShiftReportViewState) {
+    const normalizedView = normalizeOpsAlertMonitorShiftReportView(currentView);
+    const viewMeta = getOpsAlertMonitorShiftReportViewMeta(normalizedView);
+
+    return `
+        <div class="ops-alert-shift-report__view-switch">
+            <span class="ops-alert-shift-report__view-label">交班视角</span>
+            <div class="ops-alert-shift-report__view-chips">
+                ${OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS.map((item) => `
+                    <button
+                        type="button"
+                        class="ops-alert-shift-report__view-chip${item.key === normalizedView ? ' is-active' : ''}"
+                        data-admin-action="settings-set-ops-alert-shift-report-view"
+                        data-ops-alert-shift-report-view="${escapeConfigHtml(item.key)}"
+                    >
+                        ${escapeConfigHtml(item.label)}
+                    </button>
+                `).join('')}
+            </div>
+            <div class="ops-alert-shift-report__view-summary">${escapeConfigHtml(viewMeta.description || '')}</div>
+        </div>
+    `;
+}
+
+function buildOpsAlertMonitorShiftMetricMarkup({ label = '', value = '—', detail = '', tone = 'neutral' } = {}) {
+    return `
+        <article class="ops-alert-shift-report__metric ops-alert-shift-report__metric--${escapeConfigHtml(tone)}">
+            <span class="ops-alert-shift-report__metric-label">${escapeConfigHtml(label)}</span>
+            <strong class="ops-alert-shift-report__metric-value">${escapeConfigHtml(value)}</strong>
+            <span class="ops-alert-shift-report__metric-detail">${escapeConfigHtml(detail || '等待更多上下文')}</span>
+        </article>
+    `;
+}
+
+function buildOpsAlertMonitorShiftListItemMarkup(title = '', meta = '', badges = []) {
+    const renderedBadges = (Array.isArray(badges) ? badges : []).filter(Boolean).join('');
+    return `
+        <div class="ops-alert-shift-report__list-item">
+            <div class="ops-alert-shift-report__list-item-top">
+                <strong class="ops-alert-shift-report__list-item-title">${escapeConfigHtml(title || '未命名项')}</strong>
+                ${renderedBadges ? `<div class="ops-alert-shift-report__list-item-badges">${renderedBadges}</div>` : ''}
+            </div>
+            <div class="ops-alert-shift-report__list-item-meta">${escapeConfigHtml(meta || '等待更多上下文')}</div>
+        </div>
+    `;
+}
+
+function buildOpsAlertMonitorShiftTrendMarkup(report = normalizeOpsAlertMonitorShiftReport()) {
+    const trend = Array.isArray(report.trend) ? report.trend : [];
+    const maxBacklog = Math.max(1, ...trend.map((entry) => Number(entry.backlog_count || 0)));
+    const bucketHours = Math.max(1, Number(report.bucket_hours || 0));
+
+    return `
+        <div class="ops-alert-shift-report__trend">
+            <div class="ops-alert-shift-report__trend-bars">
+                ${trend.length ? trend.map((entry) => {
+        const backlogCount = Math.max(0, Number(entry.backlog_count || 0));
+        const claimedCount = Math.max(0, Number(entry.claimed_count || 0));
+        const assignedCount = Math.max(0, Number(entry.assigned_count || 0));
+        const resolvedCount = Math.max(0, Number(entry.resolved_count || 0));
+        const height = Math.max(16, Math.round((backlogCount / maxBacklog) * 100));
+        const metaParts = [];
+        if (claimedCount > 0) metaParts.push(`认领 ${formatVerifyMonitorInteger(claimedCount)}`);
+        if (assignedCount > 0) metaParts.push(`转交 ${formatVerifyMonitorInteger(assignedCount)}`);
+        if (resolvedCount > 0) metaParts.push(`关闭 ${formatVerifyMonitorInteger(resolvedCount)}`);
+        return `
+                        <div class="ops-alert-shift-report__trend-bar">
+                            <div class="ops-alert-shift-report__trend-bar-value">${escapeConfigHtml(formatVerifyMonitorInteger(backlogCount))}</div>
+                            <div class="ops-alert-shift-report__trend-bar-track">
+                                <span class="ops-alert-shift-report__trend-bar-fill" style="height:${escapeConfigHtml(String(height))}%"></span>
+                            </div>
+                            <div class="ops-alert-shift-report__trend-bar-label">${escapeConfigHtml(formatOpsAlertMonitorTimeShort(entry.bucket_end))}</div>
+                            <div class="ops-alert-shift-report__trend-bar-meta">${escapeConfigHtml(metaParts.join(' · ') || '无动作')}</div>
+                        </div>
+                    `;
+    }).join('') : `<div class="ops-alert-shift-report__panel-empty">本班还没有形成可展示的积压变化。</div>`}
+            </div>
+            <div class="ops-alert-shift-report__trend-footer">按 ${escapeConfigHtml(formatVerifyMonitorInteger(bucketHours))} 小时时间桶回看本班积压走势。</div>
+        </div>
+    `;
+}
+
+function buildOpsAlertMonitorShiftReportMarkup(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+    const normalizedReport = normalizeOpsAlertMonitorShiftReport(report);
+    const totals = normalizedReport.totals || getDefaultOpsAlertMonitorShiftReport().totals;
+    const currentView = normalizeOpsAlertMonitorShiftReportView(opsAlertMonitorShiftReportViewState);
+    const viewMeta = getOpsAlertMonitorShiftReportViewMeta(currentView);
+    const visibleSections = getOpsAlertMonitorShiftReportVisibleSections(currentView);
+    const currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId();
+    const currentAdminStat = getOpsAlertMonitorShiftReportCurrentAdminStat(normalizedReport, currentAdminId);
+    const ownedCategoryItems = buildOpsAlertMonitorShiftReportOwnedCategoryItems(opsAlertMonitorState?.categories, currentAdminId);
+    const baseCategoryItems = Array.isArray(normalizedReport.categories) ? normalizedReport.categories : [];
+    const baseAdminItems = Array.isArray(normalizedReport.admin_stats) ? normalizedReport.admin_stats : [];
+    const closeReasons = Array.isArray(normalizedReport.close_reasons) ? normalizedReport.close_reasons : [];
+    const shiftHours = Math.max(1, Number(normalizedReport.shift_hours || 0));
+    const backlogDelta = Number(totals.backlog_delta || 0);
+    const backlogDeltaTone = getOpsAlertMonitorBacklogDeltaTone(backlogDelta);
+    const mineLabel = currentAdminLabel || currentAdminStat?.label || '当前值班';
+    const mineActiveCount = Number(currentAdminStat?.active_count || 0);
+    const mineCriticalCount = Number(currentAdminStat?.critical_active_count || 0);
+    const mineClaimedCount = Number(currentAdminStat?.claimed_count || 0);
+    const mineAssignedCount = Number(currentAdminStat?.assigned_count || 0);
+    const mineResolvedCount = Number(currentAdminStat?.resolved_count || 0);
+    const mineAvgResolutionMinutes = currentAdminStat?.avg_resolution_minutes != null
+        ? Number(currentAdminStat.avg_resolution_minutes || 0)
+        : null;
+    const headline = currentView === 'mine'
+        ? (
+            mineActiveCount > 0
+                ? `${mineLabel} 当前名下有 ${formatVerifyMonitorInteger(mineActiveCount)} 条处理中告警，覆盖 ${formatVerifyMonitorInteger(ownedCategoryItems.length)} 个模块。`
+                : `${mineLabel} 当前名下没有处理中告警，可优先接手待认领积压。`
+        )
+        : (
+            Number(totals.claimed_count || 0) > 0
+            || Number(totals.assigned_count || 0) > 0
+            || Number(totals.resolved_count || 0) > 0
+        )
+            ? `近 ${formatVerifyMonitorInteger(shiftHours)} 小时共认领 ${formatVerifyMonitorInteger(totals.claimed_count || 0)}、转交 ${formatVerifyMonitorInteger(totals.assigned_count || 0)}、关闭 ${formatVerifyMonitorInteger(totals.resolved_count || 0)} 条告警。`
+            : `近 ${formatVerifyMonitorInteger(shiftHours)} 小时还没有新的认领、转交或关闭动作。`;
+    const summary = currentView === 'mine'
+        ? `本班你认领 ${formatVerifyMonitorInteger(mineClaimedCount)}、接手 ${formatVerifyMonitorInteger(mineAssignedCount)}、关闭 ${formatVerifyMonitorInteger(mineResolvedCount)} 条告警${mineAvgResolutionMinutes != null ? `，平均闭环 ${formatVerifyMonitorMinutes(mineAvgResolutionMinutes)}` : ''}；当前名下 ${formatVerifyMonitorInteger(mineCriticalCount)} 条 critical。`
+        : `当前仍有 ${formatVerifyMonitorInteger(totals.active_backlog_count || 0)} 条积压，较开班 ${formatOpsAlertMonitorSignedCount(backlogDelta)}；其中 ${formatVerifyMonitorInteger(totals.active_claimed_count || 0)} 条已有人跟进，${formatVerifyMonitorInteger(totals.active_pending_count || 0)} 条待认领。`;
+    const metrics = currentView === 'mine' ? [
+        {
+            label: '我名下处理中',
+            value: formatVerifyMonitorInteger(mineActiveCount),
+            detail: ownedCategoryItems.length > 0
+                ? `覆盖 ${formatVerifyMonitorInteger(ownedCategoryItems.length)} 个模块`
+                : '当前没有名下积压',
+            tone: mineActiveCount > 0 ? 'warning' : 'neutral'
+        },
+        {
+            label: '我名下 critical',
+            value: formatVerifyMonitorInteger(mineCriticalCount),
+            detail: mineCriticalCount > 0 ? '优先处理高优先级积压' : '当前没有 critical 积压',
+            tone: mineCriticalCount > 0 ? 'danger' : 'neutral'
+        },
+        {
+            label: '本班认领',
+            value: formatVerifyMonitorInteger(mineClaimedCount),
+            detail: '本班你主动接手的告警',
+            tone: mineClaimedCount > 0 ? 'neutral' : 'neutral'
+        },
+        {
+            label: '转交 / 接手',
+            value: formatVerifyMonitorInteger(mineAssignedCount),
+            detail: '本班由你接手的告警',
+            tone: mineAssignedCount > 0 ? 'warning' : 'neutral'
+        },
+        {
+            label: '本班关闭',
+            value: formatVerifyMonitorInteger(mineResolvedCount),
+            detail: mineResolvedCount > 0 ? '你本班完成闭环的告警' : '本班还没有关闭记录',
+            tone: mineResolvedCount > 0 ? 'success' : 'neutral'
+        },
+        {
+            label: '我的平均闭环',
+            value: mineAvgResolutionMinutes != null ? formatVerifyMonitorMinutes(mineAvgResolutionMinutes) : '—',
+            detail: mineResolvedCount > 0 ? `基于 ${formatVerifyMonitorInteger(mineResolvedCount)} 条已关闭告警` : '等待更多关闭样本',
+            tone: mineAvgResolutionMinutes != null ? 'success' : 'neutral'
+        }
+    ] : [
+        {
+            label: '本班认领',
+            value: formatVerifyMonitorInteger(totals.claimed_count || 0),
+            detail: Number(totals.note_count || 0) > 0
+                ? `另有 ${formatVerifyMonitorInteger(totals.note_count || 0)} 条备注更新`
+                : '本班新接手告警数',
+            tone: Number(totals.claimed_count || 0) > 0 ? 'neutral' : 'neutral'
+        },
+        {
+            label: '转交 / 接手',
+            value: formatVerifyMonitorInteger(totals.assigned_count || 0),
+            detail: Number(totals.reopened_count || 0) > 0
+                ? `重新打开 ${formatVerifyMonitorInteger(totals.reopened_count || 0)} 条`
+                : '跨人交接次数',
+            tone: Number(totals.assigned_count || 0) > 0 ? 'warning' : 'neutral'
+        },
+        {
+            label: '本班关闭',
+            value: formatVerifyMonitorInteger(totals.resolved_count || 0),
+            detail: normalizedReport.close_reasons.length
+                ? `关闭原因已归类 ${formatVerifyMonitorInteger(normalizedReport.close_reasons.length)} 项`
+                : '本班还没有关闭记录',
+            tone: Number(totals.resolved_count || 0) > 0 ? 'success' : 'neutral'
+        },
+        {
+            label: '平均闭环',
+            value: totals.avg_resolution_minutes != null
+                ? formatVerifyMonitorMinutes(totals.avg_resolution_minutes)
+                : '—',
+            detail: Number(totals.resolved_count || 0) > 0
+                ? `基于 ${formatVerifyMonitorInteger(totals.resolved_count || 0)} 条已关闭告警`
+                : '等待更多关闭样本',
+            tone: totals.avg_resolution_minutes != null ? 'success' : 'neutral'
+        },
+        {
+            label: '当前积压',
+            value: formatVerifyMonitorInteger(totals.active_backlog_count || 0),
+            detail: `较开班 ${formatOpsAlertMonitorSignedCount(backlogDelta)}`,
+            tone: backlogDeltaTone
+        },
+        {
+            label: '最长等待',
+            value: totals.longest_waiting_minutes != null
+                ? formatVerifyMonitorMinutes(totals.longest_waiting_minutes)
+                : '—',
+            detail: totals.longest_waiting_minutes != null
+                ? '当前未关闭告警中等待最久的一条'
+                : '当前没有待处理积压',
+            tone: totals.longest_waiting_minutes != null && Number(totals.longest_waiting_minutes || 0) >= 180
+                ? 'warning'
+                : 'neutral'
+        }
+    ];
+    const categoryItems = currentView === 'mine' ? ownedCategoryItems : baseCategoryItems;
+    const adminItems = currentView === 'mine'
+        ? (currentAdminStat ? [currentAdminStat] : [])
+        : baseAdminItems;
+    const headerBadges = currentView === 'mine'
+        ? [
+            buildOpsAlertMonitorBadge(`班次 ${formatVerifyMonitorInteger(shiftHours)} 小时`, 'neutral'),
+            currentAdminLabel ? buildOpsAlertMonitorBadge(`当前值班 ${currentAdminLabel}`, 'neutral') : '',
+            buildOpsAlertMonitorBadge(`我名下 ${formatVerifyMonitorInteger(mineActiveCount)}`, mineActiveCount > 0 ? 'warning' : 'neutral'),
+            mineCriticalCount > 0 ? buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(mineCriticalCount)} critical`, 'danger') : ''
+        ].filter(Boolean)
+        : [
+            buildOpsAlertMonitorBadge(`班次 ${formatVerifyMonitorInteger(shiftHours)} 小时`, 'neutral'),
+            buildOpsAlertMonitorBadge(`当前积压 ${formatVerifyMonitorInteger(totals.active_backlog_count || 0)}`, Number(totals.active_backlog_count || 0) > 0 ? 'warning' : 'neutral'),
+            buildOpsAlertMonitorBadge(`较开班 ${formatOpsAlertMonitorSignedCount(backlogDelta)}`, backlogDeltaTone),
+            currentAdminLabel ? buildOpsAlertMonitorBadge(`当前值班 ${currentAdminLabel}`, 'neutral') : ''
+        ].filter(Boolean);
+
+    return `
+        <div class="ops-alert-shift-report">
+            <div class="ops-alert-shift-report__head">
+                <div class="ops-alert-shift-report__copy">
+                    <div class="ops-alert-shift-report__eyebrow">本班处理统计 / 交班视图</div>
+                    <div class="ops-alert-shift-report__title">${escapeConfigHtml(headline)}</div>
+                    <div class="ops-alert-shift-report__summary">${escapeConfigHtml(summary)}</div>
+                </div>
+                <div class="ops-alert-shift-report__stats">
+                    ${headerBadges.join('')}
+                </div>
+                <div class="ops-alert-shift-report__actions">
+                    <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-copy-ops-alert-shift-report">
+                        <i class="fas fa-clipboard-list"></i> 复制交班摘要
+                    </button>
+                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-export-ops-alert-shift-report-csv">
+                        <i class="fas fa-file-export"></i> 导出交班 CSV
+                    </button>
+                </div>
+            </div>
+            ${buildOpsAlertMonitorShiftReportViewSwitchMarkup(currentView)}
+            <div class="ops-alert-shift-report__metrics">
+                ${metrics.map((metric) => buildOpsAlertMonitorShiftMetricMarkup(metric)).join('')}
+            </div>
+            <div class="ops-alert-shift-report__panels">
+                ${visibleSections.has('categories') ? `
+                <section class="ops-alert-shift-report__panel">
+                    <div class="ops-alert-shift-report__panel-title">${escapeConfigHtml(currentView === 'mine' ? '我名下积压模块' : currentView === 'handoff' ? '交接优先模块' : '当前积压模块')}</div>
+                    <div class="ops-alert-shift-report__panel-list">
+                        ${categoryItems.length
+        ? categoryItems.map((category) => buildOpsAlertMonitorShiftListItemMarkup(
+            category.label || category.key || '告警模块',
+            `积压 ${formatVerifyMonitorInteger(category.backlog_count || 0)} · 待认领 ${formatVerifyMonitorInteger(category.pending_count || 0)} · 处理中 ${formatVerifyMonitorInteger(category.claimed_count || 0)}${Number(category.critical_count || 0) > 0 ? ` · critical ${formatVerifyMonitorInteger(category.critical_count || 0)}` : ''}`,
+            [
+                Number(category.critical_count || 0) > 0
+                    ? buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(category.critical_count || 0)} critical`, 'danger')
+                    : '',
+                buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(category.backlog_count || 0)} 积压`, Number(category.pending_count || 0) > 0 ? 'warning' : 'neutral')
+            ]
+        )).join('')
+        : `<div class="ops-alert-shift-report__panel-empty">${escapeConfigHtml(currentView === 'mine' ? '当前没有分配到你名下的积压模块。' : '当前没有需要交接的积压模块。')}</div>`}
+                    </div>
+                </section>
+                ` : ''}
+                ${visibleSections.has('admins') ? `
+                <section class="ops-alert-shift-report__panel">
+                    <div class="ops-alert-shift-report__panel-title">${escapeConfigHtml(currentView === 'mine' ? '我的处理量' : currentView === 'review' ? '人员处理产出' : '人员工作量')}</div>
+                    <div class="ops-alert-shift-report__panel-list">
+                        ${adminItems.length
+        ? adminItems.map((admin) => buildOpsAlertMonitorShiftListItemMarkup(
+            admin.label || '未指定负责人',
+            `认领 ${formatVerifyMonitorInteger(admin.claimed_count || 0)} · 接手 ${formatVerifyMonitorInteger(admin.assigned_count || 0)} · 关闭 ${formatVerifyMonitorInteger(admin.resolved_count || 0)} · 手上 ${formatVerifyMonitorInteger(admin.active_count || 0)}${admin.avg_resolution_minutes != null ? ` · 平均 ${formatVerifyMonitorMinutes(admin.avg_resolution_minutes)}` : ''}`,
+            [
+                admin.is_current ? buildOpsAlertMonitorBadge('当前值班', 'neutral') : '',
+                Number(admin.critical_active_count || 0) > 0
+                    ? buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(admin.critical_active_count || 0)} critical`, 'danger')
+                    : ''
+            ]
+        )).join('')
+        : `<div class="ops-alert-shift-report__panel-empty">${escapeConfigHtml(currentView === 'mine' ? '当前还没有归属到你名下的处理动作。' : '本班还没有可归因到负责人的处理动作。')}</div>`}
+                    </div>
+                </section>
+                ` : ''}
+                ${visibleSections.has('trend') ? `
+                <section class="ops-alert-shift-report__panel ops-alert-shift-report__panel--wide">
+                    <div class="ops-alert-shift-report__panel-title">${escapeConfigHtml(currentView === 'review' ? '本班积压变化' : '积压趋势')}</div>
+                    ${buildOpsAlertMonitorShiftTrendMarkup(normalizedReport)}
+                </section>
+                ` : ''}
+                ${visibleSections.has('close_reasons') ? `
+                <section class="ops-alert-shift-report__panel">
+                    <div class="ops-alert-shift-report__panel-title">${escapeConfigHtml(viewMeta.key === 'review' ? '闭环原因分布' : '关闭原因分布')}</div>
+                    <div class="ops-alert-shift-report__panel-list">
+                        ${closeReasons.length
+        ? closeReasons.map((reason) => buildOpsAlertMonitorShiftListItemMarkup(
+            reason.label || '其他关闭原因',
+            `本班关闭 ${formatVerifyMonitorInteger(reason.count || 0)} 条`,
+            [
+                buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(reason.count || 0)} 条`, Number(reason.count || 0) > 0 ? 'success' : 'neutral')
+            ]
+        )).join('')
+        : '<div class="ops-alert-shift-report__panel-empty">本班还没有可归类的关闭原因。</div>'}
+                    </div>
+                </section>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function buildOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+    const normalizedReport = normalizeOpsAlertMonitorShiftReport(report);
+    const totals = normalizedReport.totals || getDefaultOpsAlertMonitorShiftReport().totals;
+    const currentView = normalizeOpsAlertMonitorShiftReportView(opsAlertMonitorShiftReportViewState);
+    const viewMeta = getOpsAlertMonitorShiftReportViewMeta(currentView);
+    const visibleSections = getOpsAlertMonitorShiftReportVisibleSections(currentView);
+    const currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId();
+    const currentAdminStat = getOpsAlertMonitorShiftReportCurrentAdminStat(normalizedReport, currentAdminId);
+    const shiftHours = Math.max(1, Number(normalizedReport.shift_hours || 0));
+    const backlogDelta = Number(totals.backlog_delta || 0);
+    const categoryItems = currentView === 'mine'
+        ? buildOpsAlertMonitorShiftReportOwnedCategoryItems(opsAlertMonitorState?.categories, currentAdminId)
+        : (Array.isArray(normalizedReport.categories) ? normalizedReport.categories : []);
+    const adminItems = currentView === 'mine'
+        ? (currentAdminStat ? [currentAdminStat] : [])
+        : (Array.isArray(normalizedReport.admin_stats) ? normalizedReport.admin_stats : []);
+    const closeReasons = Array.isArray(normalizedReport.close_reasons) ? normalizedReport.close_reasons : [];
+    const trend = Array.isArray(normalizedReport.trend) ? normalizedReport.trend : [];
+    const mineActiveCount = Number(currentAdminStat?.active_count || 0);
+    const mineCriticalCount = Number(currentAdminStat?.critical_active_count || 0);
+    const mineClaimedCount = Number(currentAdminStat?.claimed_count || 0);
+    const mineAssignedCount = Number(currentAdminStat?.assigned_count || 0);
+    const mineResolvedCount = Number(currentAdminStat?.resolved_count || 0);
+    const mineAvgResolutionMinutes = currentAdminStat?.avg_resolution_minutes != null
+        ? Number(currentAdminStat.avg_resolution_minutes || 0)
+        : null;
+    const windowLabel = normalizedReport.window_start || normalizedReport.window_end
+        ? `${formatVerifyMonitorDateTime(normalizedReport.window_start)} 至 ${formatVerifyMonitorDateTime(normalizedReport.window_end)}`
+        : '';
+    const lines = [
+        '第一阶段集中告警交班摘要',
+        `生成时间：${formatVerifyMonitorDateTime(new Date().toISOString())}`
+    ];
+
+    if (windowLabel) {
+        lines.push(`班次区间：${windowLabel}`);
+    }
+
+    lines.push(`班次时长：${formatVerifyMonitorInteger(shiftHours)} 小时`);
+    lines.push(`交班视角：${viewMeta.label}`);
+
+    if (currentAdminLabel) {
+        lines.push(`当前值班：${currentAdminLabel}`);
+    }
+
+    lines.push(
+        '',
+        `${currentView === 'mine' ? '我的概况' : '本班概况'}：`,
+        currentView === 'mine'
+            ? `你本班认领 ${formatVerifyMonitorInteger(mineClaimedCount)}，接手 ${formatVerifyMonitorInteger(mineAssignedCount)}，关闭 ${formatVerifyMonitorInteger(mineResolvedCount)}。`
+            : `认领 ${formatVerifyMonitorInteger(totals.claimed_count || 0)}，转交 ${formatVerifyMonitorInteger(totals.assigned_count || 0)}，关闭 ${formatVerifyMonitorInteger(totals.resolved_count || 0)}，备注更新 ${formatVerifyMonitorInteger(totals.note_count || 0)}。`,
+        currentView === 'mine'
+            ? `当前名下积压 ${formatVerifyMonitorInteger(mineActiveCount)}，其中 critical ${formatVerifyMonitorInteger(mineCriticalCount)}；覆盖 ${formatVerifyMonitorInteger(categoryItems.length)} 个模块。`
+            : `当前积压 ${formatVerifyMonitorInteger(totals.active_backlog_count || 0)}，较开班 ${formatOpsAlertMonitorSignedCount(backlogDelta)}；已跟进 ${formatVerifyMonitorInteger(totals.active_claimed_count || 0)}，待认领 ${formatVerifyMonitorInteger(totals.active_pending_count || 0)}。`,
+        currentView === 'mine'
+            ? `我的平均闭环 ${mineAvgResolutionMinutes != null ? formatVerifyMonitorMinutes(mineAvgResolutionMinutes) : '暂无样本'}。`
+            : `平均闭环 ${totals.avg_resolution_minutes != null ? formatVerifyMonitorMinutes(totals.avg_resolution_minutes) : '暂无样本'}；最长等待 ${totals.longest_waiting_minutes != null ? formatVerifyMonitorMinutes(totals.longest_waiting_minutes) : '暂无积压'}。`,
+        ''
+    );
+
+    if (visibleSections.has('categories')) {
+        lines.push(currentView === 'mine' ? '我名下积压模块：' : '重点积压模块：');
+        if (categoryItems.length) {
+            categoryItems.forEach((category, index) => {
+                const label = category.label || category.key || `模块 ${index + 1}`;
+                lines.push(
+                    `${index + 1}. ${label}：积压 ${formatVerifyMonitorInteger(category.backlog_count || 0)}，待认领 ${formatVerifyMonitorInteger(category.pending_count || 0)}，处理中 ${formatVerifyMonitorInteger(category.claimed_count || 0)}${Number(category.critical_count || 0) > 0 ? `，critical ${formatVerifyMonitorInteger(category.critical_count || 0)}` : ''}`
+                );
+            });
+        } else {
+            lines.push(currentView === 'mine' ? '1. 当前没有分配到你名下的积压模块。' : '1. 当前没有需要重点交接的积压模块。');
+        }
+        lines.push('');
+    }
+
+    if (visibleSections.has('admins')) {
+        lines.push(`${currentView === 'mine' ? '我的处理量' : currentView === 'review' ? '人员处理产出' : '人员工作量'}：`);
+        if (adminItems.length) {
+            adminItems.forEach((admin, index) => {
+                const label = admin.label || '未指定负责人';
+                lines.push(
+                    `${index + 1}. ${label}：认领 ${formatVerifyMonitorInteger(admin.claimed_count || 0)}，接手 ${formatVerifyMonitorInteger(admin.assigned_count || 0)}，关闭 ${formatVerifyMonitorInteger(admin.resolved_count || 0)}，手上 ${formatVerifyMonitorInteger(admin.active_count || 0)}${admin.avg_resolution_minutes != null ? `，平均 ${formatVerifyMonitorMinutes(admin.avg_resolution_minutes)}` : ''}${admin.is_current ? '，当前值班' : ''}`
+                );
+            });
+        } else {
+            lines.push(currentView === 'mine' ? '1. 当前还没有归属到你名下的处理动作。' : '1. 本班还没有可归因到负责人的处理动作。');
+        }
+        lines.push('');
+    }
+
+    if (visibleSections.has('close_reasons')) {
+        lines.push(`${currentView === 'review' ? '闭环原因' : '关闭原因'}：`);
+        if (closeReasons.length) {
+            closeReasons.forEach((reason, index) => {
+                lines.push(`${index + 1}. ${reason.label || '其他关闭原因'}：${formatVerifyMonitorInteger(reason.count || 0)} 条`);
+            });
+        } else {
+            lines.push('1. 本班还没有可归类的关闭原因。');
+        }
+        lines.push('');
+    }
+
+    if (visibleSections.has('trend')) {
+        lines.push(`${currentView === 'review' ? '本班积压变化' : '积压趋势'}：`);
+        if (trend.length) {
+            trend.forEach((entry, index) => {
+                lines.push(
+                    `${index + 1}. ${formatOpsAlertMonitorTimeShort(entry.bucket_end)}：积压 ${formatVerifyMonitorInteger(entry.backlog_count || 0)}，认领 ${formatVerifyMonitorInteger(entry.claimed_count || 0)}，转交 ${formatVerifyMonitorInteger(entry.assigned_count || 0)}，关闭 ${formatVerifyMonitorInteger(entry.resolved_count || 0)}`
+                );
+            });
+        } else {
+            lines.push('1. 本班还没有形成可展示的积压变化。');
+        }
+    }
+
+    return lines.join('\n');
+}
+
+function buildOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+    const normalizedReport = normalizeOpsAlertMonitorShiftReport(report);
+    const totals = normalizedReport.totals || getDefaultOpsAlertMonitorShiftReport().totals;
+    const currentView = normalizeOpsAlertMonitorShiftReportView(opsAlertMonitorShiftReportViewState);
+    const viewMeta = getOpsAlertMonitorShiftReportViewMeta(currentView);
+    const visibleSections = getOpsAlertMonitorShiftReportVisibleSections(currentView);
+    const currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId();
+    const currentAdminStat = getOpsAlertMonitorShiftReportCurrentAdminStat(normalizedReport, currentAdminId);
+    const shiftHours = Math.max(1, Number(normalizedReport.shift_hours || 0));
+    const rows = [{
+        section: 'summary',
+        item: '班次概览',
+        current_admin: currentAdminLabel || '',
+        view_mode: currentView,
+        view_label: viewMeta.label || '',
+        shift_hours: shiftHours,
+        bucket_hours: Math.max(1, Number(normalizedReport.bucket_hours || 0)),
+        window_start: normalizedReport.window_start || '',
+        window_end: normalizedReport.window_end || '',
+        claimed_count: Number(totals.claimed_count || 0),
+        assigned_count: Number(totals.assigned_count || 0),
+        resolved_count: Number(totals.resolved_count || 0),
+        note_count: Number(totals.note_count || 0),
+        reopened_count: Number(totals.reopened_count || 0),
+        avg_resolution_minutes: totals.avg_resolution_minutes != null ? Number(totals.avg_resolution_minutes || 0) : '',
+        active_backlog_count: Number(totals.active_backlog_count || 0),
+        active_claimed_count: Number(totals.active_claimed_count || 0),
+        active_pending_count: Number(totals.active_pending_count || 0),
+        previous_backlog_count: Number(totals.previous_backlog_count || 0),
+        backlog_delta: Number(totals.backlog_delta || 0),
+        longest_waiting_minutes: totals.longest_waiting_minutes != null ? Number(totals.longest_waiting_minutes || 0) : '',
+        current_admin_active_count: Number(currentAdminStat?.active_count || 0),
+        current_admin_critical_active_count: Number(currentAdminStat?.critical_active_count || 0),
+        current_admin_claimed_count: Number(currentAdminStat?.claimed_count || 0),
+        current_admin_assigned_count: Number(currentAdminStat?.assigned_count || 0),
+        current_admin_resolved_count: Number(currentAdminStat?.resolved_count || 0),
+        current_admin_avg_resolution_minutes: currentAdminStat?.avg_resolution_minutes != null ? Number(currentAdminStat.avg_resolution_minutes || 0) : ''
+    }];
+
+    if (visibleSections.has('categories')) {
+        const categoryItems = currentView === 'mine'
+            ? buildOpsAlertMonitorShiftReportOwnedCategoryItems(opsAlertMonitorState?.categories, currentAdminId)
+            : (Array.isArray(normalizedReport.categories) ? normalizedReport.categories : []);
+        categoryItems.forEach((category) => {
+            rows.push({
+                section: 'categories',
+                item: category.label || category.key || '告警模块',
+                category_key: category.key || '',
+                backlog_count: Number(category.backlog_count || 0),
+                pending_count: Number(category.pending_count || 0),
+                claimed_count: Number(category.claimed_count || 0),
+                critical_count: Number(category.critical_count || 0)
+            });
+        });
+    }
+
+    if (visibleSections.has('admins')) {
+        const adminItems = currentView === 'mine'
+            ? (currentAdminStat ? [currentAdminStat] : [])
+            : (Array.isArray(normalizedReport.admin_stats) ? normalizedReport.admin_stats : []);
+        adminItems.forEach((admin) => {
+            rows.push({
+                section: 'admins',
+                item: admin.label || '未指定负责人',
+                admin_id: admin.admin_id || '',
+                is_current: admin.is_current === true,
+                claimed_count: Number(admin.claimed_count || 0),
+                assigned_count: Number(admin.assigned_count || 0),
+                resolved_count: Number(admin.resolved_count || 0),
+                active_count: Number(admin.active_count || 0),
+                critical_active_count: Number(admin.critical_active_count || 0),
+                avg_resolution_minutes: admin.avg_resolution_minutes != null ? Number(admin.avg_resolution_minutes || 0) : ''
+            });
+        });
+    }
+
+    if (visibleSections.has('close_reasons')) {
+        (Array.isArray(normalizedReport.close_reasons) ? normalizedReport.close_reasons : []).forEach((reason) => {
+            rows.push({
+                section: 'close_reasons',
+                item: reason.label || '其他关闭原因',
+                count: Number(reason.count || 0)
+            });
+        });
+    }
+
+    if (visibleSections.has('trend')) {
+        (Array.isArray(normalizedReport.trend) ? normalizedReport.trend : []).forEach((entry) => {
+            rows.push({
+                section: 'trend',
+                item: formatOpsAlertMonitorTimeShort(entry.bucket_end),
+                bucket_end: entry.bucket_end || '',
+                backlog_count: Number(entry.backlog_count || 0),
+                claimed_count: Number(entry.claimed_count || 0),
+                assigned_count: Number(entry.assigned_count || 0),
+                resolved_count: Number(entry.resolved_count || 0)
+            });
+        });
+    }
+
+    return rows;
+}
+
+function setOpsAlertMonitorShiftReportView(value = 'all') {
+    opsAlertMonitorShiftReportViewState = normalizeOpsAlertMonitorShiftReportView(value);
+    renderOpsAlertMonitorShiftReport();
+    return opsAlertMonitorShiftReportViewState;
+}
+
+function renderOpsAlertMonitorShiftReport() {
+    const target = document.getElementById('opsAlertMonitorShiftReport');
+    if (!target) return;
+
+    const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
+    if (state.status === 'loading') {
+        target.innerHTML = `
+            <div class="ops-alert-shift-report">
+                <div class="ops-alert-shift-report__head">
+                    <div class="ops-alert-shift-report__copy">
+                        <div class="ops-alert-shift-report__eyebrow">本班处理统计 / 交班视图</div>
+                        <div class="ops-alert-shift-report__title">正在汇总认领、转交、关闭和积压趋势...</div>
+                        <div class="ops-alert-shift-report__summary">会优先给出本班处理量、当前积压和交班时最值得说明的几块模块。</div>
+                    </div>
+                    <div class="ops-alert-shift-report__stats">
+                        ${buildOpsAlertMonitorBadge('等待加载', 'neutral')}
+                    </div>
+                </div>
+                <div class="ops-alert-shift-report__metrics">
+                    ${[
+        { label: '本班认领', value: '—' },
+        { label: '转交 / 接手', value: '—' },
+        { label: '本班关闭', value: '—' },
+        { label: '平均闭环', value: '—' },
+        { label: '当前积压', value: '—' },
+        { label: '最长等待', value: '—' }
+    ].map((metric) => buildOpsAlertMonitorShiftMetricMarkup(metric)).join('')}
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    if (state.status === 'error') {
+        target.innerHTML = `
+            <div class="ops-alert-shift-report ops-alert-shift-report--danger">
+                <div class="ops-alert-shift-report__head">
+                    <div class="ops-alert-shift-report__copy">
+                        <div class="ops-alert-shift-report__eyebrow">本班处理统计 / 交班视图</div>
+                        <div class="ops-alert-shift-report__title">交班报表加载失败</div>
+                        <div class="ops-alert-shift-report__summary">${escapeConfigHtml(state.message || '请刷新面板后重试。')}</div>
+                    </div>
+                    <div class="ops-alert-shift-report__stats">
+                        ${buildOpsAlertMonitorBadge('加载失败', 'danger')}
+                    </div>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    target.innerHTML = buildOpsAlertMonitorShiftReportMarkup(
+        state.summary?.shift_report,
+        state.current_admin_label || ''
+    );
+}
+
 function buildOpsAlertMonitorCategoryMarkup(category = {}, filters = getOpsAlertMonitorViewFilters()) {
     const tone = getOpsAlertMonitorCardTone(category);
     const actions = getOpsAlertMonitorCategoryActions(category.key);
@@ -9380,7 +11054,8 @@ function renderOpsAlertMonitorPanel() {
     const panel = document.getElementById('opsAlertMonitorPanel');
     const meta = document.getElementById('opsAlertMonitorMeta');
     const grid = document.getElementById('opsAlertMonitorGrid');
-    if (!panel || !meta || !grid) return;
+    const shiftReport = document.getElementById('opsAlertMonitorShiftReport');
+    if (!panel || !meta || !grid || !shiftReport) return;
 
     const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
     const summary = state.summary || getDefaultOpsAlertMonitorState().summary;
@@ -9389,6 +11064,7 @@ function renderOpsAlertMonitorPanel() {
     panel.hidden = false;
     syncOpsAlertMonitorFilterToolbar(filters);
     renderOpsAlertRiskSpotlight(filters);
+    renderOpsAlertMonitorShiftReport();
     renderOpsAlertMonitorBatchActions(filters);
 
     if (state.status === 'loading') {
@@ -9447,6 +11123,28 @@ async function copyOpsAlertMonitorChecklist(categoryKey = '') {
     }
 }
 
+async function copyOpsAlertMonitorShiftReportSummary() {
+    const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
+    if (state.status !== 'ready') {
+        showToast('交班报表仍在加载，请稍后再试', 'info');
+        return false;
+    }
+
+    try {
+        const text = buildOpsAlertMonitorShiftReportSummaryText(
+            state.summary?.shift_report,
+            state.current_admin_label || ''
+        );
+        await writeAdminConfigClipboard(text);
+        showToast(`已复制${getOpsAlertMonitorShiftReportViewMeta().label}交班摘要`, 'success');
+        return true;
+    } catch (error) {
+        console.error('[Config] Copy ops alert shift report failed:', error);
+        showToast(`复制失败: ${error.message || '未知错误'}`, 'error');
+        return false;
+    }
+}
+
 function exportOpsAlertMonitorCsv(categoryKey = '') {
     const filters = getOpsAlertMonitorViewFilters();
     const categories = getOpsAlertMonitorPreparedCategories(filters);
@@ -9465,6 +11163,34 @@ function exportOpsAlertMonitorCsv(categoryKey = '') {
         `ops_alert_monitor_${suffix}_${timestamp}.csv`
     );
     showToast(`已导出 ${rows.length} 条集中告警清单`, 'success');
+    return true;
+}
+
+function exportOpsAlertMonitorShiftReportCsv() {
+    const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
+    if (state.status !== 'ready') {
+        showToast('交班报表仍在加载，请稍后再试', 'info');
+        return false;
+    }
+
+    const rows = buildOpsAlertMonitorShiftReportCsvRows(
+        state.summary?.shift_report,
+        state.current_admin_label || ''
+    );
+
+    if (!rows.length) {
+        showToast('当前没有可导出的交班报表', 'info');
+        return false;
+    }
+
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const viewKey = normalizeOpsAlertMonitorShiftReportView(opsAlertMonitorShiftReportViewState);
+    const csv = convertRowsToCsv(rows);
+    downloadExportBlob(
+        new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }),
+        `ops_alert_shift_report_${viewKey}_${timestamp}.csv`
+    );
+    showToast(`已导出${getOpsAlertMonitorShiftReportViewMeta().label}交班报表`, 'success');
     return true;
 }
 
@@ -9632,6 +11358,252 @@ async function getAdminConfigApiHeaders() {
     }
 
     return headers;
+}
+
+function isMissingScopedSystemNotificationColumnError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    return error?.code === '42703'
+        || error?.code === '42P01'
+        || (message.includes('column') && message.includes('does not exist'))
+        || (message.includes('schema cache') && message.includes('scope'))
+        || (message.includes('schema cache') && message.includes('category'));
+}
+
+async function insertClientSystemNotificationWithScope(payload = {}) {
+    let response = await window.supabaseClient
+        .from('system_notifications')
+        .insert(payload);
+
+    if (!response?.error || !isMissingScopedSystemNotificationColumnError(response.error)) {
+        return response;
+    }
+
+    const legacyPayload = { ...payload };
+    delete legacyPayload.scope;
+    delete legacyPayload.category;
+
+    response = await window.supabaseClient
+        .from('system_notifications')
+        .insert(legacyPayload);
+
+    return response;
+}
+
+function isActiveAdminRoleForClientNotification(role = {}, nowMs = Date.now()) {
+    const roleName = String(role?.role_name || '').trim().toLowerCase();
+    if (!['admin', 'super_admin'].includes(roleName)) {
+        return false;
+    }
+
+    const expiresAt = String(role?.expires_at || '').trim();
+    if (!expiresAt) {
+        return true;
+    }
+
+    const expiresMs = Date.parse(expiresAt);
+    return Number.isFinite(expiresMs) && expiresMs > nowMs;
+}
+
+async function listActiveAdminUserIdsForClientNotifications(excludeUserId = '') {
+    const { data, error } = await window.supabaseClient
+        .from('admin_roles')
+        .select('user_id, role_name, expires_at');
+
+    if (error) {
+        throw error;
+    }
+
+    const normalizedExcludeUserId = String(excludeUserId || '').trim();
+    const nowMs = Date.now();
+    return Array.from(new Set(
+        (data || [])
+            .filter((row) => isActiveAdminRoleForClientNotification(row, nowMs))
+            .map((row) => String(row?.user_id || '').trim())
+            .filter((userId) => userId && userId !== normalizedExcludeUserId)
+    ));
+}
+
+async function hasRecentClientSystemNotification({
+    userId = '',
+    title = '',
+    content = '',
+    scope = 'admin_personal',
+    category = 'general',
+    dedupeWindowMinutes = 30
+} = {}) {
+    const normalizedUserId = String(userId || '').trim();
+    const normalizedTitle = String(title || '').trim();
+    const normalizedContent = String(content || '').trim();
+    if (!normalizedUserId || !normalizedTitle || !normalizedContent || !(dedupeWindowMinutes > 0)) {
+        return false;
+    }
+
+    const sinceIso = new Date(Date.now() - dedupeWindowMinutes * 60 * 1000).toISOString();
+    let response = await window.supabaseClient
+        .from('system_notifications')
+        .select('id, title, content, created_at, scope, category')
+        .eq('user_id', normalizedUserId)
+        .eq('title', normalizedTitle)
+        .eq('scope', String(scope || '').trim() || 'admin_personal')
+        .eq('category', String(category || '').trim() || 'general')
+        .gte('created_at', sinceIso);
+
+    if (response?.error && isMissingScopedSystemNotificationColumnError(response.error)) {
+        response = await window.supabaseClient
+            .from('system_notifications')
+            .select('id, title, content, created_at')
+            .eq('user_id', normalizedUserId)
+            .eq('title', normalizedTitle)
+            .gte('created_at', sinceIso);
+    }
+
+    if (response?.error) {
+        console.warn('[Config] Announcement reminder dedupe lookup failed:', response.error.message || response.error);
+        return false;
+    }
+
+    return (response?.data || []).some((row) => String(row?.content || '').trim() === normalizedContent);
+}
+
+function getAnnouncementTypeLabel(type = 'banner') {
+    const normalized = String(type || '').trim().toLowerCase();
+    if (normalized === 'modal') {
+        return '弹窗公告';
+    }
+    if (normalized === 'toast') {
+        return '浮层提示';
+    }
+    return '横幅公告';
+}
+
+function getAnnouncementPageLabels(pages = []) {
+    const pageLabelMap = {
+        all: '全部页面',
+        prompts: '图库',
+        index: '主页',
+        shop: '商城',
+        verify: '验证',
+        guestbook: '留言'
+    };
+
+    const normalizedPages = Array.isArray(pages) ? pages : [];
+    if (!normalizedPages.length || normalizedPages.includes('all')) {
+        return [pageLabelMap.all];
+    }
+
+    return normalizedPages
+        .map((page) => pageLabelMap[String(page || '').trim().toLowerCase()] || String(page || '').trim())
+        .filter(Boolean);
+}
+
+function extractAnnouncementPreviewText(content = '', maxLength = 72) {
+    const raw = String(content || '').trim();
+    if (!raw) {
+        return '';
+    }
+
+    let plainText = raw.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p|li)>/gi, '\n');
+    if (typeof document !== 'undefined' && document.createElement) {
+        const container = document.createElement('div');
+        container.innerHTML = plainText;
+        plainText = container.textContent || container.innerText || '';
+    } else {
+        plainText = plainText.replace(/<[^>]+>/g, ' ');
+    }
+
+    plainText = plainText.replace(/\s+/g, ' ').trim();
+    if (!plainText) {
+        return '';
+    }
+
+    return plainText.length > maxLength
+        ? `${plainText.slice(0, Math.max(1, maxLength - 1)).trim()}…`
+        : plainText;
+}
+
+async function notifyActiveAdminsAboutAnnouncement(previousConfig = {}, nextConfig = {}) {
+    if (!window.supabaseClient?.from || !window.supabaseClient?.auth) {
+        return { recipients: 0, created: 0, skipped: 0 };
+    }
+
+    const { data: { user } = {} } = await window.supabaseClient.auth.getUser();
+    const actorUserId = String(user?.id || '').trim();
+    const actorLabel = String(user?.email || '').trim() || '某位管理员';
+    const recipientIds = await listActiveAdminUserIdsForClientNotifications(actorUserId);
+    if (!recipientIds.length) {
+        return { recipients: 0, created: 0, skipped: 0 };
+    }
+
+    const previousEnabled = previousConfig?.announcement_enabled === true;
+    const nextEnabled = nextConfig?.announcement_enabled === true;
+    const announcementTypeLabel = getAnnouncementTypeLabel(nextConfig?.announcement_type);
+    const pageLabels = getAnnouncementPageLabels(nextConfig?.announcement_pages);
+    const previewText = extractAnnouncementPreviewText(nextConfig?.announcement_content);
+    const dedupeWindowMinutes = 20;
+
+    let title = '站内公告已更新';
+    let actionLabel = '更新';
+    if (nextEnabled && !previousEnabled) {
+        title = '站内公告已发布';
+        actionLabel = '发布';
+    } else if (!nextEnabled && previousEnabled) {
+        title = '站内公告已下线';
+        actionLabel = '下线';
+    } else if (!nextEnabled) {
+        title = '站内公告设置已更新';
+        actionLabel = '调整';
+    }
+
+    const lines = [
+        `${actorLabel} 刚刚${actionLabel}了站内公告。`,
+        `当前状态：${nextEnabled ? '已启用' : '已关闭'}`,
+        `展示形态：${announcementTypeLabel}`,
+        `显示页面：${pageLabels.join(' / ')}`
+    ];
+    if (previewText) {
+        lines.push(`公告摘要：${previewText}`);
+    }
+
+    const content = lines.join('\n');
+    let created = 0;
+    let skipped = 0;
+
+    for (const userId of recipientIds) {
+        const exists = await hasRecentClientSystemNotification({
+            userId,
+            title,
+            content,
+            scope: 'admin_personal',
+            category: 'announcement',
+            dedupeWindowMinutes
+        });
+        if (exists) {
+            skipped += 1;
+            continue;
+        }
+
+        const { error } = await insertClientSystemNotificationWithScope({
+            user_id: userId,
+            title,
+            content,
+            type: nextEnabled ? 'info' : 'warning',
+            is_read: false,
+            scope: 'admin_personal',
+            category: 'announcement'
+        });
+
+        if (error) {
+            throw error;
+        }
+
+        created += 1;
+    }
+
+    return {
+        recipients: recipientIds.length,
+        created,
+        skipped
+    };
 }
 
 async function loadPaymentChannelSettings(force = false) {
@@ -9812,10 +11784,17 @@ async function loadOpsAlertMonitor(force = false) {
                 throw new Error(payload.message || '加载集中告警处理面板失败');
             }
 
+            const defaultSummary = getDefaultOpsAlertMonitorState().summary;
             opsAlertMonitorState = {
                 status: 'ready',
                 fetched_at: payload.fetched_at || '',
-                summary: payload.summary || getDefaultOpsAlertMonitorState().summary,
+                summary: {
+                    ...defaultSummary,
+                    ...(payload.summary && typeof payload.summary === 'object' && !Array.isArray(payload.summary)
+                        ? payload.summary
+                        : {}),
+                    shift_report: normalizeOpsAlertMonitorShiftReport(payload.summary?.shift_report)
+                },
                 assignable_admins: Array.isArray(payload.assignable_admins) ? payload.assignable_admins : [],
                 current_admin_id: payload.current_admin_id || '',
                 current_admin_label: payload.current_admin_label || '',
@@ -10610,7 +12589,8 @@ function collectOpsAlertConfigFromForm() {
             ...currentConfig.shop_inventory
         },
         customer_chat_message: {
-            ...currentConfig.customer_chat_message
+            ...currentConfig.customer_chat_message,
+            quick_reply_templates: normalizeOpsAlertCustomerChatQuickReplyTemplates(currentConfig.customer_chat_message?.quick_reply_templates)
         },
         shop_purchase_success: {
             ...currentConfig.shop_purchase_success
@@ -10856,6 +12836,7 @@ function collectOpsAlertConfigFromForm() {
         document.getElementById('opsAlertCustomerChatMessageSummaryMaxItems')?.value,
         currentConfig.customer_chat_message.summary_max_items
     );
+    nextConfig.customer_chat_message.quick_reply_templates = collectOpsAlertCustomerChatQuickReplyTemplatesFromForm();
     nextConfig.shop_purchase_success.enabled = document.getElementById('opsAlertShopPurchaseSuccessEnabledToggle')?.classList.contains('active')
         ?? currentConfig.shop_purchase_success.enabled;
     nextConfig.shop_purchase_success.sweep_interval_ms = Math.max(
@@ -11373,6 +13354,11 @@ async function saveOpsAlertConfigOverride(config, options = {}) {
 
         systemConfigCache['ops_alerts'] = normalizeOpsAlertConfig(payload.config);
         opsAlertSecretStatus = payload.secrets || getDefaultOpsAlertSecretStatus();
+        window.dispatchEvent(new CustomEvent('ops-alerts-config-updated', {
+            detail: {
+                config: systemConfigCache['ops_alerts']
+            }
+        }));
         renderOpsAlertSettings();
         clearOpsAlertSecretInputs();
         if (options.successMessage) {
@@ -11392,6 +13378,9 @@ async function saveOpsAlertConfigOverride(config, options = {}) {
 }
 
 async function saveOpsAlertSettings() {
+    if (!validateOpsAlertCustomerChatQuickReplyTemplatesBeforeSave()) {
+        return false;
+    }
     return saveOpsAlertConfigOverride(collectOpsAlertConfigFromForm());
 }
 
@@ -11782,10 +13771,13 @@ function normalizeOpsAlertWorkspaceContext(context = {}) {
         title: String(context.title || context.workspaceTitle || '').trim(),
         alertType: String(context.alertType || context.alert_type || '').trim().toLowerCase(),
         category: String(context.category || context.workspaceCategory || '').trim().toLowerCase(),
+        tab: String(context.tab || context.defaultTab || context.workspaceTab || context.userTab || '').trim().toLowerCase(),
+        email: String(context.email || context.userEmail || context.workspaceEmail || '').trim(),
         referenceLabel: String(context.referenceLabel || context.reference_label || '').trim(),
         referenceValue: String(context.referenceValue || context.reference_value || '').trim(),
         targetId: String(context.targetId || context.target_id || '').trim(),
         userId: String(context.userId || context.user_id || context.workspaceUserId || '').trim(),
+        paymentOrderId: String(context.paymentOrderId || context.payment_order_id || '').trim(),
         clientIp: String(context.clientIp || context.client_ip || context.workspaceClientIp || '').trim(),
         discountCode: String(context.discountCode || context.discount_code || context.workspaceDiscountCode || '').trim(),
         signalType: String(context.signalType || context.signal_type || context.workspaceSignalType || '').trim().toLowerCase(),
@@ -11833,8 +13825,25 @@ function getOpsAlertWorkspaceRiskUserId(context = {}) {
     return '';
 }
 
-async function tryOpenOpsAlertWorkspaceUserModal(userId, attemptCount = 6, delayMs = 140) {
+async function tryOpenOpsAlertWorkspaceUserModal(userId, options = {}) {
     const normalizedUserId = String(userId || '').trim();
+    const normalizedEmail = String(options?.email || options?.userEmail || '').trim();
+    const normalizedTab = String(options?.defaultTab || options?.tab || '').trim().toLowerCase();
+    const normalizedPaymentOrderId = String(options?.paymentOrderId || options?.payment_order_id || '').trim();
+    const attemptCount = Number(options?.attemptCount || 6);
+    const delayMs = Number(options?.delayMs || 140);
+    if (!normalizedUserId && !normalizedEmail) {
+        return false;
+    }
+
+    if (typeof window.openUserModal === 'function') {
+        return window.openUserModal(normalizedUserId, {
+            defaultTab: normalizedTab,
+            paymentOrderId: normalizedPaymentOrderId,
+            fallbackEmail: normalizedEmail
+        });
+    }
+
     if (!normalizedUserId) {
         return false;
     }
@@ -11843,7 +13852,15 @@ async function tryOpenOpsAlertWorkspaceUserModal(userId, attemptCount = 6, delay
     for (let attempt = 0; attempt < attemptCount; attempt += 1) {
         const row = document.querySelector(`[data-admin-action="users-open-drawer"][data-user-id="${encodedUserId}"]`);
         if (row instanceof HTMLElement) {
-            row.click();
+            if (typeof window.openUserModal === 'function') {
+                await window.openUserModal(normalizedUserId, {
+                    defaultTab: normalizedTab,
+                    paymentOrderId: normalizedPaymentOrderId,
+                    fallbackEmail: normalizedEmail
+                });
+            } else {
+                row.click();
+            }
             return true;
         }
         await settleOpsAlertWorkspace(delayMs);
@@ -12026,18 +14043,26 @@ async function openOpsAlertWorkspace(workspaceKey, context = {}) {
             scrollToOpsAlertWorkspaceTarget('module-discounts');
         } else if (normalizedKey === 'shop-risk-users') {
             const riskUserId = getOpsAlertWorkspaceRiskUserId(normalizedContext);
+            const riskUserEmail = String(normalizedContext.email || '').trim();
             const userSearchValue = riskUserId || workspaceSearchValue || '';
             window.switchModule?.('users');
             await settleOpsAlertWorkspace();
-            const userSearchInput = document.getElementById('userSearchInput');
-            if (userSearchInput) {
-                userSearchInput.value = userSearchValue;
-                userSearchInput.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-            await settleOpsAlertWorkspace();
-            if (riskUserId) {
-                await tryOpenOpsAlertWorkspaceUserModal(riskUserId);
+            if (riskUserId || riskUserEmail) {
+                const modalOpened = await tryOpenOpsAlertWorkspaceUserModal(riskUserId, {
+                    defaultTab: normalizedContext.tab,
+                    paymentOrderId: normalizedContext.paymentOrderId,
+                    email: riskUserEmail
+                });
+                if (!modalOpened) {
+                    return false;
+                }
             } else {
+                const userSearchInput = document.getElementById('userSearchInput');
+                if (userSearchInput) {
+                    userSearchInput.value = userSearchValue;
+                    userSearchInput.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                await settleOpsAlertWorkspace();
                 scrollToOpsAlertWorkspaceTarget('module-users');
             }
         } else {
@@ -13703,7 +15728,12 @@ async function saveAnnouncement() {
 
     if (!contentEl) return;
 
-    const config = systemConfigCache['notifications'] || {};
+    const previousConfig = {
+        ...(systemConfigCache['notifications'] || {})
+    };
+    const config = {
+        ...previousConfig
+    };
     // For contenteditable div, use innerHTML
     config.announcement_content = contentEl.innerHTML || contentEl.value || '';
     config.announcement_enabled = enabledEl?.checked || false;
@@ -13720,9 +15750,19 @@ async function saveAnnouncement() {
     // Get the save button
     const saveBtn = document.querySelector('.editor-actions .btn-primary');
 
-    if (success && saveBtn) {
+    if (!success) {
+        return;
+    }
+
+    try {
+        await notifyActiveAdminsAboutAnnouncement(previousConfig, config);
+    } catch (notificationError) {
+        console.warn('[Config] Announcement admin reminder failed:', notificationError.message || notificationError);
+    }
+
+    if (saveBtn) {
         if (typeof showToast === 'function') {
-            showToast('公告已发布', 'success');
+            showToast(config.announcement_enabled ? '公告已发布' : '公告设置已保存', 'success');
         } else {
             console.warn('showToast function not found');
         }
@@ -15605,8 +17645,11 @@ window.refreshOpsAlertHealthPanel = refreshOpsAlertHealthPanel;
 window.scrollToOpsAlertHealthPanel = scrollToOpsAlertHealthPanel;
 window.refreshOpsAlertMonitorPanel = refreshOpsAlertMonitorPanel;
 window.setOpsAlertMonitorFilter = setOpsAlertMonitorFilter;
+window.setOpsAlertMonitorShiftReportView = setOpsAlertMonitorShiftReportView;
 window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;
 window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;
+window.copyOpsAlertMonitorShiftReportSummary = copyOpsAlertMonitorShiftReportSummary;
+window.exportOpsAlertMonitorShiftReportCsv = exportOpsAlertMonitorShiftReportCsv;
 window.openOpsAlertWorkspace = openOpsAlertWorkspace;
 
 const PENDING_OPS_ALERT_WORKSPACE_STORAGE_KEY = 'zaoyoe_pending_ops_alert_workspace';

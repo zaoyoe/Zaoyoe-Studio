@@ -76,7 +76,7 @@
 
         scheduleOptionalTask(2200, () => {
             loadStylesheet('css/chat-widget.css?v=20260324_CHAT_RUNTIME_STYLE_2');
-            loadScript('js/components/ChatWidget.js?v=20260330_CHAT_OPS_TODO_CASE_ACTIONS_28', initChatWidgetIfReady);
+            loadScript('js/components/ChatWidget.js?v=20260331_CHAT_USER_EMAIL_FALLBACK_36', initChatWidgetIfReady);
         }, 2200);
     }
 

@@ -40,8 +40,15 @@ class ChatWidget {
         this.userContextCache = new Map();
         this.userContextRecentActions = new Map();
         this.currentUserContext = null;
+        this.userContextPanelCollapsed = true;
         this.currentSessionInfo = null;
+        this.replyTemplateConfigTemplates = null;
+        this.replyTemplateConfigLoadedAt = 0;
+        this.replyTemplateConfigPromise = null;
+        this._replyTemplateRenderToken = 0;
+        this.handleOpsAlertConfigUpdated = this.handleOpsAlertConfigUpdated.bind(this);
         this._userContextRequestId = 0;
+        this._adminSessionLoadRequestId = 0;
         this._sessionLoadRequestId = 0;
         this._sessionLoadingOverlayTimer = null;
         this.opsAlertSessionId = '__admin_ops_todo__';
@@ -58,6 +65,7 @@ class ChatWidget {
         this.adminSessionQueueFilter = 'all';
         this.adminSessionQueueDefaultView = 'all';
         this.adminSessionQueueDefaultFilter = 'all';
+        this.adminSidebarInsightsCollapsed = true;
         this.adminSessionSearchQuery = '';
         this.opsAlertCaseActionLocks = new Set();
         this.opsAlertBatchAssignBusy = false;
@@ -114,6 +122,7 @@ class ChatWidget {
         this.supportPendingActionId = '';
         this.supportLastMenuId = '';
         this.supportInlineState = { actionId: '', value: '', result: '', error: '', loading: false };
+        window.addEventListener('ops-alerts-config-updated', this.handleOpsAlertConfigUpdated);
 
         this._detectRefreshRate();
         this.init();
@@ -2235,15 +2244,30 @@ class ChatWidget {
                     <h3>${this.t('chat.sidebarTitle', '客服消息')}</h3>
                     <button class="chat-close"><i class="fas fa-times"></i></button>
                 </div>
-                <div class="admin-search">
-                    <input type="text" id="sessionSearch" placeholder="🔍 ${this.t('chat.searchPlaceholderFull', '搜索会话或聊天记录...')}">
-                </div>
-                <div class="session-queue-overview" id="sessionQueueOverview"></div>
-                <div class="session-queue-snapshot" id="sessionQueueSnapshot"></div>
-                <div class="session-queue-presets" id="sessionQueueViews"></div>
-                <div class="session-filter-bar" id="sessionFilterBar"></div>
-                <div class="session-list" id="sessionList">
-                    <div class="session-loading">${this.t('chat.loading', '加载中...')}</div>
+                <div class="admin-sidebar-body">
+                    <div class="admin-search">
+                        <input type="text" id="sessionSearch" placeholder="🔍 ${this.t('chat.searchPlaceholderFull', '搜索会话或聊天记录...')}">
+                    </div>
+                    <section class="admin-sidebar-insights is-collapsed" id="adminSidebarInsights">
+                        <button type="button" class="admin-sidebar-insights__header" id="adminSidebarInsightsToggle" aria-expanded="false">
+                            <span class="admin-sidebar-insights__eyebrow">值班概览</span>
+                            <span class="admin-sidebar-insights__summary" id="adminSidebarInsightsSummary">正在整理当前队列...</span>
+                            <span class="admin-sidebar-insights__toggle-text">展开</span>
+                        </button>
+                        <div class="admin-sidebar-insights__body" id="adminSidebarInsightsBody">
+                            <div class="session-queue-overview is-loading" id="sessionQueueOverview">
+                                ${this.getAdminSessionOverviewSkeletonMarkup()}
+                            </div>
+                            <div class="session-queue-snapshot is-loading" id="sessionQueueSnapshot">
+                                ${this.getAdminSessionQueueSnapshotSkeletonMarkup()}
+                            </div>
+                            <div class="session-queue-presets" id="sessionQueueViews"></div>
+                            <div class="session-filter-bar" id="sessionFilterBar"></div>
+                        </div>
+                    </section>
+                    <div class="session-list" id="sessionList">
+                        ${this.getAdminSessionListSkeletonMarkup()}
+                    </div>
                 </div>
             </div>
             
@@ -2288,6 +2312,9 @@ class ChatWidget {
         this.sessionQueueOverview = this.chatWindow.querySelector('#sessionQueueOverview');
         this.sessionQueueViews = this.chatWindow.querySelector('#sessionQueueViews');
         this.sessionFilterBar = this.chatWindow.querySelector('#sessionFilterBar');
+        this.adminSidebarInsights = this.chatWindow.querySelector('#adminSidebarInsights');
+        this.adminSidebarInsightsSummary = this.chatWindow.querySelector('#adminSidebarInsightsSummary');
+        this.adminSidebarInsightsToggle = this.chatWindow.querySelector('#adminSidebarInsightsToggle');
         this.chatHeader = this.chatWindow.querySelector('#adminChatHeader');
         this.userContextPanel = this.chatWindow.querySelector('#chatContextPanel');
         this.replyTemplateBar = this.chatWindow.querySelector('#chatReplyTemplateBar');
@@ -2346,6 +2373,105 @@ class ChatWidget {
         if (loadingText) {
             loadingText.textContent = this.t('chat.loading', '加载中...');
         }
+
+        this.updateAdminSidebarInsightsShell();
+    }
+
+    getAdminSessionOverviewSkeletonMarkup() {
+        return Array.from({ length: 4 }, () => `
+            <div class="session-queue-card session-queue-card--skeleton" aria-hidden="true">
+                <span class="session-queue-skeleton session-queue-skeleton--value"></span>
+                <span class="session-queue-skeleton session-queue-skeleton--label"></span>
+                <span class="session-queue-skeleton session-queue-skeleton--hint"></span>
+            </div>
+        `).join('');
+    }
+
+    getAdminSessionQueueSnapshotSkeletonMarkup() {
+        return `
+            <div class="session-queue-skeleton session-queue-skeleton--eyebrow"></div>
+            <div class="session-queue-skeleton session-queue-skeleton--line"></div>
+            <div class="session-queue-skeleton session-queue-skeleton--line session-queue-skeleton--line-wide"></div>
+            <div class="session-queue-skeleton session-queue-skeleton--pill-row">
+                <span class="session-queue-skeleton session-queue-skeleton--pill"></span>
+                <span class="session-queue-skeleton session-queue-skeleton--pill"></span>
+                <span class="session-queue-skeleton session-queue-skeleton--pill"></span>
+            </div>
+        `;
+    }
+
+    getAdminSessionListSkeletonMarkup(count = 6) {
+        return Array.from({ length: count }, () => `
+            <div class="session-skeleton" aria-hidden="true">
+                <span class="session-skeleton__avatar"></span>
+                <span class="session-skeleton__body">
+                    <span class="session-skeleton__line session-skeleton__line--primary"></span>
+                    <span class="session-skeleton__line session-skeleton__line--secondary"></span>
+                    <span class="session-skeleton__line session-skeleton__line--tertiary"></span>
+                </span>
+            </div>
+        `).join('');
+    }
+
+    setAdminSidebarInsightsCollapsed(collapsed = false) {
+        this.adminSidebarInsightsCollapsed = collapsed !== false;
+        this.updateAdminSidebarInsightsShell();
+    }
+
+    updateAdminSidebarInsightsShell(snapshot = null) {
+        const shell = this.adminSidebarInsights;
+        const toggle = this.adminSidebarInsightsToggle;
+        const summary = this.adminSidebarInsightsSummary;
+        if (!shell || !toggle) {
+            return;
+        }
+
+        const collapsed = this.adminSidebarInsightsCollapsed !== false;
+        shell.classList.toggle('is-collapsed', collapsed);
+        toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+
+        const toggleText = toggle.querySelector('.admin-sidebar-insights__toggle-text');
+        if (toggleText) {
+            toggleText.textContent = collapsed ? '展开' : '收起';
+        }
+
+        if (!summary) {
+            return;
+        }
+
+        const sourceSnapshot = snapshot && typeof snapshot === 'object'
+            ? snapshot
+            : this.getAdminSessionQueueBacklogSnapshot?.();
+        if (!sourceSnapshot || typeof sourceSnapshot !== 'object') {
+            summary.textContent = '正在整理当前队列...';
+            return;
+        }
+
+        const summaryParts = [];
+        if (Number(sourceSnapshot.pendingReply || 0) > 0) {
+            summaryParts.push(`待回复 ${sourceSnapshot.pendingReply}`);
+        }
+        if (Number(sourceSnapshot.staleReply || 0) > 0) {
+            summaryParts.push(`久未回复 ${sourceSnapshot.staleReply}`);
+        }
+        if (Number(sourceSnapshot.openTickets || 0) > 0) {
+            summaryParts.push(`工单中 ${sourceSnapshot.openTickets}`);
+        }
+        if (Number(sourceSnapshot.verificationAlerts || 0) > 0) {
+            summaryParts.push(`验证异常 ${sourceSnapshot.verificationAlerts}`);
+        }
+
+        summary.textContent = summaryParts.length
+            ? summaryParts.slice(0, 3).join(' · ')
+            : '当前队列比较平稳';
+    }
+
+    setAdminChatSessions(chatSessions = []) {
+        this.sessions = [
+            this.buildOpsAlertSession(),
+            ...this.sortAdminSessions(Array.isArray(chatSessions) ? chatSessions : [])
+        ];
+        this.renderAdminSessionList();
     }
 
     injectAdminLayoutStyles() {
@@ -2353,10 +2479,10 @@ class ChatWidget {
         style.textContent = `
             /* Admin Mode Layout - Two Column with Glassmorphism */
             .chat-window.admin-mode-layout {
-                width: 700px !important;
-                max-width: 95vw;
-                height: 600px;
-                max-height: 85vh;
+                width: min(1040px, calc(100vw - 32px)) !important;
+                max-width: 97vw;
+                height: min(760px, 92vh);
+                max-height: 92vh;
                 display: flex;
                 flex-direction: row;
                 border-radius: 20px;
@@ -2373,12 +2499,15 @@ class ChatWidget {
             
             /* Left Sidebar */
             .admin-sidebar {
-                width: 240px;
-                min-width: 200px;
+                width: 324px;
+                min-width: 300px;
+                max-width: 35%;
                 display: flex;
                 flex-direction: column;
                 background: rgba(0, 0, 0, 0.15);
                 border-right: 1px solid rgba(255, 255, 255, 0.1);
+                min-height: 0;
+                overflow: hidden;
             }
             
             .admin-sidebar-header {
@@ -2397,6 +2526,66 @@ class ChatWidget {
             
             .admin-search {
                 padding: 10px 12px;
+            }
+            .admin-sidebar-body {
+                flex: 1;
+                min-height: 0;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+            .admin-sidebar-insights {
+                margin: 0 12px 10px;
+                border-radius: 16px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                background: rgba(255, 255, 255, 0.045);
+                overflow: hidden;
+                flex: 0 0 auto;
+            }
+            .admin-sidebar-insights__header {
+                appearance: none;
+                width: 100%;
+                border: 0;
+                background: transparent;
+                color: inherit;
+                padding: 12px 14px;
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) auto;
+                gap: 4px 12px;
+                align-items: center;
+                text-align: left;
+                cursor: pointer;
+            }
+            .admin-sidebar-insights__eyebrow {
+                color: rgba(255, 255, 255, 0.72);
+                font-size: 11px;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+            .admin-sidebar-insights__summary {
+                grid-column: 1 / 2;
+                color: rgba(255, 255, 255, 0.82);
+                font-size: 12px;
+                line-height: 1.5;
+                min-width: 0;
+            }
+            .admin-sidebar-insights__toggle-text {
+                grid-column: 2 / 3;
+                grid-row: 1 / span 2;
+                align-self: center;
+                color: rgba(255, 255, 255, 0.62);
+                font-size: 12px;
+                white-space: nowrap;
+            }
+            .admin-sidebar-insights__body {
+                padding-bottom: 10px;
+                max-height: min(300px, 42vh);
+                overflow-y: auto;
+                scrollbar-width: thin;
+                scrollbar-color: rgba(148, 148, 148, 0.55) transparent;
+            }
+            .admin-sidebar-insights.is-collapsed .admin-sidebar-insights__body {
+                display: none;
             }
             .session-queue-overview {
                 display: grid;
@@ -2522,6 +2711,104 @@ class ChatWidget {
                 color: rgba(255, 255, 255, 0.62);
                 font-size: 11px;
             }
+            .session-queue-snapshot__suggestions {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .session-queue-suggestion {
+                border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                background: rgba(10, 14, 24, 0.32);
+                padding: 10px 12px;
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+            .session-queue-suggestion--danger {
+                border-color: rgba(248, 113, 113, 0.28);
+                background: rgba(127, 29, 29, 0.18);
+            }
+            .session-queue-suggestion--warning {
+                border-color: rgba(250, 204, 21, 0.24);
+                background: rgba(113, 63, 18, 0.18);
+            }
+            .session-queue-suggestion--calm {
+                border-color: rgba(107, 158, 206, 0.24);
+                background: rgba(30, 64, 175, 0.16);
+            }
+            .session-queue-suggestion__eyebrow {
+                color: rgba(255, 255, 255, 0.6);
+                font-size: 10px;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+            }
+            .session-queue-suggestion__title {
+                color: #f8fafc;
+                font-size: 12px;
+                font-weight: 700;
+                line-height: 1.35;
+            }
+            .session-queue-suggestion__desc {
+                color: rgba(255, 255, 255, 0.78);
+                font-size: 11px;
+                line-height: 1.55;
+            }
+            .session-queue-suggestion__action {
+                appearance: none;
+                align-self: flex-start;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                background: rgba(255, 255, 255, 0.08);
+                color: #f8fafc;
+                border-radius: 999px;
+                padding: 5px 10px;
+                font-size: 11px;
+                line-height: 1.2;
+                cursor: pointer;
+            }
+            .session-queue-suggestion__hint {
+                color: rgba(255, 255, 255, 0.68);
+                font-size: 11px;
+            }
+            .session-queue-suggestion__list {
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+            .session-queue-suggestion__list-item {
+                display: flex;
+                align-items: flex-start;
+                gap: 8px;
+            }
+            .session-queue-suggestion__index {
+                width: 18px;
+                height: 18px;
+                flex: 0 0 18px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.12);
+                color: #f8fafc;
+                font-size: 10px;
+                font-weight: 700;
+            }
+            .session-queue-suggestion__list-body {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+            }
+            .session-queue-suggestion__list-title {
+                color: #f8fafc;
+                font-size: 11px;
+                font-weight: 600;
+                line-height: 1.35;
+            }
+            .session-queue-suggestion__list-detail {
+                color: rgba(255, 255, 255, 0.7);
+                font-size: 11px;
+                line-height: 1.45;
+            }
             .session-queue-presets {
                 display: flex;
                 flex-wrap: wrap;
@@ -2554,6 +2841,51 @@ class ChatWidget {
                 flex-wrap: wrap;
                 gap: 8px;
                 padding: 0 12px 10px;
+            }
+            .session-queue-card--skeleton {
+                pointer-events: none;
+            }
+            .session-queue-skeleton {
+                display: block;
+                border-radius: 999px;
+                background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08));
+                background-size: 220% 100%;
+                animation: session-skeleton-shimmer 1.25s linear infinite;
+            }
+            .session-queue-skeleton--value {
+                width: 42px;
+                height: 20px;
+            }
+            .session-queue-skeleton--label {
+                width: 64px;
+                height: 12px;
+            }
+            .session-queue-skeleton--hint {
+                width: 52px;
+                height: 10px;
+            }
+            .session-queue-skeleton--eyebrow {
+                width: 58px;
+                height: 10px;
+                margin-bottom: 8px;
+            }
+            .session-queue-skeleton--line {
+                width: 78%;
+                height: 12px;
+                margin-bottom: 8px;
+            }
+            .session-queue-skeleton--line-wide {
+                width: 94%;
+            }
+            .session-queue-skeleton--pill-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 6px;
+            }
+            .session-queue-skeleton--pill {
+                width: 72px;
+                height: 22px;
             }
             .session-filter-btn {
                 appearance: none;
@@ -2618,11 +2950,60 @@ class ChatWidget {
             /* Session List */
             .session-list {
                 flex: 1;
+                min-height: 0;
                 overflow-y: auto;
                 -webkit-overflow-scrolling: touch;
                 scrollbar-gutter: stable both-edges;
                 scrollbar-width: thin;
                 scrollbar-color: rgba(148, 148, 148, 0.72) transparent;
+                padding-bottom: 10px;
+            }
+            .session-skeleton {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 12px 15px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            }
+            .session-skeleton__avatar {
+                width: 36px;
+                height: 36px;
+                flex: 0 0 36px;
+                border-radius: 50%;
+                background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08));
+                background-size: 220% 100%;
+                animation: session-skeleton-shimmer 1.25s linear infinite;
+            }
+            .session-skeleton__body {
+                flex: 1;
+                min-width: 0;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .session-skeleton__line {
+                height: 10px;
+                border-radius: 999px;
+                background: linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08));
+                background-size: 220% 100%;
+                animation: session-skeleton-shimmer 1.25s linear infinite;
+            }
+            .session-skeleton__line--primary {
+                width: 54%;
+            }
+            .session-skeleton__line--secondary {
+                width: 72%;
+            }
+            .session-skeleton__line--tertiary {
+                width: 42%;
+            }
+            @keyframes session-skeleton-shimmer {
+                0% {
+                    background-position: 200% 0;
+                }
+                100% {
+                    background-position: -20% 0;
+                }
             }
             
             .session-item {
@@ -2890,6 +3271,8 @@ class ChatWidget {
             }
             .chat-context-panel {
                 padding: 12px 16px 0;
+                flex: 0 0 auto;
+                min-height: 0;
             }
             .chat-context-panel[hidden] {
                 display: none !important;
@@ -2907,6 +3290,92 @@ class ChatWidget {
                 color: #fecaca;
                 background: rgba(127, 29, 29, 0.28);
                 border-color: rgba(248, 113, 113, 0.2);
+            }
+            .user-context-shell {
+                border-radius: 18px;
+                background: rgba(255, 255, 255, 0.04);
+                border: 1px solid rgba(148, 163, 184, 0.14);
+                overflow: hidden;
+                box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+            }
+            .user-context-shell__toggle {
+                appearance: none;
+                width: 100%;
+                border: 0;
+                background: transparent;
+                color: inherit;
+                padding: 14px 16px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 14px;
+                text-align: left;
+                cursor: pointer;
+            }
+            .user-context-shell__toggle:hover {
+                background: rgba(255, 255, 255, 0.02);
+            }
+            .user-context-shell__toggle-copy {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                min-width: 0;
+                flex: 1;
+            }
+            .user-context-shell__eyebrow {
+                color: rgba(255, 255, 255, 0.5);
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+            .user-context-shell__title {
+                color: rgba(255, 255, 255, 0.96);
+                font-size: 14px;
+                font-weight: 700;
+                line-height: 1.4;
+            }
+            .user-context-shell__summary {
+                color: rgba(255, 255, 255, 0.58);
+                font-size: 12px;
+                line-height: 1.6;
+                word-break: break-word;
+            }
+            .user-context-shell__toggle-side {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                flex-shrink: 0;
+            }
+            .user-context-shell__toggle-text {
+                color: rgba(219, 234, 254, 0.88);
+                font-size: 12px;
+                font-weight: 600;
+            }
+            .user-context-shell__toggle-icon {
+                color: rgba(219, 234, 254, 0.72);
+                font-size: 12px;
+                transition: transform 0.2s ease;
+            }
+            .user-context-shell__body {
+                max-height: min(320px, 42vh);
+                opacity: 1;
+                overflow: hidden;
+                border-top: 1px solid rgba(148, 163, 184, 0.1);
+                transition: max-height 0.24s ease, opacity 0.2s ease, border-color 0.2s ease;
+            }
+            .user-context-shell__body-inner {
+                max-height: min(320px, 42vh);
+                overflow-y: auto;
+                padding: 0 16px 16px;
+            }
+            .user-context-shell.is-collapsed .user-context-shell__body {
+                max-height: 0;
+                opacity: 0;
+                border-top-color: transparent;
+            }
+            .user-context-shell.is-collapsed .user-context-shell__toggle-icon {
+                transform: rotate(-90deg);
             }
             .chat-reply-templates {
                 padding: 12px 16px 0;
@@ -2960,10 +3429,7 @@ class ChatWidget {
                 line-height: 1.5;
             }
             .user-context-card {
-                padding: 14px;
-                border-radius: 18px;
-                background: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(148, 163, 184, 0.14);
+                padding-top: 14px;
                 display: flex;
                 flex-direction: column;
                 gap: 12px;
@@ -3298,6 +3764,7 @@ class ChatWidget {
                 display: flex;
                 flex-direction: column;
                 min-width: 0;
+                min-height: 0;
             }
             
             .admin-chat-header {
@@ -3328,6 +3795,7 @@ class ChatWidget {
             
             .admin-mode-layout .chat-messages {
                 flex: 1;
+                min-height: 0;
                 overflow-y: auto;
                 padding: 20px;
                 scroll-behavior: auto !important; /* Force instant scrolling */
@@ -3738,6 +4206,9 @@ class ChatWidget {
                     display: flex;
                     flex-direction: column;
                 }
+                .admin-sidebar-insights__body {
+                    max-height: min(260px, 40vh);
+                }
                 
                 /* Chat area also full size, positioned to the right */
                 .admin-chat-area {
@@ -3769,6 +4240,7 @@ class ChatWidget {
                 /* Session list takes full available space */
                 .session-list {
                     flex: 1;
+                    min-height: 0;
                     overflow-y: auto;
                 }
                 
@@ -6382,6 +6854,7 @@ class ChatWidget {
     }
 
     async loadAdminSessions() {
+        const requestId = ++this._adminSessionLoadRequestId;
         try {
             // Get current admin user to exclude from list
             const { data: { user: currentUser } } = await this.supabase.auth.getUser();
@@ -6394,6 +6867,7 @@ class ChatWidget {
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
+            if (requestId !== this._adminSessionLoadRequestId) return;
 
             // Only use USER messages (not admin replies) for grouping sessions
             const userMessages = messages.filter(m => !m.is_admin);
@@ -6406,32 +6880,6 @@ class ChatWidget {
                     .map(m => m.session_id.trim().toLowerCase())
                     .filter(Boolean)
             )];
-
-            // Fetch user info from profiles table using user IDs
-            let userMapById = new Map();
-            let userMapByEmail = new Map();
-
-            if (userIds.length > 0) {
-                const profiles = await this.fetchChatProfiles('id', userIds);
-
-                if (profiles) {
-                    profiles.forEach(u => {
-                        userMapById.set(u.id, u);
-                    });
-                }
-            }
-
-            if (emailSessionIds.length > 0) {
-                const profilesByEmail = await this.fetchChatProfiles('email', emailSessionIds);
-
-                if (profilesByEmail) {
-                    profilesByEmail.forEach(u => {
-                        if (u.email) {
-                            userMapByEmail.set(u.email.toLowerCase(), u);
-                        }
-                    });
-                }
-            }
 
             // Group USER messages by user_id (for logged-in users) or session_id (for pure guests)
             // This merges all sessions from the same user into one
@@ -6475,8 +6923,7 @@ class ChatWidget {
                 }
             });
 
-            // Build sessions with user info
-            const builtSessions = Array.from(userSessionMap.entries()).map(([groupKey, data]) => {
+            const buildSessionsFromProfileMaps = (userMapById = new Map(), userMapByEmail = new Map()) => Array.from(userSessionMap.entries()).map(([groupKey, data]) => {
                 const msg = data.lastMsg;
                 const normalizedGroupKey = typeof groupKey === 'string' ? groupKey.trim() : String(groupKey || '');
                 const userInfo = data.userId
@@ -6504,24 +6951,42 @@ class ChatWidget {
                     replySummary: this.buildSessionReplySummary(data.lastUserMessageAt, data.lastAdminMessageAt)
                 };
             });
-            this.sessions = await this.attachSessionTicketSummaries(builtSessions);
 
-            try {
-                await this.refreshOpsAlerts({ announceNew: false });
-            } catch (opsError) {
+            const initialSessions = buildSessionsFromProfileMaps();
+            this.setAdminChatSessions(initialSessions);
+
+            const [profilesById, profilesByEmail] = await Promise.all([
+                userIds.length > 0 ? this.fetchChatProfiles('id', userIds) : Promise.resolve([]),
+                emailSessionIds.length > 0 ? this.fetchChatProfiles('email', emailSessionIds) : Promise.resolve([])
+            ]);
+            if (requestId !== this._adminSessionLoadRequestId) return;
+
+            const userMapById = new Map((Array.isArray(profilesById) ? profilesById : []).map((profile) => [profile.id, profile]));
+            const userMapByEmail = new Map(
+                (Array.isArray(profilesByEmail) ? profilesByEmail : [])
+                    .filter((profile) => profile?.email)
+                    .map((profile) => [String(profile.email || '').toLowerCase(), profile])
+            );
+
+            const profiledSessions = buildSessionsFromProfileMaps(userMapById, userMapByEmail);
+            this.setAdminChatSessions(profiledSessions);
+
+            this.attachSessionTicketSummaries(profiledSessions)
+                .then((enrichedSessions) => {
+                    if (requestId !== this._adminSessionLoadRequestId) return;
+                    this.setAdminChatSessions(enrichedSessions);
+                })
+                .catch((summaryError) => {
+                    console.error('Failed to enrich admin sessions:', summaryError);
+                });
+
+            this.refreshOpsAlerts({ announceNew: false }).catch((opsError) => {
                 console.error('Failed to load ops alert sessions:', opsError);
-            }
-
-            if (!this.isOpsAlertSession(this.sessions[0])) {
-                this.sessions = [
-                    this.buildOpsAlertSession(),
-                    ...this.sessions
-                ];
-            }
-            this.renderAdminSessionList();
+            });
 
         } catch (err) {
             console.error('Failed to load sessions:', err);
+            if (requestId !== this._adminSessionLoadRequestId) return;
             this.sessionList.innerHTML = `<div class="session-loading">${this.t('chat.loadFailed', '加载失败')}</div>`;
         }
     }
@@ -6944,6 +7409,97 @@ class ChatWidget {
         };
     }
 
+    upsertAdminMessageCacheEntry(message = {}) {
+        const normalizedSessionId = String(message?.session_id || '').trim();
+        const normalizedCreatedAt = String(message?.created_at || '').trim();
+        if (!normalizedSessionId || !normalizedCreatedAt || !(this.sessionMessagesCache instanceof Map)) {
+            return;
+        }
+
+        for (const [cacheKey, cachedMessages] of this.sessionMessagesCache.entries()) {
+            const cacheSessionIds = String(cacheKey || '')
+                .split('|')
+                .map((value) => String(value || '').trim())
+                .filter(Boolean);
+            if (!cacheSessionIds.includes(normalizedSessionId) || !Array.isArray(cachedMessages)) {
+                continue;
+            }
+
+            const alreadyExists = cachedMessages.some((item) => (
+                String(item?.session_id || '').trim() === normalizedSessionId
+                && String(item?.created_at || '').trim() === normalizedCreatedAt
+                && String(item?.content || '') === String(message.content || '')
+                && String(item?.message_type || 'text') === String(message.message_type || 'text')
+                && Boolean(item?.is_admin) === Boolean(message.is_admin)
+            ));
+            if (alreadyExists) {
+                continue;
+            }
+
+            const nextMessages = [...cachedMessages, {
+                session_id: normalizedSessionId,
+                content: message.content,
+                is_admin: Boolean(message.is_admin),
+                message_type: String(message.message_type || 'text'),
+                created_at: normalizedCreatedAt
+            }].sort((left, right) => Date.parse(left?.created_at || 0) - Date.parse(right?.created_at || 0));
+            this.sessionMessagesCache.set(cacheKey, nextMessages);
+        }
+    }
+
+    applyAdminReplySessionUpdate(sessionId = '', message = {}) {
+        const normalizedSessionId = String(sessionId || '').trim();
+        const normalizedCreatedAt = String(message?.created_at || new Date().toISOString()).trim();
+        if (!normalizedSessionId || !Array.isArray(this.sessions) || !this.sessions.length) {
+            return;
+        }
+
+        this.upsertAdminMessageCacheEntry({
+            session_id: normalizedSessionId,
+            content: message?.content || '',
+            is_admin: true,
+            message_type: String(message?.message_type || 'text'),
+            created_at: normalizedCreatedAt
+        });
+
+        let touched = false;
+        const chatSessions = this.sessions
+            .filter((session) => !this.isOpsAlertSession(session))
+            .map((session) => {
+                const sessionIds = Array.isArray(session?.sessionIds) && session.sessionIds.length
+                    ? session.sessionIds.map((value) => String(value || '').trim()).filter(Boolean)
+                    : [String(session?.id || '').trim()].filter(Boolean);
+                const isTargetSession = session.id === normalizedSessionId
+                    || sessionIds.includes(normalizedSessionId);
+                if (!isTargetSession) {
+                    return session;
+                }
+
+                touched = true;
+                return {
+                    ...session,
+                    lastTime: normalizedCreatedAt,
+                    lastMessage: String(message?.message_type || 'text') === 'image'
+                        ? this.t('chat.image', '[图片]')
+                        : String(message?.content || '').trim() || session.lastMessage,
+                    lastAdminMessageAt: normalizedCreatedAt,
+                    replySummary: this.buildSessionReplySummary(session.lastUserMessageAt, normalizedCreatedAt)
+                };
+            });
+
+        if (!touched) {
+            return;
+        }
+
+        this.setAdminChatSessions(chatSessions);
+        if (this.currentSessionKey) {
+            const nextCurrentSession = this.sessions.find((session) => session.id === this.currentSessionKey) || null;
+            if (nextCurrentSession) {
+                this.currentSessionInfo = nextCurrentSession;
+            }
+        }
+    }
+
     refreshAdminSessionReplySummaries() {
         const opsSession = (Array.isArray(this.sessions) ? this.sessions : []).find((session) => this.isOpsAlertSession(session)) || null;
         const chatSessions = (Array.isArray(this.sessions) ? this.sessions : [])
@@ -7035,10 +7591,12 @@ class ChatWidget {
         ];
     }
 
-    getAdminSessionQueueSnapshot() {
-        const sessions = this.sessions
-            .filter((session) => this.matchesAdminSessionQueueView(session))
-            .filter((session) => this.matchesAdminSessionQueueFilter(session));
+    buildAdminSessionQueueSnapshot({ view = 'all', filter = 'all' } = {}) {
+        const normalizedView = this.normalizeAdminSessionQueueView(view);
+        const normalizedFilter = this.normalizeAdminSessionQueueFilter(filter);
+        const sessions = (Array.isArray(this.sessions) ? this.sessions : [])
+            .filter((session) => this.matchesAdminSessionQueueViewMode(session, normalizedView))
+            .filter((session) => this.matchesAdminSessionQueueFilterMode(session, normalizedFilter, normalizedView));
         const chatSessions = sessions.filter((session) => !this.isOpsAlertSession(session));
 
         const pendingReply = chatSessions.filter((session) => session.replySummary?.pending).length;
@@ -7053,6 +7611,8 @@ class ChatWidget {
             .sort((left, right) => right - left)[0] || 0;
 
         return {
+            view: normalizedView,
+            filter: normalizedFilter,
             total: chatSessions.length,
             pendingReply,
             staleReply,
@@ -7060,8 +7620,23 @@ class ChatWidget {
             openTickets,
             verificationAlerts,
             paymentFollowups,
+            specializedLoad: verificationAlerts + paymentFollowups,
             topWait
         };
+    }
+
+    getAdminSessionQueueSnapshot() {
+        return this.buildAdminSessionQueueSnapshot({
+            view: this.adminSessionQueueView,
+            filter: this.adminSessionQueueFilter
+        });
+    }
+
+    getAdminSessionQueueBacklogSnapshot() {
+        return this.buildAdminSessionQueueSnapshot({
+            view: 'all',
+            filter: 'all'
+        });
     }
 
     getAdminSessionQueueCapacityAlerts(snapshot = {}) {
@@ -7091,12 +7666,219 @@ class ChatWidget {
         return alerts.slice(0, 3);
     }
 
+    getAdminSessionQueuePriorityItems(snapshot = {}) {
+        const items = [];
+
+        if (Number(snapshot.staleReply || 0) > 0) {
+            items.push({
+                key: 'stale_reply',
+                title: `${snapshot.staleReply} 个久未回复`,
+                detail: snapshot.topWait > 0
+                    ? `最长等待 ${this.formatSessionReplyWaitAge(snapshot.topWait)}`
+                    : '先清最老会话',
+                weight: snapshot.staleReply * 140 + Math.min(240, Number(snapshot.topWait || 0)),
+                tone: snapshot.staleReply >= 3 || Number(snapshot.topWait || 0) >= 120 ? 'danger' : 'warning'
+            });
+        }
+
+        if (Number(snapshot.openTickets || 0) > 0) {
+            items.push({
+                key: 'ticket',
+                title: `${snapshot.openTickets} 个售后处理中`,
+                detail: '优先守住工单与退款闭环',
+                weight: snapshot.openTickets * 120,
+                tone: snapshot.openTickets >= 5 ? 'danger' : 'warning'
+            });
+        }
+
+        if (Number(snapshot.verificationAlerts || 0) > 0) {
+            items.push({
+                key: 'verification',
+                title: `${snapshot.verificationAlerts} 个验证异常`,
+                detail: '先核验失败、超时与重试中的会话',
+                weight: snapshot.verificationAlerts * 110,
+                tone: snapshot.verificationAlerts >= 3 ? 'danger' : 'warning'
+            });
+        }
+
+        if (Number(snapshot.paymentFollowups || 0) > 0) {
+            items.push({
+                key: 'payment',
+                title: `${snapshot.paymentFollowups} 个支付待跟进`,
+                detail: '确认到账、补单和回填状态',
+                weight: snapshot.paymentFollowups * 95,
+                tone: snapshot.paymentFollowups >= 4 ? 'warning' : 'calm'
+            });
+        }
+
+        if (Number(snapshot.pendingReply || 0) > 0) {
+            items.push({
+                key: 'reply',
+                title: `${snapshot.pendingReply} 个待回复`,
+                detail: '避免新会话继续老化',
+                weight: snapshot.pendingReply * 70,
+                tone: snapshot.pendingReply >= 8 ? 'warning' : 'calm'
+            });
+        }
+
+        return items
+            .sort((left, right) => Number(right.weight || 0) - Number(left.weight || 0))
+            .slice(0, 3);
+    }
+
+    getAdminSessionQueueRecommendedMode(snapshot = {}) {
+        const specializedLoad = Number(snapshot.specializedLoad || 0);
+        const defaultView = this.normalizeAdminSessionQueueView(this.adminSessionQueueDefaultView || 'all');
+        const defaultFilter = this.normalizeAdminSessionQueueFilter(this.adminSessionQueueDefaultFilter || 'all');
+
+        if (Number(snapshot.staleReply || 0) >= 3 || Number(snapshot.topWait || 0) >= 120) {
+            return {
+                view: 'all',
+                filter: 'stale_reply',
+                tone: Number(snapshot.staleReply || 0) >= 5 || Number(snapshot.topWait || 0) >= 180 ? 'danger' : 'warning',
+                reason: `先把 ${snapshot.staleReply} 个久未回复清掉，最长已经等了 ${this.formatSessionReplyWaitAge(snapshot.topWait || 60)}。`
+            };
+        }
+
+        if (Number(snapshot.openTickets || 0) >= 5 || Number(snapshot.openTickets || 0) >= Math.max(3, specializedLoad + 1)) {
+            return {
+                view: 'ticket_followup',
+                filter: 'all',
+                tone: Number(snapshot.openTickets || 0) >= 6 ? 'danger' : 'warning',
+                reason: `售后闭环里的会话有 ${snapshot.openTickets} 个，先盯工单、退款和承诺中的用户。`
+            };
+        }
+
+        if (Number(snapshot.verificationAlerts || 0) >= 2 && Number(snapshot.verificationAlerts || 0) >= Number(snapshot.paymentFollowups || 0)) {
+            return {
+                view: 'payment_verify',
+                filter: 'verification',
+                tone: Number(snapshot.verificationAlerts || 0) >= 4 ? 'danger' : 'warning',
+                reason: '验证异常更集中，适合先切到验证异常视图集中排查。'
+            };
+        }
+
+        if (specializedLoad >= 3) {
+            return {
+                view: 'payment_verify',
+                filter: 'all',
+                tone: specializedLoad >= 5 ? 'danger' : 'warning',
+                reason: `支付和验证待跟进共 ${specializedLoad} 个，适合切到异常工作流连续处理。`
+            };
+        }
+
+        if (Number(snapshot.highPriority || 0) >= 5) {
+            return {
+                view: 'priority',
+                filter: 'all',
+                tone: Number(snapshot.highPriority || 0) >= 7 ? 'danger' : 'warning',
+                reason: `高优先会话已经堆到 ${snapshot.highPriority} 个，先按综合优先级清队列。`
+            };
+        }
+
+        if (Number(snapshot.pendingReply || 0) >= 6) {
+            return {
+                view: 'all',
+                filter: 'reply',
+                tone: Number(snapshot.pendingReply || 0) >= 10 ? 'warning' : 'calm',
+                reason: `先接住还没回复的 ${snapshot.pendingReply} 个会话，避免继续变成超时积压。`
+            };
+        }
+
+        return {
+            view: defaultView,
+            filter: defaultFilter,
+            tone: 'calm',
+            reason: '当前没有明显拥堵，保持默认值班视图即可。'
+        };
+    }
+
+    getAdminSessionQueueCoordinationAdvice(snapshot = {}) {
+        const specializedLoad = Number(snapshot.specializedLoad || 0);
+
+        if (Number(snapshot.staleReply || 0) >= 5 && (Number(snapshot.openTickets || 0) >= 4 || specializedLoad >= 4)) {
+            return {
+                tone: 'danger',
+                title: '建议立刻补位增援',
+                description: '当前回复清 backlog 和售后/异常会互相打断，建议至少加 1 人：一人清久未回复，一人盯售后或异常链路。'
+            };
+        }
+
+        if (Number(snapshot.openTickets || 0) >= 4 && specializedLoad >= 3) {
+            return {
+                tone: 'warning',
+                title: '建议拆成两路值守',
+                description: '把售后值守和支付/验证分开，异常会话优先转交到对应工作区负责人，客服只保留对用户的回访。'
+            };
+        }
+
+        if (Number(snapshot.verificationAlerts || 0) >= 3) {
+            return {
+                tone: 'warning',
+                title: '建议转给验证线协同',
+                description: '验证异常已经成堆，适合先让验证负责人盯排查，客服工作台负责同步结果和稳住用户预期。'
+            };
+        }
+
+        if (Number(snapshot.paymentFollowups || 0) >= 3) {
+            return {
+                tone: 'warning',
+                title: '建议支付会话单独处理',
+                description: '到账、补单和回填类问题最好成线处理，必要时直接转给支付工作区值守，减少在客服列表里来回切换。'
+            };
+        }
+
+        if (Number(snapshot.openTickets || 0) >= 4) {
+            return {
+                tone: 'warning',
+                title: '建议补一个售后值守',
+                description: '工单中的会话偏多，优先让一位同学专门看退款和工单推进，避免用户刚被回复又重新排队。'
+            };
+        }
+
+        if (Number(snapshot.staleReply || 0) >= 3 || Number(snapshot.pendingReply || 0) >= 8) {
+            return {
+                tone: 'calm',
+                title: '先切视图集中清队列',
+                description: '暂时不一定要增援，先切到建议视图把老会话清掉，队列通常会先明显回落。'
+            };
+        }
+
+        return {
+            tone: 'calm',
+            title: '维持默认值守即可',
+            description: '当前还不需要专门转交或增援，按默认视图持续跟进就够了。'
+        };
+    }
+
+    getAdminSessionQueueDutyAdvice(snapshot = null) {
+        const backlogSnapshot = snapshot || this.getAdminSessionQueueBacklogSnapshot();
+        const recommendedMode = this.getAdminSessionQueueRecommendedMode(backlogSnapshot);
+        const priorityItems = this.getAdminSessionQueuePriorityItems(backlogSnapshot);
+        const coordination = this.getAdminSessionQueueCoordinationAdvice(backlogSnapshot);
+        const recommendedLabel = this.formatAdminSessionQueueModeLabel(recommendedMode.view, recommendedMode.filter);
+        const isCurrentModeRecommended = this.normalizeAdminSessionQueueView(this.adminSessionQueueView) === recommendedMode.view
+            && this.normalizeAdminSessionQueueFilter(this.adminSessionQueueFilter) === recommendedMode.filter;
+
+        return {
+            snapshot: backlogSnapshot,
+            recommendedMode: {
+                ...recommendedMode,
+                label: recommendedLabel
+            },
+            priorityItems,
+            coordination,
+            isCurrentModeRecommended
+        };
+    }
+
     renderAdminSessionQueueSnapshot() {
         const container = this.chatWindow?.querySelector('#sessionQueueSnapshot');
         if (!container) return;
 
-        const snapshot = this.getAdminSessionQueueSnapshot();
+        const snapshot = this.getAdminSessionQueueBacklogSnapshot();
         const capacityAlerts = this.getAdminSessionQueueCapacityAlerts(snapshot);
+        const dutyAdvice = this.getAdminSessionQueueDutyAdvice(snapshot);
         const currentMode = this.formatAdminSessionQueueModeLabel(this.adminSessionQueueView, this.adminSessionQueueFilter);
         const defaultMode = this.formatAdminSessionQueueModeLabel(this.adminSessionQueueDefaultView, this.adminSessionQueueDefaultFilter);
         const isDefaultMode = this.isAdminSessionQueueUsingDefaultView();
@@ -7112,6 +7894,7 @@ class ChatWidget {
             <div class="session-queue-snapshot__mode">
                 <span>当前：${currentMode}</span>
                 <span>默认：${defaultMode}</span>
+                <span>摘要：全队列</span>
             </div>
             <div class="session-queue-snapshot__summary">${summaryParts.slice(0, 3).join(' · ')}</div>
             <div class="session-queue-snapshot__meta">
@@ -7130,6 +7913,37 @@ class ChatWidget {
                     `).join('')}
                 </div>
             ` : ''}
+            <div class="session-queue-snapshot__suggestions">
+                <div class="session-queue-suggestion session-queue-suggestion--${dutyAdvice.recommendedMode.tone}">
+                    <div class="session-queue-suggestion__eyebrow">适合切到</div>
+                    <div class="session-queue-suggestion__title">${this.escapeHtml(dutyAdvice.recommendedMode.label)}</div>
+                    <div class="session-queue-suggestion__desc">${this.escapeHtml(dutyAdvice.recommendedMode.reason)}</div>
+                    ${dutyAdvice.isCurrentModeRecommended
+                        ? '<span class="session-queue-suggestion__hint">当前已在建议视图</span>'
+                        : `<button type="button" class="session-queue-suggestion__action" data-session-snapshot-action="apply-recommended-mode" data-session-recommended-view="${this.escapeHtml(dutyAdvice.recommendedMode.view)}" data-session-recommended-filter="${this.escapeHtml(dutyAdvice.recommendedMode.filter)}">切到建议视图</button>`}
+                </div>
+                <div class="session-queue-suggestion session-queue-suggestion--${dutyAdvice.priorityItems[0]?.tone || dutyAdvice.recommendedMode.tone}">
+                    <div class="session-queue-suggestion__eyebrow">优先处理</div>
+                    ${dutyAdvice.priorityItems.length ? `
+                        <div class="session-queue-suggestion__list">
+                            ${dutyAdvice.priorityItems.map((item, index) => `
+                                <div class="session-queue-suggestion__list-item">
+                                    <span class="session-queue-suggestion__index">${index + 1}</span>
+                                    <span class="session-queue-suggestion__list-body">
+                                        <span class="session-queue-suggestion__list-title">${this.escapeHtml(item.title)}</span>
+                                        <span class="session-queue-suggestion__list-detail">${this.escapeHtml(item.detail)}</span>
+                                    </span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : '<div class="session-queue-suggestion__desc">当前队列比较平稳，按默认节奏处理即可。</div>'}
+                </div>
+                <div class="session-queue-suggestion session-queue-suggestion--${dutyAdvice.coordination.tone}">
+                    <div class="session-queue-suggestion__eyebrow">协同安排</div>
+                    <div class="session-queue-suggestion__title">${this.escapeHtml(dutyAdvice.coordination.title)}</div>
+                    <div class="session-queue-suggestion__desc">${this.escapeHtml(dutyAdvice.coordination.description)}</div>
+                </div>
+            </div>
             <div class="session-queue-snapshot__actions">
                 ${isDefaultMode
                     ? '<span class="session-queue-snapshot__hint">当前已使用默认视图</span>'
@@ -7157,10 +7971,12 @@ class ChatWidget {
     }
 
     renderAdminSessionQueueControls() {
+        const backlogSnapshot = this.getAdminSessionQueueBacklogSnapshot();
         this.renderAdminSessionOverview();
         this.renderAdminSessionQueueSnapshot();
         this.renderAdminSessionViews();
         this.renderAdminSessionFilters();
+        this.updateAdminSidebarInsightsShell(backlogSnapshot);
     }
 
     renderAdminSessionFilters() {
@@ -7200,11 +8016,16 @@ class ChatWidget {
     }
 
     matchesAdminSessionQueueView(session = {}) {
+        return this.matchesAdminSessionQueueViewMode(session, this.adminSessionQueueView);
+    }
+
+    matchesAdminSessionQueueViewMode(session = {}, view = 'all') {
+        const normalizedView = this.normalizeAdminSessionQueueView(view);
         if (this.isOpsAlertSession(session)) {
-            return this.adminSessionQueueView === 'all';
+            return normalizedView === 'all';
         }
 
-        switch (this.adminSessionQueueView) {
+        switch (normalizedView) {
             case 'priority':
                 return this.isHighPriorityAdminSession(session);
             case 'ticket_followup':
@@ -7221,11 +8042,17 @@ class ChatWidget {
     }
 
     matchesAdminSessionQueueFilter(session = {}) {
+        return this.matchesAdminSessionQueueFilterMode(session, this.adminSessionQueueFilter, this.adminSessionQueueView);
+    }
+
+    matchesAdminSessionQueueFilterMode(session = {}, filter = 'all', view = 'all') {
+        const normalizedFilter = this.normalizeAdminSessionQueueFilter(filter);
+        const normalizedView = this.normalizeAdminSessionQueueView(view);
         if (this.isOpsAlertSession(session)) {
-            return this.adminSessionQueueView === 'all' && this.adminSessionQueueFilter === 'all';
+            return normalizedView === 'all' && normalizedFilter === 'all';
         }
 
-        switch (this.adminSessionQueueFilter) {
+        switch (normalizedFilter) {
             case 'reply':
                 return Boolean(session.replySummary?.pending);
             case 'stale_reply':
@@ -7375,6 +8202,55 @@ class ChatWidget {
         });
 
         container.hidden = false;
+    }
+
+    getUserContextPanelSummaryText(context = {}) {
+        const items = this.getUserContextHeaderStatusItems(context);
+        if (items.length) {
+            return items.map((item) => `${item.label} ${item.value}`).join(' · ');
+        }
+
+        const summaryParts = [];
+        if (context.accountState) {
+            summaryParts.push(String(context.accountState).trim());
+        }
+
+        const counts = [
+            { label: '订单', value: Array.isArray(context.orders) ? context.orders.length : 0 },
+            { label: '充值', value: Array.isArray(context.payments) ? context.payments.length : 0 },
+            { label: '验证', value: Array.isArray(context.verifications) ? context.verifications.length : 0 },
+            { label: '工单', value: Array.isArray(context.tickets) ? context.tickets.length : 0 }
+        ]
+            .filter((item) => item.value > 0)
+            .slice(0, 3)
+            .map((item) => `${item.label} ${item.value}`);
+
+        if (counts.length) {
+            summaryParts.push(...counts);
+        }
+
+        return summaryParts.join(' · ') || '账号、订单、充值与工单概览';
+    }
+
+    setUserContextPanelCollapsed(collapsed = false) {
+        this.userContextPanelCollapsed = Boolean(collapsed);
+
+        const shell = this.userContextPanel?.querySelector('.user-context-shell');
+        const toggle = this.userContextPanel?.querySelector('#userContextPanelToggle');
+        const toggleText = toggle?.querySelector('.user-context-shell__toggle-text');
+
+        if (shell) {
+            shell.classList.toggle('is-collapsed', this.userContextPanelCollapsed);
+        }
+
+        if (toggle) {
+            toggle.setAttribute('aria-expanded', this.userContextPanelCollapsed ? 'false' : 'true');
+            toggle.setAttribute('title', this.userContextPanelCollapsed ? '展开 360 信息' : '收起 360 信息');
+        }
+
+        if (toggleText) {
+            toggleText.textContent = this.userContextPanelCollapsed ? '展开' : '收起';
+        }
     }
 
     buildUserContextActionSignature(action = {}) {
@@ -7619,6 +8495,7 @@ class ChatWidget {
                 workspaceKey: 'shop-risk-users',
                 context: {
                     userId: context.userId || '',
+                    email: context.email || '',
                     targetId: context.userId || userSearchValue,
                     target_id: context.userId || userSearchValue,
                     referenceLabel: context.userId ? '用户' : '邮箱',
@@ -7673,12 +8550,25 @@ class ChatWidget {
 
         if (latestPayment) {
             const paymentId = String(latestPayment.id || '').trim();
+            const paymentUserReference = String(context.userId || context.email || '').trim();
             actions.push({
                 key: 'payment',
                 label: '充值记录',
                 hint: paymentId ? `支付单 ${paymentId.slice(0, 8)}` : '最近充值',
-                workspaceKey: 'payments-overview',
-                context: {
+                workspaceKey: paymentUserReference ? 'shop-risk-users' : 'payments-overview',
+                context: paymentUserReference ? {
+                    userId: context.userId || '',
+                    email: context.email || '',
+                    paymentOrderId: paymentId,
+                    targetId: context.userId || paymentUserReference,
+                    target_id: context.userId || paymentUserReference,
+                    referenceLabel: context.userId ? '支付单' : '邮箱',
+                    referenceValue: context.userId
+                        ? (paymentId || String(latestPayment.package_name || '最近充值').trim())
+                        : paymentUserReference,
+                    defaultTab: 'payments',
+                    tab: 'payments'
+                } : {
                     paymentOrderId: paymentId,
                     targetId: paymentId,
                     target_id: paymentId,
@@ -7793,68 +8683,186 @@ class ChatWidget {
         return true;
     }
 
-    getReplyTemplateDrafts(context = {}) {
-        if (!this.currentSessionId || this.isOpsAlertSessionId(this.currentSessionId)) {
+    getDefaultReplyTemplateDefinitions() {
+        return [{
+            id: 'ack',
+            business_type: 'general',
+            enabled: true,
+            label: '先接手',
+            hint: '先稳住用户预期',
+            text: '这边已看到你的消息，我先帮你核对一下当前记录，稍后给你明确处理结果。'
+        }, {
+            id: 'order',
+            business_type: 'order',
+            enabled: true,
+            label: '订单说明',
+            hint: '最近订单 {{order_status}}',
+            text: '我这边看到你最近的订单「{{order_name}}」当前状态是{{order_status}}，我先继续帮你核对处理进度，稍后给你明确反馈。'
+        }, {
+            id: 'payment',
+            business_type: 'payment',
+            enabled: true,
+            label: '充值核对',
+            hint: '最近充值 {{payment_status}}',
+            text: '我这边看到你最近的充值记录当前是{{payment_status}}，先帮你核对到账和处理链路，稍后回复你。'
+        }, {
+            id: 'verify',
+            business_type: 'verification',
+            enabled: true,
+            label: '验证跟进',
+            hint: '最近验证 {{verification_status}}',
+            text: '我这边看到最近验证任务状态是{{verification_status}}，先帮你核对当前提示和处理进度，稍后给你更新。'
+        }, {
+            id: 'ticket',
+            business_type: 'ticket',
+            enabled: true,
+            label: '工单跟进',
+            hint: '售后工单 {{ticket_status}}',
+            text: '我这边看到最近售后工单目前是{{ticket_status}}，已经接手继续跟进，有结果会第一时间回复你。'
+        }];
+    }
+
+    normalizeReplyTemplateBusinessType(value = 'general') {
+        const normalized = String(value || '').trim().toLowerCase();
+        return ['general', 'order', 'payment', 'verification', 'ticket'].includes(normalized)
+            ? normalized
+            : 'general';
+    }
+
+    normalizeReplyTemplateDefinitions(templates) {
+        if (!Array.isArray(templates)) {
+            return this.getDefaultReplyTemplateDefinitions();
+        }
+        if (!templates.length) {
             return [];
         }
 
+        const defaults = this.getDefaultReplyTemplateDefinitions();
+        const normalized = [];
+        templates.forEach((item) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                return;
+            }
+
+            const businessType = this.normalizeReplyTemplateBusinessType(
+                item.business_type || item.businessType || item.type
+            );
+            const fallback = defaults.find((candidate) => candidate.id === String(item.id || '').trim())
+                || defaults.find((candidate) => candidate.business_type === businessType)
+                || null;
+            const text = String(item.text || '').trim();
+            if (!text) {
+                return;
+            }
+
+            normalized.push({
+                id: String(item.id || fallback?.id || `template_${normalized.length + 1}`).trim() || `template_${normalized.length + 1}`,
+                business_type: businessType,
+                enabled: item.enabled !== false,
+                label: String(item.label || '').trim() || fallback?.label || '快捷回复',
+                hint: String(item.hint || '').trim(),
+                text
+            });
+        });
+
+        return normalized.slice(0, 12);
+    }
+
+    getReplyTemplateDefinitions() {
+        return this.normalizeReplyTemplateDefinitions(this.replyTemplateConfigTemplates);
+    }
+
+    buildReplyTemplateContextState(context = {}) {
         const latestOrder = this.getLatestUserContextRecord(context.orders);
         const latestPayment = this.getLatestUserContextRecord(context.payments);
         const latestVerification = this.getLatestUserContextRecord(context.verifications);
         const latestTicket = this.getLatestUserContextRecord(context.tickets);
         const openTicket = (Array.isArray(context.tickets) ? context.tickets : [])
             .find((ticket) => !['resolved', 'rejected'].includes(String(ticket?.status || '').trim().toLowerCase()));
+        const activeTicket = openTicket || latestTicket;
 
-        const templates = [{
-            key: 'ack',
-            label: '先接手',
-            hint: '先稳住用户预期',
-            text: '这边已看到你的消息，我先帮你核对一下当前记录，稍后给你明确处理结果。'
-        }];
+        return {
+            availability: {
+                general: true,
+                order: Boolean(latestOrder),
+                payment: Boolean(latestPayment),
+                verification: Boolean(latestVerification),
+                ticket: Boolean(activeTicket)
+            },
+            placeholders: {
+                order_name: latestOrder ? this.truncateText(latestOrder.snapshot_product_name || '最近订单', 16) : '最近订单',
+                order_status: latestOrder ? this.formatUserContextStatus(latestOrder.delivery_status || latestOrder.refund_status) : '处理中',
+                payment_status: latestPayment ? this.formatUserContextStatus(latestPayment.status) : '处理中',
+                verification_status: latestVerification ? this.formatUserContextStatus(latestVerification.status) : '处理中',
+                ticket_status: activeTicket ? this.formatUserContextStatus(activeTicket.status) : '处理中'
+            }
+        };
+    }
 
-        if (latestOrder) {
-            const orderName = this.truncateText(latestOrder.snapshot_product_name || '最近订单', 16);
-            const orderStatus = this.formatUserContextStatus(latestOrder.delivery_status || latestOrder.refund_status);
-            templates.push({
-                key: 'order',
-                label: '订单说明',
-                hint: `最近订单 ${orderStatus}`,
-                text: `我这边看到你最近的订单「${orderName}」当前状态是${orderStatus}，我先继续帮你核对处理进度，稍后给你明确反馈。`
-            });
+    interpolateReplyTemplateText(templateText = '', placeholders = {}) {
+        return String(templateText || '').replace(/{{\s*([a-z0-9_]+)\s*}}/gi, (_match, rawKey) => {
+            const key = String(rawKey || '').trim().toLowerCase();
+            return String(placeholders[key] ?? '').trim();
+        }).replace(/\s{2,}/g, ' ').trim();
+    }
+
+    async ensureReplyTemplateConfigLoaded(force = false) {
+        if (!force && this.replyTemplateConfigPromise) {
+            return this.replyTemplateConfigPromise;
         }
 
-        if (latestPayment) {
-            const paymentStatus = this.formatUserContextStatus(latestPayment.status);
-            templates.push({
-                key: 'payment',
-                label: '充值核对',
-                hint: `最近充值 ${paymentStatus}`,
-                text: `我这边看到你最近的充值记录当前是${paymentStatus}，先帮你核对到账和处理链路，稍后回复你。`
-            });
+        const now = Date.now();
+        if (!force && this.replyTemplateConfigLoadedAt && (now - this.replyTemplateConfigLoadedAt) < 5 * 60 * 1000) {
+            return false;
         }
 
-        if (latestVerification) {
-            const verifyStatus = this.formatUserContextStatus(latestVerification.status);
-            templates.push({
-                key: 'verify',
-                label: '验证跟进',
-                hint: `最近验证 ${verifyStatus}`,
-                text: `我这边看到最近验证任务状态是${verifyStatus}，先帮你核对当前提示和处理进度，稍后给你更新。`
-            });
+        this.replyTemplateConfigPromise = (async () => {
+            try {
+                const config = await this.fetchOpsAlertSettingsConfig();
+                const nextTemplates = this.normalizeReplyTemplateDefinitions(config?.customer_chat_message?.quick_reply_templates);
+                const previousSnapshot = JSON.stringify(Array.isArray(this.replyTemplateConfigTemplates) ? this.replyTemplateConfigTemplates : null);
+                const nextSnapshot = JSON.stringify(nextTemplates);
+                this.replyTemplateConfigTemplates = nextTemplates;
+                this.replyTemplateConfigLoadedAt = Date.now();
+                return previousSnapshot !== nextSnapshot;
+            } catch (error) {
+                this.replyTemplateConfigLoadedAt = Date.now();
+                console.warn('[ChatWidget] Failed to load quick reply templates:', error);
+                return false;
+            } finally {
+                this.replyTemplateConfigPromise = null;
+            }
+        })();
+
+        return this.replyTemplateConfigPromise;
+    }
+
+    handleOpsAlertConfigUpdated(event = {}) {
+        const config = event?.detail?.config && typeof event.detail.config === 'object'
+            ? event.detail.config
+            : null;
+        this.replyTemplateConfigTemplates = this.normalizeReplyTemplateDefinitions(
+            config?.customer_chat_message?.quick_reply_templates
+        );
+        this.replyTemplateConfigLoadedAt = Date.now();
+        this.renderReplyTemplateBar(this.currentUserContext || null);
+    }
+
+    getReplyTemplateDrafts(context = {}) {
+        if (!this.currentSessionId || this.isOpsAlertSessionId(this.currentSessionId)) {
+            return [];
         }
 
-        if (openTicket || latestTicket) {
-            const ticket = openTicket || latestTicket;
-            const ticketStatus = this.formatUserContextStatus(ticket.status);
-            templates.push({
-                key: 'ticket',
-                label: '工单跟进',
-                hint: `售后工单 ${ticketStatus}`,
-                text: `我这边看到最近售后工单目前是${ticketStatus}，已经接手继续跟进，有结果会第一时间回复你。`
-            });
-        }
-
-        return templates.slice(0, 5);
+        const templateState = this.buildReplyTemplateContextState(context || {});
+        return this.getReplyTemplateDefinitions()
+            .filter((template) => template.enabled !== false && templateState.availability[template.business_type] !== false)
+            .map((template, index) => ({
+                key: String(template.id || `template_${index + 1}`).trim() || `template_${index + 1}`,
+                label: this.interpolateReplyTemplateText(template.label, templateState.placeholders) || `快捷回复 ${index + 1}`,
+                hint: this.interpolateReplyTemplateText(template.hint, templateState.placeholders),
+                text: this.interpolateReplyTemplateText(template.text, templateState.placeholders)
+            }))
+            .filter((template) => template.text);
     }
 
     applyReplyTemplate(template = {}) {
@@ -7875,36 +8883,46 @@ class ChatWidget {
         const bar = this.replyTemplateBar;
         if (!bar) return;
 
-        const templates = this.getReplyTemplateDrafts(context || {});
+        const renderToken = (this._replyTemplateRenderToken || 0) + 1;
+        this._replyTemplateRenderToken = renderToken;
+        const renderTemplates = () => this.getReplyTemplateDrafts(context || {});
+        const templates = renderTemplates();
         bar.replaceChildren();
 
         if (!templates.length) {
             bar.hidden = true;
-            return;
+        } else {
+            const label = document.createElement('div');
+            label.className = 'chat-reply-templates__label';
+            label.textContent = '快捷回复';
+            bar.appendChild(label);
+
+            const list = document.createElement('div');
+            list.className = 'chat-reply-templates__list';
+
+            templates.forEach((template) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'chat-reply-template-btn';
+                button.innerHTML = `
+                    <span class="chat-reply-template-btn__label">${this.escapeHtml(template.label)}</span>
+                    <span class="chat-reply-template-btn__hint">${this.escapeHtml(template.hint || '插入到回复框')}</span>
+                `;
+                button.addEventListener('click', () => this.applyReplyTemplate(template));
+                list.appendChild(button);
+            });
+
+            bar.appendChild(list);
+            bar.hidden = false;
         }
 
-        const label = document.createElement('div');
-        label.className = 'chat-reply-templates__label';
-        label.textContent = '快捷回复';
-        bar.appendChild(label);
-
-        const list = document.createElement('div');
-        list.className = 'chat-reply-templates__list';
-
-        templates.forEach((template) => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'chat-reply-template-btn';
-            button.innerHTML = `
-                <span class="chat-reply-template-btn__label">${this.escapeHtml(template.label)}</span>
-                <span class="chat-reply-template-btn__hint">${this.escapeHtml(template.hint || '插入到回复框')}</span>
-            `;
-            button.addEventListener('click', () => this.applyReplyTemplate(template));
-            list.appendChild(button);
-        });
-
-        bar.appendChild(list);
-        bar.hidden = false;
+        this.ensureReplyTemplateConfigLoaded()
+            .then((changed) => {
+                if (changed && this._replyTemplateRenderToken === renderToken) {
+                    this.renderReplyTemplateBar(context);
+                }
+            })
+            .catch(() => {});
     }
 
     createUserContextActionsSection(context = {}) {
@@ -7996,7 +9014,7 @@ class ChatWidget {
         }
     }
 
-    buildUserContextTimelineAction(kind = '', item = {}) {
+    buildUserContextTimelineAction(kind = '', item = {}, context = {}) {
         if (!item || typeof item !== 'object') return null;
 
         if (kind === 'order') {
@@ -8018,11 +9036,24 @@ class ChatWidget {
 
         if (kind === 'payment') {
             const paymentId = String(item.id || '').trim();
+            const paymentUserReference = String(context.userId || context.email || '').trim();
             return {
                 key: 'payment',
                 label: '查看充值记录',
-                workspaceKey: 'payments-overview',
-                context: {
+                workspaceKey: paymentUserReference ? 'shop-risk-users' : 'payments-overview',
+                context: paymentUserReference ? {
+                    userId: context.userId || '',
+                    email: context.email || '',
+                    paymentOrderId: paymentId,
+                    targetId: context.userId || paymentUserReference,
+                    target_id: context.userId || paymentUserReference,
+                    referenceLabel: context.userId ? '支付单' : '邮箱',
+                    referenceValue: context.userId
+                        ? (paymentId || String(item.package_name || '最近充值').trim())
+                        : paymentUserReference,
+                    defaultTab: 'payments',
+                    tab: 'payments'
+                } : {
                     paymentOrderId: paymentId,
                     targetId: paymentId,
                     target_id: paymentId,
@@ -8074,7 +9105,7 @@ class ChatWidget {
         const entries = [];
 
         (Array.isArray(context.orders) ? context.orders : []).forEach((order) => {
-            const action = this.buildUserContextTimelineAction('order', order);
+            const action = this.buildUserContextTimelineAction('order', order, context);
             entries.push({
                 kind: 'order',
                 label: '订单',
@@ -8087,7 +9118,7 @@ class ChatWidget {
         });
 
         (Array.isArray(context.payments) ? context.payments : []).forEach((payment) => {
-            const action = this.buildUserContextTimelineAction('payment', payment);
+            const action = this.buildUserContextTimelineAction('payment', payment, context);
             entries.push({
                 kind: 'payment',
                 label: '充值',
@@ -8100,7 +9131,7 @@ class ChatWidget {
         });
 
         (Array.isArray(context.verifications) ? context.verifications : []).forEach((item) => {
-            const action = this.buildUserContextTimelineAction('verify', item);
+            const action = this.buildUserContextTimelineAction('verify', item, context);
             entries.push({
                 kind: 'verify',
                 label: '验证',
@@ -8113,7 +9144,7 @@ class ChatWidget {
         });
 
         (Array.isArray(context.tickets) ? context.tickets : []).forEach((ticket) => {
-            const action = this.buildUserContextTimelineAction('ticket', ticket);
+            const action = this.buildUserContextTimelineAction('ticket', ticket, context);
             entries.push({
                 kind: 'ticket',
                 label: '工单',
@@ -8214,6 +9245,36 @@ class ChatWidget {
         this.renderUserContextHeaderStatus(context);
         this.renderReplyTemplateBar(context);
 
+        const shell = document.createElement('section');
+        shell.className = 'user-context-shell';
+
+        const shellToggle = document.createElement('button');
+        shellToggle.type = 'button';
+        shellToggle.className = 'user-context-shell__toggle';
+        shellToggle.id = 'userContextPanelToggle';
+        shellToggle.setAttribute('data-user-context-panel-toggle', 'true');
+        shellToggle.innerHTML = `
+            <span class="user-context-shell__toggle-copy">
+                <span class="user-context-shell__eyebrow">用户 360</span>
+                <strong class="user-context-shell__title">账号、订单、工单与业务时间线</strong>
+                <span class="user-context-shell__summary">${this.escapeHtml(this.getUserContextPanelSummaryText(context))}</span>
+            </span>
+            <span class="user-context-shell__toggle-side">
+                <span class="user-context-shell__toggle-text">展开</span>
+                <i class="fas fa-chevron-down user-context-shell__toggle-icon" aria-hidden="true"></i>
+            </span>
+        `;
+        shell.appendChild(shellToggle);
+
+        const shellBody = document.createElement('div');
+        shellBody.className = 'user-context-shell__body';
+        shellBody.id = 'userContextPanelBody';
+
+        const shellBodyInner = document.createElement('div');
+        shellBodyInner.className = 'user-context-shell__body-inner';
+        shellBody.appendChild(shellBodyInner);
+        shell.appendChild(shellBody);
+
         const card = document.createElement('div');
         card.className = 'user-context-card';
 
@@ -8271,7 +9332,9 @@ class ChatWidget {
 
         card.appendChild(grid);
         card.appendChild(this.createUserContextTimelineSection(this.buildUserContextTimelineEntries(context)));
-        this.userContextPanel.appendChild(card);
+        shellBodyInner.appendChild(card);
+        this.userContextPanel.appendChild(shell);
+        this.setUserContextPanelCollapsed(this.userContextPanelCollapsed);
     }
 
     async loadUser360Context(session = {}) {
@@ -8837,6 +9900,20 @@ class ChatWidget {
             });
         }
 
+        if (this.adminSidebarInsightsToggle) {
+            this.adminSidebarInsightsToggle.addEventListener('click', () => {
+                this.setAdminSidebarInsightsCollapsed(!this.adminSidebarInsightsCollapsed);
+            });
+        }
+
+        if (this.userContextPanel) {
+            this.userContextPanel.addEventListener('click', (event) => {
+                const toggle = event.target.closest('[data-user-context-panel-toggle]');
+                if (!toggle) return;
+                this.setUserContextPanelCollapsed(!this.userContextPanelCollapsed);
+            });
+        }
+
         // Session search filter - enhanced with chat message search
         const searchInput = this.chatWindow.querySelector('#sessionSearch');
         if (searchInput) {
@@ -8867,6 +9944,12 @@ class ChatWidget {
                 const action = button.getAttribute('data-session-snapshot-action');
                 if (action === 'restore-default') {
                     this.restoreAdminSessionQueueDefaultView();
+                } else if (action === 'apply-recommended-mode') {
+                    this.adminSessionQueueView = this.normalizeAdminSessionQueueView(button.getAttribute('data-session-recommended-view') || 'all');
+                    this.adminSessionQueueFilter = this.normalizeAdminSessionQueueFilter(button.getAttribute('data-session-recommended-filter') || 'all');
+                    this.persistAdminSessionQueuePreferences();
+                    this.renderAdminSessionQueueControls();
+                    this.renderAdminSessionList();
                 } else if (action === 'save-default') {
                     this.saveCurrentAdminSessionQueueAsDefault();
                 }
@@ -8944,14 +10027,25 @@ class ChatWidget {
         this.scrollToBottom();
 
         try {
-            await this.supabase
+            const { data: sentMessage, error } = await this.supabase
                 .from('chat_messages')
                 .insert({
                     session_id: this.currentSessionId,
                     content: text,
                     message_type: 'text',
                     is_admin: true
-                });
+                })
+                .select('session_id, content, is_admin, message_type, created_at')
+                .single();
+            if (error) throw error;
+
+            this.applyAdminReplySessionUpdate(this.currentSessionId, sentMessage || {
+                session_id: this.currentSessionId,
+                content: text,
+                is_admin: true,
+                message_type: 'text',
+                created_at: new Date().toISOString()
+            });
 
             // 🔔 Create system notification for the user's bell
             await this.createNotificationForUser(this.currentSessionId, text);
@@ -9069,16 +10163,26 @@ class ChatWidget {
             const imageUrl = urlData.publicUrl;
 
             // Send as image message
-            await this.supabase
+            const { data: sentImageMessage, error: insertError } = await this.supabase
                 .from('chat_messages')
                 .insert({
                     session_id: this.currentSessionId,
                     content: imageUrl,
                     message_type: 'image',
                     is_admin: true
-                });
+                })
+                .select('session_id, content, is_admin, message_type, created_at')
+                .single();
+            if (insertError) throw insertError;
 
             this.appendMessage(imageUrl, this.getMessageRenderType(true), 'image');
+            this.applyAdminReplySessionUpdate(this.currentSessionId, sentImageMessage || {
+                session_id: this.currentSessionId,
+                content: imageUrl,
+                is_admin: true,
+                message_type: 'image',
+                created_at: new Date().toISOString()
+            });
             this.scrollToBottom();
 
         } catch (err) {
@@ -9111,9 +10215,12 @@ class ChatWidget {
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
                 const msg = payload.new;
                 const isTicketSyncMessage = this.isTicketSyncChatMessage(msg);
+                const isAdminReply = Boolean(msg?.is_admin) && !isTicketSyncMessage;
 
-                // Skip admin's own messages
-                if (msg.is_admin && !isTicketSyncMessage) return;
+                if (isAdminReply) {
+                    this.applyAdminReplySessionUpdate(msg.session_id, msg);
+                    return;
+                }
 
                 // Check if we're currently ACTIVELY viewing this session's chat
                 // Must be: window open + selected this session + on mobile: must be in chat view (not list view)
@@ -9335,6 +10442,16 @@ class ChatWidget {
                 .user-context-summary,
                 .user-context-grid {
                     grid-template-columns: 1fr;
+                }
+                .user-context-shell__toggle {
+                    align-items: flex-start;
+                }
+                .user-context-shell__toggle-side {
+                    margin-top: 2px;
+                }
+                .user-context-shell__body,
+                .user-context-shell__body-inner {
+                    max-height: min(260px, 34vh);
                 }
             }
             

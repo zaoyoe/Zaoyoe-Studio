@@ -1344,6 +1344,19 @@ module.exports = async (req, res) => {
                     customer_chat_message_summary_hourly_minute: Number(nextConfig.customer_chat_message?.summary_hourly_minute || 0),
                     customer_chat_message_summary_daily_hour: Number(nextConfig.customer_chat_message?.summary_daily_hour || 0),
                     customer_chat_message_summary_daily_minute: Number(nextConfig.customer_chat_message?.summary_daily_minute || 0),
+                    customer_chat_message_quick_reply_template_count: Array.isArray(nextConfig.customer_chat_message?.quick_reply_templates)
+                        ? nextConfig.customer_chat_message.quick_reply_templates.length
+                        : 0,
+                    customer_chat_message_quick_reply_enabled_count: Array.isArray(nextConfig.customer_chat_message?.quick_reply_templates)
+                        ? nextConfig.customer_chat_message.quick_reply_templates.filter((template) => template?.enabled !== false).length
+                        : 0,
+                    customer_chat_message_quick_reply_business_types: Array.from(new Set(
+                        (Array.isArray(nextConfig.customer_chat_message?.quick_reply_templates)
+                            ? nextConfig.customer_chat_message.quick_reply_templates
+                            : [])
+                            .map((template) => sanitizeText(template?.business_type, 40))
+                            .filter(Boolean)
+                    )),
                     shop_purchase_success_work_hours_only_enabled: nextConfig.shop_purchase_success?.work_hours_only_enabled === true,
                     shop_purchase_success_summary_enabled: nextConfig.shop_purchase_success?.summary_enabled === true,
                     shop_purchase_success_summary_window_minutes: Number(nextConfig.shop_purchase_success?.summary_window_minutes || 0),

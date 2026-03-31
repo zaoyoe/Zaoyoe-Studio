@@ -181,9 +181,14 @@ test('notification inserts gracefully fall back when scope columns are not deplo
 test('notification writers tag chat replies and admin notices with scoped metadata', () => {
     const chatWidgetSource = readRepoFile(path.join('js', 'components', 'ChatWidget.js'));
     const adminUsersSource = readRepoFile('admin-users.js');
+    const adminConfigSource = readRepoFile('admin-config.js');
+    const adminLoginAnomalySource = readRepoFile(path.join('api', '_lib', 'admin-login-anomaly-alerts.js'));
 
     assert.match(chatWidgetSource, /scope:\s*'user_personal'/);
     assert.match(chatWidgetSource, /category:\s*'chat_reply'/);
     assert.match(adminUsersSource, /scope:\s*'user_personal'/);
     assert.match(adminUsersSource, /category:\s*'admin_notice'/);
+    assert.match(adminConfigSource, /scope:\s*'admin_personal'/);
+    assert.match(adminConfigSource, /category:\s*'announcement'/);
+    assert.match(adminLoginAnomalySource, /category:\s*'security'/);
 });
