@@ -60,9 +60,9 @@
                 },
                 {
                     key: 'points.manage',
-                    label: '积分管理',
+                    label: '兑换码与套餐',
                     icon: '🪙',
-                    description: '积分批次、兑换码与余额运营',
+                    description: '兑换码批次、套餐目录与兑换运营',
                     modules: ['points']
                 }
             ]
@@ -154,7 +154,7 @@
             anyOf: ['users.manage']
         },
         points: {
-            label: '积分管理',
+            label: '兑换码/套餐',
             anyOf: ['points.manage']
         },
         tickets: {
@@ -525,6 +525,16 @@
                 element.addEventListener('click', (event) => {
                     event.preventDefault();
                     event.stopPropagation();
+
+                    const action = String(element.dataset.adminAction || '').trim();
+                    if (action && window.AdminSiteFilter?.actionRequiresWritableSite?.(action)) {
+                        const writableSite = window.AdminSiteFilter.requireWritableSite({ action });
+                        if (!writableSite) {
+                            return;
+                        }
+                        element.dataset.adminWritableSite = writableSite;
+                    }
+
                     handler(element, event);
                 });
             });
@@ -577,6 +587,15 @@
             form.addEventListener('submit', async (event) => {
                 event.preventDefault();
                 event.stopPropagation();
+
+                if (window.AdminSiteFilter?.formRequiresWritableSite?.(formId)) {
+                    const writableSite = window.AdminSiteFilter.requireWritableSite({ formId });
+                    if (!writableSite) {
+                        return;
+                    }
+                    form.dataset.adminWritableSite = writableSite;
+                }
+
                 await handler(event);
             });
         };

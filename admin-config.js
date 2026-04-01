@@ -2041,7 +2041,7 @@ function syncOpsAlertUnifiedSummaryDraftFromSelection(config = normalizeOpsAlert
     opsAlertUnifiedSummaryDraftDirty = false;
 }
 
-function collectOpsAlertUnifiedSummaryDraftFromForm() {
+function buildLocalOpsAlertUnifiedSummaryDraft() {
     return {
         summary_enabled: document.getElementById('opsAlertUnifiedSummaryDraftEnabled')?.checked === true,
         work_hours_only_enabled: document.getElementById('opsAlertUnifiedSummaryDraftWorkHoursOnlyEnabled')?.checked === true,
@@ -2077,24 +2077,31 @@ function collectOpsAlertUnifiedSummaryDraftFromForm() {
     };
 }
 
-function getOpsAlertSummaryModeHintText(section = {}, options = {}) {
-    const monitorEnabled = options.monitorEnabled !== false;
-    const summaryEnabled = options.summaryEnabled !== false;
-    if (!monitorEnabled) {
-        return '当前主监控未启用，开启后才会按这里的节奏统一发送。';
-    }
-    if (!summaryEnabled) {
-        return '当前未启用定时汇总，开启后才会按这里的节奏统一发送。';
+function resolveOpsAlertUnifiedSummaryDraft() {
+    if (typeof window.collectAdminWorkbenchOpsAlertUnifiedSummaryDraft === 'function') {
+        return window.collectAdminWorkbenchOpsAlertUnifiedSummaryDraft({}, {
+            document,
+            ids: {
+                summaryEnabled: 'opsAlertUnifiedSummaryDraftEnabled',
+                workHoursOnlyEnabled: 'opsAlertUnifiedSummaryDraftWorkHoursOnlyEnabled',
+                summaryScheduleMode: 'opsAlertUnifiedSummaryDraftScheduleMode',
+                summaryWindowMinutes: 'opsAlertUnifiedSummaryDraftWindowMinutes',
+                summaryHourlyMinute: 'opsAlertUnifiedSummaryDraftHourlyMinute',
+                summaryDailyHour: 'opsAlertUnifiedSummaryDraftDailyHour',
+                summaryDailyMinute: 'opsAlertUnifiedSummaryDraftDailyMinute',
+                summaryMaxItems: 'opsAlertUnifiedSummaryDraftMaxItems'
+            },
+            normalizeScheduleMode: normalizeOpsAlertSummaryScheduleMode,
+            clamp,
+            toWholeNumber
+        });
     }
 
-    const scheduleMode = normalizeOpsAlertSummaryScheduleMode(section.summary_schedule_mode, 'rolling_window');
-    if (scheduleMode === 'hourly') {
-        return `当前会在每小时 ${formatOpsAlertTimeNumber(section.summary_hourly_minute, 0, 59)} 分统一发送。`;
-    }
-    if (scheduleMode === 'daily') {
-        return `当前会在每天 ${formatOpsAlertHourMinute(section.summary_daily_hour, section.summary_daily_minute)} 统一发送。`;
-    }
-    return `当前会把 ${formatVerifyMonitorInteger(section.summary_window_minutes || 0)} 分钟内的告警先合并，在窗口结束后统一发送。`;
+    return buildLocalOpsAlertUnifiedSummaryDraft();
+}
+
+function collectOpsAlertUnifiedSummaryDraftFromForm() {
+    return resolveOpsAlertUnifiedSummaryDraft();
 }
 
 function setOpsAlertSummaryModeRowVisibility(inputId, isVisible) {
@@ -2123,62 +2130,144 @@ function ensureOpsAlertSummaryModeHintElement(ids = {}) {
     return hintEl;
 }
 
-function applyOpsAlertSummaryModePresentation(section = {}, ids = {}, options = {}) {
-    const scheduleMode = normalizeOpsAlertSummaryScheduleMode(section.summary_schedule_mode, 'rolling_window');
-    setOpsAlertSummaryModeRowVisibility(ids.summaryWindowMinutes, scheduleMode === 'rolling_window');
-    setOpsAlertSummaryModeRowVisibility(ids.summaryHourlyMinute, scheduleMode === 'hourly');
-    setOpsAlertSummaryModeRowVisibility(ids.summaryDailyHour, scheduleMode === 'daily');
-    setOpsAlertSummaryModeRowVisibility(ids.summaryDailyMinute, scheduleMode === 'daily');
+function applyOpsAlertSummaryModeControlStateToDom(controlState = {}, ids = {}, options = {}) {
+    const normalizedIds = {
+        ...ids,
+        summaryModeHint: ids.summaryModeHint || `${ids.summaryScheduleMode || 'opsAlertSummaryMode'}Hint`
+    };
+    const valueSource = options.valueSource && typeof options.valueSource === 'object'
+        ? options.valueSource
+        : null;
 
-    const hintEl = ensureOpsAlertSummaryModeHintElement(ids);
+    const scheduleModeInput = document.getElementById(normalizedIds.summaryScheduleMode);
+    if (scheduleModeInput) {
+        if (valueSource && valueSource.summary_schedule_mode !== undefined) {
+            scheduleModeInput.value = String(valueSource.summary_schedule_mode || 'rolling_window');
+        }
+        scheduleModeInput.disabled = controlState.scheduleModeDisabled === true;
+    }
+
+    if (options.populateAllValues === true && valueSource) {
+        const inputValuePairs = [
+            [normalizedIds.summaryWindowMinutes, valueSource.summary_window_minutes],
+            [normalizedIds.summaryHourlyMinute, valueSource.summary_hourly_minute],
+            [normalizedIds.summaryDailyHour, valueSource.summary_daily_hour],
+            [normalizedIds.summaryDailyMinute, valueSource.summary_daily_minute],
+            [normalizedIds.summaryMaxItems, valueSource.summary_max_items]
+        ];
+        inputValuePairs.forEach(([id, value]) => {
+            const input = document.getElementById(id);
+            if (input && value !== undefined && value !== null) {
+                input.value = String(value);
+            }
+        });
+    }
+
+    const rollingWindowInput = document.getElementById(normalizedIds.summaryWindowMinutes);
+    if (rollingWindowInput) {
+        rollingWindowInput.disabled = controlState.summaryWindowMinutesDisabled === true;
+    }
+    const hourlyMinuteInput = document.getElementById(normalizedIds.summaryHourlyMinute);
+    if (hourlyMinuteInput) {
+        hourlyMinuteInput.disabled = controlState.summaryHourlyMinuteDisabled === true;
+    }
+    const dailyHourInput = document.getElementById(normalizedIds.summaryDailyHour);
+    if (dailyHourInput) {
+        dailyHourInput.disabled = controlState.summaryDailyHourDisabled === true;
+    }
+    const dailyMinuteInput = document.getElementById(normalizedIds.summaryDailyMinute);
+    if (dailyMinuteInput) {
+        dailyMinuteInput.disabled = controlState.summaryDailyMinuteDisabled === true;
+    }
+    const summaryMaxItemsInput = document.getElementById(normalizedIds.summaryMaxItems);
+    if (summaryMaxItemsInput) {
+        summaryMaxItemsInput.disabled = controlState.summaryMaxItemsDisabled === true;
+    }
+
+    setOpsAlertSummaryModeRowVisibility(normalizedIds.summaryWindowMinutes, controlState.rows?.summaryWindowMinutesVisible === true);
+    setOpsAlertSummaryModeRowVisibility(normalizedIds.summaryHourlyMinute, controlState.rows?.summaryHourlyMinuteVisible === true);
+    setOpsAlertSummaryModeRowVisibility(normalizedIds.summaryDailyHour, controlState.rows?.summaryDailyHourVisible === true);
+    setOpsAlertSummaryModeRowVisibility(normalizedIds.summaryDailyMinute, controlState.rows?.summaryDailyMinuteVisible === true);
+
+    const hintEl = ensureOpsAlertSummaryModeHintElement(normalizedIds);
     const hintCopyEl = hintEl?.querySelector('span');
     if (hintCopyEl) {
-        hintCopyEl.textContent = getOpsAlertSummaryModeHintText(section, options);
+        hintCopyEl.textContent = controlState.hintText || '';
     }
     if (hintEl) {
-        hintEl.classList.toggle('is-disabled', options.summaryEnabled === false || options.monitorEnabled === false);
+        hintEl.classList.toggle('is-disabled', controlState.hintDisabled === true);
     }
+}
+
+function buildLocalOpsAlertSummaryModeControlState(monitorConfig = {}, options = {}) {
+    const monitorEnabled = options.monitorEnabled === undefined
+        ? monitorConfig.enabled === true
+        : options.monitorEnabled === true;
+    const summaryEnabled = options.summaryEnabled === undefined
+        ? monitorConfig.summary_enabled === true
+        : options.summaryEnabled === true;
+    const scheduleMode = normalizeOpsAlertSummaryScheduleMode(monitorConfig.summary_schedule_mode, 'rolling_window');
+
+    return {
+        scheduleMode,
+        scheduleModeDisabled: !(monitorEnabled && summaryEnabled),
+        summaryMaxItemsDisabled: !(monitorEnabled && summaryEnabled),
+        summaryWindowMinutesDisabled: !(monitorEnabled && summaryEnabled) || scheduleMode !== 'rolling_window',
+        summaryHourlyMinuteDisabled: !(monitorEnabled && summaryEnabled) || scheduleMode !== 'hourly',
+        summaryDailyHourDisabled: !(monitorEnabled && summaryEnabled) || scheduleMode !== 'daily',
+        summaryDailyMinuteDisabled: !(monitorEnabled && summaryEnabled) || scheduleMode !== 'daily',
+        rows: {
+            summaryWindowMinutesVisible: scheduleMode === 'rolling_window',
+            summaryHourlyMinuteVisible: scheduleMode === 'hourly',
+            summaryDailyHourVisible: scheduleMode === 'daily',
+            summaryDailyMinuteVisible: scheduleMode === 'daily'
+        },
+        hintText: '',
+        hintDisabled: !(monitorEnabled && summaryEnabled)
+    };
+}
+
+function resolveOpsAlertSummaryModeControlState(monitorConfig = {}, options = {}) {
+    const monitorEnabled = options.monitorEnabled === undefined
+        ? monitorConfig.enabled === true
+        : options.monitorEnabled === true;
+    const summaryEnabled = options.summaryEnabled === undefined
+        ? monitorConfig.summary_enabled === true
+        : options.summaryEnabled === true;
+
+    if (typeof window.buildAdminWorkbenchOpsAlertSummaryModeControlState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertSummaryModeControlState(monitorConfig, {
+            normalizeScheduleMode: normalizeOpsAlertSummaryScheduleMode,
+            getHintText: typeof window.buildAdminWorkbenchOpsAlertSummaryModeHintText === 'function'
+                ? window.buildAdminWorkbenchOpsAlertSummaryModeHintText
+                : undefined,
+            formatCount: formatVerifyMonitorInteger,
+            formatTimeNumber: formatOpsAlertTimeNumber,
+            formatHourMinute: formatOpsAlertHourMinute,
+            monitorEnabled,
+            summaryEnabled
+        });
+    }
+
+    return buildLocalOpsAlertSummaryModeControlState(monitorConfig, {
+        monitorEnabled,
+        summaryEnabled
+    });
 }
 
 function applyOpsAlertUnifiedSummaryDraftControls() {
     const draft = collectOpsAlertUnifiedSummaryDraftFromForm();
     const summaryEnabled = draft.summary_enabled === true;
-    const scheduleModeInput = document.getElementById(OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS.summaryScheduleMode);
-    const rollingWindowInput = document.getElementById(OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS.summaryWindowMinutes);
-    const hourlyMinuteInput = document.getElementById(OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS.summaryHourlyMinute);
-    const dailyHourInput = document.getElementById(OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS.summaryDailyHour);
-    const dailyMinuteInput = document.getElementById(OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS.summaryDailyMinute);
-    const summaryMaxItemsInput = document.getElementById(OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS.summaryMaxItems);
     const selectedCount = getOpsAlertSummaryOrchestrationSelectedDefinitions().length;
     const applyButton = document.querySelector('[data-admin-action="settings-apply-ops-alert-unified-summary-draft"]');
-
-    if (scheduleModeInput) {
-        scheduleModeInput.value = draft.summary_schedule_mode;
-        scheduleModeInput.disabled = !summaryEnabled;
-    }
-    if (rollingWindowInput) {
-        rollingWindowInput.value = String(draft.summary_window_minutes);
-        rollingWindowInput.disabled = !summaryEnabled || draft.summary_schedule_mode !== 'rolling_window';
-    }
-    if (hourlyMinuteInput) {
-        hourlyMinuteInput.value = String(draft.summary_hourly_minute);
-        hourlyMinuteInput.disabled = !summaryEnabled || draft.summary_schedule_mode !== 'hourly';
-    }
-    if (dailyHourInput) {
-        dailyHourInput.value = String(draft.summary_daily_hour);
-        dailyHourInput.disabled = !summaryEnabled || draft.summary_schedule_mode !== 'daily';
-    }
-    if (dailyMinuteInput) {
-        dailyMinuteInput.value = String(draft.summary_daily_minute);
-        dailyMinuteInput.disabled = !summaryEnabled || draft.summary_schedule_mode !== 'daily';
-    }
-    if (summaryMaxItemsInput) {
-        summaryMaxItemsInput.value = String(draft.summary_max_items);
-        summaryMaxItemsInput.disabled = !summaryEnabled;
-    }
-    applyOpsAlertSummaryModePresentation(draft, OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS, {
+    const sharedSummaryModeState = resolveOpsAlertSummaryModeControlState(draft, {
         monitorEnabled: true,
         summaryEnabled
+    });
+
+    applyOpsAlertSummaryModeControlStateToDom(sharedSummaryModeState, OPS_ALERT_UNIFIED_SUMMARY_DRAFT_FIELD_IDS, {
+        valueSource: draft,
+        populateAllValues: true
     });
     if (applyButton) {
         applyButton.disabled = selectedCount <= 0;
@@ -4167,62 +4256,7 @@ function renderUnlockPricingConfig() {
 }
 
 function renderPackagesConfig() {
-    const packages = systemConfigCache['packages'] || [];
     const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
-    const tbody = document.getElementById('packagesTableBody');
-    if (!tbody) return;
-
-    tbody.innerHTML = packages.map((pkg, index) => `
-        <tr data-index="${index}">
-            <td>
-                <input
-                    type="text"
-                    value="${escapeConfigHtml(pkg.name)}"
-                    data-admin-change-action="settings-update-package-field"
-                    data-package-index="${index}"
-                    data-package-field="name"
-                    data-package-value-type="string">
-            </td>
-            <td>
-                <input
-                    type="number"
-                    value="${escapeConfigHtml(pkg.points)}"
-                    data-admin-change-action="settings-update-package-field"
-                    data-package-index="${index}"
-                    data-package-field="points"
-                    data-package-value-type="int">
-            </td>
-            <td>
-                <input
-                    type="number"
-                    value="${escapeConfigHtml(pkg.bonus || 0)}"
-                    placeholder="0"
-                    data-admin-change-action="settings-update-package-field"
-                    data-package-index="${index}"
-                    data-package-field="bonus"
-                    data-package-value-type="int">
-            </td>
-            <td>
-                <input
-                    type="number"
-                    value="${pkg.price == null ? '' : escapeConfigHtml(pkg.price)}"
-                    step="0.1"
-                    data-admin-change-action="settings-update-package-field"
-                    data-package-index="${index}"
-                    data-package-field="price"
-                    data-package-value-type="float">
-            </td>
-            <td>
-                <div class="status-toggle ${pkg.enabled ? 'active' : ''}" data-admin-action="settings-toggle-package-status" data-package-index="${index}"></div>
-            </td>
-            <td>
-                <button class="btn-delete" type="button" data-admin-action="settings-delete-package" data-package-index="${index}">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </td>
-        </tr>
-    `).join('');
-
     const customRechargeToggle = document.getElementById('customRechargeStatusToggle');
     if (customRechargeToggle) {
         customRechargeToggle.classList.toggle('active', rechargeOptions.custom_amount_enabled);
@@ -4231,30 +4265,6 @@ function renderPackagesConfig() {
     const mockPaymentToggle = document.getElementById('mockPaymentStatusToggle');
     if (mockPaymentToggle) {
         mockPaymentToggle.classList.toggle('active', rechargeOptions.mock_payment_enabled);
-    }
-}
-
-function normalizePackageFieldValue(field, value, fallback) {
-    switch (field) {
-        case 'name':
-            return String(value ?? '').trim();
-        case 'points':
-        case 'bonus': {
-            const parsed = parseInt(value ?? '', 10);
-            return Math.max(0, Number.isFinite(parsed) ? parsed : (Number.isFinite(fallback) ? fallback : 0));
-        }
-        case 'price': {
-            const trimmed = String(value ?? '').trim();
-            if (!trimmed) {
-                return null;
-            }
-
-            const parsed = Number(trimmed);
-            const normalized = Number.isFinite(parsed) ? parsed : fallback;
-            return Number.isFinite(normalized) ? Math.max(0, Math.round(normalized * 100) / 100) : null;
-        }
-        default:
-            return value;
     }
 }
 
@@ -5848,8 +5858,7 @@ function setOpsAlertStrategyBadgeState(elementId, label, tone = 'neutral') {
     element.dataset.tone = tone;
 }
 
-function renderOpsAlertStrategySummary(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
-    const normalizedConfig = normalizeOpsAlertConfig(config);
+function buildLocalOpsAlertStrategySummaryState(normalizedConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const defaults = getDefaultOpsAlertConfig();
     const temporaryMuteState = getOpsAlertTemporaryMuteState(normalizedConfig);
     const quietHours = normalizedConfig.quiet_hours || defaults.quiet_hours;
@@ -5892,122 +5901,172 @@ function renderOpsAlertStrategySummary(config = normalizeOpsAlertConfig(systemCo
     )).length;
     const totalRoutingCount = OPS_ALERT_ROUTING_DEFINITIONS.length;
 
-    const muteBadgeLabel = temporaryMuteState.active
-        ? '临时静默中'
-        : totalActiveMuteCount > 0
-            ? `生效 ${formatVerifyMonitorInteger(totalActiveMuteCount)} 项`
-            : quietHours.enabled
-                ? '夜间静默开启'
-                : '按需启用';
-    const muteBadgeTone = totalActiveMuteCount > 0 || quietHours.enabled ? 'warning' : 'neutral';
-    const muteSummaryText = temporaryMuteState.active
-        ? `当前外发已静默到 ${temporaryMuteState.untilLabel}，适合维护窗口快速止噪。`
-        : totalActiveMuteCount > 0
-            ? `当前有 ${formatVerifyMonitorInteger(totalActiveMuteCount)} 项静默策略生效，建议只保留真正需要降噪的规则。`
-            : totalExpiredMuteCount > 0
-                ? `检测到 ${formatVerifyMonitorInteger(totalExpiredMuteCount)} 条过期静默记录，建议清理旧时间，减少误判。`
-                : '维护窗口、夜间降噪和单类静默会汇总在这里。';
-    const mutePanelTipText = totalActiveMuteCount > 0
-        ? `当前有 ${formatVerifyMonitorInteger(totalActiveMuteCount)} 项静默策略生效，优先处理仍在生效的规则。`
-        : '集中管理临时静默、夜间静默和分组降噪。';
+    return {
+        mute: {
+            badgeLabel: temporaryMuteState.active
+                ? '临时静默中'
+                : totalActiveMuteCount > 0
+                    ? `生效 ${formatVerifyMonitorInteger(totalActiveMuteCount)} 项`
+                    : quietHours.enabled
+                        ? '夜间静默开启'
+                        : '按需启用',
+            badgeTone: totalActiveMuteCount > 0 || quietHours.enabled ? 'warning' : 'neutral',
+            summaryTipText: temporaryMuteState.active
+                ? `当前外发已静默到 ${temporaryMuteState.untilLabel}，适合维护窗口快速止噪。`
+                : totalActiveMuteCount > 0
+                    ? `当前有 ${formatVerifyMonitorInteger(totalActiveMuteCount)} 项静默策略生效，建议只保留真正需要降噪的规则。`
+                    : totalExpiredMuteCount > 0
+                        ? `检测到 ${formatVerifyMonitorInteger(totalExpiredMuteCount)} 条过期静默记录，建议清理旧时间，减少误判。`
+                        : '维护窗口、夜间降噪和单类静默会汇总在这里。',
+            panelTipText: totalActiveMuteCount > 0
+                ? `当前有 ${formatVerifyMonitorInteger(totalActiveMuteCount)} 项静默策略生效，优先处理仍在生效的规则。`
+                : '集中管理临时静默、夜间静默和分组降噪。',
+            temporaryLabel: temporaryMuteState.active
+                ? `至 ${temporaryMuteState.untilLabel}`
+                : temporaryMuteState.expired
+                    ? '已过期'
+                    : '未设置',
+            quietHoursLabel: quietHours.enabled
+                ? formatOpsAlertHourRange(quietHours.start_hour, quietHours.end_hour)
+                : '已关闭',
+            rulesLabel: `${formatVerifyMonitorInteger(activeTypeCount)} / ${formatVerifyMonitorInteger(activeModuleCount)} 生效`,
+            typeMetaLabel: `共 ${formatVerifyMonitorInteger(OPS_ALERT_MUTE_RULE_TYPE_DEFINITIONS.length)} 类，${formatVerifyMonitorInteger(activeTypeCount)} 类生效`,
+            moduleMetaLabel: `共 ${formatVerifyMonitorInteger(OPS_ALERT_MUTE_RULE_MODULE_DEFINITIONS.length)} 类，${formatVerifyMonitorInteger(activeModuleCount)} 类生效`,
+            typeTabLabel: `${formatVerifyMonitorInteger(activeTypeCount)} 生效`,
+            moduleTabLabel: `${formatVerifyMonitorInteger(activeModuleCount)} 生效`
+        },
+        routing: {
+            badgeLabel: routingCustomizedCount > 0
+                ? `已定制 ${formatVerifyMonitorInteger(routingCustomizedCount)} 类`
+                : '全通道默认',
+            badgeTone: routingCustomizedCount > 0 ? 'success' : 'neutral',
+            summaryTipText: routingCustomizedCount > 0
+                ? `已有 ${formatVerifyMonitorInteger(routingCustomizedCount)} 类事件被改成非默认路由，矩阵更适合快速复核。`
+                : '当前 14 类事件都保留 Telegram、飞书、邮件三通道默认投递。',
+            panelTipText: routingCustomizedCount > 0
+                ? `已对 ${formatVerifyMonitorInteger(routingCustomizedCount)} 类事件做了分流，建议重点检查核心告警是否还保留至少一条主通道。`
+                : '把路由改成矩阵后，可以更快看清哪类告警发到哪个通道。',
+            matrixMetaLabel: `共 ${formatVerifyMonitorInteger(totalRoutingCount)} 类事件，已定制 ${formatVerifyMonitorInteger(routingCustomizedCount)} 类`,
+            telegramLabel: `${formatVerifyMonitorInteger(routingChannelCounts.telegram)} / ${formatVerifyMonitorInteger(totalRoutingCount)}`,
+            feishuLabel: `${formatVerifyMonitorInteger(routingChannelCounts.feishu)} / ${formatVerifyMonitorInteger(totalRoutingCount)}`,
+            emailLabel: `${formatVerifyMonitorInteger(routingChannelCounts.email)} / ${formatVerifyMonitorInteger(totalRoutingCount)}`
+        },
+        work_hours: {
+            badgeLabel: workHours.enabled
+                ? '已启用'
+                : workHoursOnlyCount > 0
+                    ? '待启用'
+                    : '未启用',
+            badgeTone: workHours.enabled ? 'success' : (workHoursOnlyCount > 0 ? 'warning' : 'neutral'),
+            summaryTipText: workHoursOnlyCount > 0
+                ? `当前有 ${formatVerifyMonitorInteger(workHoursOnlyCount)} 类告警启用了“仅工作时间通知”。`
+                : '只影响开启“仅工作时间通知”的低优先级告警。',
+            panelTipText: workHours.enabled
+                ? `当前工作时段为 ${formatOpsAlertHourRange(workHours.start_hour, workHours.end_hour)}，会影响 ${formatVerifyMonitorInteger(workHoursOnlyCount)} 类告警。`
+                : '这组时间只影响开启“仅工作时间通知”的低优先级告警。',
+            rangeLabel: formatOpsAlertHourRange(workHours.start_hour, workHours.end_hour),
+            timezoneLabel: workHours.timezone || defaults.work_hours.timezone,
+            rulesLabel: `${formatVerifyMonitorInteger(workHoursOnlyCount)} 类`
+        }
+    };
+}
 
-    setOpsAlertStrategyBadgeState('opsAlertStrategySummaryMuteBadge', muteBadgeLabel, muteBadgeTone);
-    setOpsAlertStrategyBadgeState('opsAlertStrategyPanelMuteBadge', muteBadgeLabel, muteBadgeTone);
-    setOpsAlertInfoTipText('opsAlertStrategySummaryMuteTip', muteSummaryText);
-    setOpsAlertInfoTipText('opsAlertStrategyPanelMuteTip', mutePanelTipText);
+function resolveOpsAlertStrategySummaryState(normalizedConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    if (typeof window.buildAdminWorkbenchOpsAlertStrategySummaryState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertStrategySummaryState(normalizedConfig, {
+            normalizeConfig: normalizeOpsAlertConfig,
+            getDefaultConfig: getDefaultOpsAlertConfig,
+            getTemporaryMuteState: getOpsAlertTemporaryMuteState,
+            getMuteRuleState: getOpsAlertMuteRuleState,
+            typeDefinitions: OPS_ALERT_MUTE_RULE_TYPE_DEFINITIONS,
+            moduleDefinitions: OPS_ALERT_MUTE_RULE_MODULE_DEFINITIONS,
+            routingDefinitions: OPS_ALERT_ROUTING_DEFINITIONS,
+            summaryDefinitions: OPS_ALERT_SUMMARY_ORCHESTRATION_DEFINITIONS,
+            formatCount: formatVerifyMonitorInteger,
+            formatHourRange: formatOpsAlertHourRange
+        });
+    }
+
+    return buildLocalOpsAlertStrategySummaryState(normalizedConfig);
+}
+
+function renderOpsAlertStrategySummary(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    const summaryState = resolveOpsAlertStrategySummaryState(normalizedConfig);
+    const fallbackSummaryState = buildLocalOpsAlertStrategySummaryState(normalizedConfig);
+    const muteSummary = summaryState?.mute || fallbackSummaryState.mute;
+    const routingSummary = summaryState?.routing || fallbackSummaryState.routing;
+    const workHoursSummary = summaryState?.work_hours || fallbackSummaryState.work_hours;
+
+    setOpsAlertStrategyBadgeState('opsAlertStrategySummaryMuteBadge', muteSummary.badgeLabel, muteSummary.badgeTone);
+    setOpsAlertStrategyBadgeState('opsAlertStrategyPanelMuteBadge', muteSummary.badgeLabel, muteSummary.badgeTone);
+    setOpsAlertInfoTipText('opsAlertStrategySummaryMuteTip', muteSummary.summaryTipText);
+    setOpsAlertInfoTipText('opsAlertStrategyPanelMuteTip', muteSummary.panelTipText);
     const muteTemporaryEl = document.getElementById('opsAlertStrategySummaryMuteTemporary');
     if (muteTemporaryEl) {
-        muteTemporaryEl.textContent = temporaryMuteState.active
-            ? `至 ${temporaryMuteState.untilLabel}`
-            : temporaryMuteState.expired
-                ? '已过期'
-                : '未设置';
+        muteTemporaryEl.textContent = muteSummary.temporaryLabel;
     }
     const muteQuietHoursEl = document.getElementById('opsAlertStrategySummaryMuteQuietHours');
     if (muteQuietHoursEl) {
-        muteQuietHoursEl.textContent = quietHours.enabled
-            ? formatOpsAlertHourRange(quietHours.start_hour, quietHours.end_hour)
-            : '已关闭';
+        muteQuietHoursEl.textContent = muteSummary.quietHoursLabel;
     }
     const muteRulesEl = document.getElementById('opsAlertStrategySummaryMuteRules');
     if (muteRulesEl) {
-        muteRulesEl.textContent = `${formatVerifyMonitorInteger(activeTypeCount)} / ${formatVerifyMonitorInteger(activeModuleCount)} 生效`;
+        muteRulesEl.textContent = muteSummary.rulesLabel;
     }
     const typeMuteMetaEl = document.getElementById('opsAlertTypeMutePanelMeta');
     if (typeMuteMetaEl) {
-        typeMuteMetaEl.textContent = `共 ${formatVerifyMonitorInteger(OPS_ALERT_MUTE_RULE_TYPE_DEFINITIONS.length)} 类，${formatVerifyMonitorInteger(activeTypeCount)} 类生效`;
+        typeMuteMetaEl.textContent = muteSummary.typeMetaLabel;
     }
     const moduleMuteMetaEl = document.getElementById('opsAlertModuleMutePanelMeta');
     if (moduleMuteMetaEl) {
-        moduleMuteMetaEl.textContent = `共 ${formatVerifyMonitorInteger(OPS_ALERT_MUTE_RULE_MODULE_DEFINITIONS.length)} 类，${formatVerifyMonitorInteger(activeModuleCount)} 类生效`;
+        moduleMuteMetaEl.textContent = muteSummary.moduleMetaLabel;
     }
     const typeTabCountEl = document.getElementById('opsAlertMuteTabTypesCount');
     if (typeTabCountEl) {
-        typeTabCountEl.textContent = `${formatVerifyMonitorInteger(activeTypeCount)} 生效`;
+        typeTabCountEl.textContent = muteSummary.typeTabLabel;
     }
     const moduleTabCountEl = document.getElementById('opsAlertMuteTabModulesCount');
     if (moduleTabCountEl) {
-        moduleTabCountEl.textContent = `${formatVerifyMonitorInteger(activeModuleCount)} 生效`;
+        moduleTabCountEl.textContent = muteSummary.moduleTabLabel;
     }
 
-    const routingBadgeLabel = routingCustomizedCount > 0
-        ? `已定制 ${formatVerifyMonitorInteger(routingCustomizedCount)} 类`
-        : '全通道默认';
-    const routingBadgeTone = routingCustomizedCount > 0 ? 'success' : 'neutral';
-    const routingSummaryTipText = routingCustomizedCount > 0
-        ? `已有 ${formatVerifyMonitorInteger(routingCustomizedCount)} 类事件被改成非默认路由，矩阵更适合快速复核。`
-        : '当前 14 类事件都保留 Telegram、飞书、邮件三通道默认投递。';
-    const routingPanelTipText = routingCustomizedCount > 0
-        ? `已对 ${formatVerifyMonitorInteger(routingCustomizedCount)} 类事件做了分流，建议重点检查核心告警是否还保留至少一条主通道。`
-        : '把路由改成矩阵后，可以更快看清哪类告警发到哪个通道。';
-    setOpsAlertStrategyBadgeState('opsAlertStrategySummaryRoutingBadge', routingBadgeLabel, routingBadgeTone);
-    setOpsAlertStrategyBadgeState('opsAlertStrategyPanelRoutingBadge', routingBadgeLabel, routingBadgeTone);
-    setOpsAlertInfoTipText('opsAlertStrategySummaryRoutingTip', routingSummaryTipText);
-    setOpsAlertInfoTipText('opsAlertStrategyPanelRoutingTip', routingPanelTipText);
+    setOpsAlertStrategyBadgeState('opsAlertStrategySummaryRoutingBadge', routingSummary.badgeLabel, routingSummary.badgeTone);
+    setOpsAlertStrategyBadgeState('opsAlertStrategyPanelRoutingBadge', routingSummary.badgeLabel, routingSummary.badgeTone);
+    setOpsAlertInfoTipText('opsAlertStrategySummaryRoutingTip', routingSummary.summaryTipText);
+    setOpsAlertInfoTipText('opsAlertStrategyPanelRoutingTip', routingSummary.panelTipText);
     const routingMatrixMetaEl = document.getElementById('opsAlertRoutingMatrixMeta');
     if (routingMatrixMetaEl) {
-        routingMatrixMetaEl.textContent = `共 ${formatVerifyMonitorInteger(totalRoutingCount)} 类事件，已定制 ${formatVerifyMonitorInteger(routingCustomizedCount)} 类`;
+        routingMatrixMetaEl.textContent = routingSummary.matrixMetaLabel;
     }
     const routingTelegramEl = document.getElementById('opsAlertStrategySummaryRoutingTelegram');
     if (routingTelegramEl) {
-        routingTelegramEl.textContent = `${formatVerifyMonitorInteger(routingChannelCounts.telegram)} / ${formatVerifyMonitorInteger(totalRoutingCount)}`;
+        routingTelegramEl.textContent = routingSummary.telegramLabel;
     }
     const routingFeishuEl = document.getElementById('opsAlertStrategySummaryRoutingFeishu');
     if (routingFeishuEl) {
-        routingFeishuEl.textContent = `${formatVerifyMonitorInteger(routingChannelCounts.feishu)} / ${formatVerifyMonitorInteger(totalRoutingCount)}`;
+        routingFeishuEl.textContent = routingSummary.feishuLabel;
     }
     const routingEmailEl = document.getElementById('opsAlertStrategySummaryRoutingEmail');
     if (routingEmailEl) {
-        routingEmailEl.textContent = `${formatVerifyMonitorInteger(routingChannelCounts.email)} / ${formatVerifyMonitorInteger(totalRoutingCount)}`;
+        routingEmailEl.textContent = routingSummary.emailLabel;
     }
 
-    const workHoursBadgeTone = workHours.enabled ? 'success' : (workHoursOnlyCount > 0 ? 'warning' : 'neutral');
-    const workHoursBadgeLabel = workHours.enabled
-        ? '已启用'
-        : workHoursOnlyCount > 0
-            ? '待启用'
-            : '未启用';
-    const workHoursSummaryTipText = workHoursOnlyCount > 0
-        ? `当前有 ${formatVerifyMonitorInteger(workHoursOnlyCount)} 类告警启用了“仅工作时间通知”。`
-        : '只影响开启“仅工作时间通知”的低优先级告警。';
-    const workHoursPanelTipText = workHours.enabled
-        ? `当前工作时段为 ${formatOpsAlertHourRange(workHours.start_hour, workHours.end_hour)}，会影响 ${formatVerifyMonitorInteger(workHoursOnlyCount)} 类告警。`
-        : '这组时间只影响开启“仅工作时间通知”的低优先级告警。';
-    setOpsAlertStrategyBadgeState('opsAlertStrategySummaryWorkHoursBadge', workHoursBadgeLabel, workHoursBadgeTone);
-    setOpsAlertStrategyBadgeState('opsAlertStrategyPanelWorkHoursBadge', workHoursBadgeLabel, workHoursBadgeTone);
-    setOpsAlertInfoTipText('opsAlertStrategySummaryWorkHoursTip', workHoursSummaryTipText);
-    setOpsAlertInfoTipText('opsAlertStrategyPanelWorkHoursTip', workHoursPanelTipText);
+    setOpsAlertStrategyBadgeState('opsAlertStrategySummaryWorkHoursBadge', workHoursSummary.badgeLabel, workHoursSummary.badgeTone);
+    setOpsAlertStrategyBadgeState('opsAlertStrategyPanelWorkHoursBadge', workHoursSummary.badgeLabel, workHoursSummary.badgeTone);
+    setOpsAlertInfoTipText('opsAlertStrategySummaryWorkHoursTip', workHoursSummary.summaryTipText);
+    setOpsAlertInfoTipText('opsAlertStrategyPanelWorkHoursTip', workHoursSummary.panelTipText);
     const workHoursRangeEl = document.getElementById('opsAlertStrategySummaryWorkHoursRange');
     if (workHoursRangeEl) {
-        workHoursRangeEl.textContent = formatOpsAlertHourRange(workHours.start_hour, workHours.end_hour);
+        workHoursRangeEl.textContent = workHoursSummary.rangeLabel;
     }
     const workHoursTimezoneEl = document.getElementById('opsAlertStrategySummaryWorkHoursTimezone');
     if (workHoursTimezoneEl) {
-        workHoursTimezoneEl.textContent = workHours.timezone || defaults.work_hours.timezone;
+        workHoursTimezoneEl.textContent = workHoursSummary.timezoneLabel;
     }
     const workHoursRulesEl = document.getElementById('opsAlertStrategySummaryWorkHoursRules');
     if (workHoursRulesEl) {
-        workHoursRulesEl.textContent = `${formatVerifyMonitorInteger(workHoursOnlyCount)} 类`;
+        workHoursRulesEl.textContent = workHoursSummary.rulesLabel;
     }
 }
 
@@ -6211,49 +6270,71 @@ function getOpsAlertTemporaryMuteState(config = normalizeOpsAlertConfig(systemCo
     };
 }
 
+function resolveOpsAlertStrategyControlState(normalizedConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    if (typeof window.buildAdminWorkbenchOpsAlertStrategyControlState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertStrategyControlState(normalizedConfig, {
+            normalizeConfig: normalizeOpsAlertConfig,
+            getDefaultConfig: getDefaultOpsAlertConfig,
+            getTemporaryMuteState: getOpsAlertTemporaryMuteState,
+            formatDateTimeLocalInputValue,
+            formatHourRangePreview: formatOpsAlertHourRangePreview
+        });
+    }
+
+    return null;
+}
+
 function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     ensureOpsAlertStrategyLayout();
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const temporaryMute = normalizedConfig.temporary_mute || getDefaultOpsAlertConfig().temporary_mute;
     const temporaryMuteState = getOpsAlertTemporaryMuteState(normalizedConfig);
+    const sharedControlState = resolveOpsAlertStrategyControlState(normalizedConfig);
     const temporaryMuteUntilInput = document.getElementById('opsAlertTemporaryMuteUntil');
     if (temporaryMuteUntilInput) {
-        temporaryMuteUntilInput.value = formatDateTimeLocalInputValue(temporaryMute.until || '');
+        temporaryMuteUntilInput.value = sharedControlState?.temporaryMute?.untilValue || formatDateTimeLocalInputValue(temporaryMute.until || '');
     }
 
     const temporaryMuteAllowCriticalToggle = document.getElementById('opsAlertTemporaryMuteAllowCriticalToggle');
     if (temporaryMuteAllowCriticalToggle) {
-        temporaryMuteAllowCriticalToggle.classList.toggle('active', temporaryMute.allow_critical !== false);
+        temporaryMuteAllowCriticalToggle.classList.toggle('active', sharedControlState?.temporaryMute?.allowCriticalActive ?? (temporaryMute.allow_critical !== false));
     }
 
     const temporaryMuteStatus = document.getElementById('opsAlertTemporaryMuteStatus');
     if (temporaryMuteStatus) {
-        if (temporaryMuteState.active) {
-            temporaryMuteStatus.textContent = `当前已静默至 ${temporaryMuteState.untilLabel}，${temporaryMuteState.allowCritical ? 'critical 仍继续通知。' : '所有级别暂停外发。'}`;
-            temporaryMuteStatus.hidden = false;
-        } else if (temporaryMuteState.expired) {
-            temporaryMuteStatus.textContent = `上次静默已于 ${temporaryMuteState.untilLabel} 到期。点击“清除静默”可清掉旧时间。`;
-            temporaryMuteStatus.hidden = false;
+        if (sharedControlState?.temporaryMute) {
+            temporaryMuteStatus.textContent = sharedControlState.temporaryMute.statusText || '';
+            temporaryMuteStatus.hidden = sharedControlState.temporaryMute.statusHidden === true;
         } else {
-            temporaryMuteStatus.textContent = '';
-            temporaryMuteStatus.hidden = true;
+            if (temporaryMuteState.active) {
+                temporaryMuteStatus.textContent = `当前已静默至 ${temporaryMuteState.untilLabel}，${temporaryMuteState.allowCritical ? 'critical 仍继续通知。' : '所有级别暂停外发。'}`;
+                temporaryMuteStatus.hidden = false;
+            } else if (temporaryMuteState.expired) {
+                temporaryMuteStatus.textContent = `上次静默已于 ${temporaryMuteState.untilLabel} 到期。点击“清除静默”可清掉旧时间。`;
+                temporaryMuteStatus.hidden = false;
+            } else {
+                temporaryMuteStatus.textContent = '';
+                temporaryMuteStatus.hidden = true;
+            }
         }
     }
     const temporaryMuteInlineClear = document.getElementById('opsAlertTemporaryMuteInlineClear');
     if (temporaryMuteInlineClear) {
-        temporaryMuteInlineClear.hidden = !(temporaryMuteState.active || temporaryMuteState.expired);
+        temporaryMuteInlineClear.hidden = sharedControlState?.temporaryMute
+            ? sharedControlState.temporaryMute.clearHidden
+            : !(temporaryMuteState.active || temporaryMuteState.expired);
     }
 
     const quietHours = normalizedConfig.quiet_hours || getDefaultOpsAlertConfig().quiet_hours;
     const quietHoursEnabledToggle = document.getElementById('opsAlertQuietHoursEnabledToggle');
     if (quietHoursEnabledToggle) {
-        quietHoursEnabledToggle.classList.toggle('active', quietHours.enabled);
+        quietHoursEnabledToggle.classList.toggle('active', sharedControlState?.quietHours?.enabledActive ?? quietHours.enabled);
     }
 
     const allowCriticalToggle = document.getElementById('opsAlertQuietHoursAllowCriticalToggle');
     if (allowCriticalToggle) {
-        allowCriticalToggle.classList.toggle('active', quietHours.allow_critical);
-        allowCriticalToggle.classList.toggle('disabled', !quietHours.enabled);
+        allowCriticalToggle.classList.toggle('active', sharedControlState?.quietHours?.allowCriticalActive ?? quietHours.allow_critical);
+        allowCriticalToggle.classList.toggle('disabled', sharedControlState?.quietHours?.allowCriticalDisabled ?? !quietHours.enabled);
     }
 
     [
@@ -6262,11 +6343,11 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
         'opsAlertQuietHoursTimezone'
     ].forEach((id) => {
         const input = document.getElementById(id);
-        if (input) input.disabled = !quietHours.enabled;
+        if (input) input.disabled = sharedControlState?.quietHours?.inputsDisabled ?? !quietHours.enabled;
     });
     const quietHoursRangeHint = document.getElementById('opsAlertQuietHoursRangeHint');
     if (quietHoursRangeHint) {
-        quietHoursRangeHint.textContent = formatOpsAlertHourRangePreview(
+        quietHoursRangeHint.textContent = sharedControlState?.quietHours?.rangeHint || formatOpsAlertHourRangePreview(
             quietHours.start_hour,
             quietHours.end_hour,
             { timezone: quietHours.timezone }
@@ -6276,7 +6357,7 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
     const workHours = normalizedConfig.work_hours || getDefaultOpsAlertConfig().work_hours;
     const workHoursEnabledToggle = document.getElementById('opsAlertWorkHoursEnabledToggle');
     if (workHoursEnabledToggle) {
-        workHoursEnabledToggle.classList.toggle('active', workHours.enabled);
+        workHoursEnabledToggle.classList.toggle('active', sharedControlState?.workHours?.enabledActive ?? workHours.enabled);
     }
 
     [
@@ -6285,11 +6366,11 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
         'opsAlertWorkHoursTimezone'
     ].forEach((id) => {
         const input = document.getElementById(id);
-        if (input) input.disabled = !workHours.enabled;
+        if (input) input.disabled = sharedControlState?.workHours?.inputsDisabled ?? !workHours.enabled;
     });
     const workHoursRangeHint = document.getElementById('opsAlertWorkHoursRangeHint');
     if (workHoursRangeHint) {
-        workHoursRangeHint.textContent = formatOpsAlertHourRangePreview(
+        workHoursRangeHint.textContent = sharedControlState?.workHours?.rangeHint || formatOpsAlertHourRangePreview(
             workHours.start_hour,
             workHours.end_hour,
             { timezone: workHours.timezone }
@@ -6301,19 +6382,23 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
         getOpsAlertMuteRuleDefinitions(scope).forEach((definition) => {
             const rule = scopeConfig[definition.key] || {};
             const state = getOpsAlertMuteRuleState(rule);
+            const sharedRuleState = sharedControlState?.muteRules?.[scope]?.[definition.key] || null;
             const input = document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'Until'));
             if (input) {
-                input.value = formatDateTimeLocalInputValue(rule.until || '');
+                input.value = sharedRuleState?.untilValue || formatDateTimeLocalInputValue(rule.until || '');
             }
 
             const allowCriticalToggle = document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'AllowCriticalToggle'));
             if (allowCriticalToggle) {
-                allowCriticalToggle.classList.toggle('active', rule.allow_critical !== false);
+                allowCriticalToggle.classList.toggle('active', sharedRuleState?.allowCriticalActive ?? (rule.allow_critical !== false));
             }
 
             const statusEl = document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'Status'));
             if (statusEl) {
-                if (state.active) {
+                if (sharedRuleState) {
+                    statusEl.textContent = sharedRuleState.statusText || '';
+                    statusEl.hidden = sharedRuleState.statusHidden === true;
+                } else if (state.active) {
                     statusEl.textContent = `${state.untilLabel} 前静默${state.allowCritical ? '，critical 继续通知。' : '，全部级别暂停。'}`;
                     statusEl.hidden = false;
                 } else if (state.expired) {
@@ -6326,12 +6411,12 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
             }
             const clearButton = document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'Clear'));
             if (clearButton) {
-                clearButton.hidden = !(state.active || state.expired);
+                clearButton.hidden = sharedRuleState ? sharedRuleState.clearHidden : !(state.active || state.expired);
             }
 
             const row = document.querySelector(`[data-mute-rule-row="${scope}:${definition.key}"]`);
             if (row instanceof HTMLElement) {
-                row.dataset.ruleState = state.active ? 'active' : (state.expired ? 'expired' : 'inactive');
+                row.dataset.ruleState = sharedRuleState?.rowState || (state.active ? 'active' : (state.expired ? 'expired' : 'inactive'));
             }
         });
     });
@@ -6342,7 +6427,7 @@ function applyOpsAlertStrategyControls(config = normalizeOpsAlertConfig(systemCo
         channelKeys.forEach((channelKey) => {
             const checkbox = document.getElementById(getOpsAlertRoutingCheckboxId(routingKey, channelKey));
             if (!checkbox) return;
-            checkbox.checked = normalizedConfig.routing?.[routingKey]?.[channelKey] !== false;
+            checkbox.checked = sharedControlState?.routingMatrix?.[routingKey]?.[channelKey] ?? (normalizedConfig.routing?.[routingKey]?.[channelKey] !== false);
         });
     });
 
@@ -7305,12 +7390,30 @@ function ensureOpsAlertCustomerChatQuickReplyTemplateEvents() {
     });
 }
 
+function buildLocalOpsAlertShopRiskControlState(shopRiskConfig = {}) {
+    return {
+        autoResponseToggle: {
+            active: shopRiskConfig?.auto_response_enabled === true
+        },
+        thresholdInputsDisabled: shopRiskConfig?.auto_response_enabled !== true
+    };
+}
+
+function resolveOpsAlertShopRiskControlState(shopRiskConfig = {}) {
+    if (typeof window.buildAdminWorkbenchOpsAlertShopRiskControlState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertShopRiskControlState(shopRiskConfig);
+    }
+
+    return buildLocalOpsAlertShopRiskControlState(shopRiskConfig);
+}
+
 function applyOpsAlertShopRiskControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const shopRiskConfig = normalizedConfig.shop_order_risk || getDefaultOpsAlertConfig().shop_order_risk;
+    const sharedControlState = resolveOpsAlertShopRiskControlState(shopRiskConfig);
     const toggleEl = document.getElementById('opsAlertShopRiskAutoResponseEnabledToggle');
     if (toggleEl) {
-        toggleEl.classList.toggle('active', shopRiskConfig.auto_response_enabled);
+        toggleEl.classList.toggle('active', sharedControlState?.autoResponseToggle?.active ?? shopRiskConfig.auto_response_enabled);
     }
 
     [
@@ -7320,89 +7423,175 @@ function applyOpsAlertShopRiskControls(config = normalizeOpsAlertConfig(systemCo
         'opsAlertShopRiskAutoSuspendProductMinRiskScore'
     ].forEach((id) => {
         const input = document.getElementById(id);
-        if (input) input.disabled = !shopRiskConfig.auto_response_enabled;
+        if (input) input.disabled = sharedControlState?.thresholdInputsDisabled ?? !shopRiskConfig.auto_response_enabled;
     });
 }
 
 function applyOpsAlertShopInventoryControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const inventoryConfig = normalizedConfig.shop_inventory || getDefaultOpsAlertConfig().shop_inventory;
-    const toggleEl = document.getElementById('opsAlertShopInventoryEnabledToggle');
-    if (toggleEl) {
-        toggleEl.classList.toggle('active', inventoryConfig.enabled);
-    }
-
-    const recoveryToggleEl = document.getElementById('opsAlertShopInventoryRecoveryNotificationEnabledToggle');
-    if (recoveryToggleEl) {
-        recoveryToggleEl.classList.toggle('active', inventoryConfig.recovery_notification_enabled);
-        recoveryToggleEl.classList.toggle('disabled', !inventoryConfig.enabled);
-    }
-    const summaryToggleEl = document.getElementById('opsAlertShopInventorySummaryEnabledToggle');
-    if (summaryToggleEl) {
-        summaryToggleEl.classList.toggle('active', inventoryConfig.summary_enabled === true);
-        summaryToggleEl.classList.toggle('disabled', !inventoryConfig.enabled);
-    }
-
-    [
-        'opsAlertShopInventoryLowStockThreshold',
-        'opsAlertShopInventorySweepIntervalMinutes',
-        'opsAlertShopInventorySalesWindowDays',
-        'opsAlertShopInventoryDedupeWindowMinutes'
-    ].forEach((id) => {
-        const input = document.getElementById(id);
-        if (input) input.disabled = !inventoryConfig.enabled;
-    });
-    applyOpsAlertSummaryModeControls(inventoryConfig, {
-        summaryScheduleMode: 'opsAlertShopInventorySummaryScheduleMode',
-        summaryWindowMinutes: 'opsAlertShopInventorySummaryWindowMinutes',
-        summaryHourlyMinute: 'opsAlertShopInventorySummaryHourlyMinute',
-        summaryDailyHour: 'opsAlertShopInventorySummaryDailyHour',
-        summaryDailyMinute: 'opsAlertShopInventorySummaryDailyMinute',
-        summaryMaxItems: 'opsAlertShopInventorySummaryMaxItems'
+    applyOpsAlertMonitorSectionControls(inventoryConfig, {
+        enabledToggleId: 'opsAlertShopInventoryEnabledToggle',
+        summaryToggleId: 'opsAlertShopInventorySummaryEnabledToggle',
+        extraToggles: [
+            {
+                key: 'recovery_notification_enabled',
+                id: 'opsAlertShopInventoryRecoveryNotificationEnabledToggle'
+            }
+        ],
+        inputIds: [
+            'opsAlertShopInventoryLowStockThreshold',
+            'opsAlertShopInventorySweepIntervalMinutes',
+            'opsAlertShopInventorySalesWindowDays',
+            'opsAlertShopInventoryDedupeWindowMinutes'
+        ],
+        summaryFieldIds: {
+            summaryScheduleMode: 'opsAlertShopInventorySummaryScheduleMode',
+            summaryWindowMinutes: 'opsAlertShopInventorySummaryWindowMinutes',
+            summaryHourlyMinute: 'opsAlertShopInventorySummaryHourlyMinute',
+            summaryDailyHour: 'opsAlertShopInventorySummaryDailyHour',
+            summaryDailyMinute: 'opsAlertShopInventorySummaryDailyMinute',
+            summaryMaxItems: 'opsAlertShopInventorySummaryMaxItems'
+        },
+        sharedOptions: {
+            summaryToggleDisabledWhenMonitorDisabled: true,
+            extraToggleKeys: ['recovery_notification_enabled'],
+            extraToggleDisabledWhenMonitorDisabledKeys: ['recovery_notification_enabled']
+        }
     });
 }
 
 function applyOpsAlertSummaryModeControls(monitorConfig = {}, ids = {}) {
-    const summaryInputsEnabled = monitorConfig.enabled && monitorConfig.summary_enabled === true;
-    const scheduleMode = normalizeOpsAlertSummaryScheduleMode(monitorConfig.summary_schedule_mode, 'rolling_window');
-    const scheduleModeInput = document.getElementById(ids.summaryScheduleMode);
-    if (scheduleModeInput) {
-        scheduleModeInput.disabled = !summaryInputsEnabled;
-        scheduleModeInput.value = scheduleMode;
-    }
-
-    const rollingWindowInput = document.getElementById(ids.summaryWindowMinutes);
-    if (rollingWindowInput) {
-        rollingWindowInput.disabled = !summaryInputsEnabled || scheduleMode !== 'rolling_window';
-    }
-
-    const hourlyMinuteInput = document.getElementById(ids.summaryHourlyMinute);
-    if (hourlyMinuteInput) {
-        hourlyMinuteInput.disabled = !summaryInputsEnabled || scheduleMode !== 'hourly';
-    }
-
-    const dailyHourInput = document.getElementById(ids.summaryDailyHour);
-    if (dailyHourInput) {
-        dailyHourInput.disabled = !summaryInputsEnabled || scheduleMode !== 'daily';
-    }
-
-    const dailyMinuteInput = document.getElementById(ids.summaryDailyMinute);
-    if (dailyMinuteInput) {
-        dailyMinuteInput.disabled = !summaryInputsEnabled || scheduleMode !== 'daily';
-    }
-
-    const summaryMaxItemsInput = document.getElementById(ids.summaryMaxItems);
-    if (summaryMaxItemsInput) {
-        summaryMaxItemsInput.disabled = !summaryInputsEnabled;
-    }
-
-    applyOpsAlertSummaryModePresentation(monitorConfig, {
+    const controlState = resolveOpsAlertSummaryModeControlState(monitorConfig);
+    applyOpsAlertSummaryModeControlStateToDom(controlState, {
         ...ids,
         summaryModeHint: ids.summaryModeHint || `${ids.summaryScheduleMode || 'opsAlertSummaryMode'}Hint`
     }, {
-        monitorEnabled: monitorConfig.enabled === true,
-        summaryEnabled: monitorConfig.summary_enabled === true
+        valueSource: {
+            summary_schedule_mode: controlState.scheduleMode
+        }
     });
+}
+
+function buildLocalOpsAlertMonitorControlState(monitorConfig = {}, sharedOptions = {}) {
+    const monitorEnabled = monitorConfig?.enabled === true;
+    const summaryToggleDisabledWhenMonitorDisabled = sharedOptions.summaryToggleDisabledWhenMonitorDisabled === true;
+    const workHoursOnlyToggleDisabledWhenMonitorDisabled = sharedOptions.workHoursOnlyToggleDisabledWhenMonitorDisabled !== false;
+    const extraToggleDisabledKeys = new Set(
+        Array.isArray(sharedOptions.extraToggleDisabledWhenMonitorDisabledKeys)
+            ? sharedOptions.extraToggleDisabledWhenMonitorDisabledKeys.filter(Boolean)
+            : []
+    );
+    const extraToggleKeys = Array.isArray(sharedOptions.extraToggleKeys)
+        ? sharedOptions.extraToggleKeys.filter(Boolean)
+        : [];
+    const extraToggles = {};
+    extraToggleKeys.forEach((key) => {
+        extraToggles[key] = {
+            active: monitorConfig?.[key] === true,
+            disabled: extraToggleDisabledKeys.has(key) ? !monitorEnabled : false
+        };
+    });
+
+    return {
+        enabledActive: monitorEnabled,
+        inputsDisabled: !monitorEnabled,
+        summaryToggle: {
+            active: monitorConfig?.summary_enabled === true,
+            disabled: summaryToggleDisabledWhenMonitorDisabled ? !monitorEnabled : false
+        },
+        workHoursOnlyToggle: {
+            active: monitorConfig?.work_hours_only_enabled === true,
+            disabled: workHoursOnlyToggleDisabledWhenMonitorDisabled ? !monitorEnabled : false
+        },
+        extraToggles
+    };
+}
+
+function resolveOpsAlertMonitorControlState(monitorConfig = {}, sharedOptions = {}) {
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorControlState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorControlState(monitorConfig, sharedOptions);
+    }
+
+    return buildLocalOpsAlertMonitorControlState(monitorConfig, sharedOptions);
+}
+
+function applyOpsAlertMonitorToggleState(elementId, toggleState = {}, options = {}) {
+    if (!elementId) {
+        return;
+    }
+    const element = document.getElementById(elementId);
+    if (!element) {
+        return;
+    }
+
+    const resolvedActive = Object.prototype.hasOwnProperty.call(toggleState || {}, 'active')
+        ? toggleState.active === true
+        : options.fallbackActive === true;
+    element.classList.toggle('active', resolvedActive);
+
+    const hasDisabledState = Object.prototype.hasOwnProperty.call(toggleState || {}, 'disabled')
+        || Object.prototype.hasOwnProperty.call(options, 'fallbackDisabled');
+    if (hasDisabledState) {
+        const resolvedDisabled = Object.prototype.hasOwnProperty.call(toggleState || {}, 'disabled')
+            ? toggleState.disabled === true
+            : options.fallbackDisabled === true;
+        element.classList.toggle('disabled', resolvedDisabled);
+    }
+}
+
+function applyOpsAlertMonitorInputsDisabled(inputIds = [], disabled = false) {
+    inputIds.forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.disabled = disabled === true;
+        }
+    });
+}
+
+function applyOpsAlertMonitorSectionControls(monitorConfig = {}, options = {}) {
+    const sharedOptions = options.sharedOptions && typeof options.sharedOptions === 'object'
+        ? options.sharedOptions
+        : {};
+    const monitorEnabled = monitorConfig.enabled === true;
+    const sharedMonitorState = resolveOpsAlertMonitorControlState(monitorConfig, sharedOptions);
+    const extraToggleDisabledKeys = new Set(
+        Array.isArray(sharedOptions.extraToggleDisabledWhenMonitorDisabledKeys)
+            ? sharedOptions.extraToggleDisabledWhenMonitorDisabledKeys.filter(Boolean)
+            : []
+    );
+
+    applyOpsAlertMonitorToggleState(options.enabledToggleId, {
+        active: sharedMonitorState?.enabledActive
+    }, {
+        fallbackActive: monitorEnabled
+    });
+    applyOpsAlertMonitorToggleState(options.summaryToggleId, sharedMonitorState?.summaryToggle || {}, {
+        fallbackActive: monitorConfig.summary_enabled === true,
+        fallbackDisabled: sharedOptions.summaryToggleDisabledWhenMonitorDisabled === true ? !monitorEnabled : undefined
+    });
+    applyOpsAlertMonitorToggleState(options.workHoursOnlyToggleId, sharedMonitorState?.workHoursOnlyToggle || {}, {
+        fallbackActive: monitorConfig.work_hours_only_enabled === true,
+        fallbackDisabled: sharedOptions.workHoursOnlyToggleDisabledWhenMonitorDisabled !== false ? !monitorEnabled : undefined
+    });
+
+    (Array.isArray(options.extraToggles) ? options.extraToggles : []).forEach((entry) => {
+        if (!entry?.id || !entry?.key) {
+            return;
+        }
+        applyOpsAlertMonitorToggleState(entry.id, sharedMonitorState?.extraToggles?.[entry.key] || {}, {
+            fallbackActive: monitorConfig[entry.key] === true,
+            fallbackDisabled: extraToggleDisabledKeys.has(entry.key) ? !monitorEnabled : undefined
+        });
+    });
+
+    applyOpsAlertMonitorInputsDisabled(options.inputIds, sharedMonitorState?.inputsDisabled ?? !monitorEnabled);
+
+    if (options.summaryFieldIds) {
+        applyOpsAlertSummaryModeControls(monitorConfig, options.summaryFieldIds);
+    }
+
+    return sharedMonitorState;
 }
 
 function applyOpsAlertCustomerChatControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
@@ -7410,346 +7599,243 @@ function applyOpsAlertCustomerChatControls(config = normalizeOpsAlertConfig(syst
     const monitorConfig = normalizedConfig.customer_chat_message || getDefaultOpsAlertConfig().customer_chat_message;
     ensureOpsAlertCustomerChatQuickReplyTemplateEvents();
     renderOpsAlertCustomerChatQuickReplyTemplates(monitorConfig.quick_reply_templates);
-    const toggleEl = document.getElementById('opsAlertCustomerChatMessageEnabledToggle');
-    if (toggleEl) {
-        toggleEl.classList.toggle('active', monitorConfig.enabled);
-    }
-    const summaryToggleEl = document.getElementById('opsAlertCustomerChatMessageSummaryEnabledToggle');
-    if (summaryToggleEl) {
-        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
-    }
-    const workHoursOnlyToggleEl = document.getElementById('opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle');
-    if (workHoursOnlyToggleEl) {
-        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
-        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
-    }
-
-    [
-        'opsAlertCustomerChatMessageSweepIntervalMinutes',
-        'opsAlertCustomerChatMessageLookbackMinutes',
-        'opsAlertCustomerChatMessageDedupeWindowMinutes'
-    ].forEach((id) => {
-        const input = document.getElementById(id);
-        if (input) input.disabled = !monitorConfig.enabled;
-    });
-    applyOpsAlertSummaryModeControls(monitorConfig, {
+    applyOpsAlertMonitorSectionControls(monitorConfig, {
+        enabledToggleId: 'opsAlertCustomerChatMessageEnabledToggle',
+        summaryToggleId: 'opsAlertCustomerChatMessageSummaryEnabledToggle',
+        workHoursOnlyToggleId: 'opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle',
+        inputIds: [
+            'opsAlertCustomerChatMessageSweepIntervalMinutes',
+            'opsAlertCustomerChatMessageLookbackMinutes',
+            'opsAlertCustomerChatMessageDedupeWindowMinutes'
+        ],
+        summaryFieldIds: {
         summaryScheduleMode: 'opsAlertCustomerChatMessageSummaryScheduleMode',
         summaryWindowMinutes: 'opsAlertCustomerChatMessageSummaryWindowMinutes',
         summaryHourlyMinute: 'opsAlertCustomerChatMessageSummaryHourlyMinute',
         summaryDailyHour: 'opsAlertCustomerChatMessageSummaryDailyHour',
         summaryDailyMinute: 'opsAlertCustomerChatMessageSummaryDailyMinute',
         summaryMaxItems: 'opsAlertCustomerChatMessageSummaryMaxItems'
+        }
     });
 }
 
 function applyOpsAlertShopPurchaseSuccessControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const monitorConfig = normalizedConfig.shop_purchase_success || getDefaultOpsAlertConfig().shop_purchase_success;
-    const toggleEl = document.getElementById('opsAlertShopPurchaseSuccessEnabledToggle');
-    if (toggleEl) {
-        toggleEl.classList.toggle('active', monitorConfig.enabled);
-    }
-    const summaryToggleEl = document.getElementById('opsAlertShopPurchaseSuccessSummaryEnabledToggle');
-    if (summaryToggleEl) {
-        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
-    }
-    const workHoursOnlyToggleEl = document.getElementById('opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle');
-    if (workHoursOnlyToggleEl) {
-        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
-        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
-    }
-
-    [
-        'opsAlertShopPurchaseSuccessSweepIntervalMinutes',
-        'opsAlertShopPurchaseSuccessLookbackMinutes',
-        'opsAlertShopPurchaseSuccessDedupeWindowMinutes'
-    ].forEach((id) => {
-        const input = document.getElementById(id);
-        if (input) input.disabled = !monitorConfig.enabled;
-    });
-    applyOpsAlertSummaryModeControls(monitorConfig, {
+    applyOpsAlertMonitorSectionControls(monitorConfig, {
+        enabledToggleId: 'opsAlertShopPurchaseSuccessEnabledToggle',
+        summaryToggleId: 'opsAlertShopPurchaseSuccessSummaryEnabledToggle',
+        workHoursOnlyToggleId: 'opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle',
+        inputIds: [
+            'opsAlertShopPurchaseSuccessSweepIntervalMinutes',
+            'opsAlertShopPurchaseSuccessLookbackMinutes',
+            'opsAlertShopPurchaseSuccessDedupeWindowMinutes'
+        ],
+        summaryFieldIds: {
         summaryScheduleMode: 'opsAlertShopPurchaseSuccessSummaryScheduleMode',
         summaryWindowMinutes: 'opsAlertShopPurchaseSuccessSummaryWindowMinutes',
         summaryHourlyMinute: 'opsAlertShopPurchaseSuccessSummaryHourlyMinute',
         summaryDailyHour: 'opsAlertShopPurchaseSuccessSummaryDailyHour',
         summaryDailyMinute: 'opsAlertShopPurchaseSuccessSummaryDailyMinute',
         summaryMaxItems: 'opsAlertShopPurchaseSuccessSummaryMaxItems'
+        }
     });
 }
 
 function applyOpsAlertWalletRechargeSuccessControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const monitorConfig = normalizedConfig.wallet_recharge_success || getDefaultOpsAlertConfig().wallet_recharge_success;
-    const toggleEl = document.getElementById('opsAlertWalletRechargeSuccessEnabledToggle');
-    if (toggleEl) {
-        toggleEl.classList.toggle('active', monitorConfig.enabled);
-    }
-    const summaryToggleEl = document.getElementById('opsAlertWalletRechargeSuccessSummaryEnabledToggle');
-    if (summaryToggleEl) {
-        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
-    }
-    const workHoursOnlyToggleEl = document.getElementById('opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle');
-    if (workHoursOnlyToggleEl) {
-        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
-        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
-    }
-
-    [
-        'opsAlertWalletRechargeSuccessSweepIntervalMinutes',
-        'opsAlertWalletRechargeSuccessLookbackMinutes',
-        'opsAlertWalletRechargeSuccessDedupeWindowMinutes'
-    ].forEach((id) => {
-        const input = document.getElementById(id);
-        if (input) input.disabled = !monitorConfig.enabled;
-    });
-    applyOpsAlertSummaryModeControls(monitorConfig, {
+    applyOpsAlertMonitorSectionControls(monitorConfig, {
+        enabledToggleId: 'opsAlertWalletRechargeSuccessEnabledToggle',
+        summaryToggleId: 'opsAlertWalletRechargeSuccessSummaryEnabledToggle',
+        workHoursOnlyToggleId: 'opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle',
+        inputIds: [
+            'opsAlertWalletRechargeSuccessSweepIntervalMinutes',
+            'opsAlertWalletRechargeSuccessLookbackMinutes',
+            'opsAlertWalletRechargeSuccessDedupeWindowMinutes'
+        ],
+        summaryFieldIds: {
         summaryScheduleMode: 'opsAlertWalletRechargeSuccessSummaryScheduleMode',
         summaryWindowMinutes: 'opsAlertWalletRechargeSuccessSummaryWindowMinutes',
         summaryHourlyMinute: 'opsAlertWalletRechargeSuccessSummaryHourlyMinute',
         summaryDailyHour: 'opsAlertWalletRechargeSuccessSummaryDailyHour',
         summaryDailyMinute: 'opsAlertWalletRechargeSuccessSummaryDailyMinute',
         summaryMaxItems: 'opsAlertWalletRechargeSuccessSummaryMaxItems'
+        }
     });
 }
 
 function applyOpsAlertTicketsControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const monitorConfig = normalizedConfig.tickets || getDefaultOpsAlertConfig().tickets;
-    const toggleEl = document.getElementById('opsAlertTicketsEnabledToggle');
-    if (toggleEl) {
-        toggleEl.classList.toggle('active', monitorConfig.enabled);
-    }
-    const summaryToggleEl = document.getElementById('opsAlertTicketsSummaryEnabledToggle');
-    if (summaryToggleEl) {
-        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
-    }
-    const workHoursOnlyToggleEl = document.getElementById('opsAlertTicketsWorkHoursOnlyEnabledToggle');
-    if (workHoursOnlyToggleEl) {
-        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
-        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
-    }
-
-    [
-        'opsAlertTicketsSweepIntervalMinutes',
-        'opsAlertTicketsPendingOverdueMinutes',
-        'opsAlertTicketsCriticalOverdueMinutes',
-        'opsAlertTicketsStateLookbackMinutes',
-        'opsAlertTicketsDedupeWindowMinutes'
-    ].forEach((id) => {
-        const input = document.getElementById(id);
-        if (input) input.disabled = !monitorConfig.enabled;
-    });
-    applyOpsAlertSummaryModeControls(monitorConfig, {
+    applyOpsAlertMonitorSectionControls(monitorConfig, {
+        enabledToggleId: 'opsAlertTicketsEnabledToggle',
+        summaryToggleId: 'opsAlertTicketsSummaryEnabledToggle',
+        workHoursOnlyToggleId: 'opsAlertTicketsWorkHoursOnlyEnabledToggle',
+        inputIds: [
+            'opsAlertTicketsSweepIntervalMinutes',
+            'opsAlertTicketsPendingOverdueMinutes',
+            'opsAlertTicketsCriticalOverdueMinutes',
+            'opsAlertTicketsStateLookbackMinutes',
+            'opsAlertTicketsDedupeWindowMinutes'
+        ],
+        summaryFieldIds: {
         summaryScheduleMode: 'opsAlertTicketsSummaryScheduleMode',
         summaryWindowMinutes: 'opsAlertTicketsSummaryWindowMinutes',
         summaryHourlyMinute: 'opsAlertTicketsSummaryHourlyMinute',
         summaryDailyHour: 'opsAlertTicketsSummaryDailyHour',
         summaryDailyMinute: 'opsAlertTicketsSummaryDailyMinute',
         summaryMaxItems: 'opsAlertTicketsSummaryMaxItems'
+        }
     });
 }
 
 function applyOpsAlertShopOrderDeliveryControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const monitorConfig = normalizedConfig.shop_order_delivery || getDefaultOpsAlertConfig().shop_order_delivery;
-    const toggleEl = document.getElementById('opsAlertShopOrderDeliveryEnabledToggle');
-    if (toggleEl) {
-        toggleEl.classList.toggle('active', monitorConfig.enabled);
-    }
-    const incidentToggleEl = document.getElementById('opsAlertShopOrderDeliveryIncidentEnabledToggle');
-    if (incidentToggleEl) {
-        incidentToggleEl.classList.toggle('active', monitorConfig.incident_enabled === true);
-        incidentToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
-    }
-    const summaryToggleEl = document.getElementById('opsAlertShopOrderDeliverySummaryEnabledToggle');
-    if (summaryToggleEl) {
-        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
-    }
-    const workHoursOnlyToggleEl = document.getElementById('opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle');
-    if (workHoursOnlyToggleEl) {
-        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
-        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
-    }
-
-    [
-        'opsAlertShopOrderDeliveryLookbackDays',
-        'opsAlertShopOrderDeliveryStateLookbackMinutes',
-        'opsAlertShopOrderDeliveryRetryWaitingMinAttempts',
-        'opsAlertShopOrderDeliverySweepIntervalMinutes',
-        'opsAlertShopOrderDeliveryDedupeWindowMinutes',
-        'opsAlertShopOrderDeliveryIncidentMinOrderCount',
-        'opsAlertShopOrderDeliveryIncidentMinDeadLetterCount',
-        'opsAlertShopOrderDeliveryIncidentMinDistinctUsers',
-        'opsAlertShopOrderDeliveryIncidentDedupeWindowMinutes'
-    ].forEach((id) => {
-        const input = document.getElementById(id);
-        if (input) input.disabled = !monitorConfig.enabled;
-    });
-    applyOpsAlertSummaryModeControls(monitorConfig, {
-        summaryScheduleMode: 'opsAlertShopOrderDeliverySummaryScheduleMode',
-        summaryWindowMinutes: 'opsAlertShopOrderDeliverySummaryWindowMinutes',
-        summaryHourlyMinute: 'opsAlertShopOrderDeliverySummaryHourlyMinute',
-        summaryDailyHour: 'opsAlertShopOrderDeliverySummaryDailyHour',
-        summaryDailyMinute: 'opsAlertShopOrderDeliverySummaryDailyMinute',
-        summaryMaxItems: 'opsAlertShopOrderDeliverySummaryMaxItems'
+    applyOpsAlertMonitorSectionControls(monitorConfig, {
+        enabledToggleId: 'opsAlertShopOrderDeliveryEnabledToggle',
+        summaryToggleId: 'opsAlertShopOrderDeliverySummaryEnabledToggle',
+        workHoursOnlyToggleId: 'opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle',
+        extraToggles: [
+            {
+                key: 'incident_enabled',
+                id: 'opsAlertShopOrderDeliveryIncidentEnabledToggle'
+            }
+        ],
+        inputIds: [
+            'opsAlertShopOrderDeliveryLookbackDays',
+            'opsAlertShopOrderDeliveryStateLookbackMinutes',
+            'opsAlertShopOrderDeliveryRetryWaitingMinAttempts',
+            'opsAlertShopOrderDeliverySweepIntervalMinutes',
+            'opsAlertShopOrderDeliveryDedupeWindowMinutes',
+            'opsAlertShopOrderDeliveryIncidentMinOrderCount',
+            'opsAlertShopOrderDeliveryIncidentMinDeadLetterCount',
+            'opsAlertShopOrderDeliveryIncidentMinDistinctUsers',
+            'opsAlertShopOrderDeliveryIncidentDedupeWindowMinutes'
+        ],
+        summaryFieldIds: {
+            summaryScheduleMode: 'opsAlertShopOrderDeliverySummaryScheduleMode',
+            summaryWindowMinutes: 'opsAlertShopOrderDeliverySummaryWindowMinutes',
+            summaryHourlyMinute: 'opsAlertShopOrderDeliverySummaryHourlyMinute',
+            summaryDailyHour: 'opsAlertShopOrderDeliverySummaryDailyHour',
+            summaryDailyMinute: 'opsAlertShopOrderDeliverySummaryDailyMinute',
+            summaryMaxItems: 'opsAlertShopOrderDeliverySummaryMaxItems'
+        },
+        sharedOptions: {
+            extraToggleKeys: ['incident_enabled'],
+            extraToggleDisabledWhenMonitorDisabledKeys: ['incident_enabled']
+        }
     });
 }
 
 function applyOpsAlertVerifyQuotaControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const monitorConfig = normalizedConfig.verify_quota || getDefaultOpsAlertConfig().verify_quota;
-    const toggleEl = document.getElementById('opsAlertVerifyQuotaEnabledToggle');
-    if (toggleEl) {
-        toggleEl.classList.toggle('active', monitorConfig.enabled);
-    }
-    const summaryToggleEl = document.getElementById('opsAlertVerifyQuotaSummaryEnabledToggle');
-    if (summaryToggleEl) {
-        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
-    }
-    const workHoursOnlyToggleEl = document.getElementById('opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle');
-    if (workHoursOnlyToggleEl) {
-        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
-        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
-    }
-
-    [
-        'opsAlertVerifyQuotaLowBalanceThreshold',
-        'opsAlertVerifyQuotaLowRemainingJobsThreshold',
-        'opsAlertVerifyQuotaCriticalBalanceThreshold',
-        'opsAlertVerifyQuotaCriticalRemainingJobsThreshold',
-        'opsAlertVerifyQuotaMinQueueBufferJobs',
-        'opsAlertVerifyQuotaSweepIntervalMinutes',
-        'opsAlertVerifyQuotaDedupeWindowMinutes'
-    ].forEach((id) => {
-        const input = document.getElementById(id);
-        if (input) input.disabled = !monitorConfig.enabled;
-    });
-    applyOpsAlertSummaryModeControls(monitorConfig, {
+    applyOpsAlertMonitorSectionControls(monitorConfig, {
+        enabledToggleId: 'opsAlertVerifyQuotaEnabledToggle',
+        summaryToggleId: 'opsAlertVerifyQuotaSummaryEnabledToggle',
+        workHoursOnlyToggleId: 'opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle',
+        inputIds: [
+            'opsAlertVerifyQuotaLowBalanceThreshold',
+            'opsAlertVerifyQuotaLowRemainingJobsThreshold',
+            'opsAlertVerifyQuotaCriticalBalanceThreshold',
+            'opsAlertVerifyQuotaCriticalRemainingJobsThreshold',
+            'opsAlertVerifyQuotaMinQueueBufferJobs',
+            'opsAlertVerifyQuotaSweepIntervalMinutes',
+            'opsAlertVerifyQuotaDedupeWindowMinutes'
+        ],
+        summaryFieldIds: {
         summaryScheduleMode: 'opsAlertVerifyQuotaSummaryScheduleMode',
         summaryWindowMinutes: 'opsAlertVerifyQuotaSummaryWindowMinutes',
         summaryHourlyMinute: 'opsAlertVerifyQuotaSummaryHourlyMinute',
         summaryDailyHour: 'opsAlertVerifyQuotaSummaryDailyHour',
         summaryDailyMinute: 'opsAlertVerifyQuotaSummaryDailyMinute',
         summaryMaxItems: 'opsAlertVerifyQuotaSummaryMaxItems'
+        }
     });
 }
 
 function applyOpsAlertVerifyQueueControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const monitorConfig = normalizedConfig.verify_queue || getDefaultOpsAlertConfig().verify_queue;
-    const toggleEl = document.getElementById('opsAlertVerifyQueueEnabledToggle');
-    if (toggleEl) {
-        toggleEl.classList.toggle('active', monitorConfig.enabled);
-    }
-    const summaryToggleEl = document.getElementById('opsAlertVerifyQueueSummaryEnabledToggle');
-    if (summaryToggleEl) {
-        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
-    }
-    const workHoursOnlyToggleEl = document.getElementById('opsAlertVerifyQueueWorkHoursOnlyEnabledToggle');
-    if (workHoursOnlyToggleEl) {
-        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
-        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
-    }
-
-    [
-        'opsAlertVerifyQueueRecentActivityLookbackHours',
-        'opsAlertVerifyQueueRecentFailureWindowMinutes',
-        'opsAlertVerifyQueueSizeThreshold',
-        'opsAlertVerifyQueueActiveJobThreshold',
-        'opsAlertVerifyQueueOldestPendingMinutesThreshold',
-        'opsAlertVerifyQueueRecentFailureThreshold',
-        'opsAlertVerifyQueueSweepIntervalMinutes',
-        'opsAlertVerifyQueueDedupeWindowMinutes'
-    ].forEach((id) => {
-        const input = document.getElementById(id);
-        if (input) input.disabled = !monitorConfig.enabled;
-    });
-    applyOpsAlertSummaryModeControls(monitorConfig, {
+    applyOpsAlertMonitorSectionControls(monitorConfig, {
+        enabledToggleId: 'opsAlertVerifyQueueEnabledToggle',
+        summaryToggleId: 'opsAlertVerifyQueueSummaryEnabledToggle',
+        workHoursOnlyToggleId: 'opsAlertVerifyQueueWorkHoursOnlyEnabledToggle',
+        inputIds: [
+            'opsAlertVerifyQueueRecentActivityLookbackHours',
+            'opsAlertVerifyQueueRecentFailureWindowMinutes',
+            'opsAlertVerifyQueueSizeThreshold',
+            'opsAlertVerifyQueueActiveJobThreshold',
+            'opsAlertVerifyQueueOldestPendingMinutesThreshold',
+            'opsAlertVerifyQueueRecentFailureThreshold',
+            'opsAlertVerifyQueueSweepIntervalMinutes',
+            'opsAlertVerifyQueueDedupeWindowMinutes'
+        ],
+        summaryFieldIds: {
         summaryScheduleMode: 'opsAlertVerifyQueueSummaryScheduleMode',
         summaryWindowMinutes: 'opsAlertVerifyQueueSummaryWindowMinutes',
         summaryHourlyMinute: 'opsAlertVerifyQueueSummaryHourlyMinute',
         summaryDailyHour: 'opsAlertVerifyQueueSummaryDailyHour',
         summaryDailyMinute: 'opsAlertVerifyQueueSummaryDailyMinute',
         summaryMaxItems: 'opsAlertVerifyQueueSummaryMaxItems'
+        }
     });
 }
 
 function applyOpsAlertVerifyFailureControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const monitorConfig = normalizedConfig.verify_failure || getDefaultOpsAlertConfig().verify_failure;
-    const toggleEl = document.getElementById('opsAlertVerifyFailureEnabledToggle');
-    if (toggleEl) {
-        toggleEl.classList.toggle('active', monitorConfig.enabled);
-    }
-    const summaryToggleEl = document.getElementById('opsAlertVerifyFailureSummaryEnabledToggle');
-    if (summaryToggleEl) {
-        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
-    }
-    const workHoursOnlyToggleEl = document.getElementById('opsAlertVerifyFailureWorkHoursOnlyEnabledToggle');
-    if (workHoursOnlyToggleEl) {
-        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
-        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
-    }
-
-    [
-        'opsAlertVerifyFailureRecentWindowMinutes',
-        'opsAlertVerifyFailureMinTotalJobsThreshold',
-        'opsAlertVerifyFailureRateThreshold',
-        'opsAlertVerifyFailureAffectedUserThreshold',
-        'opsAlertVerifyFailureSweepIntervalMinutes',
-        'opsAlertVerifyFailureDedupeWindowMinutes'
-    ].forEach((id) => {
-        const input = document.getElementById(id);
-        if (input) input.disabled = !monitorConfig.enabled;
-    });
-    applyOpsAlertSummaryModeControls(monitorConfig, {
+    applyOpsAlertMonitorSectionControls(monitorConfig, {
+        enabledToggleId: 'opsAlertVerifyFailureEnabledToggle',
+        summaryToggleId: 'opsAlertVerifyFailureSummaryEnabledToggle',
+        workHoursOnlyToggleId: 'opsAlertVerifyFailureWorkHoursOnlyEnabledToggle',
+        inputIds: [
+            'opsAlertVerifyFailureRecentWindowMinutes',
+            'opsAlertVerifyFailureMinTotalJobsThreshold',
+            'opsAlertVerifyFailureRateThreshold',
+            'opsAlertVerifyFailureAffectedUserThreshold',
+            'opsAlertVerifyFailureSweepIntervalMinutes',
+            'opsAlertVerifyFailureDedupeWindowMinutes'
+        ],
+        summaryFieldIds: {
         summaryScheduleMode: 'opsAlertVerifyFailureSummaryScheduleMode',
         summaryWindowMinutes: 'opsAlertVerifyFailureSummaryWindowMinutes',
         summaryHourlyMinute: 'opsAlertVerifyFailureSummaryHourlyMinute',
         summaryDailyHour: 'opsAlertVerifyFailureSummaryDailyHour',
         summaryDailyMinute: 'opsAlertVerifyFailureSummaryDailyMinute',
         summaryMaxItems: 'opsAlertVerifyFailureSummaryMaxItems'
+        }
     });
 }
 
 function applyOpsAlertPaymentGatewayControls(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const monitorConfig = normalizedConfig.payment_gateway || getDefaultOpsAlertConfig().payment_gateway;
-    const toggleEl = document.getElementById('opsAlertPaymentGatewayEnabledToggle');
-    if (toggleEl) {
-        toggleEl.classList.toggle('active', monitorConfig.enabled);
-    }
-    const summaryToggleEl = document.getElementById('opsAlertPaymentGatewaySummaryEnabledToggle');
-    if (summaryToggleEl) {
-        summaryToggleEl.classList.toggle('active', monitorConfig.summary_enabled === true);
-    }
-    const workHoursOnlyToggleEl = document.getElementById('opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle');
-    if (workHoursOnlyToggleEl) {
-        workHoursOnlyToggleEl.classList.toggle('active', monitorConfig.work_hours_only_enabled === true);
-        workHoursOnlyToggleEl.classList.toggle('disabled', !monitorConfig.enabled);
-    }
-
-    [
-        'opsAlertPaymentGatewayWindowMinutes',
-        'opsAlertPaymentGatewayFailedOrdersThreshold',
-        'opsAlertPaymentGatewayFailedRatioThreshold',
-        'opsAlertPaymentGatewayWebhookSuccessRateThreshold',
-        'opsAlertPaymentGatewayQuerySuccessRateThreshold',
-        'opsAlertPaymentGatewayWebhook5xxThreshold',
-        'opsAlertPaymentGatewayQuery5xxThreshold',
-        'opsAlertPaymentGatewaySweepIntervalMinutes',
-        'opsAlertPaymentGatewayDedupeWindowMinutes'
-    ].forEach((id) => {
-        const input = document.getElementById(id);
-        if (input) input.disabled = !monitorConfig.enabled;
-    });
-    applyOpsAlertSummaryModeControls(monitorConfig, {
+    applyOpsAlertMonitorSectionControls(monitorConfig, {
+        enabledToggleId: 'opsAlertPaymentGatewayEnabledToggle',
+        summaryToggleId: 'opsAlertPaymentGatewaySummaryEnabledToggle',
+        workHoursOnlyToggleId: 'opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle',
+        inputIds: [
+            'opsAlertPaymentGatewayWindowMinutes',
+            'opsAlertPaymentGatewayFailedOrdersThreshold',
+            'opsAlertPaymentGatewayFailedRatioThreshold',
+            'opsAlertPaymentGatewayWebhookSuccessRateThreshold',
+            'opsAlertPaymentGatewayQuerySuccessRateThreshold',
+            'opsAlertPaymentGatewayWebhook5xxThreshold',
+            'opsAlertPaymentGatewayQuery5xxThreshold',
+            'opsAlertPaymentGatewaySweepIntervalMinutes',
+            'opsAlertPaymentGatewayDedupeWindowMinutes'
+        ],
+        summaryFieldIds: {
         summaryScheduleMode: 'opsAlertPaymentGatewaySummaryScheduleMode',
         summaryWindowMinutes: 'opsAlertPaymentGatewaySummaryWindowMinutes',
         summaryHourlyMinute: 'opsAlertPaymentGatewaySummaryHourlyMinute',
         summaryDailyHour: 'opsAlertPaymentGatewaySummaryDailyHour',
         summaryDailyMinute: 'opsAlertPaymentGatewaySummaryDailyMinute',
         summaryMaxItems: 'opsAlertPaymentGatewaySummaryMaxItems'
+        }
     });
 }
 
@@ -8440,110 +8526,22 @@ function buildOpsAlertOverviewKeyValueMarkup(items = [], options = {}) {
     `;
 }
 
-function renderOpsAlertOverviewBanner(overviewStatus, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+function renderOpsAlertOverviewBanner(overviewStatus, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState(), precomputedBannerState = null) {
     const summaryEl = document.getElementById('opsAlertSummary');
     if (!summaryEl) {
         return;
     }
 
-    const {
-        normalizedConfig,
-        deliveryIssues,
-        enabledChannelCount,
-        readyChannelCount,
-        configuredTargetChannelCount
-    } = overviewStatus;
-    const summary = healthState?.summary || getDefaultOpsAlertHealthState().summary;
-    const temporaryMuteState = getOpsAlertTemporaryMuteState(normalizedConfig);
-    const enabledSeveritySummary = buildOpsAlertEnabledSeveritySummary(normalizedConfig);
-    const failedCount = Math.max(0, Number(summary.failed_count || 0));
-    const deadLetterCount = Math.max(0, Number(summary.dead_letter_count || 0));
-    const totalAttemptCount = Math.max(0, Number(summary.total_attempt_count || 0));
-    const lookbackHours = formatVerifyMonitorInteger(summary.lookback_hours || 72);
-    let tone = 'neutral';
-    let icon = 'fa-bell-slash';
-    let headline = '站外告警未启用';
-    const detailParts = [];
-
-    if (!normalizedConfig.enabled) {
-        headline = enabledChannelCount > 0
-            ? '站外告警尚未启用，当前通道仅保存为预设'
-            : '站外告警未启用';
-        detailParts.push(
-            enabledChannelCount > 0
-                ? '保存并启用后才会真正开始站外投递。'
-                : '退款和异常消息仍会保留在站内后台。'
-        );
-    } else if (enabledChannelCount === 0) {
-        tone = 'warning';
-        icon = 'fa-triangle-exclamation';
-        headline = '站外告警已启用，但还没有打开外部通道';
-        detailParts.push('请至少打开一个外部通道，才会开始异步投递。');
-    } else if (deadLetterCount > 0) {
-        tone = 'danger';
-        icon = 'fa-circle-exclamation';
-        headline = '站外告警存在死信，建议优先处理异常通道';
-    } else if (failedCount > 0 || deliveryIssues.length > 0 || readyChannelCount < enabledChannelCount) {
-        tone = 'warning';
-        icon = 'fa-triangle-exclamation';
-        headline = '站外告警已启用，但部分通道仍需要关注';
-    } else {
-        tone = 'success';
-        icon = 'fa-satellite-dish';
-        headline = '站外告警已启用，当前通道可正常投递';
-    }
-
-    if (normalizedConfig.enabled) {
-        detailParts.push('发送采用异步队列，不阻塞退款主流程。');
-    }
-    if (deliveryIssues.length) {
-        detailParts.push(`待补充：${deliveryIssues.join('、')}。`);
-    }
-    if (enabledSeveritySummary) {
-        detailParts.push(`当前级别：${enabledSeveritySummary}。`);
-    }
-    if (temporaryMuteState.active) {
-        detailParts.push(
-            `临时静默至 ${temporaryMuteState.untilLabel}，${temporaryMuteState.allowCritical ? 'critical 仍继续通知。' : '所有级别暂停外发。'}`
-        );
-    }
-
-    const badges = [
-        buildOpsAlertHealthBadge(normalizedConfig.enabled ? '已启用' : '未启用', normalizedConfig.enabled ? (tone === 'neutral' ? 'success' : tone) : 'neutral'),
-        buildOpsAlertHealthBadge(
-            enabledChannelCount > 0 ? `${readyChannelCount} / ${enabledChannelCount} 通道就绪` : '0 / 0 通道就绪',
-            enabledChannelCount > 0
-                ? (readyChannelCount === enabledChannelCount ? 'success' : 'warning')
-                : 'neutral'
-        ),
-        buildOpsAlertHealthBadge(
-            `已配置 ${configuredTargetChannelCount} / 3`,
-            configuredTargetChannelCount > 0 ? 'success' : 'neutral'
-        )
-    ];
-
-    if (healthState?.status === 'loading') {
-        badges.push(buildOpsAlertHealthBadge('健康页刷新中', 'neutral'));
-    } else if (healthState?.status === 'error') {
-        badges.push(buildOpsAlertHealthBadge('健康查询失败', 'danger'));
-    } else if (normalizedConfig.enabled && totalAttemptCount > 0) {
-        badges.push(
-            buildOpsAlertHealthBadge(
-                `近 ${lookbackHours}h 失败 ${formatVerifyMonitorInteger(failedCount)}`,
-                deadLetterCount > 0 ? 'danger' : (failedCount > 0 ? 'warning' : 'success')
-            )
-        );
-        if (deadLetterCount > 0) {
-            badges.push(buildOpsAlertHealthBadge(`死信 ${formatVerifyMonitorInteger(deadLetterCount)}`, 'danger'));
-        }
-    }
-
-    const canSendTest = normalizedConfig.enabled && enabledChannelCount > 0 && deliveryIssues.length === 0;
-    const testButtonTitle = canSendTest
-        ? '向已启用的站外通道发送测试告警'
-        : (!normalizedConfig.enabled
-            ? '请先启用站外告警'
-            : (enabledChannelCount === 0 ? '请先打开至少一个通道' : '请先补齐通道配置'));
+    const sharedBannerState = precomputedBannerState || resolveOpsAlertOverviewBannerState(overviewStatus, healthState);
+    const tone = sharedBannerState.tone || 'neutral';
+    const icon = sharedBannerState.icon || 'fa-bell-slash';
+    const headline = sharedBannerState.headline || '站外告警未启用';
+    const detailText = sharedBannerState.detailText || '';
+    const badgeItems = Array.isArray(sharedBannerState.badgeItems) ? sharedBannerState.badgeItems : [];
+    const canSendTest = sharedBannerState.canSendTest === true;
+    const testButtonTitle = sharedBannerState.testButtonTitle || '请先启用站外告警';
+    const badges = badgeItems.map((item) => buildOpsAlertHealthBadge(item?.label || '—', item?.tone || 'neutral'));
+    const fetchedAt = sharedBannerState.fetchedAt || healthState?.fetched_at || '';
 
     setOpsAlertOverviewBannerTone(summaryEl, tone);
     summaryEl.innerHTML = `
@@ -8553,8 +8551,8 @@ function renderOpsAlertOverviewBanner(overviewStatus, healthState = opsAlertHeal
         <div class="ops-alert-overview-banner__content">
             <div class="ops-alert-overview-banner__headline">${escapeConfigHtml(headline)}</div>
             <div class="ops-alert-overview-banner__meta">${badges.join('')}</div>
-            <div class="ops-alert-overview-banner__detail">${escapeConfigHtml(detailParts.join(' '))}</div>
-            ${healthState?.fetched_at ? `<div class="ops-alert-overview-banner__stamp">刷新于 ${escapeConfigHtml(formatVerifyMonitorDateTime(healthState.fetched_at))}</div>` : ''}
+            <div class="ops-alert-overview-banner__detail">${escapeConfigHtml(detailText)}</div>
+            ${fetchedAt ? `<div class="ops-alert-overview-banner__stamp">刷新于 ${escapeConfigHtml(formatVerifyMonitorDateTime(fetchedAt))}</div>` : ''}
         </div>
         <div class="ops-alert-overview-banner__actions">
             <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-scroll-ops-alert-health">
@@ -8580,6 +8578,228 @@ function updateOpsAlertOverviewCard(cardId, titleId, bodyId, tone, titleText, bo
     setOpsAlertOverviewCardTone(card, tone);
     if (titleEl) titleEl.textContent = titleText;
     if (bodyEl) bodyEl.innerHTML = bodyMarkup;
+}
+
+function buildOpsAlertOverviewCardBodyMarkup(cardState = {}, options = {}) {
+    const normalizedCardState = cardState && typeof cardState === 'object' && !Array.isArray(cardState)
+        ? cardState
+        : {};
+    const parts = [];
+    const listItems = Array.isArray(normalizedCardState.items) ? normalizedCardState.items.filter(Boolean) : [];
+    const metrics = Array.isArray(normalizedCardState.metrics) ? normalizedCardState.metrics.filter(Boolean) : [];
+    const detailRows = Array.isArray(normalizedCardState.detailRows) ? normalizedCardState.detailRows.filter(Boolean) : [];
+
+    if (listItems.length || options.renderListWhenEmpty === true) {
+        parts.push(buildOpsAlertOverviewListMarkup(listItems, {
+            compact: normalizedCardState.compact !== false,
+            emptyMessage: options.listEmptyMessage || options.emptyMessage || '暂无数据'
+        }));
+    }
+    if (metrics.length) {
+        parts.push(buildOpsAlertOverviewMetricMarkup(metrics));
+    }
+    if (detailRows.length) {
+        parts.push(buildOpsAlertOverviewKeyValueMarkup(detailRows, {
+            compact: normalizedCardState.detailRowsCompact === true
+        }));
+    }
+    if (normalizedCardState.emptyMessage) {
+        parts.push(buildOpsAlertOverviewEmptyMarkup(normalizedCardState.emptyMessage));
+    }
+
+    return parts.join('') || buildOpsAlertOverviewEmptyMarkup(options.emptyMessage || '暂无数据');
+}
+
+function buildLocalOpsAlertOverviewRenderState(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+    const normalizedOverviewStatus = overviewStatus && typeof overviewStatus === 'object' && !Array.isArray(overviewStatus)
+        ? overviewStatus
+        : {};
+    const normalizedConfig = normalizedOverviewStatus.normalizedConfig && typeof normalizedOverviewStatus.normalizedConfig === 'object'
+        ? normalizedOverviewStatus.normalizedConfig
+        : {};
+    const deliveryIssues = Array.isArray(normalizedOverviewStatus.deliveryIssues)
+        ? normalizedOverviewStatus.deliveryIssues.filter(Boolean)
+        : [];
+    const channelOverviewItems = Array.isArray(normalizedOverviewStatus.channelOverviewItems)
+        ? normalizedOverviewStatus.channelOverviewItems.filter(Boolean)
+        : [];
+    const targetOverviewItems = Array.isArray(normalizedOverviewStatus.targetOverviewItems)
+        ? normalizedOverviewStatus.targetOverviewItems.filter(Boolean)
+        : [];
+    const targetDetailRows = Array.isArray(normalizedOverviewStatus.targetDetailRows)
+        ? normalizedOverviewStatus.targetDetailRows.filter(Boolean)
+        : [];
+    const enabledChannelCount = Math.max(0, Number(normalizedOverviewStatus.enabledChannelCount || 0));
+    const readyChannelCount = Math.max(0, Number(normalizedOverviewStatus.readyChannelCount || 0));
+    const configuredTargetChannelCount = Math.max(0, Number(normalizedOverviewStatus.configuredTargetChannelCount || 0));
+    const normalizedHealthState = healthState && typeof healthState === 'object' && !Array.isArray(healthState)
+        ? healthState
+        : {};
+    const summary = normalizedHealthState.summary && typeof normalizedHealthState.summary === 'object' && !Array.isArray(normalizedHealthState.summary)
+        ? normalizedHealthState.summary
+        : getDefaultOpsAlertHealthState().summary;
+    const totalAttemptCount = Math.max(0, Number(summary.total_attempt_count || 0));
+    const failedCount = Math.max(0, Number(summary.failed_count || 0));
+    const deadLetterCount = Math.max(0, Number(summary.dead_letter_count || 0));
+
+    let bannerTone = 'neutral';
+    let bannerIcon = 'fa-bell-slash';
+    let bannerHeadline = '站外告警未启用';
+    if (normalizedConfig.enabled === true && enabledChannelCount === 0) {
+        bannerTone = 'warning';
+        bannerIcon = 'fa-triangle-exclamation';
+        bannerHeadline = '站外告警已启用，但还没有打开外部通道';
+    } else if (deadLetterCount > 0) {
+        bannerTone = 'danger';
+        bannerIcon = 'fa-circle-exclamation';
+        bannerHeadline = '站外告警存在死信，建议优先处理异常通道';
+    } else if (normalizedConfig.enabled === true && (failedCount > 0 || deliveryIssues.length > 0 || readyChannelCount < enabledChannelCount)) {
+        bannerTone = 'warning';
+        bannerIcon = 'fa-triangle-exclamation';
+        bannerHeadline = '站外告警已启用，但部分通道仍需要关注';
+    } else if (normalizedConfig.enabled === true && enabledChannelCount > 0) {
+        bannerTone = 'success';
+        bannerIcon = 'fa-satellite-dish';
+        bannerHeadline = '站外告警已启用，当前通道可正常投递';
+    }
+
+    return {
+        bannerState: {
+            tone: bannerTone,
+            icon: bannerIcon,
+            headline: bannerHeadline,
+            detailText: normalizedConfig.enabled === true
+                ? '发送采用异步队列，不阻塞退款主流程。'
+                : '退款和异常消息仍会保留在站内后台。',
+            badgeItems: [
+                {
+                    label: normalizedConfig.enabled ? '已启用' : '未启用',
+                    tone: normalizedConfig.enabled ? (bannerTone === 'neutral' ? 'success' : bannerTone) : 'neutral'
+                },
+                {
+                    label: enabledChannelCount > 0 ? `${readyChannelCount} / ${enabledChannelCount} 通道就绪` : '0 / 0 通道就绪',
+                    tone: enabledChannelCount > 0
+                        ? (readyChannelCount === enabledChannelCount ? 'success' : 'warning')
+                        : 'neutral'
+                },
+                {
+                    label: `已配置 ${configuredTargetChannelCount || 0} / 3`,
+                    tone: configuredTargetChannelCount > 0 ? 'success' : 'neutral'
+                }
+            ],
+            canSendTest: normalizedConfig.enabled === true && enabledChannelCount > 0 && deliveryIssues.length === 0,
+            testButtonTitle: normalizedConfig.enabled === true
+                ? (enabledChannelCount > 0 ? '向已启用的站外通道发送测试告警' : '请先打开至少一个通道')
+                : '请先启用站外告警',
+            fetchedAt: normalizedHealthState.fetched_at || ''
+        },
+        cardStates: {
+            channelsCard: {
+                tone: normalizedConfig.enabled === true && enabledChannelCount === 0
+                    ? 'warning'
+                    : (enabledChannelCount > 0 && normalizedConfig.enabled ? (deliveryIssues.length > 0 ? 'warning' : 'success') : 'neutral'),
+                title: normalizedConfig.enabled === true && enabledChannelCount === 0
+                    ? '0 / 3 已打开'
+                    : (enabledChannelCount > 0 ? `${readyChannelCount} / ${enabledChannelCount} 已就绪` : '未启用'),
+                compact: !(enabledChannelCount > 0),
+                items: channelOverviewItems
+            },
+            targetsCard: {
+                tone: targetOverviewItems.length > 0
+                    ? (configuredTargetChannelCount > 0 ? (deliveryIssues.length > 0 ? 'warning' : 'success') : (normalizedConfig.enabled ? 'warning' : 'neutral'))
+                    : 'neutral',
+                title: targetOverviewItems.length > 0 ? `已配置 ${configuredTargetChannelCount || 0} / 3` : '等待配置',
+                compact: true,
+                items: targetOverviewItems,
+                detailRows: targetDetailRows,
+                detailRowsCompact: true,
+                includeTargetDetails: targetOverviewItems.length > 0 && targetDetailRows.length > 0
+            },
+            recentCard: {
+                tone: normalizedHealthState.status === 'error'
+                    ? 'danger'
+                    : (deadLetterCount > 0 ? 'danger' : (failedCount > 0 ? 'warning' : (totalAttemptCount > 0 ? 'success' : 'neutral'))),
+                title: normalizedHealthState.status === 'loading'
+                    ? '正在刷新'
+                    : (normalizedHealthState.status === 'error'
+                        ? '查询失败'
+                        : (totalAttemptCount > 0 ? `近 ${formatVerifyMonitorInteger(summary.lookback_hours || 0)} 小时` : '等待刷新')),
+                metrics: totalAttemptCount > 0
+                    ? [
+                        { label: '总投递', value: formatVerifyMonitorInteger(totalAttemptCount) },
+                        {
+                            label: '送达率',
+                            value: totalAttemptCount > 0
+                                ? `${Math.round((Math.max(0, Number(summary.delivered_count || 0)) / totalAttemptCount) * 100)}%`
+                                : '—'
+                        },
+                        { label: '刷新于', value: normalizedHealthState.fetched_at ? formatVerifyMonitorDateTime(normalizedHealthState.fetched_at) : '—' }
+                    ]
+                    : [],
+                detailRows: [],
+                emptyMessage: normalizedHealthState.status === 'loading'
+                    ? (normalizedHealthState.message || '正在加载站外告警通道健康状态...')
+                    : (normalizedHealthState.status === 'error'
+                        ? (normalizedHealthState.message || '加载站外告警通道健康状态失败。')
+                        : '告警通道健康页加载后，会在这里显示最近投递摘要。')
+            }
+        },
+        recentVisualState: {
+            trendMeta: '',
+            trendBuckets: [],
+            trendFooterLabels: [],
+            segmentMeta: '分段统计',
+            segments: []
+        }
+    };
+}
+
+function resolveOpsAlertOverviewRenderState(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+    if (typeof window.buildAdminWorkbenchOpsAlertOverviewRenderState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertOverviewRenderState(overviewStatus, healthState, {
+            defaultHealthState: getDefaultOpsAlertHealthState(),
+            getTemporaryMuteState: getOpsAlertTemporaryMuteState,
+            getEnabledSeveritySummary: buildOpsAlertEnabledSeveritySummary,
+            formatCount: formatVerifyMonitorInteger,
+            formatDateTime: formatVerifyMonitorDateTime,
+            formatBucketLabel: formatOpsAlertTrendBucketLabel,
+            buildGradient: buildOpsAlertTrendGradient
+        });
+    }
+    return buildLocalOpsAlertOverviewRenderState(overviewStatus, healthState);
+}
+
+function buildLocalOpsAlertOverviewBannerState(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+    return buildLocalOpsAlertOverviewRenderState(overviewStatus, healthState).bannerState;
+}
+
+function resolveOpsAlertOverviewBannerState(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+    const renderState = resolveOpsAlertOverviewRenderState(overviewStatus, healthState);
+    return renderState?.bannerState || buildLocalOpsAlertOverviewBannerState(overviewStatus, healthState);
+}
+
+function buildLocalOpsAlertOverviewCardStates(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+    return buildLocalOpsAlertOverviewRenderState(overviewStatus, healthState).cardStates;
+}
+
+function resolveOpsAlertOverviewCardStates(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState()) {
+    const renderState = resolveOpsAlertOverviewRenderState(overviewStatus, healthState);
+    return renderState?.cardStates || buildLocalOpsAlertOverviewCardStates(overviewStatus, healthState);
+}
+
+function buildLocalOpsAlertOverviewRecentVisualState(summary = {}, status = 'idle') {
+    return buildLocalOpsAlertOverviewRenderState({}, {
+        status,
+        summary
+    }).recentVisualState;
+}
+
+function resolveOpsAlertOverviewRecentVisualState(summary = {}, status = 'idle') {
+    const renderState = resolveOpsAlertOverviewRenderState({}, {
+        status,
+        summary
+    });
+    return renderState?.recentVisualState || buildLocalOpsAlertOverviewRecentVisualState(summary, status);
 }
 
 function formatOpsAlertTrendBucketLabel(value) {
@@ -8623,7 +8843,7 @@ function buildOpsAlertTrendGradient(bucket = {}) {
     return `linear-gradient(to top, ${stops.join(', ')})`;
 }
 
-function renderOpsAlertOverviewRecentVisuals(summary = {}, status = 'idle') {
+function renderOpsAlertOverviewRecentVisuals(summary = {}, status = 'idle', precomputedVisualState = null) {
     const trendEl = document.getElementById('opsAlertOverviewRecentTrend');
     const segmentsEl = document.getElementById('opsAlertOverviewRecentSegments');
     if (!trendEl || !segmentsEl) {
@@ -8635,100 +8855,46 @@ function renderOpsAlertOverviewRecentVisuals(summary = {}, status = 'idle') {
     segmentsEl.hidden = true;
     segmentsEl.innerHTML = '';
 
-    if (status !== 'ready') {
-        return;
-    }
-
-    const trendBuckets = Array.isArray(summary.recent_trend_buckets) ? summary.recent_trend_buckets : [];
-    const maxBucketTotal = trendBuckets.reduce((max, bucket) => (
-        Math.max(max, Number(bucket?.total_count || 0))
-    ), 0);
-
-    if (trendBuckets.length > 0 && maxBucketTotal > 0) {
-        const bars = trendBuckets.map((bucket) => {
-            const delivered = Math.max(0, Number(bucket?.delivered_count || 0));
-            const failed = Math.max(0, Number(bucket?.failed_count || 0));
-            const deadLetter = Math.max(0, Number(bucket?.dead_letter_count || 0));
-            const total = delivered + failed + deadLetter;
-            const heightPercent = total > 0
-                ? Math.max(10, Math.round((total / maxBucketTotal) * 100))
-                : 0;
-            const tooltip = [
-                `${formatOpsAlertTrendBucketLabel(bucket?.bucket_start_at)} - ${formatOpsAlertTrendBucketLabel(bucket?.bucket_end_at)}`,
-                `送达 ${formatVerifyMonitorInteger(delivered)} 次`,
-                `失败 ${formatVerifyMonitorInteger(failed)} 次`,
-                `死信 ${formatVerifyMonitorInteger(deadLetter)} 项`
-            ].join(' · ');
-            const backgroundStyle = total > 0
-                ? `height:${heightPercent}%;background:${buildOpsAlertTrendGradient(bucket)};`
-                : '';
-
-            return `
-                <div class="ops-alert-overview-trend__bucket" title="${escapeConfigHtml(tooltip)}">
-                    <div class="ops-alert-overview-trend__track">
-                        <div class="ops-alert-overview-trend__fill${total > 0 ? '' : ' ops-alert-overview-trend__fill--empty'}" style="${backgroundStyle}"></div>
-                    </div>
+    const sharedVisualState = precomputedVisualState || resolveOpsAlertOverviewRecentVisualState(summary, status);
+    if (Array.isArray(sharedVisualState.trendBuckets) && sharedVisualState.trendBuckets.length) {
+        const bars = sharedVisualState.trendBuckets.map((bucket) => `
+            <div class="ops-alert-overview-trend__bucket" title="${escapeConfigHtml(bucket?.tooltip || '')}">
+                <div class="ops-alert-overview-trend__track">
+                    <div class="ops-alert-overview-trend__fill${bucket?.fillEmpty ? ' ops-alert-overview-trend__fill--empty' : ''}" style="${escapeConfigHtml(bucket?.backgroundStyle || '')}"></div>
                 </div>
-            `;
-        }).join('');
+            </div>
+        `).join('');
 
-        const middleIndex = Math.floor((trendBuckets.length - 1) / 2);
         trendEl.innerHTML = `
             <div class="ops-alert-overview-trend">
-                <div class="ops-alert-overview-trend__meta">72 小时趋势 · 每 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.trend_bucket_hours || 6))} 小时一段</div>
+                <div class="ops-alert-overview-trend__meta">${escapeConfigHtml(sharedVisualState.trendMeta || '')}</div>
                 <div class="ops-alert-overview-trend__bars">${bars}</div>
                 <div class="ops-alert-overview-trend__footer">
-                    <span>${escapeConfigHtml(formatOpsAlertTrendBucketLabel(trendBuckets[0]?.bucket_start_at))}</span>
-                    <span>${escapeConfigHtml(formatOpsAlertTrendBucketLabel(trendBuckets[middleIndex]?.bucket_start_at))}</span>
-                    <span>${escapeConfigHtml(formatOpsAlertTrendBucketLabel(trendBuckets[trendBuckets.length - 1]?.bucket_end_at))}</span>
+                    ${(Array.isArray(sharedVisualState.trendFooterLabels) ? sharedVisualState.trendFooterLabels : []).map((label) => `<span>${escapeConfigHtml(label || '—')}</span>`).join('')}
                 </div>
             </div>
         `;
         trendEl.hidden = false;
     }
 
-    const deliveredCount = Math.max(0, Number(summary.delivered_count || 0));
-    const failedCount = Math.max(0, Number(summary.failed_count || 0));
-    const deadLetterCount = Math.max(0, Number(summary.dead_letter_count || 0));
-    const segmentTotal = deliveredCount + failedCount + deadLetterCount;
-
-    if (segmentTotal > 0) {
-        const segments = [
-            {
-                label: '送达',
-                value: deliveredCount,
-                tone: 'success'
-            },
-            {
-                label: '失败',
-                value: failedCount,
-                tone: 'warning'
-            },
-            {
-                label: '死信',
-                value: deadLetterCount,
-                tone: 'danger'
-            }
-        ].map((segment) => {
-            const share = segmentTotal > 0 ? Math.round((segment.value / segmentTotal) * 100) : 0;
-            return `
-                <div class="ops-alert-overview-segment ops-alert-overview-segment--${escapeConfigHtml(segment.tone)}">
-                    <span>${escapeConfigHtml(segment.label)}</span>
-                    <strong>${escapeConfigHtml(formatVerifyMonitorInteger(segment.value))}</strong>
-                    <em>${escapeConfigHtml(formatVerifyMonitorInteger(share))}%</em>
-                </div>
-            `;
-        }).join('');
+    if (Array.isArray(sharedVisualState.segments) && sharedVisualState.segments.length) {
+        const segments = sharedVisualState.segments.map((segment) => `
+            <div class="ops-alert-overview-segment ops-alert-overview-segment--${escapeConfigHtml(segment?.tone || 'neutral')}">
+                <span>${escapeConfigHtml(segment?.label || '—')}</span>
+                <strong>${escapeConfigHtml(segment?.valueText || '0')}</strong>
+                <em>${escapeConfigHtml(segment?.shareText || '0%')}</em>
+            </div>
+        `).join('');
 
         segmentsEl.innerHTML = `
-            <div class="ops-alert-overview-segments__meta">分段统计</div>
+            <div class="ops-alert-overview-segments__meta">${escapeConfigHtml(sharedVisualState.segmentMeta || '分段统计')}</div>
             <div class="ops-alert-overview-segments">${segments}</div>
         `;
         segmentsEl.hidden = false;
     }
 }
 
-function getOpsAlertOverviewStatus(config) {
+function buildLocalOpsAlertOverviewStatus(config) {
     const normalizedConfig = normalizeOpsAlertConfig(config);
     const telegramSecret = opsAlertSecretStatus?.telegram_bot_token || getDefaultOpsAlertSecretStatus().telegram_bot_token;
     const feishuSecret = opsAlertSecretStatus?.feishu_webhook_url || getDefaultOpsAlertSecretStatus().feishu_webhook_url;
@@ -8918,8 +9084,26 @@ function getOpsAlertOverviewStatus(config) {
         targetDetailRows,
         enabledChannelCount,
         readyChannelCount,
-        configuredTargetChannelCount
+        configuredTargetChannelCount,
+        temporaryMuteState: getOpsAlertTemporaryMuteState(normalizedConfig),
+        enabledSeveritySummary: buildOpsAlertEnabledSeveritySummary(normalizedConfig)
     };
+}
+
+function resolveOpsAlertOverviewStatus(config) {
+    const normalizedConfig = normalizeOpsAlertConfig(config);
+    if (typeof window.buildAdminWorkbenchOpsAlertOverviewStatus === 'function') {
+        return window.buildAdminWorkbenchOpsAlertOverviewStatus(normalizedConfig, opsAlertSecretStatus, {
+            normalizeConfig: normalizeOpsAlertConfig,
+            getDefaultSecretStatus: getDefaultOpsAlertSecretStatus,
+            getTemporaryMuteState: getOpsAlertTemporaryMuteState
+        });
+    }
+    return buildLocalOpsAlertOverviewStatus(normalizedConfig);
+}
+
+function getOpsAlertOverviewStatus(config) {
+    return resolveOpsAlertOverviewStatus(config);
 }
 
 function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
@@ -8936,7 +9120,7 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
     } = getOpsAlertOverviewStatus(config);
     const healthState = opsAlertHealthState || getDefaultOpsAlertHealthState();
     const summary = healthState.summary || getDefaultOpsAlertHealthState().summary;
-    renderOpsAlertOverviewBanner({
+    const overviewStatus = {
         normalizedConfig,
         channelStates,
         deliveryIssues,
@@ -8946,214 +9130,93 @@ function renderOpsAlertOverviewCards(config = normalizeOpsAlertConfig(systemConf
         enabledChannelCount,
         readyChannelCount,
         configuredTargetChannelCount
-    }, healthState);
+    };
+    const sharedOverviewRenderState = resolveOpsAlertOverviewRenderState(overviewStatus, healthState);
+    const sharedCardStates = sharedOverviewRenderState?.cardStates || resolveOpsAlertOverviewCardStates(overviewStatus, healthState);
+    renderOpsAlertOverviewBanner(
+        overviewStatus,
+        healthState,
+        sharedOverviewRenderState?.bannerState || resolveOpsAlertOverviewBannerState(overviewStatus, healthState)
+    );
 
-    let channelsTone = 'neutral';
-    let channelsTitle = '未启用';
-    let channelsBody = buildOpsAlertOverviewListMarkup(channelOverviewItems, { compact: true });
-
-    if (normalizedConfig.enabled && enabledChannelCount === 0) {
-        channelsTone = 'warning';
-        channelsTitle = '0 / 3 已打开';
-        channelsBody = buildOpsAlertOverviewListMarkup(channelOverviewItems, { compact: true });
-    } else if (enabledChannelCount > 0 && deliveryIssues.length > 0) {
-        channelsTone = normalizedConfig.enabled ? 'warning' : 'neutral';
-        channelsTitle = `${readyChannelCount} / ${enabledChannelCount} 已就绪`;
-        channelsBody = buildOpsAlertOverviewListMarkup(channelOverviewItems);
-    } else if (enabledChannelCount > 0) {
-        channelsTone = normalizedConfig.enabled ? 'success' : 'neutral';
-        channelsTitle = `${readyChannelCount} / ${enabledChannelCount} 已就绪`;
-        channelsBody = buildOpsAlertOverviewListMarkup(channelOverviewItems);
-    }
+    const channelsCardState = sharedCardStates?.channelsCard || {
+        tone: normalizedConfig.enabled && enabledChannelCount === 0
+            ? 'warning'
+            : (enabledChannelCount > 0 && deliveryIssues.length > 0
+                ? (normalizedConfig.enabled ? 'warning' : 'neutral')
+                : (enabledChannelCount > 0 && normalizedConfig.enabled ? 'success' : 'neutral')),
+        title: normalizedConfig.enabled && enabledChannelCount === 0
+            ? '0 / 3 已打开'
+            : (enabledChannelCount > 0 ? `${readyChannelCount} / ${enabledChannelCount} 已就绪` : '未启用'),
+        compact: !(enabledChannelCount > 0),
+        items: channelOverviewItems
+    };
     updateOpsAlertOverviewCard(
         'opsAlertOverviewChannelsCard',
         'opsAlertOverviewChannelsTitle',
         'opsAlertOverviewChannels',
-        channelsTone,
-        channelsTitle,
-        channelsBody
+        channelsCardState.tone || 'neutral',
+        channelsCardState.title || '未启用',
+        buildOpsAlertOverviewCardBodyMarkup(channelsCardState, {
+            renderListWhenEmpty: true,
+            listEmptyMessage: '暂无数据'
+        })
     );
 
-    let targetsTone = 'neutral';
-    let targetsTitle = '等待配置';
-    let targetsBody = buildOpsAlertOverviewListMarkup(targetOverviewItems, { compact: true });
-    if (targetOverviewItems.length > 0) {
-        if (configuredTargetChannelCount > 0) {
-            targetsTone = deliveryIssues.length > 0 ? 'warning' : 'success';
-        } else if (normalizedConfig.enabled) {
-            targetsTone = 'warning';
-        }
-        targetsTitle = `已配置 ${configuredTargetChannelCount || 0} / 3`;
-        if (targetDetailRows.length) {
-            targetsBody += buildOpsAlertOverviewKeyValueMarkup(targetDetailRows, { compact: true });
-        }
-    }
+    const targetsCardState = sharedCardStates?.targetsCard || {
+        tone: targetOverviewItems.length > 0
+            ? (configuredTargetChannelCount > 0
+                ? (deliveryIssues.length > 0 ? 'warning' : 'success')
+                : (normalizedConfig.enabled ? 'warning' : 'neutral'))
+            : 'neutral',
+        title: targetOverviewItems.length > 0 ? `已配置 ${configuredTargetChannelCount || 0} / 3` : '等待配置',
+        compact: true,
+        items: targetOverviewItems,
+        detailRows: targetDetailRows,
+        detailRowsCompact: true,
+        includeTargetDetails: targetOverviewItems.length > 0 && targetDetailRows.length > 0
+    };
     updateOpsAlertOverviewCard(
         'opsAlertOverviewTargetsCard',
         'opsAlertOverviewTargetsTitle',
         'opsAlertOverviewTargets',
-        targetsTone,
-        targetsTitle,
-        targetsBody
+        targetsCardState.tone || 'neutral',
+        targetsCardState.title || '等待配置',
+        buildOpsAlertOverviewCardBodyMarkup({
+            ...targetsCardState,
+            detailRows: targetsCardState.includeTargetDetails ? (targetsCardState.detailRows || []) : []
+        }, {
+            renderListWhenEmpty: true,
+            listEmptyMessage: '暂无数据'
+        })
     );
 
-    let recentTone = 'neutral';
-    let recentTitle = '等待刷新';
-    let recentBody = buildOpsAlertOverviewEmptyMarkup('告警通道健康页加载后，会在这里显示最近投递摘要。');
-
-    if (healthState.status === 'loading') {
-        recentTitle = '正在刷新';
-        recentBody = buildOpsAlertOverviewEmptyMarkup(healthState.message || '正在加载站外告警通道健康状态...');
-    } else if (healthState.status === 'error') {
-        recentTone = 'danger';
-        recentTitle = '查询失败';
-        recentBody = buildOpsAlertOverviewEmptyMarkup(healthState.message || '加载站外告警通道健康状态失败。');
-    } else if (healthState.status === 'ready') {
-        const lookbackHours = formatVerifyMonitorInteger(summary.lookback_hours || 0);
-        const recentDeliverySummary = buildOpsAlertRecentDeliverySummary(summary.recent_deliveries, {
-            limit: 3,
-            includeChannel: true
-        });
-        const recentErrorSummary = buildOpsAlertRecentErrorSummary(summary.recent_errors, 2);
-        const recentErrorChannelSummary = buildOpsAlertErrorSourceSummary(summary.recent_error_channels, 3);
-        const totalAttemptCount = Math.max(0, Number(summary.total_attempt_count || 0));
-        const deliveredCount = Math.max(0, Number(summary.delivered_count || 0));
-        const deliveryRateText = totalAttemptCount > 0
-            ? `${Math.round((deliveredCount / totalAttemptCount) * 100)}%`
-            : '—';
-        if (Number(summary.total_attempt_count || 0) > 0) {
-            if (Number(summary.dead_letter_count || 0) > 0) {
-                recentTone = 'danger';
-            } else if (Number(summary.failed_count || 0) > 0) {
-                recentTone = 'warning';
-            } else {
-                recentTone = 'success';
-            }
-            recentTitle = `近 ${lookbackHours} 小时`;
-            const metricsMarkup = buildOpsAlertOverviewMetricMarkup([
-                { label: '总投递', value: formatVerifyMonitorInteger(totalAttemptCount) },
-                { label: '送达率', value: deliveryRateText },
-                { label: '刷新于', value: healthState.fetched_at ? formatVerifyMonitorDateTime(healthState.fetched_at) : '—' }
-            ]);
-            const detailsMarkup = buildOpsAlertOverviewKeyValueMarkup([
-                recentDeliverySummary
-                    ? { label: '最近投递', value: recentDeliverySummary, tone: 'neutral' }
-                    : null,
-                recentErrorSummary
-                    ? {
-                        label: '最近失败',
-                        value: recentErrorSummary,
-                        tone: Number(summary.dead_letter_count || 0) > 0 ? 'danger' : 'warning'
-                    }
-                    : { label: '最近失败', value: '最近没有失败明细', tone: 'success' },
-                recentErrorChannelSummary
-                    ? {
-                        label: '异常来源',
-                        value: recentErrorChannelSummary,
-                        tone: Number(summary.dead_letter_count || 0) > 0 ? 'danger' : 'warning'
-                    }
-                    : {
-                        label: '异常来源',
-                        value: '当前没有集中失败来源',
-                        tone: Number(summary.failed_count || 0) > 0 ? 'warning' : 'success'
-                    }
-            ]);
-            recentBody = `${metricsMarkup}${detailsMarkup}`;
-        } else if (Array.isArray(healthState.channels) && healthState.channels.length > 0) {
-            recentTitle = `近 ${lookbackHours} 小时`;
-            recentBody = [
-                buildOpsAlertOverviewMetricMarkup([
-                    { label: '总投递', value: '0' },
-                    { label: '送达率', value: '—' },
-                    { label: '刷新于', value: healthState.fetched_at ? formatVerifyMonitorDateTime(healthState.fetched_at) : '—' }
-                ]),
-                buildOpsAlertOverviewEmptyMarkup('最近没有新的站外投递记录，但通道健康信息已经刷新。')
-            ].join('');
-        } else {
-            recentTitle = '暂无投递';
-            recentBody = buildOpsAlertOverviewEmptyMarkup('最近没有可用于评估的站外告警通道数据。');
-        }
-    }
+    const recentCardState = sharedCardStates?.recentCard || {
+        tone: 'neutral',
+        title: '等待刷新',
+        metrics: [],
+        detailRows: [],
+        emptyMessage: healthState.status === 'loading'
+            ? (healthState.message || '正在加载站外告警通道健康状态...')
+            : (healthState.status === 'error'
+                ? (healthState.message || '加载站外告警通道健康状态失败。')
+                : '告警通道健康页加载后，会在这里显示最近投递摘要。')
+    };
     updateOpsAlertOverviewCard(
         'opsAlertOverviewRecentCard',
         'opsAlertOverviewRecentTitle',
         'opsAlertOverviewRecent',
-        recentTone,
-        recentTitle,
-        recentBody
+        recentCardState.tone || 'neutral',
+        recentCardState.title || '等待刷新',
+        buildOpsAlertOverviewCardBodyMarkup(recentCardState, {
+            emptyMessage: '告警通道健康页加载后，会在这里显示最近投递摘要。'
+        })
     );
-    renderOpsAlertOverviewRecentVisuals(summary, healthState.status);
-}
-
-function buildOpsAlertRecentDeliverySummary(items = [], options = {}) {
-    const limit = Number.isFinite(Number(options.limit)) ? Math.max(1, Number(options.limit)) : 2;
-    const includeChannel = options.includeChannel === true;
-    const normalizedItems = Array.isArray(items) ? items : [];
-
-    return normalizedItems
-        .slice(0, limit)
-        .map((item) => {
-            const title = String(item?.title || item?.alert_type || '系统告警').trim();
-            const target = String(item?.target_summary || '').trim();
-            const channel = includeChannel ? String(item?.channel || '').trim() : '';
-            const parts = [title];
-            if (target) {
-                parts.push(`(${target})`);
-            }
-            if (channel) {
-                parts.push(`· ${channel}`);
-            }
-            return parts.join(' ');
-        })
-        .filter(Boolean)
-        .join('；');
-}
-
-function buildOpsAlertRecentErrorSummary(items = [], limit = 2) {
-    const normalizedItems = Array.isArray(items) ? items : [];
-    return normalizedItems
-        .slice(0, Math.max(1, Number(limit) || 2))
-        .map((item) => {
-            const message = String(item?.message || '未知错误').trim();
-            const channelLabel = String(item?.channel_label || item?.channel || '').trim();
-            const count = Number(item?.count || 0);
-            const parts = [message];
-            if (channelLabel) {
-                parts.push(`(${channelLabel})`);
-            }
-            if (count > 0) {
-                parts.push(`· ${formatVerifyMonitorInteger(count)} 次`);
-            }
-            return parts.join(' ');
-        })
-        .filter(Boolean)
-        .join('；');
-}
-
-function buildOpsAlertDeliveryTypeSummary(items = [], limit = 3) {
-    const normalizedItems = Array.isArray(items) ? items : [];
-    return normalizedItems
-        .slice(0, Math.max(1, Number(limit) || 3))
-        .map((item) => {
-            const title = String(item?.title || item?.alert_type || '系统告警').trim();
-            const count = Number(item?.count || 0);
-            return count > 0 ? `${title} ${formatVerifyMonitorInteger(count)} 次` : title;
-        })
-        .filter(Boolean)
-        .join('；');
-}
-
-function buildOpsAlertErrorSourceSummary(items = [], limit = 3) {
-    const normalizedItems = Array.isArray(items) ? items : [];
-    return normalizedItems
-        .slice(0, Math.max(1, Number(limit) || 3))
-        .map((item) => {
-            const channelLabel = String(item?.channel_label || item?.channel || '未知通道').trim();
-            const count = Number(item?.count || 0);
-            return count > 0 ? `${channelLabel} ${formatVerifyMonitorInteger(count)} 次` : channelLabel;
-        })
-        .filter(Boolean)
-        .join('；');
+    renderOpsAlertOverviewRecentVisuals(
+        summary,
+        healthState.status,
+        sharedOverviewRenderState?.recentVisualState || resolveOpsAlertOverviewRecentVisualState(summary, healthState.status)
+    );
 }
 
 function buildOpsAlertEnabledSeveritySummary(config = {}) {
@@ -9192,150 +9255,216 @@ function buildOpsAlertHealthBadge(label, tone = 'neutral') {
     return `<span class="ops-alert-monitor-badge ops-alert-monitor-badge--${escapeConfigHtml(tone)}">${escapeConfigHtml(label)}</span>`;
 }
 
-function getOpsAlertHealthSourceLabel(source) {
-    const normalizedSource = String(source || '').trim().toLowerCase();
-    if (normalizedSource === 'stored') return '后台密钥仓';
-    if (normalizedSource === 'environment') return '环境变量';
-    return '未配置';
-}
-
-function getOpsAlertHealthMetaLine(channel = {}) {
-    const metaParts = [
-        `最小级别：${channel.minimum_severity || 'warning'}`,
-        `配置来源：${getOpsAlertHealthSourceLabel(channel.source)}`
-    ];
-
-    if (channel.recipient_summary) {
-        metaParts.push(channel.recipient_summary);
-    }
-
-    if (channel.updated_at) {
-        metaParts.push(`更新于 ${formatVerifyMonitorDateTime(channel.updated_at)}`);
-    }
-
-    return metaParts.join(' · ');
-}
-
-function getOpsAlertHealthLastErrorLine(channel = {}) {
-    if (channel.last_error) {
-        return `最近错误：${channel.last_error}`;
-    }
-    if (channel.last_attempt_at) {
-        return `最近投递：${formatVerifyMonitorDateTime(channel.last_attempt_at)}`;
-    }
-    return '最近 72 小时内暂无投递记录';
-}
-
-function buildOpsAlertHealthRecentErrorMarkup(channel = {}) {
-    const recentErrors = Array.isArray(channel.recent_errors) ? channel.recent_errors : [];
-    if (!recentErrors.length) {
-        return '<div class="ops-alert-health-card__errors empty">最近没有失败明细。</div>';
-    }
-
-    return `
-        <div class="ops-alert-health-card__errors">
-            ${recentErrors.map((item) => `
-                <div class="ops-alert-health-card__error-item">
-                    <strong>${escapeConfigHtml(item.message || '未知错误')}</strong>
-                    <span>${escapeConfigHtml(formatVerifyMonitorInteger(item.count || 0))} 次 · ${item.last_seen_at ? formatVerifyMonitorDateTime(item.last_seen_at) : '时间未知'}</span>
-                </div>
-            `).join('')}
-        </div>
-    `;
-}
-
-function getOpsAlertHealthConfigDetails(channel = {}) {
-    const details = [];
-
+function buildLocalOpsAlertHealthCardState(channel = {}) {
+    const tone = String(channel.tone || 'neutral').trim().toLowerCase() || 'neutral';
+    const deliveryRate = Number(channel.delivery_rate);
+    const deliveryRateText = Number.isFinite(deliveryRate) ? `${deliveryRate.toFixed(1)}%` : '—';
+    const configSource = String(channel.source || '').trim().toLowerCase();
+    const configDetails = [];
     if (channel.key === 'telegram' && channel.recipient_summary) {
-        details.push({ label: '投递目标', value: channel.recipient_summary });
+        configDetails.push({ label: '投递目标', value: channel.recipient_summary });
     }
-
     if (channel.key === 'feishu') {
-        details.push({ label: '投递方式', value: channel.recipient_summary || 'Webhook 通道' });
+        configDetails.push({ label: '投递方式', value: channel.recipient_summary || 'Webhook 通道' });
     }
-
     if (channel.key === 'email') {
         if (channel.recipient_preview) {
-            details.push({ label: '收件人', value: channel.recipient_preview });
+            configDetails.push({ label: '收件人', value: channel.recipient_preview });
         } else if (channel.recipient_summary) {
-            details.push({ label: '收件人', value: channel.recipient_summary });
+            configDetails.push({ label: '收件人', value: channel.recipient_summary });
         }
-
         if (channel.from_address) {
-            details.push({ label: '发件地址', value: channel.from_address });
+            configDetails.push({ label: '发件地址', value: channel.from_address });
         }
-
         if (channel.reply_to) {
-            details.push({ label: 'Reply-To', value: channel.reply_to });
+            configDetails.push({ label: 'Reply-To', value: channel.reply_to });
         }
     }
-
-    const recentDeliverySummary = buildOpsAlertRecentDeliverySummary(channel.recent_deliveries, {
-        limit: 2,
-        includeChannel: false
-    });
-    if (recentDeliverySummary) {
-        details.push({ label: '最近类型', value: recentDeliverySummary });
-    }
-
     if (channel.subject_prefix) {
-        details.push({ label: '主题前缀', value: channel.subject_prefix });
+        configDetails.push({ label: '主题前缀', value: channel.subject_prefix });
     }
-
     if (channel.last_attempt_at) {
-        details.push({ label: '最近投递', value: formatVerifyMonitorDateTime(channel.last_attempt_at) });
+        configDetails.push({ label: '最近投递', value: formatVerifyMonitorDateTime(channel.last_attempt_at) });
     }
-
-    return details.slice(0, 5);
+    return {
+        tone,
+        label: channel.label || '通道',
+        metaLine: [
+            `最小级别：${channel.minimum_severity || 'warning'}`,
+            `配置来源：${configSource === 'stored' ? '后台密钥仓' : (configSource === 'environment' ? '环境变量' : '未配置')}`,
+            channel.recipient_summary || '',
+            channel.updated_at ? `更新于 ${formatVerifyMonitorDateTime(channel.updated_at)}` : ''
+        ].filter(Boolean).join(' · '),
+        statusBadges: [
+            { label: channel.enabled ? '已启用' : '未启用', tone: channel.enabled ? (channel.configured ? 'success' : 'warning') : 'neutral' },
+            { label: channel.health_label || '未启用', tone }
+        ],
+        stats: [
+            { value: formatVerifyMonitorInteger(channel.total_attempts || 0), label: '近窗投递' },
+            { value: deliveryRateText, label: '送达率' },
+            { value: formatVerifyMonitorInteger(channel.dead_letter_count || 0), label: '死信' },
+            { value: formatVerifyMonitorInteger(channel.retry_count || 0), label: '重试' }
+        ],
+        configDetails: configDetails.slice(0, 5),
+        summaryText: channel.last_error
+            ? `最近错误：${channel.last_error}`
+            : (channel.last_attempt_at ? `最近投递：${formatVerifyMonitorDateTime(channel.last_attempt_at)}` : '最近 72 小时内暂无投递记录'),
+        recentErrors: (Array.isArray(channel.recent_errors) ? channel.recent_errors : []).map((item) => ({
+            message: item.message || '未知错误',
+            meta: `${formatVerifyMonitorInteger(item.count || 0)} 次 · ${item.last_seen_at ? formatVerifyMonitorDateTime(item.last_seen_at) : '时间未知'}`
+        })),
+        recentErrorsEmptyText: '最近没有失败明细。'
+    };
 }
 
-function buildOpsAlertHealthConfigMarkup(channel = {}) {
-    const details = getOpsAlertHealthConfigDetails(channel);
-    if (!details.length) {
-        return '';
-    }
+function buildLocalOpsAlertHealthCardStates(state = {}) {
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+    const channels = Array.isArray(normalizedState.channels) ? normalizedState.channels.filter(Boolean) : [];
+    return channels.map((channel) => buildLocalOpsAlertHealthCardState(channel));
+}
+
+function resolveOpsAlertHealthCardStates(state = {}) {
+    const renderState = resolveOpsAlertHealthRenderState(state);
+    return Array.isArray(renderState?.channelCardStates)
+        ? renderState.channelCardStates
+        : buildLocalOpsAlertHealthCardStates(state);
+}
+
+function buildOpsAlertHealthCardMarkupFromState(resolvedCardState = {}) {
+    const normalizedCardState = resolvedCardState && typeof resolvedCardState === 'object' && !Array.isArray(resolvedCardState)
+        ? resolvedCardState
+        : {};
+    const configMarkup = Array.isArray(normalizedCardState.configDetails) && normalizedCardState.configDetails.length
+        ? `
+            <div class="ops-alert-health-card__config">
+                ${normalizedCardState.configDetails.map((item) => `
+                    <div class="ops-alert-health-card__config-item">
+                        <span>${escapeConfigHtml(item.label || '')}</span>
+                        <strong>${escapeConfigHtml(item.value || '—')}</strong>
+                    </div>
+                `).join('')}
+            </div>
+        `
+        : '';
+    const recentErrors = Array.isArray(normalizedCardState.recentErrors) ? normalizedCardState.recentErrors : [];
+    const recentErrorsMarkup = recentErrors.length
+        ? `
+            <div class="ops-alert-health-card__errors">
+                ${recentErrors.map((item) => `
+                    <div class="ops-alert-health-card__error-item">
+                        <strong>${escapeConfigHtml(item.message || '未知错误')}</strong>
+                        <span>${escapeConfigHtml(item.meta || '时间未知')}</span>
+                    </div>
+                `).join('')}
+            </div>
+        `
+        : `<div class="ops-alert-health-card__errors empty">${escapeConfigHtml(normalizedCardState.recentErrorsEmptyText || '最近没有失败明细。')}</div>`;
 
     return `
-        <div class="ops-alert-health-card__config">
-            ${details.map((item) => `
-                <div class="ops-alert-health-card__config-item">
-                    <span>${escapeConfigHtml(item.label || '')}</span>
-                    <strong>${escapeConfigHtml(item.value || '—')}</strong>
+        <article class="ops-alert-health-card ops-alert-health-card--${escapeConfigHtml(normalizedCardState.tone || 'neutral')}">
+            <div class="ops-alert-health-card__head">
+                <div>
+                    <div class="ops-alert-health-card__title">${escapeConfigHtml(normalizedCardState.label || '通道')}</div>
+                    <div class="ops-alert-health-card__meta">${escapeConfigHtml(normalizedCardState.metaLine || '')}</div>
                 </div>
-            `).join('')}
-        </div>
+                <div class="ops-alert-health-card__status">
+                    ${(Array.isArray(normalizedCardState.statusBadges) ? normalizedCardState.statusBadges : []).map((badge) => buildOpsAlertHealthBadge(badge?.label || '—', badge?.tone || 'neutral')).join('')}
+                </div>
+            </div>
+            <div class="ops-alert-health-card__stats">
+                ${(Array.isArray(normalizedCardState.stats) ? normalizedCardState.stats : []).map((item) => `
+                    <div><strong>${escapeConfigHtml(item?.value || '—')}</strong><span>${escapeConfigHtml(item?.label || '')}</span></div>
+                `).join('')}
+            </div>
+            ${configMarkup}
+            <div class="ops-alert-health-card__summary">${escapeConfigHtml(normalizedCardState.summaryText || '')}</div>
+            ${recentErrorsMarkup}
+        </article>
     `;
 }
 
 function buildOpsAlertHealthCardMarkup(channel = {}) {
-    const tone = String(channel.tone || 'neutral').trim().toLowerCase() || 'neutral';
-    const deliveryRate = Number(channel.delivery_rate);
-    const deliveryRateText = Number.isFinite(deliveryRate) ? `${deliveryRate.toFixed(1)}%` : '—';
+    return buildOpsAlertHealthCardMarkupFromState(buildLocalOpsAlertHealthCardState(channel));
+}
 
-    return `
-        <article class="ops-alert-health-card ops-alert-health-card--${escapeConfigHtml(tone)}">
-            <div class="ops-alert-health-card__head">
-                <div>
-                    <div class="ops-alert-health-card__title">${escapeConfigHtml(channel.label || '通道')}</div>
-                    <div class="ops-alert-health-card__meta">${escapeConfigHtml(getOpsAlertHealthMetaLine(channel))}</div>
-                </div>
-                <div class="ops-alert-health-card__status">
-                    ${buildOpsAlertHealthBadge(channel.enabled ? '已启用' : '未启用', channel.enabled ? (channel.configured ? 'success' : 'warning') : 'neutral')}
-                    ${buildOpsAlertHealthBadge(channel.health_label || '未启用', tone)}
-                </div>
-            </div>
-            <div class="ops-alert-health-card__stats">
-                <div><strong>${escapeConfigHtml(formatVerifyMonitorInteger(channel.total_attempts || 0))}</strong><span>近窗投递</span></div>
-                <div><strong>${escapeConfigHtml(deliveryRateText)}</strong><span>送达率</span></div>
-                <div><strong>${escapeConfigHtml(formatVerifyMonitorInteger(channel.dead_letter_count || 0))}</strong><span>死信</span></div>
-                <div><strong>${escapeConfigHtml(formatVerifyMonitorInteger(channel.retry_count || 0))}</strong><span>重试</span></div>
-            </div>
-            ${buildOpsAlertHealthConfigMarkup(channel)}
-            <div class="ops-alert-health-card__summary">${escapeConfigHtml(getOpsAlertHealthLastErrorLine(channel))}</div>
-            ${buildOpsAlertHealthRecentErrorMarkup(channel)}
-        </article>
-    `;
+function buildLocalOpsAlertHealthRenderState(state = {}) {
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+    const summary = normalizedState.summary && typeof normalizedState.summary === 'object' && !Array.isArray(normalizedState.summary)
+        ? normalizedState.summary
+        : getDefaultOpsAlertHealthState().summary;
+    const channels = Array.isArray(normalizedState.channels) ? normalizedState.channels.filter(Boolean) : [];
+    const normalizedStatus = String(normalizedState.status || 'idle').trim().toLowerCase() || 'idle';
+
+    if (normalizedStatus === 'loading') {
+        return {
+            panelState: {
+                status: 'loading',
+                metaIcon: 'fas fa-rotate fa-spin',
+                metaText: '正在加载站外告警通道健康状态...',
+                emptyMessage: '正在加载站外告警通道健康状态...',
+                shouldRenderCards: false
+            },
+            channelCardStates: []
+        };
+    }
+
+    if (normalizedStatus === 'error') {
+        const message = normalizedState.message || '加载告警通道健康状态失败。';
+        return {
+            panelState: {
+                status: 'error',
+                metaIcon: 'fas fa-triangle-exclamation',
+                metaText: message,
+                emptyMessage: message,
+                shouldRenderCards: false
+            },
+            channelCardStates: []
+        };
+    }
+
+    if (!channels.length) {
+        return {
+            panelState: {
+                status: 'empty',
+                metaIcon: 'fas fa-circle-info',
+                metaText: '最近没有可用于评估的站外告警通道数据。',
+                emptyMessage: '最近没有可用于评估的站外告警通道数据。',
+                shouldRenderCards: false
+            },
+            channelCardStates: []
+        };
+    }
+
+    return {
+        panelState: {
+            status: 'ready',
+            metaIcon: 'fas fa-heart-pulse',
+            metaText: `最近 ${formatVerifyMonitorInteger(summary.lookback_hours || 0)} 小时共记录 ${formatVerifyMonitorInteger(summary.total_attempt_count || 0)} 次投递，送达 ${formatVerifyMonitorInteger(summary.delivered_count || 0)} 次，失败 ${formatVerifyMonitorInteger(summary.failed_count || 0)} 次，死信 ${formatVerifyMonitorInteger(summary.dead_letter_count || 0)} 项。`,
+            emptyMessage: '',
+            shouldRenderCards: true
+        },
+        channelCardStates: channels.map((channel) => buildLocalOpsAlertHealthCardState(channel))
+    };
+}
+
+function buildLocalOpsAlertHealthPanelState(state = {}) {
+    return buildLocalOpsAlertHealthRenderState(state).panelState;
+}
+
+function resolveOpsAlertHealthPanelState(state = {}) {
+    const renderState = resolveOpsAlertHealthRenderState(state);
+    return renderState?.panelState || buildLocalOpsAlertHealthPanelState(state);
+}
+
+function resolveOpsAlertHealthRenderState(state = {}) {
+    if (typeof window.buildAdminWorkbenchOpsAlertHealthRenderState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertHealthRenderState(state, {
+            defaultHealthState: getDefaultOpsAlertHealthState(),
+            formatCount: formatVerifyMonitorInteger,
+            formatDateTime: formatVerifyMonitorDateTime
+        });
+    }
+    return buildLocalOpsAlertHealthRenderState(state);
 }
 
 function renderOpsAlertHealthPanel() {
@@ -9346,37 +9475,42 @@ function renderOpsAlertHealthPanel() {
 
     const state = opsAlertHealthState || getDefaultOpsAlertHealthState();
     const summary = state.summary || getDefaultOpsAlertHealthState().summary;
+    const sharedHealthRenderState = resolveOpsAlertHealthRenderState(state);
+    const sharedPanelState = sharedHealthRenderState?.panelState || resolveOpsAlertHealthPanelState(state);
 
     panel.hidden = false;
 
-    if (state.status === 'loading') {
+    if (sharedPanelState.status === 'loading') {
         renderOpsAlertOverviewCards();
-        meta.innerHTML = '<i class="fas fa-rotate fa-spin"></i><span>正在加载站外告警通道健康状态...</span>';
-        renderOpsAlertHealthEmptyState(grid, '正在加载站外告警通道健康状态...');
+        meta.innerHTML = `<i class="${escapeConfigHtml(sharedPanelState.metaIcon || 'fas fa-rotate fa-spin')}"></i><span>${escapeConfigHtml(sharedPanelState.metaText || '正在加载站外告警通道健康状态...')}</span>`;
+        renderOpsAlertHealthEmptyState(grid, sharedPanelState.emptyMessage || '正在加载站外告警通道健康状态...');
         return;
     }
 
-    if (state.status === 'error') {
+    if (sharedPanelState.status === 'error') {
         renderOpsAlertOverviewCards();
-        meta.innerHTML = `<i class="fas fa-triangle-exclamation"></i><span>${escapeConfigHtml(state.message || '加载告警通道健康状态失败。')}</span>`;
-        renderOpsAlertHealthEmptyState(grid, state.message || '加载告警通道健康状态失败。');
+        meta.innerHTML = `<i class="${escapeConfigHtml(sharedPanelState.metaIcon || 'fas fa-triangle-exclamation')}"></i><span>${escapeConfigHtml(sharedPanelState.metaText || state.message || '加载告警通道健康状态失败。')}</span>`;
+        renderOpsAlertHealthEmptyState(grid, sharedPanelState.emptyMessage || state.message || '加载告警通道健康状态失败。');
         return;
     }
 
     const channels = Array.isArray(state.channels) ? state.channels : [];
-    if (!channels.length) {
+    if (sharedPanelState.status === 'empty') {
         renderOpsAlertOverviewCards();
-        meta.innerHTML = '<i class="fas fa-circle-info"></i><span>最近没有可用于评估的站外告警通道数据。</span>';
-        renderOpsAlertHealthEmptyState(grid, '最近没有可用于评估的站外告警通道数据。');
+        meta.innerHTML = `<i class="${escapeConfigHtml(sharedPanelState.metaIcon || 'fas fa-circle-info')}"></i><span>${escapeConfigHtml(sharedPanelState.metaText || '最近没有可用于评估的站外告警通道数据。')}</span>`;
+        renderOpsAlertHealthEmptyState(grid, sharedPanelState.emptyMessage || '最近没有可用于评估的站外告警通道数据。');
         return;
     }
 
     renderOpsAlertOverviewCards();
-    meta.innerHTML = `<i class="fas fa-heart-pulse"></i><span>最近 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.lookback_hours || 0))} 小时共记录 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.total_attempt_count || 0))} 次投递，送达 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.delivered_count || 0))} 次，失败 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.failed_count || 0))} 次，死信 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.dead_letter_count || 0))} 项。</span>`;
-    grid.innerHTML = channels.map((channel) => buildOpsAlertHealthCardMarkup(channel)).join('');
+    meta.innerHTML = `<i class="${escapeConfigHtml(sharedPanelState.metaIcon || 'fas fa-heart-pulse')}"></i><span>${escapeConfigHtml(sharedPanelState.metaText || `最近 ${formatVerifyMonitorInteger(summary.lookback_hours || 0)} 小时共记录 ${formatVerifyMonitorInteger(summary.total_attempt_count || 0)} 次投递，送达 ${formatVerifyMonitorInteger(summary.delivered_count || 0)} 次，失败 ${formatVerifyMonitorInteger(summary.failed_count || 0)} 次，死信 ${formatVerifyMonitorInteger(summary.dead_letter_count || 0)} 项。`)}</span>`;
+    const channelCardStates = Array.isArray(sharedHealthRenderState?.channelCardStates)
+        ? sharedHealthRenderState.channelCardStates
+        : resolveOpsAlertHealthCardStates(state);
+    grid.innerHTML = channelCardStates.map((cardState) => buildOpsAlertHealthCardMarkupFromState(cardState)).join('');
 }
 
-function getOpsAlertMonitorCategoryActions(categoryKey) {
+function buildLocalOpsAlertMonitorCategoryActions(categoryKey) {
     const normalizedKey = String(categoryKey || '').trim().toLowerCase();
     const actionMap = {
         payments: [
@@ -9400,6 +9534,17 @@ function getOpsAlertMonitorCategoryActions(categoryKey) {
         ]
     };
     return actionMap[normalizedKey] || [];
+}
+
+function resolveOpsAlertMonitorCategoryActions(categoryKey) {
+    if (typeof window.getAdminWorkbenchOpsAlertMonitorCategoryActions === 'function') {
+        return window.getAdminWorkbenchOpsAlertMonitorCategoryActions(categoryKey);
+    }
+    return buildLocalOpsAlertMonitorCategoryActions(categoryKey);
+}
+
+function getOpsAlertMonitorCategoryActions(categoryKey) {
+    return resolveOpsAlertMonitorCategoryActions(categoryKey);
 }
 
 function normalizeOpsAlertMonitorFilterValue(kind, value) {
@@ -9438,28 +9583,97 @@ function getOpsAlertMonitorPreparedCategories(filters = getOpsAlertMonitorViewFi
 }
 
 function syncOpsAlertMonitorFilterToolbar(filters = getOpsAlertMonitorViewFilters()) {
+    const toolbarState = resolveOpsAlertMonitorFilterToolbarState(filters);
     document.querySelectorAll('[data-ops-alert-monitor-filter-kind]').forEach((button) => {
         const kind = String(button.dataset.opsAlertMonitorFilterKind || '').trim().toLowerCase();
         const value = String(button.dataset.opsAlertMonitorFilterValue || '').trim().toLowerCase();
-        const isActive = filters[kind] === value;
+        const matched = Array.isArray(toolbarState)
+            ? toolbarState.find((item) => item.kind === kind && item.value === value)
+            : null;
+        const isActive = matched ? matched.active === true : filters[kind] === value;
         button.classList.toggle('active', isActive);
         button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
     });
 }
 
-function getOpsAlertMonitorDisplayActiveCount(category = {}) {
+function buildLocalOpsAlertMonitorFilterToolbarState(filters = getOpsAlertMonitorViewFilters()) {
+    const normalizedFilters = filters && typeof filters === 'object' && !Array.isArray(filters)
+        ? filters
+        : getDefaultOpsAlertMonitorViewState();
+    const definitions = Array.from(document.querySelectorAll('[data-ops-alert-monitor-filter-kind]')).map((button) => ({
+        kind: button.dataset.opsAlertMonitorFilterKind,
+        value: button.dataset.opsAlertMonitorFilterValue
+    }));
+    return definitions.map((item) => {
+        const kind = String(item.kind || '').trim().toLowerCase();
+        const value = String(item.value || '').trim().toLowerCase();
+        return {
+            kind,
+            value,
+            active: normalizedFilters[kind] === value
+        };
+    });
+}
+
+function resolveOpsAlertMonitorFilterToolbarState(filters = getOpsAlertMonitorViewFilters()) {
+    const definitions = Array.from(document.querySelectorAll('[data-ops-alert-monitor-filter-kind]')).map((button) => ({
+        kind: button.dataset.opsAlertMonitorFilterKind,
+        value: button.dataset.opsAlertMonitorFilterValue
+    }));
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorFilterToolbarState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorFilterToolbarState(filters, {
+            definitions
+        });
+    }
+    return buildLocalOpsAlertMonitorFilterToolbarState(filters);
+}
+
+function buildLocalOpsAlertMonitorDisplayActiveCount(category = {}) {
     return Number(category.display_active_count ?? category.active_count ?? 0);
 }
 
-function getOpsAlertMonitorDisplayCriticalCount(category = {}) {
+function resolveOpsAlertMonitorDisplayActiveCount(category = {}) {
+    if (typeof window.getAdminWorkbenchOpsAlertMonitorDisplayActiveCount === 'function') {
+        return window.getAdminWorkbenchOpsAlertMonitorDisplayActiveCount(category);
+    }
+    return buildLocalOpsAlertMonitorDisplayActiveCount(category);
+}
+
+function getOpsAlertMonitorDisplayActiveCount(category = {}) {
+    return resolveOpsAlertMonitorDisplayActiveCount(category);
+}
+
+function buildLocalOpsAlertMonitorDisplayCriticalCount(category = {}) {
     return Number(category.display_critical_count ?? category.critical_count ?? 0);
 }
 
-function getOpsAlertMonitorCardTone(category = {}) {
+function resolveOpsAlertMonitorDisplayCriticalCount(category = {}) {
+    if (typeof window.getAdminWorkbenchOpsAlertMonitorDisplayCriticalCount === 'function') {
+        return window.getAdminWorkbenchOpsAlertMonitorDisplayCriticalCount(category);
+    }
+    return buildLocalOpsAlertMonitorDisplayCriticalCount(category);
+}
+
+function getOpsAlertMonitorDisplayCriticalCount(category = {}) {
+    return resolveOpsAlertMonitorDisplayCriticalCount(category);
+}
+
+function buildLocalOpsAlertMonitorCardTone(category = {}) {
     if (getOpsAlertMonitorDisplayCriticalCount(category) > 0) return 'danger';
     if (getOpsAlertMonitorDisplayActiveCount(category) > 0) return 'warning';
     if (String(category.latest_state || '').toLowerCase() === 'recovered') return 'success';
     return 'neutral';
+}
+
+function resolveOpsAlertMonitorCardTone(category = {}) {
+    if (typeof window.getAdminWorkbenchOpsAlertMonitorCardTone === 'function') {
+        return window.getAdminWorkbenchOpsAlertMonitorCardTone(category);
+    }
+    return buildLocalOpsAlertMonitorCardTone(category);
+}
+
+function getOpsAlertMonitorCardTone(category = {}) {
+    return resolveOpsAlertMonitorCardTone(category);
 }
 
 function renderOpsAlertMonitorEmptyState(target, message) {
@@ -9494,14 +9708,25 @@ function getOpsAlertMonitorRiskLevelLabel(riskLevel) {
     return labelMap[normalizedRiskLevel] || normalizedRiskLevel || '中';
 }
 
-function getOpsAlertCaseStatusTone(status) {
+function buildLocalOpsAlertCaseStatusTone(status) {
     const normalizedStatus = String(status || '').trim().toLowerCase();
     if (normalizedStatus === 'resolved') return 'success';
     if (normalizedStatus === 'claimed') return 'neutral';
     return 'warning';
 }
 
-function getOpsAlertCaseStatusLabel(status) {
+function resolveOpsAlertCaseStatusTone(status) {
+    if (typeof window.getAdminWorkbenchOpsAlertCaseStatusTone === 'function') {
+        return window.getAdminWorkbenchOpsAlertCaseStatusTone(status, { variant: 'monitor' });
+    }
+    return buildLocalOpsAlertCaseStatusTone(status);
+}
+
+function getOpsAlertCaseStatusTone(status) {
+    return resolveOpsAlertCaseStatusTone(status);
+}
+
+function buildLocalOpsAlertCaseStatusLabel(status) {
     const normalizedStatus = String(status || '').trim().toLowerCase();
     const labelMap = {
         open: '待处理',
@@ -9511,9 +9736,22 @@ function getOpsAlertCaseStatusLabel(status) {
     return labelMap[normalizedStatus] || '待处理';
 }
 
-function getOpsAlertMonitorAssignableAdmins() {
-    const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
-    const admins = Array.isArray(state.assignable_admins) ? state.assignable_admins : [];
+function resolveOpsAlertCaseStatusLabel(status) {
+    if (typeof window.getAdminWorkbenchOpsAlertCaseStatusLabel === 'function') {
+        return window.getAdminWorkbenchOpsAlertCaseStatusLabel(status);
+    }
+    return buildLocalOpsAlertCaseStatusLabel(status);
+}
+
+function getOpsAlertCaseStatusLabel(status) {
+    return resolveOpsAlertCaseStatusLabel(status);
+}
+
+function buildLocalOpsAlertMonitorAssignableAdmins(state = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
+        ? state
+        : getDefaultOpsAlertMonitorState();
+    const admins = Array.isArray(normalizedState.assignable_admins) ? normalizedState.assignable_admins : [];
     if (admins.length) {
         return admins.map((admin) => ({
             id: String(admin.id || '').trim(),
@@ -9524,8 +9762,8 @@ function getOpsAlertMonitorAssignableAdmins() {
         })).filter((admin) => admin.id && admin.label);
     }
 
-    const fallbackAdminId = String(state.current_admin_id || '').trim();
-    const fallbackAdminLabel = String(state.current_admin_label || '').trim();
+    const fallbackAdminId = String(normalizedState.current_admin_id || '').trim();
+    const fallbackAdminLabel = String(normalizedState.current_admin_label || '').trim();
     if (!fallbackAdminId || !fallbackAdminLabel) {
         return [];
     }
@@ -9539,7 +9777,21 @@ function getOpsAlertMonitorAssignableAdmins() {
     }];
 }
 
-function getOpsAlertCaseRecentEvents(item = {}) {
+function resolveOpsAlertMonitorAssignableAdmins(state = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {
+    if (typeof window.normalizeAdminWorkbenchOpsAlertMonitorAssignableAdmins === 'function') {
+        return window.normalizeAdminWorkbenchOpsAlertMonitorAssignableAdmins(state, {
+            fallbackRoleName: 'admin'
+        });
+    }
+
+    return buildLocalOpsAlertMonitorAssignableAdmins(state);
+}
+
+function getOpsAlertMonitorAssignableAdmins() {
+    return resolveOpsAlertMonitorAssignableAdmins(opsAlertMonitorState || getDefaultOpsAlertMonitorState());
+}
+
+function buildLocalOpsAlertCaseRecentEvents(item = {}) {
     return (Array.isArray(item.case_recent_events) ? item.case_recent_events : [])
         .map((event) => ({
             action: String(event.action || '').trim().toLowerCase(),
@@ -9555,7 +9807,18 @@ function getOpsAlertCaseRecentEvents(item = {}) {
         .filter((event) => event.action || event.actionLabel || event.summary || event.createdAt);
 }
 
-function getOpsAlertCaseRecentEventText(event = {}) {
+function resolveOpsAlertCaseRecentEvents(item = {}) {
+    if (typeof window.normalizeAdminWorkbenchOpsAlertCaseRecentEvents === 'function') {
+        return window.normalizeAdminWorkbenchOpsAlertCaseRecentEvents(item.case_recent_events);
+    }
+    return buildLocalOpsAlertCaseRecentEvents(item);
+}
+
+function getOpsAlertCaseRecentEvents(item = {}) {
+    return resolveOpsAlertCaseRecentEvents(item);
+}
+
+function buildLocalOpsAlertCaseRecentEventText(event = {}) {
     const actionLabel = String(event.actionLabel || '').trim() || String(event.action || '').trim();
     const muteUntil = String(event.metadata?.mute_until || '').trim();
     const summary = String(event.action || '').trim().toLowerCase() === 'batch_mute' && muteUntil
@@ -9583,7 +9846,21 @@ function getOpsAlertCaseRecentEventText(event = {}) {
     return parts.join(' · ');
 }
 
-function getOpsAlertCaseSummaryText(item = {}) {
+function resolveOpsAlertCaseRecentEventText(event = {}) {
+    if (typeof window.getAdminWorkbenchOpsAlertCaseRecentEventText === 'function') {
+        return window.getAdminWorkbenchOpsAlertCaseRecentEventText(event, {
+            formatTime: formatVerifyMonitorDateTime,
+            muteVerb: '已静默至'
+        });
+    }
+    return buildLocalOpsAlertCaseRecentEventText(event);
+}
+
+function getOpsAlertCaseRecentEventText(event = {}) {
+    return resolveOpsAlertCaseRecentEventText(event);
+}
+
+function buildLocalOpsAlertCaseSummaryText(item = {}) {
     const status = String(item.case_status || '').trim().toLowerCase() || 'open';
     const statusLabel = getOpsAlertCaseStatusLabel(status);
     const ownerLabel = String(item.case_owner_label || '').trim();
@@ -9618,6 +9895,20 @@ function getOpsAlertCaseSummaryText(item = {}) {
     return summaryParts.join(' · ');
 }
 
+function resolveOpsAlertCaseSummaryText(item = {}) {
+    if (typeof window.getAdminWorkbenchOpsAlertCaseSummaryText === 'function') {
+        return window.getAdminWorkbenchOpsAlertCaseSummaryText(item, {
+            formatTime: formatVerifyMonitorDateTime,
+            muteVerb: '已静默至'
+        });
+    }
+    return buildLocalOpsAlertCaseSummaryText(item);
+}
+
+function getOpsAlertCaseSummaryText(item = {}) {
+    return resolveOpsAlertCaseSummaryText(item);
+}
+
 function getShopRiskCaseStatusTone(status) {
     return getOpsAlertCaseStatusTone(status);
 }
@@ -9630,51 +9921,35 @@ function getShopRiskCaseSummaryText(item = {}) {
     return getOpsAlertCaseSummaryText(item);
 }
 
-function getOpsAlertMonitorItemAction(category = {}, item = {}) {
-    const alertType = String(item.alert_type || '').trim().toLowerCase();
-    const categoryKey = String(category.key || '').trim().toLowerCase();
-    const targetId = String(item.target_id || '').trim().toLowerCase();
-    const perType = {
-        payment_refund_ops: { target: 'payments-ops', label: '处理退款', icon: 'fas fa-arrow-rotate-left' },
-        payment_gateway_degraded: { target: 'payments-overview', label: '查看通道', icon: 'fas fa-credit-card' },
-        payment_config_changed: { target: 'admin-audit-monitor', label: '查看审计', icon: 'fas fa-user-shield' },
-        payment_config_incident: { target: 'admin-audit-monitor', label: '排查配置风险', icon: 'fas fa-user-shield' },
-        ticket_sla_overdue: { target: 'tickets-pending', label: '处理工单', icon: 'fas fa-ticket-alt' },
-        ticket_sla_summary: { target: 'tickets-pending', label: '处理工单', icon: 'fas fa-ticket-alt' },
-        shop_inventory_low: { target: 'shop-inventory', label: '去补货', icon: 'fas fa-box-open' },
-        shop_inventory_empty: { target: 'shop-inventory', label: '去补货', icon: 'fas fa-box-open' },
-        shop_order_delivery_summary: { target: 'shop-fulfillment', label: '处理履约', icon: 'fas fa-truck-ramp-box' },
-        shop_order_delivery_failed: { target: 'shop-fulfillment', label: '处理履约', icon: 'fas fa-truck-ramp-box' },
-        shop_order_delivery_incident: { target: 'shop-fulfillment', label: '处理事故', icon: 'fas fa-triangle-exclamation' }
-    };
-    if (alertType === 'shop_order_risk_anomaly' || alertType === 'shop_order_risk_recovered') {
-        if (targetId.startsWith('shop_order_risk:coupon:')) {
-            return { target: 'shop-risk-discounts', label: '查看优惠券码', icon: 'fas fa-ticket' };
-        }
-        if (targetId.startsWith('shop_order_risk:login_signature:')) {
-            return { target: 'shop-risk-users', label: '查看关联账号', icon: 'fas fa-user-shield' };
-        }
-        if (targetId.startsWith('shop_order_risk:shared_ip:')) {
-            return { target: 'shop-risk-users', label: '查看关联账号', icon: 'fas fa-user-shield' };
-        }
-        if (targetId.startsWith('shop_order_risk:user_velocity:')) {
-            return { target: 'shop-risk-users', label: '查看用户详情', icon: 'fas fa-user-shield' };
-        }
-        return { target: 'shop-risk-orders', label: '查看风险订单', icon: 'fas fa-bag-shopping' };
+function buildLocalOpsAlertMonitorItemAction(category = {}, item = {}) {
+    if (typeof window.getOpsAlertWorkspaceAction === 'function') {
+        return window.getOpsAlertWorkspaceAction({
+            categoryKey: String(category.key || '').trim().toLowerCase(),
+            alertType: String(item.alert_type || '').trim().toLowerCase(),
+            targetId: String(item.target_id || '').trim().toLowerCase()
+        }, {
+            labelVariant: 'monitor'
+        });
     }
-    const fallbackByCategory = {
-        payments: { target: 'payments-ops', label: '进入处理页', icon: 'fas fa-shield-heart' },
-        tickets: { target: 'tickets-pending', label: '进入处理页', icon: 'fas fa-ticket-alt' },
-        inventory: { target: 'shop-inventory', label: '进入处理页', icon: 'fas fa-box-open' },
-        fulfillment: { target: 'shop-fulfillment', label: '进入处理页', icon: 'fas fa-truck-ramp-box' },
-        shop_risk: { target: 'shop-risk-orders', label: '进入处理页', icon: 'fas fa-bag-shopping' }
-    };
-    return perType[alertType] || fallbackByCategory[categoryKey] || null;
+
+    return null;
 }
 
-function getOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
+function resolveOpsAlertMonitorItemAction(category = {}, item = {}) {
+    if (typeof window.getAdminWorkbenchOpsAlertMonitorWorkspaceAction === 'function') {
+        return window.getAdminWorkbenchOpsAlertMonitorWorkspaceAction(category, item, {
+            labelVariant: 'monitor'
+        });
+    }
+    return buildLocalOpsAlertMonitorItemAction(category, item);
+}
+
+function getOpsAlertMonitorItemAction(category = {}, item = {}) {
+    return resolveOpsAlertMonitorItemAction(category, item);
+}
+
+function buildLocalOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
     const alertType = String(item.alert_type || '').trim().toLowerCase();
-    const targetId = String(item.target_id || '').trim().toLowerCase();
     const primaryAction = String(item.primary_action || '').trim().toLowerCase();
     const autoResponseStatus = String(item.auto_response_status || '').trim().toLowerCase();
 
@@ -9715,7 +9990,18 @@ function getOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
     return null;
 }
 
-function getOpsAlertMonitorItemCaseActions(category = {}, item = {}) {
+function resolveOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
+    if (typeof window.getAdminWorkbenchOpsAlertMonitorQuickAction === 'function') {
+        return window.getAdminWorkbenchOpsAlertMonitorQuickAction(category, item);
+    }
+    return buildLocalOpsAlertMonitorItemQuickAction(category, item);
+}
+
+function getOpsAlertMonitorItemQuickAction(category = {}, item = {}) {
+    return resolveOpsAlertMonitorItemQuickAction(category, item);
+}
+
+function buildLocalOpsAlertMonitorItemCaseActions(category = {}, item = {}) {
     const categoryKey = String(category.key || '').trim().toLowerCase();
     if (!categoryKey || !String(item.target_id || '').trim()) {
         return [];
@@ -9757,22 +10043,49 @@ function getOpsAlertMonitorItemCaseActions(category = {}, item = {}) {
     return actions;
 }
 
-function buildOpsAlertMonitorContextAttrs(category = {}, item = {}) {
+function resolveOpsAlertMonitorItemCaseActions(category = {}, item = {}) {
+    if (typeof window.getAdminWorkbenchOpsAlertMonitorCaseActions === 'function') {
+        return window.getAdminWorkbenchOpsAlertMonitorCaseActions(category, item);
+    }
+    return buildLocalOpsAlertMonitorItemCaseActions(category, item);
+}
+
+function getOpsAlertMonitorItemCaseActions(category = {}, item = {}) {
+    return resolveOpsAlertMonitorItemCaseActions(category, item);
+}
+
+function buildLocalOpsAlertMonitorContextAttrs(category = {}, item = {}) {
     return {
-        'data-workspace-title': item.title || '',
-        'data-workspace-alert-type': item.alert_type || '',
-        'data-workspace-category': category.key || '',
-        'data-workspace-reference-label': item.reference_label || '',
-        'data-workspace-reference-value': item.reference_value || '',
-        'data-workspace-target-id': item.target_id || '',
-        'data-workspace-user-id': item.user_id || '',
-        'data-workspace-client-ip': item.client_ip || '',
-        'data-workspace-discount-code': item.discount_code || '',
-        'data-workspace-signal-type': item.signal_type || '',
-        'data-workspace-case-status': item.case_status || '',
-        'data-workspace-case-owner-admin-id': item.case_owner_admin_id || '',
-        'data-workspace-case-owner-label': item.case_owner_label || ''
+        title: item.title || '',
+        alertType: item.alert_type || '',
+        category: category.key || '',
+        referenceLabel: item.reference_label || '',
+        referenceValue: item.reference_value || '',
+        targetId: item.target_id || '',
+        userId: item.user_id || '',
+        clientIp: item.client_ip || '',
+        discountCode: item.discount_code || '',
+        signalType: item.signal_type || '',
+        sessionId: item.session_id || '',
+        caseStatus: item.case_status || '',
+        caseOwnerAdminId: item.case_owner_admin_id || '',
+        caseOwnerLabel: item.case_owner_label || ''
     };
+}
+
+function resolveOpsAlertMonitorContextAttrs(category = {}, item = {}) {
+    const sharedContext = typeof window.buildAdminWorkbenchOpsAlertMonitorActionContext === 'function'
+        ? window.buildAdminWorkbenchOpsAlertMonitorActionContext(category, item)
+        : null;
+    if (typeof window.buildAdminWorkbenchOpsAlertWorkspaceContextAttrs === 'function') {
+        return window.buildAdminWorkbenchOpsAlertWorkspaceContextAttrs(sharedContext || buildLocalOpsAlertMonitorContextAttrs(category, item));
+    }
+
+    return buildLocalOpsAlertMonitorContextAttrs(category, item);
+}
+
+function buildOpsAlertMonitorContextAttrs(category = {}, item = {}) {
+    return resolveOpsAlertMonitorContextAttrs(category, item);
 }
 
 function buildOpsAlertMonitorWorkspaceAttrs(action = {}, category = {}, item = {}) {
@@ -9814,19 +10127,16 @@ function buildOpsAlertMonitorCaseActionAttrs(action = {}, category = {}, item = 
         .join(' ');
 }
 
-function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
+function buildOpsAlertMonitorItemMarkup(item = {}, category = {}, precomputedState = null) {
     const categoryKey = String(category.key || '').trim().toLowerCase();
-    const severity = String(item.severity || 'warning').trim().toLowerCase();
-    const severityTone = getOpsAlertMonitorSeverityTone(severity);
-    const riskLevel = String(item.risk_level || '').trim().toLowerCase();
-    const riskTone = getOpsAlertMonitorRiskTone(riskLevel);
-    const itemAction = getOpsAlertMonitorItemAction(category, item);
-    const quickAction = getOpsAlertMonitorItemQuickAction(category, item);
-    const caseActions = getOpsAlertMonitorItemCaseActions(category, item);
-    const caseStatus = String(item.case_status || '').trim().toLowerCase() || 'open';
-    const caseTone = getOpsAlertCaseStatusTone(caseStatus);
-    const recentEvents = getOpsAlertCaseRecentEvents(item);
-    const metaParts = [
+    const itemState = precomputedState || null;
+    const fallbackCaseActions = getOpsAlertMonitorItemCaseActions(category, item);
+    const fallbackQuickAction = getOpsAlertMonitorItemQuickAction(category, item);
+    const fallbackItemAction = getOpsAlertMonitorItemAction(category, item);
+    const fallbackCaseStatus = String(item.case_status || '').trim().toLowerCase() || 'open';
+    const fallbackCaseTone = getOpsAlertCaseStatusTone(fallbackCaseStatus);
+    const fallbackRecentEvents = getOpsAlertCaseRecentEvents(item);
+    const fallbackMetaParts = [
         item.reference_label && item.reference_value
             ? `${escapeConfigHtml(item.reference_label)}：${escapeConfigHtml(item.reference_value)}`
             : '',
@@ -9836,30 +10146,36 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
     return `
         <article class="ops-alert-monitor-item">
             <div class="ops-alert-monitor-item__top">
-                ${buildOpsAlertMonitorBadge(severity === 'critical' ? 'critical' : 'warning', severityTone)}
-                ${riskLevel ? buildOpsAlertMonitorBadge(`风险 ${getOpsAlertMonitorRiskLevelLabel(riskLevel)}${Number.isFinite(Number(item.risk_score)) ? ` · ${formatVerifyMonitorInteger(item.risk_score)}` : ''}`, riskTone) : ''}
-                ${caseActions.length || item.case_owner_label || item.case_note || item.case_resolution || recentEvents.length
-        ? buildOpsAlertMonitorBadge(`处置 ${getOpsAlertCaseStatusLabel(caseStatus)}`, caseTone)
-        : ''}
-                <strong class="ops-alert-monitor-item__title">${escapeConfigHtml(item.title || '系统告警')}</strong>
+                ${(Array.isArray(itemState?.topBadges)
+        ? itemState.topBadges.map((badge) => buildOpsAlertMonitorBadge(badge.label, badge.tone)).join('')
+        : [
+            buildOpsAlertMonitorBadge(String(item.severity || 'warning').trim().toLowerCase() === 'critical' ? 'critical' : 'warning', getOpsAlertMonitorSeverityTone(item.severity)),
+            String(item.risk_level || '').trim().toLowerCase()
+                ? buildOpsAlertMonitorBadge(`风险 ${getOpsAlertMonitorRiskLevelLabel(item.risk_level)}${Number.isFinite(Number(item.risk_score)) ? ` · ${formatVerifyMonitorInteger(item.risk_score)}` : ''}`, getOpsAlertMonitorRiskTone(item.risk_level))
+                : '',
+            (fallbackCaseActions.length || item.case_owner_label || item.case_note || item.case_resolution || fallbackRecentEvents.length)
+                ? buildOpsAlertMonitorBadge(`处置 ${getOpsAlertCaseStatusLabel(fallbackCaseStatus)}`, fallbackCaseTone)
+                : ''
+        ].filter(Boolean).join(''))}
+                <strong class="ops-alert-monitor-item__title">${escapeConfigHtml(itemState?.title || item.title || '系统告警')}</strong>
             </div>
-            ${item.message ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(item.message)}</div>` : ''}
-            ${caseActions.length || item.case_owner_label || item.case_note || item.case_resolution || recentEvents.length
-        ? `<div class="ops-alert-monitor-item__summary"><strong>${categoryKey === 'shop_risk' ? '值班处理' : '处理进度'}：</strong> ${escapeConfigHtml(getOpsAlertCaseSummaryText(item))}</div>`
+            ${(itemState?.message || item.message) ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(itemState?.message || item.message)}</div>` : ''}
+            ${itemState?.progressText || fallbackCaseActions.length || item.case_owner_label || item.case_note || item.case_resolution || fallbackRecentEvents.length
+        ? `<div class="ops-alert-monitor-item__summary"><strong>${escapeConfigHtml(itemState?.progressPrefix || (categoryKey === 'shop_risk' ? '值班处理' : '处理进度'))}：</strong> ${escapeConfigHtml(itemState?.progressText || getOpsAlertCaseSummaryText(item))}</div>`
         : ''}
-            ${recentEvents.length ? `
+            ${(Array.isArray(itemState?.historyItems) ? itemState.historyItems : fallbackRecentEvents.map((event) => getOpsAlertCaseRecentEventText(event))).length ? `
                 <div class="ops-alert-monitor-item__history">
-                    ${recentEvents.map((event) => `
-                        <div class="ops-alert-monitor-item__history-item">${escapeConfigHtml(getOpsAlertCaseRecentEventText(event))}</div>
+                    ${(Array.isArray(itemState?.historyItems) ? itemState.historyItems : fallbackRecentEvents.map((event) => getOpsAlertCaseRecentEventText(event))).map((eventText) => `
+                        <div class="ops-alert-monitor-item__history-item">${escapeConfigHtml(eventText)}</div>
                     `).join('')}
                 </div>
             ` : ''}
-            ${item.auto_response_summary ? `<div class="ops-alert-monitor-item__summary"><strong>自动处置：</strong> ${escapeConfigHtml(item.auto_response_summary)}</div>` : ''}
-            ${item.response_summary ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(item.response_summary)}</div>` : ''}
-            <div class="ops-alert-monitor-item__meta">${metaParts.length ? metaParts.join(' · ') : '等待更多上下文'}</div>
-            ${(itemAction || quickAction || caseActions.length) ? `
+            ${(itemState?.autoResponseSummary || item.auto_response_summary) ? `<div class="ops-alert-monitor-item__summary"><strong>自动处置：</strong> ${escapeConfigHtml(itemState?.autoResponseSummary || item.auto_response_summary)}</div>` : ''}
+            ${(itemState?.responseSummary || item.response_summary) ? `<div class="ops-alert-monitor-item__summary">${escapeConfigHtml(itemState?.responseSummary || item.response_summary)}</div>` : ''}
+            <div class="ops-alert-monitor-item__meta">${escapeConfigHtml(itemState?.metaText || (fallbackMetaParts.length ? fallbackMetaParts.join(' · ') : '等待更多上下文'))}</div>
+            ${(itemState?.hasActions || fallbackItemAction || fallbackQuickAction || fallbackCaseActions.length) ? `
                 <div class="ops-alert-monitor-item__actions">
-                    ${caseActions.map((action) => `
+                    ${(Array.isArray(itemState?.caseActions) ? itemState.caseActions : fallbackCaseActions).map((action) => `
                         <button
                             type="button"
                             class="btn-add-config btn-add-config--compact"
@@ -9868,22 +10184,22 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
                             <i class="${escapeConfigHtml(action.icon)}"></i> ${escapeConfigHtml(action.label)}
                         </button>
                     `).join('')}
-                    ${quickAction ? `
+                    ${(itemState?.quickAction || fallbackQuickAction) ? `
                         <button
                             type="button"
                             class="btn-add-config btn-add-config--compact"
-                            ${buildOpsAlertMonitorQuickActionAttrs(quickAction, category, item)}
+                            ${buildOpsAlertMonitorQuickActionAttrs(itemState?.quickAction || fallbackQuickAction, category, item)}
                         >
-                            <i class="${escapeConfigHtml(quickAction.icon)}"></i> ${escapeConfigHtml(quickAction.label)}
+                            <i class="${escapeConfigHtml((itemState?.quickAction || fallbackQuickAction).icon)}"></i> ${escapeConfigHtml((itemState?.quickAction || fallbackQuickAction).label)}
                         </button>
                     ` : ''}
-                    ${itemAction ? `
+                    ${(itemState?.workspaceAction || fallbackItemAction) ? `
                         <button
                             type="button"
                             class="btn-add-config btn-add-config--compact"
-                            ${buildOpsAlertMonitorWorkspaceAttrs(itemAction, category, item)}
+                            ${buildOpsAlertMonitorWorkspaceAttrs(itemState?.workspaceAction || fallbackItemAction, category, item)}
                         >
-                            <i class="${escapeConfigHtml(itemAction.icon)}"></i> ${escapeConfigHtml(itemAction.label)}
+                            <i class="${escapeConfigHtml((itemState?.workspaceAction || fallbackItemAction).icon)}"></i> ${escapeConfigHtml((itemState?.workspaceAction || fallbackItemAction).label)}
                         </button>
                     ` : ''}
                 </div>
@@ -9892,58 +10208,64 @@ function buildOpsAlertMonitorItemMarkup(item = {}, category = {}) {
     `;
 }
 
-function buildOpsAlertMonitorCategoryView(category = {}, filters = getOpsAlertMonitorViewFilters()) {
-    const normalizedCategoryKey = String(category.key || '').trim().toLowerCase();
-    const latestState = String(category.latest_state || '').trim().toLowerCase() || 'idle';
-    const allItems = Array.isArray(category.items) ? category.items : [];
-    const categoryMatches = filters.category === 'all' || filters.category === normalizedCategoryKey;
-    const activeCount = Number(category.active_count || 0);
-    const criticalCount = Number(category.critical_count || 0);
+function buildLocalOpsAlertMonitorCategoryView(category = {}, filters = getOpsAlertMonitorViewFilters()) {
+    const normalizedCategory = category && typeof category === 'object' && !Array.isArray(category)
+        ? category
+        : {};
+    const normalizedFilters = filters && typeof filters === 'object' && !Array.isArray(filters)
+        ? filters
+        : getDefaultOpsAlertMonitorViewState();
+    const normalizedCategoryKey = String(normalizedCategory.key || '').trim().toLowerCase();
+    const latestState = String(normalizedCategory.latest_state || '').trim().toLowerCase() || 'idle';
+    const allItems = Array.isArray(normalizedCategory.items) ? normalizedCategory.items : [];
+    const categoryMatches = normalizedFilters.category === 'all' || normalizedFilters.category === normalizedCategoryKey;
+    const activeCount = Number(normalizedCategory.active_count || 0);
+    const criticalCount = Number(normalizedCategory.critical_count || 0);
     const isRecoveredOnly = activeCount === 0 && latestState === 'recovered';
 
     if (!categoryMatches) {
         return null;
     }
 
-    if (filters.scope === 'active' && activeCount <= 0) {
+    if (normalizedFilters.scope === 'active' && activeCount <= 0) {
         return null;
     }
 
-    if (filters.scope === 'recovered' && latestState !== 'recovered') {
+    if (normalizedFilters.scope === 'recovered' && latestState !== 'recovered') {
         return null;
     }
 
-    if (filters.severity !== 'all') {
-        const severityMatchedItems = allItems.filter((item) => String(item.severity || '').trim().toLowerCase() === filters.severity);
+    if (normalizedFilters.severity !== 'all') {
+        const severityMatchedItems = allItems.filter((item) => String(item.severity || '').trim().toLowerCase() === normalizedFilters.severity);
         if (!severityMatchedItems.length) {
             return null;
         }
     }
 
-    const visibleItems = filters.scope === 'recovered'
+    const visibleItems = normalizedFilters.scope === 'recovered'
         ? []
         : allItems.filter((item) => (
-            filters.severity === 'all'
+            normalizedFilters.severity === 'all'
                 ? true
-                : String(item.severity || '').trim().toLowerCase() === filters.severity
+                : String(item.severity || '').trim().toLowerCase() === normalizedFilters.severity
         ));
     const previewItems = visibleItems.slice(0, 3);
-    const displayActiveCount = filters.scope === 'recovered'
+    const displayActiveCount = normalizedFilters.scope === 'recovered'
         ? 0
-        : (filters.severity === 'all' ? activeCount : visibleItems.length);
-    const displayCriticalCount = filters.scope === 'recovered'
+        : (normalizedFilters.severity === 'all' ? activeCount : visibleItems.length);
+    const displayCriticalCount = normalizedFilters.scope === 'recovered'
         ? 0
-        : (filters.severity === 'all'
+        : (normalizedFilters.severity === 'all'
             ? criticalCount
             : visibleItems.filter((item) => String(item.severity || '').trim().toLowerCase() === 'critical').length);
     const filteredNote = !isRecoveredOnly
-        && filters.severity !== 'all'
+        && normalizedFilters.severity !== 'all'
         && activeCount > visibleItems.length
-        ? `当前筛出 ${formatVerifyMonitorInteger(visibleItems.length)} 项 ${filters.severity} 告警；模块原始待关注共 ${formatVerifyMonitorInteger(activeCount)} 项。`
+        ? `当前筛出 ${formatVerifyMonitorInteger(visibleItems.length)} 项 ${normalizedFilters.severity} 告警；模块原始待关注共 ${formatVerifyMonitorInteger(activeCount)} 项。`
         : '';
 
     return {
-        ...category,
+        ...normalizedCategory,
         items: previewItems,
         visible_items: visibleItems,
         hidden_item_count: Math.max(0, visibleItems.length - previewItems.length),
@@ -9953,7 +10275,20 @@ function buildOpsAlertMonitorCategoryView(category = {}, filters = getOpsAlertMo
     };
 }
 
-function getOpsAlertMonitorFilterSummaryLabel(filters = getOpsAlertMonitorViewFilters()) {
+function resolveOpsAlertMonitorCategoryView(category = {}, filters = getOpsAlertMonitorViewFilters()) {
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorCategoryView === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorCategoryView(category, filters, {
+            formatCount: formatVerifyMonitorInteger
+        });
+    }
+    return buildLocalOpsAlertMonitorCategoryView(category, filters);
+}
+
+function buildOpsAlertMonitorCategoryView(category = {}, filters = getOpsAlertMonitorViewFilters()) {
+    return resolveOpsAlertMonitorCategoryView(category, filters);
+}
+
+function buildLocalOpsAlertMonitorFilterSummaryLabel(filters = getOpsAlertMonitorViewFilters()) {
     const scopeLabels = { all: '全部状态', active: '仅待处理', recovered: '仅已恢复' };
     const severityLabels = { all: '全部级别', critical: '仅 critical', warning: '仅 warning' };
     const categoryLabels = {
@@ -9970,7 +10305,18 @@ function getOpsAlertMonitorFilterSummaryLabel(filters = getOpsAlertMonitorViewFi
         .join(' · ');
 }
 
-function buildOpsAlertMonitorRecoveryRow(category = {}) {
+function resolveOpsAlertMonitorFilterSummaryLabel(filters = getOpsAlertMonitorViewFilters()) {
+    if (typeof window.getAdminWorkbenchOpsAlertMonitorFilterSummaryLabel === 'function') {
+        return window.getAdminWorkbenchOpsAlertMonitorFilterSummaryLabel(filters);
+    }
+    return buildLocalOpsAlertMonitorFilterSummaryLabel(filters);
+}
+
+function getOpsAlertMonitorFilterSummaryLabel(filters = getOpsAlertMonitorViewFilters()) {
+    return resolveOpsAlertMonitorFilterSummaryLabel(filters);
+}
+
+function buildLocalOpsAlertMonitorRecoveryRow(category = {}) {
     const fallbackAction = getOpsAlertMonitorCategoryActions(category.key)[0] || {};
     const workspaceTarget = String(fallbackAction.target || '').trim();
     return {
@@ -9990,7 +10336,21 @@ function buildOpsAlertMonitorRecoveryRow(category = {}) {
     };
 }
 
-function buildOpsAlertMonitorBatchRows(categories = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
+function resolveOpsAlertMonitorRecoveryRow(category = {}) {
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorRecoveryRow === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorRecoveryRow(category, {
+            resolveCategoryFallbackAction: (currentCategory) => getOpsAlertMonitorCategoryActions(currentCategory?.key)[0] || {},
+            getWorkspaceLabel: (workspaceTarget) => getOpsAlertWorkspaceSuccessLabel(workspaceTarget)
+        });
+    }
+    return buildLocalOpsAlertMonitorRecoveryRow(category);
+}
+
+function buildOpsAlertMonitorRecoveryRow(category = {}) {
+    return resolveOpsAlertMonitorRecoveryRow(category);
+}
+
+function buildLocalOpsAlertMonitorBatchRows(categories = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
     const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
     const selectedCategories = normalizedCategoryKey
         ? categories.filter((category) => String(category.key || '').trim().toLowerCase() === normalizedCategoryKey)
@@ -10021,11 +10381,26 @@ function buildOpsAlertMonitorBatchRows(categories = [], filters = getOpsAlertMon
         }
 
         if (String(category.latest_state || '').trim().toLowerCase() === 'recovered') {
-            return [buildOpsAlertMonitorRecoveryRow(category)];
+            return [buildLocalOpsAlertMonitorRecoveryRow(category)];
         }
 
         return [];
     });
+}
+
+function resolveOpsAlertMonitorBatchRows(categories = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorBatchRows === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorBatchRows(categories, filters, categoryKey, {
+            resolveCategoryFallbackAction: (category) => getOpsAlertMonitorCategoryActions(category?.key)[0] || {},
+            resolveItemAction: (category, item) => getOpsAlertMonitorItemAction(category, item) || {},
+            getWorkspaceLabel: (workspaceTarget) => getOpsAlertWorkspaceSuccessLabel(workspaceTarget)
+        });
+    }
+    return buildLocalOpsAlertMonitorBatchRows(categories, filters, categoryKey);
+}
+
+function buildOpsAlertMonitorBatchRows(categories = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
+    return resolveOpsAlertMonitorBatchRows(categories, filters, categoryKey);
 }
 
 async function writeAdminConfigClipboard(text) {
@@ -10060,7 +10435,7 @@ async function writeAdminConfigClipboard(text) {
     }
 }
 
-function buildOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
+function buildLocalOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
     const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
     const categoryLabelMap = {
         payments: '支付与退款',
@@ -10102,6 +10477,22 @@ function buildOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonit
     return lines.join('\n').trim();
 }
 
+function resolveOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorChecklistText === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorChecklistText(rows, filters, categoryKey, {
+            now: new Date().toISOString(),
+            formatDateTime: formatVerifyMonitorDateTime,
+            formatCount: formatVerifyMonitorInteger,
+            getFilterSummaryLabel: getOpsAlertMonitorFilterSummaryLabel
+        });
+    }
+    return buildLocalOpsAlertMonitorChecklistText(rows, filters, categoryKey);
+}
+
+function buildOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
+    return resolveOpsAlertMonitorChecklistText(rows, filters, categoryKey);
+}
+
 function getOpsAlertRiskSpotlightCategory(filters = getOpsAlertMonitorViewFilters()) {
     const rawCategory = (Array.isArray(opsAlertMonitorState?.categories) ? opsAlertMonitorState.categories : [])
         .find((category) => String(category?.key || '').trim().toLowerCase() === 'shop_risk');
@@ -10124,32 +10515,59 @@ function getOpsAlertMonitorAutoResponseTone(status) {
 }
 
 function buildOpsAlertRiskThresholdBadges(category = {}) {
-    const thresholds = category?.thresholds && typeof category.thresholds === 'object'
+    const badgeItems = Array.isArray(category)
+        ? category
+        : null;
+    const thresholds = !badgeItems && category?.thresholds && typeof category.thresholds === 'object'
         ? category.thresholds
         : null;
-    if (!thresholds) {
+    const normalizedBadges = badgeItems || (thresholds ? [
+        {
+            label: thresholds.auto_response_enabled ? '自动处置开启' : '自动处置关闭',
+            tone: thresholds.auto_response_enabled ? 'warning' : 'neutral'
+        },
+        {
+            label: `停券 ≥ ${formatVerifyMonitorInteger(thresholds.auto_disable_coupon_min_risk_score || 0)}`,
+            tone: 'neutral'
+        },
+        {
+            label: `封禁 ≥ ${formatVerifyMonitorInteger(thresholds.auto_ban_user_min_risk_score || 0)}`,
+            tone: 'neutral'
+        },
+        {
+            label: `封禁 ${formatVerifyMonitorInteger(thresholds.auto_ban_user_duration_days || 0)} 天`,
+            tone: 'neutral'
+        },
+        {
+            label: `下架 ≥ ${formatVerifyMonitorInteger(thresholds.auto_suspend_product_min_risk_score || 0)}`,
+            tone: 'neutral'
+        }
+    ] : []);
+    if (!normalizedBadges.length) {
         return '';
     }
 
-    const badges = [
-        buildOpsAlertMonitorBadge(
-            thresholds.auto_response_enabled ? '自动处置开启' : '自动处置关闭',
-            thresholds.auto_response_enabled ? 'warning' : 'neutral'
-        ),
-        buildOpsAlertMonitorBadge(`停券 ≥ ${formatVerifyMonitorInteger(thresholds.auto_disable_coupon_min_risk_score || 0)}`, 'neutral'),
-        buildOpsAlertMonitorBadge(`封禁 ≥ ${formatVerifyMonitorInteger(thresholds.auto_ban_user_min_risk_score || 0)}`, 'neutral'),
-        buildOpsAlertMonitorBadge(`封禁 ${formatVerifyMonitorInteger(thresholds.auto_ban_user_duration_days || 0)} 天`, 'neutral'),
-        buildOpsAlertMonitorBadge(`下架 ≥ ${formatVerifyMonitorInteger(thresholds.auto_suspend_product_min_risk_score || 0)}`, 'neutral')
-    ];
-
     return `
         <div class="ops-alert-risk-spotlight__thresholds">
-            ${badges.join('')}
+            ${normalizedBadges.map((badge) => buildOpsAlertMonitorBadge(badge.label, badge.tone)).join('')}
         </div>
     `;
 }
 
 function buildOpsAlertRiskSpotlightActivityItem(item = {}, kind = 'threshold') {
+    if (item && typeof item === 'object' && item.title && item.statusLabel && item.statusTone) {
+        return `
+            <div class="ops-alert-risk-spotlight__entry">
+                <div class="ops-alert-risk-spotlight__entry-top">
+                    <strong class="ops-alert-risk-spotlight__entry-title">${escapeConfigHtml(item.title)}</strong>
+                    ${buildOpsAlertMonitorBadge(item.statusLabel, item.statusTone)}
+                </div>
+                <div class="ops-alert-risk-spotlight__entry-summary">${escapeConfigHtml(item.summary || '等待更多上下文')}</div>
+                <div class="ops-alert-risk-spotlight__entry-meta">${escapeConfigHtml(item.meta || '等待更多上下文')}</div>
+            </div>
+        `;
+    }
+
     const normalizedKind = String(kind || 'threshold').trim().toLowerCase();
     const statusLabel = item.status_label || '待人工确认';
     const statusTone = getOpsAlertMonitorAutoResponseTone(item.status);
@@ -10197,125 +10615,196 @@ function buildOpsAlertRiskSpotlightActivitySection(title, items = [], emptyMessa
     `;
 }
 
-function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlertMonitorViewFilters()) {
-    const actions = getOpsAlertMonitorCategoryActions('shop_risk');
-    const spotlightCategory = category && typeof category === 'object' ? category : null;
-    const tone = spotlightCategory ? getOpsAlertMonitorCardTone(spotlightCategory) : 'neutral';
-    const latestItem = Array.isArray(spotlightCategory?.visible_items) && spotlightCategory.visible_items.length
-        ? spotlightCategory.visible_items[0]
-        : (Array.isArray(spotlightCategory?.items) && spotlightCategory.items.length ? spotlightCategory.items[0] : null);
-    const latestQuickAction = latestItem ? getOpsAlertMonitorItemQuickAction(spotlightCategory || {}, latestItem) : null;
-    const activeCount = spotlightCategory ? getOpsAlertMonitorDisplayActiveCount(spotlightCategory) : 0;
-    const criticalCount = spotlightCategory ? getOpsAlertMonitorDisplayCriticalCount(spotlightCategory) : 0;
-    const caseSummary = spotlightCategory && typeof spotlightCategory.case_summary === 'object'
-        ? spotlightCategory.case_summary
-        : { open: 0, claimed: 0, resolved: 0 };
-    const title = spotlightCategory
-        ? (
-            activeCount > 0
-                ? `当前有 ${formatVerifyMonitorInteger(activeCount)} 项商城风控信号待接手`
-                : (
-                    String(spotlightCategory.latest_state || '').toLowerCase() === 'recovered'
-                        ? '最近一轮商城风控信号已恢复'
-                        : '当前没有持续中的商城风控信号'
-                )
-        )
-        : '当前没有可展示的商城风控快照';
-    const summary = spotlightCategory
-        ? (
-            latestItem?.response_summary
-            || latestItem?.message
-            || spotlightCategory.filtered_note
-            || spotlightCategory.latest_message
-            || '处理入口会直达订单列表、优惠券码和用户详情，避免只看到告警却还要手动找页签。'
-        )
-        : (
-            filters.severity !== 'all' || filters.scope !== 'all'
-                ? '当前筛选条件下没有命中的商城风控信号，可以切回“全部状态 / 全部级别”查看全量快照。'
-                : '最近没有持续中的商城风控告警，下面保留订单、优惠券码和用户处理入口。'
-        );
-    const stats = [
-        buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(activeCount)} 待关注`, activeCount > 0 ? 'warning' : 'neutral')
-    ];
+function buildLocalOpsAlertRiskSpotlightRenderState(category = null, filters = getOpsAlertMonitorViewFilters()) {
+    const spotlightCategory = category && typeof category === 'object' && !Array.isArray(category)
+        ? category
+        : null;
+    const normalizedFilters = filters && typeof filters === 'object' && !Array.isArray(filters)
+        ? filters
+        : {};
 
-    if (spotlightCategory) {
-        stats.push(buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(caseSummary.open || 0)} 待认领`, 'warning'));
-        stats.push(buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(caseSummary.claimed || 0)} 处理中`, 'neutral'));
-    }
+    return {
+        tone: spotlightCategory ? getOpsAlertMonitorCardTone(spotlightCategory) : 'neutral',
+        eyebrow: '商城风控优先处理',
+        title: '当前没有可展示的商城风控快照',
+        summary: spotlightCategory
+            ? '最近没有持续中的商城风控告警，下面保留订单、优惠券码和用户处理入口。'
+            : (
+                normalizedFilters.severity !== 'all' || normalizedFilters.scope !== 'all'
+                    ? '当前筛选条件下没有命中的商城风控信号，可以切回“全部状态 / 全部级别”查看全量快照。'
+                    : '最近没有持续中的商城风控告警，下面保留订单、优惠券码和用户处理入口。'
+            ),
+        statBadges: [{ label: '等待更多上下文', tone: 'neutral' }],
+        thresholdBadges: [],
+        sections: {
+            threshold: {
+                title: '最近阈值命中',
+                emptyMessage: '最近没有新的风控阈值命中记录。',
+                items: []
+            },
+            auto: {
+                title: '最近自动处置',
+                emptyMessage: '最近没有新的自动停券、封禁或下架记录。',
+                items: []
+            }
+        },
+        actions: [
+            {
+                actionName: 'settings-copy-ops-alert-monitor-category',
+                icon: 'fas fa-list-check',
+                label: '复制商城风控清单',
+                attrs: {
+                    'data-ops-alert-monitor-category-key': 'shop_risk'
+                }
+            },
+            ...getOpsAlertMonitorCategoryActions('shop_risk').map((action) => ({
+                actionName: 'settings-open-ops-alert-workspace',
+                icon: action.icon,
+                label: action.label,
+                attrs: {
+                    'data-workspace-target': action.target
+                }
+            }))
+        ]
+    };
+}
 
-    if (criticalCount > 0) {
-        stats.push(buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(criticalCount)} critical`, 'danger'));
+function resolveOpsAlertRiskSpotlightRenderState(category = null, filters = getOpsAlertMonitorViewFilters()) {
+    if (typeof window.buildAdminWorkbenchOpsAlertRiskSpotlightRenderState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertRiskSpotlightRenderState(category, filters, {
+            getCardTone: getOpsAlertMonitorCardTone,
+            getDisplayActiveCount: getOpsAlertMonitorDisplayActiveCount,
+            getDisplayCriticalCount: getOpsAlertMonitorDisplayCriticalCount,
+            getAutoResponseTone: getOpsAlertMonitorAutoResponseTone,
+            getCategoryActions: () => getOpsAlertMonitorCategoryActions('shop_risk'),
+            getQuickAction: getOpsAlertMonitorItemQuickAction,
+            formatCount: formatVerifyMonitorInteger,
+            formatDateTime: formatVerifyMonitorDateTime
+        });
     }
-    if (spotlightCategory && String(spotlightCategory.latest_state || '').toLowerCase() === 'recovered' && activeCount <= 0) {
-        stats.push(buildOpsAlertMonitorBadge('已恢复', 'success'));
-    }
-    if (!spotlightCategory) {
-        stats.push(buildOpsAlertMonitorBadge('等待更多上下文', 'neutral'));
-    }
+    return buildLocalOpsAlertRiskSpotlightRenderState(category, filters);
+}
 
-    const thresholdHits = Array.isArray(spotlightCategory?.recent_threshold_hits)
-        ? spotlightCategory.recent_threshold_hits.slice(0, 4)
+function buildLocalOpsAlertRiskSpotlightShellState(status = 'loading', options = {}) {
+    const normalizedStatus = String(status || 'loading').trim().toLowerCase();
+    const isError = normalizedStatus === 'error';
+    return {
+        status: isError ? 'error' : 'loading',
+        tone: isError ? 'danger' : 'neutral',
+        eyebrow: '商城风控优先处理',
+        title: isError ? '商城风控快照加载失败' : '当前没有可展示的商城风控快照',
+        summary: isError
+            ? String(options.message || '请刷新面板后重试。')
+            : String(options.message || '最近没有持续中的商城风控告警，下面保留订单、优惠券码和用户处理入口。'),
+        statBadges: [
+            { label: isError ? '加载失败' : '等待加载', tone: isError ? 'danger' : 'neutral' }
+        ],
+        actions: isError ? [
+            {
+                actionName: 'settings-refresh-ops-alert-monitor',
+                icon: 'fas fa-rotate',
+                label: '刷新面板',
+                attrs: {}
+            },
+            {
+                actionName: 'settings-open-ops-alert-workspace',
+                icon: 'fas fa-bag-shopping',
+                label: '风险订单',
+                attrs: {
+                    'data-workspace-target': 'shop-risk-orders'
+                }
+            }
+        ] : []
+    };
+}
+
+function resolveOpsAlertRiskSpotlightShellState(status = 'loading', options = {}) {
+    if (typeof window.buildAdminWorkbenchOpsAlertRiskSpotlightShellState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertRiskSpotlightShellState(status, {
+            message: options.message
+        });
+    }
+    return buildLocalOpsAlertRiskSpotlightShellState(status, options);
+}
+
+function buildOpsAlertRiskSpotlightMarkupFromState(resolvedState = {}, options = {}) {
+    const normalizedState = resolvedState && typeof resolvedState === 'object' && !Array.isArray(resolvedState)
+        ? resolvedState
+        : {};
+    const fallbackCategory = options.fallbackCategory && typeof options.fallbackCategory === 'object' && !Array.isArray(options.fallbackCategory)
+        ? options.fallbackCategory
+        : null;
+    const stats = (Array.isArray(normalizedState.statBadges) ? normalizedState.statBadges : [])
+        .map((badge) => buildOpsAlertMonitorBadge(badge?.label || '—', badge?.tone || 'neutral'));
+    const thresholdSection = normalizedState.sections?.threshold || null;
+    const autoSection = normalizedState.sections?.auto || null;
+    const thresholdBadgeMarkup = (Array.isArray(normalizedState.thresholdBadges) && normalizedState.thresholdBadges.length)
+        ? buildOpsAlertRiskThresholdBadges(normalizedState.thresholdBadges)
+        : (fallbackCategory ? buildOpsAlertRiskThresholdBadges(fallbackCategory) : '');
+    const resolvedActions = Array.isArray(normalizedState.actions) && normalizedState.actions.length
+        ? normalizedState.actions
         : [];
-    const autoResponses = Array.isArray(spotlightCategory?.recent_auto_responses)
-        ? spotlightCategory.recent_auto_responses.slice(0, 4)
-        : [];
+    const shouldRenderPanels = options.includePanels !== false && (thresholdSection || autoSection);
 
     return `
-        <div class="ops-alert-risk-spotlight ops-alert-risk-spotlight--${escapeConfigHtml(tone)}">
+        <div class="ops-alert-risk-spotlight ops-alert-risk-spotlight--${escapeConfigHtml(normalizedState.tone || 'neutral')}">
             <div class="ops-alert-risk-spotlight__copy">
-                <div class="ops-alert-risk-spotlight__eyebrow">商城风控优先处理</div>
-                <div class="ops-alert-risk-spotlight__title">${escapeConfigHtml(title)}</div>
-                <div class="ops-alert-risk-spotlight__summary">${escapeConfigHtml(summary)}</div>
+                <div class="ops-alert-risk-spotlight__eyebrow">${escapeConfigHtml(normalizedState.eyebrow || '商城风控优先处理')}</div>
+                <div class="ops-alert-risk-spotlight__title">${escapeConfigHtml(normalizedState.title || '')}</div>
+                <div class="ops-alert-risk-spotlight__summary">${escapeConfigHtml(normalizedState.summary || '')}</div>
             </div>
             <div class="ops-alert-risk-spotlight__stats">
                 ${stats.join('')}
             </div>
-            ${spotlightCategory ? buildOpsAlertRiskThresholdBadges(spotlightCategory) : ''}
-            <div class="ops-alert-risk-spotlight__panels">
-                ${buildOpsAlertRiskSpotlightActivitySection(
-        '最近阈值命中',
-        thresholdHits,
-        '最近没有新的风控阈值命中记录。',
+            ${thresholdBadgeMarkup}
+            ${shouldRenderPanels ? `
+                <div class="ops-alert-risk-spotlight__panels">
+                    ${buildOpsAlertRiskSpotlightActivitySection(
+        thresholdSection?.title || '最近阈值命中',
+        thresholdSection?.items || [],
+        thresholdSection?.emptyMessage || '最近没有新的风控阈值命中记录。',
         'threshold'
     )}
-                ${buildOpsAlertRiskSpotlightActivitySection(
-        '最近自动处置',
-        autoResponses,
-        '最近没有新的自动停券、封禁或下架记录。',
+                    ${buildOpsAlertRiskSpotlightActivitySection(
+        autoSection?.title || '最近自动处置',
+        autoSection?.items || [],
+        autoSection?.emptyMessage || '最近没有新的自动停券、封禁或下架记录。',
         'auto'
     )}
-            </div>
-            <div class="ops-alert-risk-spotlight__actions">
-                <button
-                    type="button"
-                    class="btn-add-config btn-add-config--compact"
-                    data-admin-action="settings-copy-ops-alert-monitor-category"
-                    data-ops-alert-monitor-category-key="shop_risk"
-                >
-                    <i class="fas fa-list-check"></i> 复制商城风控清单
-                </button>
-                ${latestQuickAction && latestItem ? `
-                    <button
-                        type="button"
-                        class="btn-add-config btn-add-config--compact"
-                        ${buildOpsAlertMonitorQuickActionAttrs(latestQuickAction, spotlightCategory || {}, latestItem)}
-                    >
-                        <i class="${escapeConfigHtml(latestQuickAction.icon)}"></i> ${escapeConfigHtml(latestQuickAction.label)}
-                    </button>
-                ` : ''}
-                ${actions.map((action) => `
-                    <button
-                        type="button"
-                        class="btn-add-config btn-add-config--compact"
-                        data-admin-action="settings-open-ops-alert-workspace"
-                        data-workspace-target="${escapeConfigHtml(action.target)}"
-                    >
-                        <i class="${escapeConfigHtml(action.icon)}"></i> ${escapeConfigHtml(action.label)}
-                    </button>
-                `).join('')}
-            </div>
+                </div>
+            ` : ''}
+            ${resolvedActions.length ? `
+                <div class="ops-alert-risk-spotlight__actions">
+                    ${resolvedActions.map((action) => `
+                        <button
+                            type="button"
+                            class="btn-add-config btn-add-config--compact"
+                            data-admin-action="${escapeConfigHtml(action.actionName || '')}"
+                            ${Object.entries(action.attrs || {})
+        .filter(([, value]) => String(value || '').length > 0)
+        .map(([name, value]) => `${name}="${escapeConfigHtml(value)}"`).join(' ')}
+                        >
+                            <i class="${escapeConfigHtml(action.icon || 'fas fa-circle-dot')}"></i> ${escapeConfigHtml(action.label || '操作')}
+                        </button>
+                    `).join('')}
+                </div>
+            ` : ''}
         </div>
     `;
+}
+
+function buildOpsAlertRiskSpotlightShellMarkup(shellState = {}) {
+    return buildOpsAlertRiskSpotlightMarkupFromState(shellState, {
+        includePanels: false
+    });
+}
+
+function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlertMonitorViewFilters()) {
+    const spotlightCategory = category && typeof category === 'object' && !Array.isArray(category) ? category : null;
+    return buildOpsAlertRiskSpotlightMarkupFromState(
+        resolveOpsAlertRiskSpotlightRenderState(category, filters),
+        { fallbackCategory: spotlightCategory }
+    );
 }
 
 function renderOpsAlertRiskSpotlight(filters = getOpsAlertMonitorViewFilters()) {
@@ -10329,39 +10818,37 @@ function renderOpsAlertRiskSpotlight(filters = getOpsAlertMonitorViewFilters()) 
     }
 
     if (state.status === 'error') {
-        target.innerHTML = `
-            <div class="ops-alert-risk-spotlight ops-alert-risk-spotlight--danger">
-                <div class="ops-alert-risk-spotlight__copy">
-                    <div class="ops-alert-risk-spotlight__eyebrow">商城风控优先处理</div>
-                    <div class="ops-alert-risk-spotlight__title">商城风控快照加载失败</div>
-                    <div class="ops-alert-risk-spotlight__summary">${escapeConfigHtml(state.message || '请刷新面板后重试。')}</div>
-                </div>
-                <div class="ops-alert-risk-spotlight__stats">
-                    ${buildOpsAlertMonitorBadge('加载失败', 'danger')}
-                </div>
-                <div class="ops-alert-risk-spotlight__actions">
-                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-refresh-ops-alert-monitor">
-                        <i class="fas fa-rotate"></i> 刷新面板
-                    </button>
-                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-open-ops-alert-workspace" data-workspace-target="shop-risk-orders">
-                        <i class="fas fa-bag-shopping"></i> 风险订单
-                    </button>
-                </div>
-            </div>
-        `;
+        target.innerHTML = buildOpsAlertRiskSpotlightShellMarkup(
+            resolveOpsAlertRiskSpotlightShellState(state.status, {
+                message: state.message
+            })
+        );
         return;
     }
 
     target.innerHTML = buildOpsAlertRiskSpotlightMarkup(getOpsAlertRiskSpotlightCategory(filters), filters);
 }
 
-function formatOpsAlertMonitorSignedCount(value) {
+function buildLocalOpsAlertMonitorSignedCount(value) {
     const num = Number(value);
     if (!Number.isFinite(num) || num === 0) return '0';
     return `${num > 0 ? '+' : ''}${formatVerifyMonitorInteger(num)}`;
 }
 
-function formatOpsAlertMonitorTimeShort(value) {
+function resolveOpsAlertMonitorSignedCount(value) {
+    if (typeof window.formatAdminWorkbenchOpsAlertSignedCount === 'function') {
+        return window.formatAdminWorkbenchOpsAlertSignedCount(value, {
+            formatCount: formatVerifyMonitorInteger
+        });
+    }
+    return buildLocalOpsAlertMonitorSignedCount(value);
+}
+
+function formatOpsAlertMonitorSignedCount(value) {
+    return resolveOpsAlertMonitorSignedCount(value);
+}
+
+function buildLocalOpsAlertMonitorTimeShort(value) {
     if (!value) return '—';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '—';
@@ -10372,44 +10859,94 @@ function formatOpsAlertMonitorTimeShort(value) {
     });
 }
 
-function getOpsAlertMonitorBacklogDeltaTone(delta) {
+function resolveOpsAlertMonitorTimeShort(value) {
+    if (typeof window.formatAdminWorkbenchOpsAlertTimeShort === 'function') {
+        return window.formatAdminWorkbenchOpsAlertTimeShort(value, {
+            locale: 'zh-CN'
+        });
+    }
+    return buildLocalOpsAlertMonitorTimeShort(value);
+}
+
+function formatOpsAlertMonitorTimeShort(value) {
+    return resolveOpsAlertMonitorTimeShort(value);
+}
+
+function buildLocalOpsAlertMonitorBacklogDeltaTone(delta) {
     const numericDelta = Number(delta || 0);
     if (numericDelta < 0) return 'success';
     if (numericDelta > 0) return 'warning';
     return 'neutral';
 }
 
-function normalizeOpsAlertMonitorShiftReportView(value = 'all') {
+function resolveOpsAlertMonitorBacklogDeltaTone(delta) {
+    if (typeof window.getAdminWorkbenchOpsAlertBacklogDeltaTone === 'function') {
+        return window.getAdminWorkbenchOpsAlertBacklogDeltaTone(delta);
+    }
+    return buildLocalOpsAlertMonitorBacklogDeltaTone(delta);
+}
+
+function getOpsAlertMonitorBacklogDeltaTone(delta) {
+    return resolveOpsAlertMonitorBacklogDeltaTone(delta);
+}
+
+function buildLocalOpsAlertMonitorShiftReportView(value = 'all') {
     const normalized = String(value || '').trim().toLowerCase();
     return OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS.some((item) => item.key === normalized)
         ? normalized
         : getDefaultOpsAlertMonitorShiftReportViewState();
 }
 
-function getOpsAlertMonitorShiftReportViewMeta(value = opsAlertMonitorShiftReportViewState) {
-    const normalized = normalizeOpsAlertMonitorShiftReportView(value);
+function resolveOpsAlertMonitorShiftReportView(value = 'all') {
+    if (typeof window.normalizeAdminWorkbenchOpsAlertMonitorShiftReportView === 'function') {
+        return window.normalizeAdminWorkbenchOpsAlertMonitorShiftReportView(value, {
+            viewDefinitions: OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS,
+            defaultView: getDefaultOpsAlertMonitorShiftReportViewState()
+        });
+    }
+    return buildLocalOpsAlertMonitorShiftReportView(value);
+}
+
+function normalizeOpsAlertMonitorShiftReportView(value = 'all') {
+    return resolveOpsAlertMonitorShiftReportView(value);
+}
+
+function buildLocalOpsAlertMonitorShiftReportViewMeta(value = opsAlertMonitorShiftReportViewState) {
+    const normalized = resolveOpsAlertMonitorShiftReportView(value);
     return OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS.find((item) => item.key === normalized)
         || OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS[0];
 }
 
-function getOpsAlertMonitorShiftReportVisibleSections(view = opsAlertMonitorShiftReportViewState) {
-    return new Set(getOpsAlertMonitorShiftReportViewMeta(view).sections || []);
+function resolveOpsAlertMonitorShiftReportViewMeta(value = opsAlertMonitorShiftReportViewState) {
+    if (typeof window.getAdminWorkbenchOpsAlertMonitorShiftReportViewMeta === 'function') {
+        return window.getAdminWorkbenchOpsAlertMonitorShiftReportViewMeta(value, {
+            viewDefinitions: OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS,
+            defaultView: getDefaultOpsAlertMonitorShiftReportViewState()
+        });
+    }
+    return buildLocalOpsAlertMonitorShiftReportViewMeta(value);
 }
 
-function getOpsAlertMonitorShiftReportCurrentAdminId() {
+function getOpsAlertMonitorShiftReportViewMeta(value = opsAlertMonitorShiftReportViewState) {
+    return resolveOpsAlertMonitorShiftReportViewMeta(value);
+}
+
+function buildLocalOpsAlertMonitorShiftReportCurrentAdminId() {
     return String(opsAlertMonitorState?.current_admin_id || '').trim();
 }
 
-function getOpsAlertMonitorShiftReportCurrentAdminStat(report = normalizeOpsAlertMonitorShiftReport(), currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId()) {
-    const normalizedCurrentAdminId = String(currentAdminId || '').trim();
-    const adminItems = Array.isArray(report?.admin_stats) ? report.admin_stats : [];
-
-    return adminItems.find((item) => normalizedCurrentAdminId && String(item?.admin_id || '').trim() === normalizedCurrentAdminId)
-        || adminItems.find((item) => item?.is_current === true)
-        || null;
+function resolveOpsAlertMonitorShiftReportCurrentAdminId() {
+    if (typeof window.getAdminWorkbenchOpsAlertMonitorCurrentAdminId === 'function') {
+        return window.getAdminWorkbenchOpsAlertMonitorCurrentAdminId(opsAlertMonitorState);
+    }
+    return buildLocalOpsAlertMonitorShiftReportCurrentAdminId();
 }
 
-function buildOpsAlertMonitorShiftReportOwnedCategoryItems(categories = [], currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId()) {
+function getOpsAlertMonitorShiftReportCurrentAdminId() {
+    return resolveOpsAlertMonitorShiftReportCurrentAdminId();
+}
+
+function buildLocalOpsAlertMonitorShiftOwnedCategoryItems(categories = [], currentAdminId = resolveOpsAlertMonitorShiftReportCurrentAdminId()) {
     const normalizedCurrentAdminId = String(currentAdminId || '').trim();
     if (!normalizedCurrentAdminId) {
         return [];
@@ -10452,18 +10989,197 @@ function buildOpsAlertMonitorShiftReportOwnedCategoryItems(categories = [], curr
         });
 }
 
-function buildOpsAlertMonitorShiftReportViewSwitchMarkup(currentView = opsAlertMonitorShiftReportViewState) {
+function resolveOpsAlertMonitorShiftOwnedCategoryItems(categories = [], currentAdminId = resolveOpsAlertMonitorShiftReportCurrentAdminId()) {
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorShiftOwnedCategoryItems === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorShiftOwnedCategoryItems(categories, currentAdminId, {
+            locale: 'zh-CN'
+        });
+    }
+    return buildLocalOpsAlertMonitorShiftOwnedCategoryItems(categories, currentAdminId);
+}
+
+function buildOpsAlertMonitorShiftReportOwnedCategoryItems(categories = [], currentAdminId = resolveOpsAlertMonitorShiftReportCurrentAdminId()) {
+    return resolveOpsAlertMonitorShiftOwnedCategoryItems(categories, currentAdminId);
+}
+
+function getOpsAlertMonitorShiftResolvedViewLabel(value = opsAlertMonitorShiftReportViewState) {
+    return String(getOpsAlertMonitorShiftReportViewMeta(value)?.label || '全部视角').trim() || '全部视角';
+}
+
+function buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel = '') {
+    const currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId();
+    return {
+        currentView: opsAlertMonitorShiftReportViewState,
+        currentAdminId,
+        currentAdminLabel,
+        ownedCategoryItems: buildOpsAlertMonitorShiftReportOwnedCategoryItems(opsAlertMonitorState?.categories, currentAdminId)
+    };
+}
+
+function buildOpsAlertMonitorShiftSharedOptions(overrides = {}) {
+    return {
+        viewDefinitions: OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS,
+        defaultView: getDefaultOpsAlertMonitorShiftReportViewState(),
+        defaultReport: getDefaultOpsAlertMonitorShiftReport(),
+        ...overrides
+    };
+}
+
+function buildLocalOpsAlertMonitorShiftShellState(status = 'loading', options = {}) {
+    const normalizedStatus = String(status || 'loading').trim().toLowerCase();
+    if (normalizedStatus === 'error') {
+        return {
+            status: 'error',
+            eyebrow: '本班处理统计 / 交班视图',
+            title: '交班报表加载失败',
+            summary: String(options.message || '请刷新面板后重试。'),
+            badges: [{ label: '加载失败', tone: 'danger' }],
+            metrics: []
+        };
+    }
+    return {
+        status: 'loading',
+        eyebrow: '本班处理统计 / 交班视图',
+        title: '正在汇总认领、转交、关闭和积压趋势...',
+        summary: '会优先给出本班处理量、当前积压和交班时最值得说明的几块模块。',
+        badges: [{ label: '等待加载', tone: 'neutral' }],
+        metrics: [
+            { label: '本班认领', value: '—' },
+            { label: '转交 / 接手', value: '—' },
+            { label: '本班关闭', value: '—' },
+            { label: '平均闭环', value: '—' },
+            { label: '当前积压', value: '—' },
+            { label: '最长等待', value: '—' }
+        ]
+    };
+}
+
+function resolveOpsAlertMonitorShiftShellState(status = 'loading', options = {}) {
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorShiftShellState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorShiftShellState(status, {
+            message: options.message
+        });
+    }
+    return buildLocalOpsAlertMonitorShiftShellState(status, options);
+}
+
+function buildOpsAlertMonitorShiftShellMarkup(shellState = {}) {
+    const resolvedShellState = shellState && typeof shellState === 'object' && !Array.isArray(shellState)
+        ? shellState
+        : buildLocalOpsAlertMonitorShiftShellState();
+    return `
+        <div class="ops-alert-shift-report${resolvedShellState.status === 'error' ? ' ops-alert-shift-report--danger' : ''}">
+            <div class="ops-alert-shift-report__head">
+                <div class="ops-alert-shift-report__copy">
+                    <div class="ops-alert-shift-report__eyebrow">${escapeConfigHtml(resolvedShellState.eyebrow || '本班处理统计 / 交班视图')}</div>
+                    <div class="ops-alert-shift-report__title">${escapeConfigHtml(resolvedShellState.title || '')}</div>
+                    <div class="ops-alert-shift-report__summary">${escapeConfigHtml(resolvedShellState.summary || '')}</div>
+                </div>
+                <div class="ops-alert-shift-report__stats">
+                    ${(Array.isArray(resolvedShellState.badges) ? resolvedShellState.badges : [])
+        .map((badge) => buildOpsAlertMonitorBadge(badge.label, badge.tone))
+        .join('')}
+                </div>
+            </div>
+            ${Array.isArray(resolvedShellState.metrics) && resolvedShellState.metrics.length ? `
+                <div class="ops-alert-shift-report__metrics">
+                    ${resolvedShellState.metrics.map((metric) => buildOpsAlertMonitorShiftMetricMarkup(metric)).join('')}
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+function buildLocalOpsAlertMonitorShiftRenderState(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+    return {
+        normalizedReport: normalizeOpsAlertMonitorShiftReport(report),
+        currentView: normalizeOpsAlertMonitorShiftReportView(opsAlertMonitorShiftReportViewState),
+        actionButtons: [
+            {
+                actionName: 'settings-copy-ops-alert-shift-report',
+                icon: 'fas fa-clipboard-list',
+                label: '复制交班摘要',
+                variant: 'ghost'
+            },
+            {
+                actionName: 'settings-export-ops-alert-shift-report-csv',
+                icon: 'fas fa-file-export',
+                label: '导出交班 CSV',
+                variant: 'primary'
+            }
+        ],
+        viewSwitchState: null,
+        trendState: null,
+        reportState: {
+            headline: '交班报表暂不可用',
+            summary: '共享工作台运行时尚未就绪，请刷新页面后重试。',
+            headerBadges: [{ label: '降级模式', tone: 'warning' }],
+            metrics: [],
+            panelTitles: {
+                categories: '当前积压模块',
+                admins: '人员工作量',
+                trend: '积压趋势',
+                closeReasons: '关闭原因分布'
+            }
+        },
+        panelStates: { sections: {} },
+        shiftRuntimeState: buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel)
+    };
+}
+
+function resolveOpsAlertMonitorShiftRenderState(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+    const shiftRuntimeState = buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel);
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorShiftRenderState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorShiftRenderState(report, shiftRuntimeState, buildOpsAlertMonitorShiftSharedOptions({
+            viewDefinitions: OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS,
+            defaultView: getDefaultOpsAlertMonitorShiftReportViewState(),
+            defaultReport: getDefaultOpsAlertMonitorShiftReport(),
+            formatCount: formatVerifyMonitorInteger,
+            formatMinutes: formatVerifyMonitorMinutes,
+            formatSignedCount: formatOpsAlertMonitorSignedCount,
+            formatTimeShort: formatOpsAlertMonitorTimeShort,
+            getBacklogDeltaTone: getOpsAlertMonitorBacklogDeltaTone
+        }));
+    }
+    return buildLocalOpsAlertMonitorShiftRenderState(report, currentAdminLabel);
+}
+
+function buildLocalOpsAlertMonitorShiftViewSwitchState(currentView = opsAlertMonitorShiftReportViewState) {
     const normalizedView = normalizeOpsAlertMonitorShiftReportView(currentView);
     const viewMeta = getOpsAlertMonitorShiftReportViewMeta(normalizedView);
+    return {
+        currentView: normalizedView,
+        label: '交班视角',
+        chips: OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS.map((item) => ({
+            key: item.key,
+            label: item.label,
+            active: item.key === normalizedView
+        })),
+        summaryText: viewMeta.description || ''
+    };
+}
+
+function resolveOpsAlertMonitorShiftViewSwitchState(currentView = opsAlertMonitorShiftReportViewState) {
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorShiftViewSwitchState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorShiftViewSwitchState(currentView, {
+            viewDefinitions: OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS,
+            defaultView: getDefaultOpsAlertMonitorShiftReportViewState()
+        });
+    }
+    return buildLocalOpsAlertMonitorShiftViewSwitchState(currentView);
+}
+
+function buildOpsAlertMonitorShiftReportViewSwitchMarkup(currentView = opsAlertMonitorShiftReportViewState, precomputedState = null) {
+    const sharedViewSwitchState = precomputedState || resolveOpsAlertMonitorShiftViewSwitchState(currentView);
 
     return `
         <div class="ops-alert-shift-report__view-switch">
-            <span class="ops-alert-shift-report__view-label">交班视角</span>
+            <span class="ops-alert-shift-report__view-label">${escapeConfigHtml(sharedViewSwitchState.label)}</span>
             <div class="ops-alert-shift-report__view-chips">
-                ${OPS_ALERT_MONITOR_SHIFT_REPORT_VIEW_DEFINITIONS.map((item) => `
+                ${sharedViewSwitchState.chips.map((item) => `
                     <button
                         type="button"
-                        class="ops-alert-shift-report__view-chip${item.key === normalizedView ? ' is-active' : ''}"
+                        class="ops-alert-shift-report__view-chip${item.active ? ' is-active' : ''}"
                         data-admin-action="settings-set-ops-alert-shift-report-view"
                         data-ops-alert-shift-report-view="${escapeConfigHtml(item.key)}"
                     >
@@ -10471,7 +11187,7 @@ function buildOpsAlertMonitorShiftReportViewSwitchMarkup(currentView = opsAlertM
                     </button>
                 `).join('')}
             </div>
-            <div class="ops-alert-shift-report__view-summary">${escapeConfigHtml(viewMeta.description || '')}</div>
+            <div class="ops-alert-shift-report__view-summary">${escapeConfigHtml(sharedViewSwitchState.summaryText || '')}</div>
         </div>
     `;
 }
@@ -10499,501 +11215,213 @@ function buildOpsAlertMonitorShiftListItemMarkup(title = '', meta = '', badges =
     `;
 }
 
-function buildOpsAlertMonitorShiftTrendMarkup(report = normalizeOpsAlertMonitorShiftReport()) {
-    const trend = Array.isArray(report.trend) ? report.trend : [];
+function buildLocalOpsAlertMonitorShiftTrendState(report = normalizeOpsAlertMonitorShiftReport()) {
+    const normalizedReport = normalizeOpsAlertMonitorShiftReport(report);
+    const trend = Array.isArray(normalizedReport.trend) ? normalizedReport.trend : [];
     const maxBacklog = Math.max(1, ...trend.map((entry) => Number(entry.backlog_count || 0)));
-    const bucketHours = Math.max(1, Number(report.bucket_hours || 0));
+    const bucketHours = Math.max(1, Number(normalizedReport.bucket_hours || 0));
+    return {
+        items: trend.map((entry) => {
+            const backlogCount = Math.max(0, Number(entry.backlog_count || 0));
+            const claimedCount = Math.max(0, Number(entry.claimed_count || 0));
+            const assignedCount = Math.max(0, Number(entry.assigned_count || 0));
+            const resolvedCount = Math.max(0, Number(entry.resolved_count || 0));
+            const metaParts = [];
+            if (claimedCount > 0) metaParts.push(`认领 ${formatVerifyMonitorInteger(claimedCount)}`);
+            if (assignedCount > 0) metaParts.push(`转交 ${formatVerifyMonitorInteger(assignedCount)}`);
+            if (resolvedCount > 0) metaParts.push(`关闭 ${formatVerifyMonitorInteger(resolvedCount)}`);
+            return {
+                backlogText: formatVerifyMonitorInteger(backlogCount),
+                heightPercent: Math.max(16, Math.round((backlogCount / maxBacklog) * 100)),
+                labelText: formatOpsAlertMonitorTimeShort(entry.bucket_end),
+                metaText: metaParts.join(' · ') || '无动作'
+            };
+        }),
+        emptyMessage: '本班还没有形成可展示的积压变化。',
+        footerText: `按 ${formatVerifyMonitorInteger(bucketHours)} 小时时间桶回看本班积压走势。`
+    };
+}
+
+function resolveOpsAlertMonitorShiftTrendState(report = normalizeOpsAlertMonitorShiftReport()) {
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorShiftTrendState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorShiftTrendState(report, {
+            normalizeShiftReport: normalizeOpsAlertMonitorShiftReport,
+            formatCount: formatVerifyMonitorInteger,
+            formatTimeShort: formatOpsAlertMonitorTimeShort
+        });
+    }
+    return buildLocalOpsAlertMonitorShiftTrendState(report);
+}
+
+function buildOpsAlertMonitorShiftTrendMarkup(report = normalizeOpsAlertMonitorShiftReport(), precomputedState = null) {
+    const sharedTrendState = precomputedState || resolveOpsAlertMonitorShiftTrendState(report);
 
     return `
         <div class="ops-alert-shift-report__trend">
             <div class="ops-alert-shift-report__trend-bars">
-                ${trend.length ? trend.map((entry) => {
-        const backlogCount = Math.max(0, Number(entry.backlog_count || 0));
-        const claimedCount = Math.max(0, Number(entry.claimed_count || 0));
-        const assignedCount = Math.max(0, Number(entry.assigned_count || 0));
-        const resolvedCount = Math.max(0, Number(entry.resolved_count || 0));
-        const height = Math.max(16, Math.round((backlogCount / maxBacklog) * 100));
-        const metaParts = [];
-        if (claimedCount > 0) metaParts.push(`认领 ${formatVerifyMonitorInteger(claimedCount)}`);
-        if (assignedCount > 0) metaParts.push(`转交 ${formatVerifyMonitorInteger(assignedCount)}`);
-        if (resolvedCount > 0) metaParts.push(`关闭 ${formatVerifyMonitorInteger(resolvedCount)}`);
-        return `
+                ${sharedTrendState.items.length ? sharedTrendState.items.map((item) => `
                         <div class="ops-alert-shift-report__trend-bar">
-                            <div class="ops-alert-shift-report__trend-bar-value">${escapeConfigHtml(formatVerifyMonitorInteger(backlogCount))}</div>
+                            <div class="ops-alert-shift-report__trend-bar-value">${escapeConfigHtml(item.backlogText)}</div>
                             <div class="ops-alert-shift-report__trend-bar-track">
-                                <span class="ops-alert-shift-report__trend-bar-fill" style="height:${escapeConfigHtml(String(height))}%"></span>
+                                <span class="ops-alert-shift-report__trend-bar-fill" style="height:${escapeConfigHtml(String(item.heightPercent))}%"></span>
                             </div>
-                            <div class="ops-alert-shift-report__trend-bar-label">${escapeConfigHtml(formatOpsAlertMonitorTimeShort(entry.bucket_end))}</div>
-                            <div class="ops-alert-shift-report__trend-bar-meta">${escapeConfigHtml(metaParts.join(' · ') || '无动作')}</div>
+                            <div class="ops-alert-shift-report__trend-bar-label">${escapeConfigHtml(item.labelText)}</div>
+                            <div class="ops-alert-shift-report__trend-bar-meta">${escapeConfigHtml(item.metaText)}</div>
                         </div>
-                    `;
-    }).join('') : `<div class="ops-alert-shift-report__panel-empty">本班还没有形成可展示的积压变化。</div>`}
+                    `).join('') : `<div class="ops-alert-shift-report__panel-empty">${escapeConfigHtml(sharedTrendState.emptyMessage)}</div>`}
             </div>
-            <div class="ops-alert-shift-report__trend-footer">按 ${escapeConfigHtml(formatVerifyMonitorInteger(bucketHours))} 小时时间桶回看本班积压走势。</div>
+            <div class="ops-alert-shift-report__trend-footer">${escapeConfigHtml(sharedTrendState.footerText)}</div>
         </div>
     `;
 }
 
 function buildOpsAlertMonitorShiftReportMarkup(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
-    const normalizedReport = normalizeOpsAlertMonitorShiftReport(report);
-    const totals = normalizedReport.totals || getDefaultOpsAlertMonitorShiftReport().totals;
-    const currentView = normalizeOpsAlertMonitorShiftReportView(opsAlertMonitorShiftReportViewState);
-    const viewMeta = getOpsAlertMonitorShiftReportViewMeta(currentView);
-    const visibleSections = getOpsAlertMonitorShiftReportVisibleSections(currentView);
-    const currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId();
-    const currentAdminStat = getOpsAlertMonitorShiftReportCurrentAdminStat(normalizedReport, currentAdminId);
-    const ownedCategoryItems = buildOpsAlertMonitorShiftReportOwnedCategoryItems(opsAlertMonitorState?.categories, currentAdminId);
-    const baseCategoryItems = Array.isArray(normalizedReport.categories) ? normalizedReport.categories : [];
-    const baseAdminItems = Array.isArray(normalizedReport.admin_stats) ? normalizedReport.admin_stats : [];
-    const closeReasons = Array.isArray(normalizedReport.close_reasons) ? normalizedReport.close_reasons : [];
-    const shiftHours = Math.max(1, Number(normalizedReport.shift_hours || 0));
-    const backlogDelta = Number(totals.backlog_delta || 0);
-    const backlogDeltaTone = getOpsAlertMonitorBacklogDeltaTone(backlogDelta);
-    const mineLabel = currentAdminLabel || currentAdminStat?.label || '当前值班';
-    const mineActiveCount = Number(currentAdminStat?.active_count || 0);
-    const mineCriticalCount = Number(currentAdminStat?.critical_active_count || 0);
-    const mineClaimedCount = Number(currentAdminStat?.claimed_count || 0);
-    const mineAssignedCount = Number(currentAdminStat?.assigned_count || 0);
-    const mineResolvedCount = Number(currentAdminStat?.resolved_count || 0);
-    const mineAvgResolutionMinutes = currentAdminStat?.avg_resolution_minutes != null
-        ? Number(currentAdminStat.avg_resolution_minutes || 0)
-        : null;
-    const headline = currentView === 'mine'
-        ? (
-            mineActiveCount > 0
-                ? `${mineLabel} 当前名下有 ${formatVerifyMonitorInteger(mineActiveCount)} 条处理中告警，覆盖 ${formatVerifyMonitorInteger(ownedCategoryItems.length)} 个模块。`
-                : `${mineLabel} 当前名下没有处理中告警，可优先接手待认领积压。`
-        )
-        : (
-            Number(totals.claimed_count || 0) > 0
-            || Number(totals.assigned_count || 0) > 0
-            || Number(totals.resolved_count || 0) > 0
-        )
-            ? `近 ${formatVerifyMonitorInteger(shiftHours)} 小时共认领 ${formatVerifyMonitorInteger(totals.claimed_count || 0)}、转交 ${formatVerifyMonitorInteger(totals.assigned_count || 0)}、关闭 ${formatVerifyMonitorInteger(totals.resolved_count || 0)} 条告警。`
-            : `近 ${formatVerifyMonitorInteger(shiftHours)} 小时还没有新的认领、转交或关闭动作。`;
-    const summary = currentView === 'mine'
-        ? `本班你认领 ${formatVerifyMonitorInteger(mineClaimedCount)}、接手 ${formatVerifyMonitorInteger(mineAssignedCount)}、关闭 ${formatVerifyMonitorInteger(mineResolvedCount)} 条告警${mineAvgResolutionMinutes != null ? `，平均闭环 ${formatVerifyMonitorMinutes(mineAvgResolutionMinutes)}` : ''}；当前名下 ${formatVerifyMonitorInteger(mineCriticalCount)} 条 critical。`
-        : `当前仍有 ${formatVerifyMonitorInteger(totals.active_backlog_count || 0)} 条积压，较开班 ${formatOpsAlertMonitorSignedCount(backlogDelta)}；其中 ${formatVerifyMonitorInteger(totals.active_claimed_count || 0)} 条已有人跟进，${formatVerifyMonitorInteger(totals.active_pending_count || 0)} 条待认领。`;
-    const metrics = currentView === 'mine' ? [
-        {
-            label: '我名下处理中',
-            value: formatVerifyMonitorInteger(mineActiveCount),
-            detail: ownedCategoryItems.length > 0
-                ? `覆盖 ${formatVerifyMonitorInteger(ownedCategoryItems.length)} 个模块`
-                : '当前没有名下积压',
-            tone: mineActiveCount > 0 ? 'warning' : 'neutral'
-        },
-        {
-            label: '我名下 critical',
-            value: formatVerifyMonitorInteger(mineCriticalCount),
-            detail: mineCriticalCount > 0 ? '优先处理高优先级积压' : '当前没有 critical 积压',
-            tone: mineCriticalCount > 0 ? 'danger' : 'neutral'
-        },
-        {
-            label: '本班认领',
-            value: formatVerifyMonitorInteger(mineClaimedCount),
-            detail: '本班你主动接手的告警',
-            tone: mineClaimedCount > 0 ? 'neutral' : 'neutral'
-        },
-        {
-            label: '转交 / 接手',
-            value: formatVerifyMonitorInteger(mineAssignedCount),
-            detail: '本班由你接手的告警',
-            tone: mineAssignedCount > 0 ? 'warning' : 'neutral'
-        },
-        {
-            label: '本班关闭',
-            value: formatVerifyMonitorInteger(mineResolvedCount),
-            detail: mineResolvedCount > 0 ? '你本班完成闭环的告警' : '本班还没有关闭记录',
-            tone: mineResolvedCount > 0 ? 'success' : 'neutral'
-        },
-        {
-            label: '我的平均闭环',
-            value: mineAvgResolutionMinutes != null ? formatVerifyMonitorMinutes(mineAvgResolutionMinutes) : '—',
-            detail: mineResolvedCount > 0 ? `基于 ${formatVerifyMonitorInteger(mineResolvedCount)} 条已关闭告警` : '等待更多关闭样本',
-            tone: mineAvgResolutionMinutes != null ? 'success' : 'neutral'
+    const shiftRenderState = resolveOpsAlertMonitorShiftRenderState(report, currentAdminLabel);
+    const normalizedReport = shiftRenderState.normalizedReport || normalizeOpsAlertMonitorShiftReport(report);
+    const currentView = shiftRenderState.currentView || normalizeOpsAlertMonitorShiftReportView(opsAlertMonitorShiftReportViewState);
+    const resolvedActionButtons = Array.isArray(shiftRenderState.actionButtons) ? shiftRenderState.actionButtons : [];
+    const sharedViewSwitchState = shiftRenderState.viewSwitchState || null;
+    const sharedTrendState = shiftRenderState.trendState || null;
+    const resolvedReportState = shiftRenderState.reportState || {};
+    const resolvedSections = shiftRenderState.panelStates?.sections || {};
+    const renderBadgeList = (badges = []) => (Array.isArray(badges) ? badges : [])
+        .map((badge) => buildOpsAlertMonitorBadge(badge?.label || '—', badge?.tone || 'neutral'))
+        .join('');
+    const renderListSection = (section, extraClass = '') => {
+        if (!section?.visible) {
+            return '';
         }
-    ] : [
-        {
-            label: '本班认领',
-            value: formatVerifyMonitorInteger(totals.claimed_count || 0),
-            detail: Number(totals.note_count || 0) > 0
-                ? `另有 ${formatVerifyMonitorInteger(totals.note_count || 0)} 条备注更新`
-                : '本班新接手告警数',
-            tone: Number(totals.claimed_count || 0) > 0 ? 'neutral' : 'neutral'
-        },
-        {
-            label: '转交 / 接手',
-            value: formatVerifyMonitorInteger(totals.assigned_count || 0),
-            detail: Number(totals.reopened_count || 0) > 0
-                ? `重新打开 ${formatVerifyMonitorInteger(totals.reopened_count || 0)} 条`
-                : '跨人交接次数',
-            tone: Number(totals.assigned_count || 0) > 0 ? 'warning' : 'neutral'
-        },
-        {
-            label: '本班关闭',
-            value: formatVerifyMonitorInteger(totals.resolved_count || 0),
-            detail: normalizedReport.close_reasons.length
-                ? `关闭原因已归类 ${formatVerifyMonitorInteger(normalizedReport.close_reasons.length)} 项`
-                : '本班还没有关闭记录',
-            tone: Number(totals.resolved_count || 0) > 0 ? 'success' : 'neutral'
-        },
-        {
-            label: '平均闭环',
-            value: totals.avg_resolution_minutes != null
-                ? formatVerifyMonitorMinutes(totals.avg_resolution_minutes)
-                : '—',
-            detail: Number(totals.resolved_count || 0) > 0
-                ? `基于 ${formatVerifyMonitorInteger(totals.resolved_count || 0)} 条已关闭告警`
-                : '等待更多关闭样本',
-            tone: totals.avg_resolution_minutes != null ? 'success' : 'neutral'
-        },
-        {
-            label: '当前积压',
-            value: formatVerifyMonitorInteger(totals.active_backlog_count || 0),
-            detail: `较开班 ${formatOpsAlertMonitorSignedCount(backlogDelta)}`,
-            tone: backlogDeltaTone
-        },
-        {
-            label: '最长等待',
-            value: totals.longest_waiting_minutes != null
-                ? formatVerifyMonitorMinutes(totals.longest_waiting_minutes)
-                : '—',
-            detail: totals.longest_waiting_minutes != null
-                ? '当前未关闭告警中等待最久的一条'
-                : '当前没有待处理积压',
-            tone: totals.longest_waiting_minutes != null && Number(totals.longest_waiting_minutes || 0) >= 180
-                ? 'warning'
-                : 'neutral'
-        }
-    ];
-    const categoryItems = currentView === 'mine' ? ownedCategoryItems : baseCategoryItems;
-    const adminItems = currentView === 'mine'
-        ? (currentAdminStat ? [currentAdminStat] : [])
-        : baseAdminItems;
-    const headerBadges = currentView === 'mine'
-        ? [
-            buildOpsAlertMonitorBadge(`班次 ${formatVerifyMonitorInteger(shiftHours)} 小时`, 'neutral'),
-            currentAdminLabel ? buildOpsAlertMonitorBadge(`当前值班 ${currentAdminLabel}`, 'neutral') : '',
-            buildOpsAlertMonitorBadge(`我名下 ${formatVerifyMonitorInteger(mineActiveCount)}`, mineActiveCount > 0 ? 'warning' : 'neutral'),
-            mineCriticalCount > 0 ? buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(mineCriticalCount)} critical`, 'danger') : ''
-        ].filter(Boolean)
-        : [
-            buildOpsAlertMonitorBadge(`班次 ${formatVerifyMonitorInteger(shiftHours)} 小时`, 'neutral'),
-            buildOpsAlertMonitorBadge(`当前积压 ${formatVerifyMonitorInteger(totals.active_backlog_count || 0)}`, Number(totals.active_backlog_count || 0) > 0 ? 'warning' : 'neutral'),
-            buildOpsAlertMonitorBadge(`较开班 ${formatOpsAlertMonitorSignedCount(backlogDelta)}`, backlogDeltaTone),
-            currentAdminLabel ? buildOpsAlertMonitorBadge(`当前值班 ${currentAdminLabel}`, 'neutral') : ''
-        ].filter(Boolean);
+        const items = Array.isArray(section.items) ? section.items : [];
+        return `
+            <section class="ops-alert-shift-report__panel${extraClass}">
+                <div class="ops-alert-shift-report__panel-title">${escapeConfigHtml(section.title || '交班视图')}</div>
+                <div class="ops-alert-shift-report__panel-list">
+                    ${items.length
+        ? items.map((item) => buildOpsAlertMonitorShiftListItemMarkup(
+            item?.title,
+            item?.meta,
+            (Array.isArray(item?.badges) ? item.badges : []).map((badge) => buildOpsAlertMonitorBadge(badge?.label, badge?.tone))
+        )).join('')
+        : `<div class="ops-alert-shift-report__panel-empty">${escapeConfigHtml(section.emptyMessage || '暂无数据')}</div>`}
+                </div>
+            </section>
+        `;
+    };
 
     return `
         <div class="ops-alert-shift-report">
             <div class="ops-alert-shift-report__head">
                 <div class="ops-alert-shift-report__copy">
                     <div class="ops-alert-shift-report__eyebrow">本班处理统计 / 交班视图</div>
-                    <div class="ops-alert-shift-report__title">${escapeConfigHtml(headline)}</div>
-                    <div class="ops-alert-shift-report__summary">${escapeConfigHtml(summary)}</div>
+                    <div class="ops-alert-shift-report__title">${escapeConfigHtml(resolvedReportState.headline || '')}</div>
+                    <div class="ops-alert-shift-report__summary">${escapeConfigHtml(resolvedReportState.summary || '')}</div>
                 </div>
                 <div class="ops-alert-shift-report__stats">
-                    ${headerBadges.join('')}
+                    ${renderBadgeList(resolvedReportState.headerBadges)}
                 </div>
                 <div class="ops-alert-shift-report__actions">
-                    <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="settings-copy-ops-alert-shift-report">
-                        <i class="fas fa-clipboard-list"></i> 复制交班摘要
-                    </button>
-                    <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-export-ops-alert-shift-report-csv">
-                        <i class="fas fa-file-export"></i> 导出交班 CSV
-                    </button>
+                    ${resolvedActionButtons.map((button) => `
+                        <button
+                            type="button"
+                            class="btn-add-config btn-add-config--compact${button.variant === 'ghost' ? ' btn-add-config--ghost' : ''}"
+                            data-admin-action="${escapeConfigHtml(button.actionName)}"
+                        >
+                            <i class="${escapeConfigHtml(button.icon)}"></i> ${escapeConfigHtml(button.label)}
+                        </button>
+                    `).join('')}
                 </div>
             </div>
-            ${buildOpsAlertMonitorShiftReportViewSwitchMarkup(currentView)}
+            ${buildOpsAlertMonitorShiftReportViewSwitchMarkup(currentView, sharedViewSwitchState)}
             <div class="ops-alert-shift-report__metrics">
-                ${metrics.map((metric) => buildOpsAlertMonitorShiftMetricMarkup(metric)).join('')}
+                ${(Array.isArray(resolvedReportState.metrics) ? resolvedReportState.metrics : [])
+        .map((metric) => buildOpsAlertMonitorShiftMetricMarkup(metric))
+        .join('')}
             </div>
             <div class="ops-alert-shift-report__panels">
-                ${visibleSections.has('categories') ? `
-                <section class="ops-alert-shift-report__panel">
-                    <div class="ops-alert-shift-report__panel-title">${escapeConfigHtml(currentView === 'mine' ? '我名下积压模块' : currentView === 'handoff' ? '交接优先模块' : '当前积压模块')}</div>
-                    <div class="ops-alert-shift-report__panel-list">
-                        ${categoryItems.length
-        ? categoryItems.map((category) => buildOpsAlertMonitorShiftListItemMarkup(
-            category.label || category.key || '告警模块',
-            `积压 ${formatVerifyMonitorInteger(category.backlog_count || 0)} · 待认领 ${formatVerifyMonitorInteger(category.pending_count || 0)} · 处理中 ${formatVerifyMonitorInteger(category.claimed_count || 0)}${Number(category.critical_count || 0) > 0 ? ` · critical ${formatVerifyMonitorInteger(category.critical_count || 0)}` : ''}`,
-            [
-                Number(category.critical_count || 0) > 0
-                    ? buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(category.critical_count || 0)} critical`, 'danger')
-                    : '',
-                buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(category.backlog_count || 0)} 积压`, Number(category.pending_count || 0) > 0 ? 'warning' : 'neutral')
-            ]
-        )).join('')
-        : `<div class="ops-alert-shift-report__panel-empty">${escapeConfigHtml(currentView === 'mine' ? '当前没有分配到你名下的积压模块。' : '当前没有需要交接的积压模块。')}</div>`}
-                    </div>
-                </section>
-                ` : ''}
-                ${visibleSections.has('admins') ? `
-                <section class="ops-alert-shift-report__panel">
-                    <div class="ops-alert-shift-report__panel-title">${escapeConfigHtml(currentView === 'mine' ? '我的处理量' : currentView === 'review' ? '人员处理产出' : '人员工作量')}</div>
-                    <div class="ops-alert-shift-report__panel-list">
-                        ${adminItems.length
-        ? adminItems.map((admin) => buildOpsAlertMonitorShiftListItemMarkup(
-            admin.label || '未指定负责人',
-            `认领 ${formatVerifyMonitorInteger(admin.claimed_count || 0)} · 接手 ${formatVerifyMonitorInteger(admin.assigned_count || 0)} · 关闭 ${formatVerifyMonitorInteger(admin.resolved_count || 0)} · 手上 ${formatVerifyMonitorInteger(admin.active_count || 0)}${admin.avg_resolution_minutes != null ? ` · 平均 ${formatVerifyMonitorMinutes(admin.avg_resolution_minutes)}` : ''}`,
-            [
-                admin.is_current ? buildOpsAlertMonitorBadge('当前值班', 'neutral') : '',
-                Number(admin.critical_active_count || 0) > 0
-                    ? buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(admin.critical_active_count || 0)} critical`, 'danger')
-                    : ''
-            ]
-        )).join('')
-        : `<div class="ops-alert-shift-report__panel-empty">${escapeConfigHtml(currentView === 'mine' ? '当前还没有归属到你名下的处理动作。' : '本班还没有可归因到负责人的处理动作。')}</div>`}
-                    </div>
-                </section>
-                ` : ''}
-                ${visibleSections.has('trend') ? `
+                ${renderListSection(resolvedSections.categories)}
+                ${renderListSection(resolvedSections.admins)}
+                ${resolvedSections.trend?.visible ? `
                 <section class="ops-alert-shift-report__panel ops-alert-shift-report__panel--wide">
-                    <div class="ops-alert-shift-report__panel-title">${escapeConfigHtml(currentView === 'review' ? '本班积压变化' : '积压趋势')}</div>
-                    ${buildOpsAlertMonitorShiftTrendMarkup(normalizedReport)}
+                    <div class="ops-alert-shift-report__panel-title">${escapeConfigHtml(resolvedSections.trend.title || resolvedReportState.panelTitles?.trend || '积压趋势')}</div>
+                    ${buildOpsAlertMonitorShiftTrendMarkup(normalizedReport, sharedTrendState)}
                 </section>
                 ` : ''}
-                ${visibleSections.has('close_reasons') ? `
-                <section class="ops-alert-shift-report__panel">
-                    <div class="ops-alert-shift-report__panel-title">${escapeConfigHtml(viewMeta.key === 'review' ? '闭环原因分布' : '关闭原因分布')}</div>
-                    <div class="ops-alert-shift-report__panel-list">
-                        ${closeReasons.length
-        ? closeReasons.map((reason) => buildOpsAlertMonitorShiftListItemMarkup(
-            reason.label || '其他关闭原因',
-            `本班关闭 ${formatVerifyMonitorInteger(reason.count || 0)} 条`,
-            [
-                buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(reason.count || 0)} 条`, Number(reason.count || 0) > 0 ? 'success' : 'neutral')
-            ]
-        )).join('')
-        : '<div class="ops-alert-shift-report__panel-empty">本班还没有可归类的关闭原因。</div>'}
-                    </div>
-                </section>
-                ` : ''}
+                ${renderListSection(resolvedSections.closeReasons)}
             </div>
         </div>
     `;
 }
 
-function buildOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+function buildLocalOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
     const normalizedReport = normalizeOpsAlertMonitorShiftReport(report);
-    const totals = normalizedReport.totals || getDefaultOpsAlertMonitorShiftReport().totals;
-    const currentView = normalizeOpsAlertMonitorShiftReportView(opsAlertMonitorShiftReportViewState);
-    const viewMeta = getOpsAlertMonitorShiftReportViewMeta(currentView);
-    const visibleSections = getOpsAlertMonitorShiftReportVisibleSections(currentView);
-    const currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId();
-    const currentAdminStat = getOpsAlertMonitorShiftReportCurrentAdminStat(normalizedReport, currentAdminId);
-    const shiftHours = Math.max(1, Number(normalizedReport.shift_hours || 0));
-    const backlogDelta = Number(totals.backlog_delta || 0);
-    const categoryItems = currentView === 'mine'
-        ? buildOpsAlertMonitorShiftReportOwnedCategoryItems(opsAlertMonitorState?.categories, currentAdminId)
-        : (Array.isArray(normalizedReport.categories) ? normalizedReport.categories : []);
-    const adminItems = currentView === 'mine'
-        ? (currentAdminStat ? [currentAdminStat] : [])
-        : (Array.isArray(normalizedReport.admin_stats) ? normalizedReport.admin_stats : []);
-    const closeReasons = Array.isArray(normalizedReport.close_reasons) ? normalizedReport.close_reasons : [];
-    const trend = Array.isArray(normalizedReport.trend) ? normalizedReport.trend : [];
-    const mineActiveCount = Number(currentAdminStat?.active_count || 0);
-    const mineCriticalCount = Number(currentAdminStat?.critical_active_count || 0);
-    const mineClaimedCount = Number(currentAdminStat?.claimed_count || 0);
-    const mineAssignedCount = Number(currentAdminStat?.assigned_count || 0);
-    const mineResolvedCount = Number(currentAdminStat?.resolved_count || 0);
-    const mineAvgResolutionMinutes = currentAdminStat?.avg_resolution_minutes != null
-        ? Number(currentAdminStat.avg_resolution_minutes || 0)
-        : null;
-    const windowLabel = normalizedReport.window_start || normalizedReport.window_end
-        ? `${formatVerifyMonitorDateTime(normalizedReport.window_start)} 至 ${formatVerifyMonitorDateTime(normalizedReport.window_end)}`
-        : '';
+    const shiftRuntimeState = {
+        ...buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel),
+        generatedAt: new Date().toISOString()
+    };
     const lines = [
         '第一阶段集中告警交班摘要',
-        `生成时间：${formatVerifyMonitorDateTime(new Date().toISOString())}`
+        `生成时间：${formatVerifyMonitorDateTime(shiftRuntimeState.generatedAt)}`,
+        `交班视角：${getOpsAlertMonitorShiftResolvedViewLabel(shiftRuntimeState.currentView)}`,
+        `班次时长：${formatVerifyMonitorInteger(Math.max(1, Number(normalizedReport.shift_hours || 0)))} 小时`
     ];
-
-    if (windowLabel) {
-        lines.push(`班次区间：${windowLabel}`);
+    if (shiftRuntimeState.currentAdminLabel) {
+        lines.push(`当前值班：${shiftRuntimeState.currentAdminLabel}`);
     }
-
-    lines.push(`班次时长：${formatVerifyMonitorInteger(shiftHours)} 小时`);
-    lines.push(`交班视角：${viewMeta.label}`);
-
-    if (currentAdminLabel) {
-        lines.push(`当前值班：${currentAdminLabel}`);
+    if (normalizedReport.window_start || normalizedReport.window_end) {
+        lines.push(`班次区间：${formatVerifyMonitorDateTime(normalizedReport.window_start)} 至 ${formatVerifyMonitorDateTime(normalizedReport.window_end)}`);
     }
-
-    lines.push(
-        '',
-        `${currentView === 'mine' ? '我的概况' : '本班概况'}：`,
-        currentView === 'mine'
-            ? `你本班认领 ${formatVerifyMonitorInteger(mineClaimedCount)}，接手 ${formatVerifyMonitorInteger(mineAssignedCount)}，关闭 ${formatVerifyMonitorInteger(mineResolvedCount)}。`
-            : `认领 ${formatVerifyMonitorInteger(totals.claimed_count || 0)}，转交 ${formatVerifyMonitorInteger(totals.assigned_count || 0)}，关闭 ${formatVerifyMonitorInteger(totals.resolved_count || 0)}，备注更新 ${formatVerifyMonitorInteger(totals.note_count || 0)}。`,
-        currentView === 'mine'
-            ? `当前名下积压 ${formatVerifyMonitorInteger(mineActiveCount)}，其中 critical ${formatVerifyMonitorInteger(mineCriticalCount)}；覆盖 ${formatVerifyMonitorInteger(categoryItems.length)} 个模块。`
-            : `当前积压 ${formatVerifyMonitorInteger(totals.active_backlog_count || 0)}，较开班 ${formatOpsAlertMonitorSignedCount(backlogDelta)}；已跟进 ${formatVerifyMonitorInteger(totals.active_claimed_count || 0)}，待认领 ${formatVerifyMonitorInteger(totals.active_pending_count || 0)}。`,
-        currentView === 'mine'
-            ? `我的平均闭环 ${mineAvgResolutionMinutes != null ? formatVerifyMonitorMinutes(mineAvgResolutionMinutes) : '暂无样本'}。`
-            : `平均闭环 ${totals.avg_resolution_minutes != null ? formatVerifyMonitorMinutes(totals.avg_resolution_minutes) : '暂无样本'}；最长等待 ${totals.longest_waiting_minutes != null ? formatVerifyMonitorMinutes(totals.longest_waiting_minutes) : '暂无积压'}。`,
-        ''
-    );
-
-    if (visibleSections.has('categories')) {
-        lines.push(currentView === 'mine' ? '我名下积压模块：' : '重点积压模块：');
-        if (categoryItems.length) {
-            categoryItems.forEach((category, index) => {
-                const label = category.label || category.key || `模块 ${index + 1}`;
-                lines.push(
-                    `${index + 1}. ${label}：积压 ${formatVerifyMonitorInteger(category.backlog_count || 0)}，待认领 ${formatVerifyMonitorInteger(category.pending_count || 0)}，处理中 ${formatVerifyMonitorInteger(category.claimed_count || 0)}${Number(category.critical_count || 0) > 0 ? `，critical ${formatVerifyMonitorInteger(category.critical_count || 0)}` : ''}`
-                );
-            });
-        } else {
-            lines.push(currentView === 'mine' ? '1. 当前没有分配到你名下的积压模块。' : '1. 当前没有需要重点交接的积压模块。');
-        }
-        lines.push('');
-    }
-
-    if (visibleSections.has('admins')) {
-        lines.push(`${currentView === 'mine' ? '我的处理量' : currentView === 'review' ? '人员处理产出' : '人员工作量'}：`);
-        if (adminItems.length) {
-            adminItems.forEach((admin, index) => {
-                const label = admin.label || '未指定负责人';
-                lines.push(
-                    `${index + 1}. ${label}：认领 ${formatVerifyMonitorInteger(admin.claimed_count || 0)}，接手 ${formatVerifyMonitorInteger(admin.assigned_count || 0)}，关闭 ${formatVerifyMonitorInteger(admin.resolved_count || 0)}，手上 ${formatVerifyMonitorInteger(admin.active_count || 0)}${admin.avg_resolution_minutes != null ? `，平均 ${formatVerifyMonitorMinutes(admin.avg_resolution_minutes)}` : ''}${admin.is_current ? '，当前值班' : ''}`
-                );
-            });
-        } else {
-            lines.push(currentView === 'mine' ? '1. 当前还没有归属到你名下的处理动作。' : '1. 本班还没有可归因到负责人的处理动作。');
-        }
-        lines.push('');
-    }
-
-    if (visibleSections.has('close_reasons')) {
-        lines.push(`${currentView === 'review' ? '闭环原因' : '关闭原因'}：`);
-        if (closeReasons.length) {
-            closeReasons.forEach((reason, index) => {
-                lines.push(`${index + 1}. ${reason.label || '其他关闭原因'}：${formatVerifyMonitorInteger(reason.count || 0)} 条`);
-            });
-        } else {
-            lines.push('1. 本班还没有可归类的关闭原因。');
-        }
-        lines.push('');
-    }
-
-    if (visibleSections.has('trend')) {
-        lines.push(`${currentView === 'review' ? '本班积压变化' : '积压趋势'}：`);
-        if (trend.length) {
-            trend.forEach((entry, index) => {
-                lines.push(
-                    `${index + 1}. ${formatOpsAlertMonitorTimeShort(entry.bucket_end)}：积压 ${formatVerifyMonitorInteger(entry.backlog_count || 0)}，认领 ${formatVerifyMonitorInteger(entry.claimed_count || 0)}，转交 ${formatVerifyMonitorInteger(entry.assigned_count || 0)}，关闭 ${formatVerifyMonitorInteger(entry.resolved_count || 0)}`
-                );
-            });
-        } else {
-            lines.push('1. 本班还没有形成可展示的积压变化。');
-        }
-    }
-
     return lines.join('\n');
 }
 
-function buildOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+function resolveOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+    const shiftRuntimeState = {
+        ...buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel),
+        generatedAt: new Date().toISOString()
+    };
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorShiftReportSummaryText === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorShiftReportSummaryText(report, shiftRuntimeState, buildOpsAlertMonitorShiftSharedOptions({
+            formatDateTime: formatVerifyMonitorDateTime,
+            formatCount: formatVerifyMonitorInteger,
+            formatMinutes: formatVerifyMonitorMinutes,
+            formatSignedCount: formatOpsAlertMonitorSignedCount,
+            formatTimeShort: formatOpsAlertMonitorTimeShort
+        }));
+    }
+    return buildLocalOpsAlertMonitorShiftReportSummaryText(report, currentAdminLabel);
+}
+
+function buildOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+    return resolveOpsAlertMonitorShiftReportSummaryText(report, currentAdminLabel);
+}
+
+function buildLocalOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
     const normalizedReport = normalizeOpsAlertMonitorShiftReport(report);
-    const totals = normalizedReport.totals || getDefaultOpsAlertMonitorShiftReport().totals;
-    const currentView = normalizeOpsAlertMonitorShiftReportView(opsAlertMonitorShiftReportViewState);
-    const viewMeta = getOpsAlertMonitorShiftReportViewMeta(currentView);
-    const visibleSections = getOpsAlertMonitorShiftReportVisibleSections(currentView);
-    const currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId();
-    const currentAdminStat = getOpsAlertMonitorShiftReportCurrentAdminStat(normalizedReport, currentAdminId);
-    const shiftHours = Math.max(1, Number(normalizedReport.shift_hours || 0));
-    const rows = [{
+    const shiftRuntimeState = buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel);
+    return [{
         section: 'summary',
         item: '班次概览',
-        current_admin: currentAdminLabel || '',
-        view_mode: currentView,
-        view_label: viewMeta.label || '',
-        shift_hours: shiftHours,
+        current_admin: shiftRuntimeState.currentAdminLabel || '',
+        view_mode: normalizeOpsAlertMonitorShiftReportView(shiftRuntimeState.currentView),
+        view_label: getOpsAlertMonitorShiftResolvedViewLabel(shiftRuntimeState.currentView),
+        shift_hours: Math.max(1, Number(normalizedReport.shift_hours || 0)),
         bucket_hours: Math.max(1, Number(normalizedReport.bucket_hours || 0)),
         window_start: normalizedReport.window_start || '',
-        window_end: normalizedReport.window_end || '',
-        claimed_count: Number(totals.claimed_count || 0),
-        assigned_count: Number(totals.assigned_count || 0),
-        resolved_count: Number(totals.resolved_count || 0),
-        note_count: Number(totals.note_count || 0),
-        reopened_count: Number(totals.reopened_count || 0),
-        avg_resolution_minutes: totals.avg_resolution_minutes != null ? Number(totals.avg_resolution_minutes || 0) : '',
-        active_backlog_count: Number(totals.active_backlog_count || 0),
-        active_claimed_count: Number(totals.active_claimed_count || 0),
-        active_pending_count: Number(totals.active_pending_count || 0),
-        previous_backlog_count: Number(totals.previous_backlog_count || 0),
-        backlog_delta: Number(totals.backlog_delta || 0),
-        longest_waiting_minutes: totals.longest_waiting_minutes != null ? Number(totals.longest_waiting_minutes || 0) : '',
-        current_admin_active_count: Number(currentAdminStat?.active_count || 0),
-        current_admin_critical_active_count: Number(currentAdminStat?.critical_active_count || 0),
-        current_admin_claimed_count: Number(currentAdminStat?.claimed_count || 0),
-        current_admin_assigned_count: Number(currentAdminStat?.assigned_count || 0),
-        current_admin_resolved_count: Number(currentAdminStat?.resolved_count || 0),
-        current_admin_avg_resolution_minutes: currentAdminStat?.avg_resolution_minutes != null ? Number(currentAdminStat.avg_resolution_minutes || 0) : ''
+        window_end: normalizedReport.window_end || ''
     }];
+}
 
-    if (visibleSections.has('categories')) {
-        const categoryItems = currentView === 'mine'
-            ? buildOpsAlertMonitorShiftReportOwnedCategoryItems(opsAlertMonitorState?.categories, currentAdminId)
-            : (Array.isArray(normalizedReport.categories) ? normalizedReport.categories : []);
-        categoryItems.forEach((category) => {
-            rows.push({
-                section: 'categories',
-                item: category.label || category.key || '告警模块',
-                category_key: category.key || '',
-                backlog_count: Number(category.backlog_count || 0),
-                pending_count: Number(category.pending_count || 0),
-                claimed_count: Number(category.claimed_count || 0),
-                critical_count: Number(category.critical_count || 0)
-            });
-        });
+function resolveOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+    const shiftRuntimeState = buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel);
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorShiftReportCsvRows === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorShiftReportCsvRows(report, shiftRuntimeState, buildOpsAlertMonitorShiftSharedOptions({
+            formatTimeShort: formatOpsAlertMonitorTimeShort
+        }));
     }
+    return buildLocalOpsAlertMonitorShiftReportCsvRows(report, currentAdminLabel);
+}
 
-    if (visibleSections.has('admins')) {
-        const adminItems = currentView === 'mine'
-            ? (currentAdminStat ? [currentAdminStat] : [])
-            : (Array.isArray(normalizedReport.admin_stats) ? normalizedReport.admin_stats : []);
-        adminItems.forEach((admin) => {
-            rows.push({
-                section: 'admins',
-                item: admin.label || '未指定负责人',
-                admin_id: admin.admin_id || '',
-                is_current: admin.is_current === true,
-                claimed_count: Number(admin.claimed_count || 0),
-                assigned_count: Number(admin.assigned_count || 0),
-                resolved_count: Number(admin.resolved_count || 0),
-                active_count: Number(admin.active_count || 0),
-                critical_active_count: Number(admin.critical_active_count || 0),
-                avg_resolution_minutes: admin.avg_resolution_minutes != null ? Number(admin.avg_resolution_minutes || 0) : ''
-            });
-        });
-    }
-
-    if (visibleSections.has('close_reasons')) {
-        (Array.isArray(normalizedReport.close_reasons) ? normalizedReport.close_reasons : []).forEach((reason) => {
-            rows.push({
-                section: 'close_reasons',
-                item: reason.label || '其他关闭原因',
-                count: Number(reason.count || 0)
-            });
-        });
-    }
-
-    if (visibleSections.has('trend')) {
-        (Array.isArray(normalizedReport.trend) ? normalizedReport.trend : []).forEach((entry) => {
-            rows.push({
-                section: 'trend',
-                item: formatOpsAlertMonitorTimeShort(entry.bucket_end),
-                bucket_end: entry.bucket_end || '',
-                backlog_count: Number(entry.backlog_count || 0),
-                claimed_count: Number(entry.claimed_count || 0),
-                assigned_count: Number(entry.assigned_count || 0),
-                resolved_count: Number(entry.resolved_count || 0)
-            });
-        });
-    }
-
-    return rows;
+function buildOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = '') {
+    return resolveOpsAlertMonitorShiftReportCsvRows(report, currentAdminLabel);
 }
 
 function setOpsAlertMonitorShiftReportView(value = 'all') {
@@ -11007,49 +11435,10 @@ function renderOpsAlertMonitorShiftReport() {
     if (!target) return;
 
     const state = opsAlertMonitorState || getDefaultOpsAlertMonitorState();
-    if (state.status === 'loading') {
-        target.innerHTML = `
-            <div class="ops-alert-shift-report">
-                <div class="ops-alert-shift-report__head">
-                    <div class="ops-alert-shift-report__copy">
-                        <div class="ops-alert-shift-report__eyebrow">本班处理统计 / 交班视图</div>
-                        <div class="ops-alert-shift-report__title">正在汇总认领、转交、关闭和积压趋势...</div>
-                        <div class="ops-alert-shift-report__summary">会优先给出本班处理量、当前积压和交班时最值得说明的几块模块。</div>
-                    </div>
-                    <div class="ops-alert-shift-report__stats">
-                        ${buildOpsAlertMonitorBadge('等待加载', 'neutral')}
-                    </div>
-                </div>
-                <div class="ops-alert-shift-report__metrics">
-                    ${[
-        { label: '本班认领', value: '—' },
-        { label: '转交 / 接手', value: '—' },
-        { label: '本班关闭', value: '—' },
-        { label: '平均闭环', value: '—' },
-        { label: '当前积压', value: '—' },
-        { label: '最长等待', value: '—' }
-    ].map((metric) => buildOpsAlertMonitorShiftMetricMarkup(metric)).join('')}
-                </div>
-            </div>
-        `;
-        return;
-    }
-
-    if (state.status === 'error') {
-        target.innerHTML = `
-            <div class="ops-alert-shift-report ops-alert-shift-report--danger">
-                <div class="ops-alert-shift-report__head">
-                    <div class="ops-alert-shift-report__copy">
-                        <div class="ops-alert-shift-report__eyebrow">本班处理统计 / 交班视图</div>
-                        <div class="ops-alert-shift-report__title">交班报表加载失败</div>
-                        <div class="ops-alert-shift-report__summary">${escapeConfigHtml(state.message || '请刷新面板后重试。')}</div>
-                    </div>
-                    <div class="ops-alert-shift-report__stats">
-                        ${buildOpsAlertMonitorBadge('加载失败', 'danger')}
-                    </div>
-                </div>
-            </div>
-        `;
+    if (state.status === 'loading' || state.status === 'error') {
+        target.innerHTML = buildOpsAlertMonitorShiftShellMarkup(resolveOpsAlertMonitorShiftShellState(state.status, {
+            message: state.message
+        }));
         return;
     }
 
@@ -11059,74 +11448,185 @@ function renderOpsAlertMonitorShiftReport() {
     );
 }
 
+function buildLocalOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = []) {
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+    const normalizedFilters = filters && typeof filters === 'object' && !Array.isArray(filters) ? filters : getDefaultOpsAlertMonitorViewState();
+    const normalizedCategories = Array.isArray(categories) ? categories : [];
+    const summary = normalizedState.summary && typeof normalizedState.summary === 'object' && !Array.isArray(normalizedState.summary)
+        ? normalizedState.summary
+        : getDefaultOpsAlertMonitorState().summary;
+
+    if (normalizedState.status === 'loading') {
+        return {
+            status: 'loading',
+            metaIcon: 'fas fa-rotate fa-spin',
+            metaText: '正在汇总支付、工单、库存、履约与商城风控五类告警...',
+            emptyMessage: '正在加载集中告警处理面板...'
+        };
+    }
+
+    if (normalizedState.status === 'error') {
+        return {
+            status: 'error',
+            metaIcon: 'fas fa-triangle-exclamation',
+            metaText: normalizedState.message || '集中告警处理面板加载失败。',
+            emptyMessage: normalizedState.message || '集中告警处理面板加载失败。'
+        };
+    }
+
+    const filteredActiveCount = normalizedCategories.reduce((sum, category) => sum + Number(category.display_active_count || 0), 0);
+    const filteredCriticalCount = normalizedCategories.reduce((sum, category) => sum + Number(category.display_critical_count || 0), 0);
+    const filteredSummaryLabel = getOpsAlertMonitorFilterSummaryLabel(normalizedFilters);
+
+    if (!normalizedCategories.length) {
+        return {
+            status: 'empty',
+            metaIcon: 'fas fa-filter-circle-xmark',
+            metaText: `当前筛选：${filteredSummaryLabel}。这组条件下没有命中的集中告警，请调整筛选后重试。`,
+            emptyMessage: '当前筛选条件下没有可展示的集中告警卡片。'
+        };
+    }
+
+    return {
+        status: 'ready',
+        metaIcon: filteredActiveCount > 0 ? 'fas fa-siren-on' : 'fas fa-circle-check',
+        metaText: filteredActiveCount > 0
+            ? `当前筛选：${filteredSummaryLabel}。命中 ${formatVerifyMonitorInteger(filteredActiveCount)} 项待关注告警，覆盖 ${formatVerifyMonitorInteger(normalizedCategories.length)} 个模块，其中 ${formatVerifyMonitorInteger(filteredCriticalCount)} 项为 critical。`
+            : `当前筛选：${filteredSummaryLabel}。最近 ${formatVerifyMonitorInteger(summary.lookback_hours || 0)} 小时内没有持续中的待关注告警，下面保留可复核的恢复轨迹。`,
+        emptyMessage: ''
+    };
+}
+
+function resolveOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = []) {
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorPanelState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorPanelState(state, filters, categories, {
+            formatCount: formatVerifyMonitorInteger,
+            getFilterSummaryLabel: getOpsAlertMonitorFilterSummaryLabel
+        });
+    }
+    return buildLocalOpsAlertMonitorPanelState(state, filters, categories);
+}
+
+function buildLocalOpsAlertMonitorCategoryRenderState(category = {}, filters = getOpsAlertMonitorViewFilters()) {
+    const normalizedCategory = category && typeof category === 'object' && !Array.isArray(category) ? category : {};
+    const normalizedFilters = filters && typeof filters === 'object' && !Array.isArray(filters) ? filters : getDefaultOpsAlertMonitorViewState();
+    const items = Array.isArray(normalizedCategory.items) ? normalizedCategory.items : [];
+    return {
+        tone: getOpsAlertMonitorCardTone(normalizedCategory),
+        title: normalizedCategory.label || '告警分类',
+        description: normalizedCategory.description || '',
+        latestSummary: normalizedCategory.latest_title
+            ? `${normalizedCategory.latest_title}${normalizedCategory.latest_at ? ` · ${formatVerifyMonitorDateTime(normalizedCategory.latest_at)}` : ''}`
+            : '最近还没有收集到这类告警。',
+        latestMessage: normalizedCategory.filtered_note
+            || normalizedCategory.latest_message
+            || (getOpsAlertMonitorDisplayActiveCount(normalizedCategory) > 0
+                ? `当前有 ${formatVerifyMonitorInteger(getOpsAlertMonitorDisplayActiveCount(normalizedCategory))} 项待关注告警。`
+                : '当前没有持续中的待关注告警。'),
+        emptyMessage: String(normalizedCategory.latest_state || '').toLowerCase() === 'recovered'
+            ? '最近一条同类告警已经恢复，可进入对应模块做一次复核。'
+            : (String(normalizedFilters.severity || 'all') === 'all'
+                ? '当前没有持续中的待处理告警。'
+                : `当前筛选条件下没有命中的 ${normalizedFilters.severity} 告警。`),
+        hiddenHint: Number(normalizedCategory.hidden_item_count || 0) > 0
+            ? `当前卡片仅展示前 3 项，另有 ${formatVerifyMonitorInteger(Number(normalizedCategory.hidden_item_count || 0))} 项可通过“复制清单 / 导出 CSV”带走处理。`
+            : '',
+        statBadges: [
+            { label: `${formatVerifyMonitorInteger(getOpsAlertMonitorDisplayActiveCount(normalizedCategory))} 待关注`, tone: getOpsAlertMonitorDisplayActiveCount(normalizedCategory) > 0 ? 'warning' : 'neutral' },
+            normalizedCategory?.case_summary?.claimed > 0 ? { label: `${formatVerifyMonitorInteger(normalizedCategory.case_summary.claimed || 0)} 处理中`, tone: 'neutral' } : null,
+            getOpsAlertMonitorDisplayCriticalCount(normalizedCategory) > 0 ? { label: `${formatVerifyMonitorInteger(getOpsAlertMonitorDisplayCriticalCount(normalizedCategory))} critical`, tone: 'danger' } : null,
+            String(normalizedFilters.scope || 'all') === 'recovered' || (getOpsAlertMonitorDisplayActiveCount(normalizedCategory) === 0 && String(normalizedCategory.latest_state || '').toLowerCase() === 'recovered')
+                ? { label: '已恢复', tone: 'success' }
+                : null
+        ].filter(Boolean),
+        items: items.map((item) => ({ item, state: null })),
+        actions: [
+            {
+                actionName: 'settings-copy-ops-alert-monitor-category',
+                icon: 'fas fa-list-check',
+                label: '复制清单',
+                attrs: { 'data-ops-alert-monitor-category-key': String(normalizedCategory.key || '').trim() }
+            },
+            ...getOpsAlertMonitorCategoryActions(normalizedCategory.key).map((action) => ({
+                actionName: 'settings-open-ops-alert-workspace',
+                icon: action.icon,
+                label: action.label,
+                attrs: { 'data-workspace-target': action.target }
+            }))
+        ]
+    };
+}
+
+function resolveOpsAlertMonitorCategoryRenderState(category = {}, filters = getOpsAlertMonitorViewFilters()) {
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorCategoryRenderState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorCategoryRenderState(category, filters, {
+            formatCount: formatVerifyMonitorInteger,
+            formatDateTime: formatVerifyMonitorDateTime,
+            getCategoryActions: (categoryKey) => getOpsAlertMonitorCategoryActions(categoryKey),
+            getDisplayActiveCount: getOpsAlertMonitorDisplayActiveCount,
+            getDisplayCriticalCount: getOpsAlertMonitorDisplayCriticalCount,
+            getCardTone: getOpsAlertMonitorCardTone,
+            getSeverityTone: getOpsAlertMonitorSeverityTone,
+            getRiskTone: getOpsAlertMonitorRiskTone,
+            getRiskLevelLabel: getOpsAlertMonitorRiskLevelLabel,
+            getItemAction: getOpsAlertMonitorItemAction,
+            getQuickAction: getOpsAlertMonitorItemQuickAction,
+            getCaseActions: getOpsAlertMonitorItemCaseActions,
+            getCaseStatusLabel: getOpsAlertCaseStatusLabel,
+            getCaseStatusTone: getOpsAlertCaseStatusTone,
+            getCaseSummaryText: getOpsAlertCaseSummaryText,
+            getRecentEvents: getOpsAlertCaseRecentEvents,
+            getRecentEventText: getOpsAlertCaseRecentEventText
+        });
+    }
+    return buildLocalOpsAlertMonitorCategoryRenderState(category, filters);
+}
+
 function buildOpsAlertMonitorCategoryMarkup(category = {}, filters = getOpsAlertMonitorViewFilters()) {
-    const tone = getOpsAlertMonitorCardTone(category);
-    const actions = getOpsAlertMonitorCategoryActions(category.key);
-    const items = Array.isArray(category.items) ? category.items : [];
-    const hiddenItemCount = Number(category.hidden_item_count || 0);
-    const caseSummary = category && typeof category.case_summary === 'object'
-        ? category.case_summary
-        : { open: 0, claimed: 0, resolved: 0 };
-    const latestSummary = category.latest_title
-        ? `${category.latest_title}${category.latest_at ? ` · ${formatVerifyMonitorDateTime(category.latest_at)}` : ''}`
-        : '最近还没有收集到这类告警。';
-    const latestMessage = category.filtered_note
-        || category.latest_message
-        || (getOpsAlertMonitorDisplayActiveCount(category) > 0
-            ? `当前有 ${formatVerifyMonitorInteger(getOpsAlertMonitorDisplayActiveCount(category))} 项待关注告警。`
-            : '当前没有持续中的待关注告警。');
+    const fallbackState = buildLocalOpsAlertMonitorCategoryRenderState(category, filters);
+    const resolvedState = resolveOpsAlertMonitorCategoryRenderState(category, filters);
+    const resolvedActionButtons = Array.isArray(resolvedState.actions) && resolvedState.actions.length
+        ? resolvedState.actions
+        : fallbackState.actions;
+    const resolvedItems = Array.isArray(resolvedState.items) && resolvedState.items.length
+        ? resolvedState.items
+        : fallbackState.items;
 
     return `
-        <article class="ops-alert-monitor-card ops-alert-monitor-card--${escapeConfigHtml(tone)}">
+        <article class="ops-alert-monitor-card ops-alert-monitor-card--${escapeConfigHtml(resolvedState.tone || 'neutral')}">
             <div class="ops-alert-monitor-card__head">
                 <div class="ops-alert-monitor-card__copy">
-                    <div class="ops-alert-monitor-card__title">${escapeConfigHtml(category.label || '告警分类')}</div>
-                    <div class="ops-alert-monitor-card__desc">${escapeConfigHtml(category.description || '')}</div>
+                    <div class="ops-alert-monitor-card__title">${escapeConfigHtml(resolvedState.title || '告警分类')}</div>
+                    <div class="ops-alert-monitor-card__desc">${escapeConfigHtml(resolvedState.description || '')}</div>
                 </div>
                 <div class="ops-alert-monitor-card__stats">
-                    ${buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(getOpsAlertMonitorDisplayActiveCount(category))} 待关注`, getOpsAlertMonitorDisplayActiveCount(category) > 0 ? 'warning' : 'neutral')}
-                    ${Number(caseSummary.claimed || 0) > 0 ? buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(caseSummary.claimed || 0)} 处理中`, 'neutral') : ''}
-                    ${getOpsAlertMonitorDisplayCriticalCount(category) > 0 ? buildOpsAlertMonitorBadge(`${formatVerifyMonitorInteger(getOpsAlertMonitorDisplayCriticalCount(category))} critical`, 'danger') : ''}
-                    ${String(filters.scope || 'all') === 'recovered' || (getOpsAlertMonitorDisplayActiveCount(category) === 0 && String(category.latest_state || '').toLowerCase() === 'recovered')
-        ? buildOpsAlertMonitorBadge('已恢复', 'success')
-        : ''}
+                    ${(Array.isArray(resolvedState.statBadges) ? resolvedState.statBadges : [])
+        .map((badge) => buildOpsAlertMonitorBadge(badge.label, badge.tone)).join('')}
                 </div>
             </div>
             <div class="ops-alert-monitor-card__latest">
-                <strong>${escapeConfigHtml(latestSummary)}</strong>
-                <span>${escapeConfigHtml(latestMessage)}</span>
+                <strong>${escapeConfigHtml(resolvedState.latestSummary || '')}</strong>
+                <span>${escapeConfigHtml(resolvedState.latestMessage || '')}</span>
             </div>
             <div class="ops-alert-monitor-card__items">
-                ${items.length
-        ? items.map((item) => buildOpsAlertMonitorItemMarkup(item, category)).join('')
-        : `<div class="ops-alert-monitor-empty">${escapeConfigHtml(
-            String(category.latest_state || '').toLowerCase() === 'recovered'
-                ? '最近一条同类告警已经恢复，可进入对应模块做一次复核。'
-                : (String(filters.severity || 'all') === 'all'
-                    ? '当前没有持续中的待处理告警。'
-                    : `当前筛选条件下没有命中的 ${filters.severity} 告警。`)
-        )}</div>`}
+                ${resolvedItems.length
+        ? resolvedItems.map((entry) => buildOpsAlertMonitorItemMarkup(entry.item, category, entry.state)).join('')
+        : `<div class="ops-alert-monitor-empty">${escapeConfigHtml(resolvedState.emptyMessage || '')}</div>`}
             </div>
-            ${hiddenItemCount > 0 ? `
-                <div class="ops-alert-monitor-card__hint">当前卡片仅展示前 3 项，另有 ${escapeConfigHtml(formatVerifyMonitorInteger(hiddenItemCount))} 项可通过“复制清单 / 导出 CSV”带走处理。</div>
+            ${resolvedState.hiddenHint ? `
+                <div class="ops-alert-monitor-card__hint">${escapeConfigHtml(resolvedState.hiddenHint)}</div>
             ` : ''}
             <div class="ops-alert-monitor-card__actions">
-                <button
-                    type="button"
-                    class="btn-add-config btn-add-config--compact"
-                    data-admin-action="settings-copy-ops-alert-monitor-category"
-                    data-ops-alert-monitor-category-key="${escapeConfigHtml(category.key || '')}"
-                >
-                    <i class="fas fa-list-check"></i> 复制清单
-                </button>
-                ${actions.map((action) => `
+                ${resolvedActionButtons.map((action) => `
                     <button
                         type="button"
                         class="btn-add-config btn-add-config--compact"
-                        data-admin-action="settings-open-ops-alert-workspace"
-                        data-workspace-target="${escapeConfigHtml(action.target)}"
+                        data-admin-action="${escapeConfigHtml(action.actionName || '')}"
+                        ${Object.entries(action.attrs || {})
+            .filter(([, value]) => String(value || '').length > 0)
+            .map(([name, value]) => `${name}="${escapeConfigHtml(value)}"`).join(' ')}
                     >
-                        <i class="${escapeConfigHtml(action.icon)}"></i> ${escapeConfigHtml(action.label)}
+                        <i class="${escapeConfigHtml(action.icon || 'fas fa-circle-dot')}"></i> ${escapeConfigHtml(action.label || '操作')}
                     </button>
                 `).join('')}
             </div>
@@ -11148,7 +11648,7 @@ function setOpsAlertMonitorFilter(kind, value) {
     return true;
 }
 
-function buildOpsAlertCaseMutationItems(items = [], categoryKey = '') {
+function buildLocalOpsAlertCaseMutationItems(items = [], categoryKey = '') {
     const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
     return (Array.isArray(items) ? items : [])
         .map((item) => ({
@@ -11162,7 +11662,18 @@ function buildOpsAlertCaseMutationItems(items = [], categoryKey = '') {
         .filter((item) => item.category_key && item.target_id);
 }
 
-function getOpsAlertMonitorBatchMuteModuleKeys(filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
+function resolveOpsAlertCaseMutationItems(items = [], categoryKey = '') {
+    if (typeof window.buildAdminWorkbenchOpsAlertCaseMutationItems === 'function') {
+        return window.buildAdminWorkbenchOpsAlertCaseMutationItems(items, categoryKey);
+    }
+    return buildLocalOpsAlertCaseMutationItems(items, categoryKey);
+}
+
+function buildOpsAlertCaseMutationItems(items = [], categoryKey = '') {
+    return resolveOpsAlertCaseMutationItems(items, categoryKey);
+}
+
+function buildLocalOpsAlertMonitorBatchMuteModuleKeysFromCategories(categories = [], categoryKey = '') {
     const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
     const categoryToModuleKey = {
         payments: 'payments',
@@ -11173,7 +11684,7 @@ function getOpsAlertMonitorBatchMuteModuleKeys(filters = getOpsAlertMonitorViewF
     };
 
     return Array.from(new Set(
-        getOpsAlertMonitorPreparedCategories(filters)
+        categories
             .filter((category) => {
                 const currentCategoryKey = String(category.key || '').trim().toLowerCase();
                 if (normalizedCategoryKey && currentCategoryKey !== normalizedCategoryKey) {
@@ -11186,15 +11697,30 @@ function getOpsAlertMonitorBatchMuteModuleKeys(filters = getOpsAlertMonitorViewF
     ));
 }
 
+function resolveOpsAlertMonitorBatchMuteModuleKeysFromCategories(categories = [], categoryKey = '') {
+    if (typeof window.getAdminWorkbenchOpsAlertMonitorBatchMuteModuleKeys === 'function') {
+        return window.getAdminWorkbenchOpsAlertMonitorBatchMuteModuleKeys(categories, categoryKey);
+    }
+    return buildLocalOpsAlertMonitorBatchMuteModuleKeysFromCategories(categories, categoryKey);
+}
+
+function getOpsAlertMonitorBatchMuteModuleKeysFromCategories(categories = [], categoryKey = '') {
+    return resolveOpsAlertMonitorBatchMuteModuleKeysFromCategories(categories, categoryKey);
+}
+
+function getOpsAlertMonitorBatchMuteModuleKeys(filters = getOpsAlertMonitorViewFilters(), categoryKey = '') {
+    const categories = getOpsAlertMonitorPreparedCategories(filters);
+    return getOpsAlertMonitorBatchMuteModuleKeysFromCategories(categories, categoryKey);
+}
+
 function getOpsAlertMuteModuleLabel(moduleKey = '') {
     const definition = OPS_ALERT_MUTE_RULE_MODULE_DEFINITIONS.find((item) => item.key === String(moduleKey || '').trim().toLowerCase());
     return definition?.label || String(moduleKey || '').trim() || '模块';
 }
 
-function getOpsAlertMonitorBatchItems(filters = getOpsAlertMonitorViewFilters(), action = '', categoryKey = '') {
+function buildLocalOpsAlertMonitorBatchItemsFromCategories(categories = [], action = '', categoryKey = '') {
     const normalizedAction = String(action || '').trim().toLowerCase();
     const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
-    const categories = getOpsAlertMonitorPreparedCategories(filters);
 
     return categories.flatMap((category) => {
         const currentCategoryKey = String(category.key || '').trim().toLowerCase();
@@ -11202,7 +11728,7 @@ function getOpsAlertMonitorBatchItems(filters = getOpsAlertMonitorViewFilters(),
             return [];
         }
 
-        return buildOpsAlertCaseMutationItems(category.visible_items || [], currentCategoryKey);
+        return buildLocalOpsAlertCaseMutationItems(category.visible_items || [], currentCategoryKey);
     }).filter((item) => {
         const matchingCategory = categories.find((category) => String(category.key || '').trim().toLowerCase() === item.category_key);
         const sourceItem = Array.isArray(matchingCategory?.visible_items)
@@ -11223,38 +11749,82 @@ function getOpsAlertMonitorBatchItems(filters = getOpsAlertMonitorViewFilters(),
     });
 }
 
+function resolveOpsAlertMonitorBatchItemsFromCategories(categories = [], action = '', categoryKey = '') {
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorBatchItems === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorBatchItems(categories, action, categoryKey);
+    }
+    return buildLocalOpsAlertMonitorBatchItemsFromCategories(categories, action, categoryKey);
+}
+
+function getOpsAlertMonitorBatchItemsFromCategories(categories = [], action = '', categoryKey = '') {
+    return resolveOpsAlertMonitorBatchItemsFromCategories(categories, action, categoryKey);
+}
+
+function getOpsAlertMonitorBatchItems(filters = getOpsAlertMonitorViewFilters(), action = '', categoryKey = '') {
+    const categories = getOpsAlertMonitorPreparedCategories(filters);
+    return getOpsAlertMonitorBatchItemsFromCategories(categories, action, categoryKey);
+}
+
 function renderOpsAlertMonitorBatchActions(filters = getOpsAlertMonitorViewFilters()) {
-    const setButtonState = (actionName, count, emptyTitle, activeTitle) => {
+    const setButtonState = (actionName, disabled, title) => {
         const button = document.querySelector(`[data-admin-action="${actionName}"]`);
         if (!button) return;
-        button.disabled = count <= 0;
-        button.title = count > 0 ? activeTitle.replace('{count}', formatVerifyMonitorInteger(count)) : emptyTitle;
+        button.disabled = disabled;
+        button.title = title;
     };
+    const buttonStates = resolveOpsAlertMonitorBatchActionStates(filters);
 
-    setButtonState(
-        'settings-batch-claim-ops-alert-monitor',
-        getOpsAlertMonitorBatchItems(filters, 'assign').length,
-        '当前筛选条件下没有可指派的告警',
-        '当前筛选将指派 {count} 条告警'
-    );
-    setButtonState(
-        'settings-batch-note-ops-alert-monitor',
-        getOpsAlertMonitorBatchItems(filters, 'add_note').length,
-        '当前筛选条件下没有可备注的告警',
-        '当前筛选将备注 {count} 条告警'
-    );
-    setButtonState(
-        'settings-batch-resolve-ops-alert-monitor',
-        getOpsAlertMonitorBatchItems(filters, 'resolve').length,
-        '当前筛选条件下没有可关闭的告警',
-        '当前筛选将关闭 {count} 条告警'
-    );
-    setButtonState(
-        'settings-batch-mute-ops-alert-monitor',
-        getOpsAlertMonitorBatchMuteModuleKeys(filters).length,
-        '当前筛选条件下没有可静默的告警模块',
-        '当前筛选将静默 {count} 个告警模块'
-    );
+    if (Array.isArray(buttonStates)) {
+        buttonStates.forEach((item) => setButtonState(item.actionName, item.disabled, item.title));
+        return;
+    }
+
+    setButtonState('settings-batch-claim-ops-alert-monitor', getOpsAlertMonitorBatchItems(filters, 'assign').length <= 0, getOpsAlertMonitorBatchItems(filters, 'assign').length > 0 ? `当前筛选将指派 ${formatVerifyMonitorInteger(getOpsAlertMonitorBatchItems(filters, 'assign').length)} 条告警` : '当前筛选条件下没有可指派的告警');
+    setButtonState('settings-batch-note-ops-alert-monitor', getOpsAlertMonitorBatchItems(filters, 'add_note').length <= 0, getOpsAlertMonitorBatchItems(filters, 'add_note').length > 0 ? `当前筛选将备注 ${formatVerifyMonitorInteger(getOpsAlertMonitorBatchItems(filters, 'add_note').length)} 条告警` : '当前筛选条件下没有可备注的告警');
+    setButtonState('settings-batch-resolve-ops-alert-monitor', getOpsAlertMonitorBatchItems(filters, 'resolve').length <= 0, getOpsAlertMonitorBatchItems(filters, 'resolve').length > 0 ? `当前筛选将关闭 ${formatVerifyMonitorInteger(getOpsAlertMonitorBatchItems(filters, 'resolve').length)} 条告警` : '当前筛选条件下没有可关闭的告警');
+    setButtonState('settings-batch-mute-ops-alert-monitor', getOpsAlertMonitorBatchMuteModuleKeys(filters).length <= 0, getOpsAlertMonitorBatchMuteModuleKeys(filters).length > 0 ? `当前筛选将静默 ${formatVerifyMonitorInteger(getOpsAlertMonitorBatchMuteModuleKeys(filters).length)} 个告警模块` : '当前筛选条件下没有可静默的告警模块');
+}
+
+function buildLocalOpsAlertMonitorBatchActionStates(filters = getOpsAlertMonitorViewFilters()) {
+    const categories = getOpsAlertMonitorPreparedCategories(filters);
+    const assignItems = getOpsAlertMonitorBatchItemsFromCategories(categories, 'assign');
+    const noteItems = getOpsAlertMonitorBatchItemsFromCategories(categories, 'add_note');
+    const resolveItems = getOpsAlertMonitorBatchItemsFromCategories(categories, 'resolve');
+    const muteModuleKeys = getOpsAlertMonitorBatchMuteModuleKeysFromCategories(categories);
+    return [
+        {
+            actionName: 'settings-batch-claim-ops-alert-monitor',
+            disabled: assignItems.length <= 0,
+            title: assignItems.length > 0 ? `当前筛选将指派 ${formatVerifyMonitorInteger(assignItems.length)} 条告警` : '当前筛选条件下没有可指派的告警'
+        },
+        {
+            actionName: 'settings-batch-note-ops-alert-monitor',
+            disabled: noteItems.length <= 0,
+            title: noteItems.length > 0 ? `当前筛选将备注 ${formatVerifyMonitorInteger(noteItems.length)} 条告警` : '当前筛选条件下没有可备注的告警'
+        },
+        {
+            actionName: 'settings-batch-resolve-ops-alert-monitor',
+            disabled: resolveItems.length <= 0,
+            title: resolveItems.length > 0 ? `当前筛选将关闭 ${formatVerifyMonitorInteger(resolveItems.length)} 条告警` : '当前筛选条件下没有可关闭的告警'
+        },
+        {
+            actionName: 'settings-batch-mute-ops-alert-monitor',
+            disabled: muteModuleKeys.length <= 0,
+            title: muteModuleKeys.length > 0 ? `当前筛选将静默 ${formatVerifyMonitorInteger(muteModuleKeys.length)} 个告警模块` : '当前筛选条件下没有可静默的告警模块'
+        }
+    ];
+}
+
+function resolveOpsAlertMonitorBatchActionStates(filters = getOpsAlertMonitorViewFilters()) {
+    const categories = getOpsAlertMonitorPreparedCategories(filters);
+    if (typeof window.buildAdminWorkbenchOpsAlertMonitorBatchActionStates === 'function') {
+        return window.buildAdminWorkbenchOpsAlertMonitorBatchActionStates(categories, filters, {
+            buildBatchItems: (preparedCategories, action) => getOpsAlertMonitorBatchItemsFromCategories(preparedCategories, action),
+            getBatchMuteModuleKeys: (preparedCategories) => getOpsAlertMonitorBatchMuteModuleKeysFromCategories(preparedCategories),
+            formatCount: formatVerifyMonitorInteger
+        });
+    }
+    return buildLocalOpsAlertMonitorBatchActionStates(filters);
 }
 
 function renderOpsAlertMonitorPanel() {
@@ -11273,35 +11843,15 @@ function renderOpsAlertMonitorPanel() {
     renderOpsAlertRiskSpotlight(filters);
     renderOpsAlertMonitorShiftReport();
     renderOpsAlertMonitorBatchActions(filters);
-
-    if (state.status === 'loading') {
-        meta.innerHTML = '<i class="fas fa-rotate fa-spin"></i><span>正在汇总支付、工单、库存、履约与商城风控五类告警...</span>';
-        renderOpsAlertMonitorEmptyState(grid, '正在加载集中告警处理面板...');
+    const categories = state.status === 'ready' ? getOpsAlertMonitorPreparedCategories(filters) : [];
+    const panelState = resolveOpsAlertMonitorPanelState(state, filters, categories);
+    meta.innerHTML = `<i class="${escapeConfigHtml(panelState.metaIcon)}"></i><span>${escapeConfigHtml(panelState.metaText)}</span>`;
+    if (panelState.status !== 'ready' || !categories.length) {
+        renderOpsAlertMonitorEmptyState(grid, panelState.emptyMessage);
         return;
     }
-
-    if (state.status === 'error') {
-        meta.innerHTML = `<i class="fas fa-triangle-exclamation"></i><span>${escapeConfigHtml(state.message || '集中告警处理面板加载失败。')}</span>`;
-        renderOpsAlertMonitorEmptyState(grid, state.message || '集中告警处理面板加载失败。');
-        return;
-    }
-
-    const categories = getOpsAlertMonitorPreparedCategories(filters);
-
-    const filteredActiveCount = categories.reduce((sum, category) => sum + Number(category.display_active_count || 0), 0);
-    const filteredCriticalCount = categories.reduce((sum, category) => sum + Number(category.display_critical_count || 0), 0);
-    const filteredSummaryLabel = getOpsAlertMonitorFilterSummaryLabel(filters);
-
-    meta.innerHTML = categories.length
-        ? (
-            Number(filteredActiveCount || 0) > 0
-                ? `<i class="fas fa-siren-on"></i><span>当前筛选：${escapeConfigHtml(filteredSummaryLabel)}。命中 ${escapeConfigHtml(formatVerifyMonitorInteger(filteredActiveCount))} 项待关注告警，覆盖 ${escapeConfigHtml(formatVerifyMonitorInteger(categories.length))} 个模块，其中 ${escapeConfigHtml(formatVerifyMonitorInteger(filteredCriticalCount))} 项为 critical。</span>`
-                : `<i class="fas fa-circle-check"></i><span>当前筛选：${escapeConfigHtml(filteredSummaryLabel)}。最近 ${escapeConfigHtml(formatVerifyMonitorInteger(summary.lookback_hours || 0))} 小时内没有持续中的待关注告警，下面保留可复核的恢复轨迹。</span>`
-        )
-        : `<i class="fas fa-filter-circle-xmark"></i><span>当前筛选：${escapeConfigHtml(filteredSummaryLabel)}。这组条件下没有命中的集中告警，请调整筛选后重试。</span>`;
 
     if (!categories.length) {
-        renderOpsAlertMonitorEmptyState(grid, '当前筛选条件下没有可展示的集中告警卡片。');
         return;
     }
 
@@ -11538,11 +12088,6 @@ async function saveConfig(key, value) {
         if (error) throw error;
 
         systemConfigCache[key] = value;
-
-        // Sync packages to points_packages table
-        if (key === 'packages') {
-            await syncPackagesToDatabase(value);
-        }
 
         return true;
     } catch (err) {
@@ -11845,6 +12390,7 @@ async function loadPaymentChannelSettings(force = false) {
             paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
             paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
             renderPaymentChannelsConfig();
+            renderPackagesConfig();
             return null;
         }
     })();
@@ -11856,6 +12402,42 @@ async function loadPaymentChannelSettings(force = false) {
     }
 }
 
+async function fetchOpsAlertSettingsPayload(headers = {}) {
+    if (typeof window.fetchAdminWorkbenchOpsAlertSettings === 'function') {
+        return window.fetchAdminWorkbenchOpsAlertSettings(headers, {
+            errorMessage: '加载站外告警配置失败'
+        });
+    }
+
+    const response = await fetch('/api/admin/settings/ops-alerts', {
+        method: 'GET',
+        headers
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.success) {
+        throw new Error(payload.message || '加载站外告警配置失败');
+    }
+    return payload;
+}
+
+function buildLocalOpsAlertSettingsPayload(payload = {}) {
+    return {
+        config: normalizeOpsAlertConfig(payload.config),
+        secrets: payload.secrets || getDefaultOpsAlertSecretStatus()
+    };
+}
+
+function resolveOpsAlertSettingsPayload(payload = {}) {
+    if (typeof window.normalizeAdminWorkbenchOpsAlertSettingsPayload === 'function') {
+        return window.normalizeAdminWorkbenchOpsAlertSettingsPayload(payload, {
+            normalizeConfig: normalizeOpsAlertConfig,
+            defaultSecrets: getDefaultOpsAlertSecretStatus()
+        });
+    }
+    return buildLocalOpsAlertSettingsPayload(payload);
+}
+
 async function loadOpsAlertSettings(force = false) {
     if (loadOpsAlertSettings._loadingPromise && !force) {
         return loadOpsAlertSettings._loadingPromise;
@@ -11864,18 +12446,11 @@ async function loadOpsAlertSettings(force = false) {
     loadOpsAlertSettings._loadingPromise = (async () => {
         try {
             const headers = await getAdminConfigApiHeaders();
-            const response = await fetch('/api/admin/settings/ops-alerts', {
-                method: 'GET',
-                headers
-            });
+            const payload = await fetchOpsAlertSettingsPayload(headers);
+            const normalizedPayload = resolveOpsAlertSettingsPayload(payload);
 
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || !payload.success) {
-                throw new Error(payload.message || '加载站外告警配置失败');
-            }
-
-            systemConfigCache['ops_alerts'] = normalizeOpsAlertConfig(payload.config);
-            opsAlertSecretStatus = payload.secrets || getDefaultOpsAlertSecretStatus();
+            systemConfigCache['ops_alerts'] = normalizedPayload.config;
+            opsAlertSecretStatus = normalizedPayload.secrets;
             renderOpsAlertSettings();
             return payload;
         } catch (error) {
@@ -11894,6 +12469,55 @@ async function loadOpsAlertSettings(force = false) {
     }
 }
 
+async function fetchOpsAlertHealthPayload(headers = {}) {
+    if (typeof window.fetchAdminWorkbenchOpsAlertHealth === 'function') {
+        return window.fetchAdminWorkbenchOpsAlertHealth(headers, {
+            timeoutMs: OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS,
+            errorMessage: '加载站外告警通道健康状态失败'
+        });
+    }
+
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timeoutId = controller
+        ? window.setTimeout(() => controller.abort(), OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS)
+        : 0;
+    try {
+        const response = await fetch('/api/admin/settings/ops-alert-health', {
+            method: 'GET',
+            headers,
+            signal: controller?.signal
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '加载站外告警通道健康状态失败');
+        }
+        return payload;
+    } finally {
+        if (timeoutId) {
+            window.clearTimeout(timeoutId);
+        }
+    }
+}
+
+function buildLocalOpsAlertHealthPayload(payload = {}) {
+    return {
+        fetched_at: payload.fetched_at || '',
+        summary: payload.summary || getDefaultOpsAlertHealthState().summary,
+        channels: Array.isArray(payload.channels) ? payload.channels : [],
+        message: ''
+    };
+}
+
+function resolveOpsAlertHealthPayload(payload = {}) {
+    if (typeof window.normalizeAdminWorkbenchOpsAlertHealthPayload === 'function') {
+        return window.normalizeAdminWorkbenchOpsAlertHealthPayload(payload, {
+            defaultSummary: getDefaultOpsAlertHealthState().summary
+        });
+    }
+    return buildLocalOpsAlertHealthPayload(payload);
+}
+
 async function loadOpsAlertHealth(force = false) {
     if (loadOpsAlertHealth._loadingPromise && !force) {
         return loadOpsAlertHealth._loadingPromise;
@@ -11907,30 +12531,14 @@ async function loadOpsAlertHealth(force = false) {
     renderOpsAlertHealthPanel();
 
     loadOpsAlertHealth._loadingPromise = (async () => {
-        const controller = typeof AbortController === 'function' ? new AbortController() : null;
-        const timeoutId = controller
-            ? window.setTimeout(() => controller.abort(), OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS)
-            : 0;
-
         try {
             const headers = await getAdminConfigApiHeaders();
-            const response = await fetch('/api/admin/settings/ops-alert-health', {
-                method: 'GET',
-                headers,
-                signal: controller?.signal
-            });
-
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || !payload.success) {
-                throw new Error(payload.message || '加载站外告警通道健康状态失败');
-            }
+            const payload = await fetchOpsAlertHealthPayload(headers);
+            const normalizedPayload = resolveOpsAlertHealthPayload(payload);
 
             opsAlertHealthState = {
                 status: 'ready',
-                fetched_at: payload.fetched_at || '',
-                summary: payload.summary || getDefaultOpsAlertHealthState().summary,
-                channels: Array.isArray(payload.channels) ? payload.channels : [],
-                message: ''
+                ...normalizedPayload
             };
             renderOpsAlertHealthPanel();
             return payload;
@@ -11946,10 +12554,6 @@ async function loadOpsAlertHealth(force = false) {
             };
             renderOpsAlertHealthPanel();
             return null;
-        } finally {
-            if (timeoutId) {
-                window.clearTimeout(timeoutId);
-            }
         }
     })();
 
@@ -11958,6 +12562,66 @@ async function loadOpsAlertHealth(force = false) {
     } finally {
         loadOpsAlertHealth._loadingPromise = null;
     }
+}
+
+async function fetchOpsAlertMonitorPayload(headers = {}) {
+    if (typeof window.fetchAdminWorkbenchOpsAlertMonitor === 'function') {
+        return window.fetchAdminWorkbenchOpsAlertMonitor(headers, {
+            timeoutMs: OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS,
+            errorMessage: '加载集中告警处理面板失败'
+        });
+    }
+
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timeoutId = controller
+        ? window.setTimeout(() => controller.abort(), OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS)
+        : 0;
+    try {
+        const response = await fetch('/api/admin/settings/ops-alert-monitor', {
+            method: 'GET',
+            headers,
+            signal: controller?.signal
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '加载集中告警处理面板失败');
+        }
+        return payload;
+    } finally {
+        if (timeoutId) {
+            window.clearTimeout(timeoutId);
+        }
+    }
+}
+
+function buildLocalOpsAlertMonitorPayload(payload = {}) {
+    const defaultSummary = getDefaultOpsAlertMonitorState().summary;
+    return {
+        fetched_at: payload.fetched_at || '',
+        summary: {
+            ...defaultSummary,
+            ...(payload.summary && typeof payload.summary === 'object' && !Array.isArray(payload.summary)
+                ? payload.summary
+                : {}),
+            shift_report: normalizeOpsAlertMonitorShiftReport(payload.summary?.shift_report)
+        },
+        assignable_admins: Array.isArray(payload.assignable_admins) ? payload.assignable_admins : [],
+        current_admin_id: payload.current_admin_id || '',
+        current_admin_label: payload.current_admin_label || '',
+        categories: Array.isArray(payload.categories) ? payload.categories : [],
+        message: ''
+    };
+}
+
+function resolveOpsAlertMonitorPayload(payload = {}) {
+    const defaultSummary = getDefaultOpsAlertMonitorState().summary;
+    if (typeof window.normalizeAdminWorkbenchOpsAlertMonitorPayload === 'function') {
+        return window.normalizeAdminWorkbenchOpsAlertMonitorPayload(payload, {
+            defaultSummary,
+            normalizeShiftReport: normalizeOpsAlertMonitorShiftReport
+        });
+    }
+    return buildLocalOpsAlertMonitorPayload(payload);
 }
 
 async function loadOpsAlertMonitor(force = false) {
@@ -11973,40 +12637,13 @@ async function loadOpsAlertMonitor(force = false) {
     renderOpsAlertMonitorPanel();
 
     loadOpsAlertMonitor._loadingPromise = (async () => {
-        const controller = typeof AbortController === 'function' ? new AbortController() : null;
-        const timeoutId = controller
-            ? window.setTimeout(() => controller.abort(), OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS)
-            : 0;
-
         try {
             const headers = await getAdminConfigApiHeaders();
-            const response = await fetch('/api/admin/settings/ops-alert-monitor', {
-                method: 'GET',
-                headers,
-                signal: controller?.signal
-            });
-
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || !payload.success) {
-                throw new Error(payload.message || '加载集中告警处理面板失败');
-            }
-
-            const defaultSummary = getDefaultOpsAlertMonitorState().summary;
+            const payload = await fetchOpsAlertMonitorPayload(headers);
+            const normalizedPayload = resolveOpsAlertMonitorPayload(payload);
             opsAlertMonitorState = {
                 status: 'ready',
-                fetched_at: payload.fetched_at || '',
-                summary: {
-                    ...defaultSummary,
-                    ...(payload.summary && typeof payload.summary === 'object' && !Array.isArray(payload.summary)
-                        ? payload.summary
-                        : {}),
-                    shift_report: normalizeOpsAlertMonitorShiftReport(payload.summary?.shift_report)
-                },
-                assignable_admins: Array.isArray(payload.assignable_admins) ? payload.assignable_admins : [],
-                current_admin_id: payload.current_admin_id || '',
-                current_admin_label: payload.current_admin_label || '',
-                categories: Array.isArray(payload.categories) ? payload.categories : [],
-                message: ''
+                ...normalizedPayload
             };
             renderOpsAlertMonitorPanel();
             return payload;
@@ -12022,10 +12659,6 @@ async function loadOpsAlertMonitor(force = false) {
             };
             renderOpsAlertMonitorPanel();
             return null;
-        } finally {
-            if (timeoutId) {
-                window.clearTimeout(timeoutId);
-            }
         }
     })();
 
@@ -12033,81 +12666,6 @@ async function loadOpsAlertMonitor(force = false) {
         return await loadOpsAlertMonitor._loadingPromise;
     } finally {
         loadOpsAlertMonitor._loadingPromise = null;
-    }
-}
-
-// Sync packages config to points_packages table
-async function syncPackagesToDatabase(packages) {
-    try {
-        if (!packages || !Array.isArray(packages)) return;
-
-        console.log('[Config] Syncing packages to database...');
-
-        // Get existing packages from database
-        const { data: existingPackages } = await supabaseClient
-            .from('points_packages')
-            .select('id, name');
-
-        const existingMap = {};
-        (existingPackages || []).forEach(p => {
-            existingMap[p.name] = p.id;
-        });
-
-        // Track which names are in the config
-        const configNames = new Set(packages.map(p => p.name));
-
-        // Update or insert packages
-        for (const pkg of packages) {
-            const existingId = existingMap[pkg.name];
-
-            const packageData = {
-                name: pkg.name,
-                points_amount: pkg.points || 0,
-                bonus_points: pkg.bonus || 0,
-                price_cny: pkg.price || 0,
-                is_active: pkg.enabled !== false,
-                sort_order: pkg.sort || 0
-            };
-
-            let error;
-
-            if (existingId) {
-                // Update existing
-                const result = await supabaseClient
-                    .from('points_packages')
-                    .update(packageData)
-                    .eq('id', existingId);
-                error = result.error;
-            } else {
-                // Insert new
-                const result = await supabaseClient
-                    .from('points_packages')
-                    .insert(packageData);
-                error = result.error;
-            }
-
-            if (error) {
-                console.warn('[Config] Sync package error:', error.message);
-            }
-        }
-
-        // Delete packages that are not in config anymore
-        for (const existing of (existingPackages || [])) {
-            if (!configNames.has(existing.name)) {
-                console.log('[Config] Deleting removed package:', existing.name);
-                await supabaseClient
-                    .from('points_packages')
-                    .delete()
-                    .eq('id', existing.id);
-            }
-        }
-
-        console.log('[Config] Packages synced successfully');
-        if (typeof showToast === 'function') {
-            showToast('礼包已同步到数据库', 'success');
-        }
-    } catch (err) {
-        console.error('[Config] Sync packages error:', err);
     }
 }
 
@@ -12466,75 +13024,6 @@ function toggleConfigCard(headerEl) {
     }
 }
 
-// ============================================
-// PACKAGES CRUD
-// ============================================
-
-async function updatePackage(index, field, value) {
-    const packages = systemConfigCache['packages'] || [];
-    if (packages[index]) {
-        packages[index][field] = normalizePackageFieldValue(field, value, packages[index][field]);
-        await saveConfig('packages', packages);
-    }
-}
-
-async function togglePackageStatus(index) {
-    const packages = systemConfigCache['packages'] || [];
-    if (!packages[index]) return;
-
-    // Immediately toggle and update UI (optimistic update)
-    packages[index].enabled = !packages[index].enabled;
-
-    // Instantly update the toggle visual
-    const toggleEl = document.querySelector(`#packagesTableBody tr[data-index="${index}"] .status-toggle`);
-    if (toggleEl) {
-        toggleEl.classList.toggle('active', packages[index].enabled);
-        pulseAdminConfigToggle(toggleEl);
-    }
-
-    // Save in background (don't wait)
-    saveConfig('packages', packages).catch(err => {
-        // Revert on error
-        console.error('[Config] Toggle save failed:', err);
-        packages[index].enabled = !packages[index].enabled;
-        if (toggleEl) toggleEl.classList.toggle('active', packages[index].enabled);
-    });
-}
-
-async function deletePackage(index) {
-    if (!confirm('确定删除这个礼包吗？')) return;
-
-    const packages = systemConfigCache['packages'] || [];
-    packages.splice(index, 1);
-
-    // Optimistic update - render immediately
-    renderPackagesConfig();
-
-    // Save in background
-    saveConfig('packages', packages);
-}
-
-async function addPackageRow() {
-    const packages = systemConfigCache['packages'] || [];
-    const newId = Math.max(...packages.map(p => p.id || 0), 0) + 1;
-
-    packages.push({
-        id: newId,
-        name: '新礼包',
-        points: 100,
-        bonus: 0,
-        price: 9.9,
-        enabled: true,
-        sort: packages.length + 1
-    });
-
-    // Optimistic update - render immediately
-    renderPackagesConfig();
-
-    // Save in background
-    saveConfig('packages', packages);
-}
-
 async function toggleCustomRechargeEntryStatus() {
     const config = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
     const toggleEl = document.getElementById('customRechargeStatusToggle');
@@ -12716,15 +13205,17 @@ async function toggleMockPaymentStatus() {
     });
 }
 
-function collectOpsAlertConfigFromForm() {
-    const currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
-    const nextConfig = {
+function buildLocalOpsAlertConfigDraft(currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    return {
         ...currentConfig,
         temporary_mute: {
             ...currentConfig.temporary_mute
         },
         quiet_hours: {
             ...currentConfig.quiet_hours
+        },
+        work_hours: {
+            ...currentConfig.work_hours
         },
         mute_rules: {
             types: {
@@ -12824,716 +13315,851 @@ function collectOpsAlertConfigFromForm() {
             ...currentConfig.payment_gateway
         }
     };
+}
 
-    nextConfig.enabled = document.getElementById('opsAlertEnabledToggle')?.classList.contains('active') ?? currentConfig.enabled;
-    nextConfig.temporary_mute.until = normalizeDateTimeLocalInputValue(
-        document.getElementById('opsAlertTemporaryMuteUntil')?.value ?? currentConfig.temporary_mute.until
-    );
-    nextConfig.temporary_mute.allow_critical = document.getElementById('opsAlertTemporaryMuteAllowCriticalToggle')?.classList.contains('active')
-        ?? currentConfig.temporary_mute.allow_critical;
-    nextConfig.quiet_hours.enabled = document.getElementById('opsAlertQuietHoursEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.quiet_hours.enabled;
-    nextConfig.quiet_hours.start_hour = clamp(
-        toWholeNumber(
-            document.getElementById('opsAlertQuietHoursStartHour')?.value,
-            currentConfig.quiet_hours.start_hour
-        ),
-        0,
-        23
-    );
-    nextConfig.quiet_hours.end_hour = clamp(
-        toWholeNumber(
-            document.getElementById('opsAlertQuietHoursEndHour')?.value,
-            currentConfig.quiet_hours.end_hour
-        ),
-        0,
-        23
-    );
-    nextConfig.quiet_hours.timezone = String(
-        document.getElementById('opsAlertQuietHoursTimezone')?.value ?? currentConfig.quiet_hours.timezone
-    ).trim() || currentConfig.quiet_hours.timezone;
-    nextConfig.quiet_hours.allow_critical = document.getElementById('opsAlertQuietHoursAllowCriticalToggle')?.classList.contains('active')
-        ?? currentConfig.quiet_hours.allow_critical;
-    nextConfig.work_hours.enabled = document.getElementById('opsAlertWorkHoursEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.work_hours.enabled;
-    nextConfig.work_hours.start_hour = clamp(
-        toWholeNumber(
-            document.getElementById('opsAlertWorkHoursStartHour')?.value,
-            currentConfig.work_hours.start_hour
-        ),
-        0,
-        23
-    );
-    nextConfig.work_hours.end_hour = clamp(
-        toWholeNumber(
-            document.getElementById('opsAlertWorkHoursEndHour')?.value,
-            currentConfig.work_hours.end_hour
-        ),
-        0,
-        23
-    );
-    nextConfig.work_hours.timezone = String(
-        document.getElementById('opsAlertWorkHoursTimezone')?.value ?? currentConfig.work_hours.timezone
-    ).trim() || currentConfig.work_hours.timezone;
-    ['types', 'modules'].forEach((scope) => {
-        getOpsAlertMuteRuleDefinitions(scope).forEach((definition) => {
-            const currentRule = currentConfig.mute_rules?.[scope]?.[definition.key] || {
-                until: '',
-                allow_critical: true
-            };
-            nextConfig.mute_rules[scope][definition.key] = {
-                ...currentRule,
-                until: normalizeDateTimeLocalInputValue(
-                    document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'Until'))?.value ?? currentRule.until
-                ),
-                allow_critical: document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'AllowCriticalToggle'))?.classList.contains('active')
-                    ?? currentRule.allow_critical
-            };
+function resolveOpsAlertConfigDraft(currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    if (typeof window.buildAdminWorkbenchOpsAlertConfigDraft === 'function') {
+        return window.buildAdminWorkbenchOpsAlertConfigDraft(currentConfig, {
+            normalizeQuickReplyTemplates: normalizeOpsAlertCustomerChatQuickReplyTemplates
         });
-    });
-    nextConfig.channels.telegram.enabled = document.getElementById('opsAlertTelegramEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.channels.telegram.enabled;
-    nextConfig.channels.telegram.chat_ids = normalizeConfigStringArray(
-        document.getElementById('opsAlertTelegramChatIds')?.value ?? currentConfig.channels.telegram.chat_ids
-    );
-    nextConfig.channels.telegram.minimum_severity = normalizeOpsAlertSeverity(
-        document.getElementById('opsAlertTelegramSeverity')?.value,
-        currentConfig.channels.telegram.minimum_severity
-    );
-    nextConfig.channels.feishu.enabled = document.getElementById('opsAlertFeishuEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.channels.feishu.enabled;
-    nextConfig.channels.feishu.minimum_severity = normalizeOpsAlertSeverity(
-        document.getElementById('opsAlertFeishuSeverity')?.value,
-        currentConfig.channels.feishu.minimum_severity
-    );
-    nextConfig.channels.email.enabled = document.getElementById('opsAlertEmailEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.channels.email.enabled;
-    nextConfig.channels.email.minimum_severity = normalizeOpsAlertSeverity(
-        document.getElementById('opsAlertEmailSeverity')?.value,
-        currentConfig.channels.email.minimum_severity
-    );
-    nextConfig.channels.email.recipients = normalizeConfigStringArray(
-        document.getElementById('opsAlertEmailRecipients')?.value ?? currentConfig.channels.email.recipients
-    );
-    nextConfig.channels.email.from_address = String(
-        document.getElementById('opsAlertEmailFromAddress')?.value ?? currentConfig.channels.email.from_address
-    ).trim();
-    nextConfig.channels.email.reply_to = String(
-        document.getElementById('opsAlertEmailReplyTo')?.value ?? currentConfig.channels.email.reply_to
-    ).trim();
-    nextConfig.channels.email.subject_prefix = String(
-        document.getElementById('opsAlertEmailSubjectPrefix')?.value ?? currentConfig.channels.email.subject_prefix
-    ).trim() || currentConfig.channels.email.subject_prefix;
-    Object.keys(nextConfig.routing || {}).forEach((routingKey) => {
-        ['telegram', 'feishu', 'email'].forEach((channelKey) => {
-            const checkbox = document.getElementById(getOpsAlertRoutingCheckboxId(routingKey, channelKey));
-            if (!checkbox) return;
-            nextConfig.routing[routingKey][channelKey] = checkbox.checked;
+    }
+
+    return buildLocalOpsAlertConfigDraft(currentConfig);
+}
+
+function resolveOpsAlertStrategyDraft(currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    if (typeof window.collectAdminWorkbenchOpsAlertStrategyDraft === 'function') {
+        return window.collectAdminWorkbenchOpsAlertStrategyDraft(currentConfig, {
+            document,
+            normalizeDateTimeLocalInputValue,
+            clamp,
+            toWholeNumber,
+            normalizeConfigStringArray,
+            normalizeOpsAlertSeverity,
+            getMuteRuleDefinitions: getOpsAlertMuteRuleDefinitions,
+            getMuteRuleElementId: getOpsAlertMuteRuleElementId,
+            getRoutingCheckboxId: getOpsAlertRoutingCheckboxId
         });
-    });
-    nextConfig.shop_order_risk.auto_response_enabled = document.getElementById('opsAlertShopRiskAutoResponseEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.shop_order_risk.auto_response_enabled;
-    nextConfig.shop_order_risk.auto_disable_coupon_min_risk_score = toWholeNumber(
-        document.getElementById('opsAlertShopRiskAutoDisableCouponMinRiskScore')?.value,
-        currentConfig.shop_order_risk.auto_disable_coupon_min_risk_score
-    );
-    nextConfig.shop_order_risk.auto_ban_user_min_risk_score = toWholeNumber(
-        document.getElementById('opsAlertShopRiskAutoBanUserMinRiskScore')?.value,
-        currentConfig.shop_order_risk.auto_ban_user_min_risk_score
-    );
-    nextConfig.shop_order_risk.auto_ban_user_duration_days = toWholeNumber(
-        document.getElementById('opsAlertShopRiskAutoBanUserDurationDays')?.value,
-        currentConfig.shop_order_risk.auto_ban_user_duration_days
-    );
-    nextConfig.shop_order_risk.auto_suspend_product_min_risk_score = toWholeNumber(
-        document.getElementById('opsAlertShopRiskAutoSuspendProductMinRiskScore')?.value,
-        currentConfig.shop_order_risk.auto_suspend_product_min_risk_score
-    );
-    nextConfig.shop_inventory.enabled = document.getElementById('opsAlertShopInventoryEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.shop_inventory.enabled;
-    nextConfig.shop_inventory.low_stock_threshold = toWholeNumber(
-        document.getElementById('opsAlertShopInventoryLowStockThreshold')?.value,
-        currentConfig.shop_inventory.low_stock_threshold
-    );
-    nextConfig.shop_inventory.sweep_interval_ms = Math.max(
-        10000,
-        toWholeNumber(
-            document.getElementById('opsAlertShopInventorySweepIntervalMinutes')?.value,
-            Math.max(1, Math.round(Number(currentConfig.shop_inventory.sweep_interval_ms || 0) / 60000))
-        ) * 60 * 1000
-    );
-    nextConfig.shop_inventory.sales_window_days = toWholeNumber(
-        document.getElementById('opsAlertShopInventorySalesWindowDays')?.value,
-        currentConfig.shop_inventory.sales_window_days
-    );
-    nextConfig.shop_inventory.dedupe_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertShopInventoryDedupeWindowMinutes')?.value,
-        currentConfig.shop_inventory.dedupe_window_minutes
-    );
-    nextConfig.shop_inventory.recovery_notification_enabled = document.getElementById('opsAlertShopInventoryRecoveryNotificationEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.shop_inventory.recovery_notification_enabled;
-    nextConfig.shop_inventory.summary_enabled = document.getElementById('opsAlertShopInventorySummaryEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.shop_inventory.summary_enabled;
-    nextConfig.shop_inventory.summary_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertShopInventorySummaryWindowMinutes')?.value,
-        currentConfig.shop_inventory.summary_window_minutes
-    );
-    nextConfig.shop_inventory.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-        document.getElementById('opsAlertShopInventorySummaryScheduleMode')?.value,
-        currentConfig.shop_inventory.summary_schedule_mode
-    );
-    nextConfig.shop_inventory.summary_hourly_minute = toWholeNumber(
-        document.getElementById('opsAlertShopInventorySummaryHourlyMinute')?.value,
-        currentConfig.shop_inventory.summary_hourly_minute
-    );
-    nextConfig.shop_inventory.summary_daily_hour = toWholeNumber(
-        document.getElementById('opsAlertShopInventorySummaryDailyHour')?.value,
-        currentConfig.shop_inventory.summary_daily_hour
-    );
-    nextConfig.shop_inventory.summary_daily_minute = toWholeNumber(
-        document.getElementById('opsAlertShopInventorySummaryDailyMinute')?.value,
-        currentConfig.shop_inventory.summary_daily_minute
-    );
-    nextConfig.shop_inventory.summary_max_items = toWholeNumber(
-        document.getElementById('opsAlertShopInventorySummaryMaxItems')?.value,
-        currentConfig.shop_inventory.summary_max_items
-    );
-    nextConfig.customer_chat_message.enabled = document.getElementById('opsAlertCustomerChatMessageEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.customer_chat_message.enabled;
-    nextConfig.customer_chat_message.sweep_interval_ms = Math.max(
-        10000,
-        toWholeNumber(
-            document.getElementById('opsAlertCustomerChatMessageSweepIntervalMinutes')?.value,
-            Math.max(1, Math.round(Number(currentConfig.customer_chat_message.sweep_interval_ms || 0) / 60000))
-        ) * 60 * 1000
-    );
-    nextConfig.customer_chat_message.lookback_minutes = toWholeNumber(
-        document.getElementById('opsAlertCustomerChatMessageLookbackMinutes')?.value,
-        currentConfig.customer_chat_message.lookback_minutes
-    );
-    nextConfig.customer_chat_message.dedupe_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertCustomerChatMessageDedupeWindowMinutes')?.value,
-        currentConfig.customer_chat_message.dedupe_window_minutes
-    );
-    nextConfig.customer_chat_message.work_hours_only_enabled = document.getElementById('opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.customer_chat_message.work_hours_only_enabled;
-    nextConfig.customer_chat_message.summary_enabled = document.getElementById('opsAlertCustomerChatMessageSummaryEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.customer_chat_message.summary_enabled;
-    nextConfig.customer_chat_message.summary_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertCustomerChatMessageSummaryWindowMinutes')?.value,
-        currentConfig.customer_chat_message.summary_window_minutes
-    );
-    nextConfig.customer_chat_message.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-        document.getElementById('opsAlertCustomerChatMessageSummaryScheduleMode')?.value,
-        currentConfig.customer_chat_message.summary_schedule_mode
-    );
-    nextConfig.customer_chat_message.summary_hourly_minute = toWholeNumber(
-        document.getElementById('opsAlertCustomerChatMessageSummaryHourlyMinute')?.value,
-        currentConfig.customer_chat_message.summary_hourly_minute
-    );
-    nextConfig.customer_chat_message.summary_daily_hour = toWholeNumber(
-        document.getElementById('opsAlertCustomerChatMessageSummaryDailyHour')?.value,
-        currentConfig.customer_chat_message.summary_daily_hour
-    );
-    nextConfig.customer_chat_message.summary_daily_minute = toWholeNumber(
-        document.getElementById('opsAlertCustomerChatMessageSummaryDailyMinute')?.value,
-        currentConfig.customer_chat_message.summary_daily_minute
-    );
-    nextConfig.customer_chat_message.summary_max_items = toWholeNumber(
-        document.getElementById('opsAlertCustomerChatMessageSummaryMaxItems')?.value,
-        currentConfig.customer_chat_message.summary_max_items
-    );
+    }
+
+    return null;
+}
+
+function resolveOpsAlertOperationalThresholdDrafts(currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts'])) {
+    if (typeof window.collectAdminWorkbenchOpsAlertOperationalThresholdDrafts === 'function') {
+        return window.collectAdminWorkbenchOpsAlertOperationalThresholdDrafts(currentConfig, {
+            document,
+            toWholeNumber,
+            normalizeOpsAlertSummaryScheduleMode
+        });
+    }
+
+    return null;
+}
+
+function collectOpsAlertConfigFromForm() {
+    const currentConfig = normalizeOpsAlertConfig(systemConfigCache['ops_alerts']);
+    const nextConfig = resolveOpsAlertConfigDraft(currentConfig);
+    const strategyDraft = resolveOpsAlertStrategyDraft(currentConfig);
+
+    if (strategyDraft) {
+        nextConfig.enabled = strategyDraft.enabled;
+        nextConfig.temporary_mute = strategyDraft.temporary_mute;
+        nextConfig.quiet_hours = strategyDraft.quiet_hours;
+        nextConfig.work_hours = strategyDraft.work_hours;
+        nextConfig.mute_rules = strategyDraft.mute_rules;
+        nextConfig.channels = strategyDraft.channels;
+        nextConfig.routing = strategyDraft.routing;
+    } else {
+        nextConfig.enabled = document.getElementById('opsAlertEnabledToggle')?.classList.contains('active') ?? currentConfig.enabled;
+        nextConfig.temporary_mute.until = normalizeDateTimeLocalInputValue(
+            document.getElementById('opsAlertTemporaryMuteUntil')?.value ?? currentConfig.temporary_mute.until
+        );
+        nextConfig.temporary_mute.allow_critical = document.getElementById('opsAlertTemporaryMuteAllowCriticalToggle')?.classList.contains('active')
+            ?? currentConfig.temporary_mute.allow_critical;
+        nextConfig.quiet_hours.enabled = document.getElementById('opsAlertQuietHoursEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.quiet_hours.enabled;
+        nextConfig.quiet_hours.start_hour = clamp(
+            toWholeNumber(
+                document.getElementById('opsAlertQuietHoursStartHour')?.value,
+                currentConfig.quiet_hours.start_hour
+            ),
+            0,
+            23
+        );
+        nextConfig.quiet_hours.end_hour = clamp(
+            toWholeNumber(
+                document.getElementById('opsAlertQuietHoursEndHour')?.value,
+                currentConfig.quiet_hours.end_hour
+            ),
+            0,
+            23
+        );
+        nextConfig.quiet_hours.timezone = String(
+            document.getElementById('opsAlertQuietHoursTimezone')?.value ?? currentConfig.quiet_hours.timezone
+        ).trim() || currentConfig.quiet_hours.timezone;
+        nextConfig.quiet_hours.allow_critical = document.getElementById('opsAlertQuietHoursAllowCriticalToggle')?.classList.contains('active')
+            ?? currentConfig.quiet_hours.allow_critical;
+        nextConfig.work_hours.enabled = document.getElementById('opsAlertWorkHoursEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.work_hours.enabled;
+        nextConfig.work_hours.start_hour = clamp(
+            toWholeNumber(
+                document.getElementById('opsAlertWorkHoursStartHour')?.value,
+                currentConfig.work_hours.start_hour
+            ),
+            0,
+            23
+        );
+        nextConfig.work_hours.end_hour = clamp(
+            toWholeNumber(
+                document.getElementById('opsAlertWorkHoursEndHour')?.value,
+                currentConfig.work_hours.end_hour
+            ),
+            0,
+            23
+        );
+        nextConfig.work_hours.timezone = String(
+            document.getElementById('opsAlertWorkHoursTimezone')?.value ?? currentConfig.work_hours.timezone
+        ).trim() || currentConfig.work_hours.timezone;
+        ['types', 'modules'].forEach((scope) => {
+            getOpsAlertMuteRuleDefinitions(scope).forEach((definition) => {
+                const currentRule = currentConfig.mute_rules?.[scope]?.[definition.key] || {
+                    until: '',
+                    allow_critical: true
+                };
+                nextConfig.mute_rules[scope][definition.key] = {
+                    ...currentRule,
+                    until: normalizeDateTimeLocalInputValue(
+                        document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'Until'))?.value ?? currentRule.until
+                    ),
+                    allow_critical: document.getElementById(getOpsAlertMuteRuleElementId(scope, definition.key, 'AllowCriticalToggle'))?.classList.contains('active')
+                        ?? currentRule.allow_critical
+                };
+            });
+        });
+        nextConfig.channels.telegram.enabled = document.getElementById('opsAlertTelegramEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.channels.telegram.enabled;
+        nextConfig.channels.telegram.chat_ids = normalizeConfigStringArray(
+            document.getElementById('opsAlertTelegramChatIds')?.value ?? currentConfig.channels.telegram.chat_ids
+        );
+        nextConfig.channels.telegram.minimum_severity = normalizeOpsAlertSeverity(
+            document.getElementById('opsAlertTelegramSeverity')?.value,
+            currentConfig.channels.telegram.minimum_severity
+        );
+        nextConfig.channels.feishu.enabled = document.getElementById('opsAlertFeishuEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.channels.feishu.enabled;
+        nextConfig.channels.feishu.minimum_severity = normalizeOpsAlertSeverity(
+            document.getElementById('opsAlertFeishuSeverity')?.value,
+            currentConfig.channels.feishu.minimum_severity
+        );
+        nextConfig.channels.email.enabled = document.getElementById('opsAlertEmailEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.channels.email.enabled;
+        nextConfig.channels.email.minimum_severity = normalizeOpsAlertSeverity(
+            document.getElementById('opsAlertEmailSeverity')?.value,
+            currentConfig.channels.email.minimum_severity
+        );
+        nextConfig.channels.email.recipients = normalizeConfigStringArray(
+            document.getElementById('opsAlertEmailRecipients')?.value ?? currentConfig.channels.email.recipients
+        );
+        nextConfig.channels.email.from_address = String(
+            document.getElementById('opsAlertEmailFromAddress')?.value ?? currentConfig.channels.email.from_address
+        ).trim();
+        nextConfig.channels.email.reply_to = String(
+            document.getElementById('opsAlertEmailReplyTo')?.value ?? currentConfig.channels.email.reply_to
+        ).trim();
+        nextConfig.channels.email.subject_prefix = String(
+            document.getElementById('opsAlertEmailSubjectPrefix')?.value ?? currentConfig.channels.email.subject_prefix
+        ).trim() || currentConfig.channels.email.subject_prefix;
+        Object.keys(nextConfig.routing || {}).forEach((routingKey) => {
+            ['telegram', 'feishu', 'email'].forEach((channelKey) => {
+                const checkbox = document.getElementById(getOpsAlertRoutingCheckboxId(routingKey, channelKey));
+                if (!checkbox) return;
+                nextConfig.routing[routingKey][channelKey] = checkbox.checked;
+            });
+        });
+    }
+    const operationalThresholdDrafts = resolveOpsAlertOperationalThresholdDrafts(currentConfig);
+    if (operationalThresholdDrafts?.shop_order_risk) {
+        nextConfig.shop_order_risk = operationalThresholdDrafts.shop_order_risk;
+    } else {
+        nextConfig.shop_order_risk.auto_response_enabled = document.getElementById('opsAlertShopRiskAutoResponseEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.shop_order_risk.auto_response_enabled;
+        nextConfig.shop_order_risk.auto_disable_coupon_min_risk_score = toWholeNumber(
+            document.getElementById('opsAlertShopRiskAutoDisableCouponMinRiskScore')?.value,
+            currentConfig.shop_order_risk.auto_disable_coupon_min_risk_score
+        );
+        nextConfig.shop_order_risk.auto_ban_user_min_risk_score = toWholeNumber(
+            document.getElementById('opsAlertShopRiskAutoBanUserMinRiskScore')?.value,
+            currentConfig.shop_order_risk.auto_ban_user_min_risk_score
+        );
+        nextConfig.shop_order_risk.auto_ban_user_duration_days = toWholeNumber(
+            document.getElementById('opsAlertShopRiskAutoBanUserDurationDays')?.value,
+            currentConfig.shop_order_risk.auto_ban_user_duration_days
+        );
+        nextConfig.shop_order_risk.auto_suspend_product_min_risk_score = toWholeNumber(
+            document.getElementById('opsAlertShopRiskAutoSuspendProductMinRiskScore')?.value,
+            currentConfig.shop_order_risk.auto_suspend_product_min_risk_score
+        );
+    }
+    if (operationalThresholdDrafts?.shop_inventory) {
+        nextConfig.shop_inventory = operationalThresholdDrafts.shop_inventory;
+    } else {
+        nextConfig.shop_inventory.enabled = document.getElementById('opsAlertShopInventoryEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.shop_inventory.enabled;
+        nextConfig.shop_inventory.low_stock_threshold = toWholeNumber(
+            document.getElementById('opsAlertShopInventoryLowStockThreshold')?.value,
+            currentConfig.shop_inventory.low_stock_threshold
+        );
+        nextConfig.shop_inventory.sweep_interval_ms = Math.max(
+            10000,
+            toWholeNumber(
+                document.getElementById('opsAlertShopInventorySweepIntervalMinutes')?.value,
+                Math.max(1, Math.round(Number(currentConfig.shop_inventory.sweep_interval_ms || 0) / 60000))
+            ) * 60 * 1000
+        );
+        nextConfig.shop_inventory.sales_window_days = toWholeNumber(
+            document.getElementById('opsAlertShopInventorySalesWindowDays')?.value,
+            currentConfig.shop_inventory.sales_window_days
+        );
+        nextConfig.shop_inventory.dedupe_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertShopInventoryDedupeWindowMinutes')?.value,
+            currentConfig.shop_inventory.dedupe_window_minutes
+        );
+        nextConfig.shop_inventory.recovery_notification_enabled = document.getElementById('opsAlertShopInventoryRecoveryNotificationEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.shop_inventory.recovery_notification_enabled;
+        nextConfig.shop_inventory.summary_enabled = document.getElementById('opsAlertShopInventorySummaryEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.shop_inventory.summary_enabled;
+        nextConfig.shop_inventory.summary_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertShopInventorySummaryWindowMinutes')?.value,
+            currentConfig.shop_inventory.summary_window_minutes
+        );
+        nextConfig.shop_inventory.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+            document.getElementById('opsAlertShopInventorySummaryScheduleMode')?.value,
+            currentConfig.shop_inventory.summary_schedule_mode
+        );
+        nextConfig.shop_inventory.summary_hourly_minute = toWholeNumber(
+            document.getElementById('opsAlertShopInventorySummaryHourlyMinute')?.value,
+            currentConfig.shop_inventory.summary_hourly_minute
+        );
+        nextConfig.shop_inventory.summary_daily_hour = toWholeNumber(
+            document.getElementById('opsAlertShopInventorySummaryDailyHour')?.value,
+            currentConfig.shop_inventory.summary_daily_hour
+        );
+        nextConfig.shop_inventory.summary_daily_minute = toWholeNumber(
+            document.getElementById('opsAlertShopInventorySummaryDailyMinute')?.value,
+            currentConfig.shop_inventory.summary_daily_minute
+        );
+        nextConfig.shop_inventory.summary_max_items = toWholeNumber(
+            document.getElementById('opsAlertShopInventorySummaryMaxItems')?.value,
+            currentConfig.shop_inventory.summary_max_items
+        );
+    }
+    if (operationalThresholdDrafts?.customer_chat_message) {
+        nextConfig.customer_chat_message = {
+            ...operationalThresholdDrafts.customer_chat_message,
+            quick_reply_templates: nextConfig.customer_chat_message.quick_reply_templates
+        };
+    } else {
+        nextConfig.customer_chat_message.enabled = document.getElementById('opsAlertCustomerChatMessageEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.customer_chat_message.enabled;
+        nextConfig.customer_chat_message.sweep_interval_ms = Math.max(
+            10000,
+            toWholeNumber(
+                document.getElementById('opsAlertCustomerChatMessageSweepIntervalMinutes')?.value,
+                Math.max(1, Math.round(Number(currentConfig.customer_chat_message.sweep_interval_ms || 0) / 60000))
+            ) * 60 * 1000
+        );
+        nextConfig.customer_chat_message.lookback_minutes = toWholeNumber(
+            document.getElementById('opsAlertCustomerChatMessageLookbackMinutes')?.value,
+            currentConfig.customer_chat_message.lookback_minutes
+        );
+        nextConfig.customer_chat_message.dedupe_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertCustomerChatMessageDedupeWindowMinutes')?.value,
+            currentConfig.customer_chat_message.dedupe_window_minutes
+        );
+        nextConfig.customer_chat_message.work_hours_only_enabled = document.getElementById('opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.customer_chat_message.work_hours_only_enabled;
+        nextConfig.customer_chat_message.summary_enabled = document.getElementById('opsAlertCustomerChatMessageSummaryEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.customer_chat_message.summary_enabled;
+        nextConfig.customer_chat_message.summary_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertCustomerChatMessageSummaryWindowMinutes')?.value,
+            currentConfig.customer_chat_message.summary_window_minutes
+        );
+        nextConfig.customer_chat_message.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+            document.getElementById('opsAlertCustomerChatMessageSummaryScheduleMode')?.value,
+            currentConfig.customer_chat_message.summary_schedule_mode
+        );
+        nextConfig.customer_chat_message.summary_hourly_minute = toWholeNumber(
+            document.getElementById('opsAlertCustomerChatMessageSummaryHourlyMinute')?.value,
+            currentConfig.customer_chat_message.summary_hourly_minute
+        );
+        nextConfig.customer_chat_message.summary_daily_hour = toWholeNumber(
+            document.getElementById('opsAlertCustomerChatMessageSummaryDailyHour')?.value,
+            currentConfig.customer_chat_message.summary_daily_hour
+        );
+        nextConfig.customer_chat_message.summary_daily_minute = toWholeNumber(
+            document.getElementById('opsAlertCustomerChatMessageSummaryDailyMinute')?.value,
+            currentConfig.customer_chat_message.summary_daily_minute
+        );
+        nextConfig.customer_chat_message.summary_max_items = toWholeNumber(
+            document.getElementById('opsAlertCustomerChatMessageSummaryMaxItems')?.value,
+            currentConfig.customer_chat_message.summary_max_items
+        );
+    }
     nextConfig.customer_chat_message.quick_reply_templates = collectOpsAlertCustomerChatQuickReplyTemplatesFromForm();
-    nextConfig.shop_purchase_success.enabled = document.getElementById('opsAlertShopPurchaseSuccessEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.shop_purchase_success.enabled;
-    nextConfig.shop_purchase_success.sweep_interval_ms = Math.max(
-        10000,
-        toWholeNumber(
-            document.getElementById('opsAlertShopPurchaseSuccessSweepIntervalMinutes')?.value,
-            Math.max(1, Math.round(Number(currentConfig.shop_purchase_success.sweep_interval_ms || 0) / 60000))
-        ) * 60 * 1000
-    );
-    nextConfig.shop_purchase_success.lookback_minutes = toWholeNumber(
-        document.getElementById('opsAlertShopPurchaseSuccessLookbackMinutes')?.value,
-        currentConfig.shop_purchase_success.lookback_minutes
-    );
-    nextConfig.shop_purchase_success.dedupe_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertShopPurchaseSuccessDedupeWindowMinutes')?.value,
-        currentConfig.shop_purchase_success.dedupe_window_minutes
-    );
-    nextConfig.shop_purchase_success.work_hours_only_enabled = document.getElementById('opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.shop_purchase_success.work_hours_only_enabled;
-    nextConfig.shop_purchase_success.summary_enabled = document.getElementById('opsAlertShopPurchaseSuccessSummaryEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.shop_purchase_success.summary_enabled;
-    nextConfig.shop_purchase_success.summary_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertShopPurchaseSuccessSummaryWindowMinutes')?.value,
-        currentConfig.shop_purchase_success.summary_window_minutes
-    );
-    nextConfig.shop_purchase_success.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-        document.getElementById('opsAlertShopPurchaseSuccessSummaryScheduleMode')?.value,
-        currentConfig.shop_purchase_success.summary_schedule_mode
-    );
-    nextConfig.shop_purchase_success.summary_hourly_minute = toWholeNumber(
-        document.getElementById('opsAlertShopPurchaseSuccessSummaryHourlyMinute')?.value,
-        currentConfig.shop_purchase_success.summary_hourly_minute
-    );
-    nextConfig.shop_purchase_success.summary_daily_hour = toWholeNumber(
-        document.getElementById('opsAlertShopPurchaseSuccessSummaryDailyHour')?.value,
-        currentConfig.shop_purchase_success.summary_daily_hour
-    );
-    nextConfig.shop_purchase_success.summary_daily_minute = toWholeNumber(
-        document.getElementById('opsAlertShopPurchaseSuccessSummaryDailyMinute')?.value,
-        currentConfig.shop_purchase_success.summary_daily_minute
-    );
-    nextConfig.shop_purchase_success.summary_max_items = toWholeNumber(
-        document.getElementById('opsAlertShopPurchaseSuccessSummaryMaxItems')?.value,
-        currentConfig.shop_purchase_success.summary_max_items
-    );
-    nextConfig.wallet_recharge_success.enabled = document.getElementById('opsAlertWalletRechargeSuccessEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.wallet_recharge_success.enabled;
-    nextConfig.wallet_recharge_success.sweep_interval_ms = Math.max(
-        10000,
-        toWholeNumber(
-            document.getElementById('opsAlertWalletRechargeSuccessSweepIntervalMinutes')?.value,
-            Math.max(1, Math.round(Number(currentConfig.wallet_recharge_success.sweep_interval_ms || 0) / 60000))
-        ) * 60 * 1000
-    );
-    nextConfig.wallet_recharge_success.lookback_minutes = toWholeNumber(
-        document.getElementById('opsAlertWalletRechargeSuccessLookbackMinutes')?.value,
-        currentConfig.wallet_recharge_success.lookback_minutes
-    );
-    nextConfig.wallet_recharge_success.dedupe_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertWalletRechargeSuccessDedupeWindowMinutes')?.value,
-        currentConfig.wallet_recharge_success.dedupe_window_minutes
-    );
-    nextConfig.wallet_recharge_success.work_hours_only_enabled = document.getElementById('opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.wallet_recharge_success.work_hours_only_enabled;
-    nextConfig.wallet_recharge_success.summary_enabled = document.getElementById('opsAlertWalletRechargeSuccessSummaryEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.wallet_recharge_success.summary_enabled;
-    nextConfig.wallet_recharge_success.summary_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertWalletRechargeSuccessSummaryWindowMinutes')?.value,
-        currentConfig.wallet_recharge_success.summary_window_minutes
-    );
-    nextConfig.wallet_recharge_success.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-        document.getElementById('opsAlertWalletRechargeSuccessSummaryScheduleMode')?.value,
-        currentConfig.wallet_recharge_success.summary_schedule_mode
-    );
-    nextConfig.wallet_recharge_success.summary_hourly_minute = toWholeNumber(
-        document.getElementById('opsAlertWalletRechargeSuccessSummaryHourlyMinute')?.value,
-        currentConfig.wallet_recharge_success.summary_hourly_minute
-    );
-    nextConfig.wallet_recharge_success.summary_daily_hour = toWholeNumber(
-        document.getElementById('opsAlertWalletRechargeSuccessSummaryDailyHour')?.value,
-        currentConfig.wallet_recharge_success.summary_daily_hour
-    );
-    nextConfig.wallet_recharge_success.summary_daily_minute = toWholeNumber(
-        document.getElementById('opsAlertWalletRechargeSuccessSummaryDailyMinute')?.value,
-        currentConfig.wallet_recharge_success.summary_daily_minute
-    );
-    nextConfig.wallet_recharge_success.summary_max_items = toWholeNumber(
-        document.getElementById('opsAlertWalletRechargeSuccessSummaryMaxItems')?.value,
-        currentConfig.wallet_recharge_success.summary_max_items
-    );
-    nextConfig.tickets.enabled = document.getElementById('opsAlertTicketsEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.tickets.enabled;
-    nextConfig.tickets.sweep_interval_ms = Math.max(
-        10000,
-        toWholeNumber(
-            document.getElementById('opsAlertTicketsSweepIntervalMinutes')?.value,
-            Math.max(1, Math.round(Number(currentConfig.tickets.sweep_interval_ms || 0) / 60000))
-        ) * 60 * 1000
-    );
-    nextConfig.tickets.pending_overdue_minutes = toWholeNumber(
-        document.getElementById('opsAlertTicketsPendingOverdueMinutes')?.value,
-        currentConfig.tickets.pending_overdue_minutes
-    );
-    nextConfig.tickets.critical_overdue_minutes = toWholeNumber(
-        document.getElementById('opsAlertTicketsCriticalOverdueMinutes')?.value,
-        currentConfig.tickets.critical_overdue_minutes
-    );
-    nextConfig.tickets.state_lookback_minutes = toWholeNumber(
-        document.getElementById('opsAlertTicketsStateLookbackMinutes')?.value,
-        currentConfig.tickets.state_lookback_minutes
-    );
-    nextConfig.tickets.dedupe_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertTicketsDedupeWindowMinutes')?.value,
-        currentConfig.tickets.dedupe_window_minutes
-    );
-    nextConfig.tickets.work_hours_only_enabled = document.getElementById('opsAlertTicketsWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.tickets.work_hours_only_enabled;
-    nextConfig.tickets.summary_enabled = document.getElementById('opsAlertTicketsSummaryEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.tickets.summary_enabled;
-    nextConfig.tickets.summary_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertTicketsSummaryWindowMinutes')?.value,
-        currentConfig.tickets.summary_window_minutes
-    );
-    nextConfig.tickets.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-        document.getElementById('opsAlertTicketsSummaryScheduleMode')?.value,
-        currentConfig.tickets.summary_schedule_mode
-    );
-    nextConfig.tickets.summary_hourly_minute = toWholeNumber(
-        document.getElementById('opsAlertTicketsSummaryHourlyMinute')?.value,
-        currentConfig.tickets.summary_hourly_minute
-    );
-    nextConfig.tickets.summary_daily_hour = toWholeNumber(
-        document.getElementById('opsAlertTicketsSummaryDailyHour')?.value,
-        currentConfig.tickets.summary_daily_hour
-    );
-    nextConfig.tickets.summary_daily_minute = toWholeNumber(
-        document.getElementById('opsAlertTicketsSummaryDailyMinute')?.value,
-        currentConfig.tickets.summary_daily_minute
-    );
-    nextConfig.tickets.summary_max_items = toWholeNumber(
-        document.getElementById('opsAlertTicketsSummaryMaxItems')?.value,
-        currentConfig.tickets.summary_max_items
-    );
-    nextConfig.shop_order_delivery.enabled = document.getElementById('opsAlertShopOrderDeliveryEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.shop_order_delivery.enabled;
-    nextConfig.shop_order_delivery.lookback_days = toWholeNumber(
-        document.getElementById('opsAlertShopOrderDeliveryLookbackDays')?.value,
-        currentConfig.shop_order_delivery.lookback_days
-    );
-    nextConfig.shop_order_delivery.state_lookback_minutes = toWholeNumber(
-        document.getElementById('opsAlertShopOrderDeliveryStateLookbackMinutes')?.value,
-        currentConfig.shop_order_delivery.state_lookback_minutes
-    );
-    nextConfig.shop_order_delivery.retry_waiting_min_attempts = toWholeNumber(
-        document.getElementById('opsAlertShopOrderDeliveryRetryWaitingMinAttempts')?.value,
-        currentConfig.shop_order_delivery.retry_waiting_min_attempts
-    );
-    nextConfig.shop_order_delivery.sweep_interval_ms = Math.max(
-        10000,
-        toWholeNumber(
-            document.getElementById('opsAlertShopOrderDeliverySweepIntervalMinutes')?.value,
-            Math.max(1, Math.round(Number(currentConfig.shop_order_delivery.sweep_interval_ms || 0) / 60000))
-        ) * 60 * 1000
-    );
-    nextConfig.shop_order_delivery.dedupe_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertShopOrderDeliveryDedupeWindowMinutes')?.value,
-        currentConfig.shop_order_delivery.dedupe_window_minutes
-    );
-    nextConfig.shop_order_delivery.incident_enabled = document.getElementById('opsAlertShopOrderDeliveryIncidentEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.shop_order_delivery.incident_enabled;
-    nextConfig.shop_order_delivery.incident_min_order_count = toWholeNumber(
-        document.getElementById('opsAlertShopOrderDeliveryIncidentMinOrderCount')?.value,
-        currentConfig.shop_order_delivery.incident_min_order_count
-    );
-    nextConfig.shop_order_delivery.incident_min_dead_letter_count = toWholeNumber(
-        document.getElementById('opsAlertShopOrderDeliveryIncidentMinDeadLetterCount')?.value,
-        currentConfig.shop_order_delivery.incident_min_dead_letter_count
-    );
-    nextConfig.shop_order_delivery.incident_min_distinct_users = toWholeNumber(
-        document.getElementById('opsAlertShopOrderDeliveryIncidentMinDistinctUsers')?.value,
-        currentConfig.shop_order_delivery.incident_min_distinct_users
-    );
-    nextConfig.shop_order_delivery.incident_dedupe_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertShopOrderDeliveryIncidentDedupeWindowMinutes')?.value,
-        currentConfig.shop_order_delivery.incident_dedupe_window_minutes
-    );
-    nextConfig.shop_order_delivery.work_hours_only_enabled = document.getElementById('opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.shop_order_delivery.work_hours_only_enabled;
-    nextConfig.shop_order_delivery.summary_enabled = document.getElementById('opsAlertShopOrderDeliverySummaryEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.shop_order_delivery.summary_enabled;
-    nextConfig.shop_order_delivery.summary_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertShopOrderDeliverySummaryWindowMinutes')?.value,
-        currentConfig.shop_order_delivery.summary_window_minutes
-    );
-    nextConfig.shop_order_delivery.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-        document.getElementById('opsAlertShopOrderDeliverySummaryScheduleMode')?.value,
-        currentConfig.shop_order_delivery.summary_schedule_mode
-    );
-    nextConfig.shop_order_delivery.summary_hourly_minute = toWholeNumber(
-        document.getElementById('opsAlertShopOrderDeliverySummaryHourlyMinute')?.value,
-        currentConfig.shop_order_delivery.summary_hourly_minute
-    );
-    nextConfig.shop_order_delivery.summary_daily_hour = toWholeNumber(
-        document.getElementById('opsAlertShopOrderDeliverySummaryDailyHour')?.value,
-        currentConfig.shop_order_delivery.summary_daily_hour
-    );
-    nextConfig.shop_order_delivery.summary_daily_minute = toWholeNumber(
-        document.getElementById('opsAlertShopOrderDeliverySummaryDailyMinute')?.value,
-        currentConfig.shop_order_delivery.summary_daily_minute
-    );
-    nextConfig.shop_order_delivery.summary_max_items = toWholeNumber(
-        document.getElementById('opsAlertShopOrderDeliverySummaryMaxItems')?.value,
-        currentConfig.shop_order_delivery.summary_max_items
-    );
-    nextConfig.verify_quota.enabled = document.getElementById('opsAlertVerifyQuotaEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.verify_quota.enabled;
-    nextConfig.verify_quota.low_balance_threshold = toWholeNumber(
-        document.getElementById('opsAlertVerifyQuotaLowBalanceThreshold')?.value,
-        currentConfig.verify_quota.low_balance_threshold
-    );
-    nextConfig.verify_quota.low_remaining_jobs_threshold = toWholeNumber(
-        document.getElementById('opsAlertVerifyQuotaLowRemainingJobsThreshold')?.value,
-        currentConfig.verify_quota.low_remaining_jobs_threshold
-    );
-    nextConfig.verify_quota.critical_balance_threshold = toWholeNumber(
-        document.getElementById('opsAlertVerifyQuotaCriticalBalanceThreshold')?.value,
-        currentConfig.verify_quota.critical_balance_threshold
-    );
-    nextConfig.verify_quota.critical_remaining_jobs_threshold = toWholeNumber(
-        document.getElementById('opsAlertVerifyQuotaCriticalRemainingJobsThreshold')?.value,
-        currentConfig.verify_quota.critical_remaining_jobs_threshold
-    );
-    nextConfig.verify_quota.min_queue_buffer_jobs = toWholeNumber(
-        document.getElementById('opsAlertVerifyQuotaMinQueueBufferJobs')?.value,
-        currentConfig.verify_quota.min_queue_buffer_jobs
-    );
-    nextConfig.verify_quota.sweep_interval_ms = Math.max(
-        10000,
-        toWholeNumber(
-            document.getElementById('opsAlertVerifyQuotaSweepIntervalMinutes')?.value,
-            Math.max(1, Math.round(Number(currentConfig.verify_quota.sweep_interval_ms || 0) / 60000))
-        ) * 60 * 1000
-    );
-    nextConfig.verify_quota.dedupe_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertVerifyQuotaDedupeWindowMinutes')?.value,
-        currentConfig.verify_quota.dedupe_window_minutes
-    );
-    nextConfig.verify_quota.work_hours_only_enabled = document.getElementById('opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.verify_quota.work_hours_only_enabled;
-    nextConfig.verify_quota.summary_enabled = document.getElementById('opsAlertVerifyQuotaSummaryEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.verify_quota.summary_enabled;
-    nextConfig.verify_quota.summary_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertVerifyQuotaSummaryWindowMinutes')?.value,
-        currentConfig.verify_quota.summary_window_minutes
-    );
-    nextConfig.verify_quota.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-        document.getElementById('opsAlertVerifyQuotaSummaryScheduleMode')?.value,
-        currentConfig.verify_quota.summary_schedule_mode
-    );
-    nextConfig.verify_quota.summary_hourly_minute = toWholeNumber(
-        document.getElementById('opsAlertVerifyQuotaSummaryHourlyMinute')?.value,
-        currentConfig.verify_quota.summary_hourly_minute
-    );
-    nextConfig.verify_quota.summary_daily_hour = toWholeNumber(
-        document.getElementById('opsAlertVerifyQuotaSummaryDailyHour')?.value,
-        currentConfig.verify_quota.summary_daily_hour
-    );
-    nextConfig.verify_quota.summary_daily_minute = toWholeNumber(
-        document.getElementById('opsAlertVerifyQuotaSummaryDailyMinute')?.value,
-        currentConfig.verify_quota.summary_daily_minute
-    );
-    nextConfig.verify_quota.summary_max_items = toWholeNumber(
-        document.getElementById('opsAlertVerifyQuotaSummaryMaxItems')?.value,
-        currentConfig.verify_quota.summary_max_items
-    );
-    nextConfig.verify_queue.enabled = document.getElementById('opsAlertVerifyQueueEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.verify_queue.enabled;
-    nextConfig.verify_queue.recent_activity_lookback_hours = toWholeNumber(
-        document.getElementById('opsAlertVerifyQueueRecentActivityLookbackHours')?.value,
-        currentConfig.verify_queue.recent_activity_lookback_hours
-    );
-    nextConfig.verify_queue.recent_failure_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertVerifyQueueRecentFailureWindowMinutes')?.value,
-        currentConfig.verify_queue.recent_failure_window_minutes
-    );
-    nextConfig.verify_queue.queue_size_threshold = toWholeNumber(
-        document.getElementById('opsAlertVerifyQueueSizeThreshold')?.value,
-        currentConfig.verify_queue.queue_size_threshold
-    );
-    nextConfig.verify_queue.active_job_threshold = toWholeNumber(
-        document.getElementById('opsAlertVerifyQueueActiveJobThreshold')?.value,
-        currentConfig.verify_queue.active_job_threshold
-    );
-    nextConfig.verify_queue.oldest_pending_minutes_threshold = toWholeNumber(
-        document.getElementById('opsAlertVerifyQueueOldestPendingMinutesThreshold')?.value,
-        currentConfig.verify_queue.oldest_pending_minutes_threshold
-    );
-    nextConfig.verify_queue.recent_failure_threshold = toWholeNumber(
-        document.getElementById('opsAlertVerifyQueueRecentFailureThreshold')?.value,
-        currentConfig.verify_queue.recent_failure_threshold
-    );
-    nextConfig.verify_queue.sweep_interval_ms = Math.max(
-        10000,
-        toWholeNumber(
-            document.getElementById('opsAlertVerifyQueueSweepIntervalMinutes')?.value,
-            Math.max(1, Math.round(Number(currentConfig.verify_queue.sweep_interval_ms || 0) / 60000))
-        ) * 60 * 1000
-    );
-    nextConfig.verify_queue.dedupe_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertVerifyQueueDedupeWindowMinutes')?.value,
-        currentConfig.verify_queue.dedupe_window_minutes
-    );
-    nextConfig.verify_queue.work_hours_only_enabled = document.getElementById('opsAlertVerifyQueueWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.verify_queue.work_hours_only_enabled;
-    nextConfig.verify_queue.summary_enabled = document.getElementById('opsAlertVerifyQueueSummaryEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.verify_queue.summary_enabled;
-    nextConfig.verify_queue.summary_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertVerifyQueueSummaryWindowMinutes')?.value,
-        currentConfig.verify_queue.summary_window_minutes
-    );
-    nextConfig.verify_queue.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-        document.getElementById('opsAlertVerifyQueueSummaryScheduleMode')?.value,
-        currentConfig.verify_queue.summary_schedule_mode
-    );
-    nextConfig.verify_queue.summary_hourly_minute = toWholeNumber(
-        document.getElementById('opsAlertVerifyQueueSummaryHourlyMinute')?.value,
-        currentConfig.verify_queue.summary_hourly_minute
-    );
-    nextConfig.verify_queue.summary_daily_hour = toWholeNumber(
-        document.getElementById('opsAlertVerifyQueueSummaryDailyHour')?.value,
-        currentConfig.verify_queue.summary_daily_hour
-    );
-    nextConfig.verify_queue.summary_daily_minute = toWholeNumber(
-        document.getElementById('opsAlertVerifyQueueSummaryDailyMinute')?.value,
-        currentConfig.verify_queue.summary_daily_minute
-    );
-    nextConfig.verify_queue.summary_max_items = toWholeNumber(
-        document.getElementById('opsAlertVerifyQueueSummaryMaxItems')?.value,
-        currentConfig.verify_queue.summary_max_items
-    );
-    nextConfig.verify_failure.enabled = document.getElementById('opsAlertVerifyFailureEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.verify_failure.enabled;
-    nextConfig.verify_failure.recent_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertVerifyFailureRecentWindowMinutes')?.value,
-        currentConfig.verify_failure.recent_window_minutes
-    );
-    nextConfig.verify_failure.min_total_jobs_threshold = toWholeNumber(
-        document.getElementById('opsAlertVerifyFailureMinTotalJobsThreshold')?.value,
-        currentConfig.verify_failure.min_total_jobs_threshold
-    );
-    nextConfig.verify_failure.failure_rate_threshold = toWholeNumber(
-        document.getElementById('opsAlertVerifyFailureRateThreshold')?.value,
-        currentConfig.verify_failure.failure_rate_threshold
-    );
-    nextConfig.verify_failure.affected_user_threshold = toWholeNumber(
-        document.getElementById('opsAlertVerifyFailureAffectedUserThreshold')?.value,
-        currentConfig.verify_failure.affected_user_threshold
-    );
-    nextConfig.verify_failure.sweep_interval_ms = Math.max(
-        10000,
-        toWholeNumber(
-            document.getElementById('opsAlertVerifyFailureSweepIntervalMinutes')?.value,
-            Math.max(1, Math.round(Number(currentConfig.verify_failure.sweep_interval_ms || 0) / 60000))
-        ) * 60 * 1000
-    );
-    nextConfig.verify_failure.dedupe_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertVerifyFailureDedupeWindowMinutes')?.value,
-        currentConfig.verify_failure.dedupe_window_minutes
-    );
-    nextConfig.verify_failure.work_hours_only_enabled = document.getElementById('opsAlertVerifyFailureWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.verify_failure.work_hours_only_enabled;
-    nextConfig.verify_failure.summary_enabled = document.getElementById('opsAlertVerifyFailureSummaryEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.verify_failure.summary_enabled;
-    nextConfig.verify_failure.summary_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertVerifyFailureSummaryWindowMinutes')?.value,
-        currentConfig.verify_failure.summary_window_minutes
-    );
-    nextConfig.verify_failure.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-        document.getElementById('opsAlertVerifyFailureSummaryScheduleMode')?.value,
-        currentConfig.verify_failure.summary_schedule_mode
-    );
-    nextConfig.verify_failure.summary_hourly_minute = toWholeNumber(
-        document.getElementById('opsAlertVerifyFailureSummaryHourlyMinute')?.value,
-        currentConfig.verify_failure.summary_hourly_minute
-    );
-    nextConfig.verify_failure.summary_daily_hour = toWholeNumber(
-        document.getElementById('opsAlertVerifyFailureSummaryDailyHour')?.value,
-        currentConfig.verify_failure.summary_daily_hour
-    );
-    nextConfig.verify_failure.summary_daily_minute = toWholeNumber(
-        document.getElementById('opsAlertVerifyFailureSummaryDailyMinute')?.value,
-        currentConfig.verify_failure.summary_daily_minute
-    );
-    nextConfig.verify_failure.summary_max_items = toWholeNumber(
-        document.getElementById('opsAlertVerifyFailureSummaryMaxItems')?.value,
-        currentConfig.verify_failure.summary_max_items
-    );
-    nextConfig.payment_gateway.enabled = document.getElementById('opsAlertPaymentGatewayEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.payment_gateway.enabled;
-    nextConfig.payment_gateway.window_minutes = toWholeNumber(
-        document.getElementById('opsAlertPaymentGatewayWindowMinutes')?.value,
-        currentConfig.payment_gateway.window_minutes
-    );
-    nextConfig.payment_gateway.min_failed_orders = toWholeNumber(
-        document.getElementById('opsAlertPaymentGatewayFailedOrdersThreshold')?.value,
-        currentConfig.payment_gateway.min_failed_orders
-    );
-    nextConfig.payment_gateway.min_failed_ratio_percent = toWholeNumber(
-        document.getElementById('opsAlertPaymentGatewayFailedRatioThreshold')?.value,
-        currentConfig.payment_gateway.min_failed_ratio_percent
-    );
-    nextConfig.payment_gateway.max_webhook_success_rate_percent = toWholeNumber(
-        document.getElementById('opsAlertPaymentGatewayWebhookSuccessRateThreshold')?.value,
-        currentConfig.payment_gateway.max_webhook_success_rate_percent
-    );
-    nextConfig.payment_gateway.max_query_success_rate_percent = toWholeNumber(
-        document.getElementById('opsAlertPaymentGatewayQuerySuccessRateThreshold')?.value,
-        currentConfig.payment_gateway.max_query_success_rate_percent
-    );
-    nextConfig.payment_gateway.min_webhook_5xx_count = toWholeNumber(
-        document.getElementById('opsAlertPaymentGatewayWebhook5xxThreshold')?.value,
-        currentConfig.payment_gateway.min_webhook_5xx_count
-    );
-    nextConfig.payment_gateway.min_query_5xx_count = toWholeNumber(
-        document.getElementById('opsAlertPaymentGatewayQuery5xxThreshold')?.value,
-        currentConfig.payment_gateway.min_query_5xx_count
-    );
-    nextConfig.payment_gateway.sweep_interval_ms = Math.max(
-        10000,
-        toWholeNumber(
-            document.getElementById('opsAlertPaymentGatewaySweepIntervalMinutes')?.value,
-            Math.max(1, Math.round(Number(currentConfig.payment_gateway.sweep_interval_ms || 0) / 60000))
-        ) * 60 * 1000
-    );
-    nextConfig.payment_gateway.dedupe_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertPaymentGatewayDedupeWindowMinutes')?.value,
-        currentConfig.payment_gateway.dedupe_window_minutes
-    );
-    nextConfig.payment_gateway.work_hours_only_enabled = document.getElementById('opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.payment_gateway.work_hours_only_enabled;
-    nextConfig.payment_gateway.summary_enabled = document.getElementById('opsAlertPaymentGatewaySummaryEnabledToggle')?.classList.contains('active')
-        ?? currentConfig.payment_gateway.summary_enabled;
-    nextConfig.payment_gateway.summary_window_minutes = toWholeNumber(
-        document.getElementById('opsAlertPaymentGatewaySummaryWindowMinutes')?.value,
-        currentConfig.payment_gateway.summary_window_minutes
-    );
-    nextConfig.payment_gateway.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
-        document.getElementById('opsAlertPaymentGatewaySummaryScheduleMode')?.value,
-        currentConfig.payment_gateway.summary_schedule_mode
-    );
-    nextConfig.payment_gateway.summary_hourly_minute = toWholeNumber(
-        document.getElementById('opsAlertPaymentGatewaySummaryHourlyMinute')?.value,
-        currentConfig.payment_gateway.summary_hourly_minute
-    );
-    nextConfig.payment_gateway.summary_daily_hour = toWholeNumber(
-        document.getElementById('opsAlertPaymentGatewaySummaryDailyHour')?.value,
-        currentConfig.payment_gateway.summary_daily_hour
-    );
-    nextConfig.payment_gateway.summary_daily_minute = toWholeNumber(
-        document.getElementById('opsAlertPaymentGatewaySummaryDailyMinute')?.value,
-        currentConfig.payment_gateway.summary_daily_minute
-    );
-    nextConfig.payment_gateway.summary_max_items = toWholeNumber(
-        document.getElementById('opsAlertPaymentGatewaySummaryMaxItems')?.value,
-        currentConfig.payment_gateway.summary_max_items
-    );
+    if (operationalThresholdDrafts?.shop_purchase_success) {
+        nextConfig.shop_purchase_success = operationalThresholdDrafts.shop_purchase_success;
+    } else {
+        nextConfig.shop_purchase_success.enabled = document.getElementById('opsAlertShopPurchaseSuccessEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.shop_purchase_success.enabled;
+        nextConfig.shop_purchase_success.sweep_interval_ms = Math.max(
+            10000,
+            toWholeNumber(
+                document.getElementById('opsAlertShopPurchaseSuccessSweepIntervalMinutes')?.value,
+                Math.max(1, Math.round(Number(currentConfig.shop_purchase_success.sweep_interval_ms || 0) / 60000))
+            ) * 60 * 1000
+        );
+        nextConfig.shop_purchase_success.lookback_minutes = toWholeNumber(
+            document.getElementById('opsAlertShopPurchaseSuccessLookbackMinutes')?.value,
+            currentConfig.shop_purchase_success.lookback_minutes
+        );
+        nextConfig.shop_purchase_success.dedupe_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertShopPurchaseSuccessDedupeWindowMinutes')?.value,
+            currentConfig.shop_purchase_success.dedupe_window_minutes
+        );
+        nextConfig.shop_purchase_success.work_hours_only_enabled = document.getElementById('opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.shop_purchase_success.work_hours_only_enabled;
+        nextConfig.shop_purchase_success.summary_enabled = document.getElementById('opsAlertShopPurchaseSuccessSummaryEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.shop_purchase_success.summary_enabled;
+        nextConfig.shop_purchase_success.summary_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertShopPurchaseSuccessSummaryWindowMinutes')?.value,
+            currentConfig.shop_purchase_success.summary_window_minutes
+        );
+        nextConfig.shop_purchase_success.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+            document.getElementById('opsAlertShopPurchaseSuccessSummaryScheduleMode')?.value,
+            currentConfig.shop_purchase_success.summary_schedule_mode
+        );
+        nextConfig.shop_purchase_success.summary_hourly_minute = toWholeNumber(
+            document.getElementById('opsAlertShopPurchaseSuccessSummaryHourlyMinute')?.value,
+            currentConfig.shop_purchase_success.summary_hourly_minute
+        );
+        nextConfig.shop_purchase_success.summary_daily_hour = toWholeNumber(
+            document.getElementById('opsAlertShopPurchaseSuccessSummaryDailyHour')?.value,
+            currentConfig.shop_purchase_success.summary_daily_hour
+        );
+        nextConfig.shop_purchase_success.summary_daily_minute = toWholeNumber(
+            document.getElementById('opsAlertShopPurchaseSuccessSummaryDailyMinute')?.value,
+            currentConfig.shop_purchase_success.summary_daily_minute
+        );
+        nextConfig.shop_purchase_success.summary_max_items = toWholeNumber(
+            document.getElementById('opsAlertShopPurchaseSuccessSummaryMaxItems')?.value,
+            currentConfig.shop_purchase_success.summary_max_items
+        );
+    }
+    if (operationalThresholdDrafts?.wallet_recharge_success) {
+        nextConfig.wallet_recharge_success = operationalThresholdDrafts.wallet_recharge_success;
+    } else {
+        nextConfig.wallet_recharge_success.enabled = document.getElementById('opsAlertWalletRechargeSuccessEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.wallet_recharge_success.enabled;
+        nextConfig.wallet_recharge_success.sweep_interval_ms = Math.max(
+            10000,
+            toWholeNumber(
+                document.getElementById('opsAlertWalletRechargeSuccessSweepIntervalMinutes')?.value,
+                Math.max(1, Math.round(Number(currentConfig.wallet_recharge_success.sweep_interval_ms || 0) / 60000))
+            ) * 60 * 1000
+        );
+        nextConfig.wallet_recharge_success.lookback_minutes = toWholeNumber(
+            document.getElementById('opsAlertWalletRechargeSuccessLookbackMinutes')?.value,
+            currentConfig.wallet_recharge_success.lookback_minutes
+        );
+        nextConfig.wallet_recharge_success.dedupe_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertWalletRechargeSuccessDedupeWindowMinutes')?.value,
+            currentConfig.wallet_recharge_success.dedupe_window_minutes
+        );
+        nextConfig.wallet_recharge_success.work_hours_only_enabled = document.getElementById('opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.wallet_recharge_success.work_hours_only_enabled;
+        nextConfig.wallet_recharge_success.summary_enabled = document.getElementById('opsAlertWalletRechargeSuccessSummaryEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.wallet_recharge_success.summary_enabled;
+        nextConfig.wallet_recharge_success.summary_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertWalletRechargeSuccessSummaryWindowMinutes')?.value,
+            currentConfig.wallet_recharge_success.summary_window_minutes
+        );
+        nextConfig.wallet_recharge_success.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+            document.getElementById('opsAlertWalletRechargeSuccessSummaryScheduleMode')?.value,
+            currentConfig.wallet_recharge_success.summary_schedule_mode
+        );
+        nextConfig.wallet_recharge_success.summary_hourly_minute = toWholeNumber(
+            document.getElementById('opsAlertWalletRechargeSuccessSummaryHourlyMinute')?.value,
+            currentConfig.wallet_recharge_success.summary_hourly_minute
+        );
+        nextConfig.wallet_recharge_success.summary_daily_hour = toWholeNumber(
+            document.getElementById('opsAlertWalletRechargeSuccessSummaryDailyHour')?.value,
+            currentConfig.wallet_recharge_success.summary_daily_hour
+        );
+        nextConfig.wallet_recharge_success.summary_daily_minute = toWholeNumber(
+            document.getElementById('opsAlertWalletRechargeSuccessSummaryDailyMinute')?.value,
+            currentConfig.wallet_recharge_success.summary_daily_minute
+        );
+        nextConfig.wallet_recharge_success.summary_max_items = toWholeNumber(
+            document.getElementById('opsAlertWalletRechargeSuccessSummaryMaxItems')?.value,
+            currentConfig.wallet_recharge_success.summary_max_items
+        );
+    }
+    if (operationalThresholdDrafts?.tickets) {
+        nextConfig.tickets = operationalThresholdDrafts.tickets;
+    } else {
+        nextConfig.tickets.enabled = document.getElementById('opsAlertTicketsEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.tickets.enabled;
+        nextConfig.tickets.sweep_interval_ms = Math.max(
+            10000,
+            toWholeNumber(
+                document.getElementById('opsAlertTicketsSweepIntervalMinutes')?.value,
+                Math.max(1, Math.round(Number(currentConfig.tickets.sweep_interval_ms || 0) / 60000))
+            ) * 60 * 1000
+        );
+        nextConfig.tickets.pending_overdue_minutes = toWholeNumber(
+            document.getElementById('opsAlertTicketsPendingOverdueMinutes')?.value,
+            currentConfig.tickets.pending_overdue_minutes
+        );
+        nextConfig.tickets.critical_overdue_minutes = toWholeNumber(
+            document.getElementById('opsAlertTicketsCriticalOverdueMinutes')?.value,
+            currentConfig.tickets.critical_overdue_minutes
+        );
+        nextConfig.tickets.state_lookback_minutes = toWholeNumber(
+            document.getElementById('opsAlertTicketsStateLookbackMinutes')?.value,
+            currentConfig.tickets.state_lookback_minutes
+        );
+        nextConfig.tickets.dedupe_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertTicketsDedupeWindowMinutes')?.value,
+            currentConfig.tickets.dedupe_window_minutes
+        );
+        nextConfig.tickets.work_hours_only_enabled = document.getElementById('opsAlertTicketsWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.tickets.work_hours_only_enabled;
+        nextConfig.tickets.summary_enabled = document.getElementById('opsAlertTicketsSummaryEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.tickets.summary_enabled;
+        nextConfig.tickets.summary_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertTicketsSummaryWindowMinutes')?.value,
+            currentConfig.tickets.summary_window_minutes
+        );
+        nextConfig.tickets.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+            document.getElementById('opsAlertTicketsSummaryScheduleMode')?.value,
+            currentConfig.tickets.summary_schedule_mode
+        );
+        nextConfig.tickets.summary_hourly_minute = toWholeNumber(
+            document.getElementById('opsAlertTicketsSummaryHourlyMinute')?.value,
+            currentConfig.tickets.summary_hourly_minute
+        );
+        nextConfig.tickets.summary_daily_hour = toWholeNumber(
+            document.getElementById('opsAlertTicketsSummaryDailyHour')?.value,
+            currentConfig.tickets.summary_daily_hour
+        );
+        nextConfig.tickets.summary_daily_minute = toWholeNumber(
+            document.getElementById('opsAlertTicketsSummaryDailyMinute')?.value,
+            currentConfig.tickets.summary_daily_minute
+        );
+        nextConfig.tickets.summary_max_items = toWholeNumber(
+            document.getElementById('opsAlertTicketsSummaryMaxItems')?.value,
+            currentConfig.tickets.summary_max_items
+        );
+    }
+    if (operationalThresholdDrafts?.shop_order_delivery) {
+        nextConfig.shop_order_delivery = operationalThresholdDrafts.shop_order_delivery;
+    } else {
+        nextConfig.shop_order_delivery.enabled = document.getElementById('opsAlertShopOrderDeliveryEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.shop_order_delivery.enabled;
+        nextConfig.shop_order_delivery.lookback_days = toWholeNumber(
+            document.getElementById('opsAlertShopOrderDeliveryLookbackDays')?.value,
+            currentConfig.shop_order_delivery.lookback_days
+        );
+        nextConfig.shop_order_delivery.state_lookback_minutes = toWholeNumber(
+            document.getElementById('opsAlertShopOrderDeliveryStateLookbackMinutes')?.value,
+            currentConfig.shop_order_delivery.state_lookback_minutes
+        );
+        nextConfig.shop_order_delivery.retry_waiting_min_attempts = toWholeNumber(
+            document.getElementById('opsAlertShopOrderDeliveryRetryWaitingMinAttempts')?.value,
+            currentConfig.shop_order_delivery.retry_waiting_min_attempts
+        );
+        nextConfig.shop_order_delivery.sweep_interval_ms = Math.max(
+            10000,
+            toWholeNumber(
+                document.getElementById('opsAlertShopOrderDeliverySweepIntervalMinutes')?.value,
+                Math.max(1, Math.round(Number(currentConfig.shop_order_delivery.sweep_interval_ms || 0) / 60000))
+            ) * 60 * 1000
+        );
+        nextConfig.shop_order_delivery.dedupe_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertShopOrderDeliveryDedupeWindowMinutes')?.value,
+            currentConfig.shop_order_delivery.dedupe_window_minutes
+        );
+        nextConfig.shop_order_delivery.incident_enabled = document.getElementById('opsAlertShopOrderDeliveryIncidentEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.shop_order_delivery.incident_enabled;
+        nextConfig.shop_order_delivery.incident_min_order_count = toWholeNumber(
+            document.getElementById('opsAlertShopOrderDeliveryIncidentMinOrderCount')?.value,
+            currentConfig.shop_order_delivery.incident_min_order_count
+        );
+        nextConfig.shop_order_delivery.incident_min_dead_letter_count = toWholeNumber(
+            document.getElementById('opsAlertShopOrderDeliveryIncidentMinDeadLetterCount')?.value,
+            currentConfig.shop_order_delivery.incident_min_dead_letter_count
+        );
+        nextConfig.shop_order_delivery.incident_min_distinct_users = toWholeNumber(
+            document.getElementById('opsAlertShopOrderDeliveryIncidentMinDistinctUsers')?.value,
+            currentConfig.shop_order_delivery.incident_min_distinct_users
+        );
+        nextConfig.shop_order_delivery.incident_dedupe_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertShopOrderDeliveryIncidentDedupeWindowMinutes')?.value,
+            currentConfig.shop_order_delivery.incident_dedupe_window_minutes
+        );
+        nextConfig.shop_order_delivery.work_hours_only_enabled = document.getElementById('opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.shop_order_delivery.work_hours_only_enabled;
+        nextConfig.shop_order_delivery.summary_enabled = document.getElementById('opsAlertShopOrderDeliverySummaryEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.shop_order_delivery.summary_enabled;
+        nextConfig.shop_order_delivery.summary_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertShopOrderDeliverySummaryWindowMinutes')?.value,
+            currentConfig.shop_order_delivery.summary_window_minutes
+        );
+        nextConfig.shop_order_delivery.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+            document.getElementById('opsAlertShopOrderDeliverySummaryScheduleMode')?.value,
+            currentConfig.shop_order_delivery.summary_schedule_mode
+        );
+        nextConfig.shop_order_delivery.summary_hourly_minute = toWholeNumber(
+            document.getElementById('opsAlertShopOrderDeliverySummaryHourlyMinute')?.value,
+            currentConfig.shop_order_delivery.summary_hourly_minute
+        );
+        nextConfig.shop_order_delivery.summary_daily_hour = toWholeNumber(
+            document.getElementById('opsAlertShopOrderDeliverySummaryDailyHour')?.value,
+            currentConfig.shop_order_delivery.summary_daily_hour
+        );
+        nextConfig.shop_order_delivery.summary_daily_minute = toWholeNumber(
+            document.getElementById('opsAlertShopOrderDeliverySummaryDailyMinute')?.value,
+            currentConfig.shop_order_delivery.summary_daily_minute
+        );
+        nextConfig.shop_order_delivery.summary_max_items = toWholeNumber(
+            document.getElementById('opsAlertShopOrderDeliverySummaryMaxItems')?.value,
+            currentConfig.shop_order_delivery.summary_max_items
+        );
+    }
+    if (operationalThresholdDrafts?.verify_quota) {
+        nextConfig.verify_quota = operationalThresholdDrafts.verify_quota;
+    } else {
+        nextConfig.verify_quota.enabled = document.getElementById('opsAlertVerifyQuotaEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.verify_quota.enabled;
+        nextConfig.verify_quota.low_balance_threshold = toWholeNumber(
+            document.getElementById('opsAlertVerifyQuotaLowBalanceThreshold')?.value,
+            currentConfig.verify_quota.low_balance_threshold
+        );
+        nextConfig.verify_quota.low_remaining_jobs_threshold = toWholeNumber(
+            document.getElementById('opsAlertVerifyQuotaLowRemainingJobsThreshold')?.value,
+            currentConfig.verify_quota.low_remaining_jobs_threshold
+        );
+        nextConfig.verify_quota.critical_balance_threshold = toWholeNumber(
+            document.getElementById('opsAlertVerifyQuotaCriticalBalanceThreshold')?.value,
+            currentConfig.verify_quota.critical_balance_threshold
+        );
+        nextConfig.verify_quota.critical_remaining_jobs_threshold = toWholeNumber(
+            document.getElementById('opsAlertVerifyQuotaCriticalRemainingJobsThreshold')?.value,
+            currentConfig.verify_quota.critical_remaining_jobs_threshold
+        );
+        nextConfig.verify_quota.min_queue_buffer_jobs = toWholeNumber(
+            document.getElementById('opsAlertVerifyQuotaMinQueueBufferJobs')?.value,
+            currentConfig.verify_quota.min_queue_buffer_jobs
+        );
+        nextConfig.verify_quota.sweep_interval_ms = Math.max(
+            10000,
+            toWholeNumber(
+                document.getElementById('opsAlertVerifyQuotaSweepIntervalMinutes')?.value,
+                Math.max(1, Math.round(Number(currentConfig.verify_quota.sweep_interval_ms || 0) / 60000))
+            ) * 60 * 1000
+        );
+        nextConfig.verify_quota.dedupe_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertVerifyQuotaDedupeWindowMinutes')?.value,
+            currentConfig.verify_quota.dedupe_window_minutes
+        );
+        nextConfig.verify_quota.work_hours_only_enabled = document.getElementById('opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.verify_quota.work_hours_only_enabled;
+        nextConfig.verify_quota.summary_enabled = document.getElementById('opsAlertVerifyQuotaSummaryEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.verify_quota.summary_enabled;
+        nextConfig.verify_quota.summary_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertVerifyQuotaSummaryWindowMinutes')?.value,
+            currentConfig.verify_quota.summary_window_minutes
+        );
+        nextConfig.verify_quota.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+            document.getElementById('opsAlertVerifyQuotaSummaryScheduleMode')?.value,
+            currentConfig.verify_quota.summary_schedule_mode
+        );
+        nextConfig.verify_quota.summary_hourly_minute = toWholeNumber(
+            document.getElementById('opsAlertVerifyQuotaSummaryHourlyMinute')?.value,
+            currentConfig.verify_quota.summary_hourly_minute
+        );
+        nextConfig.verify_quota.summary_daily_hour = toWholeNumber(
+            document.getElementById('opsAlertVerifyQuotaSummaryDailyHour')?.value,
+            currentConfig.verify_quota.summary_daily_hour
+        );
+        nextConfig.verify_quota.summary_daily_minute = toWholeNumber(
+            document.getElementById('opsAlertVerifyQuotaSummaryDailyMinute')?.value,
+            currentConfig.verify_quota.summary_daily_minute
+        );
+        nextConfig.verify_quota.summary_max_items = toWholeNumber(
+            document.getElementById('opsAlertVerifyQuotaSummaryMaxItems')?.value,
+            currentConfig.verify_quota.summary_max_items
+        );
+    }
+    if (operationalThresholdDrafts?.verify_queue) {
+        nextConfig.verify_queue = operationalThresholdDrafts.verify_queue;
+    } else {
+        nextConfig.verify_queue.enabled = document.getElementById('opsAlertVerifyQueueEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.verify_queue.enabled;
+        nextConfig.verify_queue.recent_activity_lookback_hours = toWholeNumber(
+            document.getElementById('opsAlertVerifyQueueRecentActivityLookbackHours')?.value,
+            currentConfig.verify_queue.recent_activity_lookback_hours
+        );
+        nextConfig.verify_queue.recent_failure_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertVerifyQueueRecentFailureWindowMinutes')?.value,
+            currentConfig.verify_queue.recent_failure_window_minutes
+        );
+        nextConfig.verify_queue.queue_size_threshold = toWholeNumber(
+            document.getElementById('opsAlertVerifyQueueSizeThreshold')?.value,
+            currentConfig.verify_queue.queue_size_threshold
+        );
+        nextConfig.verify_queue.active_job_threshold = toWholeNumber(
+            document.getElementById('opsAlertVerifyQueueActiveJobThreshold')?.value,
+            currentConfig.verify_queue.active_job_threshold
+        );
+        nextConfig.verify_queue.oldest_pending_minutes_threshold = toWholeNumber(
+            document.getElementById('opsAlertVerifyQueueOldestPendingMinutesThreshold')?.value,
+            currentConfig.verify_queue.oldest_pending_minutes_threshold
+        );
+        nextConfig.verify_queue.recent_failure_threshold = toWholeNumber(
+            document.getElementById('opsAlertVerifyQueueRecentFailureThreshold')?.value,
+            currentConfig.verify_queue.recent_failure_threshold
+        );
+        nextConfig.verify_queue.sweep_interval_ms = Math.max(
+            10000,
+            toWholeNumber(
+                document.getElementById('opsAlertVerifyQueueSweepIntervalMinutes')?.value,
+                Math.max(1, Math.round(Number(currentConfig.verify_queue.sweep_interval_ms || 0) / 60000))
+            ) * 60 * 1000
+        );
+        nextConfig.verify_queue.dedupe_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertVerifyQueueDedupeWindowMinutes')?.value,
+            currentConfig.verify_queue.dedupe_window_minutes
+        );
+        nextConfig.verify_queue.work_hours_only_enabled = document.getElementById('opsAlertVerifyQueueWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.verify_queue.work_hours_only_enabled;
+        nextConfig.verify_queue.summary_enabled = document.getElementById('opsAlertVerifyQueueSummaryEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.verify_queue.summary_enabled;
+        nextConfig.verify_queue.summary_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertVerifyQueueSummaryWindowMinutes')?.value,
+            currentConfig.verify_queue.summary_window_minutes
+        );
+        nextConfig.verify_queue.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+            document.getElementById('opsAlertVerifyQueueSummaryScheduleMode')?.value,
+            currentConfig.verify_queue.summary_schedule_mode
+        );
+        nextConfig.verify_queue.summary_hourly_minute = toWholeNumber(
+            document.getElementById('opsAlertVerifyQueueSummaryHourlyMinute')?.value,
+            currentConfig.verify_queue.summary_hourly_minute
+        );
+        nextConfig.verify_queue.summary_daily_hour = toWholeNumber(
+            document.getElementById('opsAlertVerifyQueueSummaryDailyHour')?.value,
+            currentConfig.verify_queue.summary_daily_hour
+        );
+        nextConfig.verify_queue.summary_daily_minute = toWholeNumber(
+            document.getElementById('opsAlertVerifyQueueSummaryDailyMinute')?.value,
+            currentConfig.verify_queue.summary_daily_minute
+        );
+        nextConfig.verify_queue.summary_max_items = toWholeNumber(
+            document.getElementById('opsAlertVerifyQueueSummaryMaxItems')?.value,
+            currentConfig.verify_queue.summary_max_items
+        );
+    }
+    if (operationalThresholdDrafts?.verify_failure) {
+        nextConfig.verify_failure = operationalThresholdDrafts.verify_failure;
+    } else {
+        nextConfig.verify_failure.enabled = document.getElementById('opsAlertVerifyFailureEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.verify_failure.enabled;
+        nextConfig.verify_failure.recent_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertVerifyFailureRecentWindowMinutes')?.value,
+            currentConfig.verify_failure.recent_window_minutes
+        );
+        nextConfig.verify_failure.min_total_jobs_threshold = toWholeNumber(
+            document.getElementById('opsAlertVerifyFailureMinTotalJobsThreshold')?.value,
+            currentConfig.verify_failure.min_total_jobs_threshold
+        );
+        nextConfig.verify_failure.failure_rate_threshold = toWholeNumber(
+            document.getElementById('opsAlertVerifyFailureRateThreshold')?.value,
+            currentConfig.verify_failure.failure_rate_threshold
+        );
+        nextConfig.verify_failure.affected_user_threshold = toWholeNumber(
+            document.getElementById('opsAlertVerifyFailureAffectedUserThreshold')?.value,
+            currentConfig.verify_failure.affected_user_threshold
+        );
+        nextConfig.verify_failure.sweep_interval_ms = Math.max(
+            10000,
+            toWholeNumber(
+                document.getElementById('opsAlertVerifyFailureSweepIntervalMinutes')?.value,
+                Math.max(1, Math.round(Number(currentConfig.verify_failure.sweep_interval_ms || 0) / 60000))
+            ) * 60 * 1000
+        );
+        nextConfig.verify_failure.dedupe_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertVerifyFailureDedupeWindowMinutes')?.value,
+            currentConfig.verify_failure.dedupe_window_minutes
+        );
+        nextConfig.verify_failure.work_hours_only_enabled = document.getElementById('opsAlertVerifyFailureWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.verify_failure.work_hours_only_enabled;
+        nextConfig.verify_failure.summary_enabled = document.getElementById('opsAlertVerifyFailureSummaryEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.verify_failure.summary_enabled;
+        nextConfig.verify_failure.summary_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertVerifyFailureSummaryWindowMinutes')?.value,
+            currentConfig.verify_failure.summary_window_minutes
+        );
+        nextConfig.verify_failure.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+            document.getElementById('opsAlertVerifyFailureSummaryScheduleMode')?.value,
+            currentConfig.verify_failure.summary_schedule_mode
+        );
+        nextConfig.verify_failure.summary_hourly_minute = toWholeNumber(
+            document.getElementById('opsAlertVerifyFailureSummaryHourlyMinute')?.value,
+            currentConfig.verify_failure.summary_hourly_minute
+        );
+        nextConfig.verify_failure.summary_daily_hour = toWholeNumber(
+            document.getElementById('opsAlertVerifyFailureSummaryDailyHour')?.value,
+            currentConfig.verify_failure.summary_daily_hour
+        );
+        nextConfig.verify_failure.summary_daily_minute = toWholeNumber(
+            document.getElementById('opsAlertVerifyFailureSummaryDailyMinute')?.value,
+            currentConfig.verify_failure.summary_daily_minute
+        );
+        nextConfig.verify_failure.summary_max_items = toWholeNumber(
+            document.getElementById('opsAlertVerifyFailureSummaryMaxItems')?.value,
+            currentConfig.verify_failure.summary_max_items
+        );
+    }
+    if (operationalThresholdDrafts?.payment_gateway) {
+        nextConfig.payment_gateway = operationalThresholdDrafts.payment_gateway;
+    } else {
+        nextConfig.payment_gateway.enabled = document.getElementById('opsAlertPaymentGatewayEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.payment_gateway.enabled;
+        nextConfig.payment_gateway.window_minutes = toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewayWindowMinutes')?.value,
+            currentConfig.payment_gateway.window_minutes
+        );
+        nextConfig.payment_gateway.min_failed_orders = toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewayFailedOrdersThreshold')?.value,
+            currentConfig.payment_gateway.min_failed_orders
+        );
+        nextConfig.payment_gateway.min_failed_ratio_percent = toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewayFailedRatioThreshold')?.value,
+            currentConfig.payment_gateway.min_failed_ratio_percent
+        );
+        nextConfig.payment_gateway.max_webhook_success_rate_percent = toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewayWebhookSuccessRateThreshold')?.value,
+            currentConfig.payment_gateway.max_webhook_success_rate_percent
+        );
+        nextConfig.payment_gateway.max_query_success_rate_percent = toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewayQuerySuccessRateThreshold')?.value,
+            currentConfig.payment_gateway.max_query_success_rate_percent
+        );
+        nextConfig.payment_gateway.min_webhook_5xx_count = toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewayWebhook5xxThreshold')?.value,
+            currentConfig.payment_gateway.min_webhook_5xx_count
+        );
+        nextConfig.payment_gateway.min_query_5xx_count = toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewayQuery5xxThreshold')?.value,
+            currentConfig.payment_gateway.min_query_5xx_count
+        );
+        nextConfig.payment_gateway.sweep_interval_ms = Math.max(
+            10000,
+            toWholeNumber(
+                document.getElementById('opsAlertPaymentGatewaySweepIntervalMinutes')?.value,
+                Math.max(1, Math.round(Number(currentConfig.payment_gateway.sweep_interval_ms || 0) / 60000))
+            ) * 60 * 1000
+        );
+        nextConfig.payment_gateway.dedupe_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewayDedupeWindowMinutes')?.value,
+            currentConfig.payment_gateway.dedupe_window_minutes
+        );
+        nextConfig.payment_gateway.work_hours_only_enabled = document.getElementById('opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.payment_gateway.work_hours_only_enabled;
+        nextConfig.payment_gateway.summary_enabled = document.getElementById('opsAlertPaymentGatewaySummaryEnabledToggle')?.classList.contains('active')
+            ?? currentConfig.payment_gateway.summary_enabled;
+        nextConfig.payment_gateway.summary_window_minutes = toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewaySummaryWindowMinutes')?.value,
+            currentConfig.payment_gateway.summary_window_minutes
+        );
+        nextConfig.payment_gateway.summary_schedule_mode = normalizeOpsAlertSummaryScheduleMode(
+            document.getElementById('opsAlertPaymentGatewaySummaryScheduleMode')?.value,
+            currentConfig.payment_gateway.summary_schedule_mode
+        );
+        nextConfig.payment_gateway.summary_hourly_minute = toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewaySummaryHourlyMinute')?.value,
+            currentConfig.payment_gateway.summary_hourly_minute
+        );
+        nextConfig.payment_gateway.summary_daily_hour = toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewaySummaryDailyHour')?.value,
+            currentConfig.payment_gateway.summary_daily_hour
+        );
+        nextConfig.payment_gateway.summary_daily_minute = toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewaySummaryDailyMinute')?.value,
+            currentConfig.payment_gateway.summary_daily_minute
+        );
+        nextConfig.payment_gateway.summary_max_items = toWholeNumber(
+            document.getElementById('opsAlertPaymentGatewaySummaryMaxItems')?.value,
+            currentConfig.payment_gateway.summary_max_items
+        );
+    }
 
     return normalizeOpsAlertConfig(nextConfig);
 }
 
-function clearOpsAlertSecretInputs() {
-    [
-        'opsAlertTelegramBotToken',
-        'opsAlertFeishuWebhookUrl',
-        'opsAlertEmailApiKey'
-    ].forEach((id) => {
-        const input = document.getElementById(id);
-        if (input) input.value = '';
-    });
+function buildLocalOpsAlertSecretInputs() {
+    return {
+        telegram_bot_token: document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '',
+        feishu_webhook_url: document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || '',
+        email_api_key: document.getElementById('opsAlertEmailApiKey')?.value?.trim() || ''
+    };
 }
 
-function buildOpsAlertSettingsRequestBody(config, options = {}) {
+function resolveOpsAlertSecretInputs() {
+    if (typeof window.readAdminWorkbenchOpsAlertSecretInputs === 'function') {
+        return window.readAdminWorkbenchOpsAlertSecretInputs();
+    }
+    return buildLocalOpsAlertSecretInputs();
+}
+
+function buildLocalOpsAlertSecretInputsClearer() {
+    return () => {
+        [
+            'opsAlertTelegramBotToken',
+            'opsAlertFeishuWebhookUrl',
+            'opsAlertEmailApiKey'
+        ].forEach((id) => {
+            const input = document.getElementById(id);
+            if (input) input.value = '';
+        });
+    };
+}
+
+function resolveOpsAlertSecretInputsClearer() {
+    if (typeof window.clearAdminWorkbenchOpsAlertSecretInputs === 'function') {
+        return () => window.clearAdminWorkbenchOpsAlertSecretInputs();
+    }
+    return buildLocalOpsAlertSecretInputsClearer();
+}
+
+function clearOpsAlertSecretInputs() {
+    resolveOpsAlertSecretInputsClearer()();
+}
+
+function buildLocalOpsAlertSettingsRequestBody(config, options = {}) {
     const body = {
         config,
-        secrets: {
-            telegram_bot_token: document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '',
-            feishu_webhook_url: document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || '',
-            email_api_key: document.getElementById('opsAlertEmailApiKey')?.value?.trim() || ''
-        }
+        secrets: options.secrets && typeof options.secrets === 'object' && !Array.isArray(options.secrets)
+            ? options.secrets
+            : resolveOpsAlertSecretInputs()
     };
+    const normalizedAction = String(options.action || '').trim();
+
+    if (normalizedAction) {
+        body.action = normalizedAction;
+    }
 
     if (Array.isArray(options.caseEvents) && options.caseEvents.length) {
         body.case_events = options.caseEvents;
@@ -13542,25 +14168,82 @@ function buildOpsAlertSettingsRequestBody(config, options = {}) {
     return body;
 }
 
+function resolveOpsAlertSettingsRequestBody(config, options = {}) {
+    if (typeof window.buildAdminWorkbenchOpsAlertSettingsRequestBody === 'function') {
+        return window.buildAdminWorkbenchOpsAlertSettingsRequestBody(config, options);
+    }
+    return buildLocalOpsAlertSettingsRequestBody(config, options);
+}
+
+function buildOpsAlertSettingsRequestBody(config, options = {}) {
+    return resolveOpsAlertSettingsRequestBody(config, options);
+}
+
+function resolveOpsAlertDispatchConfigValidation(config = {}, secretStatus = {}, secrets = {}) {
+    if (typeof window.validateAdminWorkbenchOpsAlertDispatchConfig === 'function') {
+        return window.validateAdminWorkbenchOpsAlertDispatchConfig(config, secretStatus, secrets);
+    }
+    return true;
+}
+
+async function submitLocalOpsAlertSettingsPayload(headers = {}, body = {}, options = {}) {
+    const response = await fetch('/api/admin/settings/ops-alerts', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.success) {
+        throw new Error(payload.message || options.errorMessage || '保存站外告警配置失败');
+    }
+    return payload;
+}
+
+async function submitOpsAlertSettingsPayload(headers = {}, body = {}, options = {}) {
+    if (typeof window.submitAdminWorkbenchOpsAlertSettings === 'function') {
+        return window.submitAdminWorkbenchOpsAlertSettings(headers, body, {
+            errorMessage: options.errorMessage || '保存站外告警配置失败'
+        });
+    }
+    return submitLocalOpsAlertSettingsPayload(headers, body, options);
+}
+
+async function submitLocalOpsAlertSecretDeletion(headers = {}, secretName = '', options = {}) {
+    const response = await fetch('/api/admin/settings/ops-alerts', {
+        method: 'DELETE',
+        headers,
+        body: JSON.stringify({ secretName })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.success) {
+        throw new Error(payload.message || options.errorMessage || '删除站外告警密钥失败');
+    }
+    return payload;
+}
+
+async function submitOpsAlertSecretDeletion(headers = {}, secretName = '', options = {}) {
+    if (typeof window.deleteAdminWorkbenchOpsAlertSecret === 'function') {
+        return window.deleteAdminWorkbenchOpsAlertSecret(headers, secretName, {
+            errorMessage: options.errorMessage || '删除站外告警密钥失败'
+        });
+    }
+    return submitLocalOpsAlertSecretDeletion(headers, secretName, options);
+}
+
 async function saveOpsAlertConfigOverride(config, options = {}) {
     setOpsAlertStrategySaveBusy(true);
     try {
         const headers = await getAdminConfigApiHeaders();
         const body = buildOpsAlertSettingsRequestBody(normalizeOpsAlertConfig(config), options);
-
-        const response = await fetch('/api/admin/settings/ops-alerts', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body)
+        const payload = await submitOpsAlertSettingsPayload(headers, body, {
+            errorMessage: '保存站外告警配置失败'
         });
+        const normalizedPayload = resolveOpsAlertSettingsPayload(payload);
 
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload.success) {
-            throw new Error(payload.message || '保存站外退款告警配置失败');
-        }
-
-        systemConfigCache['ops_alerts'] = normalizeOpsAlertConfig(payload.config);
-        opsAlertSecretStatus = payload.secrets || getDefaultOpsAlertSecretStatus();
+        systemConfigCache['ops_alerts'] = normalizedPayload.config;
+        opsAlertSecretStatus = normalizedPayload.secrets;
         window.dispatchEvent(new CustomEvent('ops-alerts-config-updated', {
             detail: {
                 config: systemConfigCache['ops_alerts']
@@ -13593,69 +14276,17 @@ async function saveOpsAlertSettings() {
 
 async function sendOpsAlertTelegramRequest(action, fallbackMessage) {
     const config = collectOpsAlertConfigFromForm();
-    const telegramEnabled = config.channels?.telegram?.enabled === true;
-    const feishuEnabled = config.channels?.feishu?.enabled === true;
-    const emailEnabled = config.channels?.email?.enabled === true;
-    const chatIds = Array.isArray(config.channels?.telegram?.chat_ids)
-        ? config.channels.telegram.chat_ids
-        : [];
-    const hasStoredTelegramToken = Boolean(opsAlertSecretStatus?.telegram_bot_token?.configured);
-    const hasStoredFeishuWebhook = Boolean(opsAlertSecretStatus?.feishu_webhook_url?.configured);
-    const hasStoredEmailApiKey = Boolean(opsAlertSecretStatus?.email_api_key?.configured);
-    const providedTelegramToken = document.getElementById('opsAlertTelegramBotToken')?.value?.trim() || '';
-    const providedFeishuWebhook = document.getElementById('opsAlertFeishuWebhookUrl')?.value?.trim() || '';
-    const providedEmailApiKey = document.getElementById('opsAlertEmailApiKey')?.value?.trim() || '';
-
-    if (!telegramEnabled && !feishuEnabled && !emailEnabled) {
-        throw new Error('请先启用至少一个站外告警通道');
-    }
-
-    if (telegramEnabled) {
-        if (!chatIds.length) {
-            throw new Error('已启用 Telegram 告警，请先填写至少一个 Telegram Chat ID');
-        }
-
-        if (!providedTelegramToken && !hasStoredTelegramToken) {
-            throw new Error('已启用 Telegram 告警，请先填写 Telegram Bot Token，或先保存已配置的后台密钥');
-        }
-    }
-
-    if (feishuEnabled && !providedFeishuWebhook && !hasStoredFeishuWebhook) {
-        throw new Error('已启用飞书告警，请先填写飞书 Webhook，或先保存已配置的后台密钥');
-    }
-
-    if (emailEnabled) {
-        const recipients = Array.isArray(config.channels?.email?.recipients) ? config.channels.email.recipients : [];
-        if (!recipients.length) {
-            throw new Error('已启用邮件告警，请先填写至少一个收件人');
-        }
-        if (!config.channels?.email?.from_address) {
-            throw new Error('已启用邮件告警，请先填写发件地址');
-        }
-        if (!providedEmailApiKey && !hasStoredEmailApiKey) {
-            throw new Error('已启用邮件告警，请先填写 Email API Key，或先保存已配置的后台密钥');
-        }
-    }
+    const secrets = resolveOpsAlertSecretInputs();
+    resolveOpsAlertDispatchConfigValidation(config, opsAlertSecretStatus, secrets);
 
     const headers = await getAdminConfigApiHeaders();
-    const response = await fetch('/api/admin/settings/ops-alerts', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-            action,
-            config,
-            secrets: {
-                telegram_bot_token: providedTelegramToken,
-                feishu_webhook_url: providedFeishuWebhook,
-                email_api_key: providedEmailApiKey
-            }
-        })
+    const body = buildOpsAlertSettingsRequestBody(config, {
+        action,
+        secrets
     });
-
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !payload.success) {
-        throw new Error(payload.message || fallbackMessage);
-    }
+    const payload = await submitOpsAlertSettingsPayload(headers, body, {
+        errorMessage: fallbackMessage
+    });
 
     showConfigSavedToast(payload.message || fallbackMessage);
     return true;
@@ -13973,396 +14604,10 @@ function scrollToOpsAlertWorkspaceTarget(targetId) {
     }
 }
 
-function normalizeOpsAlertWorkspaceContext(context = {}) {
-    return {
-        title: String(context.title || context.workspaceTitle || '').trim(),
-        alertType: String(context.alertType || context.alert_type || '').trim().toLowerCase(),
-        category: String(context.category || context.workspaceCategory || '').trim().toLowerCase(),
-        tab: String(context.tab || context.defaultTab || context.workspaceTab || context.userTab || '').trim().toLowerCase(),
-        email: String(context.email || context.userEmail || context.workspaceEmail || '').trim(),
-        referenceLabel: String(context.referenceLabel || context.reference_label || '').trim(),
-        referenceValue: String(context.referenceValue || context.reference_value || '').trim(),
-        targetId: String(context.targetId || context.target_id || '').trim(),
-        orderId: String(context.orderId || context.order_id || '').trim(),
-        ticketId: String(context.ticketId || context.ticket_id || '').trim(),
-        ticketStatus: String(context.ticketStatus || context.ticket_status || '').trim().toLowerCase(),
-        userId: String(context.userId || context.user_id || context.workspaceUserId || '').trim(),
-        paymentOrderId: String(context.paymentOrderId || context.payment_order_id || '').trim(),
-        clientIp: String(context.clientIp || context.client_ip || context.workspaceClientIp || '').trim(),
-        discountCode: String(context.discountCode || context.discount_code || context.workspaceDiscountCode || '').trim(),
-        signalType: String(context.signalType || context.signal_type || context.workspaceSignalType || '').trim().toLowerCase(),
-        caseStatus: String(context.caseStatus || context.case_status || context.workspaceCaseStatus || '').trim().toLowerCase(),
-        caseOwnerAdminId: String(context.caseOwnerAdminId || context.case_owner_admin_id || context.workspaceCaseOwnerAdminId || '').trim(),
-        caseOwnerLabel: String(context.caseOwnerLabel || context.case_owner_label || context.workspaceCaseOwnerLabel || '').trim()
-    };
-}
-
-function getOpsAlertWorkspaceTargetIdParts(context = {}) {
-    return normalizeOpsAlertWorkspaceContext(context)
-        .targetId
-        .split(':')
-        .map((part) => String(part || '').trim())
-        .filter(Boolean);
-}
-
-function getOpsAlertWorkspaceDiscountCode(context = {}) {
-    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
-    if (normalizedContext.discountCode) {
-        return normalizedContext.discountCode;
-    }
-    if (normalizedContext.referenceLabel === '优惠码' && normalizedContext.referenceValue) {
-        return normalizedContext.referenceValue;
-    }
-
-    const parts = getOpsAlertWorkspaceTargetIdParts(normalizedContext);
-    if (parts[0] === 'shop_order_risk' && parts[1] === 'coupon' && parts[2]) {
-        return parts.slice(2).join(':');
-    }
-
-    return '';
-}
-
-function getOpsAlertWorkspaceRiskUserId(context = {}) {
-    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
-    if (normalizedContext.userId) {
-        return normalizedContext.userId;
-    }
-
-    const parts = getOpsAlertWorkspaceTargetIdParts(normalizedContext);
-    if (parts[0] === 'shop_order_risk' && parts[1] === 'user_velocity' && parts[2]) {
-        return parts.slice(2).join(':');
-    }
-    return '';
-}
-
-async function tryOpenOpsAlertWorkspaceUserModal(userId, options = {}) {
-    const normalizedUserId = String(userId || '').trim();
-    const normalizedEmail = String(options?.email || options?.userEmail || '').trim();
-    const silentOnNotFound = options?.silentOnNotFound === true;
-    const normalizedTab = String(options?.defaultTab || options?.tab || '').trim().toLowerCase();
-    const normalizedPaymentOrderId = String(options?.paymentOrderId || options?.payment_order_id || '').trim();
-    const attemptCount = Number(options?.attemptCount || 6);
-    const delayMs = Number(options?.delayMs || 140);
-    if (!normalizedUserId && !normalizedEmail) {
-        return false;
-    }
-
-    if (typeof window.openUserModal === 'function') {
-        return window.openUserModal(normalizedUserId, {
-            defaultTab: normalizedTab,
-            paymentOrderId: normalizedPaymentOrderId,
-            fallbackEmail: normalizedEmail,
-            silentOnNotFound
-        });
-    }
-
-    if (!normalizedUserId) {
-        return false;
-    }
-
-    const encodedUserId = encodeURIComponent(normalizedUserId);
-    for (let attempt = 0; attempt < attemptCount; attempt += 1) {
-        const row = document.querySelector(`[data-admin-action="users-open-drawer"][data-user-id="${encodedUserId}"]`);
-        if (row instanceof HTMLElement) {
-            if (typeof window.openUserModal === 'function') {
-                await window.openUserModal(normalizedUserId, {
-                    defaultTab: normalizedTab,
-                    paymentOrderId: normalizedPaymentOrderId,
-                    fallbackEmail: normalizedEmail,
-                    silentOnNotFound
-                });
-            } else {
-                row.click();
-            }
-            return true;
-        }
-        await settleOpsAlertWorkspace(delayMs);
-    }
-
-    return false;
-}
-
-async function focusOpsAlertWorkspacePaymentOrder(paymentOrderId) {
-    const normalizedPaymentOrderId = String(paymentOrderId || '').trim();
-    if (!normalizedPaymentOrderId) {
-        return { opened: false, matched: false };
-    }
-
-    window.switchModule?.('payments');
-    await settleOpsAlertWorkspace();
-    await window.AdminPayments?.init?.();
-
-    if (window.AdminPayments?.focusOrder) {
-        const result = await window.AdminPayments.focusOrder(normalizedPaymentOrderId, {
-            switchTab: true,
-            reload: true
-        });
-        await settleOpsAlertWorkspace();
-        return result && typeof result === 'object'
-            ? result
-            : { opened: Boolean(result), matched: Boolean(result) };
-    }
-
-    window.AdminPayments?.switchTab?.('overview', { reload: false });
-    await settleOpsAlertWorkspace();
-    scrollToOpsAlertWorkspaceTarget('paymentsProviderStats');
-    return { opened: true, matched: false };
-}
-
-function getOpsAlertWorkspaceSearchValue(context = {}) {
-    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
-    const normalizedLabel = String(normalizedContext.referenceLabel || '').trim().toLowerCase();
-
-    if (['工单号', '订单号', '订单', '用户id', '记录', '目标'].includes(normalizedContext.referenceLabel)) {
-        return normalizedContext.referenceValue;
-    }
-
-    if (['工单号', '订单号', '订单', '用户id'].includes(normalizedLabel)) {
-        return normalizedContext.referenceValue;
-    }
-
-    if (!normalizedContext.referenceValue && normalizedContext.targetId) {
-        return normalizedContext.targetId;
-    }
-
-    return normalizedContext.referenceValue;
-}
-
-function getOpsAlertWorkspacePaymentsTopic(context = {}) {
-    const alertType = normalizeOpsAlertWorkspaceContext(context).alertType;
-    const topicMap = {
-        payment_refund_ops: 'all',
-        payment_gateway_degraded: 'all',
-        payment_config_changed: 'all',
-        payment_config_incident: 'all'
-    };
-    return topicMap[alertType] || 'all';
-}
-
-function getOpsAlertWorkspaceSuccessLabel(workspaceKey) {
-    const normalizedKey = String(workspaceKey || '').trim().toLowerCase();
-    const labels = {
-        'payments-overview': '支付总览',
-        'payments-ops': '支付异常运维',
-        'verify-monitor': '验证服务运维面板',
-        'admin-audit-monitor': '管理员访问审计面板',
-        'tickets-pending': '待处理工单',
-        'tickets-resolved': '已处理工单',
-        'shop-inventory': '库存 / 补货',
-        'shop-fulfillment': '履约异常订单',
-        'shop-risk-orders': '商城风险订单',
-        'shop-risk-discounts': '优惠券码列表',
-        'shop-risk-users': '用户详情'
-    };
-    return labels[normalizedKey] || '告警处理入口';
-}
-
-async function openOpsAlertWorkspace(workspaceKey, context = {}) {
-    const normalizedKey = String(workspaceKey || '').trim().toLowerCase();
-    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
-    const workspaceSearchValue = getOpsAlertWorkspaceSearchValue(normalizedContext);
-    if (!normalizedKey) {
-        showToast('缺少告警处理入口标识', 'warning');
-        return false;
-    }
-
-    try {
-        if (normalizedKey === 'verify-monitor') {
-            window.switchModule?.('settings');
-            await settleOpsAlertWorkspace();
-            window.switchSettingsView?.('security');
-            await settleOpsAlertWorkspace();
-            await window.refreshVerifyMonitor?.(true);
-            scrollToOpsAlertWorkspaceTarget('verifyMonitorPanel');
-        } else if (normalizedKey === 'admin-audit-monitor') {
-            window.switchModule?.('settings');
-            await settleOpsAlertWorkspace();
-            window.switchSettingsView?.('security');
-            await settleOpsAlertWorkspace();
-            await window.refreshAdminAuditMonitor?.(true);
-            scrollToOpsAlertWorkspaceTarget('adminAuditMonitorSection');
-        } else if (normalizedKey === 'payments-overview') {
-            if (normalizedContext.paymentOrderId) {
-                const paymentFocusResult = await focusOpsAlertWorkspacePaymentOrder(normalizedContext.paymentOrderId);
-                if (!paymentFocusResult.opened || !paymentFocusResult.matched) {
-                    scrollToOpsAlertWorkspaceTarget('paymentsProviderStats');
-                }
-            } else {
-                window.switchModule?.('payments');
-                await settleOpsAlertWorkspace();
-                await window.AdminPayments?.init?.();
-                window.AdminPayments?.switchTab?.('overview', { reload: false });
-                await settleOpsAlertWorkspace();
-                scrollToOpsAlertWorkspaceTarget('paymentsProviderStats');
-            }
-        } else if (normalizedKey === 'payments-ops') {
-            window.switchModule?.('payments');
-            await settleOpsAlertWorkspace();
-            await window.AdminPayments?.init?.();
-            await window.AdminPayments?.focusExceptionTopic?.(getOpsAlertWorkspacePaymentsTopic(normalizedContext));
-        } else if (normalizedKey === 'tickets-pending' || normalizedKey === 'tickets-resolved') {
-            const nextStatus = normalizedKey === 'tickets-pending' ? 'pending' : 'resolved';
-            const normalizedTicketId = String(normalizedContext.ticketId || '').trim()
-                || (normalizedContext.referenceLabel === '工单号' ? String(workspaceSearchValue || '').trim() : '');
-            window.switchModule?.('tickets');
-            await settleOpsAlertWorkspace();
-            await window.AdminTickets?.init?.();
-            if (normalizedTicketId && window.AdminTickets?.focusTicket) {
-                const ticketFocusResult = await window.AdminTickets.focusTicket(normalizedTicketId, {
-                    status: normalizedContext.ticketStatus || nextStatus
-                });
-                if (!ticketFocusResult.matched) {
-                    const searchInput = document.getElementById('ticketSearchInput');
-                    if (searchInput) searchInput.value = workspaceSearchValue || '';
-                    if (window.AdminTickets) {
-                        window.AdminTickets.searchQuery = workspaceSearchValue || '';
-                    }
-                    const filterButton = document.querySelector(`[data-admin-action="tickets-filter"][data-ticket-status="${nextStatus}"]`);
-                    window.AdminTickets?.filter?.(nextStatus, filterButton);
-                    if (workspaceSearchValue) {
-                        window.AdminTickets?.search?.();
-                    }
-                }
-            } else {
-                const searchInput = document.getElementById('ticketSearchInput');
-                if (searchInput) searchInput.value = workspaceSearchValue || '';
-                if (window.AdminTickets) {
-                    window.AdminTickets.searchQuery = workspaceSearchValue || '';
-                }
-                const filterButton = document.querySelector(`[data-admin-action="tickets-filter"][data-ticket-status="${nextStatus}"]`);
-                window.AdminTickets?.filter?.(nextStatus, filterButton);
-                if (workspaceSearchValue) {
-                    window.AdminTickets?.search?.();
-                }
-            }
-            await settleOpsAlertWorkspace();
-            scrollToOpsAlertWorkspaceTarget('module-tickets');
-        } else if (normalizedKey === 'shop-inventory') {
-            window.switchModule?.('shop');
-            await settleOpsAlertWorkspace();
-            await window.ShopAdmin?.init?.();
-            window.ShopAdmin?.switchTab?.('inventory');
-            await settleOpsAlertWorkspace();
-            scrollToOpsAlertWorkspaceTarget('shop-view-inventory');
-        } else if (normalizedKey === 'shop-fulfillment') {
-            window.switchModule?.('shop');
-            await settleOpsAlertWorkspace();
-            await window.ShopAdmin?.init?.();
-            window.ShopAdmin?.switchTab?.('fulfillment');
-            await settleOpsAlertWorkspace();
-            if (window.ShopAdmin) {
-                const nextStatus = normalizedContext.alertType === 'shop_order_delivery_failed' ? 'dead_letter' : 'all';
-                window.ShopAdmin.deliveryTaskStatusFilter = nextStatus;
-                window.ShopAdmin.deliveryTaskQuery = workspaceSearchValue || '';
-                window.ShopAdmin.deliveryTaskQueryContext = workspaceSearchValue
-                    ? {
-                        type: 'manual',
-                        label: workspaceSearchValue
-                    }
-                    : null;
-                window.ShopAdmin.deliveryTaskIdentityFilter = workspaceSearchValue && normalizedContext.referenceLabel === '订单'
-                    ? {
-                        taskId: '',
-                        orderId: workspaceSearchValue
-                    }
-                    : null;
-                const taskFilter = document.getElementById('deliveryTaskStatusFilter');
-                const taskQueryInput = document.getElementById('deliveryTaskQueryInput');
-                if (taskFilter) taskFilter.value = nextStatus;
-                if (taskQueryInput) taskQueryInput.value = workspaceSearchValue || '';
-                await window.ShopAdmin.loadDeliveryTasks?.(1);
-            }
-            scrollToOpsAlertWorkspaceTarget('deliveryDeadLetterSummary');
-        } else if (normalizedKey === 'shop-risk-orders') {
-            const normalizedOrderId = String(normalizedContext.orderId || '').trim()
-                || (['订单号', '订单'].includes(normalizedContext.referenceLabel)
-                    ? String(workspaceSearchValue || '').trim()
-                    : '');
-            window.switchModule?.('shop');
-            await settleOpsAlertWorkspace();
-            await window.ShopAdmin?.init?.();
-            window.ShopAdmin?.switchTab?.('orders', { load: !normalizedOrderId });
-            await settleOpsAlertWorkspace();
-            if (normalizedOrderId && window.ShopAdmin?.focusOrder) {
-                await window.ShopAdmin.focusOrder(normalizedOrderId, { openDetails: true });
-            } else {
-                const orderSearchInput = document.getElementById('orderSearchInput');
-                if (orderSearchInput) {
-                    orderSearchInput.value = normalizedOrderId || '';
-                }
-                await window.ShopAdmin?.searchOrders?.(1);
-            }
-            scrollToOpsAlertWorkspaceTarget('shop-view-orders');
-        } else if (normalizedKey === 'shop-risk-discounts') {
-            const discountSearchValue = getOpsAlertWorkspaceDiscountCode(normalizedContext) || workspaceSearchValue || '';
-            window.switchModule?.('discounts');
-            await settleOpsAlertWorkspace();
-            if (window.AdminDiscounts) {
-                window.AdminDiscounts.filters = {
-                    ...(window.AdminDiscounts.filters || {}),
-                    search: String(discountSearchValue || '').trim().toLowerCase()
-                };
-                window.AdminDiscounts.currentPage = 1;
-            }
-            const discountSearchInput = document.getElementById('discountSearchInput');
-            if (discountSearchInput) {
-                discountSearchInput.value = discountSearchValue || '';
-            }
-            await window.AdminDiscounts?.loadDiscounts?.();
-            if (discountSearchValue) {
-                window.AdminDiscounts?.search?.();
-            }
-            scrollToOpsAlertWorkspaceTarget('module-discounts');
-        } else if (normalizedKey === 'shop-risk-users') {
-            const riskUserId = getOpsAlertWorkspaceRiskUserId(normalizedContext);
-            const riskUserEmail = String(normalizedContext.email || '').trim();
-            const userSearchValue = riskUserId || workspaceSearchValue || '';
-            window.switchModule?.('users');
-            await settleOpsAlertWorkspace();
-            if (riskUserId || riskUserEmail) {
-                const modalOpened = await tryOpenOpsAlertWorkspaceUserModal(riskUserId, {
-                    defaultTab: normalizedContext.tab,
-                    paymentOrderId: normalizedContext.paymentOrderId,
-                    email: riskUserEmail,
-                    silentOnNotFound: Boolean(normalizedContext.paymentOrderId)
-                });
-                if (!modalOpened) {
-                    const paymentFocusResult = await focusOpsAlertWorkspacePaymentOrder(normalizedContext.paymentOrderId);
-                    if (paymentFocusResult.opened) {
-                        showToast(
-                            paymentFocusResult.matched
-                                ? '未找到后台用户，已自动定位到这笔充值记录'
-                                : '未找到后台用户，已打开支付总览',
-                            'warning'
-                        );
-                        return true;
-                    }
-                    showToast('未找到该用户，无法打开详情', 'error');
-                    return false;
-                }
-            } else {
-                const userSearchInput = document.getElementById('userSearchInput');
-                if (userSearchInput) {
-                    userSearchInput.value = userSearchValue;
-                    userSearchInput.dispatchEvent(new Event('input', { bubbles: true }));
-                }
-                await settleOpsAlertWorkspace();
-                scrollToOpsAlertWorkspaceTarget('module-users');
-            }
-        } else {
-            throw new Error('未识别的告警处理入口');
-        }
-
-        showToast(`已打开${getOpsAlertWorkspaceSuccessLabel(normalizedKey)}`, 'success');
-        return true;
-    } catch (error) {
-        console.error('[Config] Open ops alert workspace failed:', error);
-        showToast('打开失败: ' + (error.message || '未知错误'), 'error');
-        return false;
-    }
-}
-
 function getOpsAlertCaseComposerTargetLabel(context = {}) {
+    if (typeof window.getOpsAlertWorkspaceContextLabel === 'function') {
+        return window.getOpsAlertWorkspaceContextLabel(context, { fallback: '集中告警' });
+    }
     const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
     if (normalizedContext.referenceLabel && normalizedContext.referenceValue) {
         return `${normalizedContext.referenceLabel}：${normalizedContext.referenceValue}`;
@@ -14371,6 +14616,12 @@ function getOpsAlertCaseComposerTargetLabel(context = {}) {
 }
 
 function getOpsAlertCaseComposerBatchPreview(items = []) {
+    if (typeof window.getOpsAlertWorkspaceBatchPreview === 'function') {
+        return window.getOpsAlertWorkspaceBatchPreview(items, {
+            fallback: '告警',
+            formatCount: formatVerifyMonitorInteger
+        });
+    }
     const previewLabels = (Array.isArray(items) ? items : [])
         .slice(0, 3)
         .map((item) => {
@@ -14413,6 +14664,13 @@ function getDefaultOpsAlertCaseComposerOwner(state = {}) {
 }
 
 function getOpsAlertCaseComposerMeta(state = {}) {
+    if (typeof window.getOpsAlertCaseComposerMeta === 'function') {
+        return window.getOpsAlertCaseComposerMeta(state, {
+            formatCount: formatVerifyMonitorInteger,
+            singleFallback: '集中告警',
+            batchPreviewFallback: '告警'
+        });
+    }
     const normalizedAction = String(state.action || '').trim().toLowerCase();
     const normalizedContext = normalizeOpsAlertWorkspaceContext(state.context || {});
     const items = Array.isArray(state.items) ? state.items : [];
@@ -14563,41 +14821,53 @@ function openOpsAlertCaseComposer(action, context = {}, options = {}) {
 }
 
 async function submitOpsAlertCaseMutation(action, context = {}, options = {}) {
-    const normalizedAction = String(action || '').trim().toLowerCase();
-    const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
-    const items = buildOpsAlertCaseMutationItems(options.items || [], String(options.categoryKey || normalizedContext.category || '').trim().toLowerCase());
     const headers = await getAdminConfigApiHeaders();
-    const requestBody = {
-        action: normalizedAction,
-        note: String(options.note || '').trim(),
-        resolution: String(options.resolution || '').trim(),
-        metadata: {
-            alert_type: normalizedContext.alertType || '',
-            category: normalizedContext.category || '',
-            reference_label: normalizedContext.referenceLabel || '',
-            reference_value: normalizedContext.referenceValue || '',
-            signal_type: normalizedContext.signalType || '',
-            title: normalizedContext.title || ''
-        }
-    };
-    const ownerAdminId = String(options.ownerAdminId || options.owner_admin_id || '').trim();
-    const ownerLabel = String(options.ownerLabel || options.owner_label || '').trim();
+    if (typeof window.submitOpsAlertCaseMutationRequest === 'function') {
+        return window.submitOpsAlertCaseMutationRequest(headers, action, context, {
+            ...options,
+            errorMessage: '集中告警处理失败'
+        });
+    }
+    const requestBody = typeof window.buildOpsAlertCaseMutationRequest === 'function'
+        ? window.buildOpsAlertCaseMutationRequest(action, context, options)
+        : (() => {
+            const normalizedAction = String(action || '').trim().toLowerCase();
+            const normalizedContext = normalizeOpsAlertWorkspaceContext(context);
+            const items = buildOpsAlertCaseMutationItems(options.items || [], String(options.categoryKey || normalizedContext.category || '').trim().toLowerCase());
+            const body = {
+                action: normalizedAction,
+                note: String(options.note || '').trim(),
+                resolution: String(options.resolution || '').trim(),
+                metadata: {
+                    alert_type: normalizedContext.alertType || '',
+                    category: normalizedContext.category || '',
+                    reference_label: normalizedContext.referenceLabel || '',
+                    reference_value: normalizedContext.referenceValue || '',
+                    signal_type: normalizedContext.signalType || '',
+                    title: normalizedContext.title || ''
+                }
+            };
+            const ownerAdminId = String(options.ownerAdminId || options.owner_admin_id || '').trim();
+            const ownerLabel = String(options.ownerLabel || options.owner_label || '').trim();
 
-    if (items.length) {
-        requestBody.items = items;
-    } else {
-        requestBody.category_key = normalizedContext.category || '';
-        requestBody.target_id = normalizedContext.targetId;
-        requestBody.alert_type = normalizedContext.alertType || '';
-        requestBody.title = normalizedContext.title || '';
-    }
+            if (items.length) {
+                body.items = items;
+            } else {
+                body.category_key = normalizedContext.category || '';
+                body.target_id = normalizedContext.targetId;
+                body.alert_type = normalizedContext.alertType || '';
+                body.title = normalizedContext.title || '';
+            }
 
-    if (ownerAdminId) {
-        requestBody.owner_admin_id = ownerAdminId;
-    }
-    if (ownerLabel) {
-        requestBody.owner_label = ownerLabel;
-    }
+            if (ownerAdminId) {
+                body.owner_admin_id = ownerAdminId;
+            }
+            if (ownerLabel) {
+                body.owner_label = ownerLabel;
+            }
+
+            return body;
+        })();
 
     const response = await fetch('/api/admin/settings/ops-alert-monitor-cases', {
         method: 'POST',
@@ -14700,6 +14970,41 @@ function getDefaultOpsAlertBatchMuteUntilInputValue() {
     return formatDateTimeLocalInputValue(new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString());
 }
 
+function buildLocalOpsAlertBatchMuteModalState(state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState()) {
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
+        ? state
+        : getDefaultOpsAlertBatchMuteState();
+    const moduleLabels = (Array.isArray(normalizedState.moduleKeys) ? normalizedState.moduleKeys : []).map((key) => getOpsAlertMuteModuleLabel(key));
+    const filters = normalizedState.filters && typeof normalizedState.filters === 'object' && !Array.isArray(normalizedState.filters)
+        ? normalizedState.filters
+        : getOpsAlertMonitorViewFilters();
+    return {
+        summaryText: moduleLabels.length
+            ? `静默 ${moduleLabels.join('、')}`
+            : '集中告警模块静默',
+        noteText: moduleLabels.length
+            ? `当前筛选：${getOpsAlertMonitorFilterSummaryLabel(filters)}`
+            : '',
+        defaultUntilValue: getDefaultOpsAlertBatchMuteUntilInputValue(),
+        allowCriticalActive: normalizedState.allowCritical !== false,
+        submitDisabled: normalizedState.submitting === true,
+        submitLabel: normalizedState.submitting ? '静默中...' : '保存静默',
+        shouldFocusAfterOpen: normalizedState.open === true && normalizedState.submitting !== true
+    };
+}
+
+function resolveOpsAlertBatchMuteModalState(state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState()) {
+    if (typeof window.buildAdminWorkbenchOpsAlertBatchMuteModalState === 'function') {
+        return window.buildAdminWorkbenchOpsAlertBatchMuteModalState(state, {
+            getModuleLabel: getOpsAlertMuteModuleLabel,
+            getFilterSummaryLabel: getOpsAlertMonitorFilterSummaryLabel,
+            formatCount: formatVerifyMonitorInteger,
+            getDefaultUntilValue: getDefaultOpsAlertBatchMuteUntilInputValue
+        });
+    }
+    return buildLocalOpsAlertBatchMuteModalState(state);
+}
+
 function renderOpsAlertBatchMuteModal() {
     const modal = document.getElementById('opsAlertBatchMuteModal');
     const summaryEl = document.getElementById('opsAlertBatchMuteSummary');
@@ -14713,24 +15018,19 @@ function renderOpsAlertBatchMuteModal() {
     }
 
     const state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState();
-    const moduleLabels = state.moduleKeys.map((key) => getOpsAlertMuteModuleLabel(key));
-    const severityScopedNote = String(state.filters?.severity || 'all') !== 'all'
-        ? '当前筛选里的级别条件只用于确定命中模块；本次静默会作用到对应模块的全部告警。'
-        : '本次静默会直接写入模块级策略，命中的同类告警都会一起暂停外发。';
+    const modalState = resolveOpsAlertBatchMuteModalState(state);
 
-    summaryEl.textContent = state.open
-        ? `当前筛选：${getOpsAlertMonitorFilterSummaryLabel(state.filters)} · 命中 ${formatVerifyMonitorInteger(state.moduleKeys.length)} 个模块（${moduleLabels.join('、') || '无'}）`
-        : '集中告警模块静默';
-    noteEl.textContent = severityScopedNote;
+    summaryEl.textContent = modalState?.summaryText || '集中告警模块静默';
+    noteEl.textContent = modalState?.noteText || '';
     if (!untilInput.value) {
-        untilInput.value = getDefaultOpsAlertBatchMuteUntilInputValue();
+        untilInput.value = modalState?.defaultUntilValue || getDefaultOpsAlertBatchMuteUntilInputValue();
     }
-    allowCriticalToggle.classList.toggle('active', state.allowCritical !== false);
-    submitBtn.disabled = state.submitting;
-    submitBtn.textContent = state.submitting ? '静默中...' : '保存静默';
+    allowCriticalToggle.classList.toggle('active', modalState ? modalState.allowCriticalActive : state.allowCritical !== false);
+    submitBtn.disabled = modalState ? modalState.submitDisabled : state.submitting;
+    submitBtn.textContent = modalState?.submitLabel || (state.submitting ? '静默中...' : '保存静默');
 
     setOpsAlertBatchMuteModalVisible(Boolean(state.open));
-    if (state.open && !state.submitting) {
+    if (modalState ? modalState.shouldFocusAfterOpen : (state.open && !state.submitting)) {
         window.setTimeout(() => untilInput.focus(), 40);
     }
 }
@@ -15050,19 +15350,13 @@ async function deleteOpsAlertSecret(secretName) {
 
     try {
         const headers = await getAdminConfigApiHeaders();
-        const response = await fetch('/api/admin/settings/ops-alerts', {
-            method: 'DELETE',
-            headers,
-            body: JSON.stringify({ secretName: normalizedSecretName })
+        const payload = await submitOpsAlertSecretDeletion(headers, normalizedSecretName, {
+            errorMessage: '删除站外告警密钥失败'
         });
+        const normalizedPayload = resolveOpsAlertSettingsPayload(payload);
 
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload.success) {
-            throw new Error(payload.message || '删除站外告警密钥失败');
-        }
-
-        systemConfigCache['ops_alerts'] = normalizeOpsAlertConfig(payload.config);
-        opsAlertSecretStatus = payload.secrets || getDefaultOpsAlertSecretStatus();
+        systemConfigCache['ops_alerts'] = normalizedPayload.config;
+        opsAlertSecretStatus = normalizedPayload.secrets;
         renderOpsAlertSettings();
         clearOpsAlertSecretInputs();
         showConfigSavedToast(payload.message || '站外告警密钥已删除');
@@ -15173,394 +15467,286 @@ function clearOpsAlertMuteRule(scope, key) {
     showToast('已清除该条静默时间，保存站外告警配置后生效。', 'info');
 }
 
+function applyOpsAlertSectionControlUpdates(applyControls) {
+    if (typeof applyControls !== 'function') {
+        return;
+    }
+    const nextConfig = collectOpsAlertConfigFromForm();
+    applyControls(nextConfig);
+    applyOpsAlertOverview(nextConfig);
+}
+
+function toggleOpsAlertSectionControl(toggleId, applyControls, options = {}) {
+    const toggleEl = document.getElementById(toggleId);
+    if (!toggleEl) return;
+
+    const monitorToggleId = String(options.monitorToggleId || '').trim();
+    if (monitorToggleId) {
+        const monitorToggleEl = document.getElementById(monitorToggleId);
+        if (!monitorToggleEl?.classList.contains('active')) {
+            return;
+        }
+    }
+
+    toggleEl.classList.toggle('active');
+    pulseAdminConfigToggle(toggleEl);
+    applyOpsAlertSectionControlUpdates(applyControls);
+}
+
+function handleOpsAlertSectionSummaryScheduleModeChange(applyControls) {
+    applyOpsAlertSectionControlUpdates(applyControls);
+}
+
 function toggleOpsAlertShopRiskAutoResponseEnabled() {
-    const toggleEl = document.getElementById('opsAlertShopRiskAutoResponseEnabledToggle');
-    if (!toggleEl) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
-}
-
-function toggleOpsAlertShopInventoryEnabled() {
-    const toggleEl = document.getElementById('opsAlertShopInventoryEnabledToggle');
-    if (!toggleEl) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertShopInventoryControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
-}
-
-function toggleOpsAlertShopInventoryRecoveryNotificationEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertShopInventoryEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertShopInventoryRecoveryNotificationEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertShopInventoryControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
-}
-
-function toggleOpsAlertShopInventorySummaryEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertShopInventoryEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertShopInventorySummaryEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertShopInventoryControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl('opsAlertShopRiskAutoResponseEnabledToggle', applyOpsAlertShopRiskControls);
 }
 
 function handleOpsAlertShopInventorySummaryScheduleModeChange() {
-    applyOpsAlertShopInventoryControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertShopInventoryControls);
+}
+
+function toggleOpsAlertShopInventoryEnabled() {
+    toggleOpsAlertSectionControl('opsAlertShopInventoryEnabledToggle', applyOpsAlertShopInventoryControls);
+}
+
+function toggleOpsAlertShopInventoryRecoveryNotificationEnabled() {
+    toggleOpsAlertSectionControl(
+        'opsAlertShopInventoryRecoveryNotificationEnabledToggle',
+        applyOpsAlertShopInventoryControls,
+        { monitorToggleId: 'opsAlertShopInventoryEnabledToggle' }
+    );
+}
+
+function toggleOpsAlertShopInventorySummaryEnabled() {
+    toggleOpsAlertSectionControl(
+        'opsAlertShopInventorySummaryEnabledToggle',
+        applyOpsAlertShopInventoryControls,
+        { monitorToggleId: 'opsAlertShopInventoryEnabledToggle' }
+    );
 }
 
 function toggleOpsAlertCustomerChatMessageEnabled() {
-    const toggleEl = document.getElementById('opsAlertCustomerChatMessageEnabledToggle');
-    if (!toggleEl) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertCustomerChatControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl('opsAlertCustomerChatMessageEnabledToggle', applyOpsAlertCustomerChatControls);
 }
 
 function toggleOpsAlertCustomerChatMessageSummaryEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertCustomerChatMessageEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertCustomerChatMessageSummaryEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertCustomerChatControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertCustomerChatMessageSummaryEnabledToggle',
+        applyOpsAlertCustomerChatControls,
+        { monitorToggleId: 'opsAlertCustomerChatMessageEnabledToggle' }
+    );
 }
 
 function toggleOpsAlertCustomerChatMessageWorkHoursOnlyEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertCustomerChatMessageEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertCustomerChatControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertCustomerChatMessageWorkHoursOnlyEnabledToggle',
+        applyOpsAlertCustomerChatControls,
+        { monitorToggleId: 'opsAlertCustomerChatMessageEnabledToggle' }
+    );
 }
 
 function handleOpsAlertCustomerChatMessageSummaryScheduleModeChange() {
-    applyOpsAlertCustomerChatControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertCustomerChatControls);
 }
 
 function toggleOpsAlertShopPurchaseSuccessEnabled() {
-    const toggleEl = document.getElementById('opsAlertShopPurchaseSuccessEnabledToggle');
-    if (!toggleEl) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertShopPurchaseSuccessControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl('opsAlertShopPurchaseSuccessEnabledToggle', applyOpsAlertShopPurchaseSuccessControls);
 }
 
 function toggleOpsAlertShopPurchaseSuccessSummaryEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertShopPurchaseSuccessEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertShopPurchaseSuccessSummaryEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertShopPurchaseSuccessControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertShopPurchaseSuccessSummaryEnabledToggle',
+        applyOpsAlertShopPurchaseSuccessControls,
+        { monitorToggleId: 'opsAlertShopPurchaseSuccessEnabledToggle' }
+    );
 }
 
 function toggleOpsAlertShopPurchaseSuccessWorkHoursOnlyEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertShopPurchaseSuccessEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertShopPurchaseSuccessControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertShopPurchaseSuccessWorkHoursOnlyEnabledToggle',
+        applyOpsAlertShopPurchaseSuccessControls,
+        { monitorToggleId: 'opsAlertShopPurchaseSuccessEnabledToggle' }
+    );
 }
 
 function handleOpsAlertShopPurchaseSuccessSummaryScheduleModeChange() {
-    applyOpsAlertShopPurchaseSuccessControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertShopPurchaseSuccessControls);
 }
 
 function toggleOpsAlertWalletRechargeSuccessEnabled() {
-    const toggleEl = document.getElementById('opsAlertWalletRechargeSuccessEnabledToggle');
-    if (!toggleEl) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertWalletRechargeSuccessControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl('opsAlertWalletRechargeSuccessEnabledToggle', applyOpsAlertWalletRechargeSuccessControls);
 }
 
 function toggleOpsAlertWalletRechargeSuccessSummaryEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertWalletRechargeSuccessEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertWalletRechargeSuccessSummaryEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertWalletRechargeSuccessControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertWalletRechargeSuccessSummaryEnabledToggle',
+        applyOpsAlertWalletRechargeSuccessControls,
+        { monitorToggleId: 'opsAlertWalletRechargeSuccessEnabledToggle' }
+    );
 }
 
 function toggleOpsAlertWalletRechargeSuccessWorkHoursOnlyEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertWalletRechargeSuccessEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertWalletRechargeSuccessControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertWalletRechargeSuccessWorkHoursOnlyEnabledToggle',
+        applyOpsAlertWalletRechargeSuccessControls,
+        { monitorToggleId: 'opsAlertWalletRechargeSuccessEnabledToggle' }
+    );
 }
 
 function handleOpsAlertWalletRechargeSuccessSummaryScheduleModeChange() {
-    applyOpsAlertWalletRechargeSuccessControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertWalletRechargeSuccessControls);
 }
 
 function toggleOpsAlertTicketsEnabled() {
-    const toggleEl = document.getElementById('opsAlertTicketsEnabledToggle');
-    if (!toggleEl) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertTicketsControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl('opsAlertTicketsEnabledToggle', applyOpsAlertTicketsControls);
 }
 
 function toggleOpsAlertTicketsSummaryEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertTicketsEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertTicketsSummaryEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertTicketsControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertTicketsSummaryEnabledToggle',
+        applyOpsAlertTicketsControls,
+        { monitorToggleId: 'opsAlertTicketsEnabledToggle' }
+    );
 }
 
 function toggleOpsAlertTicketsWorkHoursOnlyEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertTicketsEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertTicketsWorkHoursOnlyEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertTicketsControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertTicketsWorkHoursOnlyEnabledToggle',
+        applyOpsAlertTicketsControls,
+        { monitorToggleId: 'opsAlertTicketsEnabledToggle' }
+    );
 }
 
 function handleOpsAlertTicketsSummaryScheduleModeChange() {
-    applyOpsAlertTicketsControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertTicketsControls);
 }
 
 function toggleOpsAlertShopOrderDeliveryEnabled() {
-    const toggleEl = document.getElementById('opsAlertShopOrderDeliveryEnabledToggle');
-    if (!toggleEl) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertShopOrderDeliveryControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl('opsAlertShopOrderDeliveryEnabledToggle', applyOpsAlertShopOrderDeliveryControls);
 }
 
 function toggleOpsAlertShopOrderDeliveryIncidentEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertShopOrderDeliveryEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertShopOrderDeliveryIncidentEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertShopOrderDeliveryControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertShopOrderDeliveryIncidentEnabledToggle',
+        applyOpsAlertShopOrderDeliveryControls,
+        { monitorToggleId: 'opsAlertShopOrderDeliveryEnabledToggle' }
+    );
 }
 
 function toggleOpsAlertShopOrderDeliverySummaryEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertShopOrderDeliveryEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertShopOrderDeliverySummaryEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertShopOrderDeliveryControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertShopOrderDeliverySummaryEnabledToggle',
+        applyOpsAlertShopOrderDeliveryControls,
+        { monitorToggleId: 'opsAlertShopOrderDeliveryEnabledToggle' }
+    );
 }
 
 function toggleOpsAlertShopOrderDeliveryWorkHoursOnlyEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertShopOrderDeliveryEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertShopOrderDeliveryControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertShopOrderDeliveryWorkHoursOnlyEnabledToggle',
+        applyOpsAlertShopOrderDeliveryControls,
+        { monitorToggleId: 'opsAlertShopOrderDeliveryEnabledToggle' }
+    );
 }
 
 function handleOpsAlertShopOrderDeliverySummaryScheduleModeChange() {
-    applyOpsAlertShopOrderDeliveryControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertShopOrderDeliveryControls);
 }
 
 function toggleOpsAlertVerifyQuotaEnabled() {
-    const toggleEl = document.getElementById('opsAlertVerifyQuotaEnabledToggle');
-    if (!toggleEl) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertVerifyQuotaControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl('opsAlertVerifyQuotaEnabledToggle', applyOpsAlertVerifyQuotaControls);
 }
 
 function toggleOpsAlertVerifyQuotaSummaryEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertVerifyQuotaEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertVerifyQuotaSummaryEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertVerifyQuotaControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertVerifyQuotaSummaryEnabledToggle',
+        applyOpsAlertVerifyQuotaControls,
+        { monitorToggleId: 'opsAlertVerifyQuotaEnabledToggle' }
+    );
 }
 
 function toggleOpsAlertVerifyQuotaWorkHoursOnlyEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertVerifyQuotaEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertVerifyQuotaControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertVerifyQuotaWorkHoursOnlyEnabledToggle',
+        applyOpsAlertVerifyQuotaControls,
+        { monitorToggleId: 'opsAlertVerifyQuotaEnabledToggle' }
+    );
 }
 
 function handleOpsAlertVerifyQuotaSummaryScheduleModeChange() {
-    applyOpsAlertVerifyQuotaControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertVerifyQuotaControls);
 }
 
 function toggleOpsAlertVerifyQueueEnabled() {
-    const toggleEl = document.getElementById('opsAlertVerifyQueueEnabledToggle');
-    if (!toggleEl) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertVerifyQueueControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl('opsAlertVerifyQueueEnabledToggle', applyOpsAlertVerifyQueueControls);
 }
 
 function toggleOpsAlertVerifyQueueSummaryEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertVerifyQueueEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertVerifyQueueSummaryEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertVerifyQueueControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertVerifyQueueSummaryEnabledToggle',
+        applyOpsAlertVerifyQueueControls,
+        { monitorToggleId: 'opsAlertVerifyQueueEnabledToggle' }
+    );
 }
 
 function toggleOpsAlertVerifyQueueWorkHoursOnlyEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertVerifyQueueEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertVerifyQueueWorkHoursOnlyEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertVerifyQueueControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertVerifyQueueWorkHoursOnlyEnabledToggle',
+        applyOpsAlertVerifyQueueControls,
+        { monitorToggleId: 'opsAlertVerifyQueueEnabledToggle' }
+    );
 }
 
 function handleOpsAlertVerifyQueueSummaryScheduleModeChange() {
-    applyOpsAlertVerifyQueueControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertVerifyQueueControls);
 }
 
 function toggleOpsAlertVerifyFailureEnabled() {
-    const toggleEl = document.getElementById('opsAlertVerifyFailureEnabledToggle');
-    if (!toggleEl) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertVerifyFailureControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl('opsAlertVerifyFailureEnabledToggle', applyOpsAlertVerifyFailureControls);
 }
 
 function toggleOpsAlertVerifyFailureSummaryEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertVerifyFailureEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertVerifyFailureSummaryEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertVerifyFailureControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertVerifyFailureSummaryEnabledToggle',
+        applyOpsAlertVerifyFailureControls,
+        { monitorToggleId: 'opsAlertVerifyFailureEnabledToggle' }
+    );
 }
 
 function toggleOpsAlertVerifyFailureWorkHoursOnlyEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertVerifyFailureEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertVerifyFailureWorkHoursOnlyEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertVerifyFailureControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertVerifyFailureWorkHoursOnlyEnabledToggle',
+        applyOpsAlertVerifyFailureControls,
+        { monitorToggleId: 'opsAlertVerifyFailureEnabledToggle' }
+    );
 }
 
 function handleOpsAlertVerifyFailureSummaryScheduleModeChange() {
-    applyOpsAlertVerifyFailureControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertVerifyFailureControls);
 }
 
 function toggleOpsAlertPaymentGatewayEnabled() {
-    const toggleEl = document.getElementById('opsAlertPaymentGatewayEnabledToggle');
-    if (!toggleEl) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertPaymentGatewayControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl('opsAlertPaymentGatewayEnabledToggle', applyOpsAlertPaymentGatewayControls);
 }
 
 function toggleOpsAlertPaymentGatewaySummaryEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertPaymentGatewayEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertPaymentGatewaySummaryEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertPaymentGatewayControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertPaymentGatewaySummaryEnabledToggle',
+        applyOpsAlertPaymentGatewayControls,
+        { monitorToggleId: 'opsAlertPaymentGatewayEnabledToggle' }
+    );
 }
 
 function toggleOpsAlertPaymentGatewayWorkHoursOnlyEnabled() {
-    const monitorToggleEl = document.getElementById('opsAlertPaymentGatewayEnabledToggle');
-    const toggleEl = document.getElementById('opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle');
-    if (!toggleEl || !monitorToggleEl?.classList.contains('active')) return;
-
-    toggleEl.classList.toggle('active');
-    pulseAdminConfigToggle(toggleEl);
-    applyOpsAlertPaymentGatewayControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    toggleOpsAlertSectionControl(
+        'opsAlertPaymentGatewayWorkHoursOnlyEnabledToggle',
+        applyOpsAlertPaymentGatewayControls,
+        { monitorToggleId: 'opsAlertPaymentGatewayEnabledToggle' }
+    );
 }
 
 function handleOpsAlertPaymentGatewaySummaryScheduleModeChange() {
-    applyOpsAlertPaymentGatewayControls(collectOpsAlertConfigFromForm());
-    applyOpsAlertOverview(collectOpsAlertConfigFromForm());
+    handleOpsAlertSectionSummaryScheduleModeChange(applyOpsAlertPaymentGatewayControls);
 }
 
 // ============================================
@@ -17818,10 +18004,6 @@ function restorePageSelector(pages) {
 
 window.initSystemConfig = initSystemConfig;
 window.toggleConfigCard = toggleConfigCard;
-window.updatePackage = updatePackage;
-window.togglePackageStatus = togglePackageStatus;
-window.deletePackage = deletePackage;
-window.addPackageRow = addPackageRow;
 window.toggleCustomRechargeEntryStatus = toggleCustomRechargeEntryStatus;
 window.toggleMockPaymentStatus = toggleMockPaymentStatus;
 window.togglePaymentProviderEnabled = togglePaymentProviderEnabled;
@@ -17935,84 +18117,8 @@ window.copyOpsAlertMonitorChecklist = copyOpsAlertMonitorChecklist;
 window.exportOpsAlertMonitorCsv = exportOpsAlertMonitorCsv;
 window.copyOpsAlertMonitorShiftReportSummary = copyOpsAlertMonitorShiftReportSummary;
 window.exportOpsAlertMonitorShiftReportCsv = exportOpsAlertMonitorShiftReportCsv;
-window.openOpsAlertWorkspace = openOpsAlertWorkspace;
 
-const PENDING_OPS_ALERT_WORKSPACE_STORAGE_KEY = 'zaoyoe_pending_ops_alert_workspace';
-
-function consumePendingOpsAlertWorkspace() {
-    if (typeof window.localStorage === 'undefined') {
-        return null;
-    }
-
-    const raw = window.localStorage.getItem(PENDING_OPS_ALERT_WORKSPACE_STORAGE_KEY);
-    if (!raw) {
-        return null;
-    }
-
-    window.localStorage.removeItem(PENDING_OPS_ALERT_WORKSPACE_STORAGE_KEY);
-
-    try {
-        const parsed = JSON.parse(raw);
-        const workspaceKey = String(parsed?.workspaceKey || '').trim();
-        if (!workspaceKey) {
-            return null;
-        }
-
-        const createdAt = parsed?.createdAt ? new Date(parsed.createdAt) : null;
-        const maxAgeMs = 10 * 60 * 1000;
-        if (createdAt && !Number.isNaN(createdAt.getTime()) && (Date.now() - createdAt.getTime()) > maxAgeMs) {
-            return null;
-        }
-
-        return {
-            workspaceKey,
-            context: parsed?.context && typeof parsed.context === 'object' ? parsed.context : {}
-        };
-    } catch (error) {
-        console.warn('[Config] Failed to parse pending ops alert workspace:', error);
-        return null;
-    }
-}
-
-async function restorePendingOpsAlertWorkspace() {
-    const pending = consumePendingOpsAlertWorkspace();
-    if (!pending) {
-        return false;
-    }
-
-    try {
-        await openOpsAlertWorkspace(pending.workspaceKey, pending.context || {});
-        return true;
-    } catch (error) {
-        console.error('[Config] Failed to restore pending ops alert workspace:', error);
-        return false;
-    }
-}
-
-function schedulePendingOpsAlertWorkspaceRestore() {
-    if (window.__pendingOpsAlertWorkspaceRestoreScheduled) {
-        return;
-    }
-    window.__pendingOpsAlertWorkspaceRestoreScheduled = true;
-
-    const runRestore = () => {
-        window.setTimeout(() => {
-            restorePendingOpsAlertWorkspace()
-                .finally(() => {
-                    window.__pendingOpsAlertWorkspaceRestoreScheduled = false;
-                });
-        }, 120);
-    };
-
-    if (document.readyState === 'complete') {
-        runRestore();
-    } else {
-        window.addEventListener('load', runRestore, { once: true });
-    }
-}
-
-window.restorePendingOpsAlertWorkspace = restorePendingOpsAlertWorkspace;
-schedulePendingOpsAlertWorkspaceRestore();
+window.schedulePendingOpsAlertWorkspaceRestore?.();
 
 window.handleOpsAlertCaseAction = handleOpsAlertCaseAction;
 window.handleOpsAlertMonitorBatchCaseAction = handleOpsAlertMonitorBatchCaseAction;

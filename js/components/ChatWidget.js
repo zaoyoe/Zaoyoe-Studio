@@ -4909,8 +4909,9 @@ class ChatWidget {
             target_id: ticketId
         };
 
-        if (typeof window.openOpsAlertWorkspace === 'function') {
-            return window.openOpsAlertWorkspace('tickets-pending', context);
+        const launcher = this.getWorkbenchLauncher();
+        if (typeof launcher === 'function') {
+            return this.openWorkbenchEntry('tickets-pending', context);
         }
 
         return this.openAdminStudioForOpsAlertWorkspace({
@@ -5848,105 +5849,20 @@ class ChatWidget {
     }
 
     resolveOpsAlertEntryWorkspace(entryPath = '', baseContext = {}) {
-        const normalized = String(entryPath || '').trim();
-        if (!normalized) {
+        if (typeof window.resolveOpsAlertEntryWorkspace === 'function') {
+            return window.resolveOpsAlertEntryWorkspace(entryPath, baseContext);
+        }
+
+        const normalizedEntryPath = String(entryPath || '').trim();
+        if (!normalizedEntryPath) {
             return { kind: 'none' };
         }
-
-        if (normalized.includes('客服消息')) {
-            return {
-                kind: 'chat-session',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('订单列表 / 优惠券码')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'shop-risk-discounts',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('订单列表 / 用户详情') || normalized.includes('用户详情')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'shop-risk-users',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('履约任务') || normalized.includes('异常订单')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'shop-fulfillment',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('库存 / 补货') || normalized.includes('库存')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'shop-inventory',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('支付配置审计') || normalized.includes('异常登录信号')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'admin-audit-monitor',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('验证服务配置')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'verify-monitor',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('售后工单')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: normalized.includes('已处理') ? 'tickets-resolved' : 'tickets-pending',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('支付总览') || normalized.includes('异常运维')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'payments-ops',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('最近订单')) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'payments-overview',
-                context: baseContext
-            };
-        }
-        if (normalized.includes('订单列表')) {
-            return {
-                kind: 'shop-orders',
-                context: baseContext
-            };
-        }
-
         return { kind: 'none' };
     }
 
     resolveShopRiskWorkspaceForChat(baseContext = {}, payload = {}) {
-        const signalType = String(payload.signal_type || '').trim().toLowerCase();
-        if (String(payload.discount_code || '').trim()) {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'shop-risk-discounts',
-                context: baseContext
-            };
-        }
-        if (String(payload.user_id || '').trim() && signalType === 'user_velocity') {
-            return {
-                kind: 'ops-workspace',
-                workspaceKey: 'shop-risk-users',
-                context: baseContext
-            };
+        if (typeof window.resolveShopRiskWorkspace === 'function') {
+            return window.resolveShopRiskWorkspace(baseContext, payload);
         }
         return {
             kind: 'ops-workspace',
@@ -5958,99 +5874,11 @@ class ChatWidget {
     resolveOpsAlertWorkspace(alertType = '', payload = {}, title = '', entryPath = '') {
         const baseContext = this.buildOpsAlertContext(alertType, payload, title);
 
-        switch (String(alertType || '').trim().toLowerCase()) {
-            case 'customer_chat_message_received':
-            case 'customer_chat_message_summary':
-                return {
-                    kind: 'chat-session',
-                    context: baseContext
-                };
-            case 'shop_purchase_succeeded':
-            case 'shop_purchase_summary':
-                return {
-                    kind: 'shop-orders',
-                    context: baseContext
-                };
-            case 'wallet_recharge_succeeded':
-            case 'wallet_recharge_summary':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'payments-overview',
-                    context: baseContext
-                };
-            case 'shop_inventory_summary':
-            case 'shop_inventory_low':
-            case 'shop_inventory_empty':
-            case 'shop_inventory_recovered':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'shop-inventory',
-                    context: baseContext
-                };
-            case 'ticket_new':
-            case 'ticket_sla_summary':
-            case 'ticket_sla_overdue':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'tickets-pending',
-                    context: baseContext
-                };
-            case 'ticket_sla_recovered':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'tickets-resolved',
-                    context: baseContext
-                };
-            case 'shop_order_delivery_summary':
-            case 'shop_order_delivery_failed':
-            case 'shop_order_delivery_recovered':
-            case 'shop_order_delivery_incident':
-            case 'shop_order_delivery_incident_recovered':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'shop-fulfillment',
-                    context: baseContext
-                };
-            case 'payment_gateway_summary':
-            case 'payment_gateway_degraded':
-            case 'payment_gateway_recovered':
-            case 'payment_refund_ops':
-            case 'payment_refund_alert':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'payments-ops',
-                    context: baseContext
-                };
-            case 'payment_config_changed':
-            case 'payment_config_recovered':
-            case 'payment_config_incident':
-            case 'payment_config_incident_recovered':
-            case 'security_admin_login_anomaly':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'admin-audit-monitor',
-                    context: baseContext
-                };
-            case 'verify_quota_summary':
-            case 'verify_quota_low':
-            case 'verify_service_disabled':
-            case 'verify_queue_summary':
-            case 'verify_queue_backlog':
-            case 'verify_failure_summary':
-            case 'verify_failure_rate_spike':
-            case 'verify_incident_escalated':
-            case 'verify_incident_recovered':
-                return {
-                    kind: 'ops-workspace',
-                    workspaceKey: 'verify-monitor',
-                    context: baseContext
-                };
-            case 'shop_order_risk_anomaly':
-            case 'shop_order_risk_recovered':
-                return this.resolveShopRiskWorkspaceForChat(baseContext, payload);
-            default:
-                return this.resolveOpsAlertEntryWorkspace(entryPath, baseContext);
+        if (typeof window.resolveOpsAlertWorkspace === 'function') {
+            return window.resolveOpsAlertWorkspace(alertType, payload, baseContext, entryPath);
         }
+
+        return this.resolveOpsAlertEntryWorkspace(entryPath, baseContext);
     }
 
     normalizeOpsAlertJob(row = {}) {
@@ -6734,6 +6562,12 @@ class ChatWidget {
 
     getAdminStudioModuleForOpsWorkspaceKey(workspaceKey = '') {
         const normalized = String(workspaceKey || '').trim().toLowerCase();
+        if (typeof window.getAdminWorkbenchModuleForWorkspaceKey === 'function') {
+            const sharedModuleName = String(window.getAdminWorkbenchModuleForWorkspaceKey(normalized) || '').trim();
+            if (sharedModuleName) {
+                return sharedModuleName;
+            }
+        }
         const moduleMap = {
             'payments-overview': 'payments',
             'payments-ops': 'payments',
@@ -6751,6 +6585,10 @@ class ChatWidget {
     }
 
     persistPendingOpsAlertWorkspace(workspaceKey = '', context = {}) {
+        if (typeof window.savePendingOpsAlertWorkspace === 'function') {
+            window.savePendingOpsAlertWorkspace(workspaceKey, context);
+            return;
+        }
         if (!workspaceKey || typeof window.localStorage === 'undefined') return;
         const payload = {
             workspaceKey: String(workspaceKey || '').trim(),
@@ -6758,6 +6596,26 @@ class ChatWidget {
             createdAt: new Date().toISOString()
         };
         window.localStorage.setItem('zaoyoe_pending_ops_alert_workspace', JSON.stringify(payload));
+    }
+
+    hasInlineAdminWorkbench() {
+        return typeof window.switchModule === 'function'
+            && Boolean(document.getElementById('adminSidebar'))
+            && Boolean(document.querySelector('.admin-layout'));
+    }
+
+    getWorkbenchLauncher() {
+        return this.hasInlineAdminWorkbench()
+            ? (window.openAdminWorkbenchEntry || window.openOpsAlertWorkspace || null)
+            : null;
+    }
+
+    async openWorkbenchEntry(workspaceKey, context = {}) {
+        const launcher = this.getWorkbenchLauncher();
+        if (typeof launcher !== 'function') {
+            return false;
+        }
+        return launcher(workspaceKey, context);
     }
 
     openAdminStudioForOpsAlertWorkspace(workspace = {}) {
@@ -6793,6 +6651,7 @@ class ChatWidget {
 
     async handleOpsAlertNavigation(alert = {}) {
         const workspace = alert.workspace || { kind: 'none' };
+        const launcher = this.getWorkbenchLauncher();
 
         try {
             if (workspace.kind === 'chat-session') {
@@ -6813,8 +6672,12 @@ class ChatWidget {
                 }
             }
 
-            if (workspace.kind === 'ops-workspace' && typeof window.openOpsAlertWorkspace === 'function') {
-                return await window.openOpsAlertWorkspace(workspace.workspaceKey, workspace.context || {});
+            if (workspace.kind === 'ops-workspace' && typeof launcher === 'function') {
+                return await this.openWorkbenchEntry(workspace.workspaceKey, workspace.context || {});
+            }
+
+            if (workspace.kind === 'chat-session' && typeof launcher === 'function') {
+                return await this.openWorkbenchEntry('chat-session', workspace.context || {});
             }
 
             return this.openAdminStudioForOpsAlertWorkspace(workspace);
@@ -9006,8 +8869,9 @@ class ChatWidget {
 
         try {
             let result = false;
-            if (typeof window.openOpsAlertWorkspace === 'function') {
-                result = await window.openOpsAlertWorkspace(workspaceKey, action.context || {});
+            const launcher = this.getWorkbenchLauncher();
+            if (typeof launcher === 'function') {
+                result = await this.openWorkbenchEntry(workspaceKey, action.context || {});
             } else {
                 result = this.openAdminStudioForOpsAlertWorkspace({
                     kind: 'ops-workspace',

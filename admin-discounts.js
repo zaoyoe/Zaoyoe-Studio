@@ -4,6 +4,10 @@
 // ========================================
 
 const AdminDiscounts = {
+    requireWritableSite(options = {}) {
+        return window.AdminSiteFilter?.requireWritableSite?.(options) || null;
+    },
+
     discounts: [],
     filteredDiscounts: [],
     currentPage: 1,
@@ -666,6 +670,10 @@ const AdminDiscounts = {
     // ACTIONS (TOGGLE, DELETE)
     // ----------------------------------------
     toggleStatus: async function (id, newState) {
+        if (!this.requireWritableSite({ label: newState ? '启用折扣码' : '停用折扣码' })) {
+            return;
+        }
+
         if (!confirm(`确定要${newState ? '启用' : '停用'}该优惠码吗？`)) return;
 
         try {
@@ -682,6 +690,10 @@ const AdminDiscounts = {
     },
 
     deleteCode: async function (id, code) {
+        if (!this.requireWritableSite({ action: 'discounts-delete-code' })) {
+            return;
+        }
+
         if (!confirm(`警告：确定要永久删除优惠码 "${code}" 吗？这可能影响历史订单的关联显示。建议使用"停用"功能。`)) return;
 
         try {
@@ -780,6 +792,10 @@ const AdminDiscounts = {
     },
 
     submitGenerate: async function () {
+        if (!this.requireWritableSite({ action: 'discounts-submit-generate' })) {
+            return;
+        }
+
         let code = document.getElementById('discountCodeInput').value.trim().toUpperCase();
         if (!code) {
             code = this.generateRandomCode();

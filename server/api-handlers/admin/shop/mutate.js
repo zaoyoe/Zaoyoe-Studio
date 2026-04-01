@@ -1,6 +1,7 @@
 const {
     parseJsonBody,
     requireAdmin,
+    requireWritableAdminSite,
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
@@ -28,6 +29,10 @@ module.exports = async (req, res) => {
         if (!action) {
             return sendJson(res, 400, { success: false, message: 'action is required' });
         }
+
+        const writableSite = requireWritableAdminSite(body.site || req.adminSite, {
+            fieldName: 'site'
+        });
 
         if (action === 'upsert_product') {
             const payload = body.payload && typeof body.payload === 'object' ? body.payload : null;
@@ -79,6 +84,8 @@ module.exports = async (req, res) => {
             await writeAdminAuditLog({
                 supabase,
                 adminId: user.id,
+                module: 'shop',
+                site: writableSite,
                 actionType: productId ? 'shop.product.update' : 'shop.product.create',
                 details: {
                     product_id: savedProduct.id,
@@ -119,6 +126,8 @@ module.exports = async (req, res) => {
             await writeAdminAuditLog({
                 supabase,
                 adminId: user.id,
+                module: 'shop',
+                site: writableSite,
                 actionType: action === 'soft_delete_product' ? 'shop.product.delete' : 'shop.product.toggle',
                 details: {
                     product_id: data[0].id,
@@ -165,6 +174,8 @@ module.exports = async (req, res) => {
             await writeAdminAuditLog({
                 supabase,
                 adminId: user.id,
+                module: 'shop',
+                site: writableSite,
                 actionType: 'shop.inventory.import',
                 details: {
                     product_id: productId,
@@ -234,6 +245,8 @@ module.exports = async (req, res) => {
             await writeAdminAuditLog({
                 supabase,
                 adminId: user.id,
+                module: 'shop',
+                site: writableSite,
                 actionType: action === 'inventory_delete' ? 'shop.inventory.delete' : 'shop.inventory.status',
                 details: {
                     inventory_id: inventoryId,
@@ -291,6 +304,8 @@ module.exports = async (req, res) => {
             await writeAdminAuditLog({
                 supabase,
                 adminId: user.id,
+                module: 'shop',
+                site: writableSite,
                 actionType: 'shop.inventory.batch_delete',
                 details: {
                     inventory_ids: inventoryIds,

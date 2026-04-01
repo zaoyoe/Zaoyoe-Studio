@@ -7,6 +7,7 @@
 CREATE TABLE IF NOT EXISTS public.prompt_comments (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   prompt_id BIGINT REFERENCES public.prompts(id) ON DELETE CASCADE NOT NULL,
+  site VARCHAR(10) DEFAULT 'cn' NOT NULL,
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
   content TEXT NOT NULL CHECK (char_length(content) > 0),
   parent_id UUID REFERENCES public.prompt_comments(id) ON DELETE CASCADE, -- For nested replies

@@ -25,6 +25,8 @@ const RUNTIME_PAGES = [
 const RUNTIME_SCRIPTS = [
     'supabase-client.js',
     'js/admin-shop.js',
+    'js/admin-workbench.js',
+    'js/admin-ticket-links.js',
     'js/avatar-uploader.js',
     'supabase-auth-functions.js',
     'admin-config.js',
@@ -193,6 +195,10 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
             violations.push(`${relativePath} is missing css/chat-widget.css`);
         }
 
+        if (!source.includes('js/admin-workbench.js')) {
+            violations.push(`${relativePath} is missing js/admin-workbench.js`);
+        }
+
         if (!source.includes('js/components/ChatWidget.js')) {
             violations.push(`${relativePath} is missing js/components/ChatWidget.js`);
         }
@@ -351,6 +357,14 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'rememberUserContextAction(context = {}, action = {})',
         'createUserContextRecentActionBanner(context = {})',
         'getUserContextQuickActions(context = {})',
+        'getWorkbenchLauncher() {',
+        'async openWorkbenchEntry(workspaceKey, context = {}) {',
+        "window.savePendingOpsAlertWorkspace(workspaceKey, context);",
+        'hasInlineAdminWorkbench() {',
+        "return this.hasInlineAdminWorkbench()",
+        "typeof window.resolveOpsAlertEntryWorkspace === 'function'",
+        "typeof window.resolveShopRiskWorkspace === 'function'",
+        "typeof window.resolveOpsAlertWorkspace === 'function'",
         'getDefaultReplyTemplateDefinitions()',
         'normalizeReplyTemplateDefinitions(templates)',
         'ensureReplyTemplateConfigLoaded(force = false)',
@@ -362,6 +376,10 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'handleCreateUserContextTicket(context = {})',
         'createUserContextActionsSection(context = {})',
         'handleUserContextAction(action = {})',
+        "return this.openWorkbenchEntry('tickets-pending', context);",
+        "return await this.openWorkbenchEntry(workspace.workspaceKey, workspace.context || {});",
+        "return await this.openWorkbenchEntry('chat-session', workspace.context || {});",
+        "result = await this.openWorkbenchEntry(workspaceKey, action.context || {});",
         'isTicketSyncChatMessage(message = {})',
         'isOpenTicketStatus(status = \'\')',
         'buildSessionTicketSummaryMap(rows = [])',
@@ -507,6 +525,8 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'handleOpsAlertBatchAssign()',
         'getOpsAlertLinkedTicketId(alert = {})',
         'canCreateOpsAlertTicket(alert = {})',
+        'buildOpsAlertCaseMutationContext(alert = {})',
+        'submitOpsAlertCaseMutationRequest(action, alert = {}, options = {})',
         'appendOpsAlertCaseNote(alert = {}, note = \'\')',
         'openLinkedOpsAlertTicket(alert = {})',
         'handleCreateOpsAlertTicket(alert = {})',
@@ -519,6 +539,8 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'rememberUserContextAction(context = {}, action = {})',
         'createUserContextRecentActionBanner(context = {})',
         'getUserContextQuickActions(context = {})',
+        'getWorkbenchLauncher() {',
+        'async openWorkbenchEntry(workspaceKey, context = {}) {',
         'getDefaultReplyTemplateDefinitions()',
         'normalizeReplyTemplateDefinitions(templates)',
         'ensureReplyTemplateConfigLoaded(force = false)',
@@ -530,6 +552,10 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'handleCreateUserContextTicket(context = {})',
         'createUserContextActionsSection(context = {})',
         'handleUserContextAction(action = {})',
+        "return this.openWorkbenchEntry('tickets-pending', context);",
+        "return await this.openWorkbenchEntry(workspace.workspaceKey, workspace.context || {});",
+        "return this.openWorkbenchEntry('chat-session', context);",
+        "result = await this.openWorkbenchEntry(workspaceKey, action.context || {});",
         'isTicketSyncChatMessage(message = {})',
         'isOpenTicketStatus(status = \'\')',
         'buildSessionTicketSummaryMap(rows = [])',
@@ -626,6 +652,11 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
     for (const marker of adminChatMarkers) {
         assert.equal(adminChatSource.includes(marker), true, `js/admin-chat.js should contain ${marker}`);
     }
+    assert.equal(
+        adminChatSource.includes('return window.submitOpsAlertCaseMutationRequest(headers, action, context, {'),
+        true,
+        'js/admin-chat.js should submit ops alert case actions through the shared workbench runtime'
+    );
 
     const adminChatStyleMarkers = [
         '.chat-context-panel',
@@ -695,7 +726,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/admin-chat.js?v=20260331_ADMIN_CHAT_LOADING_SKELETON_1'),
+        adminStudioHtml.includes('js/admin-chat.js?v=20260401_ADMIN_CHAT_CASE_PROTOCOL_7'),
         true,
         'admin-studio.html should load the latest admin chat case action runtime'
     );
@@ -707,7 +738,12 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/components/ChatWidget.js?v=20260331_CHAT_POPUP_NAV_FIX_39'),
+            source.includes('js/admin-workbench.js?v=20260401_ADMIN_WORKBENCH_SHARED_46'),
+            true,
+            'public entry pages should load the shared workbench resolver before the chat widget runtime'
+        );
+        assert.equal(
+            source.includes('js/components/ChatWidget.js?v=20260401_CHAT_WIDGET_WORKBENCH_LAUNCHER_42'),
             true,
             'public entry pages should load the latest ops todo case action widget runtime'
         );
@@ -1640,7 +1676,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
             'home-nav entry pages should load the latest framer_home stylesheet version'
         );
         assert.equal(
-            source.includes('js/framer_home.js?v=20260329_HOME_SPEED_CURVE_5'),
+            source.includes('js/framer_home.js?v=20260331_HOME_DUAL_SITE_RPC_1'),
             true,
             'home-nav entry pages should load the latest framer_home script version'
         );
@@ -1657,7 +1693,7 @@ test('homepage subpages load the latest prefetch-home runtime script version', (
 
     for (const source of subpageSources) {
         assert.equal(
-            source.includes('./js/prefetch-home.js?v=20260329_HOME_PREFETCH_TICKER_SYNC_1'),
+            source.includes('./js/prefetch-home.js?v=20260331_HOME_DUAL_SITE_PREFETCH_1'),
             true,
             'subpages should load the latest prefetch-home script version'
         );
@@ -2128,6 +2164,11 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         "function createAdminStudioEmptyElement(text, className = 'admin-empty-message', tagName = 'p')",
         "setAdminStudioVisibility(promptForm, true);",
         "setAdminStudioVisibility(loadingEl, true);",
+        'function setPromptBilingualFieldsOpen(open)',
+        'function populatePromptBilingualFields(data = {})',
+        'function collectPromptBilingualFieldValues()',
+        'function normalizePromptSiteMetrics(prompt = {})',
+        "metricCounts.textContent = `解锁 ${siteMetrics.unlock_count} · 评论 ${siteMetrics.comment_count}`;",
         "card.classList.add('is-removing');",
         "syncAdminSearchCardVisibility(card, visible);",
         "setAdminStudioVisibility(suggestionsSection, true, 'is-visible');",
@@ -2152,6 +2193,11 @@ test('admin studio runtime prompt workflows externalize visibility, empty-state,
         '.batch-progress-fill::-webkit-progress-value',
         '.color-swatch--dark-blue',
         '.color-swatch--unknown',
+        '.gallery-bilingual-panel',
+        '.gallery-bilingual-toggle.is-active',
+        '.gallery-bilingual-grid',
+        '.admin-card-site-metrics',
+        '.admin-card-site-metric.is-current',
         '.api-key-row .btn-add-config.btn-add-config--compact',
         '.api-key-row .btn-add-config.btn-add-config--danger'
     ];
@@ -2429,7 +2475,7 @@ test('admin pricing package controls no longer emit inline handlers in static or
     }
 
     const delegatedHtmlMarkers = [
-        'data-admin-action="settings-add-package-row"',
+        'data-admin-action="settings-open-points-catalog"',
         'data-admin-action="settings-toggle-custom-recharge-entry"',
         'data-admin-action="settings-toggle-mock-payment"'
     ];
@@ -2438,40 +2484,92 @@ test('admin pricing package controls no longer emit inline handlers in static or
         assert.equal(adminStudioSource.includes(marker), true, `admin-studio.html should contain ${marker}`);
     }
 
-    const delegatedRuntimeMarkers = [
+    const removedDelegatedRuntimeMarkers = [
         'data-admin-change-action="settings-update-package-field"',
         'data-admin-action="settings-toggle-package-status"',
-        'data-admin-action="settings-delete-package"'
+        'data-admin-action="settings-delete-package"',
+        'data-admin-action="settings-add-package-row"',
+        'packagesTableBody',
+        'function normalizePackageFieldValue(field, value, fallback)',
+        'window.updatePackage = updatePackage;',
+        'window.togglePackageStatus = togglePackageStatus;',
+        'window.deletePackage = deletePackage;',
+        'window.addPackageRow = addPackageRow;'
     ];
 
-    for (const marker of delegatedRuntimeMarkers) {
-        assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should render ${marker}`);
+    for (const marker of removedDelegatedRuntimeMarkers) {
+        assert.equal(adminConfigSource.includes(marker), false, `admin-config.js should not contain ${marker}`);
     }
 
     const delegatedHandlerMarkers = [
-        "case 'settings-add-package-row':",
+        "case 'settings-open-points-catalog':",
         "case 'settings-toggle-custom-recharge-entry':",
-        "case 'settings-toggle-mock-payment':",
-        "case 'settings-toggle-package-status':",
-        "case 'settings-delete-package':",
-        "case 'settings-update-package-field':"
+        "case 'settings-toggle-mock-payment':"
     ];
 
     for (const marker of delegatedHandlerMarkers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
 
-    assert.equal(
-        adminConfigSource.includes('function normalizePackageFieldValue(field, value, fallback)'),
-        true,
-        'admin-config.js should normalize delegated package field updates'
-    );
+    const removedHandlerMarkers = [
+        "case 'settings-add-package-row':",
+        "case 'settings-toggle-package-status':",
+        "case 'settings-delete-package':",
+        "case 'settings-update-package-field':"
+    ];
+
+    for (const marker of removedHandlerMarkers) {
+        assert.equal(adminStudioScript.includes(marker), false, `admin-studio.js should not contain ${marker}`);
+    }
+});
+
+test('settings pricing runtime now keeps only the package migration shortcut and payment toggles', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminConfigSource = readRepoFile('admin-config.js');
+
+    const requiredMarkers = [
+        '套餐编辑已经迁到 Points 模块的“套餐目录”里；这里不再承担日常套餐运营，只保留支付相关开关和迁移说明。',
+        '套餐主数据已经统一走 Points 域 handler，Settings 里只保留支付相关开关和迁移提示。',
+        'data-admin-action="settings-open-points-catalog"',
+        'function renderPackagesConfig() {',
+        "document.getElementById('customRechargeStatusToggle')",
+        "document.getElementById('mockPaymentStatusToggle')"
+    ];
+
+    for (const marker of requiredMarkers) {
+        assert.equal(
+            adminConfigSource.includes(marker) || adminStudioSource.includes(marker),
+            true,
+            `settings package source should contain ${marker}`
+        );
+    }
+
+    const removedMarkers = [
+        "await loadAdminPointsPackagesConfig();",
+        "fetch('/api/admin/points/packages'",
+        'let adminPointsPackagesConfigRowsLoaded = false;',
+        'function setAdminPointsPackagesConfigRows(rows = []) {',
+        'await mutateAdminPointsPackageConfig({',
+        'await deleteAdminPointsPackageConfig(current.id);',
+        'syncPackagesToDatabase(',
+        "await saveConfig('packages', packages);",
+        "saveConfig('packages', packages).catch(err => {",
+        "saveConfig('packages', packages);",
+        "if (key === 'packages') {",
+        "systemConfigCache['packages']",
+        'packagesTableBody'
+    ];
+
+    for (const marker of removedMarkers) {
+        assert.equal(adminConfigSource.includes(marker), false, `admin-config.js should no longer contain ${marker}`);
+    }
 });
 
 test('admin ops alert controls expose delegated settings actions and runtime wiring', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioCss = readRepoFile('admin-studio.css');
     const adminStudioScript = readRepoFile('admin-studio.js');
+    const adminWorkbenchSource = readRepoFile('js/admin-workbench.js');
     const adminConfigSource = readRepoFile('admin-config.js');
 
     const inlineMarkers = [
@@ -2803,6 +2901,11 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         opsAlertsModuleIndex > settingsEndIndex,
         'the standalone ops alerts module should render after the settings module closes'
     );
+    assert.equal(
+        adminStudioSource.includes('js/admin-workbench.js?v=20260401_ADMIN_WORKBENCH_SHARED_46'),
+        true,
+        'admin-studio.html should load the shared admin workbench runtime before admin config'
+    );
 
     const delegatedHandlerMarkers = [
         "case 'switch-ops-alerts-view':",
@@ -2895,6 +2998,985 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
 
+    const sharedWorkbenchMarkers = [
+        'const ADMIN_WORKBENCH_MODULE_MAP = Object.freeze({',
+        'const ADMIN_WORKBENCH_SUCCESS_LABELS = Object.freeze({',
+        'const ADMIN_WORKBENCH_PAYMENTS_TOPICS = Object.freeze({',
+        'const ADMIN_WORKBENCH_OPS_ALERT_ACTIONS = Object.freeze({',
+        'const ADMIN_WORKBENCH_OPS_ALERT_CATEGORY_FALLBACKS = Object.freeze({',
+        'const ADMIN_WORKBENCH_OPS_ALERT_MONITOR_MODULE_MAP = Object.freeze({',
+        'function getAdminWorkbenchModuleForWorkspaceKey(workspaceKey = \'\')',
+        'function normalizeOpsAlertWorkspaceContext(context = {})',
+        'function buildOpsAlertWorkspaceContextAttrs(context = {})',
+        'function readOpsAlertWorkspaceContextDataset(dataset = {})',
+        'function normalizeOpsAlertWorkspaceActionContext(context = {})',
+        'function getOpsAlertWorkspaceDiscountCode(context = {})',
+        'function getOpsAlertWorkspaceRiskUserId(context = {})',
+        'function getOpsAlertWorkspaceSearchValue(context = {})',
+        'function getOpsAlertWorkspacePaymentsTopic(context = {})',
+        'function getOpsAlertWorkspaceSuccessLabel(workspaceKey)',
+        'function getOpsAlertWorkspaceAction(context = {}, options = {})',
+        'function getOpsAlertCaseStatusLabel(status = \'\')',
+        'function getOpsAlertCaseStatusTone(status = \'\', options = {})',
+        'function getOpsAlertCaseEventActionLabel(action = \'\')',
+        'function normalizeOpsAlertCaseDisplayEvent(event = {})',
+        'function getOpsAlertCaseMuteSummary(muteUntil = \'\', options = {})',
+        'function normalizeAdminWorkbenchOpsAlertCaseRecentEvents(events = [])',
+        'function getOpsAlertCaseRecentEventText(event = {}, options = {})',
+        'function getOpsAlertCaseSummaryText(item = {}, options = {})',
+        'function getOpsAlertWorkspaceContextLabel(context = {}, options = {})',
+        'function getOpsAlertWorkspaceBatchPreview(items = [], options = {})',
+        'function normalizeOpsAlertCaseMutationItem(item = {}, categoryKey = \'\')',
+        'function buildOpsAlertCaseMutationItems(items = [], categoryKey = \'\')',
+        'function buildOpsAlertMonitorBatchItems(categories = [], action = \'\', categoryKey = \'\')',
+        'function getOpsAlertMonitorBatchMuteModuleKeys(categories = [], categoryKey = \'\')',
+        'function getAdminWorkbenchOpsAlertMonitorCategoryLabel(categoryKey = \'\', options = {})',
+        'function getAdminWorkbenchOpsAlertMonitorFilterSummaryLabel(filters = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorCategoryView(category = {}, filters = {}, options = {})',
+        'function getAdminWorkbenchOpsAlertMonitorDisplayActiveCount(category = {})',
+        'function getAdminWorkbenchOpsAlertMonitorDisplayCriticalCount(category = {})',
+        'function getAdminWorkbenchOpsAlertMonitorCardTone(category = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorCategoryCardState(category = {}, filters = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorCategoryRenderState(category = {}, filters = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorRecoveryRow(category = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorBatchRows(categories = [], filters = {}, categoryKey = \'\', options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorChecklistText(rows = [], filters = {}, categoryKey = \'\', options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorItemDisplayState(item = {}, category = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorBatchActionStates(categories = [], filters = {}, options = {})',
+        'function formatAdminWorkbenchOpsAlertSignedCount(value, options = {})',
+        'function formatAdminWorkbenchOpsAlertTimeShort(value, options = {})',
+        'function getAdminWorkbenchOpsAlertBacklogDeltaTone(delta = 0)',
+        'function getAdminWorkbenchOpsAlertMonitorCategoryActions(categoryKey = \'\')',
+        'function normalizeAdminWorkbenchOpsAlertMonitorAssignableAdmins(state = {}, options = {})',
+        'function getAdminWorkbenchOpsAlertMonitorCurrentAdminId(state = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorActionContext(category = {}, item = {})',
+        'function getAdminWorkbenchOpsAlertMonitorWorkspaceAction(category = {}, item = {}, options = {})',
+        'function getAdminWorkbenchOpsAlertMonitorQuickAction(category = {}, item = {})',
+        'function getAdminWorkbenchOpsAlertMonitorCaseActions(category = {}, item = {})',
+        'function getAdminWorkbenchDefaultOpsAlertHealthState()',
+        'function readAdminWorkbenchOpsAlertSecretInputs(options = {})',
+        'function clearAdminWorkbenchOpsAlertSecretInputs(options = {})',
+        'function buildAdminWorkbenchOpsAlertSettingsRequestBody(config, options = {})',
+        'function buildAdminWorkbenchOpsAlertStrategySummaryState(config = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertOverviewStatus(config = {}, secretStatus = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertOverviewBannerState(overviewStatus = {}, healthState = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertOverviewRenderState(overviewStatus = {}, healthState = {}, options = {})',
+        'function getAdminWorkbenchOpsAlertRecentDeliverySummary(items = [], options = {})',
+        'function getAdminWorkbenchOpsAlertRecentErrorSummary(items = [], limit = 2, options = {})',
+        'function getAdminWorkbenchOpsAlertErrorSourceSummary(items = [], limit = 3, options = {})',
+        'function buildAdminWorkbenchOpsAlertOverviewCardStates(overviewStatus = {}, healthState = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertOverviewRecentVisualState(summary = {}, status = \'idle\', options = {})',
+        'function buildAdminWorkbenchOpsAlertRiskSpotlightShellState(status = \'loading\', options = {})',
+        'function buildAdminWorkbenchOpsAlertRiskSpotlightRenderState(category = null, filters = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorFilterToolbarState(filters = {}, options = {})',
+        'function getAdminWorkbenchOpsAlertHealthSourceLabel(source = \'\')',
+        'function getAdminWorkbenchOpsAlertHealthMetaLine(channel = {}, options = {})',
+        'function getAdminWorkbenchOpsAlertHealthLastSummary(channel = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertHealthCardState(channel = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertHealthPanelState(state = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertHealthRenderState(state = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertStrategyControlState(config = {}, options = {})',
+        'function collectAdminWorkbenchOpsAlertStrategyDraft(currentConfig = {}, options = {})',
+        'function collectAdminWorkbenchOpsAlertOperationalThresholdDrafts(currentConfig = {}, options = {})',
+        'function validateAdminWorkbenchOpsAlertDispatchConfig(config = {}, secretStatus = {}, secrets = {}, options = {})',
+        'async function fetchAdminWorkbenchOpsAlertSettings(headers = {}, options = {})',
+        'async function submitAdminWorkbenchOpsAlertSettings(headers = {}, body = {}, options = {})',
+        'async function deleteAdminWorkbenchOpsAlertSecret(headers = {}, secretName = \'\', options = {})',
+        'function normalizeAdminWorkbenchOpsAlertSettingsPayload(payload = {}, options = {})',
+        'async function fetchAdminWorkbenchOpsAlertHealth(headers = {}, options = {})',
+        'function normalizeAdminWorkbenchOpsAlertHealthPayload(payload = {}, options = {})',
+        'function normalizeAdminWorkbenchOpsAlertMonitorShiftReport(report = {}, options = {})',
+        'function normalizeAdminWorkbenchOpsAlertMonitorShiftReportView(value = \'all\', options = {})',
+        'function getAdminWorkbenchOpsAlertMonitorShiftReportViewMeta(value = \'all\', options = {})',
+        'function getAdminWorkbenchOpsAlertMonitorShiftReportVisibleSections(value = \'all\', options = {})',
+        'function getAdminWorkbenchOpsAlertMonitorShiftReportCurrentAdminStat(report = {}, currentAdminId = \'\')',
+        'function buildAdminWorkbenchOpsAlertMonitorShiftOwnedCategoryItems(categories = [], currentAdminId = \'\', options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorPanelState(state = {}, filters = {}, categories = [], options = {})',
+        'function buildAdminWorkbenchOpsAlertBatchMuteModalState(state = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorShiftTrendState(report = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorShiftShellState(status = \'loading\', options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorShiftViewSwitchState(currentView = \'all\', options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorShiftReportState(report = {}, state = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorShiftPanelStates(report = {}, state = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorShiftReportSummaryText(report = {}, state = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorShiftReportCsvRows(report = {}, state = {}, options = {})',
+        'function buildAdminWorkbenchOpsAlertMonitorShiftRenderState(report = {}, state = {}, options = {})',
+        'async function fetchAdminWorkbenchOpsAlertMonitor(headers = {}, options = {})',
+        'function normalizeAdminWorkbenchOpsAlertMonitorPayload(payload = {}, options = {})',
+        'function buildOpsAlertCaseMutationContext(source = {})',
+        'function getOpsAlertCaseComposerMeta(state = {}, options = {})',
+        'function buildOpsAlertCaseMutationRequest(action, context = {}, options = {})',
+        'async function submitOpsAlertCaseMutationRequest(headers = {}, action, context = {}, options = {})',
+        'function buildChatSessionWorkbenchEntry(context = {})',
+        'function buildShopOrderWorkbenchEntry(context = {})',
+        'function buildUserWorkbenchEntry(context = {})',
+        'function buildTicketQueueWorkbenchEntry(context = {})',
+        'function buildPaymentWorkbenchEntry(context = {})',
+        'function buildVerifyWorkbenchEntry(context = {})',
+        'function buildLinkedOpsAlertSourceWorkbenchEntry(linkedContext = {}, options = {})',
+        'function buildTicketWorkbenchEntry(target = \'chat\', ticket = {}, options = {})',
+        'function resolveOpsAlertEntryWorkspace(entryPath = \'\', baseContext = {})',
+        'function resolveShopRiskWorkspace(baseContext = {}, payload = {})',
+        'function resolveOpsAlertWorkspace(alertType = \'\', payload = {}, baseContext = {}, entryPath = \'\')',
+        'async function tryOpenOpsAlertWorkspaceUserModal(userId, options = {})',
+        'async function focusOpsAlertWorkspacePaymentOrder(paymentOrderId)',
+        'async function openAdminWorkbenchEntry(workspaceKey, context = {})',
+        'async function openOpsAlertWorkspace(workspaceKey, context = {})',
+        'function savePendingOpsAlertWorkspace(workspaceKey = \'\', context = {})',
+        'function consumePendingOpsAlertWorkspace()',
+        'async function restorePendingOpsAlertWorkspace()',
+        'function schedulePendingOpsAlertWorkspaceRestore()',
+        "'chat-session': '客服会话'",
+        "'shop-risk-orders': '商城风险订单'",
+        "'shop-risk-discounts': '优惠券码列表'",
+        "'shop-risk-users': '用户详情'",
+        'window.getAdminWorkbenchModuleForWorkspaceKey = getAdminWorkbenchModuleForWorkspaceKey;',
+        'window.buildAdminWorkbenchOpsAlertWorkspaceContextAttrs = buildOpsAlertWorkspaceContextAttrs;',
+        'window.buildOpsAlertWorkspaceContextAttrs = buildOpsAlertWorkspaceContextAttrs;',
+        'window.readOpsAlertWorkspaceContextDataset = readOpsAlertWorkspaceContextDataset;',
+        'window.getOpsAlertWorkspaceAction = getOpsAlertWorkspaceAction;',
+        'window.getAdminWorkbenchOpsAlertCaseStatusLabel = getOpsAlertCaseStatusLabel;',
+        'window.getAdminWorkbenchOpsAlertCaseStatusTone = getOpsAlertCaseStatusTone;',
+        'window.getOpsAlertCaseStatusLabel = getOpsAlertCaseStatusLabel;',
+        'window.getOpsAlertCaseStatusTone = getOpsAlertCaseStatusTone;',
+        'window.getOpsAlertCaseEventActionLabel = getOpsAlertCaseEventActionLabel;',
+        'window.normalizeOpsAlertCaseDisplayEvent = normalizeOpsAlertCaseDisplayEvent;',
+        'window.getOpsAlertCaseMuteSummary = getOpsAlertCaseMuteSummary;',
+        'window.normalizeAdminWorkbenchOpsAlertCaseRecentEvents = normalizeAdminWorkbenchOpsAlertCaseRecentEvents;',
+        'window.getAdminWorkbenchOpsAlertCaseRecentEventText = getOpsAlertCaseRecentEventText;',
+        'window.getAdminWorkbenchOpsAlertCaseSummaryText = getOpsAlertCaseSummaryText;',
+        'window.getOpsAlertCaseRecentEventText = getOpsAlertCaseRecentEventText;',
+        'window.getOpsAlertCaseSummaryText = getOpsAlertCaseSummaryText;',
+        'window.getOpsAlertWorkspaceContextLabel = getOpsAlertWorkspaceContextLabel;',
+        'window.getOpsAlertWorkspaceBatchPreview = getOpsAlertWorkspaceBatchPreview;',
+        'window.buildOpsAlertCaseMutationContext = buildOpsAlertCaseMutationContext;',
+        'window.normalizeOpsAlertCaseMutationItem = normalizeOpsAlertCaseMutationItem;',
+        'window.buildAdminWorkbenchOpsAlertCaseMutationItems = buildOpsAlertCaseMutationItems;',
+        'window.buildOpsAlertCaseMutationItems = buildOpsAlertCaseMutationItems;',
+        'window.buildAdminWorkbenchOpsAlertMonitorBatchItems = buildOpsAlertMonitorBatchItems;',
+        'window.getAdminWorkbenchOpsAlertMonitorBatchMuteModuleKeys = getOpsAlertMonitorBatchMuteModuleKeys;',
+        'window.getAdminWorkbenchOpsAlertMonitorCategoryLabel = getAdminWorkbenchOpsAlertMonitorCategoryLabel;',
+        'window.getAdminWorkbenchOpsAlertMonitorFilterSummaryLabel = getAdminWorkbenchOpsAlertMonitorFilterSummaryLabel;',
+        'window.buildAdminWorkbenchOpsAlertMonitorCategoryView = buildAdminWorkbenchOpsAlertMonitorCategoryView;',
+        'window.getAdminWorkbenchOpsAlertMonitorDisplayActiveCount = getAdminWorkbenchOpsAlertMonitorDisplayActiveCount;',
+        'window.getAdminWorkbenchOpsAlertMonitorDisplayCriticalCount = getAdminWorkbenchOpsAlertMonitorDisplayCriticalCount;',
+        'window.getAdminWorkbenchOpsAlertMonitorCardTone = getAdminWorkbenchOpsAlertMonitorCardTone;',
+        'window.buildAdminWorkbenchOpsAlertMonitorCategoryCardState = buildAdminWorkbenchOpsAlertMonitorCategoryCardState;',
+        'window.buildAdminWorkbenchOpsAlertMonitorCategoryRenderState = buildAdminWorkbenchOpsAlertMonitorCategoryRenderState;',
+        'window.buildAdminWorkbenchOpsAlertMonitorFilterToolbarState = buildAdminWorkbenchOpsAlertMonitorFilterToolbarState;',
+        'window.buildAdminWorkbenchOpsAlertMonitorItemDisplayState = buildAdminWorkbenchOpsAlertMonitorItemDisplayState;',
+        'window.buildAdminWorkbenchOpsAlertMonitorBatchActionStates = buildAdminWorkbenchOpsAlertMonitorBatchActionStates;',
+        'window.formatAdminWorkbenchOpsAlertSignedCount = formatAdminWorkbenchOpsAlertSignedCount;',
+        'window.formatAdminWorkbenchOpsAlertTimeShort = formatAdminWorkbenchOpsAlertTimeShort;',
+        'window.getAdminWorkbenchOpsAlertBacklogDeltaTone = getAdminWorkbenchOpsAlertBacklogDeltaTone;',
+        'window.getAdminWorkbenchOpsAlertMonitorCategoryActions = getAdminWorkbenchOpsAlertMonitorCategoryActions;',
+        'window.normalizeAdminWorkbenchOpsAlertMonitorAssignableAdmins = normalizeAdminWorkbenchOpsAlertMonitorAssignableAdmins;',
+        'window.getAdminWorkbenchOpsAlertMonitorCurrentAdminId = getAdminWorkbenchOpsAlertMonitorCurrentAdminId;',
+        'window.buildAdminWorkbenchOpsAlertMonitorActionContext = buildAdminWorkbenchOpsAlertMonitorActionContext;',
+        'window.getAdminWorkbenchOpsAlertMonitorWorkspaceAction = getAdminWorkbenchOpsAlertMonitorWorkspaceAction;',
+        'window.getAdminWorkbenchOpsAlertMonitorQuickAction = getAdminWorkbenchOpsAlertMonitorQuickAction;',
+        'window.getAdminWorkbenchOpsAlertMonitorCaseActions = getAdminWorkbenchOpsAlertMonitorCaseActions;',
+        'window.buildAdminWorkbenchOpsAlertMonitorRecoveryRow = buildAdminWorkbenchOpsAlertMonitorRecoveryRow;',
+        'window.buildAdminWorkbenchOpsAlertMonitorBatchRows = buildAdminWorkbenchOpsAlertMonitorBatchRows;',
+        'window.buildAdminWorkbenchOpsAlertMonitorChecklistText = buildAdminWorkbenchOpsAlertMonitorChecklistText;',
+        'window.readAdminWorkbenchOpsAlertSecretInputs = readAdminWorkbenchOpsAlertSecretInputs;',
+        'window.clearAdminWorkbenchOpsAlertSecretInputs = clearAdminWorkbenchOpsAlertSecretInputs;',
+        'window.buildAdminWorkbenchOpsAlertSettingsRequestBody = buildAdminWorkbenchOpsAlertSettingsRequestBody;',
+        'window.buildAdminWorkbenchOpsAlertConfigDraft = buildAdminWorkbenchOpsAlertConfigDraft;',
+        'window.buildAdminWorkbenchOpsAlertSummaryModeHintText = buildAdminWorkbenchOpsAlertSummaryModeHintText;',
+        'window.collectAdminWorkbenchOpsAlertUnifiedSummaryDraft = collectAdminWorkbenchOpsAlertUnifiedSummaryDraft;',
+        'window.buildAdminWorkbenchOpsAlertSummaryModeControlState = buildAdminWorkbenchOpsAlertSummaryModeControlState;',
+        'window.buildAdminWorkbenchOpsAlertMonitorControlState = buildAdminWorkbenchOpsAlertMonitorControlState;',
+        'window.buildAdminWorkbenchOpsAlertShopRiskControlState = buildAdminWorkbenchOpsAlertShopRiskControlState;',
+        'window.buildAdminWorkbenchOpsAlertStrategySummaryState = buildAdminWorkbenchOpsAlertStrategySummaryState;',
+        'window.buildAdminWorkbenchOpsAlertOverviewStatus = buildAdminWorkbenchOpsAlertOverviewStatus;',
+        'window.buildAdminWorkbenchOpsAlertOverviewBannerState = buildAdminWorkbenchOpsAlertOverviewBannerState;',
+        'window.buildAdminWorkbenchOpsAlertOverviewRenderState = buildAdminWorkbenchOpsAlertOverviewRenderState;',
+        'window.buildAdminWorkbenchOpsAlertOverviewCardStates = buildAdminWorkbenchOpsAlertOverviewCardStates;',
+        'window.buildAdminWorkbenchOpsAlertRiskSpotlightState = buildAdminWorkbenchOpsAlertRiskSpotlightState;',
+        'window.buildAdminWorkbenchOpsAlertRiskSpotlightShellState = buildAdminWorkbenchOpsAlertRiskSpotlightShellState;',
+        'window.buildAdminWorkbenchOpsAlertRiskSpotlightRenderState = buildAdminWorkbenchOpsAlertRiskSpotlightRenderState;',
+        'window.buildAdminWorkbenchOpsAlertOverviewRecentVisualState = buildAdminWorkbenchOpsAlertOverviewRecentVisualState;',
+        'window.getAdminWorkbenchOpsAlertHealthSourceLabel = getAdminWorkbenchOpsAlertHealthSourceLabel;',
+        'window.getAdminWorkbenchOpsAlertHealthMetaLine = getAdminWorkbenchOpsAlertHealthMetaLine;',
+        'window.getAdminWorkbenchOpsAlertHealthLastSummary = getAdminWorkbenchOpsAlertHealthLastSummary;',
+        'window.buildAdminWorkbenchOpsAlertHealthCardState = buildAdminWorkbenchOpsAlertHealthCardState;',
+        'window.buildAdminWorkbenchOpsAlertHealthPanelState = buildAdminWorkbenchOpsAlertHealthPanelState;',
+        'window.buildAdminWorkbenchOpsAlertHealthRenderState = buildAdminWorkbenchOpsAlertHealthRenderState;',
+        'window.buildAdminWorkbenchOpsAlertStrategyControlState = buildAdminWorkbenchOpsAlertStrategyControlState;',
+        'window.collectAdminWorkbenchOpsAlertStrategyDraft = collectAdminWorkbenchOpsAlertStrategyDraft;',
+        'window.collectAdminWorkbenchOpsAlertOperationalThresholdDrafts = collectAdminWorkbenchOpsAlertOperationalThresholdDrafts;',
+        'window.validateAdminWorkbenchOpsAlertDispatchConfig = validateAdminWorkbenchOpsAlertDispatchConfig;',
+        'window.fetchAdminWorkbenchOpsAlertSettings = fetchAdminWorkbenchOpsAlertSettings;',
+        'window.submitAdminWorkbenchOpsAlertSettings = submitAdminWorkbenchOpsAlertSettings;',
+        'window.deleteAdminWorkbenchOpsAlertSecret = deleteAdminWorkbenchOpsAlertSecret;',
+        'window.normalizeAdminWorkbenchOpsAlertSettingsPayload = normalizeAdminWorkbenchOpsAlertSettingsPayload;',
+        'window.fetchAdminWorkbenchOpsAlertHealth = fetchAdminWorkbenchOpsAlertHealth;',
+        'window.normalizeAdminWorkbenchOpsAlertHealthPayload = normalizeAdminWorkbenchOpsAlertHealthPayload;',
+        'window.normalizeAdminWorkbenchOpsAlertMonitorShiftReport = normalizeAdminWorkbenchOpsAlertMonitorShiftReport;',
+        'window.normalizeAdminWorkbenchOpsAlertMonitorShiftReportView = normalizeAdminWorkbenchOpsAlertMonitorShiftReportView;',
+        'window.getAdminWorkbenchOpsAlertMonitorShiftReportViewMeta = getAdminWorkbenchOpsAlertMonitorShiftReportViewMeta;',
+        'window.getAdminWorkbenchOpsAlertMonitorShiftReportVisibleSections = getAdminWorkbenchOpsAlertMonitorShiftReportVisibleSections;',
+        'window.getAdminWorkbenchOpsAlertMonitorShiftReportCurrentAdminStat = getAdminWorkbenchOpsAlertMonitorShiftReportCurrentAdminStat;',
+        'window.buildAdminWorkbenchOpsAlertMonitorShiftOwnedCategoryItems = buildAdminWorkbenchOpsAlertMonitorShiftOwnedCategoryItems;',
+        'window.buildAdminWorkbenchOpsAlertMonitorPanelState = buildAdminWorkbenchOpsAlertMonitorPanelState;',
+        'window.buildAdminWorkbenchOpsAlertBatchMuteModalState = buildAdminWorkbenchOpsAlertBatchMuteModalState;',
+        'window.buildAdminWorkbenchOpsAlertMonitorShiftTrendState = buildAdminWorkbenchOpsAlertMonitorShiftTrendState;',
+        'window.buildAdminWorkbenchOpsAlertMonitorShiftShellState = buildAdminWorkbenchOpsAlertMonitorShiftShellState;',
+        'window.buildAdminWorkbenchOpsAlertMonitorShiftViewSwitchState = buildAdminWorkbenchOpsAlertMonitorShiftViewSwitchState;',
+        'window.buildAdminWorkbenchOpsAlertMonitorShiftReportState = buildAdminWorkbenchOpsAlertMonitorShiftReportState;',
+        'window.buildAdminWorkbenchOpsAlertMonitorShiftPanelStates = buildAdminWorkbenchOpsAlertMonitorShiftPanelStates;',
+        'window.buildAdminWorkbenchOpsAlertMonitorShiftReportSummaryText = buildAdminWorkbenchOpsAlertMonitorShiftReportSummaryText;',
+        'window.buildAdminWorkbenchOpsAlertMonitorShiftReportCsvRows = buildAdminWorkbenchOpsAlertMonitorShiftReportCsvRows;',
+        'window.buildAdminWorkbenchOpsAlertMonitorShiftRenderState = buildAdminWorkbenchOpsAlertMonitorShiftRenderState;',
+        'window.fetchAdminWorkbenchOpsAlertMonitor = fetchAdminWorkbenchOpsAlertMonitor;',
+        'window.normalizeAdminWorkbenchOpsAlertMonitorPayload = normalizeAdminWorkbenchOpsAlertMonitorPayload;',
+        'window.getOpsAlertCaseComposerMeta = getOpsAlertCaseComposerMeta;',
+        'window.buildOpsAlertCaseMutationRequest = buildOpsAlertCaseMutationRequest;',
+        'window.submitOpsAlertCaseMutationRequest = submitOpsAlertCaseMutationRequest;',
+        'window.buildChatSessionWorkbenchEntry = buildChatSessionWorkbenchEntry;',
+        'window.buildShopOrderWorkbenchEntry = buildShopOrderWorkbenchEntry;',
+        'window.buildUserWorkbenchEntry = buildUserWorkbenchEntry;',
+        'window.buildTicketQueueWorkbenchEntry = buildTicketQueueWorkbenchEntry;',
+        'window.buildPaymentWorkbenchEntry = buildPaymentWorkbenchEntry;',
+        'window.buildVerifyWorkbenchEntry = buildVerifyWorkbenchEntry;',
+        'window.buildLinkedOpsAlertSourceWorkbenchEntry = buildLinkedOpsAlertSourceWorkbenchEntry;',
+        'window.buildTicketWorkbenchEntry = buildTicketWorkbenchEntry;',
+        'window.resolveOpsAlertEntryWorkspace = resolveOpsAlertEntryWorkspace;',
+        'window.resolveShopRiskWorkspace = resolveShopRiskWorkspace;',
+        'window.resolveOpsAlertWorkspace = resolveOpsAlertWorkspace;',
+        'window.openAdminWorkbenchEntry = openAdminWorkbenchEntry;',
+        'window.openOpsAlertWorkspace = openOpsAlertWorkspace;',
+        'window.savePendingOpsAlertWorkspace = savePendingOpsAlertWorkspace;',
+        'window.consumePendingOpsAlertWorkspace = consumePendingOpsAlertWorkspace;',
+        'window.restorePendingOpsAlertWorkspace = restorePendingOpsAlertWorkspace;',
+        'window.schedulePendingOpsAlertWorkspaceRestore = schedulePendingOpsAlertWorkspaceRestore;'
+    ];
+
+    for (const marker of sharedWorkbenchMarkers) {
+        assert.equal(adminWorkbenchSource.includes(marker), true, `js/admin-workbench.js should contain ${marker}`);
+    }
+    assert.equal(
+        adminConfigSource.includes('window.getOpsAlertWorkspaceAction({'),
+        true,
+        'admin-config.js should resolve ops alert card workspaces through the shared workbench resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertWorkspaceContextAttrs(sharedContext || buildLocalOpsAlertMonitorContextAttrs(category, item))'),
+        true,
+        'admin-config.js should build ops alert workspace data attrs through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertCaseSummaryText(item, {'),
+        true,
+        'admin-config.js should format ops alert case summaries through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getOpsAlertWorkspaceContextLabel(context, { fallback: \'集中告警\' })'),
+        true,
+        'admin-config.js should build case composer target labels through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getOpsAlertWorkspaceBatchPreview(items, {'),
+        true,
+        'admin-config.js should build batch case previews through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getOpsAlertCaseComposerMeta(state, {'),
+        true,
+        'admin-config.js should build case composer copy through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertCaseMutationItems(items, categoryKey)'),
+        true,
+        'admin-config.js should normalize case mutation items through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildOpsAlertCaseMutationRequest(action, context, options)'),
+        true,
+        'admin-config.js should build case mutation requests through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorBatchItems(categories, action, categoryKey)'),
+        true,
+        'admin-config.js should derive monitor batch items through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorBatchRows(categories, filters, categoryKey, {'),
+        true,
+        'admin-config.js should derive monitor export rows through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorChecklistText(rows, filters, categoryKey, {'),
+        true,
+        'admin-config.js should build monitor checklist copy through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.fetchAdminWorkbenchOpsAlertSettings(headers, {'),
+        true,
+        'admin-config.js should fetch ops alert settings payloads through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.normalizeAdminWorkbenchOpsAlertSettingsPayload(payload, {'),
+        true,
+        'admin-config.js should normalize ops alert settings payloads through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.submitAdminWorkbenchOpsAlertSettings(headers, body, {'),
+        true,
+        'admin-config.js should submit ops alert settings payloads through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.readAdminWorkbenchOpsAlertSecretInputs()'),
+        true,
+        'admin-config.js should read ops alert secret inputs through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.clearAdminWorkbenchOpsAlertSecretInputs()'),
+        true,
+        'admin-config.js should clear ops alert secret inputs through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertSettingsRequestBody(config, options)'),
+        true,
+        'admin-config.js should build ops alert settings request bodies through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.collectAdminWorkbenchOpsAlertStrategyDraft(currentConfig, {'),
+        true,
+        'admin-config.js should collect ops alert strategy drafts through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertStrategyDraft(currentConfig = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {'),
+        true,
+        'admin-config.js should wrap shared ops alert strategy draft collection behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertConfigDraft(currentConfig, {'),
+        true,
+        'admin-config.js should build ops alert config drafts through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertConfigDraft(currentConfig = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {'),
+        true,
+        'admin-config.js should wrap shared ops alert config draft collection behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.collectAdminWorkbenchOpsAlertUnifiedSummaryDraft({}, {'),
+        true,
+        'admin-config.js should collect unified ops alert summary drafts through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertUnifiedSummaryDraft() {'),
+        true,
+        'admin-config.js should wrap unified ops alert summary draft collection behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertSummaryModeControlState(monitorConfig, {'),
+        true,
+        'admin-config.js should derive summary mode control state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertSummaryModeControlState(monitorConfig = {}, options = {}) {'),
+        true,
+        'admin-config.js should wrap summary mode control state behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertSummaryModeHintText'),
+        true,
+        'admin-config.js should reuse the shared summary mode hint helper'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorControlState(monitorConfig'),
+        true,
+        'admin-config.js should derive monitor control state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorControlState(monitorConfig = {}, sharedOptions = {}) {'),
+        true,
+        'admin-config.js should wrap monitor control state behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function buildLocalOpsAlertMonitorControlState(monitorConfig = {}, sharedOptions = {}) {'),
+        true,
+        'admin-config.js should keep a local monitor control state builder as the non-shared fallback'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertShopRiskControlState(shopRiskConfig)'),
+        true,
+        'admin-config.js should derive shop risk control state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertShopRiskControlState(shopRiskConfig = {}) {'),
+        true,
+        'admin-config.js should wrap shop risk control state behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function buildLocalOpsAlertShopRiskControlState(shopRiskConfig = {}) {'),
+        true,
+        'admin-config.js should keep a local shop risk control state builder as the non-shared fallback'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.collectAdminWorkbenchOpsAlertOperationalThresholdDrafts(currentConfig, {'),
+        true,
+        'admin-config.js should collect ops alert operational threshold drafts through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertOperationalThresholdDrafts(currentConfig = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {'),
+        true,
+        'admin-config.js should wrap operational threshold draft collection behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertStrategySummaryState(normalizedConfig, {'),
+        true,
+        'admin-config.js should derive ops alert strategy summary state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('function fetchOpsAlertSettingsPayload(headers = {}) {'),
+        true,
+        'admin-config.js should centralize ops alert settings fetches behind a local resolver helper'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertSettingsPayload(payload = {}) {'),
+        true,
+        'admin-config.js should centralize ops alert settings payload normalization behind a local resolver helper'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertOverviewStatus(config) {'),
+        true,
+        'admin-config.js should wrap ops alert overview status derivation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertSecretInputs() {'),
+        true,
+        'admin-config.js should wrap ops alert secret input reads behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertSettingsRequestBody(config, options = {}) {'),
+        true,
+        'admin-config.js should wrap ops alert settings request body building behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('async function submitOpsAlertSettingsPayload(headers = {}, body = {}, options = {}) {'),
+        true,
+        'admin-config.js should centralize ops alert settings writes behind a local submit helper'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertDispatchConfigValidation(config = {}, secretStatus = {}, secrets = {}) {'),
+        true,
+        'admin-config.js should wrap ops alert dispatch validation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('async function submitOpsAlertSecretDeletion(headers = {}, secretName = \'\', options = {}) {'),
+        true,
+        'admin-config.js should centralize ops alert secret deletion behind a local submit helper'
+    );
+    assert.equal(
+        adminConfigSource.includes('function fetchOpsAlertHealthPayload(headers = {}) {'),
+        true,
+        'admin-config.js should centralize ops alert health fetches behind a local resolver helper'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertHealthPayload(payload = {}) {'),
+        true,
+        'admin-config.js should centralize ops alert health payload normalization behind a local resolver helper'
+    );
+    assert.equal(
+        adminConfigSource.includes('function fetchOpsAlertMonitorPayload(headers = {}) {'),
+        true,
+        'admin-config.js should centralize ops alert monitor fetches behind a local resolver helper'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorPayload(payload = {}) {'),
+        true,
+        'admin-config.js should centralize ops alert monitor payload normalization behind a local resolver helper'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorAssignableAdmins(state = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {'),
+        true,
+        'admin-config.js should wrap assignable admin normalization behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertCaseStatusTone(status) {'),
+        true,
+        'admin-config.js should wrap case status tone derivation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertCaseStatusLabel(status) {'),
+        true,
+        'admin-config.js should wrap case status label derivation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorContextAttrs(category = {}, item = {}) {'),
+        true,
+        'admin-config.js should wrap monitor workspace context attrs behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertCaseRecentEventText(event = {}) {'),
+        true,
+        'admin-config.js should wrap case recent-event text behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertCaseSummaryText(item = {}) {'),
+        true,
+        'admin-config.js should wrap case summary derivation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorCategoryView(category = {}, filters = getOpsAlertMonitorViewFilters()) {'),
+        true,
+        'admin-config.js should wrap monitor category view derivation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorCategoryActions(categoryKey) {'),
+        true,
+        'admin-config.js should wrap monitor category actions behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorFilterSummaryLabel(filters = getOpsAlertMonitorViewFilters()) {'),
+        true,
+        'admin-config.js should wrap monitor filter summary labels behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorDisplayActiveCount(category = {}) {'),
+        true,
+        'admin-config.js should wrap monitor active-count derivation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorDisplayCriticalCount(category = {}) {'),
+        true,
+        'admin-config.js should wrap monitor critical-count derivation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorCardTone(category = {}) {'),
+        true,
+        'admin-config.js should wrap monitor card tone derivation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorItemAction(category = {}, item = {}) {'),
+        true,
+        'admin-config.js should wrap monitor item workspace actions behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorItemQuickAction(category = {}, item = {}) {'),
+        true,
+        'admin-config.js should wrap monitor item quick actions behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorItemCaseActions(category = {}, item = {}) {'),
+        true,
+        'admin-config.js should wrap monitor item case actions behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorBatchRows(categories = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = \'\') {'),
+        true,
+        'admin-config.js should wrap monitor batch row derivation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorChecklistText(rows = [], filters = getOpsAlertMonitorViewFilters(), categoryKey = \'\') {'),
+        true,
+        'admin-config.js should wrap monitor checklist text derivation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertBatchMuteModalState(state = opsAlertBatchMuteState || getDefaultOpsAlertBatchMuteState()) {'),
+        true,
+        'admin-config.js should wrap batch mute modal state derivation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorSignedCount(value) {'),
+        true,
+        'admin-config.js should wrap signed count formatting behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorTimeShort(value) {'),
+        true,
+        'admin-config.js should wrap short time formatting behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorBacklogDeltaTone(delta) {'),
+        true,
+        'admin-config.js should wrap backlog delta tone derivation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorShiftReportView(value = \'all\') {'),
+        true,
+        'admin-config.js should wrap shift report view normalization behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorShiftReportViewMeta(value = opsAlertMonitorShiftReportViewState) {'),
+        true,
+        'admin-config.js should wrap shift report view metadata behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorShiftReportCurrentAdminId() {'),
+        true,
+        'admin-config.js should wrap current shift admin id derivation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorShiftOwnedCategoryItems(categories = [], currentAdminId = resolveOpsAlertMonitorShiftReportCurrentAdminId()) {'),
+        true,
+        'admin-config.js should wrap owned shift category derivation behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\') {'),
+        true,
+        'admin-config.js should wrap shift report summary export text behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\') {'),
+        true,
+        'admin-config.js should wrap shift report csv rows behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function resolveOpsAlertStrategySummaryState(normalizedConfig = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {'),
+        true,
+        'admin-config.js should wrap ops alert strategy summary state behind a local resolver'
+    );
+    assert.equal(
+        adminConfigSource.includes('function buildLocalOpsAlertStrategySummaryState(normalizedConfig = normalizeOpsAlertConfig(systemConfigCache[\'ops_alerts\'])) {'),
+        true,
+        'admin-config.js should keep a local strategy summary state builder as the non-shared fallback'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertOverviewStatus(normalizedConfig, opsAlertSecretStatus, {'),
+        true,
+        'admin-config.js should derive ops alert overview status through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('return window.buildAdminWorkbenchOpsAlertOverviewRenderState(overviewStatus, healthState, {'),
+        true,
+        'admin-config.js should derive aggregated ops alert overview render state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertOverviewBannerState(overviewStatus, healthState, {'),
+        false,
+        'admin-config.js should no longer call the lower-level overview banner state helper directly once aggregate render state is available'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertOverviewCardStates({'),
+        false,
+        'admin-config.js should no longer call the lower-level overview card state helper directly once aggregate render state is available'
+    );
+    assert.equal(
+        adminConfigSource.includes('function applyOpsAlertSectionControlUpdates(applyControls) {'),
+        true,
+        'admin-config.js should centralize ops alert section control refreshes through a shared section update helper'
+    );
+    assert.equal(
+        adminConfigSource.includes('function toggleOpsAlertSectionControl(toggleId, applyControls, options = {}) {'),
+        true,
+        'admin-config.js should centralize ops alert section toggles through a shared section toggle helper'
+    );
+    assert.equal(
+        adminConfigSource.includes('function handleOpsAlertSectionSummaryScheduleModeChange(applyControls) {'),
+        true,
+        'admin-config.js should centralize ops alert summary schedule refreshes through a shared helper'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertRiskSpotlightState(category, filters, {'),
+        false,
+        'admin-config.js should no longer duplicate the lower-level shop risk spotlight state call once render state is available'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertRiskSpotlightRenderState(category, filters, {'),
+        true,
+        'admin-config.js should derive shop risk spotlight render state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('return window.buildAdminWorkbenchOpsAlertRiskSpotlightShellState(status, {'),
+        true,
+        'admin-config.js should derive shop risk spotlight shell state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertOverviewRecentVisualState(summary, status, {'),
+        false,
+        'admin-config.js should no longer call the lower-level overview recent visual helper directly once aggregate render state is available'
+    );
+    assert.equal(
+        adminConfigSource.includes('return window.buildAdminWorkbenchOpsAlertHealthRenderState(state, {'),
+        true,
+        'admin-config.js should derive aggregated ops alert health render state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertHealthCardState(channel, {'),
+        false,
+        'admin-config.js should no longer call the lower-level health card state helper directly once aggregate render state is available'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertHealthPanelState(state, {'),
+        false,
+        'admin-config.js should no longer call the lower-level health panel state helper directly once aggregate render state is available'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertStrategyControlState(normalizedConfig, {'),
+        true,
+        'admin-config.js should derive ops alert strategy control state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('operationalThresholdDrafts?.shop_order_risk'),
+        true,
+        'admin-config.js should apply shared shop risk threshold drafts before falling back to inline collection'
+    );
+    assert.equal(
+        adminConfigSource.includes('operationalThresholdDrafts?.customer_chat_message'),
+        true,
+        'admin-config.js should apply shared customer chat threshold drafts before falling back to inline collection'
+    );
+    assert.equal(
+        adminConfigSource.includes('operationalThresholdDrafts?.shop_purchase_success'),
+        true,
+        'admin-config.js should apply shared shop purchase threshold drafts before falling back to inline collection'
+    );
+    assert.equal(
+        adminConfigSource.includes('operationalThresholdDrafts?.wallet_recharge_success'),
+        true,
+        'admin-config.js should apply shared wallet recharge threshold drafts before falling back to inline collection'
+    );
+    assert.equal(
+        adminConfigSource.includes('operationalThresholdDrafts?.shop_order_delivery'),
+        true,
+        'admin-config.js should apply shared delivery threshold drafts before falling back to inline collection'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.validateAdminWorkbenchOpsAlertDispatchConfig(config, secretStatus, secrets)'),
+        true,
+        'admin-config.js should validate ops alert dispatch prerequisites through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.deleteAdminWorkbenchOpsAlertSecret(headers, secretName, {'),
+        true,
+        'admin-config.js should delete ops alert secrets through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.fetchAdminWorkbenchOpsAlertHealth(headers, {'),
+        true,
+        'admin-config.js should fetch ops alert health payloads through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.normalizeAdminWorkbenchOpsAlertHealthPayload(payload, {'),
+        true,
+        'admin-config.js should normalize ops alert health payloads through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorShiftReportSummaryText(report, shiftRuntimeState,'),
+        true,
+        'admin-config.js should build shift report summary copy through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorShiftReportCsvRows(report, shiftRuntimeState,'),
+        true,
+        'admin-config.js should build shift report csv rows through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorShiftTrendState(report, {'),
+        true,
+        'admin-config.js should derive shift trend state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('return window.buildAdminWorkbenchOpsAlertMonitorShiftShellState(status, {'),
+        true,
+        'admin-config.js should derive shift shell state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorShiftViewSwitchState(currentView, {'),
+        true,
+        'admin-config.js should derive shift report view switch state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorShiftReportState(report, {'),
+        false,
+        'admin-config.js should no longer call the lower-level shift report state helper directly once aggregate render state is available'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorShiftPanelStates(report, {'),
+        false,
+        'admin-config.js should no longer call the lower-level shift panel state helper directly once aggregate render state is available'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorShiftRenderState(report, shiftRuntimeState,'),
+        true,
+        'admin-config.js should derive aggregate shift render state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertRecentDeliverySummary(summary.recent_deliveries, {'),
+        false,
+        'admin-config.js should no longer call the lower-level overview delivery summary helper directly once aggregate render state is available'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertRecentErrorSummary(summary.recent_errors, 2, {'),
+        false,
+        'admin-config.js should no longer call the lower-level overview error summary helper directly once aggregate render state is available'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertErrorSourceSummary(summary.recent_error_channels, 3, {'),
+        false,
+        'admin-config.js should no longer call the lower-level overview error source summary helper directly once aggregate render state is available'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorCategoryView(category, filters, {'),
+        true,
+        'admin-config.js should derive prepared monitor category views through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertMonitorFilterSummaryLabel(filters)'),
+        true,
+        'admin-config.js should derive monitor filter summary labels through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorFilterToolbarState(filters, {'),
+        true,
+        'admin-config.js should derive monitor filter toolbar state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorRecoveryRow(category, {'),
+        true,
+        'admin-config.js should derive recovery rows through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorShiftOwnedCategoryItems(categories, currentAdminId, {'),
+        true,
+        'admin-config.js should derive owned shift categories through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.normalizeAdminWorkbenchOpsAlertMonitorShiftReportView(value, {'),
+        true,
+        'admin-config.js should normalize shift report views through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertMonitorShiftReportViewMeta(value, {'),
+        true,
+        'admin-config.js should derive shift report view meta through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertMonitorShiftReportVisibleSections(view, {'),
+        false,
+        'admin-config.js should no longer call the lower-level visible-section helper directly once aggregate shift render state is available'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertMonitorShiftReportCurrentAdminStat(report, currentAdminId)'),
+        false,
+        'admin-config.js should no longer call the lower-level current-admin stat helper directly once export and render runtime state is aggregated'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.formatAdminWorkbenchOpsAlertSignedCount(value, {'),
+        true,
+        'admin-config.js should format signed monitor deltas through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.formatAdminWorkbenchOpsAlertTimeShort(value, {'),
+        true,
+        'admin-config.js should format monitor time buckets through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertBacklogDeltaTone(delta)'),
+        true,
+        'admin-config.js should derive backlog delta tone through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertMonitorCurrentAdminId(opsAlertMonitorState)'),
+        true,
+        'admin-config.js should derive current monitor admin id through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.normalizeAdminWorkbenchOpsAlertCaseRecentEvents(item.case_recent_events)'),
+        true,
+        'admin-config.js should normalize recent case events through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorCategoryCardState(category, filters, {'),
+        false,
+        'admin-config.js should no longer call the lower-level monitor category card state helper directly once category render state is available'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorCategoryRenderState(category, filters, {'),
+        true,
+        'admin-config.js should derive monitor category render state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorPanelState(state, filters, categories, {'),
+        true,
+        'admin-config.js should derive monitor panel summary state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertBatchMuteModalState(state, {'),
+        true,
+        'admin-config.js should derive batch mute modal state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorItemDisplayState(item, category, {'),
+        false,
+        'admin-config.js should no longer call the lower-level monitor item display state helper directly once category render state is available'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorBatchActionStates(categories, filters, {'),
+        true,
+        'admin-config.js should derive monitor batch action state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertMonitorCategoryActions(categoryKey)'),
+        true,
+        'admin-config.js should derive monitor category actions through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.normalizeAdminWorkbenchOpsAlertMonitorAssignableAdmins(state, {'),
+        true,
+        'admin-config.js should normalize assignable admins through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertMonitorWorkspaceAction(category, item, {'),
+        true,
+        'admin-config.js should derive monitor workspace actions through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertMonitorQuickAction(category, item)'),
+        true,
+        'admin-config.js should derive monitor quick actions through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertMonitorCaseActions(category, item)'),
+        true,
+        'admin-config.js should derive monitor case actions through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.buildAdminWorkbenchOpsAlertMonitorActionContext(category, item)'),
+        true,
+        'admin-config.js should build monitor action context through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.fetchAdminWorkbenchOpsAlertMonitor(headers, {'),
+        true,
+        'admin-config.js should fetch ops alert monitor payloads through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.normalizeAdminWorkbenchOpsAlertMonitorPayload(payload, {'),
+        true,
+        'admin-config.js should normalize ops alert monitor payloads through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('const sharedRuleState = sharedControlState?.muteRules?.[scope]?.[definition.key] || null;'),
+        true,
+        'admin-config.js should consume shared mute-rule state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('sharedControlState?.routingMatrix?.[routingKey]?.[channelKey]'),
+        true,
+        'admin-config.js should consume shared routing matrix state through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.getAdminWorkbenchOpsAlertMonitorBatchMuteModuleKeys(categories, categoryKey)'),
+        true,
+        'admin-config.js should derive monitor mute module keys through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes('window.submitOpsAlertCaseMutationRequest(headers, action, context, {'),
+        true,
+        'admin-config.js should submit case mutations through the shared workbench runtime'
+    );
+    assert.equal(
+        adminConfigSource.includes("labelVariant: 'monitor'"),
+        true,
+        'admin-config.js should request monitor-oriented labels from the shared workbench resolver'
+    );
+
     const runtimeMarkers = [
         'function getDefaultOpsAlertConfig()',
         'function normalizeOpsAlertConfig(raw)',
@@ -2942,8 +4024,19 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         "fetch('/api/admin/settings/ops-alert-health'",
         'function getDefaultOpsAlertHealthState()',
         'function renderOpsAlertHealthPanel()',
-        'function getOpsAlertHealthConfigDetails(channel = {})',
-        'function buildOpsAlertHealthConfigMarkup(channel = {})',
+        'function buildOpsAlertHealthCardMarkup(channel = {})',
+        'function buildLocalOpsAlertHealthCardState(channel = {})',
+        'function resolveOpsAlertHealthRenderState(state = {})',
+        'function buildLocalOpsAlertOverviewBannerState(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState())',
+        'function resolveOpsAlertOverviewBannerState(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState())',
+        'function buildLocalOpsAlertOverviewCardStates(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState())',
+        'function resolveOpsAlertOverviewCardStates(overviewStatus = {}, healthState = opsAlertHealthState || getDefaultOpsAlertHealthState())',
+        'function buildLocalOpsAlertOverviewRecentVisualState(summary = {}, status = \'idle\')',
+        'function resolveOpsAlertOverviewRecentVisualState(summary = {}, status = \'idle\')',
+        'function buildLocalOpsAlertHealthCardStates(state = {})',
+        'function resolveOpsAlertHealthCardStates(state = {})',
+        'function buildLocalOpsAlertHealthPanelState(state = {})',
+        'function resolveOpsAlertHealthPanelState(state = {})',
         'async function loadOpsAlertHealth(force = false)',
         'window.loadOpsAlertHealth = loadOpsAlertHealth;',
         'window.refreshOpsAlertHealthPanel = refreshOpsAlertHealthPanel;',
@@ -2966,9 +4059,19 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'function getDefaultOpsAlertMonitorShiftReportViewState() {',
         'function normalizeOpsAlertMonitorShiftReportView(value = \'all\') {',
         'function getOpsAlertMonitorShiftReportViewMeta(value = opsAlertMonitorShiftReportViewState) {',
-        'function getOpsAlertMonitorShiftReportCurrentAdminStat(report = normalizeOpsAlertMonitorShiftReport(), currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId()) {',
-        'function buildOpsAlertMonitorShiftReportOwnedCategoryItems(categories = [], currentAdminId = getOpsAlertMonitorShiftReportCurrentAdminId()) {',
-        'function buildOpsAlertMonitorShiftReportViewSwitchMarkup(currentView = opsAlertMonitorShiftReportViewState) {',
+        'function buildOpsAlertMonitorShiftSharedRuntimeState(currentAdminLabel = \'\') {',
+        'function buildOpsAlertMonitorShiftSharedOptions(overrides = {}) {',
+        'function buildLocalOpsAlertMonitorShiftShellState(status = \'loading\', options = {})',
+        'function resolveOpsAlertMonitorShiftShellState(status = \'loading\', options = {})',
+        'function buildOpsAlertMonitorShiftShellMarkup(shellState = {})',
+        'function buildLocalOpsAlertMonitorShiftRenderState(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\')',
+        'function resolveOpsAlertMonitorShiftRenderState(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\')',
+        'function buildLocalOpsAlertMonitorShiftViewSwitchState(currentView = opsAlertMonitorShiftReportViewState)',
+        'function resolveOpsAlertMonitorShiftViewSwitchState(currentView = opsAlertMonitorShiftReportViewState)',
+        'function buildLocalOpsAlertMonitorShiftTrendState(report = normalizeOpsAlertMonitorShiftReport())',
+        'function resolveOpsAlertMonitorShiftTrendState(report = normalizeOpsAlertMonitorShiftReport())',
+        'function buildOpsAlertMonitorShiftReportOwnedCategoryItems(categories = [], currentAdminId = resolveOpsAlertMonitorShiftReportCurrentAdminId()) {',
+        'function buildOpsAlertMonitorShiftReportViewSwitchMarkup(currentView = opsAlertMonitorShiftReportViewState, precomputedState = null) {',
         "label: '我的接班'",
         'function renderOpsAlertMonitorPanel()',
         'function getOpsAlertRiskSpotlightCategory(filters = getOpsAlertMonitorViewFilters())',
@@ -2976,17 +4079,30 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'function buildOpsAlertRiskThresholdBadges(category = {})',
         'function buildOpsAlertRiskSpotlightActivityItem(item = {}, kind = \'threshold\')',
         'function buildOpsAlertRiskSpotlightActivitySection(title, items = [], emptyMessage = \'\', kind = \'threshold\')',
+        'function buildLocalOpsAlertRiskSpotlightRenderState(category = null, filters = getOpsAlertMonitorViewFilters())',
+        'function resolveOpsAlertRiskSpotlightRenderState(category = null, filters = getOpsAlertMonitorViewFilters())',
+        'function buildLocalOpsAlertRiskSpotlightShellState(status = \'loading\', options = {})',
+        'function resolveOpsAlertRiskSpotlightShellState(status = \'loading\', options = {})',
+        'function buildOpsAlertRiskSpotlightMarkupFromState(resolvedState = {}, options = {})',
+        'function buildOpsAlertRiskSpotlightShellMarkup(shellState = {})',
         'function buildOpsAlertRiskSpotlightMarkup(category = null, filters = getOpsAlertMonitorViewFilters())',
         'function renderOpsAlertRiskSpotlight(filters = getOpsAlertMonitorViewFilters())',
         'function buildOpsAlertMonitorShiftReportMarkup(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\')',
-        'data-admin-action="settings-copy-ops-alert-shift-report"',
-        'data-admin-action="settings-export-ops-alert-shift-report-csv"',
+        "actionName: 'settings-copy-ops-alert-shift-report'",
+        "actionName: 'settings-export-ops-alert-shift-report-csv'",
         'data-admin-action="settings-set-ops-alert-shift-report-view"',
         'function buildOpsAlertMonitorShiftReportSummaryText(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\')',
         'function buildOpsAlertMonitorShiftReportCsvRows(report = normalizeOpsAlertMonitorShiftReport(), currentAdminLabel = \'\')',
         'function setOpsAlertMonitorShiftReportView(value = \'all\') {',
-        'current_admin_active_count:',
         'function renderOpsAlertMonitorShiftReport()',
+        'function buildLocalOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = [])',
+        'function resolveOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = [])',
+        'function buildLocalOpsAlertMonitorCategoryRenderState(category = {}, filters = getOpsAlertMonitorViewFilters())',
+        'function resolveOpsAlertMonitorCategoryRenderState(category = {}, filters = getOpsAlertMonitorViewFilters())',
+        'function buildLocalOpsAlertMonitorFilterToolbarState(filters = getOpsAlertMonitorViewFilters())',
+        'function resolveOpsAlertMonitorFilterToolbarState(filters = getOpsAlertMonitorViewFilters())',
+        'function buildLocalOpsAlertMonitorBatchActionStates(filters = getOpsAlertMonitorViewFilters())',
+        'function resolveOpsAlertMonitorBatchActionStates(filters = getOpsAlertMonitorViewFilters())',
         'function getOpsAlertMonitorPreparedCategories(filters = getOpsAlertMonitorViewFilters())',
         'async function copyOpsAlertMonitorChecklist(categoryKey = \'\')',
         'async function copyOpsAlertMonitorShiftReportSummary()',
@@ -3001,6 +4117,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'window.setOpsAlertMonitorShiftReportView = setOpsAlertMonitorShiftReportView;',
         'window.copyOpsAlertMonitorShiftReportSummary = copyOpsAlertMonitorShiftReportSummary;',
         'window.exportOpsAlertMonitorShiftReportCsv = exportOpsAlertMonitorShiftReportCsv;',
+        'window.schedulePendingOpsAlertWorkspaceRestore?.();',
         'data-ops-alert-quick-reply-move="up"',
         'data-ops-alert-quick-reply-role="collapsed-summary"',
         'data-ops-alert-quick-reply-role="toggle-button"',
@@ -3008,7 +4125,6 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'data-ops-alert-quick-reply-token="${escapeConfigHtml(token)}"',
         'data-ops-alert-quick-reply-role="preview-text"',
         'data-ops-alert-quick-reply-role="validation"',
-        'async function openOpsAlertWorkspace(workspaceKey, context = {})',
         'function getDefaultShopRiskCaseComposerState()',
         'function getShopRiskCaseStatusTone(status)',
         'function getShopRiskCaseStatusLabel(status)',
@@ -3021,14 +4137,10 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'async function submitShopRiskCaseComposer()',
         "fetch('/api/admin/settings/ops-alert-monitor-cases'",
         'async function handleShopRiskAction(action, context = {})',
-        'window.openOpsAlertWorkspace = openOpsAlertWorkspace;',
         'window.handleShopRiskAction = handleShopRiskAction;',
         'window.handleShopRiskCaseAction = handleShopRiskCaseAction;',
         'window.closeShopRiskCaseComposer = closeShopRiskCaseComposer;',
         'window.submitShopRiskCaseComposer = submitShopRiskCaseComposer;',
-        "'shop-risk-orders': '商城风险订单'",
-        "'shop-risk-discounts': '优惠券码列表'",
-        "'shop-risk-users': '用户详情'",
         "shop_risk: '商城风控'",
         'shop_order_risk: {',
         'auto_response_enabled: true',
@@ -3055,6 +4167,12 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
     for (const marker of runtimeMarkers) {
         assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should contain ${marker}`);
     }
+
+    assert.equal(
+        adminStudioScript.includes('readOpsAlertWorkspaceContextDataset(actionEl.dataset)'),
+        true,
+        'admin-studio.js should read ops alert workspace context through the shared workbench dataset helper'
+    );
 
     assert.equal(
         adminStudioCss.includes('#module-ops-alerts .config-card:not(.collapsed) .config-card-body'),
@@ -3299,6 +4417,7 @@ test('admin studio points and users controls route through delegated actions', (
 
     const delegatedMarkers = [
         'data-admin-action="points-switch-view"',
+        'data-points-view="catalog"',
         'data-admin-keydown-action="points-search-enter"',
         'data-admin-action="points-toggle-date-filter"',
         'data-admin-action="points-filter-date"',
@@ -3968,6 +5087,21 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
     const runtimeMarkers = [
         "const ADMIN_POINTS_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';",
         "const ADMIN_POINTS_PANEL_VISIBLE_CLASS = 'admin-points-panel-visible';",
+        'function getPointsReadSite()',
+        "buildAdminPointsUrl('points/batches'",
+        "buildAdminPointsUrl('points/catalog'",
+        "buildAdminPointsUrl('points/lookup'",
+        "buildAdminPointsUrl('points/manage'",
+        "buildAdminPointsUrl('points/packages'",
+        'async function fetchPointsCatalogSnapshot({ site = getPointsReadSite(), force = false } = {})',
+        'function renderPointsPackageCatalog(payload = {})',
+        'function renderPointsPackageEditor()',
+        'async function savePointsPackageForm(event) {',
+        'async function deleteCurrentPointsPackage() {',
+        'async function fetchPointsBatchesPayload(params = {}) {',
+        'async function fetchPointsLookupPayload(params = {}) {',
+        'async function mutatePointsManage({ action = \'\', site = \'\', payload = {} } = {})',
+        "const writableSite = requireWritablePointsSite({ label });",
         'function setAdminPointsVisibility(target, visible)',
         'function setAdminPointsPanelVisible(target, visible)',
         "function setAdminPointsRuntimeStyles(target, styles = {}, priority = '')",
@@ -3986,18 +5120,50 @@ test('admin points runtime renderers externalize tab state, panel visibility, an
         'class="code-value admin-points-reference-id"',
         'class="value admin-points-ledger-amount',
         'class="value admin-points-lookup-value-sans"',
-        'class="value admin-points-lookup-value-danger"'
+        'class="value admin-points-lookup-value-danger"',
+        'class="points-catalog-summary-card points-catalog-summary-card--',
+        'class="points-package-status ${statusClass}"',
+        'class="points-package-row ${isSelected ? \'is-selected\' : \'\'}"',
+        "label: isCreate ? '创建套餐' : '保存套餐'"
     ];
 
     for (const marker of runtimeMarkers) {
         assert.equal(adminPointsSource.includes(marker), true, `admin-points.js should contain ${marker}`);
     }
 
+    const removedPointsWriteMarkers = [
+        ".from('redemption_batches')",
+        ".from('redemption_codes')",
+        ".from('profiles')",
+        ".from('prompts')",
+        ".from('points_ledger')",
+        'fn_check_code_status',
+        ".rpc('fn_generate_custom_codes'",
+        ".rpc('fn_generate_codes'",
+        ".rpc('fn_revoke_code'"
+    ];
+
+    for (const marker of removedPointsWriteMarkers) {
+        assert.equal(adminPointsSource.includes(marker), false, `admin-points.js should not retain ${marker}`);
+    }
+
     const expectedCssMarkers = [
         'left: var(--admin-tab-indicator-left, 0px);',
         'width: var(--admin-tab-indicator-width, 0px);',
         'width: var(--points-usage-fill-width, 0%);',
+        '#points-view-catalog',
         '.points-batch-row',
+        '.settings-package-shortcut',
+        '.points-module-note',
+        '.points-catalog-workspace',
+        '.points-package-editor-shell',
+        '.points-package-editor-badge',
+        '.points-package-form__actions',
+        '.points-catalog-summary',
+        '.points-catalog-summary-card',
+        '.points-package-row.is-selected',
+        '.points-package-status.is-active',
+        '.points-package-status.is-inactive',
         '#generatedCodesResult.admin-studio-inline-style-attr-35.admin-points-panel-visible',
         '#lookupResult.admin-studio-inline-style-attr-41.admin-points-panel-visible',
         '.admin-points-reference-id',
@@ -4046,6 +5212,10 @@ test('admin comments runtime renderers route list items, filters, and block menu
     );
 
     const delegatedMarkers = [
+        "buildAdminCommentsUrl('comments/blocks'",
+        "buildAdminCommentsUrl('comments/list'",
+        "buildAdminCommentsUrl('comments/summary'",
+        '/api/admin/comments/moderate',
         'data-comments-action="remove-filter"',
         'data-comments-action="toggle-selection"',
         'data-comments-change="selection"',
@@ -4064,7 +5234,10 @@ test('admin comments runtime renderers route list items, filters, and block menu
         "case 'toggle-pin':",
         "case 'toggle-block-dropdown':",
         "case 'block-user':",
-        "case 'selection':"
+        "case 'selection':",
+        "action: 'toggle_pin'",
+        "requireWritableCommentsSite({ label: `${scopeStr}用户封禁` })",
+        "requireWritableCommentsSite({ label: `${scopeLabel}用户解封` })"
     ];
 
     for (const marker of delegatedMarkers) {
@@ -4076,7 +5249,8 @@ test('admin comments runtime renderers route list items, filters, and block menu
         'fa-thumbtack" style=',
         '<div class="action-block-wrapper" style="position: relative;">',
         "item.style.opacity = '0';",
-        "item.style.transform = 'translateY(-20px)';"
+        "item.style.transform = 'translateY(-20px)';",
+        ".from('blocked_users')"
     ];
 
     for (const marker of removedMarkers) {
@@ -4087,7 +5261,9 @@ test('admin comments runtime renderers route list items, filters, and block menu
         "const avatarMarkup = comment.avatar",
         "class=\"item-avatar${comment.avatar ? ' item-avatar--image' : ''}\"",
         "fa-thumbtack${comment.is_pinned ? ' comment-pin-icon--active' : ''}",
-        "item.classList.add('comment-admin-item--removing');"
+        "item.classList.add('comment-admin-item--removing');",
+        "requireWritableCommentsSite({ label: currentStatus ? '取消评论置顶' : '置顶评论' })",
+        "当前封禁按 scope 全站生效，不区分 CN / EN 站点。"
     ];
 
     for (const marker of runtimeMarkers) {
@@ -4419,8 +5595,12 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
         "placeholder.hidden = !!hasPreview;",
         "const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';",
         "const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';",
-        'function invalidateHomepageRuntimeCaches() {',
-        'localStorage.setItem(HOMEPAGE_CONFIG_LAST_UPDATED_KEY, String(Date.now()));',
+        'function getHomepagePrefetchCacheKey(site = getHomepageReadSite()) {',
+        'function getHomepageConfigLastUpdatedKey(site = getHomepageReadSite()) {',
+        'sessionStorage.removeItem(getHomepagePrefetchCacheKey(safeSite));',
+        'localStorage.setItem(getHomepageConfigLastUpdatedKey(safeSite), String(Date.now()));',
+        'function invalidateHomepageRuntimeCaches(site = getHomepageReadSite()) {',
+        'localStorage.removeItem(HOMEPAGE_CONFIG_LAST_UPDATED_KEY);',
         'sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);'
     ];
 
@@ -4439,7 +5619,7 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-homepage.js?v=20260329_HOMEPAGE_CACHE_SYNC_3'),
+        adminStudioSource.includes('admin-homepage.js?v=20260331_HOMEPAGE_DUAL_SITE_ADMIN_1'),
         true,
         'admin-studio.html should load the latest homepage admin script version'
     );
@@ -4613,16 +5793,37 @@ test('discount and ticket admin renderers no longer emit inline row or paginatio
 test('ticket admin surfaces user email in search and list rendering', () => {
     const adminStudioSource = readRepoFile('admin-studio.html');
     const ticketsSource = readRepoFile('js/admin-tickets.js');
-    const configSource = readRepoFile('admin-config.js');
+    const adminWorkbenchSource = readRepoFile('js/admin-workbench.js');
+    const ticketLinksSource = readRepoFile('js/admin-ticket-links.js');
 
     assert.equal(adminStudioSource.includes('placeholder="搜索订单号、邮箱或描述..."'), true, 'admin-studio.html should mention email in the ticket search placeholder');
     assert.equal(adminStudioSource.includes('<th>用户 / 邮箱</th>'), true, 'admin-studio.html should label the ticket user column with email support');
-    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260331_ADMIN_TICKETS_LOADING_SKELETON_1'), true, 'admin-studio.html should load the cache-busted ticket admin script');
+    assert.equal(adminStudioSource.includes('js/admin-ticket-links.js?v=20260401_ADMIN_TICKET_LINK_PROTOCOL_1'), true, 'admin-studio.html should load the shared ticket link protocol before the ticket runtime');
+    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260401_ADMIN_TICKETS_WORKBENCH_PAYLOADS_4'), true, 'admin-studio.html should load the cache-busted ticket admin script');
+    assert.equal(adminStudioSource.includes('工单现在支持直接回到客服会话、订单、用户详情和原始站内代办'), true, 'admin-studio.html should expose the ticket workbench note');
+    assert.equal(ticketLinksSource.includes('root.AdminTicketLinks = api;'), true, 'js/admin-ticket-links.js should expose a shared ticket link protocol namespace');
+    assert.equal(ticketLinksSource.includes('function buildLinkedTicketDescription(body = {}, actorLabel = \'\')'), true, 'js/admin-ticket-links.js should build linked ticket descriptions through the shared protocol');
+    assert.equal(ticketLinksSource.includes('function parseLinkedOpsAlertContext(description = \'\')'), true, 'js/admin-ticket-links.js should parse linked ops alert ticket descriptions');
+    assert.equal(ticketLinksSource.includes('function parseLinkedChatSessionContext(description = \'\')'), true, 'js/admin-ticket-links.js should parse linked chat ticket descriptions');
     assert.equal(ticketsSource.includes("fetchProfilesByIds: async function"), true, 'js/admin-tickets.js should fetch profile emails for ticket users');
     assert.equal(ticketsSource.includes("t.user_email && t.user_email.toLowerCase().includes(q)"), true, 'js/admin-tickets.js should allow searching tickets by user email');
     assert.equal(ticketsSource.includes("ticket.user_email"), true, 'js/admin-tickets.js should render ticket user email');
     assert.equal(ticketsSource.includes("focusTicket: async function"), true, 'js/admin-tickets.js should expose a direct ticket focus helper');
-    assert.equal(configSource.includes("window.AdminTickets?.focusTicket"), true, 'admin-config.js should directly focus ticket workspaces when a ticket id is available');
+    assert.equal(ticketsSource.includes("getTicketLinkProtocol: function"), true, 'js/admin-tickets.js should centralize the shared ticket link protocol');
+    assert.equal(ticketsSource.includes("parseLinkedChatSessionContext: function"), true, 'js/admin-tickets.js should parse linked chat session context');
+    assert.equal(ticketsSource.includes("parseLinkedOpsAlertContext: function"), true, 'js/admin-tickets.js should parse linked ops alert context');
+    assert.equal(ticketsSource.includes("return window.AdminTicketLinks || null;"), true, 'js/admin-tickets.js should read the shared ticket link protocol from the browser runtime');
+    assert.equal(ticketsSource.includes("getWorkbenchLauncher: function"), true, 'js/admin-tickets.js should centralize the shared workbench launcher');
+    assert.equal(ticketsSource.includes("openWorkbenchEntry: async function"), true, 'js/admin-tickets.js should expose a shared workbench entry helper');
+    assert.equal(ticketsSource.includes("buildTicketWorkbenchEntry: function"), true, 'js/admin-tickets.js should centralize ticket workbench payload building');
+    assert.equal(ticketsSource.includes("openWorkbench: async function"), true, 'js/admin-tickets.js should expose a workbench bridge helper');
+    assert.equal(ticketsSource.includes("window.getOpsAlertWorkspaceAction"), true, 'js/admin-tickets.js should resolve linked ops alert workspaces through the shared resolver');
+    assert.equal(ticketsSource.includes("labelVariant: 'ticket'"), true, 'js/admin-tickets.js should request ticket-specific workspace action labels from the shared resolver');
+    assert.equal(ticketsSource.includes("window.openAdminWorkbenchEntry || window.openOpsAlertWorkspace"), true, 'js/admin-tickets.js should prefer the shared admin workbench launcher');
+    assert.equal(ticketsSource.includes("window.buildTicketWorkbenchEntry(target, ticket, {"), true, 'js/admin-tickets.js should delegate ticket workbench payloads through the shared runtime');
+    assert.equal(ticketsSource.includes("const workbenchEntry = this.buildTicketWorkbenchEntry(ticket, normalizedTarget);"), true, 'js/admin-tickets.js should reuse the shared ticket workbench payload for execution');
+    assert.equal(adminWorkbenchSource.includes("function buildTicketWorkbenchEntry(target = 'chat', ticket = {}, options = {})"), true, 'js/admin-workbench.js should expose a shared ticket workbench payload builder');
+    assert.equal(adminWorkbenchSource.includes("window.AdminTickets?.focusTicket"), true, 'js/admin-workbench.js should directly focus ticket workspaces when a ticket id is available');
 });
 
 test('discount admin runtime renderers externalize table states, copy toast, and modal visibility styling', () => {
@@ -4759,6 +5960,11 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
     const delegatedRuntimeMarkers = [
         'createTableStateRow: function',
         'buildTableLoadingSkeleton: function',
+        'buildWorkbenchActionDefinitions: function',
+        'variant: \'chat\'',
+        'variant: \'order\'',
+        'variant: \'user\'',
+        'variant: \'source\'',
         'admin-ticket-status-badge admin-ticket-status-badge--${normalizedStatus.toLowerCase()}',
         'admin-ticket-action-btn admin-ticket-action-btn--${variant}',
         'admin-ticket-pagination-shell',
@@ -4775,6 +5981,11 @@ test('ticket admin runtime renderers externalize row states, modal visibility, a
         '.admin-ticket-table-state-cell',
         '.admin-ticket-status-badge--pending',
         '.admin-ticket-action-btn--resolve',
+        '.admin-ticket-action-btn--chat',
+        '.admin-ticket-action-btn--order',
+        '.admin-ticket-action-btn--user',
+        '.admin-ticket-action-btn--source',
+        '.admin-ticket-workbench-note',
         '.admin-ticket-reply-modal.is-visible',
         '.admin-ticket-copy-toast'
     ];
@@ -5089,7 +6300,7 @@ test('shop admin order workflows externalize runtime table-row and modal styling
     const shopSource = readRepoFile('js/admin-shop.js');
     const shopStyles = readRepoFile('css/admin-studio-page.css');
     const adminStudioSource = readRepoFile('admin-studio.html');
-    const configSource = readRepoFile('admin-config.js');
+    const adminWorkbenchSource = readRepoFile('js/admin-workbench.js');
 
     const removedRuntimeMarkers = [
         'style="cursor: pointer;" title="点击查看订单详情"',
@@ -5149,8 +6360,8 @@ test('shop admin order workflows externalize runtime table-row and modal styling
     }
 
     assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260331_SHOP_LOADING_SKELETONS_1'), true, 'admin-studio.html should load the cache-busted shop admin script');
-    assert.equal(adminStudioSource.includes('admin-config.js?v=20260331_OPS_ALERT_QUICK_REPLY_COLLAPSE_10'), true, 'admin-studio.html should load the cache-busted admin config script');
-    assert.equal(configSource.includes('window.ShopAdmin?.focusOrder'), true, 'admin-config.js should directly focus shop order workspaces when an order id is available');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260401_ADMIN_WORKBENCH_SHARED_61'), true, 'admin-studio.html should load the cache-busted admin config script');
+    assert.equal(adminWorkbenchSource.includes('window.ShopAdmin?.focusOrder'), true, 'js/admin-workbench.js should directly focus shop order workspaces when an order id is available');
 });
 
 test('shop admin inventory workflows externalize runtime table and modal styling', () => {
@@ -5986,7 +7197,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260324_PROMPTS_UI_STATE_STYLES_5'),
+        promptsHtml.includes('prompts-poetry.js?v=20260401_PROMPTS_SITE_ISOLATION_1'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
     );
@@ -6156,7 +7367,21 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
         'buildMessageAreaLoadingSkeleton()',
         'chat-loading-state chat-loading-state--skeleton',
         'getSessionQueueDutyAdvice(snapshot = null)',
-        'data-session-snapshot-action="apply-recommended-mode"'
+        'data-session-snapshot-action="apply-recommended-mode"',
+        'getWorkbenchLauncher() {',
+        'async openWorkbenchEntry(workspaceKey, context = {}) {',
+        'buildUserContextWorkbenchEntry(kind = \'\', payload = {}) {',
+        "return window.getAdminWorkbenchOpsAlertCaseStatusTone(status, { variant: 'chat' });",
+        "return window.getAdminWorkbenchOpsAlertCaseStatusLabel(status);",
+        "return window.getOpsAlertCaseEventActionLabel(action);",
+        'return window.getAdminWorkbenchOpsAlertCaseRecentEventText(event, {',
+        'return window.getAdminWorkbenchOpsAlertCaseSummaryText(alert, {',
+        "return window.resolveOpsAlertEntryWorkspace(entryPath, baseContext);",
+        "return window.resolveShopRiskWorkspace(baseContext, payload);",
+        "return window.resolveOpsAlertWorkspace(alertType, payload, baseContext, entryPath);",
+        "return this.openWorkbenchEntry('chat-session', context);",
+        "return this.openWorkbenchEntry('shop-risk-orders', {",
+        "return this.openWorkbenchEntry('payments-overview', context);"
     ];
 
     for (const marker of runtimeMarkers) {
@@ -6187,7 +7412,7 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
 
     const htmlMarkers = [
         'css/admin-chat.css?v=20260331_ADMIN_CHAT_LOADING_SKELETON_1',
-        'js/admin-chat.js?v=20260331_ADMIN_CHAT_LOADING_SKELETON_1'
+        'js/admin-chat.js?v=20260401_ADMIN_CHAT_CASE_PROTOCOL_7'
     ];
 
     for (const marker of htmlMarkers) {
@@ -6252,7 +7477,7 @@ test('section visibility runtime externalizes element hiding and blocked overlay
 
     const sharedMarkers = [
         'css/section-visibility.css?v=20260324_SECTION_VISIBILITY_RUNTIME_STYLE_1',
-        'js/section-visibility.js?v=20260324_SECTION_VISIBILITY_RUNTIME_STYLE_1'
+        'js/section-visibility.js?v=20260331_SECTION_VISIBILITY_HOMEPAGE_CONFIG_1'
     ];
 
     for (const pageSource of pageSources) {
@@ -6436,8 +7661,12 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'function installSupabaseStub() {',
         'function installFetchStub() {',
         'async function runAdminStudioSmoke() {',
+        'async function runAdminPointsSmoke() {',
+        'async function runAdminGallerySmoke() {',
+        'async function runHomepageAdminSmoke() {',
         'async function runUserModalSmoke() {',
         'async function runExperimentModalSmoke() {',
+        'async function runAdminCommentsSmoke() {',
         'async function runAdminChatSmoke() {',
         'async function runNotificationSmoke() {',
         'function shouldRunMobileLayoutChecks() {',
@@ -6449,6 +7678,25 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         '快捷回复点击后会回填插值正文',
         '用户详情弹窗支持点击外部关闭',
         'A/B 实验弹窗支持点击外部关闭',
+        '首页模块会按站点加载配置',
+        '页脚显隐也通过 homepage_config 保存',
+        '切换站点后首页配置不会串站',
+        'Gallery 管理列表会渲染全局 Prompt 资产',
+        'Gallery 管理卡片会标记全局资产和双语覆盖状态',
+        'Gallery 编辑态会回填主字段和显式双语字段',
+        'Gallery 编辑保存会显式写回双语字段',
+        '切换站点后 Gallery 编辑态双语字段不会串站',
+        '套餐目录会渲染编辑工作台',
+        '套餐编辑保存会通过 points packages handler 写回',
+        '套餐新建会在 Points 模块里创建全局资产',
+        '兑换码生成会通过 points manage handler 写回批次和兑换码',
+        '批次列表会通过 points batches handler 加载当前站点批次',
+        '批次详情会通过 points batches handler 加载兑换码',
+        '评论模块会按站点加载含回复的统计口径',
+        '删除留言回复会通过 comments handler 清理回复树',
+        '画廊置顶会通过 comments handler 切换当前站点状态',
+        '评论封禁会通过 comments blocks handler 写入封禁状态',
+        '评论解封会通过 comments blocks handler 清理封禁状态',
         '客服工作台窄屏下值班建议与会话区没有横向溢出',
         '通知中心窄屏下长文案会自然换行',
         "recordResult('通知置顶会立即影响排序'"
@@ -6459,17 +7707,17 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260331_LOCAL_SMOKE_FIXTURES_6'),
+        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260401_LOCAL_SMOKE_FIXTURES_21'),
         true,
         'admin-studio.html should load the local smoke fixtures entry'
     );
     assert.equal(
-        smokeNotificationHtml.includes('css/smoke-notifications.css?v=20260331_LOCAL_SMOKE_FIXTURES_6'),
+        smokeNotificationHtml.includes('css/smoke-notifications.css?v=20260401_LOCAL_SMOKE_FIXTURES_11'),
         true,
         'smoke-notifications.html should load the dedicated smoke harness stylesheet'
     );
     assert.equal(
-        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260331_LOCAL_SMOKE_FIXTURES_6'),
+        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260401_LOCAL_SMOKE_FIXTURES_21'),
         true,
         'smoke-notifications.html should load the local smoke fixtures entry'
     );

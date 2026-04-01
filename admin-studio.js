@@ -318,6 +318,14 @@ function sanitizeImageUrl(url) {
     return '';
 }
 
+function getAdminStudioSupabaseClient() {
+    const client = window.supabaseClient;
+    if (!client) {
+        throw new Error('Supabase client unavailable');
+    }
+    return client;
+}
+
 async function auditPromptAction(actionType, details = {}) {
     if (typeof window.logAdminAction !== 'function') return;
 
@@ -326,6 +334,91 @@ async function auditPromptAction(actionType, details = {}) {
     } catch (err) {
         console.warn('Prompt audit log failed:', err);
     }
+}
+
+function getAdminPromptsReadSite() {
+    return window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+}
+
+function buildAdminPromptsUrl(params = {}) {
+    const url = new URL('/api/admin/prompts/manage', window.location.origin);
+
+    Object.entries(params || {}).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') return;
+        url.searchParams.set(key, String(value));
+    });
+
+    return `${url.pathname}${url.search}`;
+}
+
+async function parseAdminPromptsResponse(response) {
+    let payload = {};
+
+    try {
+        payload = await response.json();
+    } catch (_) {
+        payload = {};
+    }
+
+    if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.message || `Prompt request failed (${response.status})`);
+    }
+
+    return payload;
+}
+
+async function fetchAdminPromptList({ site = getAdminPromptsReadSite() } = {}) {
+    const response = await fetch(buildAdminPromptsUrl({ site }), {
+        credentials: 'include'
+    });
+
+    return parseAdminPromptsResponse(response);
+}
+
+async function fetchAdminPromptItem(id, { site = getAdminPromptsReadSite() } = {}) {
+    const response = await fetch(buildAdminPromptsUrl({
+        id,
+        site
+    }), {
+        credentials: 'include'
+    });
+
+    return parseAdminPromptsResponse(response);
+}
+
+async function mutateAdminPrompt({ action, site, id, payload = {} } = {}) {
+    const response = await fetch('/api/admin/prompts/manage', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            action,
+            site,
+            id,
+            ...(payload && typeof payload === 'object' ? payload : {})
+        })
+    });
+
+    return parseAdminPromptsResponse(response);
+}
+
+async function deleteAdminPrompts({ site, id, ids = [] } = {}) {
+    const response = await fetch('/api/admin/prompts/manage', {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            site,
+            id,
+            ids
+        })
+    });
+
+    return parseAdminPromptsResponse(response);
 }
 
 // ========================================
@@ -495,6 +588,40 @@ function bindAdminStudioDelegatedControls() {
 
     document.documentElement.dataset.adminStudioDelegatesBound = '1';
 
+    function guardAdminStudioWritableAction(actionEl, event) {
+        const action = String(actionEl?.dataset?.adminAction || '').trim();
+        if (!action || !window.AdminSiteFilter?.actionRequiresWritableSite?.(action)) {
+            return true;
+        }
+
+        const writableSite = window.AdminSiteFilter.requireWritableSite({ action });
+        if (writableSite) {
+            actionEl.dataset.adminWritableSite = writableSite;
+            return true;
+        }
+
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        return false;
+    }
+
+    function guardAdminStudioWritableForm(form, event) {
+        const formId = String(form?.id || '').trim();
+        if (!formId || !window.AdminSiteFilter?.formRequiresWritableSite?.(formId)) {
+            return true;
+        }
+
+        const writableSite = window.AdminSiteFilter.requireWritableSite({ formId });
+        if (writableSite) {
+            form.dataset.adminWritableSite = writableSite;
+            return true;
+        }
+
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        return false;
+    }
+
     document.addEventListener('click', (event) => {
         const target = event.target instanceof Element ? event.target : event.target?.parentElement;
         if (!target) {
@@ -503,6 +630,10 @@ function bindAdminStudioDelegatedControls() {
 
         const actionEl = target.closest('[data-admin-action]');
         if (!actionEl) {
+            return;
+        }
+
+        if (!guardAdminStudioWritableAction(actionEl, event)) {
             return;
         }
 
@@ -543,6 +674,10 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'switch-settings-view':
                 window.switchSettingsView?.(actionEl.dataset.settingsView);
+                break;
+            case 'settings-open-points-catalog':
+                window.switchModule?.('points');
+                window.switchPointsView?.('catalog');
                 break;
             case 'switch-ops-alerts-view':
                 window.switchOpsAlertsView?.(actionEl.dataset.opsAlertsView);
@@ -597,9 +732,6 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'settings-add-api-key':
                 window.addNewApiKey?.();
-                break;
-            case 'settings-add-package-row':
-                window.addPackageRow?.();
                 break;
             case 'settings-add-channel':
                 window.addChannel?.();
@@ -851,50 +983,65 @@ function bindAdminStudioDelegatedControls() {
                 );
                 break;
             case 'settings-open-ops-alert-workspace':
-                window.openOpsAlertWorkspace?.(actionEl.dataset.workspaceTarget, {
-                    alertType: actionEl.dataset.workspaceAlertType,
-                    category: actionEl.dataset.workspaceCategory,
-                    referenceLabel: actionEl.dataset.workspaceReferenceLabel,
-                    referenceValue: actionEl.dataset.workspaceReferenceValue,
-                    targetId: actionEl.dataset.workspaceTargetId,
-                    userId: actionEl.dataset.workspaceUserId,
-                    clientIp: actionEl.dataset.workspaceClientIp,
-                    discountCode: actionEl.dataset.workspaceDiscountCode
-                });
+                window.openOpsAlertWorkspace?.(
+                    actionEl.dataset.workspaceTarget,
+                    (typeof window.readOpsAlertWorkspaceContextDataset === 'function'
+                        ? window.readOpsAlertWorkspaceContextDataset(actionEl.dataset)
+                        : {
+                            alertType: actionEl.dataset.workspaceAlertType,
+                            category: actionEl.dataset.workspaceCategory,
+                            referenceLabel: actionEl.dataset.workspaceReferenceLabel,
+                            referenceValue: actionEl.dataset.workspaceReferenceValue,
+                            targetId: actionEl.dataset.workspaceTargetId,
+                            userId: actionEl.dataset.workspaceUserId,
+                            clientIp: actionEl.dataset.workspaceClientIp,
+                            discountCode: actionEl.dataset.workspaceDiscountCode
+                        })
+                );
                 break;
             case 'settings-handle-shop-risk-action':
-                window.handleShopRiskAction?.(actionEl.dataset.shopRiskAction, {
-                    title: actionEl.dataset.workspaceTitle,
-                    alertType: actionEl.dataset.workspaceAlertType,
-                    category: actionEl.dataset.workspaceCategory,
-                    referenceLabel: actionEl.dataset.workspaceReferenceLabel,
-                    referenceValue: actionEl.dataset.workspaceReferenceValue,
-                    targetId: actionEl.dataset.workspaceTargetId,
-                    userId: actionEl.dataset.workspaceUserId,
-                    clientIp: actionEl.dataset.workspaceClientIp,
-                    discountCode: actionEl.dataset.workspaceDiscountCode,
-                    signalType: actionEl.dataset.workspaceSignalType,
-                    caseStatus: actionEl.dataset.workspaceCaseStatus,
-                    caseOwnerAdminId: actionEl.dataset.workspaceCaseOwnerAdminId,
-                    caseOwnerLabel: actionEl.dataset.workspaceCaseOwnerLabel
-                });
+                window.handleShopRiskAction?.(
+                    actionEl.dataset.shopRiskAction,
+                    (typeof window.readOpsAlertWorkspaceContextDataset === 'function'
+                        ? window.readOpsAlertWorkspaceContextDataset(actionEl.dataset)
+                        : {
+                            title: actionEl.dataset.workspaceTitle,
+                            alertType: actionEl.dataset.workspaceAlertType,
+                            category: actionEl.dataset.workspaceCategory,
+                            referenceLabel: actionEl.dataset.workspaceReferenceLabel,
+                            referenceValue: actionEl.dataset.workspaceReferenceValue,
+                            targetId: actionEl.dataset.workspaceTargetId,
+                            userId: actionEl.dataset.workspaceUserId,
+                            clientIp: actionEl.dataset.workspaceClientIp,
+                            discountCode: actionEl.dataset.workspaceDiscountCode,
+                            signalType: actionEl.dataset.workspaceSignalType,
+                            caseStatus: actionEl.dataset.workspaceCaseStatus,
+                            caseOwnerAdminId: actionEl.dataset.workspaceCaseOwnerAdminId,
+                            caseOwnerLabel: actionEl.dataset.workspaceCaseOwnerLabel
+                        })
+                );
                 break;
             case 'settings-handle-shop-risk-case':
-                window.handleShopRiskCaseAction?.(actionEl.dataset.shopRiskCaseAction, {
-                    title: actionEl.dataset.workspaceTitle,
-                    alertType: actionEl.dataset.workspaceAlertType,
-                    category: actionEl.dataset.workspaceCategory,
-                    referenceLabel: actionEl.dataset.workspaceReferenceLabel,
-                    referenceValue: actionEl.dataset.workspaceReferenceValue,
-                    targetId: actionEl.dataset.workspaceTargetId,
-                    userId: actionEl.dataset.workspaceUserId,
-                    clientIp: actionEl.dataset.workspaceClientIp,
-                    discountCode: actionEl.dataset.workspaceDiscountCode,
-                    signalType: actionEl.dataset.workspaceSignalType,
-                    caseStatus: actionEl.dataset.workspaceCaseStatus,
-                    caseOwnerAdminId: actionEl.dataset.workspaceCaseOwnerAdminId,
-                    caseOwnerLabel: actionEl.dataset.workspaceCaseOwnerLabel
-                });
+                window.handleShopRiskCaseAction?.(
+                    actionEl.dataset.shopRiskCaseAction,
+                    (typeof window.readOpsAlertWorkspaceContextDataset === 'function'
+                        ? window.readOpsAlertWorkspaceContextDataset(actionEl.dataset)
+                        : {
+                            title: actionEl.dataset.workspaceTitle,
+                            alertType: actionEl.dataset.workspaceAlertType,
+                            category: actionEl.dataset.workspaceCategory,
+                            referenceLabel: actionEl.dataset.workspaceReferenceLabel,
+                            referenceValue: actionEl.dataset.workspaceReferenceValue,
+                            targetId: actionEl.dataset.workspaceTargetId,
+                            userId: actionEl.dataset.workspaceUserId,
+                            clientIp: actionEl.dataset.workspaceClientIp,
+                            discountCode: actionEl.dataset.workspaceDiscountCode,
+                            signalType: actionEl.dataset.workspaceSignalType,
+                            caseStatus: actionEl.dataset.workspaceCaseStatus,
+                            caseOwnerAdminId: actionEl.dataset.workspaceCaseOwnerAdminId,
+                            caseOwnerLabel: actionEl.dataset.workspaceCaseOwnerLabel
+                        })
+                );
                 break;
             case 'settings-close-shop-risk-case-modal':
                 window.closeShopRiskCaseComposer?.();
@@ -1005,20 +1152,6 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-mock-payment':
                 window.toggleMockPaymentStatus?.();
                 break;
-            case 'settings-toggle-package-status': {
-                const index = parseInt(actionEl.dataset.packageIndex || '', 10);
-                if (!Number.isNaN(index)) {
-                    window.togglePackageStatus?.(index);
-                }
-                break;
-            }
-            case 'settings-delete-package': {
-                const index = parseInt(actionEl.dataset.packageIndex || '', 10);
-                if (!Number.isNaN(index)) {
-                    window.deletePackage?.(index);
-                }
-                break;
-            }
             case 'settings-save-seo':
                 window.saveSeoSettings?.();
                 break;
@@ -1644,42 +1777,6 @@ function bindAdminStudioDelegatedControls() {
                     actionEl.checked
                 );
                 break;
-            case 'settings-update-package-field': {
-                const index = parseInt(actionEl.dataset.packageIndex || '', 10);
-                if (Number.isNaN(index)) {
-                    break;
-                }
-
-                let value = actionEl.value;
-                switch (actionEl.dataset.packageValueType) {
-                    case 'int': {
-                        const parsed = parseInt(actionEl.value || '', 10);
-                        value = Number.isFinite(parsed) ? parsed : 0;
-                        actionEl.value = String(value);
-                        break;
-                    }
-                    case 'float': {
-                        const trimmed = String(actionEl.value || '').trim();
-                        if (!trimmed) {
-                            value = null;
-                            actionEl.value = '';
-                            break;
-                        }
-
-                        const parsed = parseFloat(trimmed);
-                        value = Number.isFinite(parsed) ? parsed : null;
-                        actionEl.value = value == null ? '' : String(value);
-                        break;
-                    }
-                    default:
-                        value = String(actionEl.value || '').trim();
-                        actionEl.value = value;
-                        break;
-                }
-
-                window.updatePackage?.(index, actionEl.dataset.packageField, value);
-                break;
-            }
             case 'settings-toggle-decoration':
                 window.toggleDecoration?.();
                 break;
@@ -1806,6 +1903,10 @@ function bindAdminStudioDelegatedControls() {
     document.addEventListener('submit', (event) => {
         const form = event.target instanceof HTMLFormElement ? event.target : null;
         if (!form) {
+            return;
+        }
+
+        if (!guardAdminStudioWritableForm(form, event)) {
             return;
         }
 
@@ -2128,16 +2229,68 @@ function updateAdminTabIndicator(activeTab) {
 // ========================================
 let allPrompts = []; // Cache all prompts for local search
 
+function promptHasVisibleCopy(value) {
+    return typeof value === 'string' && value.trim().length > 0;
+}
+
+function getPromptLanguageCoverage(prompt = {}) {
+    return {
+        zh: promptHasVisibleCopy(prompt.title_zh)
+            || promptHasVisibleCopy(prompt.description_zh)
+            || promptHasVisibleCopy(prompt.prompt_text_zh),
+        en: promptHasVisibleCopy(prompt.title_en)
+            || promptHasVisibleCopy(prompt.description_en)
+            || promptHasVisibleCopy(prompt.prompt_text_en)
+    };
+}
+
+function normalizePromptSiteMetrics(prompt = {}) {
+    const rawMetrics = prompt && typeof prompt.site_metrics === 'object' && prompt.site_metrics
+        ? prompt.site_metrics
+        : {};
+    const normalizeMetricValue = (value) => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    };
+    const normalizeSiteMetric = (value = {}) => ({
+        unlock_count: normalizeMetricValue(value.unlock_count),
+        comment_count: normalizeMetricValue(value.comment_count)
+    });
+
+    return {
+        cn: normalizeSiteMetric(rawMetrics.cn),
+        intl: normalizeSiteMetric(rawMetrics.intl),
+        total: normalizeSiteMetric(rawMetrics.total)
+    };
+}
+
+function buildPromptSiteMetricElement(siteLabel, siteMetrics, currentSite = 'all') {
+    const metricRow = document.createElement('div');
+    const siteKey = String(siteLabel || '').trim().toLowerCase() === 'intl' ? 'intl' : 'cn';
+    metricRow.className = 'admin-card-site-metric';
+    if (currentSite === siteKey) {
+        metricRow.classList.add('is-current');
+    }
+
+    const metricLabel = document.createElement('span');
+    metricLabel.className = 'admin-card-site-metric__label';
+    metricLabel.textContent = siteLabel;
+    metricRow.appendChild(metricLabel);
+
+    const metricCounts = document.createElement('span');
+    metricCounts.className = 'admin-card-site-metric__counts';
+    metricCounts.textContent = `解锁 ${siteMetrics.unlock_count} · 评论 ${siteMetrics.comment_count}`;
+    metricRow.appendChild(metricCounts);
+
+    return metricRow;
+}
+
 async function loadAdminPrompts() {
     const grid = document.getElementById('adminGrid');
 
     try {
-        const { data, error } = await supabaseClient
-            .from('prompts')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-        if (error) throw error;
+        const payload = await fetchAdminPromptList();
+        const data = payload.rows || [];
 
         // Cache prompts for local search
         allPrompts = data || [];
@@ -2167,6 +2320,9 @@ function renderAdminCard(prompt) {
     const card = document.createElement('div');
     card.className = 'admin-card';
     card.dataset.id = String(prompt.id ?? '');
+    const languageCoverage = getPromptLanguageCoverage(prompt);
+    const siteMetrics = normalizePromptSiteMetrics(prompt);
+    const currentSite = getAdminPromptsReadSite();
 
     const checkbox = document.createElement('span');
     checkbox.className = 'select-checkbox';
@@ -2190,10 +2346,50 @@ function renderAdminCard(prompt) {
 
     const content = document.createElement('div');
     content.className = 'admin-card-content';
+
+    const badges = document.createElement('div');
+    badges.className = 'admin-card-badges';
+
+    const globalBadge = document.createElement('span');
+    globalBadge.className = 'admin-card-badge admin-card-badge--global';
+    globalBadge.textContent = 'Global Asset';
+    badges.appendChild(globalBadge);
+
+    const zhBadge = document.createElement('span');
+    zhBadge.className = `admin-card-badge admin-card-badge--lang ${languageCoverage.zh ? 'is-ready' : 'is-missing'}`;
+    zhBadge.textContent = 'ZH';
+    badges.appendChild(zhBadge);
+
+    const enBadge = document.createElement('span');
+    enBadge.className = `admin-card-badge admin-card-badge--lang ${languageCoverage.en ? 'is-ready' : 'is-missing'}`;
+    enBadge.textContent = 'EN';
+    badges.appendChild(enBadge);
+
+    if (Array.isArray(prompt.tags) && prompt.tags[0]) {
+        const categoryBadge = document.createElement('span');
+        categoryBadge.className = 'admin-card-badge admin-card-badge--category';
+        categoryBadge.textContent = prompt.tags[0];
+        badges.appendChild(categoryBadge);
+    }
+
+    content.appendChild(badges);
+
     const title = document.createElement('div');
     title.className = 'admin-card-title';
     title.textContent = prompt.title || 'Untitled Prompt';
     content.appendChild(title);
+
+    const subtitle = document.createElement('div');
+    subtitle.className = 'admin-card-subtitle';
+    subtitle.textContent = prompt.description || prompt.description_en || prompt.description_zh || 'Global prompt asset with explicit bilingual copy coverage.';
+    content.appendChild(subtitle);
+
+    const metrics = document.createElement('div');
+    metrics.className = 'admin-card-site-metrics';
+    metrics.appendChild(buildPromptSiteMetricElement('CN', siteMetrics.cn, currentSite));
+    metrics.appendChild(buildPromptSiteMetricElement('INTL', siteMetrics.intl, currentSite));
+    content.appendChild(metrics);
+
     card.appendChild(content);
 
     const hoverLeft = document.createElement('div');
@@ -2265,13 +2461,8 @@ function renderAdminCard(prompt) {
 // ========================================
 async function editPrompt(id) {
     try {
-        const { data, error } = await supabaseClient
-            .from('prompts')
-            .select('*')
-            .eq('id', id)
-            .single();
-
-        if (error) throw error;
+        const payload = await fetchAdminPromptItem(id);
+        const data = payload.row;
 
         // Switch to create view
         switchView('create');
@@ -2285,9 +2476,23 @@ async function editPrompt(id) {
         setAdminStudioVisibility(promptForm, true);
 
         // Populate form fields
-        document.getElementById('promptTitle').value = data.title || '';
-        setCustomDropdownValue('categoryDropdown', data.tags?.[0] || '');
-        document.getElementById('promptText').value = data.prompt_text || '';
+        populateForm({
+            title: data.title || '',
+            category: data.tags?.[0] || '',
+            prompt_text: data.prompt_text || '',
+            description: data.description || '',
+            title_zh: data.title_zh || '',
+            title_en: data.title_en || '',
+            description_zh: data.description_zh || '',
+            description_en: data.description_en || '',
+            prompt_text_zh: data.prompt_text_zh || '',
+            prompt_text_en: data.prompt_text_en || '',
+            objects: data.ai_tags?.objects,
+            scenes: data.ai_tags?.scenes,
+            styles: data.ai_tags?.styles,
+            mood: data.ai_tags?.mood,
+            dominantColors: data.dominant_colors || []
+        });
 
         // Show last edited time (compact version)
         const lastEditedInfo = document.getElementById('lastEditedInfo');
@@ -2413,6 +2618,11 @@ function cancelEdit() {
 // DELETE PROMPT
 // ========================================
 async function deletePrompt(id) {
+    const writableSite = window.AdminSiteFilter?.requireWritableSite?.({ label: '删除 Prompt' });
+    if (!writableSite) {
+        return;
+    }
+
     if (!confirm('Delete this prompt? This action cannot be undone.')) {
         return;
     }
@@ -2420,18 +2630,12 @@ async function deletePrompt(id) {
     console.log('Attempting to delete prompt with ID:', id);
 
     try {
-        const { error } = await supabaseClient
-            .from('prompts')
-            .delete()
-            .eq('id', id);
-
-        if (error) {
-            console.error('Supabase delete error:', error);
-            throw error;
-        }
+        await deleteAdminPrompts({
+            site: writableSite,
+            id
+        });
 
         console.log('Successfully deleted from database');
-        await auditPromptAction('prompt.delete', { prompt_id: id });
 
         // Remove from UI with animation
         const card = document.querySelector(`[data-id="${id}"]`);
@@ -3206,7 +3410,76 @@ IMPORTANT: Return ONLY valid JSON, no markdown formatting, no code blocks, no ex
 // FORM HANDLING
 // ========================================
 function initForm() {
+    initPromptBilingualFieldToggle();
+    setPromptBilingualFieldsOpen(false);
     document.getElementById('promptForm').addEventListener('submit', savePrompt);
+}
+
+function setPromptBilingualFieldsOpen(open) {
+    const toggleBtn = document.getElementById('promptBilingualToggleBtn');
+    const toggleLabel = document.getElementById('promptBilingualToggleLabel');
+    const fields = document.getElementById('promptBilingualFields');
+    if (!toggleBtn || !toggleLabel || !fields) {
+        return;
+    }
+
+    const expanded = Boolean(open);
+    toggleBtn.classList.toggle('is-active', expanded);
+    toggleBtn.dataset.expanded = expanded ? '1' : '0';
+    toggleBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    toggleLabel.textContent = expanded ? '收起高级语言字段' : '展开高级语言字段';
+    setAdminStudioVisibility(fields, expanded);
+}
+
+function initPromptBilingualFieldToggle() {
+    const toggleBtn = document.getElementById('promptBilingualToggleBtn');
+    if (!toggleBtn || toggleBtn.dataset.bound === '1') {
+        return;
+    }
+
+    toggleBtn.dataset.bound = '1';
+    toggleBtn.addEventListener('click', () => {
+        const expanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+        setPromptBilingualFieldsOpen(!expanded);
+    });
+}
+
+function hasPromptBilingualContent(data = {}) {
+    const fields = [
+        data.title_zh,
+        data.title_en,
+        data.description_zh,
+        data.description_en,
+        data.prompt_text_zh,
+        data.prompt_text_en
+    ];
+
+    return fields.some((value) => String(value || '').trim().length > 0);
+}
+
+function populatePromptBilingualFields(data = {}) {
+    document.getElementById('promptTitleZh').value = data.title_zh || '';
+    document.getElementById('promptTitleEn').value = data.title_en || '';
+    document.getElementById('promptDescriptionZh').value = data.description_zh || '';
+    document.getElementById('promptDescriptionEn').value = data.description_en || '';
+    document.getElementById('promptTextZh').value = data.prompt_text_zh || '';
+    document.getElementById('promptTextEn').value = data.prompt_text_en || '';
+}
+
+function collectPromptBilingualFieldValues() {
+    return {
+        title_zh: document.getElementById('promptTitleZh').value.trim(),
+        title_en: document.getElementById('promptTitleEn').value.trim(),
+        description_zh: document.getElementById('promptDescriptionZh').value.trim(),
+        description_en: document.getElementById('promptDescriptionEn').value.trim(),
+        prompt_text_zh: document.getElementById('promptTextZh').value.trim(),
+        prompt_text_en: document.getElementById('promptTextEn').value.trim()
+    };
+}
+
+function resetPromptBilingualFields() {
+    populatePromptBilingualFields({});
+    setPromptBilingualFieldsOpen(false);
 }
 
 function populateForm(data) {
@@ -3214,12 +3487,30 @@ function populateForm(data) {
     document.getElementById('promptTitle').value = data.title || '';
 
     // Category
-    if (data.category) {
-        setCustomDropdownValue('categoryDropdown', data.category);
-    }
+    setCustomDropdownValue('categoryDropdown', data.category || '');
+
+    // Prompt text
+    document.getElementById('promptText').value = data.prompt_text || data.prompt || data.prompt_suggestion_en || data.prompt_suggestion_zh || '';
 
     // Description
-    document.getElementById('promptDescription').value = data.description || '';
+    document.getElementById('promptDescription').value = data.description || data.description_en || data.description_zh || '';
+
+    populatePromptBilingualFields({
+        title_zh: data.title_zh || '',
+        title_en: data.title_en || '',
+        description_zh: data.description_zh || '',
+        description_en: data.description_en || '',
+        prompt_text_zh: data.prompt_text_zh || data.prompt_suggestion_zh || '',
+        prompt_text_en: data.prompt_text_en || data.prompt_suggestion_en || ''
+    });
+    setPromptBilingualFieldsOpen(hasPromptBilingualContent({
+        title_zh: data.title_zh,
+        title_en: data.title_en,
+        description_zh: data.description_zh,
+        description_en: data.description_en,
+        prompt_text_zh: data.prompt_text_zh || data.prompt_suggestion_zh,
+        prompt_text_en: data.prompt_text_en || data.prompt_suggestion_en
+    }));
 
     // Tags
     renderTags('tagObjects', data.objects);
@@ -3281,6 +3572,11 @@ function renderColors(colors) {
 async function savePrompt(e) {
     e.preventDefault();
 
+    const writableSite = window.AdminSiteFilter?.requireWritableSite?.({ formId: 'promptForm' });
+    if (!writableSite) {
+        return;
+    }
+
     // For new prompts, require AI analysis. For editing, just need images.
     if (currentMode === 'create') {
         if (!analysisResult || uploadedFiles.length === 0) {
@@ -3321,6 +3617,7 @@ async function savePrompt(e) {
         const category = document.getElementById('promptCategory').value;
         const promptText = document.getElementById('promptText').value.trim();
         const description = document.getElementById('promptDescription').value.trim();
+        const bilingualValues = collectPromptBilingualFieldValues();
 
         if (!title || !category) {
             throw new Error('请填写标题和分类');
@@ -3349,6 +3646,7 @@ async function savePrompt(e) {
             description: description,
             prompt: promptText,
             images: imageUrls,
+            ...bilingualValues
         };
 
         // Only include AI analysis data if we have it (new analysis was run)
@@ -3361,12 +3659,12 @@ async function savePrompt(e) {
                 mood: analysisResult.mood
             };
             // Bilingual fields from AI analysis
-            promptData.title_en = analysisResult.title_en || analysisResult.title || title;
-            promptData.title_zh = analysisResult.title_zh || '';
-            promptData.description_en = analysisResult.description_en || analysisResult.description || description;
-            promptData.description_zh = analysisResult.description_zh || '';
-            promptData.prompt_text_en = analysisResult.prompt_suggestion_en || '';
-            promptData.prompt_text_zh = analysisResult.prompt_suggestion_zh || '';
+            promptData.title_en = promptData.title_en || analysisResult.title_en || analysisResult.title || title;
+            promptData.title_zh = promptData.title_zh || analysisResult.title_zh || '';
+            promptData.description_en = promptData.description_en || analysisResult.description_en || analysisResult.description || description;
+            promptData.description_zh = promptData.description_zh || analysisResult.description_zh || '';
+            promptData.prompt_text_en = promptData.prompt_text_en || analysisResult.prompt_suggestion_en || '';
+            promptData.prompt_text_zh = promptData.prompt_text_zh || analysisResult.prompt_suggestion_zh || '';
         }
 
         // Auto-translate missing bilingual fields using PromptTranslator
@@ -3426,92 +3724,64 @@ async function savePrompt(e) {
         }
 
         // Always save to Supabase database (storage availability doesn't matter for DB save)
-        try {
-            let data, error;
+        let savedRow = null;
+        const promptPayload = {
+            title: promptData.title,
+            tags: promptData.tags,
+            description: promptData.description,
+            prompt_text: promptData.prompt,
+            title_en: promptData.title_en || '',
+            title_zh: promptData.title_zh || '',
+            description_en: promptData.description_en || '',
+            description_zh: promptData.description_zh || '',
+            prompt_text_en: promptData.prompt_text_en || '',
+            prompt_text_zh: promptData.prompt_text_zh || ''
+        };
 
-            if (currentMode === 'edit' && editingId) {
-                // UPDATE existing prompt - build update object
-                const updateData = {
-                    title: promptData.title,
-                    tags: promptData.tags,
-                    description: promptData.description,
-                    prompt_text: promptData.prompt,
-                };
-                // Only update images if storage upload was successful
-                if (storageAvailable) {
-                    updateData.images = promptData.images;
+        if (storageAvailable) {
+            promptPayload.images = promptData.images;
+        }
+
+        if (promptData.dominantColors) {
+            promptPayload.dominant_colors = promptData.dominantColors;
+        }
+
+        if (promptData.aiTags) {
+            promptPayload.ai_tags = promptData.aiTags;
+        }
+
+        if (currentMode === 'edit' && editingId) {
+            const payload = await mutateAdminPrompt({
+                action: 'update',
+                site: writableSite,
+                id: editingId,
+                payload: promptPayload
+            });
+            savedRow = payload.row || null;
+        } else {
+            const payload = await mutateAdminPrompt({
+                action: 'create',
+                site: writableSite,
+                payload: {
+                    ...promptPayload,
+                    images: promptData.images,
+                    dominant_colors: promptData.dominantColors,
+                    ai_tags: promptData.aiTags
                 }
-                // Only update AI-related fields if new analysis was done
-                if (promptData.dominantColors) {
-                    updateData.dominant_colors = promptData.dominantColors;
-                }
-                if (promptData.aiTags) {
-                    updateData.ai_tags = promptData.aiTags;
-                }
-                // Include bilingual fields if available
-                if (promptData.title_en) updateData.title_en = promptData.title_en;
-                if (promptData.title_zh) updateData.title_zh = promptData.title_zh;
-                if (promptData.description_en) updateData.description_en = promptData.description_en;
-                if (promptData.description_zh) updateData.description_zh = promptData.description_zh;
-                if (promptData.prompt_text_en) updateData.prompt_text_en = promptData.prompt_text_en;
-                if (promptData.prompt_text_zh) updateData.prompt_text_zh = promptData.prompt_text_zh;
+            });
+            savedRow = payload.row || null;
+        }
 
-                ({ data, error } = await supabaseClient
-                    .from('prompts')
-                    .update(updateData)
-                    .eq('id', editingId)
-                    .select());
+        if (!savedRow) {
+            throw new Error('Prompt save did not return a row');
+        }
 
-                if (!error) {
-                    await auditPromptAction('prompt.update', {
-                        prompt_id: editingId,
-                        title: updateData.title,
-                        tags: updateData.tags || []
-                    });
-                }
-            } else {
-                // INSERT new prompt
-                ({ data, error } = await supabaseClient
-                    .from('prompts')
-                    .insert([{
-                        title: promptData.title,
-                        tags: promptData.tags,
-                        description: promptData.description,
-                        prompt_text: promptData.prompt,
-                        images: promptData.images,
-                        dominant_colors: promptData.dominantColors,
-                        ai_tags: promptData.aiTags,
-                        // Bilingual fields
-                        title_en: promptData.title_en,
-                        title_zh: promptData.title_zh,
-                        description_en: promptData.description_en,
-                        description_zh: promptData.description_zh,
-                        prompt_text_en: promptData.prompt_text_en,
-                        prompt_text_zh: promptData.prompt_text_zh
-                    }])
-                    .select());
+        const successMsg = currentMode === 'edit' ? 'Prompt updated!' : 'Prompt saved!';
+        showToast(successMsg, 'success');
 
-                if (!error) {
-                    await auditPromptAction('prompt.create', {
-                        prompt_id: data?.[0]?.id || null,
-                        title: promptData.title,
-                        tags: promptData.tags || []
-                    });
-                }
-            }
-
-            if (error) throw error;
-
-            const successMsg = currentMode === 'edit' ? 'Prompt updated!' : 'Prompt saved!';
-            showToast(successMsg, 'success');
-
-            // Reset edit mode
-            if (currentMode === 'edit') {
-                cancelEdit();
-            }
-        } catch (dbError) {
-            console.warn('Database save failed:', dbError);
-            showToast('数据库保存失败，已生成代码片段', 'info');
+        // Reset edit mode
+        if (currentMode === 'edit') {
+            cancelEdit();
         }
 
         // Complete the progress
@@ -3672,8 +3942,9 @@ async function uploadImages() {
     // Upload to R2 via Edge Function
     if (imagesToUpload.length > 0) {
         try {
+            const client = getAdminStudioSupabaseClient();
             // Get current session
-            const { data: { session } } = await supabaseClient.auth.getSession();
+            const { data: { session } } = await client.auth.getSession();
 
             if (!session) {
                 throw new Error('Not authenticated');
@@ -3720,14 +3991,14 @@ async function uploadImages() {
                     // Convert base64 to blob
                     const blob = await fetch(`data:image/webp;base64,${base64}`).then(r => r.blob());
 
-                    const { data, error } = await supabaseClient.storage
+                    const { data, error } = await client.storage
                         .from('prompt-images')
                         .upload(filename, blob, { contentType: 'image/webp' });
 
                     if (error) throw error;
 
                     // Get public URL
-                    const { data: urlData } = supabaseClient.storage
+                    const { data: urlData } = client.storage
                         .from('prompt-images')
                         .getPublicUrl(filename);
 
@@ -3818,6 +4089,7 @@ function resetForm() {
     document.getElementById('previewGrid').innerHTML = '';
     setAdminStudioVisibility(document.getElementById('promptForm'), false);
     document.getElementById('promptForm').reset();
+    resetPromptBilingualFields();
     document.getElementById('tagObjects').innerHTML = '';
     document.getElementById('tagScenes').innerHTML = '';
     document.getElementById('tagStyles').innerHTML = '';
@@ -4138,6 +4410,11 @@ const originalFormSubmit = document.getElementById('promptForm')?.onsubmit;
 // BATCH REANALYZE
 // ========================================
 async function startBatchReanalyze() {
+    const writableSite = window.AdminSiteFilter?.requireWritableSite?.({ label: '批量重分析 Prompt' });
+    if (!writableSite) {
+        return;
+    }
+
     // Check API key first
     if (!window.AdminAI?.configured) {
         showToast('请先在后台 API 配置或 Vercel 环境变量中配置 Gemini Key', 'error');
@@ -4156,10 +4433,15 @@ async function startBatchReanalyze() {
         return;
     }
 
-    await executeBatchReanalyze(selected);
+    await executeBatchReanalyze(selected, { site: writableSite });
 }
 
 async function analyzeUntaggedPrompts() {
+    const writableSite = window.AdminSiteFilter?.requireWritableSite?.({ label: '分析无标签 Prompt' });
+    if (!writableSite) {
+        return;
+    }
+
     // Find prompts without AI tags
     const untagged = allPrompts.filter(p => !p.ai_tags || Object.keys(p.ai_tags).length === 0);
 
@@ -4172,11 +4454,12 @@ async function analyzeUntaggedPrompts() {
         return;
     }
 
-    await executeBatchReanalyze(untagged);
+    await executeBatchReanalyze(untagged, { site: writableSite });
 }
 
-async function executeBatchReanalyze(prompts) {
+async function executeBatchReanalyze(prompts, options = {}) {
     const DELAY = 1500; // 1.5s between requests
+    const writableSite = options.site || window.AdminSiteFilter?.getSiteFilter?.() || 'cn';
     batchCancelled = false;
     batchPaused = false;
     batchStartTime = Date.now();
@@ -4199,7 +4482,7 @@ async function executeBatchReanalyze(prompts) {
         updateBatchProgress(i + 1, prompts.length, prompt.title);
 
         try {
-            await reanalyzeSinglePrompt(prompt);
+            await reanalyzeSinglePrompt(prompt, writableSite);
             success++;
         } catch (err) {
             console.error(`Failed to reanalyze ${prompt.title}:`, err);
@@ -4227,7 +4510,7 @@ async function executeBatchReanalyze(prompts) {
     if (isSelectMode) toggleSelectMode();
 }
 
-async function reanalyzeSinglePrompt(prompt) {
+async function reanalyzeSinglePrompt(prompt, writableSite) {
     if (!prompt.images || prompt.images.length === 0) {
         throw new Error('No images');
     }
@@ -4276,15 +4559,12 @@ async function reanalyzeSinglePrompt(prompt) {
 
     console.log(`💾 Updating Supabase with:`, updateData);
 
-    const { error } = await supabaseClient
-        .from('prompts')
-        .update(updateData)
-        .eq('id', prompt.id);
-
-    if (error) {
-        console.error(`❌ Supabase update failed:`, error);
-        throw error;
-    }
+    await mutateAdminPrompt({
+        action: 'patch',
+        site: writableSite,
+        id: prompt.id,
+        payload: updateData
+    });
 
     console.log(`✅ Prompt ${prompt.id} reanalyzed successfully`);
 }
@@ -4318,17 +4598,20 @@ function hideDeleteConfirmation() {
 }
 
 async function executeBatchDelete() {
+    const writableSite = window.AdminSiteFilter?.requireWritableSite?.({ label: '批量删除 Prompt' });
+    if (!writableSite) {
+        return;
+    }
+
     hideDeleteConfirmation();
 
     const ids = Array.from(selectedPrompts);
 
     try {
-        const { error } = await supabaseClient
-            .from('prompts')
-            .delete()
-            .in('id', ids);
-
-        if (error) throw error;
+        await deleteAdminPrompts({
+            site: writableSite,
+            ids
+        });
 
         showToast(`成功删除 ${ids.length} 个提示词`, 'success');
         await loadAdminPrompts();

@@ -11,9 +11,6 @@ const HomepageAdmin = (() => {
     let currentSection = 'hero';
     let initialized = false;
 
-    // Section visibility per site: { cn: { hero: true, ... }, intl: { ... } }
-    let sectionVisibility = null;
-    const SV_SECTIONS = ['hero', 'gallery', 'shop', 'verify', 'guestbook', 'footer'];
     const SV_LABELS = {
         hero: { icon: 'fas fa-image', label: 'Hero 横幅' },
         gallery: { icon: 'fas fa-palette', label: '提示词图库' },
@@ -22,12 +19,78 @@ const HomepageAdmin = (() => {
         guestbook: { icon: 'fas fa-comment-dots', label: '留言板' },
         footer: { icon: 'fas fa-columns', label: '页脚链接' }
     };
-    // Map homepage_config section names to visibility section names
-    const SECTION_TO_VIS = { prompts: 'gallery' };
+    const VIS_TO_SECTION = { hero: 'hero', gallery: 'prompts', shop: 'shop', verify: 'verify', guestbook: 'guestbook', footer: 'footer' };
     const HOMEPAGE_ADMIN_HIDDEN_CLASS = 'admin-studio-inline-style-attr-3';
     const HOMEPAGE_ADMIN_PREVIEW_HIDDEN_CLASS = 'admin-studio-inline-style-attr-149';
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
+
+    function normalizeHomepageSite(site) {
+        return site === 'intl' ? 'intl' : 'cn';
+    }
+
+    function getHomepageReadSite() {
+        const filter = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+        return normalizeHomepageSite(filter === 'all' ? 'cn' : filter);
+    }
+
+    function getHomepagePrefetchCacheKey(site = getHomepageReadSite()) {
+        return `${HOMEPAGE_PREFETCH_CACHE_KEY}_${normalizeHomepageSite(site)}`;
+    }
+
+    function getHomepageConfigLastUpdatedKey(site = getHomepageReadSite()) {
+        return `${HOMEPAGE_CONFIG_LAST_UPDATED_KEY}_${normalizeHomepageSite(site)}`;
+    }
+
+    async function parseHomepageAdminResponse(response) {
+        let payload = {};
+        try {
+            payload = await response.json();
+        } catch (error) {
+            payload = {};
+        }
+
+        if (!response.ok || payload?.success === false) {
+            throw new Error(payload?.message || `Homepage request failed (${response.status})`);
+        }
+
+        return payload;
+    }
+
+    async function fetchHomepageConfigRows(site = getHomepageReadSite()) {
+        const response = await fetch(`/api/admin/homepage/config?site=${encodeURIComponent(normalizeHomepageSite(site))}`, {
+            credentials: 'include'
+        });
+
+        return parseHomepageAdminResponse(response);
+    }
+
+    async function updateHomepageConfigRow({
+        id,
+        section,
+        site,
+        content,
+        is_visible,
+        display_order
+    }) {
+        const response = await fetch('/api/admin/homepage/config', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                id,
+                section,
+                site: normalizeHomepageSite(site),
+                content,
+                is_visible,
+                display_order
+            })
+        });
+
+        return parseHomepageAdminResponse(response);
+    }
 
     function setHomepageAdminHiddenState(target, hidden, hiddenClass = HOMEPAGE_ADMIN_HIDDEN_CLASS) {
         if (!target) return;
@@ -62,22 +125,33 @@ const HomepageAdmin = (() => {
         }
     }
 
-    function invalidateHomepageRuntimeCaches() {
+    function invalidateHomepageRuntimeCaches(site = getHomepageReadSite()) {
+        const safeSite = normalizeHomepageSite(site);
         try {
-            ['cn', 'global'].forEach(site => {
-                localStorage.removeItem(`zaoyoe_${site}_cache_v1_homepage_config`);
-            });
+            localStorage.removeItem(`zaoyoe_${safeSite}_cache_v1_homepage_config`);
             localStorage.removeItem('zaoyoe_cache_v1_homepage_config');
-            localStorage.setItem(HOMEPAGE_CONFIG_LAST_UPDATED_KEY, String(Date.now()));
+            localStorage.setItem(getHomepageConfigLastUpdatedKey(safeSite), String(Date.now()));
+            localStorage.removeItem(HOMEPAGE_CONFIG_LAST_UPDATED_KEY);
             console.log('[Homepage] Invalidated homepage_config cache');
         } catch (e) {
             console.warn('[Homepage] Failed to invalidate local cache:', e);
         }
 
         try {
+            sessionStorage.removeItem(getHomepagePrefetchCacheKey(safeSite));
             sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
         } catch (e) {
             console.warn('[Homepage] Failed to invalidate homepage prefetch cache:', e);
+        }
+    }
+
+    function invalidateSectionVisibilityCaches() {
+        try {
+            ['cn', 'intl'].forEach(site => {
+                localStorage.removeItem(`zaoyoe_section_vis_${site}`);
+            });
+        } catch (e) {
+            console.warn('[Homepage] Failed to invalidate section visibility cache:', e);
         }
     }
 
@@ -95,6 +169,10 @@ const HomepageAdmin = (() => {
         });
     }
 
+    function requireWritableHomepageSite(options = {}) {
+        return window.AdminSiteFilter?.requireWritableSite?.(options) || null;
+    }
+
     // ============================================
     // INIT
     // ============================================
@@ -110,7 +188,6 @@ const HomepageAdmin = (() => {
 
         try {
             await loadAllConfig();
-            await loadSectionVisibility();
             setupEventListeners();
             initialized = true;
 
@@ -133,17 +210,13 @@ const HomepageAdmin = (() => {
     // ============================================
 
     async function loadAllConfig() {
-        const { data, error } = await supabaseClient
-            .from('homepage_config')
-            .select('*')
-            .order('display_order', { ascending: true });
-
-        if (error) throw error;
-
+        const result = await fetchHomepageConfigRows(getHomepageReadSite());
+        const rows = Array.isArray(result.rows) ? result.rows : [];
         configCache = {};
-        (data || []).forEach(row => {
+        rows.forEach(row => {
             configCache[row.section] = {
                 id: row.id,
+                site: normalizeHomepageSite(row.site),
                 content: row.content || {},
                 is_visible: row.is_visible,
                 display_order: row.display_order,
@@ -151,7 +224,7 @@ const HomepageAdmin = (() => {
             };
         });
 
-        console.log('[Homepage] Loaded config for sections:', Object.keys(configCache));
+        console.log('[Homepage] Loaded config for site:', getHomepageReadSite(), Object.keys(configCache));
 
         // Render all sections
         renderAllSections();
@@ -254,6 +327,11 @@ const HomepageAdmin = (() => {
             return;
         }
 
+        const writableSite = requireWritableHomepageSite({ action: 'homepage-save-section' });
+        if (!writableSite) {
+            return;
+        }
+
         // Show translating status on save button
         const saveBtn = document.querySelector(`.hp-section-view[data-hp-view="${section}"] .btn-primary`);
         const originalBtnText = saveBtn ? saveBtn.innerHTML : '';
@@ -330,19 +408,26 @@ const HomepageAdmin = (() => {
 
         // Save to database
         try {
-            const { error } = await supabaseClient
-                .from('homepage_config')
-                .update({
-                    content: content,
-                    is_visible: cfg.is_visible,
-                    display_order: cfg.display_order
-                })
-                .eq('section', section);
+            if (!cfg.id) {
+                throw new Error(`缺少 ${section} 区块配置行，无法保存`);
+            }
 
-            if (error) throw error;
+            const result = await updateHomepageConfigRow({
+                id: cfg.id,
+                section,
+                site: writableSite,
+                content,
+                is_visible: cfg.is_visible,
+                display_order: cfg.display_order
+            });
+            const savedRow = result.row || {};
 
             // Update timestamp
-            cfg.updated_at = new Date().toISOString();
+            cfg.updated_at = savedRow.updated_at || new Date().toISOString();
+            cfg.site = normalizeHomepageSite(savedRow.site || writableSite);
+            cfg.is_visible = savedRow.is_visible !== false;
+            cfg.display_order = Number(savedRow.display_order ?? cfg.display_order) || 0;
+            cfg.content = savedRow.content || content;
             const updatedEl = document.getElementById(`hp-${section}-updated`);
             if (updatedEl) {
                 updatedEl.textContent = `最后更新: ${new Date().toLocaleString('zh-CN')}`;
@@ -354,7 +439,9 @@ const HomepageAdmin = (() => {
                 showHomepageSaveIndicator(indicator, 2000);
             }
 
-            invalidateHomepageRuntimeCaches();
+            invalidateHomepageRuntimeCaches(writableSite);
+            invalidateSectionVisibilityCaches();
+            renderAllVisibilityToggles();
 
             if (typeof showToast === 'function') {
                 showToast('保存成功', 'success');
@@ -506,73 +593,11 @@ const HomepageAdmin = (() => {
     // ============================================
 
     function getAdminSite() {
-        // Get selected site from AdminSiteFilter, defaulting to 'cn'
-        const filter = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
-        return filter === 'all' ? 'cn' : filter;
-    }
-
-    function getDefaultVisibility() {
-        const defaults = {};
-        SV_SECTIONS.forEach(s => defaults[s] = true);
-        return defaults;
-    }
-
-    async function loadSectionVisibility() {
-        try {
-            const { data, error } = await supabaseClient.rpc('get_all_system_config');
-            if (error) throw error;
-
-            const item = (data || []).find(d => d.config_key === 'section_visibility');
-            sectionVisibility = item?.config_value || { cn: getDefaultVisibility(), intl: getDefaultVisibility() };
-
-            // Ensure both sites have defaults
-            if (!sectionVisibility.cn) sectionVisibility.cn = getDefaultVisibility();
-            if (!sectionVisibility.intl) sectionVisibility.intl = getDefaultVisibility();
-
-            console.log('[Homepage] Section visibility loaded:', sectionVisibility);
-        } catch (err) {
-            console.warn('[Homepage] Failed to load section visibility:', err.message);
-            sectionVisibility = { cn: getDefaultVisibility(), intl: getDefaultVisibility() };
-        }
-
-        renderAllVisibilityToggles();
-    }
-
-    async function saveSectionVisibility() {
-        if (!sectionVisibility) return;
-
-        try {
-            const { error } = await supabaseClient.rpc('update_system_config', {
-                p_key: 'section_visibility',
-                p_value: sectionVisibility
-            });
-
-            if (error) throw error;
-
-            // Invalidate frontend caches
-            try {
-                localStorage.removeItem('zaoyoe_section_vis_cn');
-                localStorage.removeItem('zaoyoe_section_vis_intl');
-            } catch (e) { /* ignore */ }
-
-            if (typeof showToast === 'function') {
-                showToast('分栏显示设置已保存', 'success');
-            }
-
-            console.log('[Homepage] Section visibility saved:', sectionVisibility);
-        } catch (err) {
-            console.error('[Homepage] Failed to save section visibility:', err);
-            if (typeof showToast === 'function') {
-                showToast('保存失败: ' + err.message, 'error');
-            }
-        }
+        return getHomepageReadSite();
     }
 
     function renderAllVisibilityToggles() {
-        if (!sectionVisibility) return;
-
         const site = getAdminSite();
-        const siteConfig = sectionVisibility[site] || getDefaultVisibility();
         const siteLabel = site === 'cn' ? 'CN 站' : 'INTL 站';
 
         // Map: homepage section → visibility section
@@ -596,7 +621,7 @@ const HomepageAdmin = (() => {
             const existing = moduleContent.querySelector('.sv-toggle-container');
             if (existing) existing.remove();
 
-            const isVisible = siteConfig[visSection] !== false;
+            const isVisible = configCache[hpSection]?.is_visible !== false;
             const info = SV_LABELS[visSection];
 
             const container = document.createElement('div');
@@ -628,10 +653,10 @@ const HomepageAdmin = (() => {
         });
 
         // Also render footer toggle inside the last section (guestbook) save bar area
-        renderFooterVisibilityToggle(siteConfig, siteLabel);
+        renderFooterVisibilityToggle(siteLabel);
     }
 
-    function renderFooterVisibilityToggle(siteConfig, siteLabel) {
+    function renderFooterVisibilityToggle(siteLabel) {
         const guestbookView = document.querySelector('.hp-section-view[data-hp-view="guestbook"]');
         if (!guestbookView) return;
 
@@ -642,7 +667,7 @@ const HomepageAdmin = (() => {
         const existing = moduleContent.querySelector('.sv-footer-card');
         if (existing) existing.remove();
 
-        const isVisible = siteConfig.footer !== false;
+        const isVisible = configCache.footer?.is_visible !== false;
         const info = SV_LABELS.footer;
 
         const card = document.createElement('div');
@@ -680,19 +705,64 @@ const HomepageAdmin = (() => {
         });
     }
 
-    function toggleSectionVisibility(section, checked) {
-        if (!sectionVisibility) return;
+    async function saveHomepageSectionVisibility(section, checked, site) {
+        const hpSection = VIS_TO_SECTION[section] || section;
+        const cfg = configCache[hpSection];
+        if (!cfg?.id) {
+            throw new Error(`缺少 ${hpSection} 区块配置，无法保存显示状态`);
+        }
 
-        const site = getAdminSite();
-        if (!sectionVisibility[site]) sectionVisibility[site] = getDefaultVisibility();
-        sectionVisibility[site][section] = checked;
+        const previousValue = cfg.is_visible !== false;
+        cfg.is_visible = checked;
+        setToggle(`hp-${hpSection}-visible`, checked);
 
-        // Update bar visual state
-        const bar = document.getElementById(`sv-bar-${section}`);
-        if (bar) bar.classList.toggle('sv-off', !checked);
+        try {
+            const result = await updateHomepageConfigRow({
+                id: cfg.id,
+                section: hpSection,
+                site,
+                is_visible: checked
+            });
+            const savedRow = result.row || {};
 
-        // Auto-save immediately
-        saveSectionVisibility();
+            cfg.updated_at = savedRow.updated_at || new Date().toISOString();
+            cfg.site = normalizeHomepageSite(savedRow.site || site);
+            cfg.is_visible = savedRow.is_visible !== false;
+            const updatedEl = document.getElementById(`hp-${hpSection}-updated`);
+            if (updatedEl) {
+                updatedEl.textContent = `最后更新: ${new Date().toLocaleString('zh-CN')}`;
+            }
+
+            invalidateHomepageRuntimeCaches(site);
+            invalidateSectionVisibilityCaches();
+            renderAllVisibilityToggles();
+
+            if (typeof showToast === 'function') {
+                showToast('分栏显示设置已保存', 'success');
+            }
+        } catch (err) {
+            cfg.is_visible = previousValue;
+            setToggle(`hp-${hpSection}-visible`, previousValue);
+            renderAllVisibilityToggles();
+            throw err;
+        }
+    }
+
+    async function toggleSectionVisibility(section, checked) {
+        const site = requireWritableHomepageSite({ label: '调整首页分栏显示' });
+        if (!site) {
+            renderAllVisibilityToggles();
+            return;
+        }
+
+        try {
+            await saveHomepageSectionVisibility(section, checked, site);
+        } catch (err) {
+            console.error('[Homepage] Failed to save homepage section visibility:', err);
+            if (typeof showToast === 'function') {
+                showToast('保存失败: ' + err.message, 'error');
+            }
+        }
     }
 
     // ============================================
@@ -725,8 +795,18 @@ const HomepageAdmin = (() => {
         });
 
         // Listen for admin site filter change to reload visibility toggles
-        window.addEventListener('admin-site-changed', () => {
-            renderAllVisibilityToggles();
+        window.addEventListener('admin-site-changed', async () => {
+            if (!initialized) return;
+
+            try {
+                await loadAllConfig();
+                renderCurrentSection();
+            } catch (err) {
+                console.error('[Homepage] Failed to reload config for new site:', err);
+                if (typeof showToast === 'function') {
+                    showToast('首页配置切站刷新失败: ' + err.message, 'error');
+                }
+            }
         });
     }
 

@@ -1549,17 +1549,22 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function syncHomepagePrefetchCache(message) {
+        const currentSite = window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
+        const siteCacheKey = `homepage_prefetch_${currentSite}`;
+
         try {
-            const raw = sessionStorage.getItem('homepage_prefetch');
+            const raw = sessionStorage.getItem(siteCacheKey);
             if (!raw) return;
 
             const parsed = JSON.parse(raw);
+            if (parsed?.site && parsed.site !== currentSite) return;
             if (!parsed?.cachedData) return;
 
             const maxItems = Math.max(1, Number(parsed.config?.guestbook?.max_items) || 5);
             parsed.cachedData.guestbook = mergeGuestbookMessageList(parsed.cachedData.guestbook, message, maxItems);
             parsed.timestamp = Date.now();
-            sessionStorage.setItem('homepage_prefetch', JSON.stringify(parsed));
+            parsed.site = currentSite;
+            sessionStorage.setItem(siteCacheKey, JSON.stringify(parsed));
         } catch (error) {
             console.warn('⚠️ Failed to sync homepage prefetch after guestbook post:', error.message);
         }

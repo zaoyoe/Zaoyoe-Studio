@@ -14,6 +14,17 @@
     }
 
     const now = new Date('2026-03-31T09:30:00+08:00');
+    const smokeAdminPermissions = [
+        'prompts.manage',
+        'content.moderate',
+        'users.manage',
+        'points.manage',
+        'settings.manage',
+        'ops_alerts.manage',
+        'homepage.manage',
+        'chat.manage',
+        'analytics.view'
+    ];
     const smokeState = {
         user: {
             id: 'admin-1',
@@ -623,11 +634,861 @@
                 created_at: '2026-03-31T07:18:00+08:00'
             }
         ],
+        homepageConfigRows: buildHomepageConfigRows(),
+        guestbookMessages: [
+            {
+                id: 'gb-msg-cn-1',
+                site: 'cn',
+                user_id: '00000000-0000-4000-8000-000000000001',
+                content: '中文站主留言，想确认最近的人工审核进度。',
+                image_url: '',
+                like_count: 2,
+                created_at: '2026-03-31T08:30:00+08:00'
+            },
+            {
+                id: 'gb-msg-intl-1',
+                site: 'intl',
+                user_id: '00000000-0000-4000-8000-000000000004',
+                content: 'Global guestbook entry asking about turnaround time.',
+                image_url: '',
+                like_count: 1,
+                created_at: '2026-03-31T08:10:00+08:00'
+            }
+        ],
+        guestbookComments: [
+            {
+                id: 'gb-comment-cn-1',
+                site: 'cn',
+                message_id: 'gb-msg-cn-1',
+                parent_id: null,
+                user_id: '00000000-0000-4000-8000-000000000002',
+                content: '先帮你跟进一下当前排队情况。',
+                created_at: '2026-03-31T08:36:00+08:00'
+            },
+            {
+                id: 'gb-reply-cn-1',
+                site: 'cn',
+                message_id: 'gb-msg-cn-1',
+                parent_id: 'gb-comment-cn-1',
+                user_id: '00000000-0000-4000-8000-000000000003',
+                content: '我也遇到一样的问题，先占个楼。',
+                created_at: '2026-03-31T08:41:00+08:00'
+            },
+            {
+                id: 'gb-comment-intl-1',
+                site: 'intl',
+                message_id: 'gb-msg-intl-1',
+                parent_id: null,
+                user_id: '00000000-0000-4000-8000-000000000001',
+                content: 'We are checking the queue for you.',
+                created_at: '2026-03-31T08:16:00+08:00'
+            }
+        ],
+        guestbookLikes: [
+            {
+                id: 'gb-like-cn-1',
+                site: 'cn',
+                user_id: '00000000-0000-4000-8000-000000000004',
+                target_type: 'comment',
+                target_id: 'gb-comment-cn-1',
+                created_at: '2026-03-31T08:38:00+08:00'
+            },
+            {
+                id: 'gb-like-cn-2',
+                site: 'cn',
+                user_id: '00000000-0000-4000-8000-000000000001',
+                target_type: 'comment',
+                target_id: 'gb-reply-cn-1',
+                created_at: '2026-03-31T08:42:00+08:00'
+            }
+        ],
+        prompts: [
+            {
+                id: 'prompt-cn-1',
+                title: '中文 Prompt 卡片',
+                title_zh: '中文 Prompt 卡片',
+                title_en: 'CN Prompt Card',
+                description: '中文站默认描述，用来验证编辑态会回填主描述字段。',
+                description_zh: '中文站默认描述，用来验证编辑态会回填主描述字段。',
+                description_en: 'CN default description used to verify edit-mode hydration.',
+                prompt_text: 'base prompt text for cn smoke coverage',
+                prompt_text_zh: '中文提示词草稿，用来验证显式语言字段。',
+                prompt_text_en: 'English prompt draft for smoke verification.',
+                tags: ['Photography'],
+                images: ['data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='],
+                ai_tags: {
+                    objects: { en: ['portrait'], zh: ['人像'] },
+                    scenes: { en: ['studio'], zh: ['摄影棚'] },
+                    styles: { en: ['editorial'], zh: ['杂志感'] },
+                    mood: { en: ['calm'], zh: ['平静'] }
+                },
+                dominant_colors: ['blue', 'silver'],
+                created_at: '2026-03-31T08:20:00+08:00',
+                updated_at: '2026-03-31T09:05:00+08:00'
+            },
+            {
+                id: 'prompt-intl-1',
+                title: 'Global Prompt Card',
+                title_zh: '国际站 Prompt 卡片',
+                title_en: 'Global Prompt Card',
+                description: 'Global prompt description for smoke switching.',
+                description_zh: '国际站默认描述，用来验证切站不串数据。',
+                description_en: 'Global prompt description for site-switch smoke coverage.',
+                prompt_text: 'intl base prompt text',
+                prompt_text_zh: '国际站中文提示词',
+                prompt_text_en: 'Global prompt draft',
+                tags: ['Illustration'],
+                images: ['data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='],
+                ai_tags: {
+                    objects: { en: ['character'], zh: ['角色'] },
+                    scenes: { en: ['city'], zh: ['城市'] },
+                    styles: { en: ['stylized'], zh: ['风格化'] },
+                    mood: { en: ['bright'], zh: ['明亮'] }
+                },
+                dominant_colors: ['golden', 'white'],
+                created_at: '2026-03-31T08:12:00+08:00',
+                updated_at: '2026-03-31T08:40:00+08:00'
+            }
+        ],
+        pointsPackages: [
+            {
+                id: 'pkg-starter',
+                name: '新手尝鲜包',
+                name_en: 'Starter Pack',
+                points_amount: 100,
+                bonus_points: 0,
+                price_cny: 1.99,
+                is_active: true,
+                sort_order: 1,
+                created_at: '2026-03-31T08:00:00+08:00'
+            },
+            {
+                id: 'pkg-value',
+                name: '超值进阶包',
+                name_en: 'Value Pack',
+                points_amount: 500,
+                bonus_points: 100,
+                price_cny: 9.90,
+                is_active: true,
+                sort_order: 2,
+                created_at: '2026-03-31T08:05:00+08:00'
+            },
+            {
+                id: 'pkg-legacy',
+                name: '历史下线包',
+                name_en: 'Legacy Pack',
+                points_amount: 200,
+                bonus_points: 0,
+                price_cny: 4.90,
+                is_active: false,
+                sort_order: 3,
+                created_at: '2026-03-31T08:10:00+08:00'
+            }
+        ],
+        redemptionBatches: [
+            {
+                id: 'batch-cn-1',
+                name: '闲鱼四月活动',
+                package_id: 'pkg-starter',
+                total_count: 20,
+                used_count: 8,
+                site: 'cn',
+                status: 'active',
+                created_at: '2026-03-31T09:00:00+08:00'
+            },
+            {
+                id: 'batch-intl-1',
+                name: 'INTL Campaign',
+                package_id: 'pkg-starter',
+                total_count: 10,
+                used_count: 3,
+                site: 'intl',
+                status: 'active',
+                created_at: '2026-03-31T09:20:00+08:00'
+            },
+            {
+                id: 'batch-cn-2',
+                name: '春季补发',
+                package_id: 'pkg-value',
+                total_count: 12,
+                used_count: 4,
+                site: 'cn',
+                status: 'active',
+                created_at: '2026-03-31T09:30:00+08:00'
+            },
+            {
+                id: 'batch-custom-cn-1',
+                name: '手动补偿',
+                package_id: null,
+                total_count: 3,
+                used_count: 1,
+                site: 'cn',
+                status: 'active',
+                created_at: '2026-03-31T09:40:00+08:00'
+            }
+        ],
+        redemptionCodes: [
+            {
+                id: 'code-cn-1',
+                code: 'ZY-CN-USED-0001',
+                batch_id: 'batch-cn-1',
+                package_id: 'pkg-starter',
+                status: 'used',
+                site: 'cn',
+                used_by: '00000000-0000-4000-8000-000000000001',
+                used_at: '2026-03-31T10:02:00+08:00',
+                points_amount: 100,
+                created_at: '2026-03-31T09:01:00+08:00'
+            },
+            {
+                id: 'code-cn-2',
+                code: 'ZY-CN-PENDING-0002',
+                batch_id: 'batch-cn-1',
+                package_id: 'pkg-starter',
+                status: 'pending',
+                site: 'cn',
+                points_amount: 100,
+                created_at: '2026-03-31T09:03:00+08:00'
+            },
+            {
+                id: 'code-intl-1',
+                code: 'ZY-INTL-DISABLED-0001',
+                batch_id: 'batch-intl-1',
+                package_id: 'pkg-starter',
+                status: 'disabled',
+                site: 'intl',
+                points_amount: 100,
+                created_at: '2026-03-31T09:22:00+08:00'
+            }
+        ],
+        pointsLedger: [
+            {
+                id: '11111111-1111-4111-8111-111111111111',
+                site: 'cn',
+                reason: 'unlock_prompt',
+                reference_id: 'prompt-cn-1',
+                amount: -20,
+                user_id: '00000000-0000-4000-8000-000000000001',
+                created_at: '2026-03-31T11:00:00+08:00'
+            }
+        ],
+        promptUnlocks: [
+            {
+                id: 'prompt-unlock-cn-1',
+                site: 'cn',
+                prompt_id: 'prompt-cn-1',
+                user_id: '00000000-0000-4000-8000-000000000001',
+                unlocked_at: '2026-03-31T08:21:00+08:00'
+            },
+            {
+                id: 'prompt-unlock-cn-2',
+                site: 'cn',
+                prompt_id: 'prompt-cn-1',
+                user_id: '00000000-0000-4000-8000-000000000002',
+                unlocked_at: '2026-03-31T08:27:00+08:00'
+            },
+            {
+                id: 'prompt-unlock-intl-1',
+                site: 'intl',
+                prompt_id: 'prompt-cn-1',
+                user_id: '00000000-0000-4000-8000-000000000003',
+                unlocked_at: '2026-03-31T08:36:00+08:00'
+            },
+            {
+                id: 'prompt-unlock-cn-3',
+                site: 'cn',
+                prompt_id: 'prompt-intl-1',
+                user_id: '00000000-0000-4000-8000-000000000004',
+                unlocked_at: '2026-03-31T08:29:00+08:00'
+            },
+            {
+                id: 'prompt-unlock-intl-2',
+                site: 'intl',
+                prompt_id: 'prompt-intl-1',
+                user_id: '00000000-0000-4000-8000-000000000001',
+                unlocked_at: '2026-03-31T08:31:00+08:00'
+            }
+        ],
+        promptComments: [
+            {
+                id: 'prompt-comment-cn-1',
+                site: 'cn',
+                prompt_id: 'prompt-cn-1',
+                parent_id: null,
+                content: '中文站卡片评论，当前是置顶评论。',
+                user_id: '00000000-0000-4000-8000-000000000001',
+                created_at: '2026-03-31T08:52:00+08:00',
+                image_url: '',
+                is_pinned: true,
+                is_featured: false,
+                prompt_title: '中文 Prompt 卡片',
+                like_count: 2
+            },
+            {
+                id: 'prompt-comment-cn-2',
+                site: 'cn',
+                prompt_id: 'prompt-cn-1',
+                parent_id: null,
+                content: '中文站另一条评论，smoke 会把它切成置顶。',
+                user_id: '00000000-0000-4000-8000-000000000002',
+                created_at: '2026-03-31T08:58:00+08:00',
+                image_url: '',
+                is_pinned: false,
+                is_featured: false,
+                prompt_title: '中文 Prompt 卡片',
+                like_count: 1
+            },
+            {
+                id: 'prompt-comment-intl-1',
+                site: 'intl',
+                prompt_id: 'prompt-intl-1',
+                parent_id: null,
+                content: 'Global prompt comment for site-switch regression.',
+                user_id: '00000000-0000-4000-8000-000000000003',
+                created_at: '2026-03-31T08:24:00+08:00',
+                image_url: '',
+                is_pinned: false,
+                is_featured: false,
+                prompt_title: 'Global Prompt Card',
+                like_count: 3
+            }
+        ],
+        blockedUsers: [],
+        blockHistory: [],
         opsAlertJobs: [],
         opsAlertCases: [],
         opsAlertCaseEvents: [],
         results: []
     };
+
+    function buildHomepageConfigRows() {
+        const sections = [
+            {
+                section: 'hero',
+                display_order: 1,
+                cn: {
+                    title: 'CN Hero 标题',
+                    subtitle: 'CN Hero 副标题',
+                    enable_auto: false
+                },
+                intl: {
+                    title: 'INTL Hero Title',
+                    subtitle: 'INTL Hero Subtitle',
+                    enable_auto: false
+                }
+            },
+            {
+                section: 'prompts',
+                display_order: 2,
+                cn: {
+                    section_title: 'CN 提示词精选',
+                    section_subtitle: '为中文站准备的灵感池',
+                    max_items: 6,
+                    sort: 'popular',
+                    enable_auto: true
+                },
+                intl: {
+                    section_title: 'INTL Prompt Picks',
+                    section_subtitle: 'Curated ideas for the global site',
+                    max_items: 8,
+                    sort: 'latest',
+                    enable_auto: true
+                }
+            },
+            {
+                section: 'shop',
+                display_order: 3,
+                cn: {
+                    section_title: 'CN 商城入口',
+                    section_subtitle: '中文站精选商品',
+                    max_items: 8,
+                    category: 'all',
+                    sort: 'popular',
+                    enable_auto: true
+                },
+                intl: {
+                    section_title: 'INTL Shop',
+                    section_subtitle: 'Global storefront picks',
+                    max_items: 6,
+                    category: 'all',
+                    sort: 'latest',
+                    enable_auto: true
+                }
+            },
+            {
+                section: 'verify',
+                display_order: 4,
+                cn: {
+                    section_title: 'CN API 验证',
+                    section_subtitle: '中文站快速核验入口',
+                    screenshot_path: '',
+                    features: ['免费', '实时'],
+                    enable_auto: false
+                },
+                intl: {
+                    section_title: 'INTL API Check',
+                    section_subtitle: 'Quick validation for global users',
+                    screenshot_path: '',
+                    features: ['Free', 'Realtime'],
+                    enable_auto: false
+                }
+            },
+            {
+                section: 'guestbook',
+                display_order: 5,
+                cn: {
+                    section_title: 'CN 留言板',
+                    section_subtitle: '看看中文站用户在聊什么',
+                    max_items: 5,
+                    enable_auto: true
+                },
+                intl: {
+                    section_title: 'INTL Guestbook',
+                    section_subtitle: 'Highlights from global visitors',
+                    max_items: 4,
+                    enable_auto: true
+                }
+            },
+            {
+                section: 'ticker',
+                display_order: 6,
+                cn: {
+                    speed: 32,
+                    shop_scroll_speed: 28,
+                    enable_prompts: true,
+                    enable_products: true,
+                    enable_auto: false
+                },
+                intl: {
+                    speed: 24,
+                    shop_scroll_speed: 20,
+                    enable_prompts: true,
+                    enable_products: false,
+                    enable_auto: false
+                }
+            },
+            {
+                section: 'footer',
+                display_order: 99,
+                cn: {},
+                intl: {}
+            }
+        ];
+
+        return sections.flatMap((definition, index) => {
+            const baseTimestamp = new Date(now.getTime() - ((sections.length - index) * 60000)).toISOString();
+            return [
+                {
+                    id: `hp-cn-${definition.section}`,
+                    site: 'cn',
+                    section: definition.section,
+                    content: deepClone(definition.cn),
+                    is_visible: definition.section === 'footer' ? true : definition.section !== 'verify',
+                    display_order: definition.display_order,
+                    updated_at: baseTimestamp
+                },
+                {
+                    id: `hp-intl-${definition.section}`,
+                    site: 'intl',
+                    section: definition.section,
+                    content: deepClone(definition.intl),
+                    is_visible: definition.section === 'footer' ? false : definition.section !== 'guestbook',
+                    display_order: definition.display_order,
+                    updated_at: baseTimestamp
+                }
+            ];
+        });
+    }
+
+    function normalizeSmokeCommentsSite(site) {
+        const normalized = String(site || '').trim().toLowerCase();
+        if (normalized === 'all') return 'all';
+        return normalized === 'intl' ? 'intl' : 'cn';
+    }
+
+    function filterSmokeCommentRows(rows = [], site = 'all') {
+        const normalizedSite = normalizeSmokeCommentsSite(site);
+        if (normalizedSite === 'all') {
+            return Array.isArray(rows) ? rows : [];
+        }
+        return (Array.isArray(rows) ? rows : []).filter((row) => normalizeSmokeCommentsSite(row?.site) === normalizedSite);
+    }
+
+    function buildSmokeCountMap(rows = [], keyField) {
+        return (Array.isArray(rows) ? rows : []).reduce((acc, row) => {
+            const key = row?.[keyField];
+            if (!key) return acc;
+            acc[key] = (acc[key] || 0) + 1;
+            return acc;
+        }, {});
+    }
+
+    function sortSmokeRowsByCreatedAtDesc(rows = []) {
+        return [...(Array.isArray(rows) ? rows : [])].sort((left, right) => Date.parse(right?.created_at || 0) - Date.parse(left?.created_at || 0));
+    }
+
+    function getSmokeProfile(userId) {
+        return smokeState.profiles.find((profile) => profile.id === userId) || {};
+    }
+
+    function collectSmokeCommentCascadeIds(rows = [], rootIds = []) {
+        const pending = [...new Set((Array.isArray(rootIds) ? rootIds : []).filter(Boolean))];
+        const collected = new Set(pending);
+
+        while (pending.length > 0) {
+            const currentId = pending.shift();
+            for (const row of Array.isArray(rows) ? rows : []) {
+                if (!row?.id || collected.has(row.id)) continue;
+                if (row.parent_id === currentId) {
+                    collected.add(row.id);
+                    pending.push(row.id);
+                }
+            }
+        }
+
+        return Array.from(collected);
+    }
+
+    function buildSmokeGuestbookAdminRows(site = 'all') {
+        const messages = filterSmokeCommentRows(getTableRows('guestbook_messages'), site);
+        const comments = filterSmokeCommentRows(getTableRows('guestbook_comments'), site);
+        const likes = filterSmokeCommentRows(getTableRows('guestbook_likes'), site).filter((row) => row.target_type === 'comment');
+        const messageReplyCounts = buildSmokeCountMap(comments, 'message_id');
+        const commentReplyCounts = buildSmokeCountMap(comments.filter((row) => row.parent_id), 'parent_id');
+        const likeCounts = buildSmokeCountMap(likes, 'target_id');
+
+        const messageRows = messages.map((message) => {
+            const profile = getSmokeProfile(message.user_id);
+            return {
+                id: message.id,
+                site: normalizeSmokeCommentsSite(message.site),
+                type: 'guestbook',
+                record_type: 'message',
+                level: 'top',
+                content: message.content || '',
+                author: profile.username || '未知用户',
+                email: profile.email || '',
+                avatar: profile.avatar_url || null,
+                created_at: message.created_at,
+                context: message.id,
+                prompt_title: '',
+                likes: Number(message.like_count || 0),
+                user_id: message.user_id,
+                parent_id: null,
+                image_url: message.image_url || null,
+                reply_count: messageReplyCounts[message.id] || 0
+            };
+        });
+
+        const commentRows = comments.map((comment) => {
+            const profile = getSmokeProfile(comment.user_id);
+            return {
+                id: comment.id,
+                site: normalizeSmokeCommentsSite(comment.site),
+                type: 'guestbook',
+                record_type: comment.parent_id ? 'reply' : 'comment',
+                level: 'reply',
+                content: comment.content || '',
+                author: profile.username || '未知用户',
+                email: profile.email || '',
+                avatar: profile.avatar_url || null,
+                created_at: comment.created_at,
+                context: comment.message_id,
+                prompt_title: '',
+                likes: likeCounts[comment.id] || 0,
+                user_id: comment.user_id,
+                parent_id: comment.parent_id,
+                image_url: null,
+                reply_count: commentReplyCounts[comment.id] || 0
+            };
+        });
+
+        return sortSmokeRowsByCreatedAtDesc([...messageRows, ...commentRows]);
+    }
+
+    function buildSmokeGalleryAdminRows(site = 'all') {
+        const comments = filterSmokeCommentRows(getTableRows('prompt_comments'), site);
+        const replyCounts = buildSmokeCountMap(comments.filter((row) => row.parent_id), 'parent_id');
+
+        return sortSmokeRowsByCreatedAtDesc(comments.map((comment) => {
+            const profile = getSmokeProfile(comment.user_id);
+            return {
+                id: comment.id,
+                site: normalizeSmokeCommentsSite(comment.site),
+                type: 'gallery',
+                record_type: comment.parent_id ? 'reply' : 'comment',
+                level: comment.parent_id ? 'reply' : 'top',
+                content: comment.content || '',
+                author: profile.username || '未知用户',
+                email: profile.email || '',
+                avatar: profile.avatar_url || null,
+                created_at: comment.created_at,
+                context: comment.prompt_id,
+                prompt_title: comment.prompt_title || 'Smoke Prompt',
+                likes: Number(comment.like_count || 0),
+                user_id: comment.user_id,
+                parent_id: comment.parent_id,
+                image_url: comment.image_url || null,
+                is_pinned: comment.is_pinned === true,
+                is_featured: comment.is_featured === true,
+                reply_count: replyCounts[comment.id] || 0
+            };
+        }));
+    }
+
+    function buildSmokeCommentsSummary(site = 'all') {
+        const guestbookMessages = filterSmokeCommentRows(getTableRows('guestbook_messages'), site);
+        const guestbookComments = filterSmokeCommentRows(getTableRows('guestbook_comments'), site);
+        const promptComments = filterSmokeCommentRows(getTableRows('prompt_comments'), site);
+        const activeUsersCount = new Set([
+            ...guestbookMessages.map((row) => row.user_id),
+            ...guestbookComments.map((row) => row.user_id),
+            ...promptComments.map((row) => row.user_id)
+        ].filter(Boolean)).size;
+
+        return {
+            totalCount: guestbookMessages.length + guestbookComments.length + promptComments.length,
+            todayCount: guestbookMessages.length + guestbookComments.length + promptComments.length,
+            activeUsersCount,
+            weekGrowth: 0
+        };
+    }
+
+    function isSmokeBlockActive(row) {
+        const expiresAt = String(row?.expires_at || '').trim();
+        if (!expiresAt) return true;
+        const expiresAtMs = Date.parse(expiresAt);
+        if (!Number.isFinite(expiresAtMs)) return true;
+        return expiresAtMs > now.getTime();
+    }
+
+    function buildSmokeCommentBlockState(userId) {
+        const blocks = getTableRows('blocked_users')
+            .filter((row) => String(row?.user_id || '').trim() === String(userId || '').trim())
+            .filter((row) => ['guestbook', 'gallery', 'all'].includes(String(row?.scope || '').trim()))
+            .filter((row) => isSmokeBlockActive(row))
+            .map((row) => ({
+                user_id: row.user_id,
+                scope: row.scope,
+                reason: row.reason || '',
+                expires_at: row.expires_at || null,
+                created_at: row.created_at || null
+            }));
+
+        const scopeSet = new Set(blocks.map((row) => row.scope));
+        const hasGlobalBlock = scopeSet.has('all');
+
+        return {
+            blocks,
+            scopes: Array.from(scopeSet),
+            hasGlobalBlock,
+            isGuestbookBlocked: hasGlobalBlock || scopeSet.has('guestbook'),
+            isGalleryBlocked: hasGlobalBlock || scopeSet.has('gallery')
+        };
+    }
+
+    function deleteSmokeGuestbookLikeTargets(site, targetType, targetIds = []) {
+        const normalizedSite = normalizeSmokeCommentsSite(site);
+        const expectedIds = new Set((Array.isArray(targetIds) ? targetIds : []).filter(Boolean));
+        if (!expectedIds.size) return;
+
+        setTableRows('guestbook_likes', getTableRows('guestbook_likes').filter((row) => {
+            const sameSite = normalizeSmokeCommentsSite(row?.site) === normalizedSite;
+            return !(sameSite && row?.target_type === targetType && expectedIds.has(row?.target_id));
+        }));
+    }
+
+    function handleSmokeCommentsModeration(body = {}) {
+        const action = String(body.action || '').trim().toLowerCase();
+        const site = normalizeSmokeCommentsSite(body.site);
+
+        if (site === 'all') {
+            return createResponse({
+                success: false,
+                message: 'Writable admin site must be cn or intl; received all'
+            }, 400);
+        }
+
+        if (action === 'toggle_pin') {
+            const commentId = String(body.id || body.commentId || '').trim();
+            const promptId = String(body.promptId || '').trim();
+            const currentStatus = body.currentStatus === true || body.currentStatus === 'true' || body.currentStatus === 1 || body.currentStatus === '1';
+            const promptComments = getTableRows('prompt_comments').map((row) => ({ ...row }));
+
+            let matched = null;
+            for (const row of promptComments) {
+                if (normalizeSmokeCommentsSite(row.site) !== site || row.prompt_id !== promptId) continue;
+                if (!currentStatus && row.is_pinned === true) {
+                    row.is_pinned = false;
+                }
+                if (row.id === commentId) {
+                    row.is_pinned = !currentStatus;
+                    matched = row;
+                }
+            }
+
+            if (!matched) {
+                return createResponse({
+                    success: false,
+                    message: 'Comment not found for the selected site'
+                }, 404);
+            }
+
+            setTableRows('prompt_comments', promptComments);
+            return createResponse({
+                success: true,
+                site,
+                comment: deepClone({
+                    id: matched.id,
+                    prompt_id: matched.prompt_id,
+                    is_pinned: matched.is_pinned
+                })
+            });
+        }
+
+        const items = Array.isArray(body.items) ? body.items : [];
+        const guestbookMessageIds = items
+            .filter((item) => item?.type === 'guestbook' && String(item?.recordType || item?.record_type || '').trim().toLowerCase() === 'message')
+            .map((item) => String(item?.id || '').trim())
+            .filter(Boolean);
+        const guestbookCommentIds = items
+            .filter((item) => item?.type === 'guestbook' && String(item?.recordType || item?.record_type || '').trim().toLowerCase() !== 'message')
+            .map((item) => String(item?.id || '').trim())
+            .filter(Boolean);
+        const galleryIds = items
+            .filter((item) => item?.type === 'gallery')
+            .map((item) => String(item?.id || '').trim())
+            .filter(Boolean);
+
+        const guestbookComments = filterSmokeCommentRows(getTableRows('guestbook_comments'), site);
+        const selectedCommentIds = collectSmokeCommentCascadeIds(guestbookComments, guestbookCommentIds);
+        const messageCascadeCommentIds = guestbookComments
+            .filter((row) => guestbookMessageIds.includes(row.message_id))
+            .map((row) => row.id);
+        const likeCommentIds = [...new Set([...selectedCommentIds, ...messageCascadeCommentIds])];
+
+        deleteSmokeGuestbookLikeTargets(site, 'message', guestbookMessageIds);
+        deleteSmokeGuestbookLikeTargets(site, 'comment', likeCommentIds);
+
+        if (selectedCommentIds.length) {
+            const idsToDelete = new Set(selectedCommentIds);
+            setTableRows('guestbook_comments', getTableRows('guestbook_comments').filter((row) => !idsToDelete.has(row.id)));
+        }
+
+        if (guestbookMessageIds.length) {
+            const messageIds = new Set(guestbookMessageIds);
+            setTableRows('guestbook_messages', getTableRows('guestbook_messages').filter((row) => !messageIds.has(row.id)));
+            setTableRows('guestbook_comments', getTableRows('guestbook_comments').filter((row) => !messageIds.has(row.message_id)));
+        }
+
+        if (galleryIds.length) {
+            const galleryIdSet = new Set(galleryIds);
+            setTableRows('prompt_comments', getTableRows('prompt_comments').filter((row) => {
+                return !(normalizeSmokeCommentsSite(row?.site) === site && galleryIdSet.has(row?.id));
+            }));
+        }
+
+        return createResponse({
+            success: true,
+            site,
+            deletedCount: guestbookMessageIds.length + guestbookCommentIds.length + galleryIds.length,
+            summary: {
+                guestbookMessages: guestbookMessageIds.length,
+                guestbookComments: guestbookCommentIds.length,
+                galleryComments: galleryIds.length
+            }
+        });
+    }
+
+    function handleSmokeCommentBlocks(body = {}, requestSite = 'all') {
+        const site = normalizeSmokeCommentsSite(body.site || requestSite);
+
+        if (site === 'all') {
+            return createResponse({
+                success: false,
+                message: 'Writable admin site must be cn or intl; received all'
+            }, 400);
+        }
+
+        const action = String(body.action || '').trim().toLowerCase();
+        const userId = String(body.userId || body.user_id || '').trim();
+        const scope = String(body.scope || '').trim().toLowerCase();
+
+        if (!userId || !['guestbook', 'gallery', 'all'].includes(scope)) {
+            return createResponse({
+                success: false,
+                message: 'Unsupported block request'
+            }, 400);
+        }
+
+        if (action === 'block') {
+            const rawDays = String(body.days || '').trim().toLowerCase();
+            const dayCount = rawDays && rawDays !== 'permanent'
+                ? Math.max(1, Number.parseInt(rawDays, 10) || 0)
+                : 0;
+            const scopeLabel = scope === 'guestbook' ? '留言板' : (scope === 'gallery' ? '画廊' : '全部');
+            const expiresAt = dayCount
+                ? new Date(now.getTime() + dayCount * 24 * 60 * 60 * 1000).toISOString()
+                : null;
+            const nextRows = getTableRows('blocked_users').map((row) => ({ ...row }));
+            const existingIndex = nextRows.findIndex((row) => row.user_id === userId && row.scope === scope);
+            const payload = {
+                user_id: userId,
+                scope,
+                reason: dayCount ? `临时封禁 ${scopeLabel} 权限 ${dayCount} 天` : `永久封禁 ${scopeLabel} 权限`,
+                admin_id: smokeState.user.id,
+                expires_at: expiresAt,
+                created_at: new Date(now.getTime() + 300000).toISOString()
+            };
+
+            if (existingIndex >= 0) {
+                nextRows[existingIndex] = {
+                    ...nextRows[existingIndex],
+                    ...payload
+                };
+            } else {
+                nextRows.push(payload);
+            }
+
+            setTableRows('blocked_users', nextRows);
+            setTableRows('block_history', [
+                ...getTableRows('block_history'),
+                {
+                    user_id: userId,
+                    action: 'block',
+                    scope,
+                    reason: payload.reason,
+                    admin_id: smokeState.user.id,
+                    created_at: payload.created_at
+                }
+            ]);
+        } else if (action === 'unblock') {
+            setTableRows('blocked_users', getTableRows('blocked_users').filter((row) => !(row.user_id === userId && row.scope === scope)));
+            setTableRows('block_history', [
+                ...getTableRows('block_history'),
+                {
+                    user_id: userId,
+                    action: 'unblock',
+                    scope,
+                    reason: '后台手动解封',
+                    admin_id: smokeState.user.id,
+                    created_at: new Date(now.getTime() + 360000).toISOString()
+                }
+            ]);
+        } else {
+            return createResponse({
+                success: false,
+                message: 'Unsupported block request'
+            }, 400);
+        }
+
+        return createResponse({
+            success: true,
+            site,
+            userId,
+            ...buildSmokeCommentBlockState(userId)
+        });
+    }
 
     function deepClone(value) {
         return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -871,6 +1732,10 @@
         });
     }
 
+    function normalizeSmokeSite(site) {
+        return String(site || '').trim().toLowerCase() === 'intl' ? 'intl' : 'cn';
+    }
+
     function getSmokeTableStateKey(table = '') {
         const tableMap = {
             system_notifications: 'notificationRecords',
@@ -880,6 +1745,19 @@
             payment_orders: 'paymentOrders',
             verification_logs: 'verificationLogs',
             shop_tickets: 'shopTickets',
+            homepage_config: 'homepageConfigRows',
+            guestbook_messages: 'guestbookMessages',
+            guestbook_comments: 'guestbookComments',
+            guestbook_likes: 'guestbookLikes',
+            points_packages: 'pointsPackages',
+            redemption_batches: 'redemptionBatches',
+            redemption_codes: 'redemptionCodes',
+            points_ledger: 'pointsLedger',
+            prompts: 'prompts',
+            prompt_unlocks: 'promptUnlocks',
+            prompt_comments: 'promptComments',
+            blocked_users: 'blockedUsers',
+            block_history: 'blockHistory',
             ops_alert_jobs: 'opsAlertJobs',
             ops_alert_cases: 'opsAlertCases',
             ops_alert_case_events: 'opsAlertCaseEvents'
@@ -901,6 +1779,579 @@
             return;
         }
         smokeState[stateKey] = Array.isArray(rows) ? rows : [];
+    }
+
+    function buildEmptySmokePromptSiteMetrics() {
+        return {
+            cn: { unlock_count: 0, comment_count: 0 },
+            intl: { unlock_count: 0, comment_count: 0 },
+            total: { unlock_count: 0, comment_count: 0 }
+        };
+    }
+
+    function attachSmokePromptSiteMetrics(rows = []) {
+        const safeRows = Array.isArray(rows) ? rows : [];
+        const promptIdSet = new Set(
+            safeRows
+                .map((row) => String(row?.id || '').trim())
+                .filter(Boolean)
+        );
+
+        if (!promptIdSet.size) {
+            return safeRows.map((row) => ({
+                ...row,
+                site_metrics: buildEmptySmokePromptSiteMetrics()
+            }));
+        }
+
+        const metricsById = new Map(
+            [...promptIdSet].map((promptId) => [promptId, buildEmptySmokePromptSiteMetrics()])
+        );
+        const applyMetric = (collection = [], fieldName = '') => {
+            for (const row of collection) {
+                const promptId = String(row?.prompt_id || '').trim();
+                const metrics = metricsById.get(promptId);
+                if (!metrics) continue;
+                const site = normalizeSmokeSite(row?.site);
+                metrics[site][fieldName] += 1;
+                metrics.total[fieldName] += 1;
+            }
+        };
+
+        applyMetric(getTableRows('prompt_unlocks'), 'unlock_count');
+        applyMetric(getTableRows('prompt_comments'), 'comment_count');
+
+        return safeRows.map((row) => ({
+            ...row,
+            site_metrics: deepClone(metricsById.get(String(row?.id || '').trim()) || buildEmptySmokePromptSiteMetrics())
+        }));
+    }
+
+    function buildEmptySmokePointsPackageMetrics() {
+        return {
+            cn: { batch_count: 0, generated_count: 0, used_count: 0 },
+            intl: { batch_count: 0, generated_count: 0, used_count: 0 },
+            total: { batch_count: 0, generated_count: 0, used_count: 0 }
+        };
+    }
+
+    function buildSmokePointsCatalogResponse(site = 'all') {
+        const siteContext = String(site || '').trim().toLowerCase() === 'intl'
+            ? 'intl'
+            : (String(site || '').trim().toLowerCase() === 'cn' ? 'cn' : 'all');
+        const packages = getTableRows('points_packages').map((row) => ({ ...row }));
+        const batches = getTableRows('redemption_batches').map((row) => ({ ...row }));
+        const metricsById = new Map(
+            packages.map((pkg) => [String(pkg?.id || '').trim(), buildEmptySmokePointsPackageMetrics()])
+        );
+
+        for (const batch of batches) {
+            const packageId = String(batch?.package_id || '').trim();
+            const metrics = metricsById.get(packageId);
+            if (!metrics) continue;
+            const normalizedSite = normalizeSmokeSite(batch?.site);
+            const totalCount = Math.max(0, Number(batch?.total_count) || 0);
+            const usedCount = Math.max(0, Number(batch?.used_count) || 0);
+
+            metrics[normalizedSite].batch_count += 1;
+            metrics[normalizedSite].generated_count += totalCount;
+            metrics[normalizedSite].used_count += usedCount;
+            metrics.total.batch_count += 1;
+            metrics.total.generated_count += totalCount;
+            metrics.total.used_count += usedCount;
+        }
+
+        const scopedBatches = siteContext === 'all'
+            ? batches
+            : batches.filter((batch) => normalizeSmokeSite(batch?.site) === siteContext);
+
+        return {
+            success: true,
+            siteContext,
+            summary: {
+                package_count: packages.length,
+                active_package_count: packages.filter((pkg) => pkg.is_active !== false).length,
+                batch_count: scopedBatches.length,
+                generated_code_count: scopedBatches.reduce((sum, batch) => sum + Math.max(0, Number(batch?.total_count) || 0), 0),
+                used_code_count: scopedBatches.reduce((sum, batch) => sum + Math.max(0, Number(batch?.used_count) || 0), 0),
+                custom_batch_count: scopedBatches.filter((batch) => !String(batch?.package_id || '').trim()).length
+            },
+            packages: packages.map((pkg) => ({
+                ...pkg,
+                total_points: Math.max(0, Number(pkg?.points_amount) || 0) + Math.max(0, Number(pkg?.bonus_points) || 0),
+                metrics: deepClone(metricsById.get(String(pkg?.id || '').trim()) || buildEmptySmokePointsPackageMetrics())
+            }))
+        };
+    }
+
+    function attachSmokeBatchPackage(batch = {}) {
+        const packageId = String(batch?.package_id || '').trim();
+        const pkg = getTableRows('points_packages').find((row) => String(row?.id || '').trim() === packageId) || null;
+        return {
+            ...batch,
+            points_packages: pkg
+                ? {
+                    id: pkg.id,
+                    name: pkg.name,
+                    points_amount: pkg.points_amount
+                }
+                : null
+        };
+    }
+
+    function buildSmokePointsBatchesResponse(site = 'all') {
+        const normalizedSite = String(site || '').trim().toLowerCase();
+        const rows = getTableRows('redemption_batches')
+            .filter((row) => normalizedSite === 'all' || normalizeSmokeSite(row?.site) === normalizeSmokeSite(normalizedSite))
+            .sort((left, right) => new Date(right?.created_at || 0).getTime() - new Date(left?.created_at || 0).getTime())
+            .map((row) => attachSmokeBatchPackage(row));
+
+        return {
+            success: true,
+            site: normalizedSite === 'intl' ? 'intl' : (normalizedSite === 'cn' ? 'cn' : 'all'),
+            batches: deepClone(rows)
+        };
+    }
+
+    function buildSmokePointsBatchDetail(site = 'all', batchId = '') {
+        const normalizedBatchId = String(batchId || '').trim();
+        const normalizedSite = String(site || '').trim().toLowerCase();
+        const batch = getTableRows('redemption_batches').find((row) => (
+            String(row?.id || '').trim() === normalizedBatchId
+            && (normalizedSite === 'all' || normalizeSmokeSite(row?.site) === normalizeSmokeSite(normalizedSite))
+        ));
+
+        if (!batch) {
+            return createResponse({
+                success: false,
+                message: 'Batch not found'
+            }, 404);
+        }
+
+        const profiles = getTableRows('profiles');
+        const profileMap = new Map(profiles.map((row) => [String(row?.id || '').trim(), row]));
+        const codes = getTableRows('redemption_codes')
+            .filter((row) => (
+                String(row?.batch_id || '').trim() === normalizedBatchId
+                && normalizeSmokeSite(row?.site) === normalizeSmokeSite(batch.site)
+            ))
+            .sort((left, right) => new Date(left?.created_at || 0).getTime() - new Date(right?.created_at || 0).getTime())
+            .map((row) => ({
+                ...row,
+                used_profile: profileMap.get(String(row?.used_by || '').trim()) || null,
+                revoker_name: (() => {
+                    const profile = profileMap.get(String(row?.revoked_by || '').trim());
+                    return profile ? (profile.username || profile.email || '未知') : '';
+                })()
+            }));
+
+        return createResponse({
+            success: true,
+            site: normalizedSite === 'intl' ? 'intl' : (normalizedSite === 'cn' ? 'cn' : 'all'),
+            batch: deepClone(attachSmokeBatchPackage(batch)),
+            codes: deepClone(codes)
+        });
+    }
+
+    function buildSmokePointsBatchSearch(site = 'all', code = '') {
+        const normalizedSite = String(site || '').trim().toLowerCase();
+        const normalizedCode = String(code || '').trim().toUpperCase();
+        const codeRow = getTableRows('redemption_codes').find((row) => (
+            String(row?.code || '').trim().toUpperCase() === normalizedCode
+            && (normalizedSite === 'all' || normalizeSmokeSite(row?.site) === normalizeSmokeSite(normalizedSite))
+        ));
+
+        if (!codeRow) {
+            return createResponse({
+                success: true,
+                site: normalizedSite === 'intl' ? 'intl' : (normalizedSite === 'cn' ? 'cn' : 'all'),
+                found: false,
+                batch: null
+            });
+        }
+
+        const batch = getTableRows('redemption_batches').find((row) => String(row?.id || '').trim() === String(codeRow?.batch_id || '').trim());
+        return createResponse({
+            success: true,
+            site: normalizedSite === 'intl' ? 'intl' : (normalizedSite === 'cn' ? 'cn' : 'all'),
+            found: Boolean(batch),
+            batch: batch ? deepClone(attachSmokeBatchPackage(batch)) : null
+        });
+    }
+
+    function buildSmokePointsLookupResponse(site = 'all', query = '') {
+        const normalizedSite = String(site || '').trim().toLowerCase();
+        const normalizedQuery = String(query || '').trim();
+        const upperQuery = normalizedQuery.toUpperCase();
+        const codeRow = getTableRows('redemption_codes').find((row) => String(row?.code || '').trim().toUpperCase() === upperQuery);
+
+        if (codeRow) {
+            const batch = getTableRows('redemption_batches').find((row) => String(row?.id || '').trim() === String(codeRow?.batch_id || '').trim());
+            const pkg = getTableRows('points_packages').find((row) => String(row?.id || '').trim() === String(codeRow?.package_id || '').trim());
+            const profile = getTableRows('profiles').find((row) => String(row?.id || '').trim() === String(codeRow?.used_by || '').trim());
+
+            return createResponse({
+                success: true,
+                site: normalizedSite === 'intl' ? 'intl' : (normalizedSite === 'cn' ? 'cn' : 'all'),
+                kind: 'code',
+                result: {
+                    valid: true,
+                    query_type: 'code',
+                    code: codeRow.code,
+                    status: codeRow.status,
+                    batch_id: batch?.id || '',
+                    batch_name: batch?.name || '',
+                    package_name: pkg?.name || (codeRow.points_amount ? '自定义积分' : '-'),
+                    points: codeRow.points_amount || (pkg ? (Number(pkg.points_amount || 0) + Number(pkg.bonus_points || 0)) : 0),
+                    used_by: profile ? (profile.username || profile.email || '未知用户') : '',
+                    used_at: codeRow.used_at || null,
+                    revoke_reason: codeRow.revoke_reason || '',
+                    revoked_by: codeRow.revoked_by ? '管理员' : '',
+                    revoked_at: codeRow.revoked_at || null,
+                    expires_at: codeRow.expires_at || null,
+                    external_order_id: codeRow.external_order_id || ''
+                }
+            });
+        }
+
+        const ledgerRow = getTableRows('points_ledger').find((row) => String(row?.id || '').trim() === normalizedQuery);
+        if (ledgerRow) {
+            const profile = getTableRows('profiles').find((row) => String(row?.id || '').trim() === String(ledgerRow?.user_id || '').trim());
+            const prompt = getTableRows('prompts').find((row) => String(row?.id || '').trim() === String(ledgerRow?.reference_id || '').trim());
+
+            return createResponse({
+                success: true,
+                site: normalizedSite === 'intl' ? 'intl' : (normalizedSite === 'cn' ? 'cn' : 'all'),
+                kind: 'ledger',
+                result: {
+                    ...ledgerRow,
+                    profiles: profile ? { username: profile.username, email: profile.email } : null,
+                    prompt_title: prompt?.title || ''
+                }
+            });
+        }
+
+        return createResponse({
+            success: false,
+            message: '未找到该兑换码/订单号'
+        }, 404);
+    }
+
+    function normalizeSmokePointsPackageRecord(row = {}, fallbackSort = 0) {
+        return {
+            id: String(row.id || '').trim(),
+            name: String(row.name || '').trim(),
+            name_en: String(row.name_en || '').trim(),
+            points_amount: Math.max(0, Math.round(Number(row.points_amount ?? row.points) || 0)),
+            bonus_points: Math.max(0, Math.round(Number(row.bonus_points ?? row.bonus) || 0)),
+            price_cny: row.price_cny === '' || row.price === ''
+                ? null
+                : (row.price_cny == null && row.price == null
+                    ? null
+                    : Math.max(0, Math.round((Number(row.price_cny ?? row.price) || 0) * 100) / 100)),
+            is_active: row.is_active !== false && row.enabled !== false,
+            sort_order: Math.max(0, Math.round(Number(row.sort_order ?? row.sort) || fallbackSort || 0)),
+            created_at: row.created_at || now.toISOString()
+        };
+    }
+
+    function sortSmokePointsPackageRows(rows = []) {
+        return [...rows].sort((left, right) => {
+            const sortDelta = (Number(left?.sort_order) || 0) - (Number(right?.sort_order) || 0);
+            if (sortDelta !== 0) return sortDelta;
+            return normalizeComparableValue(left?.name).localeCompare(normalizeComparableValue(right?.name));
+        });
+    }
+
+    function findSmokeBatchById(batchId = '', site = 'cn') {
+        const normalizedId = String(batchId || '').trim();
+        const normalizedSite = normalizeSmokeSite(site);
+        return getTableRows('redemption_batches').find((row) => (
+            String(row?.id || '').trim() === normalizedId
+            && normalizeSmokeSite(row?.site) === normalizedSite
+        )) || null;
+    }
+
+    function findSmokeCodeByValue(code = '', site = 'cn') {
+        const normalizedCode = String(code || '').trim();
+        const normalizedSite = normalizeSmokeSite(site);
+        return getTableRows('redemption_codes').find((row) => (
+            String(row?.code || '').trim() === normalizedCode
+            && normalizeSmokeSite(row?.site) === normalizedSite
+        )) || null;
+    }
+
+    function getSmokePackageTotalPoints(packageId = '') {
+        const pkg = getTableRows('points_packages').find((row) => String(row?.id || '').trim() === String(packageId || '').trim());
+        if (!pkg) {
+            return 0;
+        }
+        return Math.max(0, Number(pkg?.points_amount) || 0) + Math.max(0, Number(pkg?.bonus_points) || 0);
+    }
+
+    function buildSmokeGeneratedCode(site = 'cn', index = 0) {
+        const sitePrefix = normalizeSmokeSite(site) === 'intl' ? 'INTL' : 'CN';
+        const sequence = String(Date.now() + index).slice(-6);
+        return `ZY-${sitePrefix}-${sequence}`;
+    }
+
+    function handleSmokePointsManage(body = {}) {
+        const site = normalizeSmokeSite(body.site);
+        const action = String(body.action || '').trim().toLowerCase();
+        const batches = getTableRows('redemption_batches').map((row) => ({ ...row }));
+        const codes = getTableRows('redemption_codes').map((row) => ({ ...row }));
+
+        if (action === 'generate_codes') {
+            const batchName = String(body.batch_name || '').trim();
+            const count = Math.max(1, Math.min(1000, Number.parseInt(body.count, 10) || 0));
+            if (!batchName || !count) {
+                return createResponse({ success: false, message: 'batch_name and count are required' }, 400);
+            }
+
+            const packageId = String(body.package_id || '').trim();
+            const customPointsAmount = body.custom_points_amount == null || body.custom_points_amount === ''
+                ? null
+                : Math.max(0, Number.parseInt(body.custom_points_amount, 10) || 0);
+            const batchId = `batch-smoke-${site}-${Date.now()}`;
+            const generatedCodes = [];
+            const nextBatch = {
+                id: batchId,
+                name: batchName,
+                package_id: packageId || null,
+                channel: String(body.channel || 'manual').trim() || 'manual',
+                total_count: count,
+                used_count: 0,
+                expires_at: body.expires_at || null,
+                custom_points_amount: customPointsAmount,
+                notes: null,
+                site,
+                status: 'active',
+                created_at: now.toISOString()
+            };
+
+            const nextCodes = [...codes];
+            for (let index = 0; index < count; index += 1) {
+                const code = buildSmokeGeneratedCode(site, index);
+                generatedCodes.push(code);
+                nextCodes.push({
+                    id: `redemption-code-${batchId}-${index + 1}`,
+                    code,
+                    batch_id: batchId,
+                    package_id: packageId || null,
+                    status: 'pending',
+                    site,
+                    points_amount: customPointsAmount || getSmokePackageTotalPoints(packageId),
+                    created_at: now.toISOString(),
+                    expires_at: body.expires_at || null
+                });
+            }
+
+            setTableRows('redemption_batches', [...batches, nextBatch]);
+            setTableRows('redemption_codes', nextCodes);
+
+            return createResponse({
+                success: true,
+                site,
+                batch_name: batchName,
+                count,
+                codes: generatedCodes
+            });
+        }
+
+        if (action === 'update_batch') {
+            const batch = findSmokeBatchById(body.batch_id, site);
+            if (!batch) {
+                return createResponse({ success: false, message: 'Batch not found for the selected site' }, 404);
+            }
+
+            const nextBatches = batches.map((row) => {
+                if (String(row.id) !== String(batch.id)) return row;
+                return {
+                    ...row,
+                    name: String(body.name || row.name || '').trim(),
+                    notes: body.notes == null || body.notes === '' ? null : String(body.notes),
+                    expires_at: body.expires_at === undefined ? row.expires_at : (body.expires_at || null)
+                };
+            });
+            setTableRows('redemption_batches', nextBatches);
+
+            return createResponse({
+                success: true,
+                message: '批次已更新',
+                row: deepClone(nextBatches.find((row) => row.id === batch.id) || batch)
+            });
+        }
+
+        if (action === 'delete_batches') {
+            const batchIds = [...new Set((Array.isArray(body.batch_ids) ? body.batch_ids : []).map((item) => String(item || '').trim()).filter(Boolean))];
+            const deleteMode = String(body.delete_mode || 'keep').trim().toLowerCase();
+            const targetBatchIds = new Set(batchIds);
+            const scopedCodes = codes.filter((row) => normalizeSmokeSite(row?.site) === site && targetBatchIds.has(String(row?.batch_id || '').trim()));
+            const usedCodes = scopedCodes.filter((row) => row.status === 'used');
+            let retainedCount = 0;
+            let deletedCodeCount = 0;
+            let deletedBatchCount = 0;
+            let revokedCount = 0;
+
+            if (deleteMode === 'revoke') {
+                revokedCount = usedCodes.length;
+                const nextCodes = codes.filter((row) => !(normalizeSmokeSite(row?.site) === site && targetBatchIds.has(String(row?.batch_id || '').trim())));
+                const nextBatches = batches.filter((row) => !(normalizeSmokeSite(row?.site) === site && targetBatchIds.has(String(row?.id || '').trim())));
+                deletedCodeCount = scopedCodes.length;
+                deletedBatchCount = batchIds.length;
+                setTableRows('redemption_codes', nextCodes);
+                setTableRows('redemption_batches', nextBatches);
+
+                return createResponse({
+                    success: true,
+                    message: `已撤销 ${revokedCount} 个兑换码并删除 ${deletedBatchCount} 个批次`,
+                    revoked_count: revokedCount,
+                    deleted_code_count: deletedCodeCount,
+                    deleted_batch_count: deletedBatchCount
+                });
+            }
+
+            if (deleteMode === 'block') {
+                const removableStatuses = new Set(['pending', 'disabled', 'locked']);
+                const removableCodeIds = new Set(scopedCodes.filter((row) => removableStatuses.has(row.status)).map((row) => row.id));
+                const nextCodes = codes.filter((row) => !removableCodeIds.has(row.id));
+                retainedCount = scopedCodes.filter((row) => !removableCodeIds.has(row.id)).length;
+                deletedCodeCount = removableCodeIds.size;
+                setTableRows('redemption_codes', nextCodes);
+
+                if (retainedCount === 0) {
+                    const nextBatches = batches.filter((row) => !(normalizeSmokeSite(row?.site) === site && targetBatchIds.has(String(row?.id || '').trim())));
+                    deletedBatchCount = batchIds.length;
+                    setTableRows('redemption_batches', nextBatches);
+                }
+
+                return createResponse({
+                    success: true,
+                    message: retainedCount > 0
+                        ? `已删除未使用兑换码，保留 ${retainedCount} 个已使用兑换码记录`
+                        : `已删除 ${deletedBatchCount} 个批次`,
+                    retained_code_count: retainedCount,
+                    deleted_code_count: deletedCodeCount,
+                    deleted_batch_count: deletedBatchCount
+                });
+            }
+
+            setTableRows('redemption_codes', codes.filter((row) => !(normalizeSmokeSite(row?.site) === site && targetBatchIds.has(String(row?.batch_id || '').trim()))));
+            setTableRows('redemption_batches', batches.filter((row) => !(normalizeSmokeSite(row?.site) === site && targetBatchIds.has(String(row?.id || '').trim()))));
+            deletedCodeCount = scopedCodes.length;
+            deletedBatchCount = batchIds.length;
+
+            return createResponse({
+                success: true,
+                message: `已删除 ${deletedBatchCount} 个批次（用户积分保留）`,
+                deleted_code_count: deletedCodeCount,
+                deleted_batch_count: deletedBatchCount
+            });
+        }
+
+        if (action === 'invalidate_batches') {
+            const batchIds = new Set((Array.isArray(body.batch_ids) ? body.batch_ids : []).map((item) => String(item || '').trim()).filter(Boolean));
+            let disabledCount = 0;
+            const nextCodes = codes.map((row) => {
+                if (normalizeSmokeSite(row?.site) !== site) return row;
+                if (!batchIds.has(String(row?.batch_id || '').trim())) return row;
+                if (row.status !== 'pending') return row;
+                disabledCount += 1;
+                return {
+                    ...row,
+                    status: 'disabled'
+                };
+            });
+            setTableRows('redemption_codes', nextCodes);
+
+            return createResponse({
+                success: true,
+                message: `已作废 ${disabledCount} 个未使用兑换码`,
+                disabled_code_count: disabledCount
+            });
+        }
+
+        if (action === 'set_code_expiry') {
+            const code = findSmokeCodeByValue(body.code, site);
+            if (!code) {
+                return createResponse({ success: false, message: 'Code not found for the selected site' }, 404);
+            }
+
+            const nextCodes = codes.map((row) => (
+                row.id === code.id
+                    ? { ...row, expires_at: body.expires_at || null }
+                    : row
+            ));
+            setTableRows('redemption_codes', nextCodes);
+
+            return createResponse({
+                success: true,
+                message: body.expires_at ? '有效期已更新' : '已清除单码有效期，恢复继承批次有效期',
+                row: deepClone(nextCodes.find((row) => row.id === code.id) || code)
+            });
+        }
+
+        if (action === 'set_code_status') {
+            const code = findSmokeCodeByValue(body.code, site);
+            const nextStatus = String(body.status || '').trim().toLowerCase();
+            if (!code) {
+                return createResponse({ success: false, message: 'Code not found for the selected site' }, 404);
+            }
+            if (!['disabled', 'pending'].includes(nextStatus)) {
+                return createResponse({ success: false, message: 'status must be disabled or pending' }, 400);
+            }
+
+            const nextCodes = codes.map((row) => (
+                row.id === code.id
+                    ? { ...row, status: nextStatus }
+                    : row
+            ));
+            setTableRows('redemption_codes', nextCodes);
+
+            return createResponse({
+                success: true,
+                message: nextStatus === 'disabled' ? '已禁用该兑换码' : '已启用该兑换码',
+                row: deepClone(nextCodes.find((row) => row.id === code.id) || code)
+            });
+        }
+
+        if (action === 'revoke_code') {
+            const code = findSmokeCodeByValue(body.code, site);
+            if (!code) {
+                return createResponse({ success: false, message: 'Code not found for the selected site' }, 404);
+            }
+
+            const nextCodes = codes.map((row) => (
+                row.id === code.id
+                    ? {
+                        ...row,
+                        status: 'revoked',
+                        revoke_reason: String(body.reason || '管理员撤销'),
+                        revoked_at: now.toISOString(),
+                        revoked_by: 'admin-smoke'
+                    }
+                    : row
+            ));
+            const nextBatches = batches.map((row) => (
+                row.id === code.batch_id
+                    ? {
+                        ...row,
+                        used_count: Math.max(0, (Number(row.used_count) || 0) - (code.status === 'used' ? 1 : 0))
+                    }
+                    : row
+            ));
+            setTableRows('redemption_codes', nextCodes);
+            setTableRows('redemption_batches', nextBatches);
+
+            return createResponse({
+                success: true,
+                message: '撤销成功',
+                code: code.code,
+                points_deducted: Number(code.points_amount) || getSmokePackageTotalPoints(code.package_id)
+            });
+        }
+
+        return createResponse({ success: false, message: 'Unsupported points manage action' }, 400);
     }
 
     function normalizeComparableValue(value) {
@@ -967,6 +2418,7 @@
             method: 'select',
             filters: [],
             values: null,
+            returning: false,
             orderField: '',
             orderAscending: true,
             limitCount: 0,
@@ -976,6 +2428,10 @@
 
         const chain = {
             select() {
+                if (state.method === 'update' || state.method === 'insert' || state.method === 'delete') {
+                    state.returning = true;
+                    return proxy;
+                }
                 state.method = 'select';
                 return proxy;
             },
@@ -1042,7 +2498,7 @@
                 const items = Array.isArray(state.values) ? state.values : [state.values];
                 const normalizedItems = items.map((item, index) => buildInsertedRow(table, item, index));
                 setTableRows(table, [...normalizedItems, ...rows]);
-                return { data: deepClone(normalizedItems), error: null };
+                return { data: state.returning ? deepClone(normalizedItems) : deepClone(normalizedItems), error: null };
             }
 
             const matchingRows = applyFilters(rows, state.filters);
@@ -1051,13 +2507,13 @@
                 matchingRows.forEach((row) => {
                     Object.assign(row, state.values || {});
                 });
-                return { data: deepClone(matchingRows), error: null };
+                return { data: state.returning ? deepClone(matchingRows) : deepClone(matchingRows), error: null };
             }
 
             if (state.method === 'delete') {
                 const removeIds = new Set(matchingRows.map((row) => row.id));
                 setTableRows(table, rows.filter((row) => !removeIds.has(row.id)));
-                return { data: [], error: null };
+                return { data: state.returning ? deepClone(matchingRows) : [], error: null };
             }
 
             let selectedRows = deepClone(matchingRows);
@@ -1131,7 +2587,7 @@
                         data: {
                             is_admin: true,
                             is_super_admin: true,
-                            permissions: ['prompts.manage', 'content.moderate', 'settings.manage']
+                            permissions: deepClone(smokeAdminPermissions)
                         },
                         error: null
                     };
@@ -1144,6 +2600,25 @@
                             { config_key: 'payment_channels', config_value: deepClone(smokeState.paymentChannelsConfig) },
                             { config_key: 'recharge_options', config_value: deepClone(smokeState.rechargeOptions) }
                         ],
+                        error: null
+                    };
+                }
+
+                if (name === 'fn_get_homepage_config') {
+                    const params = arguments[1] && typeof arguments[1] === 'object' ? arguments[1] : {};
+                    const site = normalizeSmokeSite(params.p_site);
+                    const includeHidden = params.p_include_hidden === true;
+                    const rows = getTableRows('homepage_config')
+                        .filter((row) => row.site === site)
+                        .filter((row) => includeHidden || row.is_visible !== false)
+                        .sort((left, right) => {
+                            const orderDelta = Number(left?.display_order || 0) - Number(right?.display_order || 0);
+                            if (orderDelta !== 0) return orderDelta;
+                            return normalizeComparableValue(left?.section).localeCompare(normalizeComparableValue(right?.section));
+                        });
+
+                    return {
+                        data: deepClone(rows),
                         error: null
                     };
                 }
@@ -1176,7 +2651,7 @@
                     user: deepClone(smokeState.user),
                     isAdmin: true,
                     isSuperAdmin: true,
-                    permissions: ['prompts.manage', 'content.moderate', 'settings.manage']
+                    permissions: deepClone(smokeAdminPermissions)
                 };
             },
             async createAdminStudioSession() {
@@ -1265,6 +2740,349 @@
                 return createResponse(deepClone(smokeState.opsAlertMonitorPayload));
             }
 
+            if (url.pathname === '/api/admin/prompts/manage') {
+                if (method === 'GET') {
+                    const promptId = String(url.searchParams.get('id') || '').trim();
+                    const rows = getTableRows('prompts');
+
+                    if (promptId) {
+                        const row = rows.find((item) => item.id === promptId);
+                        if (!row) {
+                            return createResponse({
+                                success: false,
+                                message: 'Prompt smoke row not found'
+                            }, 404);
+                        }
+
+                        return createResponse({
+                            success: true,
+                            siteContext: url.searchParams.get('site') || 'all',
+                            row: deepClone(attachSmokePromptSiteMetrics([row])[0])
+                        });
+                    }
+
+                    return createResponse({
+                        success: true,
+                        siteContext: url.searchParams.get('site') || 'all',
+                        rows: deepClone(attachSmokePromptSiteMetrics(sortSmokeRowsByCreatedAtDesc(rows)))
+                    });
+                }
+
+                if (method === 'POST') {
+                    let body = {};
+                    try {
+                        body = JSON.parse(String(init?.body || '{}'));
+                    } catch (_) {
+                        body = {};
+                    }
+
+                    const action = String(body.action || (body.id ? 'update' : 'create')).trim().toLowerCase();
+                    const rows = getTableRows('prompts').map((row) => ({ ...row }));
+
+                    if (action === 'create') {
+                        const inserted = buildInsertedRow('prompts', {
+                            ...body,
+                            tags: Array.isArray(body.tags) ? body.tags : [],
+                            images: Array.isArray(body.images) ? body.images : [],
+                            dominant_colors: Array.isArray(body.dominant_colors) ? body.dominant_colors : [],
+                            created_at: now.toISOString(),
+                            updated_at: now.toISOString()
+                        });
+                        rows.unshift(inserted);
+                        setTableRows('prompts', rows);
+
+                        return createResponse({
+                            success: true,
+                            site: normalizeSmokeSite(body.site),
+                            row: deepClone(inserted)
+                        });
+                    }
+
+                    const row = rows.find((item) => item.id === body.id);
+                    if (!row) {
+                        return createResponse({
+                            success: false,
+                            message: 'Prompt smoke row not found'
+                        }, 404);
+                    }
+
+                    const nextPayload = { ...body };
+                    delete nextPayload.action;
+                    delete nextPayload.site;
+                    delete nextPayload.id;
+
+                    Object.assign(row, deepClone(nextPayload), {
+                        updated_at: new Date(now.getTime() + 60000).toISOString()
+                    });
+                    setTableRows('prompts', rows);
+
+                    return createResponse({
+                        success: true,
+                        site: normalizeSmokeSite(body.site),
+                        row: deepClone(row)
+                    });
+                }
+
+                if (method === 'DELETE') {
+                    let body = {};
+                    try {
+                        body = JSON.parse(String(init?.body || '{}'));
+                    } catch (_) {
+                        body = {};
+                    }
+
+                    const ids = [...new Set(
+                        (Array.isArray(body.ids) ? body.ids : [body.id])
+                            .map((item) => String(item || '').trim())
+                            .filter(Boolean)
+                    )];
+                    const rows = getTableRows('prompts');
+                    const deletedRows = rows.filter((row) => ids.includes(row.id));
+                    setTableRows('prompts', rows.filter((row) => !ids.includes(row.id)));
+
+                    return createResponse({
+                        success: true,
+                        site: normalizeSmokeSite(body.site),
+                        deletedCount: deletedRows.length,
+                        ids: deletedRows.map((row) => row.id)
+                    });
+                }
+            }
+
+            if (url.pathname === '/api/admin/points/catalog' && method === 'GET') {
+                return createResponse(deepClone(buildSmokePointsCatalogResponse(url.searchParams.get('site') || 'all')));
+            }
+
+            if (url.pathname === '/api/admin/points/batches' && method === 'GET') {
+                const site = url.searchParams.get('site') || 'all';
+                const batchId = String(url.searchParams.get('batchId') || '').trim();
+                const code = String(url.searchParams.get('code') || '').trim();
+
+                if (batchId) {
+                    return buildSmokePointsBatchDetail(site, batchId);
+                }
+
+                if (code) {
+                    return buildSmokePointsBatchSearch(site, code);
+                }
+
+                return createResponse(deepClone(buildSmokePointsBatchesResponse(site)));
+            }
+
+            if (url.pathname === '/api/admin/points/packages') {
+                if (method === 'GET') {
+                    const rows = sortSmokePointsPackageRows(getTableRows('points_packages').map((row, index) => (
+                        normalizeSmokePointsPackageRecord(row, index + 1)
+                    )));
+                    return createResponse({
+                        success: true,
+                        rows: deepClone(rows)
+                    });
+                }
+
+                let body = {};
+                try {
+                    body = JSON.parse(String(init?.body || '{}'));
+                } catch (_) {
+                    body = {};
+                }
+
+                const writableSite = String(body.site || '').trim().toLowerCase();
+                if (!['cn', 'intl'].includes(writableSite)) {
+                    return createResponse({
+                        success: false,
+                        message: 'Writable admin site must be cn or intl'
+                    }, 400);
+                }
+
+                const rows = getTableRows('points_packages').map((row, index) => normalizeSmokePointsPackageRecord(row, index + 1));
+
+                if (method === 'POST') {
+                    const action = String(body.action || (body.id ? 'update' : 'create')).trim().toLowerCase();
+
+                    if (action === 'create') {
+                        const inserted = normalizeSmokePointsPackageRecord(buildInsertedRow('points_packages', {
+                            ...body,
+                            id: body.id || `pkg-smoke-${rows.length + 1}`,
+                            created_at: now.toISOString()
+                        }), rows.length + 1);
+                        const nextRows = sortSmokePointsPackageRows([...rows, inserted]);
+                        setTableRows('points_packages', nextRows);
+                        return createResponse({
+                            success: true,
+                            row: deepClone(inserted)
+                        });
+                    }
+
+                    const row = rows.find((item) => item.id === String(body.id || '').trim());
+                    if (!row) {
+                        return createResponse({
+                            success: false,
+                            message: 'Points package smoke row not found'
+                        }, 404);
+                    }
+
+                    const updated = normalizeSmokePointsPackageRecord({
+                        ...row,
+                        ...body
+                    }, row.sort_order || 0);
+                    const nextRows = sortSmokePointsPackageRows(rows.map((item) => (item.id === updated.id ? updated : item)));
+                    setTableRows('points_packages', nextRows);
+                    return createResponse({
+                        success: true,
+                        row: deepClone(updated)
+                    });
+                }
+
+                if (method === 'DELETE') {
+                    const id = String(body.id || '').trim();
+                    const nextRows = rows.filter((row) => row.id !== id);
+                    setTableRows('points_packages', nextRows);
+                    return createResponse({
+                        success: true,
+                        id
+                    });
+                }
+            }
+
+            if (url.pathname === '/api/admin/points/manage' && method === 'POST') {
+                let body = {};
+                try {
+                    body = JSON.parse(String(init?.body || '{}'));
+                } catch (_) {
+                    body = {};
+                }
+
+                const writableSite = String(body.site || '').trim().toLowerCase();
+                if (!['cn', 'intl'].includes(writableSite)) {
+                    return createResponse({
+                        success: false,
+                        message: 'Writable admin site must be cn or intl'
+                    }, 400);
+                }
+
+                return handleSmokePointsManage(body);
+            }
+
+            if (url.pathname === '/api/admin/points/lookup' && method === 'GET') {
+                return buildSmokePointsLookupResponse(
+                    url.searchParams.get('site') || 'all',
+                    url.searchParams.get('q') || url.searchParams.get('code') || ''
+                );
+            }
+
+            if (url.pathname === '/api/admin/comments/summary') {
+                return createResponse({
+                    success: true,
+                    site: normalizeSmokeCommentsSite(url.searchParams.get('site') || 'all'),
+                    summary: deepClone(buildSmokeCommentsSummary(url.searchParams.get('site') || 'all'))
+                });
+            }
+
+            if (url.pathname === '/api/admin/comments/list') {
+                const site = url.searchParams.get('site') || 'all';
+                const view = String(url.searchParams.get('view') || '').trim().toLowerCase() === 'gallery' ? 'gallery' : 'guestbook';
+                const comments = view === 'gallery'
+                    ? buildSmokeGalleryAdminRows(site)
+                    : buildSmokeGuestbookAdminRows(site);
+
+                return createResponse({
+                    success: true,
+                    site: normalizeSmokeCommentsSite(site),
+                    view,
+                    comments: deepClone(comments)
+                });
+            }
+
+            if (url.pathname === '/api/admin/comments/blocks') {
+                if (method === 'GET') {
+                    const userId = String(url.searchParams.get('userId') || '').trim();
+                    return createResponse({
+                        success: true,
+                        site: normalizeSmokeCommentsSite(url.searchParams.get('site') || 'all'),
+                        userId,
+                        ...buildSmokeCommentBlockState(userId)
+                    });
+                }
+
+                if (method === 'POST') {
+                    let body = {};
+                    try {
+                        body = JSON.parse(String(init?.body || '{}'));
+                    } catch (_) {
+                        body = {};
+                    }
+
+                    return handleSmokeCommentBlocks(body, url.searchParams.get('site') || 'all');
+                }
+            }
+
+            if (url.pathname === '/api/admin/comments/moderate' && method === 'POST') {
+                let body = {};
+                try {
+                    body = JSON.parse(String(init?.body || '{}'));
+                } catch (_) {
+                    body = {};
+                }
+
+                return handleSmokeCommentsModeration(body);
+            }
+
+            if (url.pathname === '/api/admin/homepage/config') {
+                if (method === 'GET') {
+                    const site = normalizeSmokeSite(url.searchParams.get('site'));
+                    const rows = getTableRows('homepage_config')
+                        .filter((row) => row.site === site)
+                        .sort((left, right) => {
+                            const orderDelta = Number(left?.display_order || 0) - Number(right?.display_order || 0);
+                            if (orderDelta !== 0) return orderDelta;
+                            return normalizeComparableValue(left?.section).localeCompare(normalizeComparableValue(right?.section));
+                        });
+
+                    return createResponse({
+                        success: true,
+                        rows: deepClone(rows)
+                    });
+                }
+
+                if (method === 'POST') {
+                    let body = {};
+                    try {
+                        body = JSON.parse(String(init?.body || '{}'));
+                    } catch (_) {
+                        body = {};
+                    }
+
+                    const site = normalizeSmokeSite(body.site);
+                    const rows = getTableRows('homepage_config');
+                    const row = rows.find((item) => item.id === body.id && item.site === site && item.section === body.section);
+                    if (!row) {
+                        return createResponse({
+                            success: false,
+                            message: 'Homepage smoke row not found'
+                        }, 404);
+                    }
+
+                    if (Object.prototype.hasOwnProperty.call(body, 'content')) {
+                        row.content = body.content && typeof body.content === 'object'
+                            ? deepClone(body.content)
+                            : {};
+                    }
+                    if (Object.prototype.hasOwnProperty.call(body, 'is_visible')) {
+                        row.is_visible = body.is_visible !== false;
+                    }
+                    if (Object.prototype.hasOwnProperty.call(body, 'display_order')) {
+                        row.display_order = Number(body.display_order || 0);
+                    }
+                    row.updated_at = new Date(now.getTime() + 60000).toISOString();
+
+                    return createResponse({
+                        success: true,
+                        row: deepClone(row)
+                    });
+                }
+            }
+
             if (originalFetch) {
                 return originalFetch(input, init);
             }
@@ -1291,9 +3109,37 @@
         }, { message: '快捷回复模板未能在本地 smoke 中渲染' });
         recordResult('快捷回复模板已渲染', quickReplyRows.length >= 3, `检测到 ${quickReplyRows.length} 张模板卡片`);
 
-        const shiftReport = await waitFor(() => document.getElementById('opsAlertMonitorShiftReport')?.querySelector('.ops-alert-shift-report__view-switch'));
-        const shiftChips = Array.from(shiftReport.querySelectorAll('[data-admin-action="settings-set-ops-alert-shift-report-view"]'));
-        recordResult('交班报表视角切换已渲染', shiftChips.length >= 4, `检测到 ${shiftChips.length} 个视角按钮`);
+        const shiftReportState = await waitFor(() => {
+            const target = document.getElementById('opsAlertMonitorShiftReport');
+            if (!(target instanceof HTMLElement)) {
+                return null;
+            }
+
+            const switchNode = target.querySelector('.ops-alert-shift-report__view-switch');
+            if (switchNode instanceof HTMLElement) {
+                return { target, switchNode };
+            }
+
+            const text = String(target.textContent || '').trim();
+            if (text) {
+                return { target, switchNode: null };
+            }
+
+            return null;
+        }, {
+            message: '交班报表未能在本地 smoke 中渲染',
+            timeoutMs: 20000
+        });
+        const shiftChips = shiftReportState.switchNode
+            ? Array.from(shiftReportState.switchNode.querySelectorAll('[data-admin-action="settings-set-ops-alert-shift-report-view"]'))
+            : [];
+        recordResult(
+            '交班报表视角切换已渲染',
+            shiftChips.length >= 4,
+            shiftChips.length >= 4
+                ? `检测到 ${shiftChips.length} 个视角按钮`
+                : String(shiftReportState.target?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 96)
+        );
 
         const firstRow = quickReplyRows[0];
         const toggle = firstRow?.querySelector('[data-ops-alert-quick-reply-field="enabled"]');
@@ -1351,6 +3197,565 @@
 
         await runUserModalSmoke();
         await runExperimentModalSmoke();
+    }
+
+    async function runHomepageAdminSmoke() {
+        await waitFor(() => globalScope.switchModule && globalScope.AdminSiteFilter?.select, { message: '首页模块入口未加载完成' });
+        globalScope.AdminSiteFilter.select('cn');
+        await nextFrame();
+        await sleep(80);
+        globalScope.switchModule?.('homepage');
+
+        await waitFor(
+            () => document.getElementById('module-homepage')?.classList.contains('active')
+                ? document.getElementById('module-homepage')
+                : null,
+            { message: '首页模块未切换成功' }
+        );
+
+        const heroTitleInput = await waitFor(
+            () => {
+                const input = document.getElementById('hp-hero-title');
+                return input instanceof HTMLInputElement && String(input.value || '').trim() ? input : null;
+            },
+            { message: '首页 Hero 配置未加载完成' }
+        );
+
+        recordResult(
+            '首页模块会按站点加载配置',
+            heroTitleInput.value === 'CN Hero 标题',
+            `hero=${heroTitleInput.value || '<empty>'}`
+        );
+
+        const galleryVisibilityInput = await waitFor(
+            () => document.querySelector('[data-homepage-visibility="gallery"]'),
+            { message: '首页分栏显隐卡片未渲染' }
+        );
+        recordResult(
+            '首页分栏显隐卡片已从 homepage_config 渲染',
+            galleryVisibilityInput instanceof HTMLInputElement,
+            galleryVisibilityInput instanceof HTMLInputElement ? 'gallery visibility rendered' : 'missing gallery visibility input'
+        );
+
+        const heroSaveButton = document.querySelector('.hp-section-view[data-hp-view="hero"] [data-admin-action="homepage-save-section"]');
+        if (heroSaveButton instanceof HTMLElement) {
+            heroTitleInput.value = 'CN Hero 标题（smoke 已保存）';
+            heroTitleInput.dispatchEvent(new Event('input', { bubbles: true }));
+            heroSaveButton.click();
+
+            await waitFor(
+                () => {
+                    const cnHeroRow = getTableRows('homepage_config').find((row) => row.site === 'cn' && row.section === 'hero');
+                    return cnHeroRow?.content?.title === 'CN Hero 标题（smoke 已保存）' ? cnHeroRow : null;
+                },
+                { message: '首页 Hero 保存未命中 admin handler' }
+            );
+
+            const saveIndicator = document.getElementById('hp-hero-save-indicator');
+            recordResult(
+                '首页内容保存会写回当前站点行',
+                getTableRows('homepage_config').some((row) => row.site === 'cn' && row.section === 'hero' && row.content?.title === 'CN Hero 标题（smoke 已保存）'),
+                saveIndicator?.classList.contains('visible') ? 'save indicator visible' : 'save indicator pending'
+            );
+        } else {
+            recordResult('首页内容保存会写回当前站点行', false, '未找到 Hero 保存按钮');
+        }
+
+        globalScope.HomepageAdmin?.switchSection?.('guestbook');
+        await sleep(60);
+        const footerVisibilityInput = await waitFor(
+            () => document.querySelector('[data-homepage-visibility="footer"]'),
+            { message: '页脚显隐开关未渲染' }
+        );
+        if (footerVisibilityInput instanceof HTMLInputElement) {
+            footerVisibilityInput.click();
+            await waitFor(
+                () => {
+                    const footerRow = getTableRows('homepage_config').find((row) => row.site === 'cn' && row.section === 'footer');
+                    return footerRow?.is_visible === false ? footerRow : null;
+                },
+                { message: '页脚显隐未保存到 homepage_config' }
+            );
+            recordResult(
+                '页脚显隐也通过 homepage_config 保存',
+                getTableRows('homepage_config').some((row) => row.site === 'cn' && row.section === 'footer' && row.is_visible === false),
+                'cn footer hidden'
+            );
+        } else {
+            recordResult('页脚显隐也通过 homepage_config 保存', false, '未找到 footer visibility input');
+        }
+
+        globalScope.AdminSiteFilter.select('intl');
+        await nextFrame();
+        await sleep(160);
+        globalScope.HomepageAdmin?.switchSection?.('hero');
+        await sleep(80);
+
+        const intlHeroValue = document.getElementById('hp-hero-title')?.value || '';
+        const intlFooterVisible = document.querySelector('[data-homepage-visibility="footer"]')?.checked === true;
+        recordResult(
+            '切换站点后首页配置不会串站',
+            intlHeroValue === 'INTL Hero Title' && intlFooterVisible === false,
+            `hero=${intlHeroValue || '<empty>'} / footer=${intlFooterVisible ? 'visible' : 'hidden'}`
+        );
+    }
+
+    async function runAdminGallerySmoke() {
+        await waitFor(
+            () => globalScope.switchModule && globalScope.switchView && globalScope.AdminSiteFilter?.select && typeof globalScope.editPrompt === 'function',
+            { message: '画廊模块入口未加载完成' }
+        );
+
+        const promptProbe = await globalScope.supabaseClient?.from?.('prompts')?.select?.('*')?.order?.('created_at', { ascending: false });
+        recordResult(
+            'Gallery smoke stub 会返回全局 Prompt 资产',
+            Array.isArray(promptProbe?.data) && promptProbe.data.length >= 2,
+            `rows=${Array.isArray(promptProbe?.data) ? promptProbe.data.length : 'n/a'}`
+        );
+
+        globalScope.AdminSiteFilter.select('cn');
+        await nextFrame();
+        await sleep(80);
+        globalScope.switchModule?.('gallery');
+        globalScope.switchView?.('manage');
+        await globalScope.loadAdminPrompts?.();
+
+        await waitFor(
+            () => document.getElementById('module-gallery')?.classList.contains('active')
+                ? document.getElementById('module-gallery')
+                : null,
+            { message: '画廊模块未切换成功' }
+        );
+
+        let galleryGrid = null;
+        try {
+            galleryGrid = await waitFor(
+                () => document.querySelectorAll('#adminGrid .admin-card').length >= 2
+                    ? document.getElementById('adminGrid')
+                    : null,
+                { message: '画廊管理列表未按 smoke prompts 渲染' }
+            );
+        } catch (err) {
+            const grid = document.getElementById('adminGrid');
+            const manageView = document.getElementById('view-manage');
+            throw new Error([
+                '画廊管理列表未按 smoke prompts 渲染',
+                `probeRows=${Array.isArray(promptProbe?.data) ? promptProbe.data.length : 'n/a'}`,
+                `gridExists=${grid ? 'yes' : 'no'}`,
+                `manageActive=${manageView?.classList?.contains('active') ? 'yes' : 'no'}`,
+                `cardCount=${document.querySelectorAll('#adminGrid .admin-card').length}`,
+                `gridText=${String(grid?.textContent || '').trim().slice(0, 120) || '<empty>'}`
+            ].join(' | '));
+        }
+
+        recordResult(
+            'Gallery 管理列表会渲染全局 Prompt 资产',
+            document.querySelectorAll('#adminGrid .admin-card').length >= 2,
+            `cards=${document.querySelectorAll('#adminGrid .admin-card').length} / grid=${galleryGrid ? 'ready' : 'missing'}`
+        );
+
+        const promptCard = document.querySelector('#adminGrid .admin-card[data-id="prompt-cn-1"]');
+        recordResult(
+            'Gallery 管理卡片会标记全局资产和双语覆盖状态',
+            Boolean(
+                promptCard?.querySelector('.admin-card-badge--global')
+                && promptCard?.querySelector('.admin-card-badge--lang.is-ready')
+                && promptCard?.querySelector('.admin-card-subtitle')
+            ),
+            promptCard?.textContent?.trim()?.slice(0, 160) || '<empty>'
+        );
+
+        recordResult(
+            'Gallery 管理卡片会展示 CN / INTL 互动摘要',
+            Boolean(
+                promptCard?.querySelector('.admin-card-site-metrics')
+                && /CN\s*解锁\s*2\s*·\s*评论\s*2/.test(promptCard?.textContent || '')
+                && /INTL\s*解锁\s*1\s*·\s*评论\s*0/.test(promptCard?.textContent || '')
+            ),
+            promptCard?.textContent?.trim()?.slice(0, 220) || '<empty>'
+        );
+
+        await globalScope.editPrompt?.('prompt-cn-1');
+        const titleZhInput = await waitFor(
+            () => {
+                const input = document.getElementById('promptTitleZh');
+                return input instanceof HTMLInputElement && String(input.value || '').trim() ? input : null;
+            },
+            { message: '画廊编辑态未回填双语字段' }
+        );
+
+        const promptDescription = document.getElementById('promptDescription');
+        const promptTextEn = document.getElementById('promptTextEn');
+        const bilingualToggle = document.getElementById('promptBilingualToggleBtn');
+        recordResult(
+            'Gallery 编辑态会回填主字段和显式双语字段',
+            titleZhInput.value === '中文 Prompt 卡片'
+                && promptDescription?.value === '中文站默认描述，用来验证编辑态会回填主描述字段。'
+                && promptTextEn?.value === 'English prompt draft for smoke verification.'
+                && bilingualToggle?.getAttribute('aria-expanded') === 'true',
+            `titleZh=${titleZhInput.value || '<empty>'} / desc=${promptDescription?.value || '<empty>'}`
+        );
+
+        const titleEnInput = document.getElementById('promptTitleEn');
+        if (titleEnInput instanceof HTMLInputElement) {
+            titleZhInput.value = '';
+            titleZhInput.dispatchEvent(new Event('input', { bubbles: true }));
+            titleEnInput.value = 'CN Prompt Card (smoke updated)';
+            titleEnInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+            const form = document.getElementById('promptForm');
+            form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+            await waitFor(
+                () => {
+                    const row = getTableRows('prompts').find((item) => item.id === 'prompt-cn-1');
+                    return row?.title_zh === '' && row?.title_en === 'CN Prompt Card (smoke updated)' ? row : null;
+                },
+                { message: '画廊双语字段保存未写回 prompts 表' }
+            );
+
+            recordResult(
+                'Gallery 编辑保存会显式写回双语字段',
+                getTableRows('prompts').some((item) => item.id === 'prompt-cn-1' && item.title_zh === '' && item.title_en === 'CN Prompt Card (smoke updated)'),
+                JSON.stringify(getTableRows('prompts').find((item) => item.id === 'prompt-cn-1') || {})
+            );
+        } else {
+            recordResult('Gallery 编辑保存会显式写回双语字段', false, '未找到英文标题输入框');
+        }
+
+        globalScope.AdminSiteFilter.select('intl');
+        await nextFrame();
+        await sleep(160);
+        await globalScope.editPrompt?.('prompt-intl-1');
+
+        const intlTitleEn = await waitFor(
+            () => {
+                const input = document.getElementById('promptTitleEn');
+                return input instanceof HTMLInputElement && String(input.value || '').trim() ? input : null;
+            },
+            { message: '切换到 INTL 后画廊编辑态未刷新' }
+        );
+
+        recordResult(
+            '切换站点后 Gallery 编辑态双语字段不会串站',
+            intlTitleEn.value === 'Global Prompt Card'
+                && document.getElementById('promptTitleZh')?.value === '国际站 Prompt 卡片',
+            `titleEn=${intlTitleEn.value || '<empty>'} / titleZh=${document.getElementById('promptTitleZh')?.value || '<empty>'}`
+        );
+    }
+
+    async function runAdminPointsSmoke() {
+        await waitFor(
+            () => globalScope.switchModule && globalScope.switchPointsView && globalScope.AdminSiteFilter?.select,
+            { message: '兑换码/套餐模块入口未加载完成' }
+        );
+
+        globalScope.AdminSiteFilter.select('cn');
+        await nextFrame();
+        await sleep(80);
+        globalScope.switchModule?.('points');
+        globalScope.switchPointsView?.('catalog');
+
+        await waitFor(
+            () => document.getElementById('module-points')?.classList.contains('active')
+                ? document.getElementById('module-points')
+                : null,
+            { message: '兑换码/套餐模块未切换成功' }
+        );
+
+        await waitFor(
+            () => document.querySelectorAll('#pointsPackagesTableBody tr[data-package-id]').length >= 2
+                ? document.getElementById('pointsPackagesTableBody')
+                : null,
+            { message: '套餐目录列表未渲染' }
+        );
+
+        const nameInput = await waitFor(
+            () => {
+                const input = document.getElementById('pointsPackageName');
+                return input instanceof HTMLInputElement && String(input.value || '').trim() ? input : null;
+            },
+            { message: '套餐编辑器未自动回填当前套餐' }
+        );
+
+        recordResult(
+            '套餐目录会渲染编辑工作台',
+            Boolean(document.getElementById('pointsPackageForm'))
+                && Boolean(document.getElementById('pointsPackageDeleteBtn'))
+                && document.querySelectorAll('#pointsPackagesTableBody tr[data-package-id]').length >= 2,
+            `rows=${document.querySelectorAll('#pointsPackagesTableBody tr[data-package-id]').length} / current=${nameInput.value || '<empty>'}`
+        );
+
+        nameInput.value = '新手尝鲜包（smoke）';
+        nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+        document.getElementById('pointsPackageForm')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+        await waitFor(
+            () => getTableRows('points_packages').some((row) => row.id === 'pkg-starter' && row.name === '新手尝鲜包（smoke）'),
+            { message: '套餐编辑保存未通过 points packages handler 写回' }
+        );
+
+        recordResult(
+            '套餐编辑保存会通过 points packages handler 写回',
+            getTableRows('points_packages').some((row) => row.id === 'pkg-starter' && row.name === '新手尝鲜包（smoke）'),
+            JSON.stringify(getTableRows('points_packages').find((row) => row.id === 'pkg-starter') || {})
+        );
+
+        document.querySelector('[data-points-action="new-package"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        const createNameInput = await waitFor(
+            () => {
+                const input = document.getElementById('pointsPackageName');
+                const deleteBtn = document.getElementById('pointsPackageDeleteBtn');
+                if (!(input instanceof HTMLInputElement) || !(deleteBtn instanceof HTMLButtonElement)) {
+                    return null;
+                }
+                return String(input.value || '').trim() === '' && deleteBtn.disabled ? input : null;
+            },
+            { message: '套餐新建编辑器未切换到空白创建态' }
+        );
+        const createBaseInput = document.getElementById('pointsPackageBasePoints');
+        const createPriceInput = document.getElementById('pointsPackagePrice');
+        const createSortInput = document.getElementById('pointsPackageSortOrder');
+
+        if (createNameInput instanceof HTMLInputElement && createBaseInput instanceof HTMLInputElement && createPriceInput instanceof HTMLInputElement && createSortInput instanceof HTMLInputElement) {
+            createNameInput.value = 'Smoke 新套餐';
+            createNameInput.dispatchEvent(new Event('input', { bubbles: true }));
+            const createNameEnInput = document.getElementById('pointsPackageNameEn');
+            if (createNameEnInput instanceof HTMLInputElement) {
+                createNameEnInput.value = 'Smoke New Pack';
+                createNameEnInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            createBaseInput.value = '888';
+            createBaseInput.dispatchEvent(new Event('input', { bubbles: true }));
+            const bonusInput = document.getElementById('pointsPackageBonusPoints');
+            if (bonusInput instanceof HTMLInputElement) {
+                bonusInput.value = '112';
+                bonusInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            createPriceInput.value = '12.34';
+            createPriceInput.dispatchEvent(new Event('input', { bubbles: true }));
+            createSortInput.value = '9';
+            createSortInput.dispatchEvent(new Event('input', { bubbles: true }));
+            document.getElementById('pointsPackageForm')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+            await waitFor(
+                () => getTableRows('points_packages').some((row) => row.name === 'Smoke 新套餐' && Number(row.points_amount) === 888),
+                { message: '套餐新建未通过 points packages handler 创建' }
+            );
+
+            recordResult(
+                '套餐新建会在 Points 模块里创建全局资产',
+                getTableRows('points_packages').some((row) => row.name === 'Smoke 新套餐' && Number(row.points_amount) === 888),
+                JSON.stringify(getTableRows('points_packages').find((row) => row.name === 'Smoke 新套餐') || {})
+            );
+        } else {
+            recordResult('套餐新建会在 Points 模块里创建全局资产', false, '未找到套餐新建表单字段');
+        }
+
+        globalScope.switchPointsView?.('generate');
+        await waitFor(
+            () => document.getElementById('points-view-generate')?.classList.contains('active')
+                ? document.getElementById('generateCodesForm')
+                : null,
+            { message: '兑换码生成视图未切换成功' }
+        );
+
+        const batchNameInput = document.getElementById('batchName');
+        const packageIdInput = document.getElementById('batchPackageId');
+        const channelInput = document.getElementById('batchChannel');
+        const countInput = document.getElementById('batchCount');
+
+        if (
+            batchNameInput instanceof HTMLInputElement
+            && packageIdInput instanceof HTMLInputElement
+            && channelInput instanceof HTMLInputElement
+            && countInput instanceof HTMLInputElement
+        ) {
+            batchNameInput.value = 'Smoke 批次生成';
+            batchNameInput.dispatchEvent(new Event('input', { bubbles: true }));
+            packageIdInput.value = 'pkg-starter';
+            packageIdInput.dispatchEvent(new Event('change', { bubbles: true }));
+            channelInput.value = 'manual';
+            channelInput.dispatchEvent(new Event('change', { bubbles: true }));
+            countInput.value = '2';
+            countInput.dispatchEvent(new Event('input', { bubbles: true }));
+            document.getElementById('generateCodesForm')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+            await waitFor(
+                () => getTableRows('redemption_batches').some((row) => row.name === 'Smoke 批次生成' && normalizeSmokeSite(row.site) === 'cn'),
+                { message: '兑换码生成未通过 points manage handler 创建批次' }
+            );
+
+            recordResult(
+                '兑换码生成会通过 points manage handler 写回批次和兑换码',
+                getTableRows('redemption_batches').some((row) => row.name === 'Smoke 批次生成' && normalizeSmokeSite(row.site) === 'cn')
+                    && getTableRows('redemption_codes').filter((row) => row.batch_id && String(row.batch_id).startsWith('batch-smoke-cn-')).length >= 2,
+                JSON.stringify(getTableRows('redemption_batches').find((row) => row.name === 'Smoke 批次生成') || {})
+            );
+        } else {
+            recordResult('兑换码生成会通过 points manage handler 写回批次和兑换码', false, '未找到兑换码生成表单字段');
+        }
+
+        globalScope.switchPointsView?.('batches');
+        await waitFor(
+            () => document.getElementById('points-view-batches')?.classList.contains('active')
+                ? document.getElementById('batchesTableBody')
+                : null,
+            { message: '兑换码批次视图未切换成功' }
+        );
+
+        await waitFor(
+            () => document.querySelectorAll('#batchesTableBody tr[data-batch-id]').length >= 1
+                ? document.getElementById('batchesTableBody')
+                : null,
+            { message: '批次列表未通过 points batches handler 渲染' }
+        );
+
+        recordResult(
+            '批次列表会通过 points batches handler 加载当前站点批次',
+            document.querySelectorAll('#batchesTableBody tr[data-batch-id]').length >= 1,
+            `rows=${document.querySelectorAll('#batchesTableBody tr[data-batch-id]').length}`
+        );
+
+        const firstBatchRow = document.querySelector('#batchesTableBody tr[data-batch-id]');
+        if (firstBatchRow instanceof HTMLElement) {
+            firstBatchRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+            await waitFor(
+                () => document.querySelector('.codes-modal .codes-table')
+                    ? document.querySelector('.codes-modal .codes-table')
+                    : null,
+                { message: '批次详情未通过 points batches handler 加载兑换码' }
+            );
+
+            recordResult(
+                '批次详情会通过 points batches handler 加载兑换码',
+                Boolean(document.querySelector('.codes-modal .codes-table')),
+                `rows=${document.querySelectorAll('.codes-modal .codes-table tbody tr').length}`
+            );
+        } else {
+            recordResult('批次详情会通过 points batches handler 加载兑换码', false, '未找到可点击的批次行');
+        }
+    }
+
+    async function runAdminCommentsSmoke() {
+        await waitFor(() => globalScope.switchModule && globalScope.AdminSiteFilter?.select, { message: '评论模块入口未加载完成' });
+        globalScope.AdminSiteFilter.select('cn');
+        await nextFrame();
+        await sleep(80);
+        globalScope.switchModule?.('comments');
+
+        await waitFor(
+            () => document.getElementById('module-comments')?.classList.contains('active')
+                ? document.getElementById('module-comments')
+                : null,
+            { message: '评论模块未切换成功' }
+        );
+
+        await waitFor(
+            () => Number(document.getElementById('totalCommentsCount')?.textContent || 0) === 5
+                ? document.getElementById('totalCommentsCount')
+                : null,
+            { message: '评论统计未按站点完成加载' }
+        );
+
+        recordResult(
+            '评论模块会按站点加载含回复的统计口径',
+            Number(document.getElementById('totalCommentsCount')?.textContent || 0) === 5
+                && Number(document.getElementById('todayCommentsCount')?.textContent || 0) === 5,
+            `total=${document.getElementById('totalCommentsCount')?.textContent || '<empty>'} / today=${document.getElementById('todayCommentsCount')?.textContent || '<empty>'}`
+        );
+
+        await waitFor(
+            () => document.querySelectorAll('#adminCommentList .comment-admin-item').length === 3
+                ? document.getElementById('adminCommentList')
+                : null,
+            { message: '留言板评论列表未按 handler 渲染' }
+        );
+
+        const guestbookReplyCard = Array.from(document.querySelectorAll('#adminCommentList .comment-admin-item'))
+            .find((item) => item.getAttribute('data-id') === 'gb-comment-cn-1');
+        recordResult(
+            '留言板列表会渲染主贴与回复链',
+            Boolean(guestbookReplyCard) && /回复/.test(guestbookReplyCard.textContent || ''),
+            guestbookReplyCard?.textContent?.replace(/\s+/g, ' ').trim().slice(0, 80) || 'missing guestbook card'
+        );
+
+        await globalScope.deleteComment?.('gb-comment-cn-1', 'guestbook', 'comment');
+        await waitFor(
+            () => Number(document.getElementById('totalCommentsCount')?.textContent || 0) === 3
+                ? document.getElementById('totalCommentsCount')
+                : null,
+            { message: '删除留言回复后统计未回收' }
+        );
+
+        recordResult(
+            '删除留言回复会通过 comments handler 清理回复树',
+            !getTableRows('guestbook_comments').some((row) => row.id === 'gb-comment-cn-1' || row.id === 'gb-reply-cn-1'),
+            `remaining=${getTableRows('guestbook_comments').map((row) => row.id).join(',') || '<none>'}`
+        );
+
+        globalScope.switchCommentView?.('gallery');
+        await waitFor(
+            () => document.querySelectorAll('#adminCommentList .comment-admin-item').length === 2
+                ? document.getElementById('adminCommentList')
+                : null,
+            { message: '画廊评论列表未切换成功' }
+        );
+
+        await globalScope.togglePin?.('prompt-comment-cn-2', false, 'prompt-cn-1');
+        await waitFor(
+            () => getTableRows('prompt_comments').find((row) => row.id === 'prompt-comment-cn-2')?.is_pinned === true,
+            { message: '评论置顶未通过 comments handler 生效' }
+        );
+
+        recordResult(
+            '画廊置顶会通过 comments handler 切换当前站点状态',
+            getTableRows('prompt_comments').find((row) => row.id === 'prompt-comment-cn-1')?.is_pinned === false
+                && getTableRows('prompt_comments').find((row) => row.id === 'prompt-comment-cn-2')?.is_pinned === true,
+            `cn pinned=${getTableRows('prompt_comments').filter((row) => row.site === 'cn' && row.is_pinned).map((row) => row.id).join(',') || '<none>'}`
+        );
+
+        await globalScope.blockUser?.('00000000-0000-4000-8000-000000000001', 'guestbook', null);
+        await waitFor(
+            () => getTableRows('blocked_users').some((row) => row.user_id === '00000000-0000-4000-8000-000000000001' && row.scope === 'guestbook'),
+            { message: '评论封禁动作未通过 comments blocks handler 生效' }
+        );
+
+        recordResult(
+            '评论封禁会通过 comments blocks handler 写入封禁状态',
+            getTableRows('blocked_users').some((row) => row.user_id === '00000000-0000-4000-8000-000000000001' && row.scope === 'guestbook'),
+            getTableRows('blocked_users').map((row) => `${row.user_id}:${row.scope}`).join(',') || '<none>'
+        );
+
+        await globalScope.unblockUser?.('00000000-0000-4000-8000-000000000001', 'guestbook');
+        await waitFor(
+            () => !getTableRows('blocked_users').some((row) => row.user_id === '00000000-0000-4000-8000-000000000001' && row.scope === 'guestbook'),
+            { message: '评论解封动作未通过 comments blocks handler 生效' }
+        );
+
+        recordResult(
+            '评论解封会通过 comments blocks handler 清理封禁状态',
+            !getTableRows('blocked_users').some((row) => row.user_id === '00000000-0000-4000-8000-000000000001' && row.scope === 'guestbook'),
+            getTableRows('blocked_users').map((row) => `${row.user_id}:${row.scope}`).join(',') || '<none>'
+        );
+
+        globalScope.AdminSiteFilter.select('intl');
+        await nextFrame();
+        await sleep(160);
+        await waitFor(
+            () => Number(document.getElementById('totalCommentsCount')?.textContent || 0) === 3
+                ? document.getElementById('totalCommentsCount')
+                : null,
+            { message: '切换到 INTL 站点后评论统计未刷新' }
+        );
+
+        recordResult(
+            '切换站点后评论统计不会串站',
+            Number(document.getElementById('totalCommentsCount')?.textContent || 0) === 3
+                && getTableRows('prompt_comments').find((row) => row.id === 'prompt-comment-intl-1')?.is_pinned === false,
+            `intl total=${document.getElementById('totalCommentsCount')?.textContent || '<empty>'}`
+        );
     }
 
     async function runUserModalSmoke() {
@@ -1624,6 +4029,14 @@
             if (/\/admin-studio(?:\.html)?$/i.test(pathname)) {
                 if (searchParams.get('module') === 'chat') {
                     await runAdminChatSmoke();
+                } else if (searchParams.get('module') === 'points') {
+                    await runAdminPointsSmoke();
+                } else if (searchParams.get('module') === 'gallery') {
+                    await runAdminGallerySmoke();
+                } else if (searchParams.get('module') === 'comments') {
+                    await runAdminCommentsSmoke();
+                } else if (searchParams.get('module') === 'homepage') {
+                    await runHomepageAdminSmoke();
                 } else {
                     await runAdminStudioSmoke();
                 }

@@ -38,6 +38,62 @@ const HOME_LOOP_MAX_PIXELS_PER_SECOND = 140;
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 
+function getHomepageRuntimeSite() {
+  return window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
+}
+
+function getHomepagePrefetchCacheKey(site = getHomepageRuntimeSite()) {
+  return `${HOMEPAGE_PREFETCH_CACHE_KEY}_${site}`;
+}
+
+function getHomepageConfigLastUpdatedKey(site = getHomepageRuntimeSite()) {
+  return `${HOMEPAGE_CONFIG_LAST_UPDATED_KEY}_${site}`;
+}
+
+async function loadHomepageConfigRows(site = getHomepageRuntimeSite()) {
+  const { data, error } = await window.supabaseClient
+    .rpc('fn_get_homepage_config', {
+      p_site: site,
+      p_include_hidden: false
+    });
+
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+function readHomepagePrefetchCache(site = getHomepageRuntimeSite()) {
+  const key = getHomepagePrefetchCacheKey(site);
+  const raw = sessionStorage.getItem(key);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.site && parsed.site !== site) {
+      return null;
+    }
+    return parsed;
+  } catch (error) {
+    sessionStorage.removeItem(key);
+  }
+
+  return null;
+}
+
+function clearHomepagePrefetchCache(site = getHomepageRuntimeSite()) {
+  sessionStorage.removeItem(getHomepagePrefetchCacheKey(site));
+  sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
+}
+
+function writeHomepagePrefetchCache(payload, site = getHomepageRuntimeSite()) {
+  sessionStorage.setItem(getHomepagePrefetchCacheKey(site), JSON.stringify({
+    ...payload,
+    site
+  }));
+  sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
+}
+
 function resetMobileSubmenus(mobileMenu) {
   if (!mobileMenu) return;
 
@@ -218,7 +274,7 @@ function getHomeViewportWidth() {
 
 function getHomepageConfigLastUpdatedAt() {
   try {
-    const raw = localStorage.getItem(HOMEPAGE_CONFIG_LAST_UPDATED_KEY);
+    const raw = localStorage.getItem(getHomepageConfigLastUpdatedKey());
     const parsed = Number.parseInt(raw || '0', 10);
     return Number.isFinite(parsed) ? parsed : 0;
   } catch (e) {
@@ -515,9 +571,8 @@ const FramerHome = {
 
       let heroData = null;
       try {
-        const prefetchRaw = sessionStorage.getItem(HOMEPAGE_PREFETCH_CACHE_KEY);
-        if (prefetchRaw) {
-          const prefetch = JSON.parse(prefetchRaw);
+        const prefetch = readHomepagePrefetchCache();
+        if (prefetch) {
           const age = Date.now() - prefetch.timestamp;
           if (age < 300000) {
             heroData = prefetch.cachedData?.hero || this.buildHeroData(prefetch.config?.hero || {});
@@ -554,9 +609,8 @@ const FramerHome = {
   async loadAll() {
     // === Check sessionStorage for prefetched data ===
     try {
-        const prefetchRaw = sessionStorage.getItem(HOMEPAGE_PREFETCH_CACHE_KEY);
-        if (prefetchRaw) {
-          const prefetch = JSON.parse(prefetchRaw);
+        const prefetch = readHomepagePrefetchCache();
+        if (prefetch) {
           const age = Date.now() - prefetch.timestamp;
           const configUpdatedAt = getHomepageConfigLastUpdatedAt();
 
@@ -574,12 +628,12 @@ const FramerHome = {
             return;
           } else {
             // Clear poisoned cache containing raw translation keys
-            sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
+            clearHomepagePrefetchCache();
           }
         }
       } catch (e) {
         // Ignore parse errors
-        sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
+        clearHomepagePrefetchCache();
       }
 
     try {
@@ -611,11 +665,11 @@ const FramerHome = {
 
       // Save to sessionStorage so sub-page prefetch can serve it on next visit
       try {
-        sessionStorage.setItem(HOMEPAGE_PREFETCH_CACHE_KEY, JSON.stringify({
+        writeHomepagePrefetchCache({
           cachedData: this.cachedData,
           config: this.config,
           timestamp: Date.now()
-        }));
+        });
       } catch (e) {
         // sessionStorage might be full, ignore
       }
@@ -647,13 +701,7 @@ const FramerHome = {
   async fetchHomepageConfig() {
     // Use cache with 30 minute TTL
     return await Cache.loadWithCache('homepage_config', async () => {
-      const { data, error } = await window.supabaseClient
-        .from('homepage_config')
-        .select('*')
-        .eq('is_visible', true)
-        .order('display_order', { ascending: true });
-
-      if (error) throw error;
+      const data = await loadHomepageConfigRows(getHomepageRuntimeSite());
 
       // Convert array to object keyed by section
       const config = {};

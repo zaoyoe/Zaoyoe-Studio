@@ -110,6 +110,10 @@ const ShopAdmin = {
         return filter === 'intl' ? 'intl' : 'cn'; // 'all' defaults to 'cn'
     },
 
+    requireWritableSite(options = {}) {
+        return window.AdminSiteFilter?.requireWritableSite?.(options) || null;
+    },
+
     /** Get field mapping for current editing site */
     getFieldMap() {
         return this.SITE_FIELD_MAP[this.getEditSite()];
@@ -284,6 +288,7 @@ Example output format:
             headers,
             body: JSON.stringify({
                 action,
+                site: window.AdminSiteFilter?.getSiteFilter?.() || 'all',
                 ...payload
             })
         });
@@ -4029,6 +4034,10 @@ Example output format:
 
     saveProduct: async function () {
         console.log('[ShopAdmin] saveProduct started');
+        if (!this.requireWritableSite({ label: '保存商品' })) {
+            return;
+        }
+
         try {
             const id = document.getElementById('editProductId').value;
             const name = document.getElementById('prodName').value.trim();
@@ -4281,6 +4290,10 @@ Example output format:
     },
 
     deleteProduct: async function (id, name) {
+        if (!this.requireWritableSite({ label: '删除商品' })) {
+            return;
+        }
+
         if (!confirm(`确定要删除商品 "${name}" 吗？\n商品将被下架但保留历史订单记录。`)) return;
 
         try {
@@ -4294,6 +4307,10 @@ Example output format:
     },
 
     toggleStatus: async function (id, newStatus) {
+        if (!this.requireWritableSite({ label: newStatus ? '上架商品' : '下架商品' })) {
+            return;
+        }
+
         if (!confirm(`确定要${newStatus ? '上架' : '下架'} 该商品吗？`)) return;
         try {
             await this.callAdminMutation('toggle_product', { productId: id, isActive: newStatus });
@@ -4362,6 +4379,10 @@ Example output format:
     },
 
     importInventory: async function (btnElement) {
+        if (!this.requireWritableSite({ label: '导入库存' })) {
+            return;
+        }
+
         if (!this.selectedProductId) { alert('请先选择要导入的商品'); return; }
 
         const input = document.getElementById('inventoryInput');
@@ -7933,6 +7954,11 @@ Example output format:
     },
 
     submitRefund: async function (orderId, submitButton = null) {
+        if (!this.requireWritableSite({ label: '执行订单退款' })) {
+            return;
+        }
+
+        const writableSite = window.AdminSiteFilter?.getWritableSite?.() || null;
         const targetStatus = document.querySelector('input[name="refundTargetStatus"]:checked').value;
         const remark = document.getElementById('refundRemarkInput').value.trim();
 
@@ -7945,28 +7971,28 @@ Example output format:
         }
 
         try {
-            const { data, error } = await supabaseClient.rpc('fn_admin_refund_order', {
-                p_order_id: orderId,
-                p_admin_id: (await window.supabaseClient.auth.getUser()).data.user.id,
-                p_target_status: targetStatus,
-                p_remark: remark || null
+            const headers = await this.getAdminAuthHeaders();
+            const response = await fetch('/api/admin/payments/shop-refund', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    orderId,
+                    targetStatus,
+                    remark: remark || null,
+                    site: writableSite || window.AdminSiteFilter?.getSiteFilter?.() || 'all'
+                })
             });
+            const result = await response.json().catch(() => ({}));
 
-            if (error) throw error;
-
-            if (data.success) {
-                alert(data.message);
-                this.closeDynamicModal('refundModal');
-                this.searchOrders(); // Refresh Order List
-                // Also try refresh inventory list if possible, or user will switch tab
-                if (this.currentTab === 'inventory') this.loadInventoryList();
-            } else {
-                alert('Refund Failed: ' + data.message);
-                if (btn) {
-                    btn.disabled = false;
-                    btn.textContent = originalText;
-                }
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || '退款失败');
             }
+
+            alert(result.message || '退款成功');
+            this.closeDynamicModal('refundModal');
+            this.searchOrders(); // Refresh Order List
+            // Also try refresh inventory list if possible, or user will switch tab
+            if (this.currentTab === 'inventory') this.loadInventoryList();
         } catch (err) {
             console.error(err);
             alert('Error: ' + err.message);
@@ -8136,6 +8162,10 @@ Example output format:
     },
 
     batchDelete: async function () {
+        if (!this.requireWritableSite({ label: '批量删除库存' })) {
+            return;
+        }
+
         const selectedIds = Array.from(document.querySelectorAll('.inv-checkbox:checked')).map(cb => cb.dataset.id);
         if (selectedIds.length === 0) {
             alert('请先选择要删除的库存项');
@@ -8488,6 +8518,10 @@ Example output format:
     },
 
     deleteInventoryItem: async function (id) {
+        if (!this.requireWritableSite({ label: '删除库存项' })) {
+            return;
+        }
+
         if (!confirm('确定删除此库存项？')) return;
         try {
             await this.callAdminMutation('inventory_delete', { inventoryId: id });
@@ -8498,6 +8532,10 @@ Example output format:
     },
 
     freezeInventoryItem: async function (id, freeze) {
+        if (!this.requireWritableSite({ label: freeze ? '冻结库存项' : '解冻库存项' })) {
+            return;
+        }
+
         try {
             await this.callAdminMutation('inventory_update_status', {
                 inventoryId: id,
@@ -8511,6 +8549,10 @@ Example output format:
     },
 
     releaseOne: async function (id) {
+        if (!this.requireWritableSite({ label: '重新上架库存项' })) {
+            return;
+        }
+
         try {
             await this.callAdminMutation('inventory_update_status', {
                 inventoryId: id,
@@ -8613,6 +8655,10 @@ Example output format:
     },
 
     submitFault: async function (itemId) {
+        if (!this.requireWritableSite({ label: '标记库存故障' })) {
+            return;
+        }
+
         const remark = document.getElementById('faultRemarkInput').value.trim();
         // Allow empty remark if just marking as fault? Usually user wants to verify reason.
         if (!remark) {
